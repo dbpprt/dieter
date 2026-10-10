@@ -20,6 +20,7 @@ import (
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/linkauth"
+	"github.com/dbpprt/dieter/internal/localauth"
 	"github.com/dbpprt/dieter/internal/relaypolicy"
 	"github.com/dbpprt/dieter/internal/rpcraw"
 	"github.com/dbpprt/dieter/internal/trust"
@@ -36,6 +37,7 @@ type GatewayClient struct {
 	ControlWebRTC         bool
 	Identity              *Identity
 	LocalTarget           string
+	LocalToken            string
 	Version               string
 	Routes                []*gatewayv1.DirectCandidate
 	Log                   *slog.Logger
@@ -365,7 +367,7 @@ func (c *GatewayClient) runLaneOnce(ctx context.Context, lane relaypolicy.Lane, 
 		c.OnAcknowledged(connectedAt)
 	}
 	finish := func(err error) (time.Duration, error) { return time.Since(connectedAt), err }
-	local, err := grpc.NewClient(c.LocalTarget, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDefaultCallOptions(grpc.ForceCodec(rpcraw.Codec{}), grpc.MaxCallRecvMsgSize(16<<20), grpc.MaxCallSendMsgSize(16<<20)))
+	local, err := grpc.NewClient(c.LocalTarget, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithPerRPCCredentials(localauth.Credentials{Token: c.LocalToken}), grpc.WithDefaultCallOptions(grpc.ForceCodec(rpcraw.Codec{}), grpc.MaxCallRecvMsgSize(16<<20), grpc.MaxCallSendMsgSize(16<<20)))
 	if err != nil {
 		return finish(err)
 	}
@@ -778,9 +780,12 @@ func (c *GatewayClient) relayLocal(ctx context.Context, local *grpc.ClientConn, 
 		defer cancel()
 	}
 	clientVersion := frame.GetMetadata()["x-dieter-client-version"]
+	// The route marks plaintext-visible gateway relay calls. Remote metadata is
+	// not forwarded, so a relay caller cannot remove or forge it.
 	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs(
 		"x-dieter-operator-subject", operatorSubject,
 		"x-dieter-client-version", clientVersion,
+		"x-dieter-route", "relay",
 	))
 	description := &grpc.StreamDesc{ServerStreams: true, ClientStreams: false}
 	call, err := local.NewStream(ctx, description, frame.GetMethod(), grpc.ForceCodec(rpcraw.Codec{}))

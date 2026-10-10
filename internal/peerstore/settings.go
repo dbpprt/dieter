@@ -18,6 +18,9 @@ func ValidateSettings(r Record) error {
 	if DomainKind(r.Kind) {
 		return ValidateDomain(r)
 	}
+	if VaultKind(r.Kind) {
+		return ValidateVault(r)
+	}
 	if r.Kind != "project-settings" && r.Kind != "board-settings" {
 		return errors.New("unsupported peer record kind")
 	}

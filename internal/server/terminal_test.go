@@ -107,7 +107,7 @@ func TestTerminalGRPCPersistsAcrossWatchReconnect(t *testing.T) {
 		defer cancel()
 		application.terminals.Shutdown(ctx)
 	})
-	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()), localGRPCToken(application.store.Root))
 	if err != nil {
 		t.Fatal(err)
 	}

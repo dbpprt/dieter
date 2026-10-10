@@ -358,6 +358,24 @@ internal fun CreationScreen(store: MobileStore, chat: Boolean) {
                 }
                 if (preview.workspace_detail.isNotEmpty()) SectionFooter(preview.workspace_detail)
             }
+            item("vault") {
+                SectionHeader("Vault")
+                Group(listOf(0)) { _, position ->
+                    ListRow(
+                        "Allow vault access",
+                        position = position,
+                        subtitle = "The agent may use the account's passwords and TOTP codes",
+                        trailing = {
+                            DSwitch(
+                                intent.vault_access,
+                                { store.preview(intent.copy(vault_access = it)) },
+                                Modifier.testTag("vault-access"),
+                            )
+                        },
+                    )
+                }
+                SectionFooter("Set only when creating. Agents never see the vault otherwise.")
+            }
             val labels = board?.labels.orEmpty()
             if (!chat && labels.isNotEmpty())
                 item("labels") {

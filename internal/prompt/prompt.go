@@ -222,12 +222,25 @@ func ResolveForWorkspace(settings model.Settings, detail model.CardDetail, label
 		return Resolution{}, fmt.Errorf("skill template: %w", err)
 	}
 	skill := render(skillTemplate, variables)
-	instructions := BindWorkspace(joinSections(context, skill), detail.Project.Path, workspace)
+	vault := ""
+	if detail.Card.VaultAccess {
+		vault = VaultInstructions
+	}
+	instructions := BindWorkspace(joinSections(context, skill, vault), detail.Project.Path, workspace)
 	if len(instructions) > MaxRenderedBytes {
 		return Resolution{}, fmt.Errorf("rendered instructions exceed %d KiB", MaxRenderedBytes>>10)
 	}
 	return Resolution{Source: source, Template: template, Context: context, Skill: skill, Instructions: instructions, AppliedLabels: labels}, nil
 }
+
+// VaultInstructions are appended outside the configurable templates for
+// conversations created with vault access.
+const VaultInstructions = `Account vault access:
+- This conversation may use the account vault. List entries with: dieter vault list [--query TEXT] [--url URL]
+- Prefer injecting secrets into a command over printing them: dieter vault exec ITEM --env NAME=password [--env CODE=totp] -- COMMAND ARG...
+- Read a current TOTP code with: dieter vault totp ITEM
+- Print a secret only when it must be typed somewhere: dieter vault get ITEM --field password --reveal. Never repeat secret values in replies, files, commits or logs.
+- Store new credentials without seeing them: dieter vault add --name NAME [--url URL] [--username USER] --generate`
 
 const (
 	workspaceBoundaryStart  = "<dieter_workspace_boundary>"

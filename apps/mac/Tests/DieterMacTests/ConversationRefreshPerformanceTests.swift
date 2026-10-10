@@ -57,3 +57,29 @@ import Testing
     #expect(model.conversationPresentationRevision == revision + 1)
     #expect(model.conversationMessages.map(\.id) == ["message", "reply"])
 }
+
+@Test @MainActor func cachedConversationStaysReadableWhileRefreshing() {
+    let core = ScriptedCoreClient()
+    let model = ConversationModel()
+    model.core = core
+    model.selectedChatID = "card"
+    model.observe("card")
+    defer { model.observe(nil) }
+    let message = fixtureMessage("cached")
+    core.emitConversation("card") {
+        $0.messages = [message]
+        $0.syncing = true
+    }
+    #expect(model.conversationSyncing)
+    #expect(!model.conversationLoading)
+    #expect(model.conversationMessages == [message])
+    let revision = model.conversationPresentationRevision
+    core.emitConversation("card") {
+        $0.messages = [message]
+        $0.refreshedAtMillis = 1
+    }
+    #expect(!model.conversationSyncing)
+    #expect(model.conversationLastRefreshedAt != nil)
+    #expect(model.conversationMessages == [message])
+    #expect(model.conversationPresentationRevision == revision)
+}

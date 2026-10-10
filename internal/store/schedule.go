@@ -31,7 +31,7 @@ type ScheduleInput struct {
 	WorkspaceMode                                             string
 	LabelIDs                                                  []string
 	ProviderOptions                                           map[string]string
-	Enabled                                                   bool
+	Enabled, VaultAccess                                      bool
 }
 
 type SchedulePage struct {
@@ -343,7 +343,7 @@ func (s *Store) CreateSchedule(input ScheduleInput) (model.Schedule, error) {
 		Enabled: input.Enabled, Action: input.Action, TitleTemplate: input.TitleTemplate,
 		PromptTemplate: input.PromptTemplate, Provider: input.Provider, Model: input.Model,
 		Effort: strings.TrimSpace(input.Effort), ProviderOptions: cloneStringMap(input.ProviderOptions),
-		LabelIDs: labels, WorkspaceMode: input.WorkspaceMode, OpenCardPolicy: input.OpenCardPolicy,
+		LabelIDs: labels, WorkspaceMode: input.WorkspaceMode, VaultAccess: input.VaultAccess, OpenCardPolicy: input.OpenCardPolicy,
 		MisfirePolicy: input.MisfirePolicy, NextRunAt: input.NextRunAt,
 		CreatedAt: now, UpdatedAt: now,
 	}
@@ -596,7 +596,7 @@ func (s *Store) UpdateSchedule(ref string, input ScheduleInput) (model.Schedule,
 	current.TitleTemplate, current.PromptTemplate = input.TitleTemplate, input.PromptTemplate
 	current.Provider, current.Model, current.Effort, current.LabelIDs = input.Provider, input.Model, strings.TrimSpace(input.Effort), labels
 	current.ProviderOptions = cloneStringMap(input.ProviderOptions)
-	current.WorkspaceMode = input.WorkspaceMode
+	current.WorkspaceMode, current.VaultAccess = input.WorkspaceMode, input.VaultAccess
 	current.OpenCardPolicy, current.MisfirePolicy, current.NextRunAt = input.OpenCardPolicy, input.MisfirePolicy, input.NextRunAt
 	current.UpdatedAt = timestamp()
 	database, err := s.scheduleDatabase()

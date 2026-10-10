@@ -57,9 +57,11 @@ func NewServer(config Config, store *Store, logger *slog.Logger) (*Server, error
 	relay := newRelayServer(store, auth, keys, hub, config)
 	httpMux := http.NewServeMux()
 	auth.RegisterHTTP(httpMux)
-	publicRequests := make(chan struct{}, 32)
+	publicRequests := make(chan struct{}, maxPublicRequests)
+	publicClients := newClientSlots(maxPublicRequestsPerClient)
 	var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r = r.WithContext(context.WithValue(r.Context(), gatewayClientAddressKey{}, gatewayClientAddress(r, config.ProxyMode)))
+		client := gatewayClientAddress(r, config.ProxyMode)
+		r = r.WithContext(context.WithValue(r.Context(), gatewayClientAddressKey{}, client))
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Frame-Options", "DENY")
@@ -72,13 +74,22 @@ func NewServer(config Config, store *Store, logger *slog.Logger) (*Server, error
 			if r.URL.Path == "/dieter.gateway.v1.DaemonLinkService/Connect" {
 				// Admit before ServeHTTP starts its independent body reader, and
 				// retain the slot until authentication succeeds or its reader stops.
-				select {
-				case hub.handshakes <- struct{}{}:
-				default:
+				releaseClient, admitted := hub.handshakeClients.acquire(client)
+				if !admitted {
 					gatewayResourceExhausted(w)
 					return
 				}
-				release := sync.OnceFunc(func() { <-hub.handshakes })
+				select {
+				case hub.handshakes <- struct{}{}:
+				default:
+					releaseClient()
+					gatewayResourceExhausted(w)
+					return
+				}
+				release := sync.OnceFunc(func() {
+					<-hub.handshakes
+					releaseClient()
+				})
 				defer release()
 				r = r.WithContext(context.WithValue(r.Context(), gatewayLinkAdmittedKey{}, release))
 				authenticated := make(chan struct{})
@@ -87,6 +98,12 @@ func NewServer(config Config, store *Store, logger *slog.Logger) (*Server, error
 				body.authenticated = authenticated
 				r.Body = body
 			} else if publicGatewayUnaryMethod(r.URL.Path) {
+				releaseClient, admitted := publicClients.acquire(client)
+				if !admitted {
+					gatewayResourceExhausted(w)
+					return
+				}
+				defer releaseClient()
 				select {
 				case publicRequests <- struct{}{}:
 				default:
@@ -168,6 +185,13 @@ func gatewayHTTP2Config() *http2.Server {
 		WriteByteTimeout: 15 * time.Second,
 	}
 }
+
+// Unauthenticated calls share these pools; each client network gets a slice so
+// one source cannot stall compatibility checks and enrollment for everyone.
+const (
+	maxPublicRequests          = 128
+	maxPublicRequestsPerClient = 8
+)
 
 func publicGatewayUnaryMethod(path string) bool {
 	switch path {

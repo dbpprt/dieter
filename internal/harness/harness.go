@@ -522,6 +522,9 @@ type Request struct {
 	ContentPresentationEnabled bool              `json:"contentPresentationEnabled,omitempty"`
 	BackgroundProcessesEnabled bool              `json:"backgroundProcessesEnabled,omitempty"`
 	BackgroundProcess          ProcessHandler    `json:"-"`
+	// Environment is added to the worker after the allowlist, so commands the
+	// agent runs inherit it. Values never enter the stdin request.
+	Environment map[string]string `json:"-"`
 	// RuntimeDigest pins only this active turn to an immutable installed
 	// harness runtime. Completed conversations deliberately do not retain it:
 	// their next turn resolves the then-current runtime and resumes the opaque
@@ -720,6 +723,9 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 		command.Env = ompHarnessEnvironment(runtimePaths...)
 	} else {
 		command.Env = harnessEnvironment()
+	}
+	for name, value := range request.Environment {
+		command.Env = append(command.Env, name+"="+value)
 	}
 	stdin, err := command.StdinPipe()
 	if err != nil {

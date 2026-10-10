@@ -49,7 +49,7 @@ func TestGRPCMachineListener(t *testing.T) {
 		_ = listener.Close()
 	})
 
-	response, err := http.Get("http://" + listener.Addr().String() + "/")
+	response, err := localHTTPClient(http.DefaultClient, application.store.Root).Get("http://" + listener.Addr().String() + "/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,6 +61,7 @@ func TestGRPCMachineListener(t *testing.T) {
 	connection, err := grpc.NewClient(
 		listener.Addr().String(),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		localGRPCToken(application.store.Root),
 	)
 	if err != nil {
 		t.Fatal(err)

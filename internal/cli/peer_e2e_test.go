@@ -24,6 +24,7 @@ import (
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/linkauth"
+	"github.com/dbpprt/dieter/internal/localauth"
 	"github.com/dbpprt/dieter/internal/peerstore"
 	"github.com/dbpprt/dieter/internal/server"
 	"github.com/dbpprt/dieter/internal/store"
@@ -123,7 +124,7 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	direct, err := newDaemonDirectRoute(b, localListener.Addr().String(), "peer-test", "127.0.0.1:0", "127.0.0.1", "loopback", 1000)
+	direct, err := newDaemonDirectRoute(b, localListener.Addr().String(), testLocalToken(t, sb.Root), "peer-test", "127.0.0.1:0", "127.0.0.1", "loopback", 1000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +150,7 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	tunnelDone := make(chan struct{})
 	go func() {
 		defer close(tunnelDone)
-		_ = (&daemon.GatewayClient{Identity: b, LocalTarget: localListener.Addr().String(), Version: "0.4.1-dev", Routes: routes, ControlWebRTC: rtc, Log: logger}).Run(tunnelCtx)
+		_ = (&daemon.GatewayClient{Identity: b, LocalTarget: localListener.Addr().String(), LocalToken: testLocalToken(t, sb.Root), Version: "0.4.1-dev", Routes: routes, ControlWebRTC: rtc, Log: logger}).Run(tunnelCtx)
 	}()
 	defer func() { stopTunnel(); <-tunnelDone }()
 	deadline := time.Now().Add(5 * time.Second)
@@ -267,8 +268,8 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	if e != nil || !peerstore.SelectedKV(shared.Records["kv.navigation/projects-folder.fixture.name"]).Deleted {
 		t.Fatal(shared, e)
 	}
-	// Real raw local API, with no remote credentials, has the same record view.
-	local, err := grpc.NewClient(localListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	// Real raw local API, with only the local token, has the same record view.
+	local, err := grpc.NewClient(localListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithPerRPCCredentials(localauth.FileCredentials{Root: sb.Root}))
 	if err != nil {
 		t.Fatal(err)
 	}

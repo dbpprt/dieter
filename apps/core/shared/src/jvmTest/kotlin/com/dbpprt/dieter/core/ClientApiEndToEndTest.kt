@@ -89,7 +89,6 @@ import com.dbpprt.dieter.client.v1.WorkspaceSlice
 import com.dbpprt.dieter.core.client.ClientApi
 import com.dbpprt.dieter.core.client.ClientFailure
 import com.dbpprt.dieter.core.client.ClientSubscription
-import com.dbpprt.dieter.core.connection.ConnectionPhase
 import com.dbpprt.dieter.core.connection.SyncState
 import com.dbpprt.dieter.core.navigation.NavigationLayout
 import com.dbpprt.dieter.core.outbox.OutboxPolicy
@@ -112,13 +111,12 @@ import kotlinx.coroutines.flow.update
 import okio.ByteString.Companion.encodeUtf8
 
 /**
- * The client contract end to end: a UI that only dispatches commands and
- * applies observed snapshots and deltas signs in, sees the workspace, creates
- * and renames a card, and chats, exactly as the Apple façade does with bytes.
+ * The client contract end to end: a UI that only dispatches commands and applies observed snapshots
+ * and deltas signs in, sees the workspace, creates and renames a card, and chats, exactly as the
+ * Apple façade does with bytes.
  */
 class ClientApiEndToEndTest : EndToEnd() {
-    @AfterTest
-    fun tearDown() = tearDownRuntimes()
+    @AfterTest fun tearDown() = tearDownRuntimes()
 
     /** Folds updates as a UI would; a sequence gap fails the test. */
     private class Mirror {
@@ -129,13 +127,19 @@ class ClientApiEndToEndTest : EndToEnd() {
 
         fun accept(update: Update) {
             val last = sequences[update.slice] ?: 0
-            check(update.sequence == last + 1) { "missed an update of ${update.slice}: $last → ${update.sequence}" }
+            check(update.sequence == last + 1) {
+                "missed an update of ${update.slice}: $last → ${update.sequence}"
+            }
             sequences[update.slice] = update.sequence
             update.session?.let { session.value = it }
             update.workspace?.let { workspace.value = it }
-            update.workspace_delta?.let { delta -> workspace.value = SliceFolds.apply(checkNotNull(workspace.value), delta) }
+            update.workspace_delta?.let { delta ->
+                workspace.value = SliceFolds.apply(checkNotNull(workspace.value), delta)
+            }
             update.conversation?.let { conversation.value = it }
-            update.conversation_delta?.let { delta -> conversation.value = SliceFolds.apply(checkNotNull(conversation.value), delta) }
+            update.conversation_delta?.let { delta ->
+                conversation.value = SliceFolds.apply(checkNotNull(conversation.value), delta)
+            }
         }
     }
 
@@ -145,48 +149,115 @@ class ClientApiEndToEndTest : EndToEnd() {
         val runtime = runtime(fixture, token = null)
         val api = ClientApi(runtime)
         val mirror = Mirror()
-        val subscriptions = listOf(Slice.SLICE_SESSION, Slice.SLICE_WORKSPACE).map { slice ->
-            api.observe(slice, "") { update -> mirror.accept(Update.ADAPTER.decode(update.encode())) }
-        }
+        val subscriptions =
+            listOf(Slice.SLICE_SESSION, Slice.SLICE_WORKSPACE).map { slice ->
+                api.observe(slice, "") { update ->
+                    mirror.accept(Update.ADAPTER.decode(update.encode()))
+                }
+            }
 
-        val invalid = assertFailsWith<ClientFailure> { api.dispatch(Command(adopt_session = AdoptSession(gateway_url = fixture.url, session_token = ""))) }
+        val invalid =
+            assertFailsWith<ClientFailure> {
+                api.dispatch(
+                    Command(
+                        adopt_session = AdoptSession(gateway_url = fixture.url, session_token = "")
+                    )
+                )
+            }
         assertEquals(Failure.Kind.KIND_INVALID, invalid.failure.kind)
-        api.dispatch(Command(adopt_session = AdoptSession(gateway_url = fixture.url, session_token = fixture.token, name = "Isolated")))
-        val session = mirror.session.await(30.seconds, describe = { "connected: ${mirror.session.value}" }) {
-            it?.phase == SessionSlice.Phase.PHASE_CONNECTED && it.machines.any { machine -> machine.id == fixture.daemonId && machine.sync_state == MachineSyncState.MACHINE_SYNC_STATE_LIVE }
-        }!!
+        api.dispatch(
+            Command(
+                adopt_session =
+                    AdoptSession(
+                        gateway_url = fixture.url,
+                        session_token = fixture.token,
+                        name = "Isolated",
+                    )
+            )
+        )
+        val session =
+            mirror.session.await(30.seconds, describe = { "connected: ${mirror.session.value}" }) {
+                it?.phase == SessionSlice.Phase.PHASE_CONNECTED &&
+                    it.machines.any { machine ->
+                        machine.id == fixture.daemonId &&
+                            machine.sync_state == MachineSyncState.MACHINE_SYNC_STATE_LIVE
+                    }
+            }!!
         assertTrue(session.machines.any { it.id == fixture.daemonId && it.online })
-        mirror.workspace.await(describe = { "project" }) { slice -> slice?.projects?.any { it.id == fixture.projectId } == true }
+        mirror.workspace.await(describe = { "project" }) { slice ->
+            slice?.projects?.any { it.id == fixture.projectId } == true
+        }
         // The project's work and reads go to the machine with its checkout.
-        mirror.workspace.await(describe = { "project host: ${mirror.workspace.value?.project_hosts}" }) { slice ->
+        mirror.workspace.await(
+            describe = { "project host: ${mirror.workspace.value?.project_hosts}" }
+        ) { slice ->
             slice?.project_hosts?.get(fixture.projectId) == fixture.daemonId
         }
 
-        val created = api.dispatch(
-            Command(
-                create_conversation = CreateConversation(
-                    intent = CreationIntent(
-                        project_id = fixture.projectId, board_id = fixture.boardId, lane = "todo", title = "From the client contract",
-                        prompt = "hello", workspace_mode = "project",
-                    ),
-                ),
-            ),
-        ).card!!
-        mirror.workspace.await(describe = { "created card" }) { slice -> slice?.cards?.any { it.title == "From the client contract" } == true }
+        val created =
+            api.dispatch(
+                    Command(
+                        create_conversation =
+                            CreateConversation(
+                                intent =
+                                    CreationIntent(
+                                        project_id = fixture.projectId,
+                                        board_id = fixture.boardId,
+                                        lane = "todo",
+                                        title = "From the client contract",
+                                        prompt = "hello",
+                                        workspace_mode = "project",
+                                        vault_access = true,
+                                    )
+                            )
+                    )
+                )
+                .card!!
+        assertTrue(created.vault_access, "the optimistic card carries vault access")
+        mirror.workspace.await(describe = { "created card" }) { slice ->
+            slice?.cards?.any { it.title == "From the client contract" } == true
+        }
         // The machine's copy, not the acknowledged create still pending on this device.
-        val serverId = mirror.workspace.await(30.seconds, describe = { "synced card" }) { slice ->
-            slice?.cards?.any { OutboxPolicy.isServerBacked(it.id) && it.id !in slice.pending_card_ids && it.title == "From the client contract" } == true
-        }!!.cards.first { it.title == "From the client contract" }.id
+        val serverId =
+            mirror.workspace
+                .await(30.seconds, describe = { "synced card" }) { slice ->
+                    slice?.cards?.any {
+                        OutboxPolicy.isServerBacked(it.id) &&
+                            it.id !in slice.pending_card_ids &&
+                            it.title == "From the client contract"
+                    } == true
+                }!!
+                .cards
+                .first { it.title == "From the client contract" }
+                .id
         assertTrue(created.id.isNotEmpty())
-        api.dispatch(Command(rename_card = RenameCard(card_id = serverId, title = "Renamed through bytes")))
+        mirror.workspace.await(
+            describe = { "vault access synced: ${mirror.workspace.value?.cards}" }
+        ) { slice ->
+            slice?.cards?.any { it.id == serverId && it.vault_access } == true
+        }
+        api.dispatch(
+            Command(rename_card = RenameCard(card_id = serverId, title = "Renamed through bytes"))
+        )
         // Once the rename synced, nothing else changes.
         mirror.workspace.await(30.seconds, describe = { "renamed" }) { slice ->
-            slice != null && serverId !in slice.pending_card_ids && slice.cards.any { it.id == serverId && it.title == "Renamed through bytes" }
+            slice != null &&
+                serverId !in slice.pending_card_ids &&
+                slice.cards.any { it.id == serverId && it.title == "Renamed through bytes" }
         }
         val fresh = MutableStateFlow<WorkspaceSlice?>(null)
-        val snapshot = api.observe(Slice.SLICE_WORKSPACE, "") { update -> if (fresh.value == null) fresh.value = update.workspace }
+        val snapshot =
+            api.observe(Slice.SLICE_WORKSPACE, "") { update ->
+                if (fresh.value == null) fresh.value = update.workspace
+            }
         val expected = fresh.await { it != null }
-        mirror.workspace.await(describe = { "folded deltas equal a fresh snapshot: ${mirror.workspace.value} != $expected" }) { it == expected }
+        mirror.workspace.await(
+            describe = {
+                "folded deltas equal a fresh snapshot: ${mirror.workspace.value} != $expected"
+            }
+        ) {
+            it == expected
+        }
         snapshot.close()
         subscriptions.forEach { it.close() }
     }
@@ -198,39 +269,77 @@ class ClientApiEndToEndTest : EndToEnd() {
         val runtime = runtime(fixture, jvmTestPlatform(secureStore = secrets), token = null)
         val api = ClientApi(runtime)
         val mirror = Mirror()
-        val subscriptions = listOf(Slice.SLICE_SESSION, Slice.SLICE_WORKSPACE).map { slice ->
-            api.observe(slice, "") { update -> mirror.accept(Update.ADAPTER.decode(update.encode())) }
-        }
-        val adopt = Command(adopt_session = AdoptSession(gateway_url = fixture.url, session_token = fixture.token, name = "Isolated"))
+        val subscriptions =
+            listOf(Slice.SLICE_SESSION, Slice.SLICE_WORKSPACE).map { slice ->
+                api.observe(slice, "") { update ->
+                    mirror.accept(Update.ADAPTER.decode(update.encode()))
+                }
+            }
+        val adopt =
+            Command(
+                adopt_session =
+                    AdoptSession(
+                        gateway_url = fixture.url,
+                        session_token = fixture.token,
+                        name = "Isolated",
+                    )
+            )
         api.dispatch(adopt)
-        mirror.session.await(30.seconds, describe = { "connected: ${mirror.session.value}" }) { it?.phase == SessionSlice.Phase.PHASE_CONNECTED }
-        mirror.workspace.await(describe = { "project" }) { slice -> slice?.projects?.any { it.id == fixture.projectId } == true }
+        mirror.session.await(30.seconds, describe = { "connected: ${mirror.session.value}" }) {
+            it?.phase == SessionSlice.Phase.PHASE_CONNECTED
+        }
+        mirror.workspace.await(describe = { "project" }) { slice ->
+            slice?.projects?.any { it.id == fixture.projectId } == true
+        }
         assertEquals(listOf(fixture.token), secrets.values.values.toList())
 
         // A change queued while the machine is away is this account's, and is dropped with it.
         fixture.daemonOffline()
         runtime.awaitSync(fixture.daemonId, SyncState.OFFLINE)
         runtime.createConversation(
-            CreateConversationRequest(project_id = fixture.projectId, board_id = fixture.boardId, lane = "todo", title = "Never delivered", prompt = "p", defer_start = true, workspace_mode = "project"),
+            CreateConversationRequest(
+                project_id = fixture.projectId,
+                board_id = fixture.boardId,
+                lane = "todo",
+                title = "Never delivered",
+                prompt = "p",
+                defer_start = true,
+                workspace_mode = "project",
+            ),
             chat = false,
         )
         assertEquals(1, runtime.outbox.view.value.entries.size)
 
         api.dispatch(Command(sign_out = SignOut()))
-        val signedOut = mirror.session.await(describe = { "signed out: ${mirror.session.value}" }) { it?.phase == SessionSlice.Phase.PHASE_AUTH_REQUIRED }!!
+        val signedOut =
+            mirror.session.await(describe = { "signed out: ${mirror.session.value}" }) {
+                it?.phase == SessionSlice.Phase.PHASE_AUTH_REQUIRED
+            }!!
         assertTrue(signedOut.machines.isEmpty())
         assertTrue(secrets.values.isEmpty(), "the session token is forgotten")
         assertTrue(runtime.outbox.view.value.entries.isEmpty(), "the account's outbox is cleared")
-        mirror.workspace.await(describe = { "workspace cleared" }) { slice -> slice?.cards?.none { it.title == "Never delivered" } == true && slice.projects.isEmpty() }
+        mirror.workspace.await(describe = { "workspace cleared" }) { slice ->
+            slice?.cards?.none { it.title == "Never delivered" } == true && slice.projects.isEmpty()
+        }
         assertTrue(runtime.drafts.state.value.isEmpty())
 
         fixture.daemonOnline()
         api.dispatch(adopt)
-        mirror.session.await(30.seconds, describe = { "connected again: ${mirror.session.value}" }) { it?.phase == SessionSlice.Phase.PHASE_CONNECTED }
-        mirror.workspace.await(30.seconds, describe = { "project again" }) { slice -> slice?.projects?.any { it.id == fixture.projectId } == true }
+        mirror.session.await(
+            30.seconds,
+            describe = { "connected again: ${mirror.session.value}" },
+        ) {
+            it?.phase == SessionSlice.Phase.PHASE_CONNECTED
+        }
+        mirror.workspace.await(30.seconds, describe = { "project again" }) { slice ->
+            slice?.projects?.any { it.id == fixture.projectId } == true
+        }
         assertEquals(listOf(fixture.token), secrets.values.values.toList())
         assertTrue(runtime.outbox.view.value.entries.isEmpty())
-        assertTrue(mirror.workspace.value!!.cards.none { it.title == "Never delivered" }, "a signed-out account's change is never sent")
+        assertTrue(
+            mirror.workspace.value!!.cards.none { it.title == "Never delivered" },
+            "a signed-out account's change is never sent",
+        )
         subscriptions.forEach { it.close() }
     }
 
@@ -240,36 +349,73 @@ class ClientApiEndToEndTest : EndToEnd() {
         val runtime = runtime(fixture, token = null)
         val api = ClientApi(runtime)
         val mirror = Mirror()
-        val subscription = api.observe(Slice.SLICE_SESSION, "") { update -> mirror.accept(Update.ADAPTER.decode(update.encode())) }
-        api.dispatch(Command(adopt_session = AdoptSession(gateway_url = fixture.url, session_token = fixture.token, name = "Isolated")))
-        mirror.session.await(30.seconds, describe = { "connected: ${mirror.session.value}" }) { it?.phase == SessionSlice.Phase.PHASE_CONNECTED }
+        val subscription =
+            api.observe(Slice.SLICE_SESSION, "") { update ->
+                mirror.accept(Update.ADAPTER.decode(update.encode()))
+            }
+        api.dispatch(
+            Command(
+                adopt_session =
+                    AdoptSession(
+                        gateway_url = fixture.url,
+                        session_token = fixture.token,
+                        name = "Isolated",
+                    )
+            )
+        )
+        mirror.session.await(30.seconds, describe = { "connected: ${mirror.session.value}" }) {
+            it?.phase == SessionSlice.Phase.PHASE_CONNECTED
+        }
 
         // A machine that returns is reached at once rather than at the next retry.
         fixture.daemonOffline()
         mirror.session.await(30.seconds, describe = { "offline: ${mirror.session.value}" }) {
-            it?.machines?.any { machine -> machine.id == fixture.daemonId && machine.sync_state == MachineSyncState.MACHINE_SYNC_STATE_OFFLINE } == true
+            it?.machines?.any { machine ->
+                machine.id == fixture.daemonId &&
+                    machine.sync_state == MachineSyncState.MACHINE_SYNC_STATE_OFFLINE
+            } == true
         }
         fixture.daemonOnline()
         api.dispatch(Command(reconnect = Reconnect()))
-        mirror.session.await(30.seconds, describe = { "back: ${mirror.session.value}" }) { it?.phase == SessionSlice.Phase.PHASE_CONNECTED && it.synced }
+        mirror.session.await(30.seconds, describe = { "back: ${mirror.session.value}" }) {
+            it?.phase == SessionSlice.Phase.PHASE_CONNECTED && it.synced
+        }
 
         // Reconnecting also undoes a disconnect the person chose.
         api.dispatch(Command(set_connected = SetConnected(connected = false)))
-        mirror.session.await(30.seconds, describe = { "disconnected: ${mirror.session.value}" }) { it?.phase == SessionSlice.Phase.PHASE_DISCONNECTED }
+        mirror.session.await(30.seconds, describe = { "disconnected: ${mirror.session.value}" }) {
+            it?.phase == SessionSlice.Phase.PHASE_DISCONNECTED
+        }
         api.dispatch(Command(reconnect = Reconnect()))
-        mirror.session.await(30.seconds, describe = { "reconnected: ${mirror.session.value}" }) { it?.phase == SessionSlice.Phase.PHASE_CONNECTED && it.synced }
-        assertTrue(mirror.session.value!!.gateways.single { it.active }.connect, "the gateway is wanted connected again")
+        mirror.session.await(30.seconds, describe = { "reconnected: ${mirror.session.value}" }) {
+            it?.phase == SessionSlice.Phase.PHASE_CONNECTED && it.synced
+        }
+        assertTrue(
+            mirror.session.value!!.gateways.single { it.active }.connect,
+            "the gateway is wanted connected again",
+        )
         subscription.close()
     }
 
-    /** The contract test's isolated session. Each part below is its own method, so no method grows too large for the JVM. */
-    private class Contract(val fixture: IsolatedGateway, val runtime: CoreRuntime, val api: ClientApi) {
+    /**
+     * The contract test's isolated session. Each part below is its own method, so no method grows
+     * too large for the JVM.
+     */
+    private class Contract(
+        val fixture: IsolatedGateway,
+        val runtime: CoreRuntime,
+        val api: ClientApi,
+    ) {
         val mirror = Mirror()
         val metadata = MutableStateFlow<MetadataSlice?>(null)
         val board = MutableStateFlow<BoardSlice?>(null)
 
         suspend fun step(name: String, command: Command) =
-            try { api.dispatch(command) } catch (failure: ClientFailure) { throw AssertionError("$name: ${failure.message}", failure) }
+            try {
+                api.dispatch(command)
+            } catch (failure: ClientFailure) {
+                throw AssertionError("$name: ${failure.message}", failure)
+            }
     }
 
     @Test
@@ -277,10 +423,18 @@ class ClientApiEndToEndTest : EndToEnd() {
         val fixture = fixture()
         val runtime = runtime(fixture, token = null)
         with(Contract(fixture, runtime, ClientApi(runtime))) {
-            val subscriptions = listOf(Slice.SLICE_SESSION, Slice.SLICE_WORKSPACE).map { slice ->
-                api.observe(slice, "") { update -> mirror.accept(Update.ADAPTER.decode(update.encode())) }
-            } + api.observe(Slice.SLICE_METADATA, "") { metadata.value = Update.ADAPTER.decode(it.encode()).metadata } +
-                api.observe(Slice.SLICE_BOARD, "") { board.value = Update.ADAPTER.decode(it.encode()).board }
+            val subscriptions =
+                listOf(Slice.SLICE_SESSION, Slice.SLICE_WORKSPACE).map { slice ->
+                    api.observe(slice, "") { update ->
+                        mirror.accept(Update.ADAPTER.decode(update.encode()))
+                    }
+                } +
+                    api.observe(Slice.SLICE_METADATA, "") {
+                        metadata.value = Update.ADAPTER.decode(it.encode()).metadata
+                    } +
+                    api.observe(Slice.SLICE_BOARD, "") {
+                        board.value = Update.ADAPTER.decode(it.encode()).board
+                    }
             val session = connect()
             val loaded = loadMetadata()
             editGateways(session)
@@ -300,14 +454,28 @@ class ClientApiEndToEndTest : EndToEnd() {
     }
 
     private suspend fun Contract.connect(): SessionSlice {
-        api.dispatch(Command(adopt_session = AdoptSession(gateway_url = fixture.url, session_token = fixture.token, name = "Isolated")))
-        val session = mirror.session.await(30.seconds, describe = { "synced: ${mirror.session.value}" }) {
-            it?.phase == SessionSlice.Phase.PHASE_CONNECTED && it.synced
-        }!!
+        api.dispatch(
+            Command(
+                adopt_session =
+                    AdoptSession(
+                        gateway_url = fixture.url,
+                        session_token = fixture.token,
+                        name = "Isolated",
+                    )
+            )
+        )
+        val session =
+            mirror.session.await(30.seconds, describe = { "synced: ${mirror.session.value}" }) {
+                it?.phase == SessionSlice.Phase.PHASE_CONNECTED && it.synced
+            }!!
         val machine = session.machines.single { it.id == fixture.daemonId }
         assertTrue(machine.compatible)
         assertTrue(machine.last_seen_at.isNotEmpty() || machine.online)
-        assertEquals(machine.route == "Local", machine.local, "a loopback plane marks the machine as this device: ${machine.route}")
+        assertEquals(
+            machine.route == "Local",
+            machine.local,
+            "a loopback plane marks the machine as this device: ${machine.route}",
+        )
         assertTrue(session.updated_at_millis > 0)
         assertEquals(MachineSyncState.MACHINE_SYNC_STATE_LIVE, machine.sync_state)
         assertEquals("Live", machine.sync_label)
@@ -315,10 +483,22 @@ class ClientApiEndToEndTest : EndToEnd() {
         // The core words the connection and the machine rows, in name order.
         assertEquals("Connected", session.phase_label)
         assertEquals(null, session.notice)
-        assertEquals(session.machines.sortedWith(compareBy<MachineEntry> { it.name.lowercase() }.thenBy { it.id }), session.machines)
-        assertTrue(machine.available && machine.can_share_screen && machine.unavailable_message.isEmpty(), "$machine")
+        assertEquals(
+            session.machines.sortedWith(
+                compareBy<MachineEntry> { it.name.lowercase() }.thenBy { it.id }
+            ),
+            session.machines,
+        )
+        assertTrue(
+            machine.available && machine.can_share_screen && machine.unavailable_message.isEmpty(),
+            "$machine",
+        )
         assertEquals(false, machine.show_last_seen)
-        assertTrue(if (machine.route.isEmpty()) machine.detail == "Online" else machine.detail.startsWith("${machine.route} · "), machine.detail)
+        assertTrue(
+            if (machine.route.isEmpty()) machine.detail == "Online"
+            else machine.detail.startsWith("${machine.route} · "),
+            machine.detail,
+        )
         board.await(describe = { "board slice" }) { it != null }
         return session
     }
@@ -326,62 +506,196 @@ class ClientApiEndToEndTest : EndToEnd() {
     private suspend fun Contract.loadMetadata(): MetadataSlice {
         // Metadata loads on request and arrives through its slice.
         step("metadata", Command(ensure_metadata = EnsureMetadata(daemon_id = fixture.daemonId)))
-        val loaded = metadata.await(30.seconds, describe = { "metadata: ${metadata.value}" }) { it?.machines?.get(fixture.daemonId)?.loaded == true }!!
-        assertTrue(loaded.machines.getValue(fixture.daemonId).harnesses!!.harnesses.any { it.id == "mock" })
+        val loaded =
+            metadata.await(30.seconds, describe = { "metadata: ${metadata.value}" }) {
+                it?.machines?.get(fixture.daemonId)?.loaded == true
+            }!!
+        assertTrue(
+            loaded.machines.getValue(fixture.daemonId).harnesses!!.harnesses.any { it.id == "mock" }
+        )
         return loaded
     }
 
     private suspend fun Contract.editGateways(session: SessionSlice) {
         // Using the active gateway again renames it; the last one cannot be removed.
-        api.dispatch(Command(use_gateway = UseGateway(url = session.gateway_origin, name = "Isolated")))
-        mirror.session.await(describe = { "renamed gateway" }) { it?.gateways?.singleOrNull { gateway -> gateway.active }?.name == "Isolated" }
-        assertFailsWith<ClientFailure> { api.dispatch(Command(remove_gateway = RemoveGateway(origin = session.gateway_origin))) }
-        assertFailsWith<ClientFailure> { api.dispatch(Command(use_gateway = UseGateway(url = "http://example.com", name = "Remote plaintext"))) }
+        api.dispatch(
+            Command(use_gateway = UseGateway(url = session.gateway_origin, name = "Isolated"))
+        )
+        mirror.session.await(describe = { "renamed gateway" }) {
+            it?.gateways?.singleOrNull { gateway -> gateway.active }?.name == "Isolated"
+        }
+        assertFailsWith<ClientFailure> {
+            api.dispatch(Command(remove_gateway = RemoveGateway(origin = session.gateway_origin)))
+        }
+        assertFailsWith<ClientFailure> {
+            api.dispatch(
+                Command(
+                    use_gateway = UseGateway(url = "http://example.com", name = "Remote plaintext")
+                )
+            )
+        }
     }
 
     private suspend fun Contract.editNavigation() {
         // Layout edits show at once and drain to a reachable machine.
         val navigation = MutableStateFlow<NavigationSlice?>(null)
-        val navigationWatch = api.observe(Slice.SLICE_NAVIGATION, "") { navigation.value = Update.ADAPTER.decode(it.encode()).navigation }
-        step("project order", Command(set_project_order = SetProjectOrder(project_ids = listOf(fixture.projectId))))
-        step("lane sort", Command(set_lane_descending = SetLaneDescending(board_id = fixture.boardId, lane_id = "todo", descending = false)))
-        step("expand project", Command(set_project_expanded = SetProjectExpanded(project_id = fixture.projectId, expanded = true)))
+        val navigationWatch =
+            api.observe(Slice.SLICE_NAVIGATION, "") {
+                navigation.value = Update.ADAPTER.decode(it.encode()).navigation
+            }
+        step(
+            "project order",
+            Command(set_project_order = SetProjectOrder(project_ids = listOf(fixture.projectId))),
+        )
+        step(
+            "lane sort",
+            Command(
+                set_lane_descending =
+                    SetLaneDescending(
+                        board_id = fixture.boardId,
+                        lane_id = "todo",
+                        descending = false,
+                    )
+            ),
+        )
+        step(
+            "expand project",
+            Command(
+                set_project_expanded =
+                    SetProjectExpanded(project_id = fixture.projectId, expanded = true)
+            ),
+        )
         step(
             "folders",
             Command(
-                set_folders = SetFolders(
-                    scope = FolderScope.FOLDER_SCOPE_PROJECTS,
-                    folders = listOf(NavigationFolder(id = "f_work", name = " Work ", item_ids = listOf(fixture.projectId), expanded = true)),
-                ),
+                set_folders =
+                    SetFolders(
+                        scope = FolderScope.FOLDER_SCOPE_PROJECTS,
+                        folders =
+                            listOf(
+                                NavigationFolder(
+                                    id = "f_work",
+                                    name = " Work ",
+                                    item_ids = listOf(fixture.projectId),
+                                    expanded = true,
+                                )
+                            ),
+                    )
             ),
         )
-        val laid = navigation.await(30.seconds, describe = { "navigation: ${navigation.value}" }) { slice ->
-            slice?.pending == 0 && slice.caught_up && slice.project_folders.singleOrNull()?.name == "Work"
-        }!!
+        val laid =
+            navigation.await(30.seconds, describe = { "navigation: ${navigation.value}" }) { slice
+                ->
+                slice?.pending == 0 &&
+                    slice.caught_up &&
+                    slice.project_folders.singleOrNull()?.name == "Work"
+            }!!
         assertEquals(listOf(fixture.projectId), laid.project_order)
         assertEquals(listOf(fixture.projectId), laid.project_folders.single().item_ids)
-        assertFalse(NavigationLayout(runtime.navigationKv.values.value).laneDescending(fixture.boardId, "todo"), "the lane sorts ascending")
+        assertFalse(
+            NavigationLayout(runtime.navigationKv.values.value)
+                .laneDescending(fixture.boardId, "todo"),
+            "the lane sorts ascending",
+        )
         assertEquals(listOf(fixture.projectId), laid.expanded_projects)
         assertFailsWith<AssertionError> {
-            step("duplicate folder", Command(set_folders = SetFolders(folders = listOf(NavigationFolder(id = "a", name = "Same"), NavigationFolder(id = "b", name = "same")))))
+            step(
+                "duplicate folder",
+                Command(
+                    set_folders =
+                        SetFolders(
+                            folders =
+                                listOf(
+                                    NavigationFolder(id = "a", name = "Same"),
+                                    NavigationFolder(id = "b", name = "same"),
+                                )
+                        )
+                ),
+            )
         }
-        // Edits made on the layout as shown: the core resolves folders, pins, and available projects.
+        // Edits made on the layout as shown: the core resolves folders, pins, and available
+        // projects.
         fun navigate(edit: NavigationCommand) = Command(navigation = edit)
-        step("create folder", navigate(NavigationCommand(create_folder = CreateFolder(scope = FolderScope.FOLDER_SCOPE_CHATS, name = "Research"))))
-        val research = navigation.await(30.seconds, describe = { "folder: ${navigation.value}" }) { slice -> slice?.chat_folders?.any { it.name == "Research" } == true }!!
-            .chat_folders.single { it.name == "Research" }.id
-        step("file chat", navigate(NavigationCommand(move_to_folder = MoveToFolder(scope = FolderScope.FOLDER_SCOPE_CHATS, item_id = "chat-x", folder_id = research))))
-        step("pin project", navigate(NavigationCommand(pin_project = PinProject(project_id = fixture.projectId, pinned = true))))
-        step("unfile project", navigate(NavigationCommand(move_to_folder = MoveToFolder(scope = FolderScope.FOLDER_SCOPE_PROJECTS, item_id = fixture.projectId))))
-        step("move project to the end", navigate(NavigationCommand(move_project = MoveProject(project_id = fixture.projectId))))
-        val arranged = navigation.await(30.seconds, describe = { "arranged: ${navigation.value}" }) { slice ->
-            slice?.pending == 0 && slice.chat_folders.any { it.id == research && it.item_ids == listOf("chat-x") } &&
-                slice.projects?.pinned == listOf(fixture.projectId) && fixture.projectId in slice.projects?.unfiled.orEmpty()
-        }!!.projects!!
+        step(
+            "create folder",
+            navigate(
+                NavigationCommand(
+                    create_folder =
+                        CreateFolder(scope = FolderScope.FOLDER_SCOPE_CHATS, name = "Research")
+                )
+            ),
+        )
+        val research =
+            navigation
+                .await(30.seconds, describe = { "folder: ${navigation.value}" }) { slice ->
+                    slice?.chat_folders?.any { it.name == "Research" } == true
+                }!!
+                .chat_folders
+                .single { it.name == "Research" }
+                .id
+        step(
+            "file chat",
+            navigate(
+                NavigationCommand(
+                    move_to_folder =
+                        MoveToFolder(
+                            scope = FolderScope.FOLDER_SCOPE_CHATS,
+                            item_id = "chat-x",
+                            folder_id = research,
+                        )
+                )
+            ),
+        )
+        step(
+            "pin project",
+            navigate(
+                NavigationCommand(
+                    pin_project = PinProject(project_id = fixture.projectId, pinned = true)
+                )
+            ),
+        )
+        step(
+            "unfile project",
+            navigate(
+                NavigationCommand(
+                    move_to_folder =
+                        MoveToFolder(
+                            scope = FolderScope.FOLDER_SCOPE_PROJECTS,
+                            item_id = fixture.projectId,
+                        )
+                )
+            ),
+        )
+        step(
+            "move project to the end",
+            navigate(NavigationCommand(move_project = MoveProject(project_id = fixture.projectId))),
+        )
+        val arranged =
+            navigation
+                .await(30.seconds, describe = { "arranged: ${navigation.value}" }) { slice ->
+                    slice?.pending == 0 &&
+                        slice.chat_folders.any {
+                            it.id == research && it.item_ids == listOf("chat-x")
+                        } &&
+                        slice.projects?.pinned == listOf(fixture.projectId) &&
+                        fixture.projectId in slice.projects?.unfiled.orEmpty()
+                }!!
+                .projects!!
         assertEquals(fixture.projectId, arranged.order.last())
         assertEquals(emptyList(), arranged.folders.single { it.id == "f_work" }.item_ids)
         assertFailsWith<AssertionError> {
-            step("duplicate name", navigate(NavigationCommand(create_folder = CreateFolder(scope = FolderScope.FOLDER_SCOPE_CHATS, name = " research "))))
+            step(
+                "duplicate name",
+                navigate(
+                    NavigationCommand(
+                        create_folder =
+                            CreateFolder(
+                                scope = FolderScope.FOLDER_SCOPE_CHATS,
+                                name = " research ",
+                            )
+                    )
+                ),
+            )
         }
         navigationWatch.close()
     }
@@ -389,28 +703,80 @@ class ClientApiEndToEndTest : EndToEnd() {
     private suspend fun Contract.browseFiles() {
         // A files surface lists, creates, opens, and saves on the project's machine.
         val filesSlice = MutableStateFlow<FilesSlice?>(null)
-        val filesWatch = api.observe(Slice.SLICE_FILES, "files-test") { filesSlice.value = Update.ADAPTER.decode(it.encode()).files }
+        val filesWatch =
+            api.observe(Slice.SLICE_FILES, "files-test") {
+                filesSlice.value = Update.ADAPTER.decode(it.encode()).files
+            }
         fun files(action: FilesCommand) = Command(files = action.copy(scope = "files-test"))
-        step("files bind", files(FilesCommand(bind = FilesTarget(daemon_id = fixture.daemonId, project_id = fixture.projectId))))
+        step(
+            "files bind",
+            files(
+                FilesCommand(
+                    bind = FilesTarget(daemon_id = fixture.daemonId, project_id = fixture.projectId)
+                )
+            ),
+        )
         // The command's result is the surface after it, without waiting for an update.
         val listed = step("files load", files(FilesCommand(load = FilesPath()))).files!!
         assertTrue(!listed.listing_loading && listed.entries.isNotEmpty(), "load result: $listed")
-        filesSlice.await(30.seconds, describe = { "listing: ${filesSlice.value}" }) { it?.listing_loading == false && it.entries.isNotEmpty() }
+        filesSlice.await(30.seconds, describe = { "listing: ${filesSlice.value}" }) {
+            it?.listing_loading == false && it.entries.isNotEmpty()
+        }
         step("files create", files(FilesCommand(create = FilesCreate(name = "core-notes.txt"))))
-        filesSlice.await(describe = { "created: ${filesSlice.value?.entries?.map { it.name }}" }) { slice -> slice?.entries?.any { it.name == "core-notes.txt" } == true }
+        filesSlice.await(describe = { "created: ${filesSlice.value?.entries?.map { it.name }}" }) {
+            slice ->
+            slice?.entries?.any { it.name == "core-notes.txt" } == true
+        }
         step("files open", files(FilesCommand(open_ = FilesPath(path = "core-notes.txt"))))
-        filesSlice.await(describe = { "opened" }) { it?.selected_path == "core-notes.txt" && it.document != null && !it.document_loading }
-        val saved = step("files save", files(FilesCommand(save = FilesText(text = "written through the core\n")))).file_document!!
+        filesSlice.await(describe = { "opened" }) {
+            it?.selected_path == "core-notes.txt" && it.document != null && !it.document_loading
+        }
+        val saved =
+            step(
+                    "files save",
+                    files(FilesCommand(save = FilesText(text = "written through the core\n"))),
+                )
+                .file_document!!
         assertEquals("written through the core\n", saved.content)
         // An update that does not change the document leaves it out.
         step("files hidden", files(FilesCommand(show_hidden = Toggle(on = true))))
-        filesSlice.await(describe = { "hidden shown" }) { it?.show_hidden == true && it.document_unchanged && it.document == null }
+        filesSlice.await(describe = { "hidden shown" }) {
+            it?.show_hidden == true && it.document_unchanged && it.document == null
+        }
         val tree = MutableStateFlow<FileTreeSlice?>(null)
-        val treeWatch = api.observe(Slice.SLICE_FILE_TREE, "tree-test") { tree.value = Update.ADAPTER.decode(it.encode()).file_tree }
-        step("tree bind", Command(file_tree = FileTreeCommand(scope = "tree-test", bind = FilesTarget(daemon_id = fixture.daemonId, project_id = fixture.projectId))))
-        step("tree load", Command(file_tree = FileTreeCommand(scope = "tree-test", load = FilesPath())))
-        tree.await(30.seconds, describe = { "tree: ${tree.value}" }) { slice -> slice?.folders?.any { folder -> folder.path == "" && folder.entries.any { it.name == "core-notes.txt" } } == true }
-        assertFailsWith<AssertionError> { step("unknown surface", Command(files = FilesCommand(scope = "missing", load = FilesPath()))) }
+        val treeWatch =
+            api.observe(Slice.SLICE_FILE_TREE, "tree-test") {
+                tree.value = Update.ADAPTER.decode(it.encode()).file_tree
+            }
+        step(
+            "tree bind",
+            Command(
+                file_tree =
+                    FileTreeCommand(
+                        scope = "tree-test",
+                        bind =
+                            FilesTarget(
+                                daemon_id = fixture.daemonId,
+                                project_id = fixture.projectId,
+                            ),
+                    )
+            ),
+        )
+        step(
+            "tree load",
+            Command(file_tree = FileTreeCommand(scope = "tree-test", load = FilesPath())),
+        )
+        tree.await(30.seconds, describe = { "tree: ${tree.value}" }) { slice ->
+            slice?.folders?.any { folder ->
+                folder.path == "" && folder.entries.any { it.name == "core-notes.txt" }
+            } == true
+        }
+        assertFailsWith<AssertionError> {
+            step(
+                "unknown surface",
+                Command(files = FilesCommand(scope = "missing", load = FilesPath())),
+            )
+        }
         filesWatch.close()
         treeWatch.close()
     }
@@ -420,52 +786,154 @@ class ClientApiEndToEndTest : EndToEnd() {
         // overview's terminals take the same commands under its scope.
         val terms = MutableStateFlow<TerminalsSlice?>(null)
         val written = MutableStateFlow("")
-        val termsWatch = api.observe(Slice.SLICE_TERMINALS, "terms-test") { update ->
-            val slice = Update.ADAPTER.decode(update.encode()).terminals!!
-            for (chunk in slice.output) written.update { (if (chunk.reset) "" else it) + chunk.data_.utf8() }
-            terms.value = slice
-        }
-        fun terminals(action: TerminalsCommand) = Command(terminals = action.copy(scope = "terms-test"))
-        step("terminals bind", terminals(TerminalsCommand(bind = TerminalTarget(daemon_id = fixture.daemonId))))
+        val termsWatch =
+            api.observe(Slice.SLICE_TERMINALS, "terms-test") { update ->
+                val slice = Update.ADAPTER.decode(update.encode()).terminals!!
+                for (chunk in slice.output) written.update {
+                    (if (chunk.reset) "" else it) + chunk.data_.utf8()
+                }
+                terms.value = slice
+            }
+        fun terminals(action: TerminalsCommand) =
+            Command(terminals = action.copy(scope = "terms-test"))
+        step(
+            "terminals bind",
+            terminals(TerminalsCommand(bind = TerminalTarget(daemon_id = fixture.daemonId))),
+        )
         step("terminals active", terminals(TerminalsCommand(active = Toggle(on = true))))
         step("terminals load", terminals(TerminalsCommand(load = Step())))
-        val shell = step("terminals create", terminals(TerminalsCommand(create = CreateTerminal(name = "contract", shell = "sh", columns = 100, rows = 30)))).terminal!!
-        step("terminals input", terminals(TerminalsCommand(input = TerminalInput(data_ = "echo contract-$((6*7))\n".encodeUtf8()))))
-        written.await(20.seconds, describe = { "output: ${written.value}" }) { it.contains("contract-42") }
-        step("terminals second input", terminals(TerminalsCommand(input = TerminalInput(data_ = "echo second-$((1+1))\n".encodeUtf8()))))
-        written.await(20.seconds, describe = { "output: ${written.value}" }) { it.contains("second-2") }
-        assertEquals(1, written.value.split("contract-42").size - 1, "an observer receives each byte once: ${written.value}")
+        val shell =
+            step(
+                    "terminals create",
+                    terminals(
+                        TerminalsCommand(
+                            create =
+                                CreateTerminal(
+                                    name = "contract",
+                                    shell = "sh",
+                                    columns = 100,
+                                    rows = 30,
+                                )
+                        )
+                    ),
+                )
+                .terminal!!
+        step(
+            "terminals input",
+            terminals(
+                TerminalsCommand(
+                    input = TerminalInput(data_ = "echo contract-$((6*7))\n".encodeUtf8())
+                )
+            ),
+        )
+        written.await(20.seconds, describe = { "output: ${written.value}" }) {
+            it.contains("contract-42")
+        }
+        step(
+            "terminals second input",
+            terminals(
+                TerminalsCommand(
+                    input = TerminalInput(data_ = "echo second-$((1+1))\n".encodeUtf8())
+                )
+            ),
+        )
+        written.await(20.seconds, describe = { "output: ${written.value}" }) {
+            it.contains("second-2")
+        }
+        assertEquals(
+            1,
+            written.value.split("contract-42").size - 1,
+            "an observer receives each byte once: ${written.value}",
+        )
         assertEquals(shell.id, terms.value?.selected_id)
-        val renamed = step("terminals rename", terminals(TerminalsCommand(rename = TerminalRename(terminal_id = shell.id, name = "renamed")))).terminals!!
+        val renamed =
+            step(
+                    "terminals rename",
+                    terminals(
+                        TerminalsCommand(
+                            rename = TerminalRename(terminal_id = shell.id, name = "renamed")
+                        )
+                    ),
+                )
+                .terminals!!
         assertTrue(renamed.output.isEmpty(), "command results carry no output")
         assertEquals("renamed", renamed.terminals.first { it.id == shell.id }.name)
 
         val overviewWritten = MutableStateFlow("")
         val overviewSlice = MutableStateFlow<TerminalOverviewSlice?>(null)
-        val overviewWatch = api.observe(Slice.SLICE_TERMINAL_OVERVIEW, "overview-test") { update ->
-            val slice = Update.ADAPTER.decode(update.encode()).terminal_overview!!
-            for (chunk in slice.terminals?.output.orEmpty()) overviewWritten.update { (if (chunk.reset) "" else it) + chunk.data_.utf8() }
-            overviewSlice.value = slice
-        }
-        val overview = step(
-            "overview load",
-            Command(terminal_overview = TerminalOverviewCommand(scope = "overview-test", load = TerminalOverviewLoad(preferred_daemon_id = fixture.daemonId))),
-        ).terminal_overview!!
-        assertTrue(overview.entries.any { it.terminal?.id == shell.id }, "overview: ${overview.entries}")
+        val overviewWatch =
+            api.observe(Slice.SLICE_TERMINAL_OVERVIEW, "overview-test") { update ->
+                val slice = Update.ADAPTER.decode(update.encode()).terminal_overview!!
+                for (chunk in slice.terminals?.output.orEmpty()) overviewWritten.update {
+                    (if (chunk.reset) "" else it) + chunk.data_.utf8()
+                }
+                overviewSlice.value = slice
+            }
+        val overview =
+            step(
+                    "overview load",
+                    Command(
+                        terminal_overview =
+                            TerminalOverviewCommand(
+                                scope = "overview-test",
+                                load = TerminalOverviewLoad(preferred_daemon_id = fixture.daemonId),
+                            )
+                    ),
+                )
+                .terminal_overview!!
+        assertTrue(
+            overview.entries.any { it.terminal?.id == shell.id },
+            "overview: ${overview.entries}",
+        )
         assertEquals(fixture.daemonId, overview.terminals?.target?.daemon_id)
-        step("overview terminals active", Command(terminals = TerminalsCommand(scope = "overview-test", active = Toggle(on = true))))
-        overviewWritten.await(20.seconds, describe = { "overview output: ${overviewWritten.value}" }) { it.contains("second-2") }
-        // A rename and a close through the overview's terminals show in its list.
-        step("overview rename", Command(terminals = TerminalsCommand(scope = "overview-test", rename = TerminalRename(terminal_id = shell.id, name = "overview name"))))
-        overviewSlice.await(describe = { "renamed in the overview: ${overviewSlice.value?.entries}" }) { slice ->
-            slice?.entries?.any { it.terminal?.id == shell.id && it.terminal?.name == "overview name" } == true
+        step(
+            "overview terminals active",
+            Command(
+                terminals = TerminalsCommand(scope = "overview-test", active = Toggle(on = true))
+            ),
+        )
+        overviewWritten.await(
+            20.seconds,
+            describe = { "overview output: ${overviewWritten.value}" },
+        ) {
+            it.contains("second-2")
         }
-        step("overview close", Command(terminals = TerminalsCommand(scope = "overview-test", close = TerminalId(terminal_id = shell.id))))
-        overviewSlice.await(describe = { "closed in the overview: ${overviewSlice.value?.entries}" }) { slice ->
+        // A rename and a close through the overview's terminals show in its list.
+        step(
+            "overview rename",
+            Command(
+                terminals =
+                    TerminalsCommand(
+                        scope = "overview-test",
+                        rename = TerminalRename(terminal_id = shell.id, name = "overview name"),
+                    )
+            ),
+        )
+        overviewSlice.await(
+            describe = { "renamed in the overview: ${overviewSlice.value?.entries}" }
+        ) { slice ->
+            slice?.entries?.any {
+                it.terminal?.id == shell.id && it.terminal?.name == "overview name"
+            } == true
+        }
+        step(
+            "overview close",
+            Command(
+                terminals =
+                    TerminalsCommand(
+                        scope = "overview-test",
+                        close = TerminalId(terminal_id = shell.id),
+                    )
+            ),
+        )
+        overviewSlice.await(
+            describe = { "closed in the overview: ${overviewSlice.value?.entries}" }
+        ) { slice ->
             slice != null && slice.entries.none { it.terminal?.id == shell.id }
         }
         overviewWatch.close()
-        val closed = step("terminals reload", terminals(TerminalsCommand(load = Step()))).terminals!!
+        val closed =
+            step("terminals reload", terminals(TerminalsCommand(load = Step()))).terminals!!
         assertTrue(closed.terminals.none { it.id == shell.id }, "closed: ${closed.terminals}")
         termsWatch.close()
     }
@@ -475,208 +943,604 @@ class ClientApiEndToEndTest : EndToEnd() {
         // a draft is saved on the project's machine, paused, run, and deleted;
         // each command returns its result or the schedules, with their rows.
         val schedules = MutableStateFlow<SchedulesSlice?>(null)
-        val schedulesWatch = api.observe(Slice.SLICE_SCHEDULES, "") { schedules.value = Update.ADAPTER.decode(it.encode()).schedules }
+        val schedulesWatch =
+            api.observe(Slice.SLICE_SCHEDULES, "") {
+                schedules.value = Update.ADAPTER.decode(it.encode()).schedules
+            }
         fun schedulesCommand(action: SchedulesCommand) = Command(schedules = action)
-        step("schedules bind", schedulesCommand(SchedulesCommand(bind = ScheduleProject(project_id = fixture.projectId))))
-        val scheduleList = step("schedules load", schedulesCommand(SchedulesCommand(load = Step()))).schedules!!
-        assertTrue(scheduleList.loaded && scheduleList.project_id == fixture.projectId, "listed: $scheduleList")
-        assertEquals(if (scheduleList.schedules.isEmpty()) SchedulesSlice.State.STATE_EMPTY else SchedulesSlice.State.STATE_LOADED, scheduleList.state)
-        assertEquals("${scheduleList.total_count} automation${if (scheduleList.total_count == 1) "" else "s"}", scheduleList.subtitle)
-        assertEquals(scheduleList.schedules.map { it.id }, scheduleList.rows.map { it.id })
-        step("schedules preview", schedulesCommand(SchedulesCommand(preview = SchedulePreview(cron = "0 9 * * 1-5", timezone = "Europe/Berlin"))))
-        val previewed = schedules.await(30.seconds, describe = { "preview: ${schedules.value}" }) { it?.preview?.size == 5 }!!
-        assertTrue(!previewed.preview_loading, "previewed: $previewed")
-        val newDraft = step(
-            "schedules new draft",
-            schedulesCommand(SchedulesCommand(draft = ScheduleDraftRequest(selected_board_id = fixture.boardId, timezone = "Europe/Berlin"))),
-        ).schedule_draft!!
+        step(
+            "schedules bind",
+            schedulesCommand(
+                SchedulesCommand(bind = ScheduleProject(project_id = fixture.projectId))
+            ),
+        )
+        val scheduleList =
+            step("schedules load", schedulesCommand(SchedulesCommand(load = Step()))).schedules!!
+        assertTrue(
+            scheduleList.loaded && scheduleList.project_id == fixture.projectId,
+            "listed: $scheduleList",
+        )
         assertEquals(
-            listOf(fixture.projectId, fixture.boardId, "0 9 * * 1-5", "Europe/Berlin", "worktree", "draft"),
-            listOf(newDraft.project_id, newDraft.board_id, newDraft.cron, newDraft.timezone, newDraft.workspace_mode, newDraft.action),
+            if (scheduleList.schedules.isEmpty()) SchedulesSlice.State.STATE_EMPTY
+            else SchedulesSlice.State.STATE_LOADED,
+            scheduleList.state,
+        )
+        assertEquals(
+            "${scheduleList.total_count} automation${if (scheduleList.total_count == 1) "" else "s"}",
+            scheduleList.subtitle,
+        )
+        assertEquals(scheduleList.schedules.map { it.id }, scheduleList.rows.map { it.id })
+        step(
+            "schedules preview",
+            schedulesCommand(
+                SchedulesCommand(
+                    preview = SchedulePreview(cron = "0 9 * * 1-5", timezone = "Europe/Berlin")
+                )
+            ),
+        )
+        val previewed =
+            schedules.await(30.seconds, describe = { "preview: ${schedules.value}" }) {
+                it?.preview?.size == 5
+            }!!
+        assertTrue(!previewed.preview_loading, "previewed: $previewed")
+        val newDraft =
+            step(
+                    "schedules new draft",
+                    schedulesCommand(
+                        SchedulesCommand(
+                            draft =
+                                ScheduleDraftRequest(
+                                    selected_board_id = fixture.boardId,
+                                    timezone = "Europe/Berlin",
+                                )
+                        )
+                    ),
+                )
+                .schedule_draft!!
+        assertEquals(
+            listOf(
+                fixture.projectId,
+                fixture.boardId,
+                "0 9 * * 1-5",
+                "Europe/Berlin",
+                "worktree",
+                "draft",
+            ),
+            listOf(
+                newDraft.project_id,
+                newDraft.board_id,
+                newDraft.cron,
+                newDraft.timezone,
+                newDraft.workspace_mode,
+                newDraft.action,
+            ),
         )
         assertTrue(newDraft.checkout_id.isNotEmpty(), "new draft: $newDraft")
-        assertEquals(loaded.machines.getValue(fixture.daemonId).harnesses!!.harnesses.first().id, newDraft.provider, "a new draft starts with the machine's first agent")
-        val scheduleDraft = ScheduleDraft(
-            board_id = fixture.boardId, name = "Contract", cron = "0 9 * * 1-5", timezone = "UTC", enabled = true, action = "draft",
-            title_template = "Contract · {{date}}", prompt_template = "Summarize {{project}}", provider = "mock", model = "mock", effort = "low",
-            open_card_policy = "skip_if_open", workspace_mode = "project",
+        assertEquals(
+            loaded.machines.getValue(fixture.daemonId).harnesses!!.harnesses.first().id,
+            newDraft.provider,
+            "a new draft starts with the machine's first agent",
         )
-        val savedSchedule = step("schedules save", schedulesCommand(SchedulesCommand(save = SaveSchedule(draft = scheduleDraft)))).schedule!!
+        val scheduleDraft =
+            ScheduleDraft(
+                board_id = fixture.boardId,
+                name = "Contract",
+                cron = "0 9 * * 1-5",
+                timezone = "UTC",
+                enabled = true,
+                action = "draft",
+                title_template = "Contract · {{date}}",
+                prompt_template = "Summarize {{project}}",
+                provider = "mock",
+                model = "mock",
+                effort = "low",
+                open_card_policy = "skip_if_open",
+                workspace_mode = "project",
+                vault_access = true,
+            )
+        val savedSchedule =
+            step(
+                    "schedules save",
+                    schedulesCommand(SchedulesCommand(save = SaveSchedule(draft = scheduleDraft))),
+                )
+                .schedule!!
         assertEquals("Contract", savedSchedule.name)
-        val paused = step("schedules pause", schedulesCommand(SchedulesCommand(set_enabled = ScheduleEnabled(schedule_id = savedSchedule.id, enabled = false)))).schedule!!
+        val paused =
+            step(
+                    "schedules pause",
+                    schedulesCommand(
+                        SchedulesCommand(
+                            set_enabled =
+                                ScheduleEnabled(schedule_id = savedSchedule.id, enabled = false)
+                        )
+                    ),
+                )
+                .schedule!!
         assertTrue(!paused.enabled)
-        val pausedRow = schedules.await(describe = { "paused row: ${schedules.value?.rows}" }) { slice ->
-            slice?.rows?.any { it.id == savedSchedule.id && it.status == "Paused" } == true
-        }!!.rows.single { it.id == savedSchedule.id }
-        assertEquals(listOf("Weekdays at 09:00 · UTC", "Todo"), listOf(pausedRow.timing, pausedRow.placement))
-        val mock = loaded.machines.getValue(fixture.daemonId).harnesses!!.harnesses.first { it.id == "mock" }
-        assertEquals(mock.name.ifEmpty { "mock" }, pausedRow.provider_label, "the owner's catalog names the agent")
-        step("schedules run", schedulesCommand(SchedulesCommand(run_now = ScheduleId(schedule_id = savedSchedule.id))))
-        val runRow = schedules.await(30.seconds, describe = { "run row: ${schedules.value?.run_rows}" }) { slice ->
-            slice?.selected_id == savedSchedule.id && slice.run_rows.any { it.trigger == "Manual" }
-        }!!.run_rows.first { it.trigger == "Manual" }
+        val pausedRow =
+            schedules
+                .await(describe = { "paused row: ${schedules.value?.rows}" }) { slice ->
+                    slice?.rows?.any { it.id == savedSchedule.id && it.status == "Paused" } == true
+                }!!
+                .rows
+                .single { it.id == savedSchedule.id }
+        assertEquals(
+            listOf("Weekdays at 09:00 · UTC", "Todo"),
+            listOf(pausedRow.timing, pausedRow.placement),
+        )
+        val mock =
+            loaded.machines.getValue(fixture.daemonId).harnesses!!.harnesses.first {
+                it.id == "mock"
+            }
+        assertEquals(
+            mock.name.ifEmpty { "mock" },
+            pausedRow.provider_label,
+            "the owner's catalog names the agent",
+        )
+        step(
+            "schedules run",
+            schedulesCommand(
+                SchedulesCommand(run_now = ScheduleId(schedule_id = savedSchedule.id))
+            ),
+        )
+        val runRow =
+            schedules
+                .await(30.seconds, describe = { "run row: ${schedules.value?.run_rows}" }) { slice
+                    ->
+                    slice?.selected_id == savedSchedule.id &&
+                        slice.run_rows.any { it.trigger == "Manual" }
+                }!!
+                .run_rows
+                .first { it.trigger == "Manual" }
         assertTrue(runRow.status.isNotEmpty() && runRow.at.isNotEmpty(), "run row: $runRow")
-        val editDraft = step("schedules edit draft", schedulesCommand(SchedulesCommand(draft = ScheduleDraftRequest(schedule_id = savedSchedule.id)))).schedule_draft!!
+        val editDraft =
+            step(
+                    "schedules edit draft",
+                    schedulesCommand(
+                        SchedulesCommand(
+                            draft = ScheduleDraftRequest(schedule_id = savedSchedule.id)
+                        )
+                    ),
+                )
+                .schedule_draft!!
         assertEquals(
             listOf("Contract", "mock", "project", "UTC", "Summarize {{project}}"),
-            listOf(editDraft.name, editDraft.provider, editDraft.workspace_mode, editDraft.timezone, editDraft.prompt_template),
+            listOf(
+                editDraft.name,
+                editDraft.provider,
+                editDraft.workspace_mode,
+                editDraft.timezone,
+                editDraft.prompt_template,
+            ),
         )
         assertTrue(!editDraft.enabled, "the paused schedule opens paused")
-        val deleted = step("schedules delete", schedulesCommand(SchedulesCommand(delete = ScheduleId(schedule_id = savedSchedule.id)))).schedules!!
-        assertTrue(deleted.schedules.none { it.id == savedSchedule.id }, "deleted: ${deleted.schedules}")
+        assertTrue(editDraft.vault_access, "editing a schedule keeps its vault access")
+        val deleted =
+            step(
+                    "schedules delete",
+                    schedulesCommand(
+                        SchedulesCommand(delete = ScheduleId(schedule_id = savedSchedule.id))
+                    ),
+                )
+                .schedules!!
+        assertTrue(
+            deleted.schedules.none { it.id == savedSchedule.id },
+            "deleted: ${deleted.schedules}",
+        )
         step("schedules close editor", schedulesCommand(SchedulesCommand(close_editor = Step())))
-        schedules.await(describe = { "editor closed: ${schedules.value}" }) { it?.preview?.isEmpty() == true }
+        schedules.await(describe = { "editor closed: ${schedules.value}" }) {
+            it?.preview?.isEmpty() == true
+        }
         schedulesWatch.close()
         // A second view observes a schedules surface of its own and addresses it by its scope.
         val second = MutableStateFlow<SchedulesSlice?>(null)
-        val secondWatch = api.observe(Slice.SLICE_SCHEDULES, "schedules-second") { second.value = Update.ADAPTER.decode(it.encode()).schedules }
-        val bound = step("scoped bind", schedulesCommand(SchedulesCommand(scope = "schedules-second", bind = ScheduleProject(project_id = fixture.projectId)))).schedules!!
+        val secondWatch =
+            api.observe(Slice.SLICE_SCHEDULES, "schedules-second") {
+                second.value = Update.ADAPTER.decode(it.encode()).schedules
+            }
+        val bound =
+            step(
+                    "scoped bind",
+                    schedulesCommand(
+                        SchedulesCommand(
+                            scope = "schedules-second",
+                            bind = ScheduleProject(project_id = fixture.projectId),
+                        )
+                    ),
+                )
+                .schedules!!
         assertEquals(fixture.projectId, bound.project_id)
-        second.await(describe = { "scoped: ${second.value}" }) { it?.project_id == fixture.projectId }
-        assertFailsWith<AssertionError> { step("unobserved scope", schedulesCommand(SchedulesCommand(scope = "nobody", load = Step()))) }
+        second.await(describe = { "scoped: ${second.value}" }) {
+            it?.project_id == fixture.projectId
+        }
+        assertFailsWith<AssertionError> {
+            step(
+                "unobserved scope",
+                schedulesCommand(SchedulesCommand(scope = "nobody", load = Step())),
+            )
+        }
         secondWatch.close()
     }
 
     private suspend fun Contract.editBoardCards() {
         // A never-started todo card's draft is edited, then archived and listed.
-        val todo = api.dispatch(
-            Command(
-                create_conversation = CreateConversation(
-                    intent = CreationIntent(
-                        project_id = fixture.projectId, board_id = fixture.boardId, lane = "todo", title = "Draft", prompt = "first draft",
-                        selection = HarnessSelection("mock", "mock", "low"), workspace_mode = "project",
-                    ),
-                ),
-            ),
-        ).card!!
-        val todoId = mirror.workspace.await(30.seconds, describe = { "synced draft" }) { slice ->
-            slice?.cards?.any { OutboxPolicy.isServerBacked(it.id) && it.id !in slice.pending_card_ids && it.title == "Draft" } == true
-        }!!.cards.first { it.title == "Draft" }.id
+        val todo =
+            api.dispatch(
+                    Command(
+                        create_conversation =
+                            CreateConversation(
+                                intent =
+                                    CreationIntent(
+                                        project_id = fixture.projectId,
+                                        board_id = fixture.boardId,
+                                        lane = "todo",
+                                        title = "Draft",
+                                        prompt = "first draft",
+                                        selection = HarnessSelection("mock", "mock", "low"),
+                                        workspace_mode = "project",
+                                    )
+                            )
+                    )
+                )
+                .card!!
+        val todoId =
+            mirror.workspace
+                .await(30.seconds, describe = { "synced draft" }) { slice ->
+                    slice?.cards?.any {
+                        OutboxPolicy.isServerBacked(it.id) &&
+                            it.id !in slice.pending_card_ids &&
+                            it.title == "Draft"
+                    } == true
+                }!!
+                .cards
+                .first { it.title == "Draft" }
+                .id
         assertTrue(todo.id.isNotEmpty())
-        step("edit draft", Command(update_card_draft = UpdateCardDraft(card_id = todoId, title = "Edited draft", prompt = "second draft")))
-        mirror.workspace.await(describe = { "edited" }) { slice -> slice?.cards?.any { it.id == todoId && it.title == "Edited draft" && it.initial_prompt == "second draft" } == true }
+        step(
+            "edit draft",
+            Command(
+                update_card_draft =
+                    UpdateCardDraft(
+                        card_id = todoId,
+                        title = "Edited draft",
+                        prompt = "second draft",
+                    )
+            ),
+        )
+        mirror.workspace.await(describe = { "edited" }) { slice ->
+            slice?.cards?.any {
+                it.id == todoId && it.title == "Edited draft" && it.initial_prompt == "second draft"
+            } == true
+        }
         // A change with nothing to do succeeds, and a failure reports the command's own error.
-        step("unchanged title", Command(rename_card = RenameCard(card_id = todoId, title = "Edited draft")))
-        val rejected = assertFailsWith<ClientFailure> { api.dispatch(Command(move_card = MoveCard(card_id = todoId, lane = "no-such-lane"))) }
-        assertTrue(rejected.failure.message.isNotEmpty() && rejected.failure.message != "The change was not applied.", rejected.failure.message)
-        step("unchanged after a failure", Command(rename_card = RenameCard(card_id = todoId, title = "Edited draft")))
+        step(
+            "unchanged title",
+            Command(rename_card = RenameCard(card_id = todoId, title = "Edited draft")),
+        )
+        val rejected =
+            assertFailsWith<ClientFailure> {
+                api.dispatch(Command(move_card = MoveCard(card_id = todoId, lane = "no-such-lane")))
+            }
+        assertTrue(
+            rejected.failure.message.isNotEmpty() &&
+                rejected.failure.message != "The change was not applied.",
+            rejected.failure.message,
+        )
+        step(
+            "unchanged after a failure",
+            Command(rename_card = RenameCard(card_id = todoId, title = "Edited draft")),
+        )
         step("archive", Command(archive_card = ArchiveCard(card_id = todoId)))
-        mirror.workspace.await(describe = { "archived" }) { slice -> slice?.cards?.none { it.id == todoId } == true }
-        val archived = step("list archived", Command(list_archived_cards = ListArchivedCards(board_id = fixture.boardId))).cards!!.cards
+        mirror.workspace.await(describe = { "archived" }) { slice ->
+            slice?.cards?.none { it.id == todoId } == true
+        }
+        val archived =
+            step(
+                    "list archived",
+                    Command(list_archived_cards = ListArchivedCards(board_id = fixture.boardId)),
+                )
+                .cards!!
+                .cards
         assertTrue(archived.any { it.id == todoId })
     }
 
     private suspend fun Contract.chat(session: SessionSlice): Pair<String, ClientSubscription> {
         // A chat reports awaiting its reply, has no failed turn to retry, and forks.
-        val chat = api.dispatch(
-            Command(
-                create_conversation = CreateConversation(
-                    intent = CreationIntent(project_id = fixture.projectId, title = "chat", prompt = "first", selection = HarnessSelection("mock", "mock", "low"), workspace_mode = "project"),
-                    chat = true,
-                ),
-            ),
-        ).card!!
-        val watching = api.observe(Slice.SLICE_CONVERSATION, chat.id) { mirror.accept(Update.ADAPTER.decode(it.encode())) }
-        fun replies() = mirror.conversation.value?.messages.orEmpty().count { it.role == "assistant" }
-        mirror.conversation.await(60.seconds, describe = { "first reply" }) { replies() >= 1 && it?.conversation?.status !in setOf("running", "starting") }
+        val chat =
+            api.dispatch(
+                    Command(
+                        create_conversation =
+                            CreateConversation(
+                                intent =
+                                    CreationIntent(
+                                        project_id = fixture.projectId,
+                                        title = "chat",
+                                        prompt = "first",
+                                        selection = HarnessSelection("mock", "mock", "low"),
+                                        workspace_mode = "project",
+                                    ),
+                                chat = true,
+                            )
+                    )
+                )
+                .card!!
+        val watching =
+            api.observe(Slice.SLICE_CONVERSATION, chat.id) {
+                mirror.accept(Update.ADAPTER.decode(it.encode()))
+            }
+        fun replies() =
+            mirror.conversation.value?.messages.orEmpty().count { it.role == "assistant" }
+        mirror.conversation.await(60.seconds, describe = { "first reply" }) {
+            replies() >= 1 && it?.conversation?.status !in setOf("running", "starting")
+        }
         val cardId = mirror.conversation.value!!.card_id
         // The composer's agent comes from the core; a started chat keeps its provider.
-        val agent = mirror.conversation.await(describe = { "agent: ${mirror.conversation.value?.state?.agent}" }) { it?.state?.agent?.selection?.provider == "mock" }!!.state!!.agent!!
+        val agent =
+            mirror.conversation
+                .await(describe = { "agent: ${mirror.conversation.value?.state?.agent}" }) {
+                    it?.state?.agent?.selection?.provider == "mock"
+                }!!
+                .state!!
+                .agent!!
         assertTrue(!agent.provider_enabled, "agent: $agent")
-        val keeps = assertFailsWith<ClientFailure> { api.dispatch(Command(choose_agent = ChooseAgent(card_id = cardId, choice = AgentChoice(provider = "mock")))) }
+        val keeps =
+            assertFailsWith<ClientFailure> {
+                api.dispatch(
+                    Command(
+                        choose_agent =
+                            ChooseAgent(card_id = cardId, choice = AgentChoice(provider = "mock"))
+                    )
+                )
+            }
         assertEquals(Failure.Kind.KIND_INVALID, keeps.failure.kind)
         assertEquals(null, mirror.conversation.value!!.turn_failure)
         // The slice carries what a conversation header shows: project, board, and window.
         assertEquals(fixture.projectId, mirror.conversation.value!!.project?.id)
-        assertTrue((mirror.conversation.value!!.page?.total ?: 0) >= mirror.conversation.value!!.messages.size)
-        assertEquals("", step("retry", Command(retry_failed_turn = RetryFailedTurn(card_id = cardId))).message_queued!!.message_id)
+        assertTrue(
+            (mirror.conversation.value!!.page?.total ?: 0) >=
+                mirror.conversation.value!!.messages.size
+        )
+        assertEquals(
+            "",
+            step("retry", Command(retry_failed_turn = RetryFailedTurn(card_id = cardId)))
+                .message_queued!!
+                .message_id,
+        )
         // The composer's text is trimmed into the first part by the core.
         step("send", Command(send_message = SendMessage(card_id = cardId, text = "  second\n")))
         mirror.conversation.await(60.seconds, describe = { "second reply" }) {
-            replies() >= 2 && it?.conversation?.status !in setOf("running", "starting") && it?.state?.working == false
+            replies() >= 2 &&
+                it?.conversation?.status !in setOf("running", "starting") &&
+                it?.state?.working == false
         }
-        assertEquals("second", mirror.conversation.value!!.messages.last { it.role == "user" }.parts.first().text)
+        assertEquals(
+            "second",
+            mirror.conversation.value!!.messages.last { it.role == "user" }.parts.first().text,
+        )
         assertTrue(mirror.conversation.value!!.refreshed_at_millis > 0)
-        // The transcript's rows travel beside the messages as keyed deltas, one row per user message.
+        // The transcript's rows travel beside the messages as keyed deltas, one row per user
+        // message.
         val folded = mirror.conversation.value!!
-        assertEquals(folded.messages.filter { it.role == "user" }.map { "message:${it.id}" }, folded.timeline.filter { it.user }.map { it.id })
+        assertEquals(
+            folded.messages.filter { it.role == "user" }.map { "message:${it.id}" },
+            folded.timeline.filter { it.user }.map { it.id },
+        )
         assertTrue(folded.state!!.chat)
         // Reasoning traces are this device's preference; the conversation regroups for it.
         step("show reasoning", Command(set_show_reasoning = SetShowReasoning(show = true)))
-        mirror.conversation.await(describe = { "reasoning shown" }) { it?.state?.show_reasoning == true }
-        mirror.session.await(describe = { "the session shows reasoning" }) { it?.show_reasoning == true }
+        mirror.conversation.await(describe = { "reasoning shown" }) {
+            it?.state?.show_reasoning == true
+        }
+        mirror.session.await(describe = { "the session shows reasoning" }) {
+            it?.show_reasoning == true
+        }
         assertTrue(runtime.conversations.showReasoning.value)
-        assertEquals("true", runtime.platform.settings.string("conversations.show_reasoning"), "kept with this device's settings")
+        assertEquals(
+            "true",
+            runtime.platform.settings.string("conversations.show_reasoning"),
+            "kept with this device's settings",
+        )
         step("hide reasoning", Command(set_show_reasoning = SetShowReasoning(show = false)))
-        mirror.conversation.await(describe = { "reasoning hidden" }) { it?.state?.show_reasoning == false }
-        mirror.session.await(describe = { "the session hides reasoning" }) { it?.show_reasoning == false }
+        mirror.conversation.await(describe = { "reasoning hidden" }) {
+            it?.state?.show_reasoning == false
+        }
+        mirror.session.await(describe = { "the session hides reasoning" }) {
+            it?.show_reasoning == false
+        }
         return cardId to watching
     }
 
     private suspend fun Contract.rememberChoices(cardId: String): String {
         // Drafts and creation choices stay on this device.
-        step("draft", Command(set_draft_text = SetDraftText(daemon_id = fixture.daemonId, card_id = cardId, text = "unsent")))
+        step(
+            "draft",
+            Command(
+                set_draft_text =
+                    SetDraftText(daemon_id = fixture.daemonId, card_id = cardId, text = "unsent")
+            ),
+        )
         val drafts = step("drafts", Command(list_drafts = ListDrafts())).drafts!!.drafts
-        assertEquals(listOf("unsent"), drafts.filter { it.daemon_id == fixture.daemonId && it.card_id == cardId }.map { it.text })
-        step("clear draft", Command(set_draft_text = SetDraftText(daemon_id = fixture.daemonId, card_id = cardId, text = "")))
-        assertTrue(step("drafts", Command(list_drafts = ListDrafts())).drafts!!.drafts.none { it.card_id == cardId })
+        assertEquals(
+            listOf("unsent"),
+            drafts
+                .filter { it.daemon_id == fixture.daemonId && it.card_id == cardId }
+                .map { it.text },
+        )
+        step(
+            "clear draft",
+            Command(
+                set_draft_text =
+                    SetDraftText(daemon_id = fixture.daemonId, card_id = cardId, text = "")
+            ),
+        )
+        assertTrue(
+            step("drafts", Command(list_drafts = ListDrafts())).drafts!!.drafts.none {
+                it.card_id == cardId
+            }
+        )
         val creation = MutableStateFlow<CreationSlice?>(null)
-        val creationWatch = api.observe(Slice.SLICE_CREATION, "") { creation.value = Update.ADAPTER.decode(it.encode()).creation }
+        val creationWatch =
+            api.observe(Slice.SLICE_CREATION, "") {
+                creation.value = Update.ADAPTER.decode(it.encode()).creation
+            }
         step(
             "remember",
             Command(
-                remember_creation = RememberCreation(
-                    selection = HarnessSelection("mock", "mock", "low"), project_id = fixture.projectId, board_id = fixture.boardId,
-                ),
+                remember_creation =
+                    RememberCreation(
+                        selection = HarnessSelection("mock", "mock", "low"),
+                        project_id = fixture.projectId,
+                        board_id = fixture.boardId,
+                    )
             ),
         )
         creation.await(describe = { "creation: ${creation.value}" }) {
-            it?.project_id == fixture.projectId && it.boards[fixture.projectId] == fixture.boardId && it.workspace_mode == "project"
+            it?.project_id == fixture.projectId &&
+                it.boards[fixture.projectId] == fixture.boardId &&
+                it.workspace_mode == "project"
         }
         // The checkout a new conversation runs on is the project's only one.
-        val checkoutId = creation.await(describe = { "checkouts: ${creation.value}" }) { it?.checkouts?.get(fixture.projectId)?.isNotEmpty() == true }!!.checkouts.getValue(fixture.projectId)
-        assertEquals(fixture.daemonId, mirror.workspace.value!!.projects.single { it.id == fixture.projectId }.checkouts.single { it.id == checkoutId }.daemon_id)
+        val checkoutId =
+            creation
+                .await(describe = { "checkouts: ${creation.value}" }) {
+                    it?.checkouts?.get(fixture.projectId)?.isNotEmpty() == true
+                }!!
+                .checkouts
+                .getValue(fixture.projectId)
+        assertEquals(
+            fixture.daemonId,
+            mirror.workspace.value!!
+                .projects
+                .single { it.id == fixture.projectId }
+                .checkouts
+                .single { it.id == checkoutId }
+                .daemon_id,
+        )
         creationWatch.close()
         return checkoutId
     }
 
     private suspend fun Contract.createFromIntent(cardId: String, checkoutId: String): Card {
-        // A creation form previews its intent with the core's defaults through its surface, then queues it.
+        // A creation form previews its intent with the core's defaults through its surface, then
+        // queues it.
         val previews = MutableStateFlow<CreationPreview?>(null)
-        val previewWatch = api.observe(Slice.SLICE_CREATION_PREVIEW, "form-test") { previews.value = Update.ADAPTER.decode(it.encode()).creation_preview }
-        fun form(intent: CreationIntent, choice: AgentChoice? = null) = Command(creation_preview = CreationPreviewCommand(scope = "form-test", intent = intent, choice = choice))
-        val preview = step("preview creation", form(CreationIntent(project_id = fixture.projectId, prompt = "From an intent"))).creation_preview!!
-        assertEquals(preview, previews.await(describe = { "previewed: ${previews.value}" }) { it == preview })
+        val previewWatch =
+            api.observe(Slice.SLICE_CREATION_PREVIEW, "form-test") {
+                previews.value = Update.ADAPTER.decode(it.encode()).creation_preview
+            }
+        fun form(intent: CreationIntent, choice: AgentChoice? = null) =
+            Command(
+                creation_preview =
+                    CreationPreviewCommand(scope = "form-test", intent = intent, choice = choice)
+            )
+        val preview =
+            step(
+                    "preview creation",
+                    form(CreationIntent(project_id = fixture.projectId, prompt = "From an intent")),
+                )
+                .creation_preview!!
+        assertEquals(
+            preview,
+            previews.await(describe = { "previewed: ${previews.value}" }) { it == preview },
+        )
         assertEquals("", preview.problem, "preview: $preview")
         assertEquals(CreationCatalogState.CREATION_CATALOG_STATE_LIVE, preview.catalog)
         val intent = preview.intent!!
-        assertEquals(listOf(fixture.boardId, checkoutId, "mock", "project"), listOf(intent.board_id, intent.checkout_id, intent.selection?.provider, intent.workspace_mode))
-        assertTrue(preview.defers_start && preview.daemon_id == fixture.daemonId, "preview: $preview")
-        assertTrue(preview.agent!!.providers.any { it.id == "mock" } && preview.agent!!.provider_enabled, "agent: ${preview.agent}")
-        val chosen = step("choose agent", form(CreationIntent(project_id = fixture.projectId, prompt = "From an intent"), AgentChoice(provider = "mock"))).creation_preview!!
-        assertEquals("mock", chosen.intent!!.selection!!.provider, "the choice applies to the bound intent")
+        assertEquals(
+            listOf(fixture.boardId, checkoutId, "mock", "project"),
+            listOf(
+                intent.board_id,
+                intent.checkout_id,
+                intent.selection?.provider,
+                intent.workspace_mode,
+            ),
+        )
+        assertTrue(
+            preview.defers_start && preview.daemon_id == fixture.daemonId,
+            "preview: $preview",
+        )
+        assertTrue(
+            preview.agent!!.providers.any { it.id == "mock" } && preview.agent!!.provider_enabled,
+            "agent: ${preview.agent}",
+        )
+        val chosen =
+            step(
+                    "choose agent",
+                    form(
+                        CreationIntent(project_id = fixture.projectId, prompt = "From an intent"),
+                        AgentChoice(provider = "mock"),
+                    ),
+                )
+                .creation_preview!!
+        assertEquals(
+            "mock",
+            chosen.intent!!.selection!!.provider,
+            "the choice applies to the bound intent",
+        )
         previewWatch.close()
-        step("create from intent", Command(create_conversation = CreateConversation(intent = intent)))
-        mirror.workspace.await(30.seconds, describe = { "intent card" }) { slice -> slice?.cards?.any { it.initial_prompt == "From an intent" && it.board_id == fixture.boardId } == true }
-        val incomplete = assertFailsWith<ClientFailure> { api.dispatch(Command(create_conversation = CreateConversation(intent = CreationIntent(project_id = fixture.projectId)))) }
+        step(
+            "create from intent",
+            Command(create_conversation = CreateConversation(intent = intent)),
+        )
+        mirror.workspace.await(30.seconds, describe = { "intent card" }) { slice ->
+            slice?.cards?.any {
+                it.initial_prompt == "From an intent" && it.board_id == fixture.boardId
+            } == true
+        }
+        val incomplete =
+            assertFailsWith<ClientFailure> {
+                api.dispatch(
+                    Command(
+                        create_conversation =
+                            CreateConversation(
+                                intent = CreationIntent(project_id = fixture.projectId)
+                            )
+                    )
+                )
+            }
         assertEquals("Describe the task.", incomplete.failure.message)
-        assertTrue(mirror.workspace.value!!.cards.any { it.id == cardId }, "card $cardId in ${mirror.workspace.value!!.cards.map { it.id + ":" + it.scope }}")
+        assertTrue(
+            mirror.workspace.value!!.cards.any { it.id == cardId },
+            "card $cardId in ${mirror.workspace.value!!.cards.map { it.id + ":" + it.scope }}",
+        )
         val forked = step("fork", Command(fork_card = ForkCard(card_id = cardId))).card!!
-        mirror.workspace.await(30.seconds, describe = { "forked" }) { slice -> slice?.cards?.any { it.id == forked.id } == true }
+        mirror.workspace.await(30.seconds, describe = { "forked" }) { slice ->
+            slice?.cards?.any { it.id == forked.id } == true
+        }
         return forked
     }
 
     private suspend fun Contract.listChats(cardId: String, forked: Card) {
-        // The chats list shows live chats in their project's section, searches in place, and loads archived chats.
+        // The chats list shows live chats in their project's section, searches in place, and loads
+        // archived chats.
         val chats = MutableStateFlow<ChatsSlice?>(null)
-        val chatsWatch = api.observe(Slice.SLICE_CHATS, "chats-test") { chats.value = Update.ADAPTER.decode(it.encode()).chats }
+        val chatsWatch =
+            api.observe(Slice.SLICE_CHATS, "chats-test") {
+                chats.value = Update.ADAPTER.decode(it.encode()).chats
+            }
         chats.await(30.seconds, describe = { "chats: ${chats.value}" }) { slice ->
-            slice != null && slice.projects.any { it.project_id == fixture.projectId && forked.id in it.chat_ids } && forked.id in slice.visible_ids
+            slice != null &&
+                slice.projects.any {
+                    it.project_id == fixture.projectId && forked.id in it.chat_ids
+                } &&
+                forked.id in slice.visible_ids
         }
-        step("search chats", Command(chats = ChatsCommand(scope = "chats-test", query = ChatsQuery(text = "fork of"))))
-        chats.await(describe = { "searched: ${chats.value}" }) { it != null && forked.id in it.visible_ids && cardId !in it.visible_ids }
-        step("archived chats", Command(chats = ChatsCommand(scope = "chats-test", show_archived = Toggle(on = true))))
-        chats.await(30.seconds, describe = { "archived: ${chats.value}" }) { it != null && !it.loading && it.error.isEmpty() && forked.id !in it.visible_ids }
+        step(
+            "search chats",
+            Command(
+                chats = ChatsCommand(scope = "chats-test", query = ChatsQuery(text = "fork of"))
+            ),
+        )
+        chats.await(describe = { "searched: ${chats.value}" }) {
+            it != null && forked.id in it.visible_ids && cardId !in it.visible_ids
+        }
+        step(
+            "archived chats",
+            Command(chats = ChatsCommand(scope = "chats-test", show_archived = Toggle(on = true))),
+        )
+        chats.await(30.seconds, describe = { "archived: ${chats.value}" }) {
+            it != null && !it.loading && it.error.isEmpty() && forked.id !in it.visible_ids
+        }
         chatsWatch.close()
     }
 
@@ -685,19 +1549,34 @@ class ClientApiEndToEndTest : EndToEnd() {
         // with nothing new to send.
         delay(2.seconds)
         step("resync", Command(resync = Resync()))
-        mirror.workspace.await(30.seconds, describe = { "resynced: ${mirror.workspace.value?.projects}" }) { slice ->
-            slice?.loaded == true && slice.cards.any { it.id == forked.id } && slice.projects.any { it.id == fixture.projectId }
+        mirror.workspace.await(
+            30.seconds,
+            describe = { "resynced: ${mirror.workspace.value?.projects}" },
+        ) { slice ->
+            slice?.loaded == true &&
+                slice.cards.any { it.id == forked.id } &&
+                slice.projects.any { it.id == fixture.projectId }
         }
         // Creating right after a clean sync reaches the project's machine.
-        val afterResync = step(
-            "create after resync",
-            Command(
-                create_conversation = CreateConversation(
-                    intent = CreationIntent(project_id = fixture.projectId, title = "after resync", prompt = "hi", selection = HarnessSelection("mock", "mock", "low"), workspace_mode = "project"),
-                    chat = true,
-                ),
-            ),
-        ).card!!
+        val afterResync =
+            step(
+                    "create after resync",
+                    Command(
+                        create_conversation =
+                            CreateConversation(
+                                intent =
+                                    CreationIntent(
+                                        project_id = fixture.projectId,
+                                        title = "after resync",
+                                        prompt = "hi",
+                                        selection = HarnessSelection("mock", "mock", "low"),
+                                        workspace_mode = "project",
+                                    ),
+                                chat = true,
+                            )
+                    ),
+                )
+                .card!!
         assertTrue(afterResync.id.isNotEmpty())
     }
 }

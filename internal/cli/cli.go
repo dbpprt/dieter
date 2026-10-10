@@ -35,6 +35,7 @@ import (
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/linkauth"
+	"github.com/dbpprt/dieter/internal/localauth"
 	"github.com/dbpprt/dieter/internal/machine"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/providerquota"
@@ -133,6 +134,10 @@ func Main(args []string) int {
 		if errors.As(err, &remoteExit) {
 			return remoteExit.Code()
 		}
+		var childExit *exitStatusError
+		if errors.As(err, &childExit) {
+			return childExit.code
+		}
 		fmt.Fprintln(client.Err, "error:", err)
 		return 1
 	}
@@ -202,6 +207,7 @@ Commands:
   screen       Share screens/clipboard, configure virtual displays, inspect latency
   schedule     Create, preview, dispatch, pause, and inspect schedules
   kv           Shared portable JSON, ordering, and live account subscriptions
+  vault        End-to-end encrypted passwords and TOTP shared by your machines
   peer         Inspect and edit account peer settings (leaderless sync)
   settings     Inspect and update prompt and daemon settings
   prompt       Inspect, update, scope, and preview prompt templates
@@ -465,6 +471,11 @@ its current address. Status reports the selected network endpoint.
 	defer closeLog()
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	// Rotate before anything listens; the raw API and its forwarders share it.
+	localToken, err := localauth.Rotate(c.Store.Root)
+	if err != nil {
+		return err
+	}
 	identity, identityErr := dieterdaemon.LoadIdentity(c.Store.Root)
 	enrolled := identityErr == nil && identity.Enrolled()
 	if enrolled {
@@ -539,7 +550,7 @@ its current address. Status reports the selected network endpoint.
 		}
 		quotaSource = providerquota.NewWithRuntime(c.Store.Root, logger, quotaRuntime)
 		var routes []*gatewayv1.DirectCandidate
-		loopback, loopbackErr := newDaemonDirectRoute(identity, *addr, "loopback", "127.0.0.1:0", "127.0.0.1", "loopback", 1000)
+		loopback, loopbackErr := newDaemonDirectRoute(identity, *addr, localToken, "loopback", "127.0.0.1:0", "127.0.0.1", "loopback", 1000)
 		if loopbackErr != nil {
 			logger.Warn("automatic local route is unavailable; clients will use the gateway relay", "error", loopbackErr)
 		} else {
@@ -552,7 +563,7 @@ its current address. Status reports the selected network endpoint.
 			if strings.TrimSpace(*directHost) == "" {
 				return errors.New("--direct-host is required with --direct-addr")
 			}
-			direct, directErr := newDaemonDirectRoute(identity, *addr, "direct", *directAddr, *directHost, *directNetwork, 100)
+			direct, directErr := newDaemonDirectRoute(identity, *addr, localToken, "direct", *directAddr, *directHost, *directNetwork, 100)
 			if directErr != nil {
 				return directErr
 			}
@@ -617,7 +628,7 @@ its current address. Status reports the selected network endpoint.
 				return err
 			}
 			client := &dieterdaemon.GatewayClient{
-				Identity: identity, LocalTarget: *addr, Version: Version, Routes: routes,
+				Identity: identity, LocalTarget: *addr, LocalToken: localToken, Version: Version, Routes: routes,
 				Log: logger, OnStatus: statusWriter.Gateway, OnAcknowledged: statusWriter.GatewayAcknowledged,
 				OnCompatibilityPolicy: onCompatibilityPolicy, OnUpdateRequired: onUpdateRequired,
 				RemoteDesktopPresence: remoteDesktopPresence, ProviderQuotas: quotaSource,
@@ -674,7 +685,7 @@ type daemonDirectRoute struct {
 	candidate *gatewayv1.DirectCandidate
 }
 
-func newDaemonDirectRoute(identity *dieterdaemon.Identity, localTarget, id, listenAddress, advertisedHost, network string, priority int32) (*daemonDirectRoute, error) {
+func newDaemonDirectRoute(identity *dieterdaemon.Identity, localTarget, localToken, id, listenAddress, advertisedHost, network string, priority int32) (*daemonDirectRoute, error) {
 	listener, err := net.Listen("tcp", strings.TrimSpace(listenAddress))
 	if err != nil {
 		return nil, err
@@ -693,7 +704,7 @@ func newDaemonDirectRoute(identity *dieterdaemon.Identity, localTarget, id, list
 	if err != nil || port < 1 || port > 65535 {
 		return nil, fmt.Errorf("resolve direct listener port: invalid port %q", portText)
 	}
-	direct, err := dieterdaemon.NewDirectServer(identity, localTarget)
+	direct, err := dieterdaemon.NewDirectServer(identity, localTarget, localToken)
 	if err != nil {
 		return nil, err
 	}

@@ -49,6 +49,9 @@ type activeTurn struct {
 	workerObserved bool
 	recoveryErr    error
 	finishing      bool
+	// vaultSecrets are values revealed to this turn; stored transcript chunks
+	// redact them.
+	vaultSecrets []string
 }
 
 type TurnUpdate struct {

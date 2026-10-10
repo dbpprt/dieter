@@ -21,10 +21,9 @@ import kotlinx.serialization.json.put
 import okio.ByteString.Companion.encodeUtf8
 
 /**
- * GitHub OAuth with PKCE (RFC 7636) through the gateway. The platform opens
- * [begin]'s URL in a browser and hands the callback URL to [complete]. The
- * pending attempt is persisted, so a callback delivered after the app was
- * relaunched still completes within [EXPIRY].
+ * GitHub OAuth with PKCE (RFC 7636) through the gateway. The platform opens [begin]'s URL in a
+ * browser and hands the callback URL to [complete]. The pending attempt is persisted, so a callback
+ * delivered after the app was relaunched still completes within [EXPIRY].
  */
 class SignIn(
     private val storage: CoreStorage,
@@ -33,15 +32,22 @@ class SignIn(
     private val redirectUri: String,
     private val clock: Clock = Clock.System,
 ) {
-    /** Starts an attempt for [gateway] and returns the URL to open. Replaces any previous attempt. */
+    /**
+     * Starts an attempt for [gateway] and returns the URL to open. Replaces any previous attempt.
+     */
     fun begin(gateway: Gateway): String {
-        if (!gateway.secure) throw CoreException(FailureKind.PERMANENT, "Remote sign-in requires an HTTPS gateway.")
+        if (!gateway.secure)
+            throw CoreException(FailureKind.PERMANENT, "Remote sign-in requires an HTTPS gateway.")
         val verifier = randomUrlToken(48)
         val challenge = verifier.encodeUtf8().sha256().toByteArray().base64Url()
         storage.write(
             PENDING,
             PendingSignIn.ADAPTER.encode(
-                PendingSignIn(gateway = gateway.record(), verifier = verifier, created_at_millis = clock.now().toEpochMilliseconds()),
+                PendingSignIn(
+                    gateway = gateway.record(),
+                    verifier = verifier,
+                    created_at_millis = clock.now().toEpochMilliseconds(),
+                )
             ),
         )
         return "${gateway.httpBase}/auth/github/start?native_redirect_uri=${Urls.encode(redirectUri)}" +
@@ -52,31 +58,57 @@ class SignIn(
     fun isCallback(url: String): Boolean = url.substringBefore('?') == redirectUri
 
     /**
-     * Exchanges the callback's code for a session token, stores it, and
-     * returns the gateway that was signed in to.
+     * Exchanges the callback's code for a session token, stores it, and returns the gateway that
+     * was signed in to.
+     *
+     * Any app can deliver a callback URL, so only a successful exchange or expiry ends the attempt;
+     * a forged callback cannot cancel a real one.
      */
     suspend fun complete(callbackUrl: String): Gateway {
-        if (!isCallback(callbackUrl)) throw CoreException(FailureKind.PERMANENT, "Not a Dieter sign-in callback.")
-        val pending = storage.read(PENDING)?.let(PendingSignIn.ADAPTER::decode)
-            ?: throw CoreException(FailureKind.PERMANENT, "No sign-in is in progress.")
-        storage.delete(PENDING)
+        if (!isCallback(callbackUrl))
+            throw CoreException(FailureKind.PERMANENT, "Not a Dieter sign-in callback.")
+        val pending =
+            storage.read(PENDING)?.let(PendingSignIn.ADAPTER::decode)
+                ?: throw CoreException(FailureKind.PERMANENT, "No sign-in is in progress.")
         if (clock.now() - Instant.fromEpochMilliseconds(pending.created_at_millis) > EXPIRY) {
+            storage.delete(PENDING)
             throw CoreException(FailureKind.PERMANENT, "Sign-in expired. Start sign-in again.")
         }
-        val code = Urls.queryParameter(callbackUrl, "code")
-            ?: throw CoreException(FailureKind.PERMANENT, "The sign-in callback did not contain a code.")
-        val gateway = pending.gateway?.toGateway() ?: throw CoreException(FailureKind.PERMANENT, "No sign-in is in progress.")
+        val code =
+            Urls.queryParameter(callbackUrl, "code")
+                ?: throw CoreException(
+                    FailureKind.PERMANENT,
+                    "The sign-in callback did not contain a code.",
+                )
+        val gateway =
+            pending.gateway?.toGateway()
+                ?: throw CoreException(FailureKind.PERMANENT, "No sign-in is in progress.")
         val body = buildJsonObject {
             put("code", code)
             put("verifier", pending.verifier)
-        }.toString()
+        }
+            .toString()
         val response = http.postJson("${gateway.httpBase}/auth/native/exchange", body)
         if (response.status != 200) {
-            throw CoreException(FailureKind.PERMANENT, "Dieter rejected the sign-in exchange (${response.status}).")
+            throw CoreException(
+                FailureKind.PERMANENT,
+                "Dieter rejected the sign-in exchange (${response.status}).",
+            )
         }
-        val token = runCatching { Json.parseToJsonElement(response.body).jsonObject["accessToken"]?.jsonPrimitive?.contentOrNull }
-            .getOrNull()?.takeIf { it.isNotBlank() }
-            ?: throw CoreException(FailureKind.PERMANENT, "Dieter rejected the sign-in exchange.")
+        val token =
+            runCatching {
+                Json.parseToJsonElement(response.body)
+                    .jsonObject["accessToken"]
+                    ?.jsonPrimitive
+                    ?.contentOrNull
+            }
+                .getOrNull()
+                ?.takeIf { it.isNotBlank() }
+                ?: throw CoreException(
+                    FailureKind.PERMANENT,
+                    "Dieter rejected the sign-in exchange.",
+                )
+        storage.delete(PENDING)
         credentials.save(gateway, token)
         return gateway
     }
@@ -92,7 +124,9 @@ class SignIn(
 /** Gateway session tokens, keyed by gateway origin. */
 class Credentials(private val store: SecureStore) {
     fun token(gateway: Gateway): String? = store.read(gateway.origin)?.takeIf { it.isNotBlank() }
+
     fun save(gateway: Gateway, token: String) = store.write(gateway.origin, token)
+
     fun remove(gateway: Gateway) = store.delete(gateway.origin)
 }
 
@@ -102,12 +136,17 @@ fun GatewayRecord.toGateway() = Gateway(name = name, host = host, port = port, s
 
 /** Minimal URL helpers; the core never needs a full URL parser. */
 object Urls {
-    private const val UNRESERVED = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+    private const val UNRESERVED =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
 
     fun encode(value: String): String = buildString {
         for (byte in value.encodeToByteArray()) {
             val char = byte.toInt().toChar()
-            if (byte >= 0 && char in UNRESERVED) append(char) else append('%').append(HEX[(byte.toInt() shr 4) and 0xf]).append(HEX[byte.toInt() and 0xf])
+            if (byte >= 0 && char in UNRESERVED) append(char)
+            else
+                append('%')
+                    .append(HEX[(byte.toInt() shr 4) and 0xf])
+                    .append(HEX[byte.toInt() and 0xf])
         }
     }
 
@@ -122,10 +161,13 @@ object Urls {
             if (char == '%' && index + 2 < value.length) {
                 val decoded = value.substring(index + 1, index + 3).toIntOrNull(16)
                 if (decoded != null) {
-                    bytes.add(decoded.toByte()); index += 3; continue
+                    bytes.add(decoded.toByte())
+                    index += 3
+                    continue
                 }
             }
-            if (char == '+') bytes.add(' '.code.toByte()) else char.toString().encodeToByteArray().forEach(bytes::add)
+            if (char == '+') bytes.add(' '.code.toByte())
+            else char.toString().encodeToByteArray().forEach(bytes::add)
             index++
         }
         return bytes.toByteArray().decodeToString()

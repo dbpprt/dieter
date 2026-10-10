@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/dbpprt/dieter/internal/buildinfo"
+	"github.com/dbpprt/dieter/internal/localauth"
 	"github.com/dbpprt/dieter/internal/store"
 )
 
@@ -18,6 +19,7 @@ func TestDaemonExposesOnlyCurrentRPCContract(t *testing.T) {
 	application := New(data, nil)
 	for _, path := range []string{"/", "/api/v1/state", "/auth/session", "/auth/github/login", "/auth/github/callback", "/auth/native/token"} {
 		request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1"+path, nil)
+		request.Header.Set(localauth.Header, application.localToken)
 		response := httptest.NewRecorder()
 		application.Handler().ServeHTTP(response, request)
 		if response.Code != http.StatusNotFound {

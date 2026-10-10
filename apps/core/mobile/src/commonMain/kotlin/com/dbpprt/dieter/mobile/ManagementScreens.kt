@@ -732,7 +732,7 @@ private fun ScheduleEditor(store: MobileStore, scheduleId: String, onDismiss: ()
         SectionHeader("Agent")
         AgentSettings(preview.agent) { choice -> store.preview(store.creationIntent.value, choice) }
         SectionHeader("Behavior")
-        Group(listOf(0, 1, 2)) { index, position ->
+        Group(listOf(0, 1, 2, 3)) { index, position ->
             when (index) {
                 0 ->
                     PickerRow(
@@ -756,6 +756,19 @@ private fun ScheduleEditor(store: MobileStore, scheduleId: String, onDismiss: ()
                     ) {
                         draft = value.copy(open_card_policy = it)
                     }
+                3 ->
+                    ListRow(
+                        "Vault access",
+                        position = position,
+                        subtitle = "Its cards may use the account's passwords and TOTP codes",
+                        trailing = {
+                            DSwitch(
+                                value.vault_access,
+                                { draft = value.copy(vault_access = it) },
+                                Modifier.testTag("schedule-vault-access"),
+                            )
+                        },
+                    )
                 else ->
                     PickerRow(
                         "Workspace",

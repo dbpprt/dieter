@@ -90,7 +90,7 @@ func newFixture(t *testing.T) *fixture {
 	dieterv1.RegisterDieterServiceServer(local, handler)
 	go local.Serve(listener)
 	t.Cleanup(local.Stop)
-	direct, err := daemon.NewDirectServer(identity, listener.Addr().String())
+	direct, err := daemon.NewDirectServer(identity, listener.Addr().String(), "local-token")
 	if err != nil {
 		t.Fatal(err)
 	}

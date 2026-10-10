@@ -297,6 +297,10 @@ struct ScheduleEditor: View {
                 )
                 .accessibilityIdentifier("schedule-editor.workspace")
             }
+            Toggle("Allow vault access", isOn: $draft.vaultAccess)
+                .toggleStyle(.switch)
+                .help("Cards this automation creates may use the account vault's passwords and TOTP codes.")
+                .accessibilityIdentifier("schedule-editor.vault-access")
             Label(
                 options.placements.first { $0.key == draft.action }?.detail ?? "",
                 systemImage: draft.action == "run" ? "bolt.fill" : "tray.full.fill"

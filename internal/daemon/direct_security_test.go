@@ -66,7 +66,7 @@ func TestDirectTLSExpiryReleasesStalledNetworkStreams(t *testing.T) {
 			}
 			go func() { _ = local.Serve(listener) }()
 			t.Cleanup(local.Stop)
-			direct, err := NewDirectServer(identity, listener.Addr().String())
+			direct, err := NewDirectServer(identity, listener.Addr().String(), "local-token")
 			if err != nil {
 				t.Fatal(err)
 			}

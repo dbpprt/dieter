@@ -108,7 +108,7 @@ func protoCard(value model.Card) *dieterv1.Card {
 		Pinned: value.Pinned, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt,
 		LabelIds: append([]string(nil), value.LabelIDs...), ResponseSeq: value.ResponseSeq, ResponseMessageId: value.ResponseMessageID, SeenResponseSeq: value.SeenResponseSeq,
 		WorkspaceMode: value.WorkspaceMode, WorkspaceBranch: value.WorkspaceBranch, WorkspaceBaseBranch: value.WorkspaceBaseBranch,
-		WorkspaceBaseRemote: value.WorkspaceBaseRemote, RemotePublishMode: value.RemotePublishMode,
+		WorkspaceBaseRemote: value.WorkspaceBaseRemote, RemotePublishMode: value.RemotePublishMode, VaultAccess: value.VaultAccess,
 	}
 	for _, field := range value.StateFields {
 		projected := &dieterv1.CardStateField{Name: field.Name, Revision: field.Revision}
@@ -554,7 +554,7 @@ func protoSchedule(value model.Schedule) *dieterv1.Schedule {
 		Timezone: value.Timezone, Enabled: value.Enabled, Action: value.Action,
 		TitleTemplate: value.TitleTemplate, PromptTemplate: value.PromptTemplate,
 		Provider: value.Provider, Model: value.Model, Effort: value.Effort,
-		ProviderOptions: cloneProtoStringMap(value.ProviderOptions), WorkspaceMode: value.WorkspaceMode,
+		ProviderOptions: cloneProtoStringMap(value.ProviderOptions), WorkspaceMode: value.WorkspaceMode, VaultAccess: value.VaultAccess,
 		LabelIds: append([]string(nil), value.LabelIDs...), OpenCardPolicy: value.OpenCardPolicy,
 		MisfirePolicy: value.MisfirePolicy,
 		NextRunAt:     value.NextRunAt, LastRunAt: value.LastRunAt,

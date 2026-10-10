@@ -83,6 +83,8 @@ func (c *CLI) runDaemonCommand(args []string) (bool, error) {
 		return true, c.rpcSchedule(args[1:])
 	case "kv":
 		return true, c.rpcKV(args[1:])
+	case "vault":
+		return true, c.rpcVault(args[1:])
 	case "peer":
 		return true, c.rpcPeer(args[1:])
 	case "settings":

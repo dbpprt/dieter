@@ -4,14 +4,25 @@ import (
 	"net"
 	"net/http"
 	"strings"
+
+	"github.com/dbpprt/dieter/internal/localauth"
 )
 
-func localDaemonOnly(next http.Handler) http.Handler {
+// localDaemonOnly admits a raw request only with the local API token. The
+// loopback listener keeps other hosts out; the token keeps out other users and
+// processes on this host, which can reach loopback but not the user-only file.
+func localDaemonOnly(token string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !localDaemonRequest(r) {
 			http.Error(w, "local daemon requests require a numeric or localhost host and no browser origin", http.StatusForbidden)
 			return
 		}
+		presented := r.Header.Values(localauth.Header)
+		if len(presented) != 1 || !localauth.Valid(token, presented[0]) {
+			http.Error(w, "local daemon requests require the local API token", http.StatusUnauthorized)
+			return
+		}
+		r.Header.Del(localauth.Header)
 		next.ServeHTTP(w, r)
 	})
 }

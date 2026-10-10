@@ -961,6 +961,48 @@ direct TLS and gateway relay target selection behave like other commands.
 Never change privacy on an operator's host merely to test it; use isolated
 fixtures and the owned native privacy qualification.
 
+### Account vault (passwords and TOTP)
+
+`dieter vault` holds account logins shared by the operator's machines. Items
+replicate as ciphertext only. Commands that return decrypted content refuse the
+gateway relay route, so run them on the machine (or a direct `--machine` route).
+
+```sh
+dieter vault status                                  # state, members, your access
+dieter vault list [--query TEXT] [--url URL] [--format table|json|jsonl|ids]
+dieter vault show ITEM                               # metadata, never secrets
+dieter vault totp ITEM                               # current code (waits near expiry)
+dieter vault exec ITEM --env NAME=password [--env CODE=totp] -- COMMAND ARG...
+dieter vault get ITEM --field password --reveal      # only when it must be typed
+printf '%s' "$VALUE" | dieter vault add --name NAME [--url URL] [--username USER] --password-file -
+dieter vault add --name NAME [--url URL] [--username USER] --generate [--length N]
+dieter vault edit ITEM [--name NEW] [--url URL] [--username U] [--password-file -|--generate] [--totp-file FILE|-]
+dieter vault remove ITEM
+```
+
+ITEM is an exact `vi_` ID or unique name. Secrets are never accepted as
+arguments; use `--password-file -`, `--totp-file`, `--notes-file`, `--prompt`
+(terminal only) or `--generate`. Fields are `password`, `username`, `url`,
+`name`, `totp` and `notes`. `exec` runs exact argv without a shell, keeps
+stdio and returns the child's exit status.
+
+Agent turns may use the vault only when their card, chat or schedule was
+created with `--vault` (fixed at creation). There are no approvals: the daemon
+identifies a turn by `DIETER_TURN_TOKEN` (with `DIETER_CARD_ID` and
+`DIETER_HOME`) in the worker environment, valid only while the turn is active.
+Without vault access, item commands fail with PermissionDenied. Agents cannot run
+`init`, `join`, `approve`, `remove-member`, `rotate` or `audit`, and must not use
+`--machine` with vault commands. Prefer `exec`; never repeat secret values in
+replies, files, commits or logs. Revealed passwords are redacted from stored
+transcripts, but the model provider still sees tool output.
+
+Operators set up machines with `vault init` (prints a recovery key once),
+`vault join` on each new machine, then `vault approve MEMBER --code CODE` on an
+existing member after comparing the codes both machines print. `vault join
+--recovery-key-stdin` joins offline. `vault remove-member MEMBER` revokes and
+rotates; `vault rotate --recovery-key` replaces the recovery key. `vault audit`
+shows this machine's access log without secret values.
+
 ### Shared projects and peer storage
 
 One project can have checkouts on many machines. Use `project attach --name NAME

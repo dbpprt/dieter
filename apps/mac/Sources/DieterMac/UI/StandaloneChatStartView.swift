@@ -263,6 +263,16 @@ struct StandaloneChatStartView: View {
                 .help(preview.workspaceDetail)
                 .accessibilityIdentifier("chats.new.workspace")
                 .smokeTarget("chats.new.workspace")
+                Toggle(isOn: $form.intent.vaultAccess) {
+                    Label("Vault", systemImage: form.intent.vaultAccess ? "key.fill" : "key")
+                }
+                .toggleStyle(.button)
+                .help(
+                    "Let this chat's agent use the account vault's passwords and TOTP codes. "
+                        + "Set only when starting the chat."
+                )
+                .accessibilityIdentifier("chats.new.vault-access")
+                .accessibilityValue(form.intent.vaultAccess ? "Allowed" : "Not allowed")
                 Spacer(minLength: 0)
             }
             .font(.system(size: 11, weight: .medium))

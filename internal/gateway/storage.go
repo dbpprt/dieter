@@ -16,6 +16,10 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// Pending enrollments are small rows that expire after ten minutes; each client
+// network is also limited to a few (maxActiveEnrollmentsPerClient).
+const maxPendingEnrollments = 10000
+
 type Store struct {
 	Root string
 	DB   *sql.DB
@@ -30,17 +34,6 @@ type Session struct {
 	ExpiresAt time.Time `json:"expiresAt"`
 }
 
-type OAuthPending struct {
-	StateHash       string    `json:"stateHash"`
-	Verifier        string    `json:"verifier"`
-	NativeRedirect  string    `json:"nativeRedirect,omitempty"`
-	NativeChallenge string    `json:"nativeChallenge,omitempty"`
-	EnrollmentID    string    `json:"enrollmentId,omitempty"`
-	EnrollmentCode  string    `json:"enrollmentCode,omitempty"`
-	CreatedAt       time.Time `json:"createdAt"`
-	ExpiresAt       time.Time `json:"expiresAt"`
-}
-
 type NativeCode struct {
 	CodeHash  string    `json:"codeHash"`
 	Challenge string    `json:"challenge"`
@@ -50,10 +43,21 @@ type NativeCode struct {
 }
 
 type AuthState struct {
-	Sessions  []Session            `json:"sessions,omitempty"`
-	Pending   []OAuthPending       `json:"pending,omitempty"`
-	Codes     []NativeCode         `json:"codes,omitempty"`
-	Approvals []EnrollmentApproval `json:"approvals,omitempty"`
+	Sessions  []Session              `json:"sessions,omitempty"`
+	Codes     []NativeCode           `json:"codes,omitempty"`
+	Approvals []EnrollmentApproval   `json:"approvals,omitempty"`
+	SignIns   []NativeSignInApproval `json:"signIns,omitempty"`
+}
+
+// NativeSignInApproval waits for the user to confirm an app sign-in after
+// GitHub has identified them. Only allowed accounts reach this state.
+type NativeSignInApproval struct {
+	TokenHash string    `json:"tokenHash"`
+	Redirect  string    `json:"redirect"`
+	Challenge string    `json:"challenge"`
+	GitHubID  int64     `json:"githubId"`
+	Login     string    `json:"login"`
+	ExpiresAt time.Time `json:"expiresAt"`
 }
 
 type EnrollmentApproval struct {
@@ -324,7 +328,7 @@ func (s *Store) CreateEnrollment(record EnrollmentRecord) error {
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM enrollments`).Scan(&active); err != nil {
 		return err
 	}
-	if active >= 1000 {
+	if active >= maxPendingEnrollments {
 		return errors.New("too many pending daemon enrollments")
 	}
 	if _, err := tx.Exec(`INSERT INTO enrollments(id, secret_hash, user_code, name, public_key, expires_at) VALUES(?, ?, ?, ?, ?, ?)`,

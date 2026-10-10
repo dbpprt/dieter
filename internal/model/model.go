@@ -244,8 +244,11 @@ type Card struct {
 	WorkspaceBaseBranch string                     `json:"workspaceBaseBranch,omitempty" yaml:"workspace_base_branch,omitempty"`
 	WorkspaceBaseRemote string                     `json:"workspaceBaseRemote,omitempty" yaml:"workspace_base_remote,omitempty"`
 	RemotePublishMode   string                     `json:"remotePublishMode,omitempty" yaml:"remote_publish_mode,omitempty"`
-	Workspace           *WorkspaceSummary          `json:"workspace,omitempty" yaml:"-"`
-	PullRequest         *PullRequestSummary        `json:"pullRequest,omitempty" yaml:"-"`
+	// VaultAccess is owner-local and fixed at creation: agent turns of this
+	// conversation may use the account vault.
+	VaultAccess bool                `json:"vaultAccess,omitempty" yaml:"vault_access,omitempty"`
+	Workspace   *WorkspaceSummary   `json:"workspace,omitempty" yaml:"-"`
+	PullRequest *PullRequestSummary `json:"pullRequest,omitempty" yaml:"-"`
 }
 
 // Workspace is the durable execution location for either a board card or a
@@ -526,6 +529,7 @@ type Schedule struct {
 	Effort          string            `json:"effort,omitempty" yaml:"effort,omitempty"`
 	ProviderOptions map[string]string `json:"providerOptions,omitempty" yaml:"provider_options,omitempty"`
 	WorkspaceMode   string            `json:"workspaceMode" yaml:"workspace_mode"`
+	VaultAccess     bool              `json:"vaultAccess,omitempty" yaml:"vault_access,omitempty"`
 	LabelIDs        []string          `json:"labelIds,omitempty" yaml:"labels,omitempty"`
 	OpenCardPolicy  string            `json:"openCardPolicy" yaml:"open_card_policy"`
 	MisfirePolicy   string            `json:"misfirePolicy" yaml:"misfire_policy"`

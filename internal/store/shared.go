@@ -777,6 +777,11 @@ func checkoutFields(checkout model.Checkout) map[string]json.RawMessage {
 // Generic conflict resolution observes the same immutable identity and local
 // owner rules as typed operations. It cannot reassign a durable conversation.
 func (s *Store) validateDomainWrite(identity PeerIdentity, data PeerData, kind, id string, value []byte, deleted bool) error {
+	// Only the vault metadata record may be resolved generically, after two
+	// machines initialized a vault concurrently. Members and items are sealed.
+	if peerstore.VaultKind(kind) && kind != "vault" {
+		return errors.New("vault members and items change only through `dieter vault`")
+	}
 	if !peerstore.DomainKind(kind) {
 		return nil
 	}

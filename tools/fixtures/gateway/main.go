@@ -36,6 +36,7 @@ import (
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/harness"
+	"github.com/dbpprt/dieter/internal/localauth"
 	"github.com/dbpprt/dieter/internal/machine"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/peerstore"
@@ -242,13 +243,17 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 	if err != nil {
 		return err
 	}
+	localToken, err := localauth.Ensure(data.Root)
+	if err != nil {
+		return err
+	}
 	var control *controlrtc.Manager
 	if os.Getenv("DIETER_TEST_CONTROL_WEBRTC") == "1" {
 		tlsListener, listenErr := net.Listen("tcp", "127.0.0.1:0")
 		if listenErr != nil {
 			return listenErr
 		}
-		direct, directErr := daemon.NewDirectServer(identity, boardListener.Addr().String())
+		direct, directErr := daemon.NewDirectServer(identity, boardListener.Addr().String(), localToken)
 		if directErr != nil {
 			tlsListener.Close()
 			return directErr
@@ -335,11 +340,11 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 		secondTarget = secondListener.Addr().String()
 	}
 
-	routes, err := fixtureDirectRoute(directRoute, identity, boardListener.Addr().String())
+	routes, err := fixtureDirectRoute(directRoute, identity, boardListener.Addr().String(), localToken)
 	if err != nil {
 		return err
 	}
-	tunnel := &daemon.GatewayClient{ControlWebRTC: control != nil, Identity: identity, LocalTarget: boardListener.Addr().String(), Version: buildinfo.ReleaseVersion, Routes: routes.candidates, Log: logger}
+	tunnel := &daemon.GatewayClient{ControlWebRTC: control != nil, Identity: identity, LocalTarget: boardListener.Addr().String(), LocalToken: localToken, Version: buildinfo.ReleaseVersion, Routes: routes.candidates, Log: logger}
 	if usageFixture {
 		tunnel.ProviderQuotas = isolatedUsageQuotas{}
 	}
@@ -453,8 +458,12 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 			return err
 		}
 		secondDaemonID = secondIdentity.ID
+		secondToken, tokenErr := localauth.Read(secondData.Root)
+		if tokenErr != nil {
+			return tokenErr
+		}
 		secondTunnel := &daemon.GatewayClient{
-			Identity: secondIdentity, LocalTarget: secondTarget, Version: buildinfo.ReleaseVersion,
+			Identity: secondIdentity, LocalTarget: secondTarget, LocalToken: secondToken, Version: buildinfo.ReleaseVersion,
 			Log: logger,
 		}
 		acknowledged := make(chan struct{}, 1)
@@ -580,7 +589,7 @@ type directRoutes struct {
 // fixtureDirectRoute mirrors the daemon's automatic loopback route, so clients
 // exercise pinned direct TLS against the disposable daemon. A "dead" route
 // advertises a port that refuses connections to cover relay fallback.
-func fixtureDirectRoute(mode string, identity *daemon.Identity, localTarget string) (directRoutes, error) {
+func fixtureDirectRoute(mode string, identity *daemon.Identity, localTarget, localToken string) (directRoutes, error) {
 	if mode == "" {
 		return directRoutes{close: func() {}}, nil
 	}
@@ -596,7 +605,7 @@ func fixtureDirectRoute(mode string, identity *daemon.Identity, localTarget stri
 		}
 		return directRoutes{candidates: []*gatewayv1.DirectCandidate{candidate}, close: func() {}}, nil
 	}
-	server, err := daemon.NewDirectServer(identity, localTarget)
+	server, err := daemon.NewDirectServer(identity, localTarget, localToken)
 	if err != nil {
 		_ = listener.Close()
 		return directRoutes{}, err

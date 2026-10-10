@@ -21,7 +21,8 @@ before sharing the report. No response-time SLA is currently promised.
 
 Harness workers run unsandboxed with the daemon user's permissions. Authenticated
 clients have account-wide operator access, not granular read-only scopes. The
-raw daemon data plane must remain loopback-only. Public access uses authenticated
+raw daemon data plane must remain loopback-only and requires a user-only local
+API token, so other local users cannot drive it. Public access uses authenticated
 TLS routes or the gateway relay.
 
 The gateway does not store project code, transcripts, or provider credentials,

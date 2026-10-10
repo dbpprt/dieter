@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
+	"github.com/dbpprt/dieter/internal/localauth"
 	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"github.com/dbpprt/dieter/internal/server"
 	"github.com/dbpprt/dieter/internal/store"
@@ -36,6 +37,10 @@ func permissionCLI(t *testing.T, options remotedesktop.Options) (*CLI, *bytes.Bu
 		t.Fatal(err)
 	}
 	if _, err := dieterdaemon.NewStatusWriter(local.Root, dieterdaemon.RuntimeStatus{PID: os.Getpid(), State: "running", ListenAddress: strings.TrimPrefix(host.URL, "http://")}); err != nil {
+		t.Fatal(err)
+	}
+	// The caller still needs the daemon's local API token.
+	if err := os.WriteFile(localauth.Path(local.Root), []byte(testLocalToken(t, data.Root)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	client := New(local)

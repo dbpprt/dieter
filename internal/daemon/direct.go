@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dbpprt/dieter/internal/buildinfo"
+	"github.com/dbpprt/dieter/internal/localauth"
 	"github.com/dbpprt/dieter/internal/rpcraw"
 	"github.com/dbpprt/dieter/internal/trust"
 	"google.golang.org/grpc"
@@ -31,11 +32,13 @@ type DirectServer struct {
 
 const maxActiveDirectRPCs = 64
 
-func NewDirectServer(identity *Identity, localTarget string) (*DirectServer, error) {
+// NewDirectServer forwards verified direct RPCs to the raw local API, which
+// admits them with the daemon's local API token.
+func NewDirectServer(identity *Identity, localTarget, localToken string) (*DirectServer, error) {
 	if identity == nil || !identity.Enrolled() {
 		return nil, errors.New("daemon is not enrolled")
 	}
-	local, err := grpc.NewClient(localTarget, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDefaultCallOptions(grpc.ForceCodec(rpcraw.Codec{}), grpc.MaxCallRecvMsgSize(16<<20), grpc.MaxCallSendMsgSize(16<<20)))
+	local, err := grpc.NewClient(localTarget, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithPerRPCCredentials(localauth.Credentials{Token: localToken}), grpc.WithDefaultCallOptions(grpc.ForceCodec(rpcraw.Codec{}), grpc.MaxCallRecvMsgSize(16<<20), grpc.MaxCallSendMsgSize(16<<20)))
 	if err != nil {
 		return nil, err
 	}

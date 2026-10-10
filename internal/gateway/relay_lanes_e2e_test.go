@@ -110,7 +110,7 @@ func newRelayFleet(t *testing.T, setup ...func(*Server)) *relayFleet {
 	t.Cleanup(func() { httpServer.Close() })
 	tunnelCtx, stop := context.WithCancel(ctx)
 	done := make(chan error, 1)
-	tunnel := &daemon.GatewayClient{Identity: target, LocalTarget: local.Addr().String(), Version: "0.4.1-dev", Log: log, Timing: daemon.GatewayTiming{ReconnectInitialBackoff: 20 * time.Millisecond, ReconnectMaximumBackoff: 50 * time.Millisecond}}
+	tunnel := &daemon.GatewayClient{Identity: target, LocalTarget: local.Addr().String(), LocalToken: testLocalToken(t, ts.Root), Version: "0.4.1-dev", Log: log, Timing: daemon.GatewayTiming{ReconnectInitialBackoff: 20 * time.Millisecond, ReconnectMaximumBackoff: 50 * time.Millisecond}}
 	go func() { done <- tunnel.Run(tunnelCtx) }()
 	t.Cleanup(func() {
 		stop()
@@ -467,7 +467,7 @@ func TestRelayFleetStalledPeerDoesNotDelayHealthyPeerConvergence(t *testing.T) {
 	defer cancelTunnel()
 	tunnelDone := make(chan error, 1)
 	go func() {
-		tunnelDone <- (&daemon.GatewayClient{Identity: stalled, LocalTarget: listener.Addr().String(), Version: "0.4.1-dev", Log: log}).Run(tunnelCtx)
+		tunnelDone <- (&daemon.GatewayClient{Identity: stalled, LocalTarget: listener.Addr().String(), LocalToken: "local-token", Version: "0.4.1-dev", Log: log}).Run(tunnelCtx)
 	}()
 	defer func() {
 		cancelTunnel()

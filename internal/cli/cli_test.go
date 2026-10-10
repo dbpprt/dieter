@@ -232,7 +232,7 @@ func TestNewDaemonDirectRouteAdvertisesEphemeralLoopback(t *testing.T) {
 		CertificatePEM: []byte("enrolled"),
 		PrivateKey:     private,
 	}
-	route, err := newDaemonDirectRoute(identity, "127.0.0.1:4242", "loopback", "127.0.0.1:0", "127.0.0.1", "loopback", 1000)
+	route, err := newDaemonDirectRoute(identity, "127.0.0.1:4242", "local-token", "loopback", "127.0.0.1:0", "127.0.0.1", "loopback", 1000)
 	if err != nil {
 		t.Fatal(err)
 	}

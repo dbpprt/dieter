@@ -55,6 +55,7 @@ Quota commands are account-wide and reject `--machine`.
 | `schedule`                              | Templates, previews, occurrence history, and dispatch                                                  |
 | `settings`, `prompt`                    | Portable settings and scoped prompt configuration                                                      |
 | `peer`, `kv`                            | Peer synchronization, portable records, revisions, ordering, and subscriptions                         |
+| `vault`                                 | End-to-end encrypted logins and TOTP, machine membership, agent use, and the access audit              |
 | `watch`, `status`, `storage`, `version` | Bounded observation, counts, paths, and build identity                                                 |
 
 ## Common recipes

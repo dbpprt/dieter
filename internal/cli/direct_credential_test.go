@@ -138,7 +138,7 @@ func TestRemoteWaitSurvivesTwoDirectTokenExpirations(t *testing.T) {
 	dieterv1.RegisterDieterServiceServer(local, execution)
 	go func() { _ = local.Serve(localListener) }()
 	t.Cleanup(local.Stop)
-	direct, err := daemon.NewDirectServer(identity, localListener.Addr().String())
+	direct, err := daemon.NewDirectServer(identity, localListener.Addr().String(), "local-token")
 	if err != nil {
 		t.Fatal(err)
 	}

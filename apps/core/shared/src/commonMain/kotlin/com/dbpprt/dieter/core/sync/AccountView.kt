@@ -679,6 +679,7 @@ class AccountProjector {
                 workspace_base_branch = owned.workspace_base_branch,
                 workspace_base_remote = owned.workspace_base_remote,
                 remote_publish_mode = owned.remote_publish_mode,
+                vault_access = owned.vault_access,
                 workspace = owned.workspace,
                 pull_request = owned.pull_request,
                 token_usage = owned.token_usage,

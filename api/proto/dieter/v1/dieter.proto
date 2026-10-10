@@ -190,6 +190,23 @@ service DieterService {
   rpc RunSchedule(ScheduleRef) returns (ScheduleRun);
   rpc SetScheduleEnabled(SetScheduleEnabledRequest) returns (Schedule);
   rpc ListScheduleRuns(ListScheduleRunsRequest) returns (ScheduleRunsResponse);
+
+  // Account vault. Items replicate only as ciphertext; RPCs that return
+  // decrypted content refuse the gateway relay route. Agent turns may use the
+  // vault only when their card, chat or schedule was created with vault access.
+  rpc GetVaultStatus(google.protobuf.Empty) returns (VaultStatus);
+  rpc InitVault(InitVaultRequest) returns (InitVaultResponse);
+  rpc JoinVault(JoinVaultRequest) returns (JoinVaultResponse);
+  rpc ApproveVaultMember(ApproveVaultMemberRequest) returns (VaultStatus);
+  rpc RemoveVaultMember(VaultMemberRef) returns (VaultStatus);
+  rpc RotateVault(RotateVaultRequest) returns (RotateVaultResponse);
+  rpc ListVaultItems(ListVaultItemsRequest) returns (VaultItemsResponse);
+  rpc GetVaultItem(VaultItemRef) returns (VaultItem);
+  rpc RevealVaultItem(RevealVaultItemRequest) returns (RevealVaultItemResponse);
+  rpc CreateVaultItem(CreateVaultItemRequest) returns (VaultItem);
+  rpc UpdateVaultItem(UpdateVaultItemRequest) returns (VaultItem);
+  rpc DeleteVaultItem(VaultItemRef) returns (VaultItem);
+  rpc ListVaultAudit(ListVaultAuditRequest) returns (VaultAuditResponse);
 }
 
 message HealthResponse {
@@ -628,6 +645,9 @@ message Card {
   // to correlate with credential-free quota snapshots and is not a provider
   // credential or raw provider account identifier.
   string provider_account_key = 37;
+  // Owner-local: agent turns of this conversation may use the account vault.
+  // Set only at creation; forks and merges never inherit it.
+  bool vault_access = 47;
 }
 
 message CardOrigin {
@@ -1098,6 +1118,8 @@ message CreateConversationRequest {
   bool auto_generate_title = 18;
   string workspace_base_remote = 19;
   string remote_publish_mode = 20;
+  // Grant this conversation's agent turns access to the account vault.
+  bool vault_access = 25;
 }
 
 message ListChatsRequest {
@@ -2315,6 +2337,8 @@ message Schedule {
   repeated string next_runs = 23;
   map<string, string> provider_options = 24;
   string workspace_mode = 25;
+  // Cards created by this schedule get vault access. Owner-local.
+  bool vault_access = 42;
 }
 
 message ScheduleDraft {
@@ -2338,6 +2362,7 @@ message ScheduleDraft {
   reserved 17;
   map<string, string> provider_options = 18;
   string workspace_mode = 19;
+  bool vault_access = 41;
 }
 
 message SaveScheduleRequest {
@@ -2598,4 +2623,182 @@ message KVFrame {
 message MarkConversationReadRequest {
   string card_id = 1;
   int64 response_seq = 2;
+}
+
+// Vault caller as the daemon classified it. Agent callers present their
+// turn token; operator callers are local or remote humans.
+message VaultCaller {
+  // "operator", "agent" or "remote".
+  string kind = 1;
+  string card_id = 2;
+  bool vault_access = 3;
+  // "local", "direct" or "relay".
+  string route = 4;
+}
+
+message VaultMember {
+  string id = 1;
+  string name = 2;
+  string daemon_id = 3;
+  bool recovery = 4;
+  bool pending = 5;
+  bool self = 6;
+  // Verification code computed from this machine's pinned vault root. Compare
+  // it with the code printed on the joining machine before approving.
+  string join_code = 7;
+  string requested_at = 8;
+  string approved_at = 9;
+  string approved_by = 10;
+}
+
+message VaultStatus {
+  // "none", "locked", "pending" or "unlocked".
+  string state = 1;
+  string vault_id = 2;
+  string member_id = 3;
+  string join_code = 4;
+  repeated VaultMember members = 5;
+  int32 item_count = 6;
+  repeated string conflict_item_ids = 7;
+  string current_key_id = 8;
+  string created_at = 9;
+  VaultCaller caller = 10;
+}
+
+message InitVaultRequest {
+  string name = 1;
+}
+
+message InitVaultResponse {
+  VaultStatus status = 1;
+  // Printed once and never stored. It can unlock any machine.
+  string recovery_key = 2;
+}
+
+message JoinVaultRequest {
+  string name = 1;
+  // Empty requests approval from an existing member.
+  string recovery_key = 2;
+}
+
+message JoinVaultResponse {
+  VaultStatus status = 1;
+  string join_code = 2;
+}
+
+message ApproveVaultMemberRequest {
+  string member_id = 1;
+  string join_code = 2;
+}
+
+message VaultMemberRef {
+  string member_id = 1;
+}
+
+message RotateVaultRequest {
+  bool new_recovery_key = 1;
+}
+
+message RotateVaultResponse {
+  VaultStatus status = 1;
+  string recovery_key = 2;
+}
+
+// Item metadata. Secret values are only returned by RevealVaultItem.
+message VaultItem {
+  string id = 1;
+  string name = 2;
+  repeated string urls = 3;
+  string username = 4;
+  bool has_password = 5;
+  bool has_totp = 6;
+  bool has_notes = 7;
+  string created_at = 8;
+  string updated_at = 9;
+  string updated_by = 10;
+  bool conflict = 11;
+  // Set when this machine cannot authenticate the item.
+  string error = 12;
+}
+
+message ListVaultItemsRequest {
+  // Case-insensitive substring of name, username or URL.
+  string query = 1;
+  // Items whose URL host matches this URL's host.
+  string url = 2;
+}
+
+message VaultItemsResponse {
+  repeated VaultItem items = 1;
+}
+
+message VaultItemRef {
+  // Exact vi_ ID or unique case-insensitive name.
+  string item = 1;
+}
+
+message RevealVaultItemRequest {
+  string item = 1;
+  // password, username, totp, url, notes or name.
+  repeated string fields = 2;
+  // Audited intent: "get", "totp" or "exec".
+  string purpose = 3;
+}
+
+message RevealVaultItemResponse {
+  VaultItem item = 1;
+  map<string, string> values = 2;
+  // Seconds until a returned TOTP code changes.
+  int32 totp_remaining_seconds = 3;
+}
+
+message CreateVaultItemRequest {
+  string name = 1;
+  repeated string urls = 2;
+  string username = 3;
+  string password = 4;
+  // Generate the password on the daemon; it is never returned.
+  bool generate_password = 5;
+  int32 password_length = 6;
+  bool password_without_symbols = 7;
+  // otpauth://totp URI or base32 secret.
+  string totp = 8;
+  string notes = 9;
+}
+
+message UpdateVaultItemRequest {
+  string item = 1;
+  optional string name = 2;
+  repeated string urls = 3;
+  bool replace_urls = 4;
+  optional string username = 5;
+  optional string password = 6;
+  bool generate_password = 7;
+  int32 password_length = 8;
+  bool password_without_symbols = 9;
+  optional string totp = 10;
+  optional string notes = 11;
+}
+
+message ListVaultAuditRequest {
+  int32 limit = 1;
+  string item = 2;
+  string card_id = 3;
+}
+
+message VaultAuditEntry {
+  string time = 1;
+  string action = 2;
+  string item_id = 3;
+  string item_name = 4;
+  string fields = 5;
+  string caller = 6;
+  string card_id = 7;
+  string route = 8;
+  string outcome = 9;
+  string detail = 10;
+}
+
+message VaultAuditResponse {
+  repeated VaultAuditEntry entries = 1;
 }

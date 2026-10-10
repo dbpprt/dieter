@@ -107,6 +107,16 @@ struct NewConversationSheet: View {
                             .help("Configure the branch, base and publishing options")
                     }
                     .help(preview.workspaceDetail)
+                    LabeledContent("Vault") {
+                        Toggle("Allow vault access", isOn: $form.intent.vaultAccess)
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                            .accessibilityIdentifier("new-card.vault-access")
+                    }
+                    .help(
+                        "Let this task's agent use the account vault's passwords and TOTP codes. "
+                            + "Set only when creating."
+                    )
 
                     if preview.catalog == .none {
                         HStack(spacing: 8) {

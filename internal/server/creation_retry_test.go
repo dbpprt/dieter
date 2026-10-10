@@ -78,7 +78,7 @@ func creationRetryClient(t *testing.T, data *store.Store, runner harness.Runner)
 			t.Error(err)
 		}
 	})
-	return dieterv1connect.NewDieterServiceClient(server.Client(), server.URL)
+	return dieterv1connect.NewDieterServiceClient(localHTTPClient(server.Client(), data.Root), server.URL)
 }
 
 func TestCreateConversationRetriesFirstTurnAfterStorageAdmissionFailure(t *testing.T) {

@@ -23,6 +23,7 @@ import (
 	"github.com/dbpprt/dieter/internal/gateway"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/localauth"
 	"github.com/dbpprt/dieter/internal/machine"
 	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"github.com/dbpprt/dieter/internal/server"
@@ -451,7 +452,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	defer screenManager.Shutdown(context.Background())
 	var control *controlrtc.Manager
 	if withRTC {
-		transport, err := newDaemonDirectRoute(identity, localListener.Addr().String(), "control-tls", "127.0.0.1:0", "127.0.0.1", "loopback", 1000)
+		transport, err := newDaemonDirectRoute(identity, localListener.Addr().String(), testLocalToken(t, remoteStore.Root), "control-tls", "127.0.0.1:0", "127.0.0.1", "loopback", 1000)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -482,7 +483,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	go func() { _ = remoteHTTP.Serve(localListener) }()
 	defer remoteHTTP.Close()
 
-	directRoute, err := newDaemonDirectRoute(identity, localListener.Addr().String(), "cli-e2e", "127.0.0.1:0", "127.0.0.1", "loopback", 1000)
+	directRoute, err := newDaemonDirectRoute(identity, localListener.Addr().String(), testLocalToken(t, remoteStore.Root), "cli-e2e", "127.0.0.1:0", "127.0.0.1", "loopback", 1000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -494,7 +495,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 			_ = directRoute.listener.Close()
 		}
 	}()
-	tunnel := &dieterdaemon.GatewayClient{ControlWebRTC: withRTC, Identity: identity, LocalTarget: localListener.Addr().String(), Version: "0.4.1-dev", Routes: []*gatewayv1.DirectCandidate{directRoute.candidate}, Log: logger}
+	tunnel := &dieterdaemon.GatewayClient{ControlWebRTC: withRTC, Identity: identity, LocalTarget: localListener.Addr().String(), LocalToken: testLocalToken(t, remoteStore.Root), Version: "0.4.1-dev", Routes: []*gatewayv1.DirectCandidate{directRoute.candidate}, Log: logger}
 	go func() { _ = tunnel.Run(ctx) }()
 	deadline := time.Now().Add(5 * time.Second)
 	for !gatewayServer.Hub.Online(identity.ID) && time.Now().Before(deadline) {
@@ -652,6 +653,10 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	if _, err := dieterdaemon.NewStatusWriter(localCLIStore.Root, dieterdaemon.RuntimeStatus{PID: os.Getpid(), Version: "test", State: "running", ListenAddress: localListener.Addr().String(), GatewayState: dieterdaemon.GatewayNotEnrolled}); err != nil {
 		t.Fatal(err)
 	}
+	// This caller root stands in for the daemon user's own CLI.
+	if err := os.WriteFile(localauth.Path(localCLIStore.Root), []byte(testLocalToken(t, remoteStore.Root)), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	localCLI := New(localCLIStore)
 
 	var localCLIOutput bytes.Buffer
@@ -660,6 +665,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	localCLI.Close()
 	assertChangesCLI(t, first, &firstOutput)
 	assertMachineHomeTerminalCLI(t, first, &firstOutput)
+	assertVaultDirectCLI(t, first, &firstOutput)
 	assertQueueRemovalCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	assertCardMergeCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	assertProjectHostnameCLI(t, first, &firstOutput, remoteProject.ID)
@@ -724,6 +730,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	}
 	assertScreenSessionCLI(t, second, &secondOutput, nil)
 	assertMachineHomeTerminalCLI(t, second, &secondOutput)
+	assertVaultRelayRefusedCLI(t, second, &secondOutput)
 	assertQueueRemovalCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertCardMergeCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertProjectHostnameCLI(t, second, &secondOutput, remoteProject.ID)

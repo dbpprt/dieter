@@ -313,7 +313,7 @@ func TestTLSProxyForwardingCannotBeSpoofed(t *testing.T) {
 		}
 	}
 	for address := range gateway.Auth.rates {
-		if address != "127.0.0.1" && address != "::1" {
+		if address != "127.0.0.1" && address != "::/64" {
 			t.Fatalf("untrusted forwarded address used: %s", address)
 		}
 	}

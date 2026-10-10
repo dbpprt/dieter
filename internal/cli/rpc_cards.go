@@ -168,6 +168,8 @@ Options:
   --base-branch BRANCH      Optional worktree base branch
   --base-remote REMOTE      Optional board/project remote override
   --remote-publish MODE     manual, pull_request, or push_base
+  --vault                   Let this conversation's agent turns use the account
+                            vault (fixed at creation; see dieter vault --help)
   --format json|id          Output format
 
 Destination defaults to the running local daemon. Pass global --machine ID|NAME
@@ -199,6 +201,7 @@ before the command to create on another enrolled machine.
 	baseBranch := set.String("base-branch", "", "worktree base branch")
 	baseRemote := set.String("base-remote", "", "base remote override")
 	remotePublish := set.String("remote-publish", "", "manual, pull_request, or push_base")
+	vaultAccess := set.Bool("vault", false, "grant agent turns access to the account vault")
 	format := set.String("format", "json", "json or id")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
@@ -252,7 +255,7 @@ before the command to create on another enrolled machine.
 		LabelIds: splitCSV(*labels), DeferStart: !chat && *lane != "running", Attachments: messageParts(attachments),
 		ClientId: "dieter-cli", CommandId: commandID, WorkspaceMode: *workspaceMode,
 		WorkspaceBranch: *branch, WorkspaceBaseBranch: *baseBranch, AutoGenerateTitle: *autoTitle,
-		WorkspaceBaseRemote: *baseRemote, RemotePublishMode: *remotePublish,
+		WorkspaceBaseRemote: *baseRemote, RemotePublishMode: *remotePublish, VaultAccess: *vaultAccess,
 	}
 	client, rpcCtx, err := c.rpc(ctx)
 	if err != nil {

@@ -39,12 +39,18 @@ type Service struct {
 	config         Config
 	enrollMu       sync.Mutex
 	enrollAttempts map[string][]time.Time
+	enrollActive   map[string][]time.Time
 }
 
-const maxEnrollmentRatePeers = 4096
+const (
+	maxEnrollmentRatePeers = 4096
+	// Pending enrollments share one global table. Each client network may hold
+	// only a few, so filling it takes many networks rather than a handful.
+	maxActiveEnrollmentsPerClient = 8
+)
 
 func NewService(store *Store, auth *Auth, keys *Keys, hub *Hub, config Config) *Service {
-	return &Service{store: store, auth: auth, keys: keys, hub: hub, config: config, enrollAttempts: map[string][]time.Time{}}
+	return &Service{store: store, auth: auth, keys: keys, hub: hub, config: config, enrollAttempts: map[string][]time.Time{}, enrollActive: map[string][]time.Time{}}
 }
 
 func (s *Service) SetQuotaManager(manager *QuotaManager) { s.quota = manager }
@@ -290,6 +296,9 @@ func (s *Service) BeginDaemonEnrollment(ctx context.Context, request *gatewayv1.
 	_, _ = rand.Read(codeRaw)
 	code := strings.ToUpper(base64.RawURLEncoding.EncodeToString(codeRaw))
 	expires := time.Now().UTC().Add(10 * time.Minute)
+	if !s.reserveEnrollment(ctx, expires) {
+		return nil, status.Error(codes.ResourceExhausted, "too many pending daemon enrollments from this network")
+	}
 	id := randomID("enroll_")
 	if err := s.store.CreateEnrollment(EnrollmentRecord{ID: id, SecretHash: s.auth.digest(secret), UserCode: code, Name: name, PublicKey: request.GetPublicKey(), ExpiresAt: expires}); err != nil {
 		return nil, status.Error(codes.Internal, "create daemon enrollment")
@@ -299,7 +308,7 @@ func (s *Service) BeginDaemonEnrollment(ctx context.Context, request *gatewayv1.
 }
 
 func (s *Service) allowEnrollment(ctx context.Context) bool {
-	host := gatewayContextClientAddress(ctx)
+	host := clientNetworkKey(gatewayContextClientAddress(ctx))
 	now := time.Now().UTC()
 	cutoff := now.Add(-time.Minute)
 	s.enrollMu.Lock()
@@ -324,6 +333,35 @@ func (s *Service) allowEnrollment(ctx context.Context) bool {
 		return false
 	}
 	s.enrollAttempts[host] = append(kept, now)
+	return true
+}
+
+// reserveEnrollment counts an enrollment against its client network until it
+// expires; completing it early does not free the slot.
+func (s *Service) reserveEnrollment(ctx context.Context, expires time.Time) bool {
+	host := clientNetworkKey(gatewayContextClientAddress(ctx))
+	now := time.Now().UTC()
+	s.enrollMu.Lock()
+	defer s.enrollMu.Unlock()
+	for peer, active := range s.enrollActive {
+		if len(active) == 0 || !active[len(active)-1].After(now) {
+			delete(s.enrollActive, peer)
+		}
+	}
+	if _, exists := s.enrollActive[host]; !exists && len(s.enrollActive) >= maxEnrollmentRatePeers {
+		return false
+	}
+	kept := s.enrollActive[host][:0]
+	for _, expiry := range s.enrollActive[host] {
+		if expiry.After(now) {
+			kept = append(kept, expiry)
+		}
+	}
+	if len(kept) >= maxActiveEnrollmentsPerClient {
+		s.enrollActive[host] = kept
+		return false
+	}
+	s.enrollActive[host] = append(kept, expires)
 	return true
 }
 

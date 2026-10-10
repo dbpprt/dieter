@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/netip"
 	"strings"
+	"sync"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/peer"
@@ -36,6 +37,51 @@ func gatewayClientAddress(r *http.Request, proxyMode bool) string {
 		}
 	}
 	return host
+}
+
+// clientNetworkKey groups IPv6 clients by /64, the smallest prefix a host is
+// usually assigned, so rotating addresses inside one network cannot multiply a
+// per-client limit.
+func clientNetworkKey(address string) string {
+	ip, err := netip.ParseAddr(address)
+	if err != nil || ip.Is4() {
+		return address
+	}
+	prefix, err := ip.Prefix(64)
+	if err != nil {
+		return address
+	}
+	return prefix.String()
+}
+
+// clientSlots bounds concurrent unauthenticated work per client network. The
+// global pools stay as a backstop; this keeps one source from holding all of
+// a pool that every daemon and client shares.
+type clientSlots struct {
+	mu    sync.Mutex
+	limit int
+	held  map[string]int
+}
+
+func newClientSlots(limit int) *clientSlots {
+	return &clientSlots{limit: limit, held: map[string]int{}}
+}
+
+func (s *clientSlots) acquire(client string) (func(), bool) {
+	key := clientNetworkKey(client)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.held[key] >= s.limit {
+		return nil, false
+	}
+	s.held[key]++
+	return sync.OnceFunc(func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.held[key]--; s.held[key] <= 0 {
+			delete(s.held, key)
+		}
+	}), true
 }
 
 func canonicalPeerHost(address string) string {

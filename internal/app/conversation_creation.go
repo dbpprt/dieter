@@ -62,7 +62,7 @@ type CardInput struct {
 	WorkspaceBaseRemote, RemotePublishMode                       string
 	LabelIDs                                                     []string
 	ProviderOptions                                              map[string]string
-	DeferStart, AutoGenerateTitle                                bool
+	DeferStart, AutoGenerateTitle, VaultAccess                   bool
 	ID                                                           string
 	Origin                                                       *model.CardOrigin
 	Attachments                                                  []model.UIMessagePart
@@ -137,7 +137,7 @@ func (s *Service) createConversation(ctx context.Context, input CardInput, scope
 			return model.Card{}, err
 		}
 	}
-	createInput := store.CreateCardInput{CheckoutID: input.CheckoutID, Project: project.ID, Board: input.Board, ID: input.ID, Lane: input.Lane, Title: input.Title, Prompt: input.Prompt, Provider: provider, Model: input.Model, Effort: input.Effort, ProviderOptions: input.ProviderOptions, LabelIDs: input.LabelIDs, Origin: input.Origin, WorkspaceMode: input.WorkspaceMode, WorkspaceBranch: input.WorkspaceBranch, WorkspaceBaseBranch: input.WorkspaceBaseBranch, WorkspaceBaseRemote: input.WorkspaceBaseRemote, RemotePublishMode: input.RemotePublishMode}
+	createInput := store.CreateCardInput{CheckoutID: input.CheckoutID, Project: project.ID, Board: input.Board, ID: input.ID, Lane: input.Lane, Title: input.Title, Prompt: input.Prompt, Provider: provider, Model: input.Model, Effort: input.Effort, ProviderOptions: input.ProviderOptions, LabelIDs: input.LabelIDs, Origin: input.Origin, WorkspaceMode: input.WorkspaceMode, WorkspaceBranch: input.WorkspaceBranch, WorkspaceBaseBranch: input.WorkspaceBaseBranch, WorkspaceBaseRemote: input.WorkspaceBaseRemote, RemotePublishMode: input.RemotePublishMode, VaultAccess: input.VaultAccess}
 	var card model.Card
 	if scope == model.ConversationScopeChat {
 		card, err = s.Store.CreateChat(createInput)

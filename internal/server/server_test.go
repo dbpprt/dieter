@@ -83,7 +83,7 @@ func newConnectTestClient(t *testing.T, data *store.Store, runner harness.Runner
 	application := NewWithRunner(data, slog.New(slog.NewTextHandler(io.Discard, nil)), runner)
 	server := httptest.NewServer(application.Handler())
 	t.Cleanup(server.Close)
-	return dieterv1connect.NewDieterServiceClient(server.Client(), server.URL), server.URL
+	return dieterv1connect.NewDieterServiceClient(localHTTPClient(server.Client(), data.Root), server.URL), server.URL
 }
 
 func TestFixtureCatalogServesHarnessesAndSettingsWithoutDiscovery(t *testing.T) {
@@ -99,7 +99,7 @@ func TestFixtureCatalogServesHarnessesAndSettingsWithoutDiscovery(t *testing.T) 
 	})
 	httpServer := httptest.NewServer(application.Handler())
 	defer httpServer.Close()
-	client := dieterv1connect.NewDieterServiceClient(httpServer.Client(), httpServer.URL)
+	client := dieterv1connect.NewDieterServiceClient(localHTTPClient(httpServer.Client(), application.store.Root), httpServer.URL)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	catalog, err := client.GetHarnesses(ctx, connect.NewRequest(&emptypb.Empty{}))
@@ -179,12 +179,13 @@ func TestConnectConversationEndToEnd(t *testing.T) {
 	runner := &fakeRunner{}
 	client, baseURL := newConnectTestClient(t, data, runner)
 
-	rootResponse, err := http.Get(baseURL + "/")
+	raw := localHTTPClient(http.DefaultClient, data.Root)
+	rootResponse, err := raw.Get(baseURL + "/")
 	if err != nil || rootResponse.StatusCode != http.StatusNotFound {
 		t.Fatalf("machine-only root response=%v err=%v", rootResponse, err)
 	}
 	_ = rootResponse.Body.Close()
-	legacyResponse, err := http.Get(baseURL + "/api/v1/state")
+	legacyResponse, err := raw.Get(baseURL + "/api/v1/state")
 	if err != nil {
 		t.Fatal(err)
 	}

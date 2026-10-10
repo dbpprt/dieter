@@ -155,6 +155,19 @@ const (
 	DieterService_RunSchedule_FullMethodName                        = "/dieter.v1.DieterService/RunSchedule"
 	DieterService_SetScheduleEnabled_FullMethodName                 = "/dieter.v1.DieterService/SetScheduleEnabled"
 	DieterService_ListScheduleRuns_FullMethodName                   = "/dieter.v1.DieterService/ListScheduleRuns"
+	DieterService_GetVaultStatus_FullMethodName                     = "/dieter.v1.DieterService/GetVaultStatus"
+	DieterService_InitVault_FullMethodName                          = "/dieter.v1.DieterService/InitVault"
+	DieterService_JoinVault_FullMethodName                          = "/dieter.v1.DieterService/JoinVault"
+	DieterService_ApproveVaultMember_FullMethodName                 = "/dieter.v1.DieterService/ApproveVaultMember"
+	DieterService_RemoveVaultMember_FullMethodName                  = "/dieter.v1.DieterService/RemoveVaultMember"
+	DieterService_RotateVault_FullMethodName                        = "/dieter.v1.DieterService/RotateVault"
+	DieterService_ListVaultItems_FullMethodName                     = "/dieter.v1.DieterService/ListVaultItems"
+	DieterService_GetVaultItem_FullMethodName                       = "/dieter.v1.DieterService/GetVaultItem"
+	DieterService_RevealVaultItem_FullMethodName                    = "/dieter.v1.DieterService/RevealVaultItem"
+	DieterService_CreateVaultItem_FullMethodName                    = "/dieter.v1.DieterService/CreateVaultItem"
+	DieterService_UpdateVaultItem_FullMethodName                    = "/dieter.v1.DieterService/UpdateVaultItem"
+	DieterService_DeleteVaultItem_FullMethodName                    = "/dieter.v1.DieterService/DeleteVaultItem"
+	DieterService_ListVaultAudit_FullMethodName                     = "/dieter.v1.DieterService/ListVaultAudit"
 )
 
 // DieterServiceClient is the client API for DieterService service.
@@ -327,6 +340,22 @@ type DieterServiceClient interface {
 	RunSchedule(ctx context.Context, in *ScheduleRef, opts ...grpc.CallOption) (*ScheduleRun, error)
 	SetScheduleEnabled(ctx context.Context, in *SetScheduleEnabledRequest, opts ...grpc.CallOption) (*Schedule, error)
 	ListScheduleRuns(ctx context.Context, in *ListScheduleRunsRequest, opts ...grpc.CallOption) (*ScheduleRunsResponse, error)
+	// Account vault. Items replicate only as ciphertext; RPCs that return
+	// decrypted content refuse the gateway relay route. Agent turns may use the
+	// vault only when their card, chat or schedule was created with vault access.
+	GetVaultStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*VaultStatus, error)
+	InitVault(ctx context.Context, in *InitVaultRequest, opts ...grpc.CallOption) (*InitVaultResponse, error)
+	JoinVault(ctx context.Context, in *JoinVaultRequest, opts ...grpc.CallOption) (*JoinVaultResponse, error)
+	ApproveVaultMember(ctx context.Context, in *ApproveVaultMemberRequest, opts ...grpc.CallOption) (*VaultStatus, error)
+	RemoveVaultMember(ctx context.Context, in *VaultMemberRef, opts ...grpc.CallOption) (*VaultStatus, error)
+	RotateVault(ctx context.Context, in *RotateVaultRequest, opts ...grpc.CallOption) (*RotateVaultResponse, error)
+	ListVaultItems(ctx context.Context, in *ListVaultItemsRequest, opts ...grpc.CallOption) (*VaultItemsResponse, error)
+	GetVaultItem(ctx context.Context, in *VaultItemRef, opts ...grpc.CallOption) (*VaultItem, error)
+	RevealVaultItem(ctx context.Context, in *RevealVaultItemRequest, opts ...grpc.CallOption) (*RevealVaultItemResponse, error)
+	CreateVaultItem(ctx context.Context, in *CreateVaultItemRequest, opts ...grpc.CallOption) (*VaultItem, error)
+	UpdateVaultItem(ctx context.Context, in *UpdateVaultItemRequest, opts ...grpc.CallOption) (*VaultItem, error)
+	DeleteVaultItem(ctx context.Context, in *VaultItemRef, opts ...grpc.CallOption) (*VaultItem, error)
+	ListVaultAudit(ctx context.Context, in *ListVaultAuditRequest, opts ...grpc.CallOption) (*VaultAuditResponse, error)
 }
 
 type dieterServiceClient struct {
@@ -1750,6 +1779,136 @@ func (c *dieterServiceClient) ListScheduleRuns(ctx context.Context, in *ListSche
 	return out, nil
 }
 
+func (c *dieterServiceClient) GetVaultStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*VaultStatus, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VaultStatus)
+	err := c.cc.Invoke(ctx, DieterService_GetVaultStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) InitVault(ctx context.Context, in *InitVaultRequest, opts ...grpc.CallOption) (*InitVaultResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InitVaultResponse)
+	err := c.cc.Invoke(ctx, DieterService_InitVault_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) JoinVault(ctx context.Context, in *JoinVaultRequest, opts ...grpc.CallOption) (*JoinVaultResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JoinVaultResponse)
+	err := c.cc.Invoke(ctx, DieterService_JoinVault_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) ApproveVaultMember(ctx context.Context, in *ApproveVaultMemberRequest, opts ...grpc.CallOption) (*VaultStatus, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VaultStatus)
+	err := c.cc.Invoke(ctx, DieterService_ApproveVaultMember_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) RemoveVaultMember(ctx context.Context, in *VaultMemberRef, opts ...grpc.CallOption) (*VaultStatus, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VaultStatus)
+	err := c.cc.Invoke(ctx, DieterService_RemoveVaultMember_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) RotateVault(ctx context.Context, in *RotateVaultRequest, opts ...grpc.CallOption) (*RotateVaultResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RotateVaultResponse)
+	err := c.cc.Invoke(ctx, DieterService_RotateVault_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) ListVaultItems(ctx context.Context, in *ListVaultItemsRequest, opts ...grpc.CallOption) (*VaultItemsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VaultItemsResponse)
+	err := c.cc.Invoke(ctx, DieterService_ListVaultItems_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) GetVaultItem(ctx context.Context, in *VaultItemRef, opts ...grpc.CallOption) (*VaultItem, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VaultItem)
+	err := c.cc.Invoke(ctx, DieterService_GetVaultItem_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) RevealVaultItem(ctx context.Context, in *RevealVaultItemRequest, opts ...grpc.CallOption) (*RevealVaultItemResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RevealVaultItemResponse)
+	err := c.cc.Invoke(ctx, DieterService_RevealVaultItem_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) CreateVaultItem(ctx context.Context, in *CreateVaultItemRequest, opts ...grpc.CallOption) (*VaultItem, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VaultItem)
+	err := c.cc.Invoke(ctx, DieterService_CreateVaultItem_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) UpdateVaultItem(ctx context.Context, in *UpdateVaultItemRequest, opts ...grpc.CallOption) (*VaultItem, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VaultItem)
+	err := c.cc.Invoke(ctx, DieterService_UpdateVaultItem_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) DeleteVaultItem(ctx context.Context, in *VaultItemRef, opts ...grpc.CallOption) (*VaultItem, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VaultItem)
+	err := c.cc.Invoke(ctx, DieterService_DeleteVaultItem_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) ListVaultAudit(ctx context.Context, in *ListVaultAuditRequest, opts ...grpc.CallOption) (*VaultAuditResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VaultAuditResponse)
+	err := c.cc.Invoke(ctx, DieterService_ListVaultAudit_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DieterServiceServer is the server API for DieterService service.
 // All implementations must embed UnimplementedDieterServiceServer
 // for forward compatibility.
@@ -1920,6 +2079,22 @@ type DieterServiceServer interface {
 	RunSchedule(context.Context, *ScheduleRef) (*ScheduleRun, error)
 	SetScheduleEnabled(context.Context, *SetScheduleEnabledRequest) (*Schedule, error)
 	ListScheduleRuns(context.Context, *ListScheduleRunsRequest) (*ScheduleRunsResponse, error)
+	// Account vault. Items replicate only as ciphertext; RPCs that return
+	// decrypted content refuse the gateway relay route. Agent turns may use the
+	// vault only when their card, chat or schedule was created with vault access.
+	GetVaultStatus(context.Context, *emptypb.Empty) (*VaultStatus, error)
+	InitVault(context.Context, *InitVaultRequest) (*InitVaultResponse, error)
+	JoinVault(context.Context, *JoinVaultRequest) (*JoinVaultResponse, error)
+	ApproveVaultMember(context.Context, *ApproveVaultMemberRequest) (*VaultStatus, error)
+	RemoveVaultMember(context.Context, *VaultMemberRef) (*VaultStatus, error)
+	RotateVault(context.Context, *RotateVaultRequest) (*RotateVaultResponse, error)
+	ListVaultItems(context.Context, *ListVaultItemsRequest) (*VaultItemsResponse, error)
+	GetVaultItem(context.Context, *VaultItemRef) (*VaultItem, error)
+	RevealVaultItem(context.Context, *RevealVaultItemRequest) (*RevealVaultItemResponse, error)
+	CreateVaultItem(context.Context, *CreateVaultItemRequest) (*VaultItem, error)
+	UpdateVaultItem(context.Context, *UpdateVaultItemRequest) (*VaultItem, error)
+	DeleteVaultItem(context.Context, *VaultItemRef) (*VaultItem, error)
+	ListVaultAudit(context.Context, *ListVaultAuditRequest) (*VaultAuditResponse, error)
 	mustEmbedUnimplementedDieterServiceServer()
 }
 
@@ -2334,6 +2509,45 @@ func (UnimplementedDieterServiceServer) SetScheduleEnabled(context.Context, *Set
 }
 func (UnimplementedDieterServiceServer) ListScheduleRuns(context.Context, *ListScheduleRunsRequest) (*ScheduleRunsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListScheduleRuns not implemented")
+}
+func (UnimplementedDieterServiceServer) GetVaultStatus(context.Context, *emptypb.Empty) (*VaultStatus, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetVaultStatus not implemented")
+}
+func (UnimplementedDieterServiceServer) InitVault(context.Context, *InitVaultRequest) (*InitVaultResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method InitVault not implemented")
+}
+func (UnimplementedDieterServiceServer) JoinVault(context.Context, *JoinVaultRequest) (*JoinVaultResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method JoinVault not implemented")
+}
+func (UnimplementedDieterServiceServer) ApproveVaultMember(context.Context, *ApproveVaultMemberRequest) (*VaultStatus, error) {
+	return nil, status.Error(codes.Unimplemented, "method ApproveVaultMember not implemented")
+}
+func (UnimplementedDieterServiceServer) RemoveVaultMember(context.Context, *VaultMemberRef) (*VaultStatus, error) {
+	return nil, status.Error(codes.Unimplemented, "method RemoveVaultMember not implemented")
+}
+func (UnimplementedDieterServiceServer) RotateVault(context.Context, *RotateVaultRequest) (*RotateVaultResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RotateVault not implemented")
+}
+func (UnimplementedDieterServiceServer) ListVaultItems(context.Context, *ListVaultItemsRequest) (*VaultItemsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListVaultItems not implemented")
+}
+func (UnimplementedDieterServiceServer) GetVaultItem(context.Context, *VaultItemRef) (*VaultItem, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetVaultItem not implemented")
+}
+func (UnimplementedDieterServiceServer) RevealVaultItem(context.Context, *RevealVaultItemRequest) (*RevealVaultItemResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevealVaultItem not implemented")
+}
+func (UnimplementedDieterServiceServer) CreateVaultItem(context.Context, *CreateVaultItemRequest) (*VaultItem, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateVaultItem not implemented")
+}
+func (UnimplementedDieterServiceServer) UpdateVaultItem(context.Context, *UpdateVaultItemRequest) (*VaultItem, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateVaultItem not implemented")
+}
+func (UnimplementedDieterServiceServer) DeleteVaultItem(context.Context, *VaultItemRef) (*VaultItem, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteVaultItem not implemented")
+}
+func (UnimplementedDieterServiceServer) ListVaultAudit(context.Context, *ListVaultAuditRequest) (*VaultAuditResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListVaultAudit not implemented")
 }
 func (UnimplementedDieterServiceServer) mustEmbedUnimplementedDieterServiceServer() {}
 func (UnimplementedDieterServiceServer) testEmbeddedByValue()                       {}
@@ -4737,6 +4951,240 @@ func _DieterService_ListScheduleRuns_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DieterService_GetVaultStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).GetVaultStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_GetVaultStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).GetVaultStatus(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_InitVault_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InitVaultRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).InitVault(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_InitVault_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).InitVault(ctx, req.(*InitVaultRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_JoinVault_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JoinVaultRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).JoinVault(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_JoinVault_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).JoinVault(ctx, req.(*JoinVaultRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_ApproveVaultMember_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ApproveVaultMemberRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).ApproveVaultMember(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_ApproveVaultMember_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).ApproveVaultMember(ctx, req.(*ApproveVaultMemberRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_RemoveVaultMember_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VaultMemberRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).RemoveVaultMember(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_RemoveVaultMember_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).RemoveVaultMember(ctx, req.(*VaultMemberRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_RotateVault_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RotateVaultRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).RotateVault(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_RotateVault_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).RotateVault(ctx, req.(*RotateVaultRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_ListVaultItems_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListVaultItemsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).ListVaultItems(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_ListVaultItems_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).ListVaultItems(ctx, req.(*ListVaultItemsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_GetVaultItem_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VaultItemRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).GetVaultItem(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_GetVaultItem_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).GetVaultItem(ctx, req.(*VaultItemRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_RevealVaultItem_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevealVaultItemRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).RevealVaultItem(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_RevealVaultItem_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).RevealVaultItem(ctx, req.(*RevealVaultItemRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_CreateVaultItem_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateVaultItemRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).CreateVaultItem(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_CreateVaultItem_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).CreateVaultItem(ctx, req.(*CreateVaultItemRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_UpdateVaultItem_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateVaultItemRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).UpdateVaultItem(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_UpdateVaultItem_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).UpdateVaultItem(ctx, req.(*UpdateVaultItemRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_DeleteVaultItem_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VaultItemRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).DeleteVaultItem(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_DeleteVaultItem_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).DeleteVaultItem(ctx, req.(*VaultItemRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_ListVaultAudit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListVaultAuditRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).ListVaultAudit(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_ListVaultAudit_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).ListVaultAudit(ctx, req.(*ListVaultAuditRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DieterService_ServiceDesc is the grpc.ServiceDesc for DieterService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -5255,6 +5703,58 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListScheduleRuns",
 			Handler:    _DieterService_ListScheduleRuns_Handler,
+		},
+		{
+			MethodName: "GetVaultStatus",
+			Handler:    _DieterService_GetVaultStatus_Handler,
+		},
+		{
+			MethodName: "InitVault",
+			Handler:    _DieterService_InitVault_Handler,
+		},
+		{
+			MethodName: "JoinVault",
+			Handler:    _DieterService_JoinVault_Handler,
+		},
+		{
+			MethodName: "ApproveVaultMember",
+			Handler:    _DieterService_ApproveVaultMember_Handler,
+		},
+		{
+			MethodName: "RemoveVaultMember",
+			Handler:    _DieterService_RemoveVaultMember_Handler,
+		},
+		{
+			MethodName: "RotateVault",
+			Handler:    _DieterService_RotateVault_Handler,
+		},
+		{
+			MethodName: "ListVaultItems",
+			Handler:    _DieterService_ListVaultItems_Handler,
+		},
+		{
+			MethodName: "GetVaultItem",
+			Handler:    _DieterService_GetVaultItem_Handler,
+		},
+		{
+			MethodName: "RevealVaultItem",
+			Handler:    _DieterService_RevealVaultItem_Handler,
+		},
+		{
+			MethodName: "CreateVaultItem",
+			Handler:    _DieterService_CreateVaultItem_Handler,
+		},
+		{
+			MethodName: "UpdateVaultItem",
+			Handler:    _DieterService_UpdateVaultItem_Handler,
+		},
+		{
+			MethodName: "DeleteVaultItem",
+			Handler:    _DieterService_DeleteVaultItem_Handler,
+		},
+		{
+			MethodName: "ListVaultAudit",
+			Handler:    _DieterService_ListVaultAudit_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

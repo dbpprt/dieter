@@ -3007,6 +3007,13 @@ public nonisolated struct ClientCreationIntent: @unchecked Sendable {
     set {_uniqueStorage()._remotePublishMode = newValue}
   }
 
+  /// Let the conversation's agent turns use the account vault. Fixed at
+  /// creation; never remembered between forms.
+  public var vaultAccess: Bool {
+    get {_storage._vaultAccess}
+    set {_uniqueStorage()._vaultAccess = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -16113,7 +16120,7 @@ nonisolated extension ClientRememberCreation: SwiftProtobuf.Message, SwiftProtob
 
 nonisolated extension ClientCreationIntent: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".CreationIntent"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}board_id\0\u{3}checkout_id\0\u{1}lane\0\u{1}title\0\u{1}prompt\0\u{1}attachments\0\u{1}selection\0\u{3}label_ids\0\u{3}workspace_mode\0\u{3}workspace_branch\0\u{3}workspace_base_branch\0\u{3}workspace_base_remote\0\u{3}remote_publish_mode\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}board_id\0\u{3}checkout_id\0\u{1}lane\0\u{1}title\0\u{1}prompt\0\u{1}attachments\0\u{1}selection\0\u{3}label_ids\0\u{3}workspace_mode\0\u{3}workspace_branch\0\u{3}workspace_base_branch\0\u{3}workspace_base_remote\0\u{3}remote_publish_mode\0\u{3}vault_access\0")
 
   fileprivate class _StorageClass {
     var _projectID: String = String()
@@ -16130,6 +16137,7 @@ nonisolated extension ClientCreationIntent: SwiftProtobuf.Message, SwiftProtobuf
     var _workspaceBaseBranch: String = String()
     var _workspaceBaseRemote: String = String()
     var _remotePublishMode: String = String()
+    var _vaultAccess: Bool = false
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -16154,6 +16162,7 @@ nonisolated extension ClientCreationIntent: SwiftProtobuf.Message, SwiftProtobuf
       _workspaceBaseBranch = source._workspaceBaseBranch
       _workspaceBaseRemote = source._workspaceBaseRemote
       _remotePublishMode = source._remotePublishMode
+      _vaultAccess = source._vaultAccess
     }
   }
 
@@ -16186,6 +16195,7 @@ nonisolated extension ClientCreationIntent: SwiftProtobuf.Message, SwiftProtobuf
         case 12: try { try decoder.decodeSingularStringField(value: &_storage._workspaceBaseBranch) }()
         case 13: try { try decoder.decodeSingularStringField(value: &_storage._workspaceBaseRemote) }()
         case 14: try { try decoder.decodeSingularStringField(value: &_storage._remotePublishMode) }()
+        case 15: try { try decoder.decodeSingularBoolField(value: &_storage._vaultAccess) }()
         default: break
         }
       }
@@ -16240,6 +16250,9 @@ nonisolated extension ClientCreationIntent: SwiftProtobuf.Message, SwiftProtobuf
       if !_storage._remotePublishMode.isEmpty {
         try visitor.visitSingularStringField(value: _storage._remotePublishMode, fieldNumber: 14)
       }
+      if _storage._vaultAccess != false {
+        try visitor.visitSingularBoolField(value: _storage._vaultAccess, fieldNumber: 15)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -16263,6 +16276,7 @@ nonisolated extension ClientCreationIntent: SwiftProtobuf.Message, SwiftProtobuf
         if _storage._workspaceBaseBranch != rhs_storage._workspaceBaseBranch {return false}
         if _storage._workspaceBaseRemote != rhs_storage._workspaceBaseRemote {return false}
         if _storage._remotePublishMode != rhs_storage._remotePublishMode {return false}
+        if _storage._vaultAccess != rhs_storage._vaultAccess {return false}
         return true
       }
       if !storagesAreEqual {return false}

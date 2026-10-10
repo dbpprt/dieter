@@ -16,7 +16,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -131,6 +130,7 @@ func (a *Auth) RegisterHTTP(mux *http.ServeMux) {
 	mux.HandleFunc("GET /auth/github/start", a.start)
 	mux.HandleFunc("GET /auth/github/callback", a.callback)
 	mux.HandleFunc("POST /auth/enrollment/approve", a.approveEnrollment)
+	mux.HandleFunc("POST /auth/native/approve", a.approveNativeSignIn)
 	mux.HandleFunc("POST /auth/native/exchange", a.nativeExchange)
 	mux.HandleFunc("POST /auth/native/revoke", a.nativeRevoke)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) })
@@ -388,7 +388,7 @@ func (a *Auth) start(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "authentication unavailable", http.StatusInternalServerError)
 		return
 	}
-	pending := OAuthPending{StateHash: a.digest(state), Verifier: verifier, CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(10 * time.Minute)}
+	pending := oauthPending{State: state, Verifier: verifier, ExpiresAt: time.Now().UTC().Add(10 * time.Minute)}
 	nativeRedirect := strings.TrimSpace(r.URL.Query().Get("native_redirect_uri"))
 	nativeChallenge := strings.TrimSpace(r.URL.Query().Get("native_code_challenge"))
 	if nativeRedirect != "" || nativeChallenge != "" {
@@ -411,18 +411,12 @@ func (a *Auth) start(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "a native callback or daemon enrollment is required", http.StatusBadRequest)
 		return
 	}
-	if err := a.store.UpdateAuthState(func(value *AuthState) error {
-		pruneAuthState(value, time.Now().UTC())
-		if len(value.Pending) >= maxAuthRecords {
-			return errAuthCapacity
-		}
-		value.Pending = append(value.Pending, pending)
-		return nil
-	}); err != nil {
+	sealed, err := a.sealPending(pending)
+	if err != nil {
 		http.Error(w, "authentication unavailable", http.StatusInternalServerError)
 		return
 	}
-	http.SetCookie(w, secureCookie(oauthCookie, state, 10*time.Minute))
+	http.SetCookie(w, secureCookie(oauthCookie, sealed, 10*time.Minute))
 	digest := sha256.Sum256([]byte(verifier))
 	query := url.Values{
 		"client_id": {a.config.GitHubClientID}, "redirect_uri": {a.callbackURL()}, "state": {state},
@@ -431,35 +425,30 @@ func (a *Auth) start(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, strings.TrimRight(a.config.GitHubBaseURL, "/")+"/login/oauth/authorize?"+query.Encode(), http.StatusFound)
 }
 
-// nativeRedirectAllowed accepts configured app schemes and RFC 8252 loopback
-// callbacks used by the CLI. The CLI binds the port before starting OAuth and
-// protects the one-time code with PKCE, so an unprivileged local process cannot
-// redeem a callback intended for another login attempt.
+// nativeRedirectAllowed accepts only the exact configured app callbacks. A
+// loopback callback would let any local process start its own sign-in and
+// receive the session; PKCE cannot stop a flow the attacker started.
 func (a *Auth) nativeRedirectAllowed(raw string) bool {
-	if _, ok := a.config.NativeRedirects[raw]; ok {
-		return true
-	}
-	parsed, err := url.Parse(raw)
-	if err != nil || parsed.Scheme != "http" || parsed.User != nil || parsed.Fragment != "" || parsed.RawQuery != "" {
-		return false
-	}
-	if parsed.Hostname() != "127.0.0.1" || parsed.Port() == "" || parsed.Path != "/auth/callback" {
-		return false
-	}
-	port, err := strconv.ParseUint(parsed.Port(), 10, 16)
-	return err == nil && port > 0
+	_, ok := a.config.NativeRedirects[raw]
+	return ok
 }
 
 func (a *Auth) callback(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	state := r.URL.Query().Get("state")
 	cookie, err := r.Cookie(oauthCookie)
-	if err != nil || state == "" || !hmac.Equal([]byte(state), []byte(cookie.Value)) {
+	var pending oauthPending
+	ok := false
+	if err == nil {
+		pending, ok = a.openPending(cookie.Value)
+	}
+	if !ok || state == "" || !hmac.Equal([]byte(state), []byte(pending.State)) {
 		a.completion(w, false, "Authentication state is invalid.")
 		return
 	}
-	pending, ok, err := a.consumePending(state)
-	if err != nil || !ok || r.URL.Query().Get("code") == "" || r.URL.Query().Get("error") != "" {
+	// The sealed attempt is single-use: clear it before anything else can fail.
+	http.SetCookie(w, secureCookie(oauthCookie, "", -time.Hour))
+	if !pending.ExpiresAt.After(time.Now().UTC()) || r.URL.Query().Get("code") == "" || r.URL.Query().Get("error") != "" {
 		a.completion(w, false, "Authentication expired or was rejected.")
 		return
 	}
@@ -476,21 +465,10 @@ func (a *Auth) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if pending.EnrollmentID != "" {
-		http.SetCookie(w, secureCookie(oauthCookie, "", -time.Hour))
 		a.confirmEnrollment(w, pending, user.ID, user.Login)
 		return
 	}
-	code, err := a.createNativeCode(user.ID, user.Login, pending.NativeChallenge)
-	if err != nil {
-		a.completion(w, false, "Authentication unavailable.")
-		return
-	}
-	redirect, _ := url.Parse(pending.NativeRedirect)
-	query := redirect.Query()
-	query.Set("code", code)
-	redirect.RawQuery = query.Encode()
-	http.SetCookie(w, secureCookie(oauthCookie, "", -time.Hour))
-	http.Redirect(w, r, redirect.String(), http.StatusFound)
+	a.confirmNativeSignIn(w, pending, user.ID, user.Login)
 }
 
 func (a *Auth) completion(w http.ResponseWriter, success bool, message string) {
@@ -590,24 +568,6 @@ func (a *Auth) createNativeCode(id int64, login, challenge string) (string, erro
 	return raw, err
 }
 
-func (a *Auth) consumePending(raw string) (OAuthPending, bool, error) {
-	var found OAuthPending
-	err := a.store.UpdateAuthState(func(state *AuthState) error {
-		pruneAuthState(state, time.Now().UTC())
-		next := state.Pending[:0]
-		for _, pending := range state.Pending {
-			if found.StateHash == "" && hmac.Equal([]byte(pending.StateHash), []byte(a.digest(raw))) {
-				found = pending
-			} else {
-				next = append(next, pending)
-			}
-		}
-		state.Pending = next
-		return nil
-	})
-	return found, found.StateHash != "", err
-}
-
 func (a *Auth) consumeNativeCode(raw, challenge string) (NativeCode, bool, error) {
 	var found NativeCode
 	err := a.store.UpdateAuthState(func(state *AuthState) error {
@@ -634,13 +594,6 @@ func pruneAuthState(state *AuthState, now time.Time) {
 		}
 	}
 	state.Sessions = sessions
-	pending := state.Pending[:0]
-	for _, item := range state.Pending {
-		if item.ExpiresAt.After(now) {
-			pending = append(pending, item)
-		}
-	}
-	state.Pending = pending
 	codes := state.Codes[:0]
 	for _, item := range state.Codes {
 		if item.ExpiresAt.After(now) {
@@ -655,6 +608,13 @@ func pruneAuthState(state *AuthState, now time.Time) {
 		}
 	}
 	state.Approvals = approvals
+	signIns := state.SignIns[:0]
+	for _, item := range state.SignIns {
+		if item.ExpiresAt.After(now) {
+			signIns = append(signIns, item)
+		}
+	}
+	state.SignIns = signIns
 }
 
 func (a *Auth) digest(value string) string {
@@ -716,7 +676,7 @@ func (a *Auth) githubUser(ctx context.Context, token string) (struct {
 }
 
 func (a *Auth) allow(r *http.Request) bool {
-	host := gatewayClientAddress(r, a.config.ProxyMode)
+	host := clientNetworkKey(gatewayClientAddress(r, a.config.ProxyMode))
 	now, cutoff := time.Now(), time.Now().Add(-10*time.Minute)
 	a.rateMu.Lock()
 	defer a.rateMu.Unlock()

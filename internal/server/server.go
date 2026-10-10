@@ -21,6 +21,7 @@ import (
 	"github.com/dbpprt/dieter/internal/gen/dieter/v1/dieterv1connect"
 	"github.com/dbpprt/dieter/internal/gitops"
 	"github.com/dbpprt/dieter/internal/harness"
+	"github.com/dbpprt/dieter/internal/localauth"
 	"github.com/dbpprt/dieter/internal/machine"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/remotedesktop"
@@ -51,6 +52,7 @@ type Server struct {
 	schedules               *scheduler.Manager
 	log                     *slog.Logger
 	mux                     *http.ServeMux
+	localToken              string
 	filesMu                 sync.RWMutex
 	terminals               *terminal.Manager
 	executions              *remoteexec.Manager
@@ -138,6 +140,11 @@ func newServer(data *store.Store, logger *slog.Logger, runner harness.Runner) *S
 		},
 		machineDelay: 750 * time.Millisecond, machineOperations: map[string]acceptedMachineOperation{},
 	}
+	if token, err := localauth.Ensure(data.Root); err != nil {
+		logger.Error("local API token is unavailable; the raw API rejects every request", "error", err)
+	} else {
+		s.localToken = token
+	}
 	privacy := remotedesktop.NewNativePrivacy(data.Root, "", false)
 	s.privacyDriver, s.privacyBootID = privacy, privacy.BootID
 	s.changesets = changeset.New(s.workspaces)
@@ -220,7 +227,7 @@ func newServer(data *store.Store, logger *slog.Logger, runner harness.Runner) *S
 }
 
 func (s *Server) Handler() http.Handler {
-	return h2c.NewHandler(securityHeaders(s.requestLog(localDaemonOnly(s.mux))), &http2.Server{})
+	return h2c.NewHandler(securityHeaders(s.requestLog(localDaemonOnly(s.localToken, s.mux))), &http2.Server{})
 }
 
 // CloseTerminalSessionsForTesting explicitly destroys every terminal owned by
@@ -285,8 +292,8 @@ func securityHeaders(next http.Handler) http.Handler {
 }
 
 // ListenDaemon runs Dieter's machine-local data plane without public OAuth.
-// Authentication for remote clients is enforced by the gateway or the
-// daemon's direct TLS listener, never by this loopback-only endpoint.
+// Remote clients authenticate at the gateway or the daemon's direct TLS
+// listener; this loopback endpoint admits only holders of the local API token.
 func ListenDaemon(ctx context.Context, addr string, data *store.Store, runner harness.Runner, logger *slog.Logger, remoteDesktop ...*remotedesktop.Manager) error {
 	var desktop *remotedesktop.Manager
 	if len(remoteDesktop) > 0 {

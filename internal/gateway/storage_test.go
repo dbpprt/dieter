@@ -82,7 +82,7 @@ func TestAuthUpdatesAcrossStoresCannotResurrectRevokedSession(t *testing.T) {
 		updated <- first.UpdateAuthState(func(state *AuthState) error {
 			close(read)
 			<-release
-			state.Pending = append(state.Pending, OAuthPending{StateHash: "new-login"})
+			state.Codes = append(state.Codes, NativeCode{CodeHash: "new-login"})
 			return nil
 		})
 	}()
@@ -116,7 +116,7 @@ func TestAuthUpdatesAcrossStoresCannotResurrectRevokedSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if overlapped || len(state.Sessions) != 0 || len(state.Pending) != 1 {
-		t.Fatalf("concurrent auth updates were not serialized: overlap=%v sessions=%d pending=%d", overlapped, len(state.Sessions), len(state.Pending))
+	if overlapped || len(state.Sessions) != 0 || len(state.Codes) != 1 {
+		t.Fatalf("concurrent auth updates were not serialized: overlap=%v sessions=%d codes=%d", overlapped, len(state.Sessions), len(state.Codes))
 	}
 }

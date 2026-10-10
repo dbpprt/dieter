@@ -17,6 +17,7 @@ import (
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/linkauth"
+	"github.com/dbpprt/dieter/internal/localauth"
 	"github.com/dbpprt/dieter/internal/trust"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -42,12 +43,18 @@ type dieterTransport struct {
 type dieterMetadataConn struct {
 	grpc.ClientConnInterface
 	daemonID string
+	// turnToken identifies the agent turn that runs this CLI. It is sent only
+	// to the local daemon that issued it.
+	turnToken string
 }
 
 func (c dieterMetadataConn) context(ctx context.Context) context.Context {
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-dieter-client-version", Version)
 	if c.daemonID != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-dieter-daemon-id", c.daemonID)
+	}
+	if c.turnToken != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-dieter-turn-token", c.turnToken)
 	}
 	return ctx
 }
@@ -231,12 +238,13 @@ func (c *CLI) dialDieter(ctx context.Context) (*dieterTransport, error) {
 		connection, err := grpc.NewClient(
 			statusValue.ListenAddress,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithPerRPCCredentials(localauth.FileCredentials{Root: c.Store.Root}),
 			grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(16<<20), grpc.MaxCallSendMsgSize(16<<20)),
 		)
 		if err != nil {
 			return nil, err
 		}
-		result := &dieterTransport{conn: connection, client: dieterv1.NewDieterServiceClient(readResumingConn{dieterMetadataConn{ClientConnInterface: connection}}), route: "local"}
+		result := &dieterTransport{conn: connection, client: dieterv1.NewDieterServiceClient(readResumingConn{dieterMetadataConn{ClientConnInterface: connection, turnToken: strings.TrimSpace(os.Getenv("DIETER_TURN_TOKEN"))}}), route: "local"}
 		if _, err := result.client.Health(ctx, &emptypb.Empty{}); err != nil {
 			_ = connection.Close()
 			return nil, fmt.Errorf("connect to local Dieter daemon at %s: %w", statusValue.ListenAddress, err)

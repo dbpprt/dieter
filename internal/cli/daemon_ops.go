@@ -21,6 +21,7 @@ import (
 
 	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/localauth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -219,7 +220,7 @@ func (c *CLI) daemonStatus(args []string) error {
 	} else if !dieterdaemon.IsRuntimeStatusMissing(runtimeErr) {
 		return runtimeErr
 	}
-	view.APIHealthy = daemonHealth(view.ListenAddress)
+	view.APIHealthy = daemonHealth(c.Store.Root, view.ListenAddress)
 	view.Running = view.APIHealthy && runtimeErr == nil && dieterdaemon.RuntimeStatusCurrent(runtimeStatus, time.Now().UTC())
 	if view.Running {
 		switch {
@@ -276,13 +277,13 @@ func healthLabel(healthy bool) string {
 	return "unreachable"
 }
 
-func daemonHealth(address string) bool {
+func daemonHealth(root, address string) bool {
 	if strings.TrimSpace(address) == "" {
 		return false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 1200*time.Millisecond)
 	defer cancel()
-	connection, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	connection, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithPerRPCCredentials(localauth.FileCredentials{Root: root}))
 	if err != nil {
 		return false
 	}
@@ -666,7 +667,7 @@ func restartHomebrewService(output io.Writer) (bool, error) {
 
 func setupServicePreflight(root string) error {
 	status, err := dieterdaemon.LoadRuntimeStatus(root)
-	if err == nil && dieterdaemon.RuntimeStatusCurrent(status, time.Now().UTC()) && !status.ServiceManaged && daemonHealth(status.ListenAddress) {
+	if err == nil && dieterdaemon.RuntimeStatusCurrent(status, time.Now().UTC()) && !status.ServiceManaged && daemonHealth(root, status.ListenAddress) {
 		return fmt.Errorf("foreground Dieter daemon (pid %d) is already running; stop it in its terminal with Ctrl-C, then rerun `dieter setup` so the managed service can load the enrollment", status.PID)
 	}
 	return nil
@@ -689,14 +690,14 @@ func waitForDaemon(root string, timeout time.Duration) error {
 		if err == nil {
 			last = status
 		}
-		if err == nil && dieterdaemon.RuntimeStatusCurrent(status, time.Now().UTC()) && daemonHealth(status.ListenAddress) {
+		if err == nil && dieterdaemon.RuntimeStatusCurrent(status, time.Now().UTC()) && daemonHealth(root, status.ListenAddress) {
 			if setupDaemonReady(status, identity) {
 				return nil
 			}
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
-	if last.GatewayState != "" && daemonHealth(last.ListenAddress) {
+	if last.GatewayState != "" && daemonHealth(root, last.ListenAddress) {
 		if !last.ServiceManaged || !last.Enrolled || last.DaemonID != identity.ID || last.GatewayURL != identity.GatewayURL {
 			return errors.New("daemon local API is healthy, but the managed service has not loaded the expected enrollment; stop any foreground daemon and rerun `dieter setup`")
 		}

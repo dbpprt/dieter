@@ -419,6 +419,43 @@ const (
 	// DieterServiceListScheduleRunsProcedure is the fully-qualified name of the DieterService's
 	// ListScheduleRuns RPC.
 	DieterServiceListScheduleRunsProcedure = "/dieter.v1.DieterService/ListScheduleRuns"
+	// DieterServiceGetVaultStatusProcedure is the fully-qualified name of the DieterService's
+	// GetVaultStatus RPC.
+	DieterServiceGetVaultStatusProcedure = "/dieter.v1.DieterService/GetVaultStatus"
+	// DieterServiceInitVaultProcedure is the fully-qualified name of the DieterService's InitVault RPC.
+	DieterServiceInitVaultProcedure = "/dieter.v1.DieterService/InitVault"
+	// DieterServiceJoinVaultProcedure is the fully-qualified name of the DieterService's JoinVault RPC.
+	DieterServiceJoinVaultProcedure = "/dieter.v1.DieterService/JoinVault"
+	// DieterServiceApproveVaultMemberProcedure is the fully-qualified name of the DieterService's
+	// ApproveVaultMember RPC.
+	DieterServiceApproveVaultMemberProcedure = "/dieter.v1.DieterService/ApproveVaultMember"
+	// DieterServiceRemoveVaultMemberProcedure is the fully-qualified name of the DieterService's
+	// RemoveVaultMember RPC.
+	DieterServiceRemoveVaultMemberProcedure = "/dieter.v1.DieterService/RemoveVaultMember"
+	// DieterServiceRotateVaultProcedure is the fully-qualified name of the DieterService's RotateVault
+	// RPC.
+	DieterServiceRotateVaultProcedure = "/dieter.v1.DieterService/RotateVault"
+	// DieterServiceListVaultItemsProcedure is the fully-qualified name of the DieterService's
+	// ListVaultItems RPC.
+	DieterServiceListVaultItemsProcedure = "/dieter.v1.DieterService/ListVaultItems"
+	// DieterServiceGetVaultItemProcedure is the fully-qualified name of the DieterService's
+	// GetVaultItem RPC.
+	DieterServiceGetVaultItemProcedure = "/dieter.v1.DieterService/GetVaultItem"
+	// DieterServiceRevealVaultItemProcedure is the fully-qualified name of the DieterService's
+	// RevealVaultItem RPC.
+	DieterServiceRevealVaultItemProcedure = "/dieter.v1.DieterService/RevealVaultItem"
+	// DieterServiceCreateVaultItemProcedure is the fully-qualified name of the DieterService's
+	// CreateVaultItem RPC.
+	DieterServiceCreateVaultItemProcedure = "/dieter.v1.DieterService/CreateVaultItem"
+	// DieterServiceUpdateVaultItemProcedure is the fully-qualified name of the DieterService's
+	// UpdateVaultItem RPC.
+	DieterServiceUpdateVaultItemProcedure = "/dieter.v1.DieterService/UpdateVaultItem"
+	// DieterServiceDeleteVaultItemProcedure is the fully-qualified name of the DieterService's
+	// DeleteVaultItem RPC.
+	DieterServiceDeleteVaultItemProcedure = "/dieter.v1.DieterService/DeleteVaultItem"
+	// DieterServiceListVaultAuditProcedure is the fully-qualified name of the DieterService's
+	// ListVaultAudit RPC.
+	DieterServiceListVaultAuditProcedure = "/dieter.v1.DieterService/ListVaultAudit"
 )
 
 // DieterServiceClient is a client for the dieter.v1.DieterService service.
@@ -589,6 +626,22 @@ type DieterServiceClient interface {
 	RunSchedule(context.Context, *connect.Request[v1.ScheduleRef]) (*connect.Response[v1.ScheduleRun], error)
 	SetScheduleEnabled(context.Context, *connect.Request[v1.SetScheduleEnabledRequest]) (*connect.Response[v1.Schedule], error)
 	ListScheduleRuns(context.Context, *connect.Request[v1.ListScheduleRunsRequest]) (*connect.Response[v1.ScheduleRunsResponse], error)
+	// Account vault. Items replicate only as ciphertext; RPCs that return
+	// decrypted content refuse the gateway relay route. Agent turns may use the
+	// vault only when their card, chat or schedule was created with vault access.
+	GetVaultStatus(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.VaultStatus], error)
+	InitVault(context.Context, *connect.Request[v1.InitVaultRequest]) (*connect.Response[v1.InitVaultResponse], error)
+	JoinVault(context.Context, *connect.Request[v1.JoinVaultRequest]) (*connect.Response[v1.JoinVaultResponse], error)
+	ApproveVaultMember(context.Context, *connect.Request[v1.ApproveVaultMemberRequest]) (*connect.Response[v1.VaultStatus], error)
+	RemoveVaultMember(context.Context, *connect.Request[v1.VaultMemberRef]) (*connect.Response[v1.VaultStatus], error)
+	RotateVault(context.Context, *connect.Request[v1.RotateVaultRequest]) (*connect.Response[v1.RotateVaultResponse], error)
+	ListVaultItems(context.Context, *connect.Request[v1.ListVaultItemsRequest]) (*connect.Response[v1.VaultItemsResponse], error)
+	GetVaultItem(context.Context, *connect.Request[v1.VaultItemRef]) (*connect.Response[v1.VaultItem], error)
+	RevealVaultItem(context.Context, *connect.Request[v1.RevealVaultItemRequest]) (*connect.Response[v1.RevealVaultItemResponse], error)
+	CreateVaultItem(context.Context, *connect.Request[v1.CreateVaultItemRequest]) (*connect.Response[v1.VaultItem], error)
+	UpdateVaultItem(context.Context, *connect.Request[v1.UpdateVaultItemRequest]) (*connect.Response[v1.VaultItem], error)
+	DeleteVaultItem(context.Context, *connect.Request[v1.VaultItemRef]) (*connect.Response[v1.VaultItem], error)
+	ListVaultAudit(context.Context, *connect.Request[v1.ListVaultAuditRequest]) (*connect.Response[v1.VaultAuditResponse], error)
 }
 
 // NewDieterServiceClient constructs a client for the dieter.v1.DieterService service. By default,
@@ -1412,6 +1465,84 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(dieterServiceMethods.ByName("ListScheduleRuns")),
 			connect.WithClientOptions(opts...),
 		),
+		getVaultStatus: connect.NewClient[emptypb.Empty, v1.VaultStatus](
+			httpClient,
+			baseURL+DieterServiceGetVaultStatusProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("GetVaultStatus")),
+			connect.WithClientOptions(opts...),
+		),
+		initVault: connect.NewClient[v1.InitVaultRequest, v1.InitVaultResponse](
+			httpClient,
+			baseURL+DieterServiceInitVaultProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("InitVault")),
+			connect.WithClientOptions(opts...),
+		),
+		joinVault: connect.NewClient[v1.JoinVaultRequest, v1.JoinVaultResponse](
+			httpClient,
+			baseURL+DieterServiceJoinVaultProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("JoinVault")),
+			connect.WithClientOptions(opts...),
+		),
+		approveVaultMember: connect.NewClient[v1.ApproveVaultMemberRequest, v1.VaultStatus](
+			httpClient,
+			baseURL+DieterServiceApproveVaultMemberProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("ApproveVaultMember")),
+			connect.WithClientOptions(opts...),
+		),
+		removeVaultMember: connect.NewClient[v1.VaultMemberRef, v1.VaultStatus](
+			httpClient,
+			baseURL+DieterServiceRemoveVaultMemberProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("RemoveVaultMember")),
+			connect.WithClientOptions(opts...),
+		),
+		rotateVault: connect.NewClient[v1.RotateVaultRequest, v1.RotateVaultResponse](
+			httpClient,
+			baseURL+DieterServiceRotateVaultProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("RotateVault")),
+			connect.WithClientOptions(opts...),
+		),
+		listVaultItems: connect.NewClient[v1.ListVaultItemsRequest, v1.VaultItemsResponse](
+			httpClient,
+			baseURL+DieterServiceListVaultItemsProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("ListVaultItems")),
+			connect.WithClientOptions(opts...),
+		),
+		getVaultItem: connect.NewClient[v1.VaultItemRef, v1.VaultItem](
+			httpClient,
+			baseURL+DieterServiceGetVaultItemProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("GetVaultItem")),
+			connect.WithClientOptions(opts...),
+		),
+		revealVaultItem: connect.NewClient[v1.RevealVaultItemRequest, v1.RevealVaultItemResponse](
+			httpClient,
+			baseURL+DieterServiceRevealVaultItemProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("RevealVaultItem")),
+			connect.WithClientOptions(opts...),
+		),
+		createVaultItem: connect.NewClient[v1.CreateVaultItemRequest, v1.VaultItem](
+			httpClient,
+			baseURL+DieterServiceCreateVaultItemProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("CreateVaultItem")),
+			connect.WithClientOptions(opts...),
+		),
+		updateVaultItem: connect.NewClient[v1.UpdateVaultItemRequest, v1.VaultItem](
+			httpClient,
+			baseURL+DieterServiceUpdateVaultItemProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("UpdateVaultItem")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteVaultItem: connect.NewClient[v1.VaultItemRef, v1.VaultItem](
+			httpClient,
+			baseURL+DieterServiceDeleteVaultItemProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("DeleteVaultItem")),
+			connect.WithClientOptions(opts...),
+		),
+		listVaultAudit: connect.NewClient[v1.ListVaultAuditRequest, v1.VaultAuditResponse](
+			httpClient,
+			baseURL+DieterServiceListVaultAuditProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("ListVaultAudit")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -1552,6 +1683,19 @@ type dieterServiceClient struct {
 	runSchedule                        *connect.Client[v1.ScheduleRef, v1.ScheduleRun]
 	setScheduleEnabled                 *connect.Client[v1.SetScheduleEnabledRequest, v1.Schedule]
 	listScheduleRuns                   *connect.Client[v1.ListScheduleRunsRequest, v1.ScheduleRunsResponse]
+	getVaultStatus                     *connect.Client[emptypb.Empty, v1.VaultStatus]
+	initVault                          *connect.Client[v1.InitVaultRequest, v1.InitVaultResponse]
+	joinVault                          *connect.Client[v1.JoinVaultRequest, v1.JoinVaultResponse]
+	approveVaultMember                 *connect.Client[v1.ApproveVaultMemberRequest, v1.VaultStatus]
+	removeVaultMember                  *connect.Client[v1.VaultMemberRef, v1.VaultStatus]
+	rotateVault                        *connect.Client[v1.RotateVaultRequest, v1.RotateVaultResponse]
+	listVaultItems                     *connect.Client[v1.ListVaultItemsRequest, v1.VaultItemsResponse]
+	getVaultItem                       *connect.Client[v1.VaultItemRef, v1.VaultItem]
+	revealVaultItem                    *connect.Client[v1.RevealVaultItemRequest, v1.RevealVaultItemResponse]
+	createVaultItem                    *connect.Client[v1.CreateVaultItemRequest, v1.VaultItem]
+	updateVaultItem                    *connect.Client[v1.UpdateVaultItemRequest, v1.VaultItem]
+	deleteVaultItem                    *connect.Client[v1.VaultItemRef, v1.VaultItem]
+	listVaultAudit                     *connect.Client[v1.ListVaultAuditRequest, v1.VaultAuditResponse]
 }
 
 // GetKV calls dieter.v1.DieterService.GetKV.
@@ -2231,6 +2375,71 @@ func (c *dieterServiceClient) ListScheduleRuns(ctx context.Context, req *connect
 	return c.listScheduleRuns.CallUnary(ctx, req)
 }
 
+// GetVaultStatus calls dieter.v1.DieterService.GetVaultStatus.
+func (c *dieterServiceClient) GetVaultStatus(ctx context.Context, req *connect.Request[emptypb.Empty]) (*connect.Response[v1.VaultStatus], error) {
+	return c.getVaultStatus.CallUnary(ctx, req)
+}
+
+// InitVault calls dieter.v1.DieterService.InitVault.
+func (c *dieterServiceClient) InitVault(ctx context.Context, req *connect.Request[v1.InitVaultRequest]) (*connect.Response[v1.InitVaultResponse], error) {
+	return c.initVault.CallUnary(ctx, req)
+}
+
+// JoinVault calls dieter.v1.DieterService.JoinVault.
+func (c *dieterServiceClient) JoinVault(ctx context.Context, req *connect.Request[v1.JoinVaultRequest]) (*connect.Response[v1.JoinVaultResponse], error) {
+	return c.joinVault.CallUnary(ctx, req)
+}
+
+// ApproveVaultMember calls dieter.v1.DieterService.ApproveVaultMember.
+func (c *dieterServiceClient) ApproveVaultMember(ctx context.Context, req *connect.Request[v1.ApproveVaultMemberRequest]) (*connect.Response[v1.VaultStatus], error) {
+	return c.approveVaultMember.CallUnary(ctx, req)
+}
+
+// RemoveVaultMember calls dieter.v1.DieterService.RemoveVaultMember.
+func (c *dieterServiceClient) RemoveVaultMember(ctx context.Context, req *connect.Request[v1.VaultMemberRef]) (*connect.Response[v1.VaultStatus], error) {
+	return c.removeVaultMember.CallUnary(ctx, req)
+}
+
+// RotateVault calls dieter.v1.DieterService.RotateVault.
+func (c *dieterServiceClient) RotateVault(ctx context.Context, req *connect.Request[v1.RotateVaultRequest]) (*connect.Response[v1.RotateVaultResponse], error) {
+	return c.rotateVault.CallUnary(ctx, req)
+}
+
+// ListVaultItems calls dieter.v1.DieterService.ListVaultItems.
+func (c *dieterServiceClient) ListVaultItems(ctx context.Context, req *connect.Request[v1.ListVaultItemsRequest]) (*connect.Response[v1.VaultItemsResponse], error) {
+	return c.listVaultItems.CallUnary(ctx, req)
+}
+
+// GetVaultItem calls dieter.v1.DieterService.GetVaultItem.
+func (c *dieterServiceClient) GetVaultItem(ctx context.Context, req *connect.Request[v1.VaultItemRef]) (*connect.Response[v1.VaultItem], error) {
+	return c.getVaultItem.CallUnary(ctx, req)
+}
+
+// RevealVaultItem calls dieter.v1.DieterService.RevealVaultItem.
+func (c *dieterServiceClient) RevealVaultItem(ctx context.Context, req *connect.Request[v1.RevealVaultItemRequest]) (*connect.Response[v1.RevealVaultItemResponse], error) {
+	return c.revealVaultItem.CallUnary(ctx, req)
+}
+
+// CreateVaultItem calls dieter.v1.DieterService.CreateVaultItem.
+func (c *dieterServiceClient) CreateVaultItem(ctx context.Context, req *connect.Request[v1.CreateVaultItemRequest]) (*connect.Response[v1.VaultItem], error) {
+	return c.createVaultItem.CallUnary(ctx, req)
+}
+
+// UpdateVaultItem calls dieter.v1.DieterService.UpdateVaultItem.
+func (c *dieterServiceClient) UpdateVaultItem(ctx context.Context, req *connect.Request[v1.UpdateVaultItemRequest]) (*connect.Response[v1.VaultItem], error) {
+	return c.updateVaultItem.CallUnary(ctx, req)
+}
+
+// DeleteVaultItem calls dieter.v1.DieterService.DeleteVaultItem.
+func (c *dieterServiceClient) DeleteVaultItem(ctx context.Context, req *connect.Request[v1.VaultItemRef]) (*connect.Response[v1.VaultItem], error) {
+	return c.deleteVaultItem.CallUnary(ctx, req)
+}
+
+// ListVaultAudit calls dieter.v1.DieterService.ListVaultAudit.
+func (c *dieterServiceClient) ListVaultAudit(ctx context.Context, req *connect.Request[v1.ListVaultAuditRequest]) (*connect.Response[v1.VaultAuditResponse], error) {
+	return c.listVaultAudit.CallUnary(ctx, req)
+}
+
 // DieterServiceHandler is an implementation of the dieter.v1.DieterService service.
 type DieterServiceHandler interface {
 	// Account-scoped portable JSON state. Revisions and cursors belong to a replica;
@@ -2399,6 +2608,22 @@ type DieterServiceHandler interface {
 	RunSchedule(context.Context, *connect.Request[v1.ScheduleRef]) (*connect.Response[v1.ScheduleRun], error)
 	SetScheduleEnabled(context.Context, *connect.Request[v1.SetScheduleEnabledRequest]) (*connect.Response[v1.Schedule], error)
 	ListScheduleRuns(context.Context, *connect.Request[v1.ListScheduleRunsRequest]) (*connect.Response[v1.ScheduleRunsResponse], error)
+	// Account vault. Items replicate only as ciphertext; RPCs that return
+	// decrypted content refuse the gateway relay route. Agent turns may use the
+	// vault only when their card, chat or schedule was created with vault access.
+	GetVaultStatus(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.VaultStatus], error)
+	InitVault(context.Context, *connect.Request[v1.InitVaultRequest]) (*connect.Response[v1.InitVaultResponse], error)
+	JoinVault(context.Context, *connect.Request[v1.JoinVaultRequest]) (*connect.Response[v1.JoinVaultResponse], error)
+	ApproveVaultMember(context.Context, *connect.Request[v1.ApproveVaultMemberRequest]) (*connect.Response[v1.VaultStatus], error)
+	RemoveVaultMember(context.Context, *connect.Request[v1.VaultMemberRef]) (*connect.Response[v1.VaultStatus], error)
+	RotateVault(context.Context, *connect.Request[v1.RotateVaultRequest]) (*connect.Response[v1.RotateVaultResponse], error)
+	ListVaultItems(context.Context, *connect.Request[v1.ListVaultItemsRequest]) (*connect.Response[v1.VaultItemsResponse], error)
+	GetVaultItem(context.Context, *connect.Request[v1.VaultItemRef]) (*connect.Response[v1.VaultItem], error)
+	RevealVaultItem(context.Context, *connect.Request[v1.RevealVaultItemRequest]) (*connect.Response[v1.RevealVaultItemResponse], error)
+	CreateVaultItem(context.Context, *connect.Request[v1.CreateVaultItemRequest]) (*connect.Response[v1.VaultItem], error)
+	UpdateVaultItem(context.Context, *connect.Request[v1.UpdateVaultItemRequest]) (*connect.Response[v1.VaultItem], error)
+	DeleteVaultItem(context.Context, *connect.Request[v1.VaultItemRef]) (*connect.Response[v1.VaultItem], error)
+	ListVaultAudit(context.Context, *connect.Request[v1.ListVaultAuditRequest]) (*connect.Response[v1.VaultAuditResponse], error)
 }
 
 // NewDieterServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -3218,6 +3443,84 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(dieterServiceMethods.ByName("ListScheduleRuns")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dieterServiceGetVaultStatusHandler := connect.NewUnaryHandler(
+		DieterServiceGetVaultStatusProcedure,
+		svc.GetVaultStatus,
+		connect.WithSchema(dieterServiceMethods.ByName("GetVaultStatus")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceInitVaultHandler := connect.NewUnaryHandler(
+		DieterServiceInitVaultProcedure,
+		svc.InitVault,
+		connect.WithSchema(dieterServiceMethods.ByName("InitVault")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceJoinVaultHandler := connect.NewUnaryHandler(
+		DieterServiceJoinVaultProcedure,
+		svc.JoinVault,
+		connect.WithSchema(dieterServiceMethods.ByName("JoinVault")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceApproveVaultMemberHandler := connect.NewUnaryHandler(
+		DieterServiceApproveVaultMemberProcedure,
+		svc.ApproveVaultMember,
+		connect.WithSchema(dieterServiceMethods.ByName("ApproveVaultMember")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceRemoveVaultMemberHandler := connect.NewUnaryHandler(
+		DieterServiceRemoveVaultMemberProcedure,
+		svc.RemoveVaultMember,
+		connect.WithSchema(dieterServiceMethods.ByName("RemoveVaultMember")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceRotateVaultHandler := connect.NewUnaryHandler(
+		DieterServiceRotateVaultProcedure,
+		svc.RotateVault,
+		connect.WithSchema(dieterServiceMethods.ByName("RotateVault")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceListVaultItemsHandler := connect.NewUnaryHandler(
+		DieterServiceListVaultItemsProcedure,
+		svc.ListVaultItems,
+		connect.WithSchema(dieterServiceMethods.ByName("ListVaultItems")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceGetVaultItemHandler := connect.NewUnaryHandler(
+		DieterServiceGetVaultItemProcedure,
+		svc.GetVaultItem,
+		connect.WithSchema(dieterServiceMethods.ByName("GetVaultItem")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceRevealVaultItemHandler := connect.NewUnaryHandler(
+		DieterServiceRevealVaultItemProcedure,
+		svc.RevealVaultItem,
+		connect.WithSchema(dieterServiceMethods.ByName("RevealVaultItem")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceCreateVaultItemHandler := connect.NewUnaryHandler(
+		DieterServiceCreateVaultItemProcedure,
+		svc.CreateVaultItem,
+		connect.WithSchema(dieterServiceMethods.ByName("CreateVaultItem")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceUpdateVaultItemHandler := connect.NewUnaryHandler(
+		DieterServiceUpdateVaultItemProcedure,
+		svc.UpdateVaultItem,
+		connect.WithSchema(dieterServiceMethods.ByName("UpdateVaultItem")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceDeleteVaultItemHandler := connect.NewUnaryHandler(
+		DieterServiceDeleteVaultItemProcedure,
+		svc.DeleteVaultItem,
+		connect.WithSchema(dieterServiceMethods.ByName("DeleteVaultItem")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceListVaultAuditHandler := connect.NewUnaryHandler(
+		DieterServiceListVaultAuditProcedure,
+		svc.ListVaultAudit,
+		connect.WithSchema(dieterServiceMethods.ByName("ListVaultAudit")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/dieter.v1.DieterService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case DieterServiceGetKVProcedure:
@@ -3490,6 +3793,32 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 			dieterServiceSetScheduleEnabledHandler.ServeHTTP(w, r)
 		case DieterServiceListScheduleRunsProcedure:
 			dieterServiceListScheduleRunsHandler.ServeHTTP(w, r)
+		case DieterServiceGetVaultStatusProcedure:
+			dieterServiceGetVaultStatusHandler.ServeHTTP(w, r)
+		case DieterServiceInitVaultProcedure:
+			dieterServiceInitVaultHandler.ServeHTTP(w, r)
+		case DieterServiceJoinVaultProcedure:
+			dieterServiceJoinVaultHandler.ServeHTTP(w, r)
+		case DieterServiceApproveVaultMemberProcedure:
+			dieterServiceApproveVaultMemberHandler.ServeHTTP(w, r)
+		case DieterServiceRemoveVaultMemberProcedure:
+			dieterServiceRemoveVaultMemberHandler.ServeHTTP(w, r)
+		case DieterServiceRotateVaultProcedure:
+			dieterServiceRotateVaultHandler.ServeHTTP(w, r)
+		case DieterServiceListVaultItemsProcedure:
+			dieterServiceListVaultItemsHandler.ServeHTTP(w, r)
+		case DieterServiceGetVaultItemProcedure:
+			dieterServiceGetVaultItemHandler.ServeHTTP(w, r)
+		case DieterServiceRevealVaultItemProcedure:
+			dieterServiceRevealVaultItemHandler.ServeHTTP(w, r)
+		case DieterServiceCreateVaultItemProcedure:
+			dieterServiceCreateVaultItemHandler.ServeHTTP(w, r)
+		case DieterServiceUpdateVaultItemProcedure:
+			dieterServiceUpdateVaultItemHandler.ServeHTTP(w, r)
+		case DieterServiceDeleteVaultItemProcedure:
+			dieterServiceDeleteVaultItemHandler.ServeHTTP(w, r)
+		case DieterServiceListVaultAuditProcedure:
+			dieterServiceListVaultAuditHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -4037,4 +4366,56 @@ func (UnimplementedDieterServiceHandler) SetScheduleEnabled(context.Context, *co
 
 func (UnimplementedDieterServiceHandler) ListScheduleRuns(context.Context, *connect.Request[v1.ListScheduleRunsRequest]) (*connect.Response[v1.ScheduleRunsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.ListScheduleRuns is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) GetVaultStatus(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.VaultStatus], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetVaultStatus is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) InitVault(context.Context, *connect.Request[v1.InitVaultRequest]) (*connect.Response[v1.InitVaultResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.InitVault is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) JoinVault(context.Context, *connect.Request[v1.JoinVaultRequest]) (*connect.Response[v1.JoinVaultResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.JoinVault is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) ApproveVaultMember(context.Context, *connect.Request[v1.ApproveVaultMemberRequest]) (*connect.Response[v1.VaultStatus], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.ApproveVaultMember is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) RemoveVaultMember(context.Context, *connect.Request[v1.VaultMemberRef]) (*connect.Response[v1.VaultStatus], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.RemoveVaultMember is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) RotateVault(context.Context, *connect.Request[v1.RotateVaultRequest]) (*connect.Response[v1.RotateVaultResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.RotateVault is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) ListVaultItems(context.Context, *connect.Request[v1.ListVaultItemsRequest]) (*connect.Response[v1.VaultItemsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.ListVaultItems is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) GetVaultItem(context.Context, *connect.Request[v1.VaultItemRef]) (*connect.Response[v1.VaultItem], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetVaultItem is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) RevealVaultItem(context.Context, *connect.Request[v1.RevealVaultItemRequest]) (*connect.Response[v1.RevealVaultItemResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.RevealVaultItem is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) CreateVaultItem(context.Context, *connect.Request[v1.CreateVaultItemRequest]) (*connect.Response[v1.VaultItem], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.CreateVaultItem is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) UpdateVaultItem(context.Context, *connect.Request[v1.UpdateVaultItemRequest]) (*connect.Response[v1.VaultItem], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.UpdateVaultItem is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) DeleteVaultItem(context.Context, *connect.Request[v1.VaultItemRef]) (*connect.Response[v1.VaultItem], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.DeleteVaultItem is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) ListVaultAudit(context.Context, *connect.Request[v1.ListVaultAuditRequest]) (*connect.Response[v1.VaultAuditResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.ListVaultAudit is not implemented"))
 }

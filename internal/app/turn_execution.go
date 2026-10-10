@@ -110,6 +110,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 			return context.Canceled
 		}
 		defer endHostWork()
+		chunks = s.redactVaultSecrets(detail.Card.ID, turnID, chunks)
 		var conversation model.Conversation
 		err := retryWhileStoreBusy(ctx, func() (err error) {
 			if len(chunks) == 1 {

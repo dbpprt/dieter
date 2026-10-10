@@ -696,7 +696,7 @@ func TestIdleDaemonStreamsOnlyHeartbeatsAndRecordsNoChanges(t *testing.T) {
 			t.Error("idle daemon did not stop")
 		}
 	}()
-	client := dieterv1connect.NewDieterServiceClient(&http.Client{}, "http://"+address)
+	client := dieterv1connect.NewDieterServiceClient(localHTTPClient(&http.Client{}, data.Root), "http://"+address)
 	for deadline := time.Now().Add(5 * time.Second); ; {
 		readyCtx, cancelReady := context.WithTimeout(context.Background(), 250*time.Millisecond)
 		_, healthErr := client.Health(readyCtx, connect.NewRequest(&emptypb.Empty{}))

@@ -83,6 +83,8 @@ data class CreationInput(
     val workspaceBaseRemote: String = "",
     /** Worktree only: blank takes the board's publish mode, else "manual". */
     val remotePublishMode: String = "",
+    /** The conversation's agent turns may use the account vault. */
+    val vaultAccess: Boolean = false,
 )
 
 /** The agent catalog a new conversation is checked against, relative to its destination machine. */
@@ -387,6 +389,7 @@ object Creation {
                         ?: "manual"
                 else "",
             auto_generate_title = Titles.generated(input.title, input.prompt),
+            vault_access = input.vaultAccess,
         )
     }
 

@@ -62,15 +62,19 @@ func TestExchangeDecodesGitHubAccessToken(t *testing.T) {
 	}
 }
 
-func TestNativeRedirectAllowsOnlyConfiguredOrRFC8252LoopbackCallback(t *testing.T) {
+// A loopback callback lets any local process start its own sign-in and receive
+// the session, so only exact configured app callbacks are accepted.
+func TestNativeRedirectAllowsOnlyConfiguredCallbacks(t *testing.T) {
 	auth := NewAuth(Config{NativeRedirects: map[string]struct{}{"dieter://auth/callback": {}}}, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	for _, test := range []struct {
 		value string
 		want  bool
 	}{
 		{"dieter://auth/callback", true},
-		{"http://127.0.0.1:49152/auth/callback", true},
-		{"http://127.0.0.1:1/auth/callback", true},
+		{"dieter://auth/callback?code=preloaded", false},
+		{"dieter://auth/other", false},
+		{"http://127.0.0.1:49152/auth/callback", false},
+		{"http://127.0.0.1:1/auth/callback", false},
 		{"http://localhost:49152/auth/callback", false},
 		{"http://[::1]:49152/auth/callback", false},
 		{"https://127.0.0.1:49152/auth/callback", false},
@@ -227,7 +231,7 @@ func TestEnrollmentConfirmationExpiresRechecksAccountAndIsSingleUse(t *testing.T
 				t.Fatal(err)
 			}
 			page := httptest.NewRecorder()
-			auth.confirmEnrollment(page, OAuthPending{EnrollmentID: record.ID, EnrollmentCode: record.UserCode}, 42, "owner")
+			auth.confirmEnrollment(page, oauthPending{EnrollmentID: record.ID, EnrollmentCode: record.UserCode}, 42, "owner")
 			cookies := page.Result().Cookies()
 			if len(cookies) != 1 {
 				t.Fatalf("confirmation cookies: %v", cookies)
@@ -312,7 +316,6 @@ func TestAuthenticationStateAndRatePeersAreBounded(t *testing.T) {
 	}
 	if err := auth.store.UpdateAuthState(func(state *AuthState) error {
 		for index := 0; index < maxAuthRecords; index++ {
-			state.Pending = append(state.Pending, OAuthPending{ExpiresAt: time.Now().Add(time.Hour)})
 			state.Sessions = append(state.Sessions, Session{ExpiresAt: time.Now().Add(time.Hour)})
 			state.Codes = append(state.Codes, NativeCode{ExpiresAt: time.Now().Add(time.Hour)})
 		}
@@ -326,15 +329,21 @@ func TestAuthenticationStateAndRatePeersAreBounded(t *testing.T) {
 	if _, err := auth.createNativeCode(42, "owner", "challenge"); err != errAuthCapacity {
 		t.Fatalf("code cap not enforced: %v", err)
 	}
+	// Starting sign-in stores nothing on the gateway, so full storage cannot
+	// block it and unauthenticated callers cannot fill storage.
+	before, err := auth.store.AuthState()
+	if err != nil {
+		t.Fatal(err)
+	}
 	recorder := httptest.NewRecorder()
 	digest := sha256.Sum256([]byte("verifier"))
 	auth.start(recorder, httptest.NewRequest(http.MethodGet, auth.config.PublicURL.String()+"/auth/github/start?"+url.Values{"native_redirect_uri": {"dieter://auth/callback"}, "native_code_challenge": {base64.RawURLEncoding.EncodeToString(digest[:])}}.Encode(), nil))
-	if recorder.Code != http.StatusInternalServerError {
-		t.Fatalf("OAuth pending cap not enforced: %d", recorder.Code)
+	if recorder.Code != http.StatusFound {
+		t.Fatalf("OAuth start with full authentication storage: %d", recorder.Code)
 	}
-	state, err := auth.store.AuthState()
-	if err != nil || len(state.Pending) != maxAuthRecords {
-		t.Fatalf("OAuth pending state grew past cap: %v", err)
+	after, err := auth.store.AuthState()
+	if err != nil || fmt.Sprint(after) != fmt.Sprint(before) {
+		t.Fatalf("OAuth start wrote gateway state: %v", err)
 	}
 }
 

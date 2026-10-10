@@ -12,7 +12,7 @@ import (
 
 // GitHub establishes the account identity. A separate, explicit action binds
 // that identity to the daemon key: verification links can originate elsewhere.
-func (a *Auth) confirmEnrollment(w http.ResponseWriter, pending OAuthPending, githubID int64, login string) {
+func (a *Auth) confirmEnrollment(w http.ResponseWriter, pending oauthPending, githubID int64, login string) {
 	record, err := a.store.Enrollment(pending.EnrollmentID)
 	if err != nil || record.Approved || record.ConsumedAt != nil || !record.ExpiresAt.After(time.Now().UTC()) || record.UserCode != pending.EnrollmentCode {
 		a.completion(w, false, "Daemon enrollment is invalid or expired.")

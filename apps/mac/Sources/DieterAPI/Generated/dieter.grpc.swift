@@ -1776,6 +1776,175 @@ public enum Dieter_V1_DieterService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "GetVaultStatus" metadata.
+        public enum GetVaultStatus: Sendable {
+            /// Request type for "GetVaultStatus".
+            public typealias Input = SwiftProtobuf.Google_Protobuf_Empty
+            /// Response type for "GetVaultStatus".
+            public typealias Output = Dieter_V1_VaultStatus
+            /// Descriptor for "GetVaultStatus".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "GetVaultStatus",
+                type: .unary
+            )
+        }
+        /// Namespace for "InitVault" metadata.
+        public enum InitVault: Sendable {
+            /// Request type for "InitVault".
+            public typealias Input = Dieter_V1_InitVaultRequest
+            /// Response type for "InitVault".
+            public typealias Output = Dieter_V1_InitVaultResponse
+            /// Descriptor for "InitVault".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "InitVault",
+                type: .unary
+            )
+        }
+        /// Namespace for "JoinVault" metadata.
+        public enum JoinVault: Sendable {
+            /// Request type for "JoinVault".
+            public typealias Input = Dieter_V1_JoinVaultRequest
+            /// Response type for "JoinVault".
+            public typealias Output = Dieter_V1_JoinVaultResponse
+            /// Descriptor for "JoinVault".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "JoinVault",
+                type: .unary
+            )
+        }
+        /// Namespace for "ApproveVaultMember" metadata.
+        public enum ApproveVaultMember: Sendable {
+            /// Request type for "ApproveVaultMember".
+            public typealias Input = Dieter_V1_ApproveVaultMemberRequest
+            /// Response type for "ApproveVaultMember".
+            public typealias Output = Dieter_V1_VaultStatus
+            /// Descriptor for "ApproveVaultMember".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "ApproveVaultMember",
+                type: .unary
+            )
+        }
+        /// Namespace for "RemoveVaultMember" metadata.
+        public enum RemoveVaultMember: Sendable {
+            /// Request type for "RemoveVaultMember".
+            public typealias Input = Dieter_V1_VaultMemberRef
+            /// Response type for "RemoveVaultMember".
+            public typealias Output = Dieter_V1_VaultStatus
+            /// Descriptor for "RemoveVaultMember".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "RemoveVaultMember",
+                type: .unary
+            )
+        }
+        /// Namespace for "RotateVault" metadata.
+        public enum RotateVault: Sendable {
+            /// Request type for "RotateVault".
+            public typealias Input = Dieter_V1_RotateVaultRequest
+            /// Response type for "RotateVault".
+            public typealias Output = Dieter_V1_RotateVaultResponse
+            /// Descriptor for "RotateVault".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "RotateVault",
+                type: .unary
+            )
+        }
+        /// Namespace for "ListVaultItems" metadata.
+        public enum ListVaultItems: Sendable {
+            /// Request type for "ListVaultItems".
+            public typealias Input = Dieter_V1_ListVaultItemsRequest
+            /// Response type for "ListVaultItems".
+            public typealias Output = Dieter_V1_VaultItemsResponse
+            /// Descriptor for "ListVaultItems".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "ListVaultItems",
+                type: .unary
+            )
+        }
+        /// Namespace for "GetVaultItem" metadata.
+        public enum GetVaultItem: Sendable {
+            /// Request type for "GetVaultItem".
+            public typealias Input = Dieter_V1_VaultItemRef
+            /// Response type for "GetVaultItem".
+            public typealias Output = Dieter_V1_VaultItem
+            /// Descriptor for "GetVaultItem".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "GetVaultItem",
+                type: .unary
+            )
+        }
+        /// Namespace for "RevealVaultItem" metadata.
+        public enum RevealVaultItem: Sendable {
+            /// Request type for "RevealVaultItem".
+            public typealias Input = Dieter_V1_RevealVaultItemRequest
+            /// Response type for "RevealVaultItem".
+            public typealias Output = Dieter_V1_RevealVaultItemResponse
+            /// Descriptor for "RevealVaultItem".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "RevealVaultItem",
+                type: .unary
+            )
+        }
+        /// Namespace for "CreateVaultItem" metadata.
+        public enum CreateVaultItem: Sendable {
+            /// Request type for "CreateVaultItem".
+            public typealias Input = Dieter_V1_CreateVaultItemRequest
+            /// Response type for "CreateVaultItem".
+            public typealias Output = Dieter_V1_VaultItem
+            /// Descriptor for "CreateVaultItem".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "CreateVaultItem",
+                type: .unary
+            )
+        }
+        /// Namespace for "UpdateVaultItem" metadata.
+        public enum UpdateVaultItem: Sendable {
+            /// Request type for "UpdateVaultItem".
+            public typealias Input = Dieter_V1_UpdateVaultItemRequest
+            /// Response type for "UpdateVaultItem".
+            public typealias Output = Dieter_V1_VaultItem
+            /// Descriptor for "UpdateVaultItem".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "UpdateVaultItem",
+                type: .unary
+            )
+        }
+        /// Namespace for "DeleteVaultItem" metadata.
+        public enum DeleteVaultItem: Sendable {
+            /// Request type for "DeleteVaultItem".
+            public typealias Input = Dieter_V1_VaultItemRef
+            /// Response type for "DeleteVaultItem".
+            public typealias Output = Dieter_V1_VaultItem
+            /// Descriptor for "DeleteVaultItem".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "DeleteVaultItem",
+                type: .unary
+            )
+        }
+        /// Namespace for "ListVaultAudit" metadata.
+        public enum ListVaultAudit: Sendable {
+            /// Request type for "ListVaultAudit".
+            public typealias Input = Dieter_V1_ListVaultAuditRequest
+            /// Response type for "ListVaultAudit".
+            public typealias Output = Dieter_V1_VaultAuditResponse
+            /// Descriptor for "ListVaultAudit".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "ListVaultAudit",
+                type: .unary
+            )
+        }
         /// Descriptors for all methods in the "dieter.v1.DieterService" service.
         public static let descriptors: [GRPCCore.MethodDescriptor] = [
             GetKV.descriptor,
@@ -1912,7 +2081,20 @@ public enum Dieter_V1_DieterService: Sendable {
             DeleteSchedule.descriptor,
             RunSchedule.descriptor,
             SetScheduleEnabled.descriptor,
-            ListScheduleRuns.descriptor
+            ListScheduleRuns.descriptor,
+            GetVaultStatus.descriptor,
+            InitVault.descriptor,
+            JoinVault.descriptor,
+            ApproveVaultMember.descriptor,
+            RemoveVaultMember.descriptor,
+            RotateVault.descriptor,
+            ListVaultItems.descriptor,
+            GetVaultItem.descriptor,
+            RevealVaultItem.descriptor,
+            CreateVaultItem.descriptor,
+            UpdateVaultItem.descriptor,
+            DeleteVaultItem.descriptor,
+            ListVaultAudit.descriptor
         ]
     }
 }
@@ -4562,6 +4744,259 @@ extension Dieter_V1_DieterService {
             deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ScheduleRunsResponse>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ScheduleRunsResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "GetVaultStatus" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Account vault. Items replicate only as ciphertext; RPCs that return
+        /// > decrypted content refuse the gateway relay route. Agent turns may use the
+        /// > vault only when their card, chat or schedule was created with vault access.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
+        ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_VaultStatus` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func getVaultStatus<Result>(
+            request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
+            serializer: some GRPCCore.MessageSerializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_VaultStatus>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultStatus>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "InitVault" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_InitVaultRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_InitVaultRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_InitVaultResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func initVault<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_InitVaultRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_InitVaultRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_InitVaultResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_InitVaultResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "JoinVault" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_JoinVaultRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_JoinVaultRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_JoinVaultResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func joinVault<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_JoinVaultRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_JoinVaultRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_JoinVaultResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_JoinVaultResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ApproveVaultMember" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ApproveVaultMemberRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ApproveVaultMemberRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_VaultStatus` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func approveVaultMember<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ApproveVaultMemberRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ApproveVaultMemberRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_VaultStatus>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultStatus>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "RemoveVaultMember" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_VaultMemberRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_VaultMemberRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_VaultStatus` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func removeVaultMember<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_VaultMemberRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_VaultMemberRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_VaultStatus>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultStatus>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "RotateVault" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_RotateVaultRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_RotateVaultRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RotateVaultResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func rotateVault<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_RotateVaultRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_RotateVaultRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RotateVaultResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RotateVaultResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ListVaultItems" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ListVaultItemsRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ListVaultItemsRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_VaultItemsResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func listVaultItems<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ListVaultItemsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ListVaultItemsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_VaultItemsResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultItemsResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "GetVaultItem" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_VaultItemRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_VaultItemRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_VaultItem` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func getVaultItem<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_VaultItemRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_VaultItemRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_VaultItem>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultItem>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "RevealVaultItem" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_RevealVaultItemRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_RevealVaultItemRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RevealVaultItemResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func revealVaultItem<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_RevealVaultItemRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_RevealVaultItemRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RevealVaultItemResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RevealVaultItemResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "CreateVaultItem" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_CreateVaultItemRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_CreateVaultItemRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_VaultItem` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func createVaultItem<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_CreateVaultItemRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_CreateVaultItemRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_VaultItem>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultItem>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "UpdateVaultItem" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_UpdateVaultItemRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_UpdateVaultItemRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_VaultItem` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func updateVaultItem<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_UpdateVaultItemRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_UpdateVaultItemRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_VaultItem>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultItem>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "DeleteVaultItem" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_VaultItemRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_VaultItemRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_VaultItem` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func deleteVaultItem<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_VaultItemRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_VaultItemRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_VaultItem>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultItem>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ListVaultAudit" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ListVaultAuditRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ListVaultAuditRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_VaultAuditResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func listVaultAudit<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ListVaultAuditRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ListVaultAuditRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_VaultAuditResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultAuditResponse>) async throws -> Result
         ) async throws -> Result where Result: Sendable
     }
 
@@ -8683,6 +9118,402 @@ extension Dieter_V1_DieterService {
                 onResponse: handleResponse
             )
         }
+
+        /// Call the "GetVaultStatus" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Account vault. Items replicate only as ciphertext; RPCs that return
+        /// > decrypted content refuse the gateway relay route. Agent turns may use the
+        /// > vault only when their card, chat or schedule was created with vault access.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
+        ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_VaultStatus` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func getVaultStatus<Result>(
+            request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
+            serializer: some GRPCCore.MessageSerializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_VaultStatus>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultStatus>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.GetVaultStatus.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "InitVault" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_InitVaultRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_InitVaultRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_InitVaultResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func initVault<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_InitVaultRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_InitVaultRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_InitVaultResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_InitVaultResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.InitVault.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "JoinVault" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_JoinVaultRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_JoinVaultRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_JoinVaultResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func joinVault<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_JoinVaultRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_JoinVaultRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_JoinVaultResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_JoinVaultResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.JoinVault.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ApproveVaultMember" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ApproveVaultMemberRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ApproveVaultMemberRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_VaultStatus` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func approveVaultMember<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ApproveVaultMemberRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ApproveVaultMemberRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_VaultStatus>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultStatus>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.ApproveVaultMember.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "RemoveVaultMember" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_VaultMemberRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_VaultMemberRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_VaultStatus` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func removeVaultMember<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_VaultMemberRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_VaultMemberRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_VaultStatus>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultStatus>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.RemoveVaultMember.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "RotateVault" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_RotateVaultRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_RotateVaultRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RotateVaultResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func rotateVault<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_RotateVaultRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_RotateVaultRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RotateVaultResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RotateVaultResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.RotateVault.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ListVaultItems" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ListVaultItemsRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ListVaultItemsRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_VaultItemsResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func listVaultItems<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ListVaultItemsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ListVaultItemsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_VaultItemsResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultItemsResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.ListVaultItems.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "GetVaultItem" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_VaultItemRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_VaultItemRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_VaultItem` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func getVaultItem<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_VaultItemRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_VaultItemRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_VaultItem>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultItem>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.GetVaultItem.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "RevealVaultItem" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_RevealVaultItemRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_RevealVaultItemRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RevealVaultItemResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func revealVaultItem<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_RevealVaultItemRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_RevealVaultItemRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RevealVaultItemResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RevealVaultItemResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.RevealVaultItem.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "CreateVaultItem" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_CreateVaultItemRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_CreateVaultItemRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_VaultItem` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func createVaultItem<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_CreateVaultItemRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_CreateVaultItemRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_VaultItem>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultItem>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.CreateVaultItem.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "UpdateVaultItem" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_UpdateVaultItemRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_UpdateVaultItemRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_VaultItem` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func updateVaultItem<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_UpdateVaultItemRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_UpdateVaultItemRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_VaultItem>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultItem>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.UpdateVaultItem.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "DeleteVaultItem" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_VaultItemRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_VaultItemRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_VaultItem` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func deleteVaultItem<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_VaultItemRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_VaultItemRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_VaultItem>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultItem>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.DeleteVaultItem.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ListVaultAudit" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ListVaultAuditRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ListVaultAuditRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_VaultAuditResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func listVaultAudit<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ListVaultAuditRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ListVaultAuditRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_VaultAuditResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultAuditResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.ListVaultAudit.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
     }
 }
 
@@ -12112,6 +12943,337 @@ extension Dieter_V1_DieterService.ClientProtocol {
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ListScheduleRunsRequest>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_ScheduleRunsResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetVaultStatus" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Account vault. Items replicate only as ciphertext; RPCs that return
+    /// > decrypted content refuse the gateway relay route. Agent turns may use the
+    /// > vault only when their card, chat or schedule was created with vault access.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getVaultStatus<Result>(
+        request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultStatus>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.getVaultStatus(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<SwiftProtobuf.Google_Protobuf_Empty>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_VaultStatus>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "InitVault" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_InitVaultRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func initVault<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_InitVaultRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_InitVaultResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.initVault(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_InitVaultRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_InitVaultResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "JoinVault" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_JoinVaultRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func joinVault<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_JoinVaultRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_JoinVaultResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.joinVault(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_JoinVaultRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_JoinVaultResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ApproveVaultMember" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_ApproveVaultMemberRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func approveVaultMember<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ApproveVaultMemberRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultStatus>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.approveVaultMember(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ApproveVaultMemberRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_VaultStatus>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "RemoveVaultMember" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_VaultMemberRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func removeVaultMember<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_VaultMemberRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultStatus>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.removeVaultMember(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_VaultMemberRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_VaultStatus>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "RotateVault" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_RotateVaultRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func rotateVault<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_RotateVaultRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RotateVaultResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.rotateVault(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_RotateVaultRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_RotateVaultResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListVaultItems" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_ListVaultItemsRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listVaultItems<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ListVaultItemsRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultItemsResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.listVaultItems(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ListVaultItemsRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_VaultItemsResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetVaultItem" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_VaultItemRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getVaultItem<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_VaultItemRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultItem>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.getVaultItem(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_VaultItemRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_VaultItem>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "RevealVaultItem" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_RevealVaultItemRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func revealVaultItem<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_RevealVaultItemRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RevealVaultItemResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.revealVaultItem(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_RevealVaultItemRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_RevealVaultItemResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "CreateVaultItem" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_CreateVaultItemRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func createVaultItem<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_CreateVaultItemRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultItem>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.createVaultItem(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_CreateVaultItemRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_VaultItem>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "UpdateVaultItem" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_UpdateVaultItemRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func updateVaultItem<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_UpdateVaultItemRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultItem>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.updateVaultItem(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_UpdateVaultItemRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_VaultItem>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "DeleteVaultItem" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_VaultItemRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func deleteVaultItem<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_VaultItemRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultItem>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.deleteVaultItem(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_VaultItemRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_VaultItem>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListVaultAudit" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_ListVaultAuditRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listVaultAudit<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ListVaultAuditRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultAuditResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.listVaultAudit(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ListVaultAuditRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_VaultAuditResponse>(),
             options: options,
             onResponse: handleResponse
         )
@@ -16083,6 +17245,389 @@ extension Dieter_V1_DieterService.ClientProtocol {
             metadata: metadata
         )
         return try await self.listScheduleRuns(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetVaultStatus" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Account vault. Items replicate only as ciphertext; RPCs that return
+    /// > decrypted content refuse the gateway relay route. Agent turns may use the
+    /// > vault only when their card, chat or schedule was created with vault access.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getVaultStatus<Result>(
+        _ message: SwiftProtobuf.Google_Protobuf_Empty,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultStatus>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.getVaultStatus(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "InitVault" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func initVault<Result>(
+        _ message: Dieter_V1_InitVaultRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_InitVaultResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_InitVaultRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.initVault(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "JoinVault" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func joinVault<Result>(
+        _ message: Dieter_V1_JoinVaultRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_JoinVaultResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_JoinVaultRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.joinVault(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ApproveVaultMember" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func approveVaultMember<Result>(
+        _ message: Dieter_V1_ApproveVaultMemberRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultStatus>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_ApproveVaultMemberRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.approveVaultMember(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "RemoveVaultMember" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func removeVaultMember<Result>(
+        _ message: Dieter_V1_VaultMemberRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultStatus>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_VaultMemberRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.removeVaultMember(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "RotateVault" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func rotateVault<Result>(
+        _ message: Dieter_V1_RotateVaultRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RotateVaultResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_RotateVaultRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.rotateVault(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListVaultItems" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listVaultItems<Result>(
+        _ message: Dieter_V1_ListVaultItemsRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultItemsResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_ListVaultItemsRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.listVaultItems(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetVaultItem" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getVaultItem<Result>(
+        _ message: Dieter_V1_VaultItemRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultItem>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_VaultItemRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.getVaultItem(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "RevealVaultItem" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func revealVaultItem<Result>(
+        _ message: Dieter_V1_RevealVaultItemRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RevealVaultItemResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_RevealVaultItemRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.revealVaultItem(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "CreateVaultItem" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func createVaultItem<Result>(
+        _ message: Dieter_V1_CreateVaultItemRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultItem>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_CreateVaultItemRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.createVaultItem(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "UpdateVaultItem" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func updateVaultItem<Result>(
+        _ message: Dieter_V1_UpdateVaultItemRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultItem>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_UpdateVaultItemRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.updateVaultItem(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "DeleteVaultItem" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func deleteVaultItem<Result>(
+        _ message: Dieter_V1_VaultItemRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultItem>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_VaultItemRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.deleteVaultItem(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListVaultAudit" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listVaultAudit<Result>(
+        _ message: Dieter_V1_ListVaultAuditRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_VaultAuditResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_ListVaultAuditRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.listVaultAudit(
             request: request,
             options: options,
             onResponse: handleResponse

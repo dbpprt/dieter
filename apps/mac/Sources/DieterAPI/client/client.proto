@@ -478,6 +478,9 @@ message CreationIntent {
   string workspace_base_branch = 12;
   string workspace_base_remote = 13;
   string remote_publish_mode = 14;
+  // Let the conversation's agent turns use the account vault. Fixed at
+  // creation; never remembered between forms.
+  bool vault_access = 15;
 }
 
 // Binds a creation form's surface (SLICE_CREATION_PREVIEW, observed with a

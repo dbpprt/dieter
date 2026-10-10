@@ -44,6 +44,8 @@ var rpcCommand = map[string]string{
 	"ExchangeRemoteDesktopClipboard": "screen clipboard",
 	"GetRemoteDesktopSession":        "screen status", "UpdateRemoteDesktopSession": "screen configure",
 	"GetSchedule": "schedule show", "ListSchedules": "schedule list", "PreviewSchedule": "schedule preview", "CreateSchedule": "schedule create", "UpdateSchedule": "schedule update", "DeleteSchedule": "schedule delete", "RunSchedule": "schedule run", "SetScheduleEnabled": "schedule pause", "ListScheduleRuns": "schedule runs",
+	"GetVaultStatus": "vault status", "InitVault": "vault init", "JoinVault": "vault join", "ApproveVaultMember": "vault approve", "RemoveVaultMember": "vault remove-member", "RotateVault": "vault rotate",
+	"ListVaultItems": "vault list", "GetVaultItem": "vault show", "RevealVaultItem": "vault get", "CreateVaultItem": "vault add", "UpdateVaultItem": "vault edit", "DeleteVaultItem": "vault remove", "ListVaultAudit": "vault audit",
 }
 
 func TestEveryDaemonRPCMapsToCLICommand(t *testing.T) {
@@ -89,6 +91,7 @@ func TestEveryDaemonCLICommandHasOfflineHelp(t *testing.T) {
 		"schedule", "schedule create", "schedule list", "schedule show", "schedule preview", "schedule update", "schedule run", "schedule pause", "schedule resume", "schedule runs", "schedule delete",
 		"project consolidate", "project attach", "project detach", "project checkouts", "settings", "settings show", "settings options", "settings update",
 		"prompt", "prompt show", "prompt update", "prompt project", "prompt board", "prompt preview",
+		"vault", "vault status", "vault members", "vault init", "vault join", "vault approve", "vault remove-member", "vault rotate", "vault list", "vault show", "vault add", "vault edit", "vault remove", "vault get", "vault totp", "vault exec", "vault audit",
 		"daemon", "daemon start", "daemon service", "daemon service install", "daemon service start", "daemon service restart", "daemon service stop", "daemon service status", "daemon service uninstall", "daemon enroll", "daemon unenroll", "daemon recover", "daemon status", "daemon logs", "daemon permissions", "doctor", "setup", "serve",
 	}
 	for _, path := range paths {

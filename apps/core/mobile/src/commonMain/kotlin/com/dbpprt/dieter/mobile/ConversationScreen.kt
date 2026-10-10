@@ -408,6 +408,21 @@ private fun Transcript(
                     }
             }
         }
+        if (view.syncing) {
+            Row(
+                Modifier.fillMaxWidth()
+                    .padding(horizontal = ScreenMargin, vertical = 8.dp)
+                    .testTag("conversation-refreshing")
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = "Refreshing conversation"
+                    },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Spinner(Modifier.size(14.dp))
+                Text("Refreshing…", style = type.caption, color = palette.secondaryLabel)
+            }
+        }
         Composer(
             store,
             view,

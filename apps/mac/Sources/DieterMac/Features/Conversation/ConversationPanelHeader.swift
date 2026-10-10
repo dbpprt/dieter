@@ -96,7 +96,17 @@ struct ConversationTitleRow: View {
                 .smokeTarget("conversation.status")
             Spacer(minLength: 6)
             if context.conversationSyncing {
-                ProgressView().controlSize(.mini).accessibilityLabel("Refreshing conversation")
+                HStack(spacing: 5) {
+                    ProgressView().controlSize(.mini)
+                    Text("Refreshing…")
+                        .font(.system(size: 11))
+                        .foregroundStyle(DieterTheme.tertiary)
+                }
+                .fixedSize()
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Refreshing conversation")
+                .accessibilityIdentifier("conversation.refreshing")
+                .help("Checking for updates. Displayed activity may be out of date.")
             }
             GlassEffectContainer(spacing: 6) {
                 HStack(spacing: 6) {

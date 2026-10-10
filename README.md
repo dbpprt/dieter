@@ -183,6 +183,7 @@ Mac, Android, iOS, and CLI clients converge on the same Git state.
 | Run your first agent                    | [Quick start](https://getdieter.com/docs/quickstart/)                                                  |
 | Understand tasks, worktrees, and review | [Projects & tasks](https://getdieter.com/docs/projects/)                                               |
 | Automate through the daemon             | [CLI guide](https://getdieter.com/docs/cli/)                                                           |
+| Share logins and TOTP with agents       | [Vault](https://getdieter.com/docs/vault/)                                                             |
 | Add machines or host a gateway          | [Machines](https://getdieter.com/docs/machines/) · [Self-hosting](https://getdieter.com/docs/gateway/) |
 | Understand internals                    | [Architecture](https://getdieter.com/docs/architecture/)                                               |
 | Fix a connection or setup problem       | [Troubleshooting](https://getdieter.com/docs/troubleshooting/)                                         |
@@ -275,6 +276,20 @@ when both directions finish. Retained shared records and replay receipts use
 paged SQLite access, so historical count does not exhaust a lifetime write quota.
 Tombstones remain available to protect against stale offline replicas. See
 [peer storage and retention](landingpage/content/docs/architecture.md#shared-identity-local-execution).
+
+### Account vault
+
+`dieter vault` keeps logins (name, URLs, username, password, TOTP, notes) shared
+by all your machines. Items replicate end-to-end encrypted; vault commands that
+return decrypted content refuse the gateway relay route. Run `vault init` once,
+`vault join` on each further machine, and `vault approve MEMBER --code CODE` on a
+member after comparing codes (or `vault join --recovery-key-stdin`). Secrets are
+read from files, stdin, `--prompt` or `--generate`, never from arguments.
+Conversations created with `card create --vault`, `chat create --vault` or
+`schedule create --vault` let their agent turns use `vault list|get|totp|exec|add|edit`
+through a per-turn token; agents never change membership or keys. Revealed
+passwords are redacted from stored transcripts; `vault audit` lists access. See
+[Vault](https://getdieter.com/docs/vault/).
 
 ### macOS local privacy
 

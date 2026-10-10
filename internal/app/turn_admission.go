@@ -213,6 +213,7 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 		RuntimeRoot:                filepath.Join(s.Store.RuntimeDir(), "sessions", detail.Project.ID),
 		RuntimeDigest:              runtimeReference.Digest,
 		ContentPresentationEnabled: true,
+		Environment:                s.agentEnvironment(detail.Card.ID, turnID),
 	}
 	request.Prompt = harnessPrompt
 	go s.runTurn(ctx, detail, turnID, request, updates, done)

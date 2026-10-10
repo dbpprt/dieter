@@ -108,8 +108,9 @@ dieter daemon start \
 
 Use an address clients can actually reach. This is an example for starting a
 configured daemon, not a command to run beside an already-running service.
-Keep raw port **4242 loopback-only**. Direct access verifies the enrolled daemon
-certificate and a short-lived token targeted to that daemon.
+Keep raw port **4242 loopback-only**. It also requires the daemon's local API
+token, which only the daemon user can read. Direct access verifies the enrolled
+daemon certificate and a short-lived token targeted to that daemon.
 
 ## Updates and power controls
 

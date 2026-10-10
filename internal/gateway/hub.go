@@ -41,8 +41,14 @@ const (
 	daemonHeartbeatLease      = 60 * time.Second
 	daemonHeartbeatLeaseCheck = time.Second
 	daemonHandshakeTimeout    = 10 * time.Second
-	maxDaemonHandshakes       = 64
-	maxDaemonRelayStreams     = relaypolicy.CommandCalls
+	// A daemon sends HELLO as soon as its stream opens. An unauthenticated
+	// stream that stays silent only holds a handshake slot.
+	daemonHelloTimeout  = 3 * time.Second
+	maxDaemonHandshakes = 256
+	// One machine opens a link per lane, so a few machines behind one address
+	// can reconnect together without one source taking the whole pool.
+	maxDaemonHandshakesPerClient = 16
+	maxDaemonRelayStreams        = relaypolicy.CommandCalls
 	// Every client holds a change stream to every online machine and may
 	// watch conversations, KV and executions there. These long-lived reads
 	// have their own bound, so they cannot starve requests or each other's
@@ -52,11 +58,13 @@ const (
 
 type Hub struct {
 	gatewayv1.UnimplementedDaemonLinkServiceServer
-	store        *Store
-	config       Config
-	handshakes   chan struct{}
-	writeTimeout time.Duration
-	leaseCheck   time.Duration
+	store      *Store
+	config     Config
+	handshakes chan struct{}
+	// handshakeClients bounds the HTTP ingress share of handshakes per client.
+	handshakeClients *clientSlots
+	writeTimeout     time.Duration
+	leaseCheck       time.Duration
 
 	mu            sync.RWMutex
 	links         map[string]*daemonLink
@@ -140,7 +148,7 @@ func (q *relayFrameQueue) push(frame *gatewayv1.DaemonLinkFrame) bool {
 }
 
 func NewHub(store *Store, config Config) *Hub {
-	return &Hub{store: store, config: config, writeTimeout: relaypolicy.WriteTimeout, leaseCheck: daemonHeartbeatLeaseCheck, links: map[string]*daemonLink{}, relayLinks: map[string]map[relaypolicy.Lane]*daemonLink{}, sessions: map[string]string{}, retired: map[string]map[string]time.Time{}, accountMemory: map[int64][4]*relaypolicy.Budget{}, changed: make(chan struct{}, 1), handshakes: make(chan struct{}, maxDaemonHandshakes)}
+	return &Hub{store: store, config: config, writeTimeout: relaypolicy.WriteTimeout, leaseCheck: daemonHeartbeatLeaseCheck, links: map[string]*daemonLink{}, relayLinks: map[string]map[relaypolicy.Lane]*daemonLink{}, sessions: map[string]string{}, retired: map[string]map[string]time.Time{}, accountMemory: map[int64][4]*relaypolicy.Budget{}, changed: make(chan struct{}, 1), handshakes: make(chan struct{}, maxDaemonHandshakes), handshakeClients: newClientSlots(maxDaemonHandshakesPerClient)}
 }
 
 func (h *Hub) SetQuotaManager(manager *QuotaManager) { h.quota = manager }
@@ -155,11 +163,12 @@ type daemonHandshake struct {
 	err    error
 }
 
-func (h *Hub) handshake(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame, gatewayv1.DaemonLinkFrame]) daemonHandshake {
+func (h *Hub) handshake(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame, gatewayv1.DaemonLinkFrame], helloReceived chan<- struct{}) daemonHandshake {
 	hello, err := stream.Recv()
 	if err != nil {
 		return daemonHandshake{err: err}
 	}
+	close(helloReceived)
 	identity := hello.GetDaemonId()
 	if hello.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO || identity == "" {
 		return daemonHandshake{err: status.Error(codes.Unauthenticated, "daemon hello is required")}
@@ -209,14 +218,24 @@ func (h *Hub) authenticateLink(stream grpc.BidiStreamingServer[gatewayv1.DaemonL
 	ctx, cancel := context.WithTimeout(stream.Context(), timeout)
 	defer cancel()
 	result := make(chan daemonHandshake, 1)
+	helloReceived := make(chan struct{})
 	// Returning the RPC on timeout cancels the underlying gRPC transport and
 	// releases any blocked Send/Recv. A derived context alone does not do so.
-	go func() { result <- h.handshake(stream) }()
-	select {
-	case <-ctx.Done():
-		return daemonHandshake{err: status.FromContextError(ctx.Err()).Err()}
-	case authenticated := <-result:
-		return authenticated
+	go func() { result <- h.handshake(stream, helloReceived) }()
+	helloTimer := time.NewTimer(min(daemonHelloTimeout, timeout))
+	defer helloTimer.Stop()
+	helloDeadline := helloTimer.C
+	for {
+		select {
+		case <-ctx.Done():
+			return daemonHandshake{err: status.FromContextError(ctx.Err()).Err()}
+		case <-helloDeadline:
+			return daemonHandshake{err: status.Error(codes.DeadlineExceeded, "daemon hello was not received")}
+		case <-helloReceived:
+			helloReceived, helloDeadline = nil, nil
+		case authenticated := <-result:
+			return authenticated
+		}
 	}
 }
 

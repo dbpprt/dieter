@@ -3826,8 +3826,11 @@ type Card struct {
 	// to correlate with credential-free quota snapshots and is not a provider
 	// credential or raw provider account identifier.
 	ProviderAccountKey string `protobuf:"bytes,37,opt,name=provider_account_key,json=providerAccountKey,proto3" json:"provider_account_key,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// Owner-local: agent turns of this conversation may use the account vault.
+	// Set only at creation; forks and merges never inherit it.
+	VaultAccess   bool `protobuf:"varint,47,opt,name=vault_access,json=vaultAccess,proto3" json:"vault_access,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Card) Reset() {
@@ -4173,6 +4176,13 @@ func (x *Card) GetProviderAccountKey() string {
 		return x.ProviderAccountKey
 	}
 	return ""
+}
+
+func (x *Card) GetVaultAccess() bool {
+	if x != nil {
+		return x.VaultAccess
+	}
+	return false
 }
 
 type CardOrigin struct {
@@ -8234,8 +8244,10 @@ type CreateConversationRequest struct {
 	AutoGenerateTitle   bool   `protobuf:"varint,18,opt,name=auto_generate_title,json=autoGenerateTitle,proto3" json:"auto_generate_title,omitempty"`
 	WorkspaceBaseRemote string `protobuf:"bytes,19,opt,name=workspace_base_remote,json=workspaceBaseRemote,proto3" json:"workspace_base_remote,omitempty"`
 	RemotePublishMode   string `protobuf:"bytes,20,opt,name=remote_publish_mode,json=remotePublishMode,proto3" json:"remote_publish_mode,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// Grant this conversation's agent turns access to the account vault.
+	VaultAccess   bool `protobuf:"varint,25,opt,name=vault_access,json=vaultAccess,proto3" json:"vault_access,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateConversationRequest) Reset() {
@@ -8413,6 +8425,13 @@ func (x *CreateConversationRequest) GetRemotePublishMode() string {
 		return x.RemotePublishMode
 	}
 	return ""
+}
+
+func (x *CreateConversationRequest) GetVaultAccess() bool {
+	if x != nil {
+		return x.VaultAccess
+	}
+	return false
 }
 
 type ListChatsRequest struct {
@@ -18804,8 +18823,10 @@ type Schedule struct {
 	NextRuns        []string               `protobuf:"bytes,23,rep,name=next_runs,json=nextRuns,proto3" json:"next_runs,omitempty"`
 	ProviderOptions map[string]string      `protobuf:"bytes,24,rep,name=provider_options,json=providerOptions,proto3" json:"provider_options,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	WorkspaceMode   string                 `protobuf:"bytes,25,opt,name=workspace_mode,json=workspaceMode,proto3" json:"workspace_mode,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Cards created by this schedule get vault access. Owner-local.
+	VaultAccess   bool `protobuf:"varint,42,opt,name=vault_access,json=vaultAccess,proto3" json:"vault_access,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Schedule) Reset() {
@@ -19020,6 +19041,13 @@ func (x *Schedule) GetWorkspaceMode() string {
 	return ""
 }
 
+func (x *Schedule) GetVaultAccess() bool {
+	if x != nil {
+		return x.VaultAccess
+	}
+	return false
+}
+
 type ScheduleDraft struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	CheckoutId      string                 `protobuf:"bytes,40,opt,name=checkout_id,json=checkoutId,proto3" json:"checkout_id,omitempty"`
@@ -19041,6 +19069,7 @@ type ScheduleDraft struct {
 	MisfirePolicy   string                 `protobuf:"bytes,16,opt,name=misfire_policy,json=misfirePolicy,proto3" json:"misfire_policy,omitempty"`
 	ProviderOptions map[string]string      `protobuf:"bytes,18,rep,name=provider_options,json=providerOptions,proto3" json:"provider_options,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	WorkspaceMode   string                 `protobuf:"bytes,19,opt,name=workspace_mode,json=workspaceMode,proto3" json:"workspace_mode,omitempty"`
+	VaultAccess     bool                   `protobuf:"varint,41,opt,name=vault_access,json=vaultAccess,proto3" json:"vault_access,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -19206,6 +19235,13 @@ func (x *ScheduleDraft) GetWorkspaceMode() string {
 		return x.WorkspaceMode
 	}
 	return ""
+}
+
+func (x *ScheduleDraft) GetVaultAccess() bool {
+	if x != nil {
+		return x.VaultAccess
+	}
+	return false
 }
 
 type SaveScheduleRequest struct {
@@ -22089,6 +22125,1561 @@ func (x *MarkConversationReadRequest) GetResponseSeq() int64 {
 	return 0
 }
 
+// Vault caller as the daemon classified it. Agent callers present their
+// turn token; operator callers are local or remote humans.
+type VaultCaller struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// "operator", "agent" or "remote".
+	Kind        string `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	CardId      string `protobuf:"bytes,2,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	VaultAccess bool   `protobuf:"varint,3,opt,name=vault_access,json=vaultAccess,proto3" json:"vault_access,omitempty"`
+	// "local", "direct" or "relay".
+	Route         string `protobuf:"bytes,4,opt,name=route,proto3" json:"route,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VaultCaller) Reset() {
+	*x = VaultCaller{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[248]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VaultCaller) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VaultCaller) ProtoMessage() {}
+
+func (x *VaultCaller) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[248]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VaultCaller.ProtoReflect.Descriptor instead.
+func (*VaultCaller) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{248}
+}
+
+func (x *VaultCaller) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *VaultCaller) GetCardId() string {
+	if x != nil {
+		return x.CardId
+	}
+	return ""
+}
+
+func (x *VaultCaller) GetVaultAccess() bool {
+	if x != nil {
+		return x.VaultAccess
+	}
+	return false
+}
+
+func (x *VaultCaller) GetRoute() string {
+	if x != nil {
+		return x.Route
+	}
+	return ""
+}
+
+type VaultMember struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Id       string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name     string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	DaemonId string                 `protobuf:"bytes,3,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
+	Recovery bool                   `protobuf:"varint,4,opt,name=recovery,proto3" json:"recovery,omitempty"`
+	Pending  bool                   `protobuf:"varint,5,opt,name=pending,proto3" json:"pending,omitempty"`
+	Self     bool                   `protobuf:"varint,6,opt,name=self,proto3" json:"self,omitempty"`
+	// Verification code computed from this machine's pinned vault root. Compare
+	// it with the code printed on the joining machine before approving.
+	JoinCode      string `protobuf:"bytes,7,opt,name=join_code,json=joinCode,proto3" json:"join_code,omitempty"`
+	RequestedAt   string `protobuf:"bytes,8,opt,name=requested_at,json=requestedAt,proto3" json:"requested_at,omitempty"`
+	ApprovedAt    string `protobuf:"bytes,9,opt,name=approved_at,json=approvedAt,proto3" json:"approved_at,omitempty"`
+	ApprovedBy    string `protobuf:"bytes,10,opt,name=approved_by,json=approvedBy,proto3" json:"approved_by,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VaultMember) Reset() {
+	*x = VaultMember{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[249]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VaultMember) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VaultMember) ProtoMessage() {}
+
+func (x *VaultMember) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[249]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VaultMember.ProtoReflect.Descriptor instead.
+func (*VaultMember) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{249}
+}
+
+func (x *VaultMember) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *VaultMember) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *VaultMember) GetDaemonId() string {
+	if x != nil {
+		return x.DaemonId
+	}
+	return ""
+}
+
+func (x *VaultMember) GetRecovery() bool {
+	if x != nil {
+		return x.Recovery
+	}
+	return false
+}
+
+func (x *VaultMember) GetPending() bool {
+	if x != nil {
+		return x.Pending
+	}
+	return false
+}
+
+func (x *VaultMember) GetSelf() bool {
+	if x != nil {
+		return x.Self
+	}
+	return false
+}
+
+func (x *VaultMember) GetJoinCode() string {
+	if x != nil {
+		return x.JoinCode
+	}
+	return ""
+}
+
+func (x *VaultMember) GetRequestedAt() string {
+	if x != nil {
+		return x.RequestedAt
+	}
+	return ""
+}
+
+func (x *VaultMember) GetApprovedAt() string {
+	if x != nil {
+		return x.ApprovedAt
+	}
+	return ""
+}
+
+func (x *VaultMember) GetApprovedBy() string {
+	if x != nil {
+		return x.ApprovedBy
+	}
+	return ""
+}
+
+type VaultStatus struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// "none", "locked", "pending" or "unlocked".
+	State           string         `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
+	VaultId         string         `protobuf:"bytes,2,opt,name=vault_id,json=vaultId,proto3" json:"vault_id,omitempty"`
+	MemberId        string         `protobuf:"bytes,3,opt,name=member_id,json=memberId,proto3" json:"member_id,omitempty"`
+	JoinCode        string         `protobuf:"bytes,4,opt,name=join_code,json=joinCode,proto3" json:"join_code,omitempty"`
+	Members         []*VaultMember `protobuf:"bytes,5,rep,name=members,proto3" json:"members,omitempty"`
+	ItemCount       int32          `protobuf:"varint,6,opt,name=item_count,json=itemCount,proto3" json:"item_count,omitempty"`
+	ConflictItemIds []string       `protobuf:"bytes,7,rep,name=conflict_item_ids,json=conflictItemIds,proto3" json:"conflict_item_ids,omitempty"`
+	CurrentKeyId    string         `protobuf:"bytes,8,opt,name=current_key_id,json=currentKeyId,proto3" json:"current_key_id,omitempty"`
+	CreatedAt       string         `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	Caller          *VaultCaller   `protobuf:"bytes,10,opt,name=caller,proto3" json:"caller,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *VaultStatus) Reset() {
+	*x = VaultStatus{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[250]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VaultStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VaultStatus) ProtoMessage() {}
+
+func (x *VaultStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[250]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VaultStatus.ProtoReflect.Descriptor instead.
+func (*VaultStatus) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{250}
+}
+
+func (x *VaultStatus) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *VaultStatus) GetVaultId() string {
+	if x != nil {
+		return x.VaultId
+	}
+	return ""
+}
+
+func (x *VaultStatus) GetMemberId() string {
+	if x != nil {
+		return x.MemberId
+	}
+	return ""
+}
+
+func (x *VaultStatus) GetJoinCode() string {
+	if x != nil {
+		return x.JoinCode
+	}
+	return ""
+}
+
+func (x *VaultStatus) GetMembers() []*VaultMember {
+	if x != nil {
+		return x.Members
+	}
+	return nil
+}
+
+func (x *VaultStatus) GetItemCount() int32 {
+	if x != nil {
+		return x.ItemCount
+	}
+	return 0
+}
+
+func (x *VaultStatus) GetConflictItemIds() []string {
+	if x != nil {
+		return x.ConflictItemIds
+	}
+	return nil
+}
+
+func (x *VaultStatus) GetCurrentKeyId() string {
+	if x != nil {
+		return x.CurrentKeyId
+	}
+	return ""
+}
+
+func (x *VaultStatus) GetCreatedAt() string {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return ""
+}
+
+func (x *VaultStatus) GetCaller() *VaultCaller {
+	if x != nil {
+		return x.Caller
+	}
+	return nil
+}
+
+type InitVaultRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InitVaultRequest) Reset() {
+	*x = InitVaultRequest{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[251]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InitVaultRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InitVaultRequest) ProtoMessage() {}
+
+func (x *InitVaultRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[251]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InitVaultRequest.ProtoReflect.Descriptor instead.
+func (*InitVaultRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{251}
+}
+
+func (x *InitVaultRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type InitVaultResponse struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Status *VaultStatus           `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	// Printed once and never stored. It can unlock any machine.
+	RecoveryKey   string `protobuf:"bytes,2,opt,name=recovery_key,json=recoveryKey,proto3" json:"recovery_key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InitVaultResponse) Reset() {
+	*x = InitVaultResponse{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[252]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InitVaultResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InitVaultResponse) ProtoMessage() {}
+
+func (x *InitVaultResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[252]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InitVaultResponse.ProtoReflect.Descriptor instead.
+func (*InitVaultResponse) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{252}
+}
+
+func (x *InitVaultResponse) GetStatus() *VaultStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+func (x *InitVaultResponse) GetRecoveryKey() string {
+	if x != nil {
+		return x.RecoveryKey
+	}
+	return ""
+}
+
+type JoinVaultRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Empty requests approval from an existing member.
+	RecoveryKey   string `protobuf:"bytes,2,opt,name=recovery_key,json=recoveryKey,proto3" json:"recovery_key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *JoinVaultRequest) Reset() {
+	*x = JoinVaultRequest{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[253]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *JoinVaultRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*JoinVaultRequest) ProtoMessage() {}
+
+func (x *JoinVaultRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[253]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use JoinVaultRequest.ProtoReflect.Descriptor instead.
+func (*JoinVaultRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{253}
+}
+
+func (x *JoinVaultRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *JoinVaultRequest) GetRecoveryKey() string {
+	if x != nil {
+		return x.RecoveryKey
+	}
+	return ""
+}
+
+type JoinVaultResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        *VaultStatus           `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	JoinCode      string                 `protobuf:"bytes,2,opt,name=join_code,json=joinCode,proto3" json:"join_code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *JoinVaultResponse) Reset() {
+	*x = JoinVaultResponse{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[254]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *JoinVaultResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*JoinVaultResponse) ProtoMessage() {}
+
+func (x *JoinVaultResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[254]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use JoinVaultResponse.ProtoReflect.Descriptor instead.
+func (*JoinVaultResponse) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{254}
+}
+
+func (x *JoinVaultResponse) GetStatus() *VaultStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+func (x *JoinVaultResponse) GetJoinCode() string {
+	if x != nil {
+		return x.JoinCode
+	}
+	return ""
+}
+
+type ApproveVaultMemberRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MemberId      string                 `protobuf:"bytes,1,opt,name=member_id,json=memberId,proto3" json:"member_id,omitempty"`
+	JoinCode      string                 `protobuf:"bytes,2,opt,name=join_code,json=joinCode,proto3" json:"join_code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ApproveVaultMemberRequest) Reset() {
+	*x = ApproveVaultMemberRequest{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[255]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApproveVaultMemberRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApproveVaultMemberRequest) ProtoMessage() {}
+
+func (x *ApproveVaultMemberRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[255]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApproveVaultMemberRequest.ProtoReflect.Descriptor instead.
+func (*ApproveVaultMemberRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{255}
+}
+
+func (x *ApproveVaultMemberRequest) GetMemberId() string {
+	if x != nil {
+		return x.MemberId
+	}
+	return ""
+}
+
+func (x *ApproveVaultMemberRequest) GetJoinCode() string {
+	if x != nil {
+		return x.JoinCode
+	}
+	return ""
+}
+
+type VaultMemberRef struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MemberId      string                 `protobuf:"bytes,1,opt,name=member_id,json=memberId,proto3" json:"member_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VaultMemberRef) Reset() {
+	*x = VaultMemberRef{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[256]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VaultMemberRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VaultMemberRef) ProtoMessage() {}
+
+func (x *VaultMemberRef) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[256]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VaultMemberRef.ProtoReflect.Descriptor instead.
+func (*VaultMemberRef) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{256}
+}
+
+func (x *VaultMemberRef) GetMemberId() string {
+	if x != nil {
+		return x.MemberId
+	}
+	return ""
+}
+
+type RotateVaultRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	NewRecoveryKey bool                   `protobuf:"varint,1,opt,name=new_recovery_key,json=newRecoveryKey,proto3" json:"new_recovery_key,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *RotateVaultRequest) Reset() {
+	*x = RotateVaultRequest{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[257]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RotateVaultRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RotateVaultRequest) ProtoMessage() {}
+
+func (x *RotateVaultRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[257]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RotateVaultRequest.ProtoReflect.Descriptor instead.
+func (*RotateVaultRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{257}
+}
+
+func (x *RotateVaultRequest) GetNewRecoveryKey() bool {
+	if x != nil {
+		return x.NewRecoveryKey
+	}
+	return false
+}
+
+type RotateVaultResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        *VaultStatus           `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	RecoveryKey   string                 `protobuf:"bytes,2,opt,name=recovery_key,json=recoveryKey,proto3" json:"recovery_key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RotateVaultResponse) Reset() {
+	*x = RotateVaultResponse{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[258]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RotateVaultResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RotateVaultResponse) ProtoMessage() {}
+
+func (x *RotateVaultResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[258]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RotateVaultResponse.ProtoReflect.Descriptor instead.
+func (*RotateVaultResponse) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{258}
+}
+
+func (x *RotateVaultResponse) GetStatus() *VaultStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+func (x *RotateVaultResponse) GetRecoveryKey() string {
+	if x != nil {
+		return x.RecoveryKey
+	}
+	return ""
+}
+
+// Item metadata. Secret values are only returned by RevealVaultItem.
+type VaultItem struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name        string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Urls        []string               `protobuf:"bytes,3,rep,name=urls,proto3" json:"urls,omitempty"`
+	Username    string                 `protobuf:"bytes,4,opt,name=username,proto3" json:"username,omitempty"`
+	HasPassword bool                   `protobuf:"varint,5,opt,name=has_password,json=hasPassword,proto3" json:"has_password,omitempty"`
+	HasTotp     bool                   `protobuf:"varint,6,opt,name=has_totp,json=hasTotp,proto3" json:"has_totp,omitempty"`
+	HasNotes    bool                   `protobuf:"varint,7,opt,name=has_notes,json=hasNotes,proto3" json:"has_notes,omitempty"`
+	CreatedAt   string                 `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt   string                 `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	UpdatedBy   string                 `protobuf:"bytes,10,opt,name=updated_by,json=updatedBy,proto3" json:"updated_by,omitempty"`
+	Conflict    bool                   `protobuf:"varint,11,opt,name=conflict,proto3" json:"conflict,omitempty"`
+	// Set when this machine cannot authenticate the item.
+	Error         string `protobuf:"bytes,12,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VaultItem) Reset() {
+	*x = VaultItem{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[259]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VaultItem) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VaultItem) ProtoMessage() {}
+
+func (x *VaultItem) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[259]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VaultItem.ProtoReflect.Descriptor instead.
+func (*VaultItem) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{259}
+}
+
+func (x *VaultItem) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *VaultItem) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *VaultItem) GetUrls() []string {
+	if x != nil {
+		return x.Urls
+	}
+	return nil
+}
+
+func (x *VaultItem) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
+func (x *VaultItem) GetHasPassword() bool {
+	if x != nil {
+		return x.HasPassword
+	}
+	return false
+}
+
+func (x *VaultItem) GetHasTotp() bool {
+	if x != nil {
+		return x.HasTotp
+	}
+	return false
+}
+
+func (x *VaultItem) GetHasNotes() bool {
+	if x != nil {
+		return x.HasNotes
+	}
+	return false
+}
+
+func (x *VaultItem) GetCreatedAt() string {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return ""
+}
+
+func (x *VaultItem) GetUpdatedAt() string {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return ""
+}
+
+func (x *VaultItem) GetUpdatedBy() string {
+	if x != nil {
+		return x.UpdatedBy
+	}
+	return ""
+}
+
+func (x *VaultItem) GetConflict() bool {
+	if x != nil {
+		return x.Conflict
+	}
+	return false
+}
+
+func (x *VaultItem) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+type ListVaultItemsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Case-insensitive substring of name, username or URL.
+	Query string `protobuf:"bytes,1,opt,name=query,proto3" json:"query,omitempty"`
+	// Items whose URL host matches this URL's host.
+	Url           string `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListVaultItemsRequest) Reset() {
+	*x = ListVaultItemsRequest{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[260]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListVaultItemsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListVaultItemsRequest) ProtoMessage() {}
+
+func (x *ListVaultItemsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[260]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListVaultItemsRequest.ProtoReflect.Descriptor instead.
+func (*ListVaultItemsRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{260}
+}
+
+func (x *ListVaultItemsRequest) GetQuery() string {
+	if x != nil {
+		return x.Query
+	}
+	return ""
+}
+
+func (x *ListVaultItemsRequest) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+type VaultItemsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Items         []*VaultItem           `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VaultItemsResponse) Reset() {
+	*x = VaultItemsResponse{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[261]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VaultItemsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VaultItemsResponse) ProtoMessage() {}
+
+func (x *VaultItemsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[261]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VaultItemsResponse.ProtoReflect.Descriptor instead.
+func (*VaultItemsResponse) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{261}
+}
+
+func (x *VaultItemsResponse) GetItems() []*VaultItem {
+	if x != nil {
+		return x.Items
+	}
+	return nil
+}
+
+type VaultItemRef struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Exact vi_ ID or unique case-insensitive name.
+	Item          string `protobuf:"bytes,1,opt,name=item,proto3" json:"item,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VaultItemRef) Reset() {
+	*x = VaultItemRef{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[262]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VaultItemRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VaultItemRef) ProtoMessage() {}
+
+func (x *VaultItemRef) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[262]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VaultItemRef.ProtoReflect.Descriptor instead.
+func (*VaultItemRef) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{262}
+}
+
+func (x *VaultItemRef) GetItem() string {
+	if x != nil {
+		return x.Item
+	}
+	return ""
+}
+
+type RevealVaultItemRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Item  string                 `protobuf:"bytes,1,opt,name=item,proto3" json:"item,omitempty"`
+	// password, username, totp, url, notes or name.
+	Fields []string `protobuf:"bytes,2,rep,name=fields,proto3" json:"fields,omitempty"`
+	// Audited intent: "get", "totp" or "exec".
+	Purpose       string `protobuf:"bytes,3,opt,name=purpose,proto3" json:"purpose,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevealVaultItemRequest) Reset() {
+	*x = RevealVaultItemRequest{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[263]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevealVaultItemRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevealVaultItemRequest) ProtoMessage() {}
+
+func (x *RevealVaultItemRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[263]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevealVaultItemRequest.ProtoReflect.Descriptor instead.
+func (*RevealVaultItemRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{263}
+}
+
+func (x *RevealVaultItemRequest) GetItem() string {
+	if x != nil {
+		return x.Item
+	}
+	return ""
+}
+
+func (x *RevealVaultItemRequest) GetFields() []string {
+	if x != nil {
+		return x.Fields
+	}
+	return nil
+}
+
+func (x *RevealVaultItemRequest) GetPurpose() string {
+	if x != nil {
+		return x.Purpose
+	}
+	return ""
+}
+
+type RevealVaultItemResponse struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Item   *VaultItem             `protobuf:"bytes,1,opt,name=item,proto3" json:"item,omitempty"`
+	Values map[string]string      `protobuf:"bytes,2,rep,name=values,proto3" json:"values,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Seconds until a returned TOTP code changes.
+	TotpRemainingSeconds int32 `protobuf:"varint,3,opt,name=totp_remaining_seconds,json=totpRemainingSeconds,proto3" json:"totp_remaining_seconds,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *RevealVaultItemResponse) Reset() {
+	*x = RevealVaultItemResponse{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[264]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevealVaultItemResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevealVaultItemResponse) ProtoMessage() {}
+
+func (x *RevealVaultItemResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[264]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevealVaultItemResponse.ProtoReflect.Descriptor instead.
+func (*RevealVaultItemResponse) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{264}
+}
+
+func (x *RevealVaultItemResponse) GetItem() *VaultItem {
+	if x != nil {
+		return x.Item
+	}
+	return nil
+}
+
+func (x *RevealVaultItemResponse) GetValues() map[string]string {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
+
+func (x *RevealVaultItemResponse) GetTotpRemainingSeconds() int32 {
+	if x != nil {
+		return x.TotpRemainingSeconds
+	}
+	return 0
+}
+
+type CreateVaultItemRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Name     string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Urls     []string               `protobuf:"bytes,2,rep,name=urls,proto3" json:"urls,omitempty"`
+	Username string                 `protobuf:"bytes,3,opt,name=username,proto3" json:"username,omitempty"`
+	Password string                 `protobuf:"bytes,4,opt,name=password,proto3" json:"password,omitempty"`
+	// Generate the password on the daemon; it is never returned.
+	GeneratePassword       bool  `protobuf:"varint,5,opt,name=generate_password,json=generatePassword,proto3" json:"generate_password,omitempty"`
+	PasswordLength         int32 `protobuf:"varint,6,opt,name=password_length,json=passwordLength,proto3" json:"password_length,omitempty"`
+	PasswordWithoutSymbols bool  `protobuf:"varint,7,opt,name=password_without_symbols,json=passwordWithoutSymbols,proto3" json:"password_without_symbols,omitempty"`
+	// otpauth://totp URI or base32 secret.
+	Totp          string `protobuf:"bytes,8,opt,name=totp,proto3" json:"totp,omitempty"`
+	Notes         string `protobuf:"bytes,9,opt,name=notes,proto3" json:"notes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateVaultItemRequest) Reset() {
+	*x = CreateVaultItemRequest{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[265]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateVaultItemRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateVaultItemRequest) ProtoMessage() {}
+
+func (x *CreateVaultItemRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[265]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateVaultItemRequest.ProtoReflect.Descriptor instead.
+func (*CreateVaultItemRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{265}
+}
+
+func (x *CreateVaultItemRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateVaultItemRequest) GetUrls() []string {
+	if x != nil {
+		return x.Urls
+	}
+	return nil
+}
+
+func (x *CreateVaultItemRequest) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
+func (x *CreateVaultItemRequest) GetPassword() string {
+	if x != nil {
+		return x.Password
+	}
+	return ""
+}
+
+func (x *CreateVaultItemRequest) GetGeneratePassword() bool {
+	if x != nil {
+		return x.GeneratePassword
+	}
+	return false
+}
+
+func (x *CreateVaultItemRequest) GetPasswordLength() int32 {
+	if x != nil {
+		return x.PasswordLength
+	}
+	return 0
+}
+
+func (x *CreateVaultItemRequest) GetPasswordWithoutSymbols() bool {
+	if x != nil {
+		return x.PasswordWithoutSymbols
+	}
+	return false
+}
+
+func (x *CreateVaultItemRequest) GetTotp() string {
+	if x != nil {
+		return x.Totp
+	}
+	return ""
+}
+
+func (x *CreateVaultItemRequest) GetNotes() string {
+	if x != nil {
+		return x.Notes
+	}
+	return ""
+}
+
+type UpdateVaultItemRequest struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	Item                   string                 `protobuf:"bytes,1,opt,name=item,proto3" json:"item,omitempty"`
+	Name                   *string                `protobuf:"bytes,2,opt,name=name,proto3,oneof" json:"name,omitempty"`
+	Urls                   []string               `protobuf:"bytes,3,rep,name=urls,proto3" json:"urls,omitempty"`
+	ReplaceUrls            bool                   `protobuf:"varint,4,opt,name=replace_urls,json=replaceUrls,proto3" json:"replace_urls,omitempty"`
+	Username               *string                `protobuf:"bytes,5,opt,name=username,proto3,oneof" json:"username,omitempty"`
+	Password               *string                `protobuf:"bytes,6,opt,name=password,proto3,oneof" json:"password,omitempty"`
+	GeneratePassword       bool                   `protobuf:"varint,7,opt,name=generate_password,json=generatePassword,proto3" json:"generate_password,omitempty"`
+	PasswordLength         int32                  `protobuf:"varint,8,opt,name=password_length,json=passwordLength,proto3" json:"password_length,omitempty"`
+	PasswordWithoutSymbols bool                   `protobuf:"varint,9,opt,name=password_without_symbols,json=passwordWithoutSymbols,proto3" json:"password_without_symbols,omitempty"`
+	Totp                   *string                `protobuf:"bytes,10,opt,name=totp,proto3,oneof" json:"totp,omitempty"`
+	Notes                  *string                `protobuf:"bytes,11,opt,name=notes,proto3,oneof" json:"notes,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *UpdateVaultItemRequest) Reset() {
+	*x = UpdateVaultItemRequest{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[266]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateVaultItemRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateVaultItemRequest) ProtoMessage() {}
+
+func (x *UpdateVaultItemRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[266]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateVaultItemRequest.ProtoReflect.Descriptor instead.
+func (*UpdateVaultItemRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{266}
+}
+
+func (x *UpdateVaultItemRequest) GetItem() string {
+	if x != nil {
+		return x.Item
+	}
+	return ""
+}
+
+func (x *UpdateVaultItemRequest) GetName() string {
+	if x != nil && x.Name != nil {
+		return *x.Name
+	}
+	return ""
+}
+
+func (x *UpdateVaultItemRequest) GetUrls() []string {
+	if x != nil {
+		return x.Urls
+	}
+	return nil
+}
+
+func (x *UpdateVaultItemRequest) GetReplaceUrls() bool {
+	if x != nil {
+		return x.ReplaceUrls
+	}
+	return false
+}
+
+func (x *UpdateVaultItemRequest) GetUsername() string {
+	if x != nil && x.Username != nil {
+		return *x.Username
+	}
+	return ""
+}
+
+func (x *UpdateVaultItemRequest) GetPassword() string {
+	if x != nil && x.Password != nil {
+		return *x.Password
+	}
+	return ""
+}
+
+func (x *UpdateVaultItemRequest) GetGeneratePassword() bool {
+	if x != nil {
+		return x.GeneratePassword
+	}
+	return false
+}
+
+func (x *UpdateVaultItemRequest) GetPasswordLength() int32 {
+	if x != nil {
+		return x.PasswordLength
+	}
+	return 0
+}
+
+func (x *UpdateVaultItemRequest) GetPasswordWithoutSymbols() bool {
+	if x != nil {
+		return x.PasswordWithoutSymbols
+	}
+	return false
+}
+
+func (x *UpdateVaultItemRequest) GetTotp() string {
+	if x != nil && x.Totp != nil {
+		return *x.Totp
+	}
+	return ""
+}
+
+func (x *UpdateVaultItemRequest) GetNotes() string {
+	if x != nil && x.Notes != nil {
+		return *x.Notes
+	}
+	return ""
+}
+
+type ListVaultAuditRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Limit         int32                  `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
+	Item          string                 `protobuf:"bytes,2,opt,name=item,proto3" json:"item,omitempty"`
+	CardId        string                 `protobuf:"bytes,3,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListVaultAuditRequest) Reset() {
+	*x = ListVaultAuditRequest{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[267]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListVaultAuditRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListVaultAuditRequest) ProtoMessage() {}
+
+func (x *ListVaultAuditRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[267]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListVaultAuditRequest.ProtoReflect.Descriptor instead.
+func (*ListVaultAuditRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{267}
+}
+
+func (x *ListVaultAuditRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *ListVaultAuditRequest) GetItem() string {
+	if x != nil {
+		return x.Item
+	}
+	return ""
+}
+
+func (x *ListVaultAuditRequest) GetCardId() string {
+	if x != nil {
+		return x.CardId
+	}
+	return ""
+}
+
+type VaultAuditEntry struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Time          string                 `protobuf:"bytes,1,opt,name=time,proto3" json:"time,omitempty"`
+	Action        string                 `protobuf:"bytes,2,opt,name=action,proto3" json:"action,omitempty"`
+	ItemId        string                 `protobuf:"bytes,3,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
+	ItemName      string                 `protobuf:"bytes,4,opt,name=item_name,json=itemName,proto3" json:"item_name,omitempty"`
+	Fields        string                 `protobuf:"bytes,5,opt,name=fields,proto3" json:"fields,omitempty"`
+	Caller        string                 `protobuf:"bytes,6,opt,name=caller,proto3" json:"caller,omitempty"`
+	CardId        string                 `protobuf:"bytes,7,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	Route         string                 `protobuf:"bytes,8,opt,name=route,proto3" json:"route,omitempty"`
+	Outcome       string                 `protobuf:"bytes,9,opt,name=outcome,proto3" json:"outcome,omitempty"`
+	Detail        string                 `protobuf:"bytes,10,opt,name=detail,proto3" json:"detail,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VaultAuditEntry) Reset() {
+	*x = VaultAuditEntry{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[268]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VaultAuditEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VaultAuditEntry) ProtoMessage() {}
+
+func (x *VaultAuditEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[268]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VaultAuditEntry.ProtoReflect.Descriptor instead.
+func (*VaultAuditEntry) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{268}
+}
+
+func (x *VaultAuditEntry) GetTime() string {
+	if x != nil {
+		return x.Time
+	}
+	return ""
+}
+
+func (x *VaultAuditEntry) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *VaultAuditEntry) GetItemId() string {
+	if x != nil {
+		return x.ItemId
+	}
+	return ""
+}
+
+func (x *VaultAuditEntry) GetItemName() string {
+	if x != nil {
+		return x.ItemName
+	}
+	return ""
+}
+
+func (x *VaultAuditEntry) GetFields() string {
+	if x != nil {
+		return x.Fields
+	}
+	return ""
+}
+
+func (x *VaultAuditEntry) GetCaller() string {
+	if x != nil {
+		return x.Caller
+	}
+	return ""
+}
+
+func (x *VaultAuditEntry) GetCardId() string {
+	if x != nil {
+		return x.CardId
+	}
+	return ""
+}
+
+func (x *VaultAuditEntry) GetRoute() string {
+	if x != nil {
+		return x.Route
+	}
+	return ""
+}
+
+func (x *VaultAuditEntry) GetOutcome() string {
+	if x != nil {
+		return x.Outcome
+	}
+	return ""
+}
+
+func (x *VaultAuditEntry) GetDetail() string {
+	if x != nil {
+		return x.Detail
+	}
+	return ""
+}
+
+type VaultAuditResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Entries       []*VaultAuditEntry     `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VaultAuditResponse) Reset() {
+	*x = VaultAuditResponse{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[269]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VaultAuditResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VaultAuditResponse) ProtoMessage() {}
+
+func (x *VaultAuditResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[269]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VaultAuditResponse.ProtoReflect.Descriptor instead.
+func (*VaultAuditResponse) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{269}
+}
+
+func (x *VaultAuditResponse) GetEntries() []*VaultAuditEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
 var File_dieter_v1_dieter_proto protoreflect.FileDescriptor
 
 const file_dieter_v1_dieter_proto_rawDesc = "" +
@@ -22395,7 +23986,7 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x0eCardStateField\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
 	"\brevision\x18\x02 \x01(\tR\brevision\x127\n" +
-	"\bversions\x18\x03 \x03(\v2\x1b.dieter.v1.CardStateVersionR\bversions\"\xc8\x0e\n" +
+	"\bversions\x18\x03 \x03(\v2\x1b.dieter.v1.CardStateVersionR\bversions\"\xeb\x0e\n" +
 	"\x04Card\x12<\n" +
 	"\fstate_fields\x18. \x03(\v2\x19.dieter.v1.CardStateFieldR\vstateFields\x12&\n" +
 	"\x0fowner_daemon_id\x18& \x01(\tR\rownerDaemonId\x12\x1f\n" +
@@ -22447,7 +24038,8 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\vtoken_usage\x18# \x01(\v2\x15.dieter.v1.TokenUsageR\n" +
 	"tokenUsage\x12-\n" +
 	"\x13merged_into_card_id\x18$ \x01(\tR\x10mergedIntoCardId\x120\n" +
-	"\x14provider_account_key\x18% \x01(\tR\x12providerAccountKey\x1aB\n" +
+	"\x14provider_account_key\x18% \x01(\tR\x12providerAccountKey\x12!\n" +
+	"\fvault_access\x18/ \x01(\bR\vvaultAccess\x1aB\n" +
 	"\x14ProviderOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x18\x10\x19\"\x8e\x01\n" +
@@ -22834,7 +24426,7 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\blabel_id\x18\x02 \x01(\tR\alabelId\"2\n" +
 	"\fEffortOption\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"\xfa\x06\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\x9d\a\n" +
 	"\x19CreateConversationRequest\x12\x1f\n" +
 	"\vcheckout_id\x18\x18 \x01(\tR\n" +
 	"checkoutId\x12\x1d\n" +
@@ -22861,7 +24453,8 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x15workspace_base_branch\x18\x11 \x01(\tR\x13workspaceBaseBranch\x12.\n" +
 	"\x13auto_generate_title\x18\x12 \x01(\bR\x11autoGenerateTitle\x122\n" +
 	"\x15workspace_base_remote\x18\x13 \x01(\tR\x13workspaceBaseRemote\x12.\n" +
-	"\x13remote_publish_mode\x18\x14 \x01(\tR\x11remotePublishMode\x1aB\n" +
+	"\x13remote_publish_mode\x18\x14 \x01(\tR\x11remotePublishMode\x12!\n" +
+	"\fvault_access\x18\x19 \x01(\bR\vvaultAccess\x1aB\n" +
 	"\x14ProviderOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"=\n" +
@@ -23936,7 +25529,7 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\tschedules\x18\x01 \x03(\v2\x13.dieter.v1.ScheduleR\tschedules\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12\x1f\n" +
 	"\vtotal_count\x18\x03 \x01(\x05R\n" +
-	"totalCount\"\x9e\a\n" +
+	"totalCount\"\xc1\a\n" +
 	"\bSchedule\x12&\n" +
 	"\x0fowner_daemon_id\x18( \x01(\tR\rownerDaemonId\x12\x1f\n" +
 	"\vcheckout_id\x18) \x01(\tR\n" +
@@ -23968,10 +25561,11 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"updated_at\x18\x16 \x01(\tR\tupdatedAt\x12\x1b\n" +
 	"\tnext_runs\x18\x17 \x03(\tR\bnextRuns\x12S\n" +
 	"\x10provider_options\x18\x18 \x03(\v2(.dieter.v1.Schedule.ProviderOptionsEntryR\x0fproviderOptions\x12%\n" +
-	"\x0eworkspace_mode\x18\x19 \x01(\tR\rworkspaceMode\x1aB\n" +
+	"\x0eworkspace_mode\x18\x19 \x01(\tR\rworkspaceMode\x12!\n" +
+	"\fvault_access\x18* \x01(\bR\vvaultAccess\x1aB\n" +
 	"\x14ProviderOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x12\x10\x13\"\xd5\x05\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x12\x10\x13\"\xf8\x05\n" +
 	"\rScheduleDraft\x12\x1f\n" +
 	"\vcheckout_id\x18( \x01(\tR\n" +
 	"checkoutId\x12\x1d\n" +
@@ -23994,7 +25588,8 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x10open_card_policy\x18\x0f \x01(\tR\x0eopenCardPolicy\x12%\n" +
 	"\x0emisfire_policy\x18\x10 \x01(\tR\rmisfirePolicy\x12X\n" +
 	"\x10provider_options\x18\x12 \x03(\v2-.dieter.v1.ScheduleDraft.ProviderOptionsEntryR\x0fproviderOptions\x12%\n" +
-	"\x0eworkspace_mode\x18\x13 \x01(\tR\rworkspaceMode\x1aB\n" +
+	"\x0eworkspace_mode\x18\x13 \x01(\tR\rworkspaceMode\x12!\n" +
+	"\fvault_access\x18) \x01(\bR\vvaultAccess\x1aB\n" +
 	"\x14ProviderOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x11\x10\x12\"l\n" +
@@ -24262,7 +25857,142 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\tcaught_up\x18\x06 \x01(\bR\bcaughtUp\"Y\n" +
 	"\x1bMarkConversationReadRequest\x12\x17\n" +
 	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12!\n" +
-	"\fresponse_seq\x18\x02 \x01(\x03R\vresponseSeq*\xc5\x01\n" +
+	"\fresponse_seq\x18\x02 \x01(\x03R\vresponseSeq\"s\n" +
+	"\vVaultCaller\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x17\n" +
+	"\acard_id\x18\x02 \x01(\tR\x06cardId\x12!\n" +
+	"\fvault_access\x18\x03 \x01(\bR\vvaultAccess\x12\x14\n" +
+	"\x05route\x18\x04 \x01(\tR\x05route\"\x9a\x02\n" +
+	"\vVaultMember\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1b\n" +
+	"\tdaemon_id\x18\x03 \x01(\tR\bdaemonId\x12\x1a\n" +
+	"\brecovery\x18\x04 \x01(\bR\brecovery\x12\x18\n" +
+	"\apending\x18\x05 \x01(\bR\apending\x12\x12\n" +
+	"\x04self\x18\x06 \x01(\bR\x04self\x12\x1b\n" +
+	"\tjoin_code\x18\a \x01(\tR\bjoinCode\x12!\n" +
+	"\frequested_at\x18\b \x01(\tR\vrequestedAt\x12\x1f\n" +
+	"\vapproved_at\x18\t \x01(\tR\n" +
+	"approvedAt\x12\x1f\n" +
+	"\vapproved_by\x18\n" +
+	" \x01(\tR\n" +
+	"approvedBy\"\xea\x02\n" +
+	"\vVaultStatus\x12\x14\n" +
+	"\x05state\x18\x01 \x01(\tR\x05state\x12\x19\n" +
+	"\bvault_id\x18\x02 \x01(\tR\avaultId\x12\x1b\n" +
+	"\tmember_id\x18\x03 \x01(\tR\bmemberId\x12\x1b\n" +
+	"\tjoin_code\x18\x04 \x01(\tR\bjoinCode\x120\n" +
+	"\amembers\x18\x05 \x03(\v2\x16.dieter.v1.VaultMemberR\amembers\x12\x1d\n" +
+	"\n" +
+	"item_count\x18\x06 \x01(\x05R\titemCount\x12*\n" +
+	"\x11conflict_item_ids\x18\a \x03(\tR\x0fconflictItemIds\x12$\n" +
+	"\x0ecurrent_key_id\x18\b \x01(\tR\fcurrentKeyId\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\t \x01(\tR\tcreatedAt\x12.\n" +
+	"\x06caller\x18\n" +
+	" \x01(\v2\x16.dieter.v1.VaultCallerR\x06caller\"&\n" +
+	"\x10InitVaultRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"f\n" +
+	"\x11InitVaultResponse\x12.\n" +
+	"\x06status\x18\x01 \x01(\v2\x16.dieter.v1.VaultStatusR\x06status\x12!\n" +
+	"\frecovery_key\x18\x02 \x01(\tR\vrecoveryKey\"I\n" +
+	"\x10JoinVaultRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12!\n" +
+	"\frecovery_key\x18\x02 \x01(\tR\vrecoveryKey\"`\n" +
+	"\x11JoinVaultResponse\x12.\n" +
+	"\x06status\x18\x01 \x01(\v2\x16.dieter.v1.VaultStatusR\x06status\x12\x1b\n" +
+	"\tjoin_code\x18\x02 \x01(\tR\bjoinCode\"U\n" +
+	"\x19ApproveVaultMemberRequest\x12\x1b\n" +
+	"\tmember_id\x18\x01 \x01(\tR\bmemberId\x12\x1b\n" +
+	"\tjoin_code\x18\x02 \x01(\tR\bjoinCode\"-\n" +
+	"\x0eVaultMemberRef\x12\x1b\n" +
+	"\tmember_id\x18\x01 \x01(\tR\bmemberId\">\n" +
+	"\x12RotateVaultRequest\x12(\n" +
+	"\x10new_recovery_key\x18\x01 \x01(\bR\x0enewRecoveryKey\"h\n" +
+	"\x13RotateVaultResponse\x12.\n" +
+	"\x06status\x18\x01 \x01(\v2\x16.dieter.v1.VaultStatusR\x06status\x12!\n" +
+	"\frecovery_key\x18\x02 \x01(\tR\vrecoveryKey\"\xc9\x02\n" +
+	"\tVaultItem\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
+	"\x04urls\x18\x03 \x03(\tR\x04urls\x12\x1a\n" +
+	"\busername\x18\x04 \x01(\tR\busername\x12!\n" +
+	"\fhas_password\x18\x05 \x01(\bR\vhasPassword\x12\x19\n" +
+	"\bhas_totp\x18\x06 \x01(\bR\ahasTotp\x12\x1b\n" +
+	"\thas_notes\x18\a \x01(\bR\bhasNotes\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\b \x01(\tR\tcreatedAt\x12\x1d\n" +
+	"\n" +
+	"updated_at\x18\t \x01(\tR\tupdatedAt\x12\x1d\n" +
+	"\n" +
+	"updated_by\x18\n" +
+	" \x01(\tR\tupdatedBy\x12\x1a\n" +
+	"\bconflict\x18\v \x01(\bR\bconflict\x12\x14\n" +
+	"\x05error\x18\f \x01(\tR\x05error\"?\n" +
+	"\x15ListVaultItemsRequest\x12\x14\n" +
+	"\x05query\x18\x01 \x01(\tR\x05query\x12\x10\n" +
+	"\x03url\x18\x02 \x01(\tR\x03url\"@\n" +
+	"\x12VaultItemsResponse\x12*\n" +
+	"\x05items\x18\x01 \x03(\v2\x14.dieter.v1.VaultItemR\x05items\"\"\n" +
+	"\fVaultItemRef\x12\x12\n" +
+	"\x04item\x18\x01 \x01(\tR\x04item\"^\n" +
+	"\x16RevealVaultItemRequest\x12\x12\n" +
+	"\x04item\x18\x01 \x01(\tR\x04item\x12\x16\n" +
+	"\x06fields\x18\x02 \x03(\tR\x06fields\x12\x18\n" +
+	"\apurpose\x18\x03 \x01(\tR\apurpose\"\xfc\x01\n" +
+	"\x17RevealVaultItemResponse\x12(\n" +
+	"\x04item\x18\x01 \x01(\v2\x14.dieter.v1.VaultItemR\x04item\x12F\n" +
+	"\x06values\x18\x02 \x03(\v2..dieter.v1.RevealVaultItemResponse.ValuesEntryR\x06values\x124\n" +
+	"\x16totp_remaining_seconds\x18\x03 \x01(\x05R\x14totpRemainingSeconds\x1a9\n" +
+	"\vValuesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb2\x02\n" +
+	"\x16CreateVaultItemRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
+	"\x04urls\x18\x02 \x03(\tR\x04urls\x12\x1a\n" +
+	"\busername\x18\x03 \x01(\tR\busername\x12\x1a\n" +
+	"\bpassword\x18\x04 \x01(\tR\bpassword\x12+\n" +
+	"\x11generate_password\x18\x05 \x01(\bR\x10generatePassword\x12'\n" +
+	"\x0fpassword_length\x18\x06 \x01(\x05R\x0epasswordLength\x128\n" +
+	"\x18password_without_symbols\x18\a \x01(\bR\x16passwordWithoutSymbols\x12\x12\n" +
+	"\x04totp\x18\b \x01(\tR\x04totp\x12\x14\n" +
+	"\x05notes\x18\t \x01(\tR\x05notes\"\xb8\x03\n" +
+	"\x16UpdateVaultItemRequest\x12\x12\n" +
+	"\x04item\x18\x01 \x01(\tR\x04item\x12\x17\n" +
+	"\x04name\x18\x02 \x01(\tH\x00R\x04name\x88\x01\x01\x12\x12\n" +
+	"\x04urls\x18\x03 \x03(\tR\x04urls\x12!\n" +
+	"\freplace_urls\x18\x04 \x01(\bR\vreplaceUrls\x12\x1f\n" +
+	"\busername\x18\x05 \x01(\tH\x01R\busername\x88\x01\x01\x12\x1f\n" +
+	"\bpassword\x18\x06 \x01(\tH\x02R\bpassword\x88\x01\x01\x12+\n" +
+	"\x11generate_password\x18\a \x01(\bR\x10generatePassword\x12'\n" +
+	"\x0fpassword_length\x18\b \x01(\x05R\x0epasswordLength\x128\n" +
+	"\x18password_without_symbols\x18\t \x01(\bR\x16passwordWithoutSymbols\x12\x17\n" +
+	"\x04totp\x18\n" +
+	" \x01(\tH\x03R\x04totp\x88\x01\x01\x12\x19\n" +
+	"\x05notes\x18\v \x01(\tH\x04R\x05notes\x88\x01\x01B\a\n" +
+	"\x05_nameB\v\n" +
+	"\t_usernameB\v\n" +
+	"\t_passwordB\a\n" +
+	"\x05_totpB\b\n" +
+	"\x06_notes\"Z\n" +
+	"\x15ListVaultAuditRequest\x12\x14\n" +
+	"\x05limit\x18\x01 \x01(\x05R\x05limit\x12\x12\n" +
+	"\x04item\x18\x02 \x01(\tR\x04item\x12\x17\n" +
+	"\acard_id\x18\x03 \x01(\tR\x06cardId\"\x84\x02\n" +
+	"\x0fVaultAuditEntry\x12\x12\n" +
+	"\x04time\x18\x01 \x01(\tR\x04time\x12\x16\n" +
+	"\x06action\x18\x02 \x01(\tR\x06action\x12\x17\n" +
+	"\aitem_id\x18\x03 \x01(\tR\x06itemId\x12\x1b\n" +
+	"\titem_name\x18\x04 \x01(\tR\bitemName\x12\x16\n" +
+	"\x06fields\x18\x05 \x01(\tR\x06fields\x12\x16\n" +
+	"\x06caller\x18\x06 \x01(\tR\x06caller\x12\x17\n" +
+	"\acard_id\x18\a \x01(\tR\x06cardId\x12\x14\n" +
+	"\x05route\x18\b \x01(\tR\x05route\x12\x18\n" +
+	"\aoutcome\x18\t \x01(\tR\aoutcome\x12\x16\n" +
+	"\x06detail\x18\n" +
+	" \x01(\tR\x06detail\"J\n" +
+	"\x12VaultAuditResponse\x124\n" +
+	"\aentries\x18\x01 \x03(\v2\x1a.dieter.v1.VaultAuditEntryR\aentries*\xc5\x01\n" +
 	"\x11GPUTelemetryState\x12#\n" +
 	"\x1fGPU_TELEMETRY_STATE_UNSPECIFIED\x10\x00\x12#\n" +
 	"\x1fGPU_TELEMETRY_STATE_UNAVAILABLE\x10\x01\x12\"\n" +
@@ -24315,7 +26045,7 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"-REMOTE_DESKTOP_RENDER_MEASUREMENT_UNSPECIFIED\x10\x00\x125\n" +
 	"1REMOTE_DESKTOP_RENDER_MEASUREMENT_METAL_PRESENTED\x10\x01\x123\n" +
 	"/REMOTE_DESKTOP_RENDER_MEASUREMENT_EGL_SUBMITTED\x10\x02\x12<\n" +
-	"8REMOTE_DESKTOP_RENDER_MEASUREMENT_ANDROID_FRAME_RENDERED\x10\x032\xdfQ\n" +
+	"8REMOTE_DESKTOP_RENDER_MEASUREMENT_ANDROID_FRAME_RENDERED\x10\x032\xb4Y\n" +
 	"\rDieterService\x12-\n" +
 	"\x05GetKV\x12\x10.dieter.v1.KVRef\x1a\x12.dieter.v1.KVEntry\x125\n" +
 	"\x06ListKV\x12\x18.dieter.v1.KVListRequest\x1a\x11.dieter.v1.KVPage\x124\n" +
@@ -24458,7 +26188,20 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x0eDeleteSchedule\x12\x16.dieter.v1.ScheduleRef\x1a\x16.google.protobuf.Empty\x12=\n" +
 	"\vRunSchedule\x12\x16.dieter.v1.ScheduleRef\x1a\x16.dieter.v1.ScheduleRun\x12O\n" +
 	"\x12SetScheduleEnabled\x12$.dieter.v1.SetScheduleEnabledRequest\x1a\x13.dieter.v1.Schedule\x12W\n" +
-	"\x10ListScheduleRuns\x12\".dieter.v1.ListScheduleRunsRequest\x1a\x1f.dieter.v1.ScheduleRunsResponseB_\n" +
+	"\x10ListScheduleRuns\x12\".dieter.v1.ListScheduleRunsRequest\x1a\x1f.dieter.v1.ScheduleRunsResponse\x12@\n" +
+	"\x0eGetVaultStatus\x12\x16.google.protobuf.Empty\x1a\x16.dieter.v1.VaultStatus\x12F\n" +
+	"\tInitVault\x12\x1b.dieter.v1.InitVaultRequest\x1a\x1c.dieter.v1.InitVaultResponse\x12F\n" +
+	"\tJoinVault\x12\x1b.dieter.v1.JoinVaultRequest\x1a\x1c.dieter.v1.JoinVaultResponse\x12R\n" +
+	"\x12ApproveVaultMember\x12$.dieter.v1.ApproveVaultMemberRequest\x1a\x16.dieter.v1.VaultStatus\x12F\n" +
+	"\x11RemoveVaultMember\x12\x19.dieter.v1.VaultMemberRef\x1a\x16.dieter.v1.VaultStatus\x12L\n" +
+	"\vRotateVault\x12\x1d.dieter.v1.RotateVaultRequest\x1a\x1e.dieter.v1.RotateVaultResponse\x12Q\n" +
+	"\x0eListVaultItems\x12 .dieter.v1.ListVaultItemsRequest\x1a\x1d.dieter.v1.VaultItemsResponse\x12=\n" +
+	"\fGetVaultItem\x12\x17.dieter.v1.VaultItemRef\x1a\x14.dieter.v1.VaultItem\x12X\n" +
+	"\x0fRevealVaultItem\x12!.dieter.v1.RevealVaultItemRequest\x1a\".dieter.v1.RevealVaultItemResponse\x12J\n" +
+	"\x0fCreateVaultItem\x12!.dieter.v1.CreateVaultItemRequest\x1a\x14.dieter.v1.VaultItem\x12J\n" +
+	"\x0fUpdateVaultItem\x12!.dieter.v1.UpdateVaultItemRequest\x1a\x14.dieter.v1.VaultItem\x12@\n" +
+	"\x0fDeleteVaultItem\x12\x17.dieter.v1.VaultItemRef\x1a\x14.dieter.v1.VaultItem\x12Q\n" +
+	"\x0eListVaultAudit\x12 .dieter.v1.ListVaultAuditRequest\x1a\x1d.dieter.v1.VaultAuditResponseB_\n" +
 	"\x14com.dbpprt.dieter.v1B\vDieterProtoP\x01Z8github.com/dbpprt/dieter/internal/gen/dieter/v1;dieterv1b\x06proto3"
 
 var (
@@ -24474,7 +26217,7 @@ func file_dieter_v1_dieter_proto_rawDescGZIP() []byte {
 }
 
 var file_dieter_v1_dieter_proto_enumTypes = make([]protoimpl.EnumInfo, 14)
-var file_dieter_v1_dieter_proto_msgTypes = make([]protoimpl.MessageInfo, 262)
+var file_dieter_v1_dieter_proto_msgTypes = make([]protoimpl.MessageInfo, 285)
 var file_dieter_v1_dieter_proto_goTypes = []any{
 	(GPUTelemetryState)(0),                            // 0: dieter.v1.GPUTelemetryState
 	(GPUVendor)(0),                                    // 1: dieter.v1.GPUVendor
@@ -24738,26 +26481,49 @@ var file_dieter_v1_dieter_proto_goTypes = []any{
 	(*KVWatchRequest)(nil),                            // 259: dieter.v1.KVWatchRequest
 	(*KVFrame)(nil),                                   // 260: dieter.v1.KVFrame
 	(*MarkConversationReadRequest)(nil),               // 261: dieter.v1.MarkConversationReadRequest
-	nil,                                               // 262: dieter.v1.BoardRetirementVersion.ClockEntry
-	nil,                                               // 263: dieter.v1.CardStateVersion.ClockEntry
-	nil,                                               // 264: dieter.v1.Card.ProviderOptionsEntry
-	nil,                                               // 265: dieter.v1.HarnessSelection.ProviderOptionsEntry
-	nil,                                               // 266: dieter.v1.ValidationCommand.EnvironmentEntry
-	nil,                                               // 267: dieter.v1.CreateConversationRequest.ProviderOptionsEntry
-	nil,                                               // 268: dieter.v1.SendMessageRequest.ProviderOptionsEntry
-	nil,                                               // 269: dieter.v1.DraftAgentSettings.ProviderOptionsEntry
-	nil,                                               // 270: dieter.v1.GitOperation.ParametersEntry
-	nil,                                               // 271: dieter.v1.StartGitOperationRequest.ParametersEntry
-	nil,                                               // 272: dieter.v1.StartExecutionRequest.EnvironmentEntry
-	nil,                                               // 273: dieter.v1.Schedule.ProviderOptionsEntry
-	nil,                                               // 274: dieter.v1.ScheduleDraft.ProviderOptionsEntry
-	nil,                                               // 275: dieter.v1.PeerVersion.ClockEntry
-	(*v1.CompatibilityPolicy)(nil),                    // 276: dieter.gateway.v1.CompatibilityPolicy
-	(*v1.RTCConfiguration)(nil),                       // 277: dieter.gateway.v1.RTCConfiguration
-	(*emptypb.Empty)(nil),                             // 278: google.protobuf.Empty
+	(*VaultCaller)(nil),                               // 262: dieter.v1.VaultCaller
+	(*VaultMember)(nil),                               // 263: dieter.v1.VaultMember
+	(*VaultStatus)(nil),                               // 264: dieter.v1.VaultStatus
+	(*InitVaultRequest)(nil),                          // 265: dieter.v1.InitVaultRequest
+	(*InitVaultResponse)(nil),                         // 266: dieter.v1.InitVaultResponse
+	(*JoinVaultRequest)(nil),                          // 267: dieter.v1.JoinVaultRequest
+	(*JoinVaultResponse)(nil),                         // 268: dieter.v1.JoinVaultResponse
+	(*ApproveVaultMemberRequest)(nil),                 // 269: dieter.v1.ApproveVaultMemberRequest
+	(*VaultMemberRef)(nil),                            // 270: dieter.v1.VaultMemberRef
+	(*RotateVaultRequest)(nil),                        // 271: dieter.v1.RotateVaultRequest
+	(*RotateVaultResponse)(nil),                       // 272: dieter.v1.RotateVaultResponse
+	(*VaultItem)(nil),                                 // 273: dieter.v1.VaultItem
+	(*ListVaultItemsRequest)(nil),                     // 274: dieter.v1.ListVaultItemsRequest
+	(*VaultItemsResponse)(nil),                        // 275: dieter.v1.VaultItemsResponse
+	(*VaultItemRef)(nil),                              // 276: dieter.v1.VaultItemRef
+	(*RevealVaultItemRequest)(nil),                    // 277: dieter.v1.RevealVaultItemRequest
+	(*RevealVaultItemResponse)(nil),                   // 278: dieter.v1.RevealVaultItemResponse
+	(*CreateVaultItemRequest)(nil),                    // 279: dieter.v1.CreateVaultItemRequest
+	(*UpdateVaultItemRequest)(nil),                    // 280: dieter.v1.UpdateVaultItemRequest
+	(*ListVaultAuditRequest)(nil),                     // 281: dieter.v1.ListVaultAuditRequest
+	(*VaultAuditEntry)(nil),                           // 282: dieter.v1.VaultAuditEntry
+	(*VaultAuditResponse)(nil),                        // 283: dieter.v1.VaultAuditResponse
+	nil,                                               // 284: dieter.v1.BoardRetirementVersion.ClockEntry
+	nil,                                               // 285: dieter.v1.CardStateVersion.ClockEntry
+	nil,                                               // 286: dieter.v1.Card.ProviderOptionsEntry
+	nil,                                               // 287: dieter.v1.HarnessSelection.ProviderOptionsEntry
+	nil,                                               // 288: dieter.v1.ValidationCommand.EnvironmentEntry
+	nil,                                               // 289: dieter.v1.CreateConversationRequest.ProviderOptionsEntry
+	nil,                                               // 290: dieter.v1.SendMessageRequest.ProviderOptionsEntry
+	nil,                                               // 291: dieter.v1.DraftAgentSettings.ProviderOptionsEntry
+	nil,                                               // 292: dieter.v1.GitOperation.ParametersEntry
+	nil,                                               // 293: dieter.v1.StartGitOperationRequest.ParametersEntry
+	nil,                                               // 294: dieter.v1.StartExecutionRequest.EnvironmentEntry
+	nil,                                               // 295: dieter.v1.Schedule.ProviderOptionsEntry
+	nil,                                               // 296: dieter.v1.ScheduleDraft.ProviderOptionsEntry
+	nil,                                               // 297: dieter.v1.PeerVersion.ClockEntry
+	nil,                                               // 298: dieter.v1.RevealVaultItemResponse.ValuesEntry
+	(*v1.CompatibilityPolicy)(nil),                    // 299: dieter.gateway.v1.CompatibilityPolicy
+	(*v1.RTCConfiguration)(nil),                       // 300: dieter.gateway.v1.RTCConfiguration
+	(*emptypb.Empty)(nil),                             // 301: google.protobuf.Empty
 }
 var file_dieter_v1_dieter_proto_depIdxs = []int32{
-	276, // 0: dieter.v1.HealthResponse.compatibility_policy:type_name -> dieter.gateway.v1.CompatibilityPolicy
+	299, // 0: dieter.v1.HealthResponse.compatibility_policy:type_name -> dieter.gateway.v1.CompatibilityPolicy
 	20,  // 1: dieter.v1.MachineInformation.processes:type_name -> dieter.v1.MachineProcess
 	17,  // 2: dieter.v1.MachineInformation.daemon_build:type_name -> dieter.v1.BuildInformation
 	18,  // 3: dieter.v1.MachineInformation.gpu:type_name -> dieter.v1.GPUTelemetry
@@ -24794,15 +26560,15 @@ var file_dieter_v1_dieter_proto_depIdxs = []int32{
 	45,  // 34: dieter.v1.Board.labels:type_name -> dieter.v1.Label
 	46,  // 35: dieter.v1.Board.lanes:type_name -> dieter.v1.Lane
 	41,  // 36: dieter.v1.Board.retirement_versions:type_name -> dieter.v1.BoardRetirementVersion
-	262, // 37: dieter.v1.BoardRetirementVersion.clock:type_name -> dieter.v1.BoardRetirementVersion.ClockEntry
+	284, // 37: dieter.v1.BoardRetirementVersion.clock:type_name -> dieter.v1.BoardRetirementVersion.ClockEntry
 	40,  // 38: dieter.v1.ListRetiredBoardsResponse.boards:type_name -> dieter.v1.Board
-	263, // 39: dieter.v1.CardStateVersion.clock:type_name -> dieter.v1.CardStateVersion.ClockEntry
+	285, // 39: dieter.v1.CardStateVersion.clock:type_name -> dieter.v1.CardStateVersion.ClockEntry
 	50,  // 40: dieter.v1.CardStateVersion.value:type_name -> dieter.v1.Card
 	48,  // 41: dieter.v1.CardStateField.versions:type_name -> dieter.v1.CardStateVersion
 	49,  // 42: dieter.v1.Card.state_fields:type_name -> dieter.v1.CardStateField
 	51,  // 43: dieter.v1.Card.origin:type_name -> dieter.v1.CardOrigin
 	58,  // 44: dieter.v1.Card.active_subagents:type_name -> dieter.v1.Subagent
-	264, // 45: dieter.v1.Card.provider_options:type_name -> dieter.v1.Card.ProviderOptionsEntry
+	286, // 45: dieter.v1.Card.provider_options:type_name -> dieter.v1.Card.ProviderOptionsEntry
 	129, // 46: dieter.v1.Card.workspace:type_name -> dieter.v1.WorkspaceSummary
 	143, // 47: dieter.v1.Card.pull_request:type_name -> dieter.v1.PullRequestSummary
 	47,  // 48: dieter.v1.Card.token_usage:type_name -> dieter.v1.TokenUsage
@@ -24822,7 +26588,7 @@ var file_dieter_v1_dieter_proto_depIdxs = []int32{
 	63,  // 62: dieter.v1.UiMessage.parts:type_name -> dieter.v1.MessagePart
 	63,  // 63: dieter.v1.QueuedMessage.parts:type_name -> dieter.v1.MessagePart
 	66,  // 64: dieter.v1.QueuedMessage.selection:type_name -> dieter.v1.HarnessSelection
-	265, // 65: dieter.v1.HarnessSelection.provider_options:type_name -> dieter.v1.HarnessSelection.ProviderOptionsEntry
+	287, // 65: dieter.v1.HarnessSelection.provider_options:type_name -> dieter.v1.HarnessSelection.ProviderOptionsEntry
 	52,  // 66: dieter.v1.ConversationSnapshot.detail:type_name -> dieter.v1.CardDetail
 	54,  // 67: dieter.v1.ConversationSnapshot.conversation:type_name -> dieter.v1.Conversation
 	67,  // 68: dieter.v1.ConversationSnapshot.page:type_name -> dieter.v1.ConversationPage
@@ -24844,9 +26610,9 @@ var file_dieter_v1_dieter_proto_depIdxs = []int32{
 	39,  // 84: dieter.v1.CreateProjectResponse.project:type_name -> dieter.v1.Project
 	40,  // 85: dieter.v1.CreateProjectResponse.board:type_name -> dieter.v1.Board
 	91,  // 86: dieter.v1.UpdateProjectRequest.hostnames:type_name -> dieter.v1.ProjectHostnames
-	266, // 87: dieter.v1.ValidationCommand.environment:type_name -> dieter.v1.ValidationCommand.EnvironmentEntry
+	288, // 87: dieter.v1.ValidationCommand.environment:type_name -> dieter.v1.ValidationCommand.EnvironmentEntry
 	92,  // 88: dieter.v1.UpdateProjectWorkspaceSettingsRequest.validation_commands:type_name -> dieter.v1.ValidationCommand
-	267, // 89: dieter.v1.CreateConversationRequest.provider_options:type_name -> dieter.v1.CreateConversationRequest.ProviderOptionsEntry
+	289, // 89: dieter.v1.CreateConversationRequest.provider_options:type_name -> dieter.v1.CreateConversationRequest.ProviderOptionsEntry
 	63,  // 90: dieter.v1.CreateConversationRequest.attachments:type_name -> dieter.v1.MessagePart
 	39,  // 91: dieter.v1.ChatsResponse.projects:type_name -> dieter.v1.Project
 	50,  // 92: dieter.v1.ChatsResponse.chats:type_name -> dieter.v1.Card
@@ -24862,25 +26628,25 @@ var file_dieter_v1_dieter_proto_depIdxs = []int32{
 	56,  // 102: dieter.v1.ConversationUpdate.presented_content:type_name -> dieter.v1.ContentPresentation
 	55,  // 103: dieter.v1.ConversationUpdate.provider_status:type_name -> dieter.v1.ProviderStatus
 	63,  // 104: dieter.v1.SendMessageRequest.parts:type_name -> dieter.v1.MessagePart
-	268, // 105: dieter.v1.SendMessageRequest.provider_options:type_name -> dieter.v1.SendMessageRequest.ProviderOptionsEntry
+	290, // 105: dieter.v1.SendMessageRequest.provider_options:type_name -> dieter.v1.SendMessageRequest.ProviderOptionsEntry
 	50,  // 106: dieter.v1.StartCardResponse.card:type_name -> dieter.v1.Card
-	269, // 107: dieter.v1.DraftAgentSettings.provider_options:type_name -> dieter.v1.DraftAgentSettings.ProviderOptionsEntry
+	291, // 107: dieter.v1.DraftAgentSettings.provider_options:type_name -> dieter.v1.DraftAgentSettings.ProviderOptionsEntry
 	122, // 108: dieter.v1.UpdateCardRequest.agent_settings:type_name -> dieter.v1.DraftAgentSettings
 	130, // 109: dieter.v1.WorkspacesResponse.workspaces:type_name -> dieter.v1.Workspace
 	132, // 110: dieter.v1.Changeset.files:type_name -> dieter.v1.ChangedFile
 	133, // 111: dieter.v1.Changeset.commits:type_name -> dieter.v1.WorkspaceCommit
 	138, // 112: dieter.v1.ChangeCommentsResponse.comments:type_name -> dieter.v1.ChangeComment
-	270, // 113: dieter.v1.GitOperation.parameters:type_name -> dieter.v1.GitOperation.ParametersEntry
+	292, // 113: dieter.v1.GitOperation.parameters:type_name -> dieter.v1.GitOperation.ParametersEntry
 	145, // 114: dieter.v1.GitOperation.validation_results:type_name -> dieter.v1.ValidationResult
 	144, // 115: dieter.v1.GitOperation.conflicts:type_name -> dieter.v1.GitConflict
-	271, // 116: dieter.v1.StartGitOperationRequest.parameters:type_name -> dieter.v1.StartGitOperationRequest.ParametersEntry
+	293, // 116: dieter.v1.StartGitOperationRequest.parameters:type_name -> dieter.v1.StartGitOperationRequest.ParametersEntry
 	146, // 117: dieter.v1.GitOperationFrame.operation:type_name -> dieter.v1.GitOperation
 	150, // 118: dieter.v1.GitOperationFrame.logs:type_name -> dieter.v1.GitOperationLogEntry
 	153, // 119: dieter.v1.FileList.entries:type_name -> dieter.v1.FileEntry
 	157, // 120: dieter.v1.TerminalsResponse.terminals:type_name -> dieter.v1.Terminal
 	157, // 121: dieter.v1.TerminalFrame.terminal:type_name -> dieter.v1.Terminal
 	167, // 122: dieter.v1.ExecutionsResponse.executions:type_name -> dieter.v1.Execution
-	272, // 123: dieter.v1.StartExecutionRequest.environment:type_name -> dieter.v1.StartExecutionRequest.EnvironmentEntry
+	294, // 123: dieter.v1.StartExecutionRequest.environment:type_name -> dieter.v1.StartExecutionRequest.EnvironmentEntry
 	167, // 124: dieter.v1.ExecutionEvent.execution:type_name -> dieter.v1.Execution
 	4,   // 125: dieter.v1.ExecutionEvent.stream:type_name -> dieter.v1.ExecutionStream
 	5,   // 126: dieter.v1.SignalExecutionRequest.signal:type_name -> dieter.v1.ExecutionSignal
@@ -24888,7 +26654,7 @@ var file_dieter_v1_dieter_proto_depIdxs = []int32{
 	184, // 128: dieter.v1.RemoteDesktopCapabilities.codec_modes:type_name -> dieter.v1.RemoteDesktopCodecMode
 	6,   // 129: dieter.v1.RemoteDesktopCapabilities.availability:type_name -> dieter.v1.RemoteDesktopAvailability
 	178, // 130: dieter.v1.RemoteDesktopDisplayModes.modes:type_name -> dieter.v1.RemoteDesktopDisplayMode
-	277, // 131: dieter.v1.StartRemoteDesktopRequest.rtc_configuration:type_name -> dieter.gateway.v1.RTCConfiguration
+	300, // 131: dieter.v1.StartRemoteDesktopRequest.rtc_configuration:type_name -> dieter.gateway.v1.RTCConfiguration
 	188, // 132: dieter.v1.StartRemoteDesktopRequest.offer:type_name -> dieter.v1.RemoteDesktopSessionDescription
 	189, // 133: dieter.v1.StartRemoteDesktopRequest.initial_candidates:type_name -> dieter.v1.RemoteDesktopICECandidate
 	8,   // 134: dieter.v1.StartRemoteDesktopRequest.quality:type_name -> dieter.v1.RemoteDesktopQuality
@@ -24917,18 +26683,18 @@ var file_dieter_v1_dieter_proto_depIdxs = []int32{
 	189, // 157: dieter.v1.RemoteDesktopSignal.candidate:type_name -> dieter.v1.RemoteDesktopICECandidate
 	205, // 158: dieter.v1.RemoteDesktopSignal.state:type_name -> dieter.v1.RemoteDesktopSessionState
 	211, // 159: dieter.v1.RemoteDesktopSignal.error:type_name -> dieter.v1.RemoteDesktopSessionError
-	278, // 160: dieter.v1.RemoteDesktopSignal.lease_heartbeat:type_name -> google.protobuf.Empty
+	301, // 160: dieter.v1.RemoteDesktopSignal.lease_heartbeat:type_name -> google.protobuf.Empty
 	220, // 161: dieter.v1.SchedulesResponse.schedules:type_name -> dieter.v1.Schedule
-	273, // 162: dieter.v1.Schedule.provider_options:type_name -> dieter.v1.Schedule.ProviderOptionsEntry
-	274, // 163: dieter.v1.ScheduleDraft.provider_options:type_name -> dieter.v1.ScheduleDraft.ProviderOptionsEntry
+	295, // 162: dieter.v1.Schedule.provider_options:type_name -> dieter.v1.Schedule.ProviderOptionsEntry
+	296, // 163: dieter.v1.ScheduleDraft.provider_options:type_name -> dieter.v1.ScheduleDraft.ProviderOptionsEntry
 	221, // 164: dieter.v1.SaveScheduleRequest.schedule:type_name -> dieter.v1.ScheduleDraft
 	228, // 165: dieter.v1.ScheduleRunsResponse.runs:type_name -> dieter.v1.ScheduleRun
 	12,  // 166: dieter.v1.RemoteDesktopClipboardRequest.action:type_name -> dieter.v1.RemoteDesktopClipboardRequest.Action
 	234, // 167: dieter.v1.RemoteDesktopClipboardRequest.items:type_name -> dieter.v1.RemoteDesktopClipboardItem
 	13,  // 168: dieter.v1.RemoteDesktopClipboardItem.kind:type_name -> dieter.v1.RemoteDesktopClipboardItem.Kind
 	234, // 169: dieter.v1.RemoteDesktopClipboardResponse.items:type_name -> dieter.v1.RemoteDesktopClipboardItem
-	277, // 170: dieter.v1.StartControlConnectionRequest.rtc_configuration:type_name -> dieter.gateway.v1.RTCConfiguration
-	275, // 171: dieter.v1.PeerVersion.clock:type_name -> dieter.v1.PeerVersion.ClockEntry
+	300, // 170: dieter.v1.StartControlConnectionRequest.rtc_configuration:type_name -> dieter.gateway.v1.RTCConfiguration
+	297, // 171: dieter.v1.PeerVersion.clock:type_name -> dieter.v1.PeerVersion.ClockEntry
 	240, // 172: dieter.v1.PeerRecord.versions:type_name -> dieter.v1.PeerVersion
 	243, // 173: dieter.v1.PeerStoreStatus.peers:type_name -> dieter.v1.PeerSyncDiagnostic
 	241, // 174: dieter.v1.PeerSnapshot.records:type_name -> dieter.v1.PeerRecord
@@ -24944,281 +26710,316 @@ var file_dieter_v1_dieter_proto_depIdxs = []int32{
 	253, // 184: dieter.v1.KVWatchRequest.after:type_name -> dieter.v1.KVCursor
 	253, // 185: dieter.v1.KVFrame.cursor:type_name -> dieter.v1.KVCursor
 	252, // 186: dieter.v1.KVFrame.entries:type_name -> dieter.v1.KVEntry
-	251, // 187: dieter.v1.DieterService.GetKV:input_type -> dieter.v1.KVRef
-	254, // 188: dieter.v1.DieterService.ListKV:input_type -> dieter.v1.KVListRequest
-	256, // 189: dieter.v1.DieterService.PutKV:input_type -> dieter.v1.KVPutRequest
-	257, // 190: dieter.v1.DieterService.DeleteKV:input_type -> dieter.v1.KVDeleteRequest
-	258, // 191: dieter.v1.DieterService.MoveKV:input_type -> dieter.v1.KVMoveRequest
-	259, // 192: dieter.v1.DieterService.WatchKV:input_type -> dieter.v1.KVWatchRequest
-	249, // 193: dieter.v1.DieterService.GetPeerChanges:input_type -> dieter.v1.PeerChangesRequest
-	248, // 194: dieter.v1.DieterService.GetPeerRecord:input_type -> dieter.v1.PeerRecordRef
-	278, // 195: dieter.v1.DieterService.GetPeerStoreStatus:input_type -> google.protobuf.Empty
-	244, // 196: dieter.v1.DieterService.ListPeerRecords:input_type -> dieter.v1.PeerSnapshotRequest
-	246, // 197: dieter.v1.DieterService.PutPeerRecord:input_type -> dieter.v1.PutPeerRecordRequest
-	247, // 198: dieter.v1.DieterService.MergePeerRecords:input_type -> dieter.v1.MergePeerRecordsRequest
-	278, // 199: dieter.v1.DieterService.Health:input_type -> google.protobuf.Empty
-	278, // 200: dieter.v1.DieterService.GetRuntimeStatus:input_type -> google.protobuf.Empty
-	237, // 201: dieter.v1.DieterService.StartControlConnection:input_type -> dieter.v1.StartControlConnectionRequest
-	238, // 202: dieter.v1.DieterService.GetControlConnection:input_type -> dieter.v1.ControlConnectionRef
-	238, // 203: dieter.v1.DieterService.CloseControlConnection:input_type -> dieter.v1.ControlConnectionRef
-	278, // 204: dieter.v1.DieterService.GetMachineInformation:input_type -> google.protobuf.Empty
-	23,  // 205: dieter.v1.DieterService.PerformMachineOperation:input_type -> dieter.v1.MachineOperationRequest
-	26,  // 206: dieter.v1.DieterService.GetState:input_type -> dieter.v1.GetStateRequest
-	29,  // 207: dieter.v1.DieterService.WatchChanges:input_type -> dieter.v1.ChangesRequest
-	278, // 208: dieter.v1.DieterService.GetHarnesses:input_type -> google.protobuf.Empty
-	278, // 209: dieter.v1.DieterService.GetSettings:input_type -> google.protobuf.Empty
-	278, // 210: dieter.v1.DieterService.GetSettingsOptions:input_type -> google.protobuf.Empty
-	78,  // 211: dieter.v1.DieterService.UpdateSettings:input_type -> dieter.v1.UpdateSettingsRequest
-	278, // 212: dieter.v1.DieterService.GetPromptSettings:input_type -> google.protobuf.Empty
-	80,  // 213: dieter.v1.DieterService.UpdatePromptSettings:input_type -> dieter.v1.UpdatePromptSettingsRequest
-	81,  // 214: dieter.v1.DieterService.SetProjectPromptTemplate:input_type -> dieter.v1.SetScopedPromptTemplateRequest
-	81,  // 215: dieter.v1.DieterService.SetBoardPromptTemplate:input_type -> dieter.v1.SetScopedPromptTemplateRequest
-	82,  // 216: dieter.v1.DieterService.PreviewPrompt:input_type -> dieter.v1.PreviewPromptRequest
-	84,  // 217: dieter.v1.DieterService.ListDirectories:input_type -> dieter.v1.ListDirectoriesRequest
-	35,  // 218: dieter.v1.DieterService.ConsolidateProject:input_type -> dieter.v1.ConsolidateProjectRequest
-	36,  // 219: dieter.v1.DieterService.AttachCheckout:input_type -> dieter.v1.AttachCheckoutRequest
-	37,  // 220: dieter.v1.DieterService.DetachCheckout:input_type -> dieter.v1.CheckoutRef
-	126, // 221: dieter.v1.DieterService.ListCheckouts:input_type -> dieter.v1.ProjectRef
-	88,  // 222: dieter.v1.DieterService.CreateProject:input_type -> dieter.v1.CreateProjectRequest
-	90,  // 223: dieter.v1.DieterService.UpdateProject:input_type -> dieter.v1.UpdateProjectRequest
-	93,  // 224: dieter.v1.DieterService.UpdateProjectWorkspaceSettings:input_type -> dieter.v1.UpdateProjectWorkspaceSettingsRequest
-	94,  // 225: dieter.v1.DieterService.ArchiveProject:input_type -> dieter.v1.ArchiveProjectRequest
-	278, // 226: dieter.v1.DieterService.ListArchivedProjects:input_type -> google.protobuf.Empty
-	95,  // 227: dieter.v1.DieterService.CreateBoard:input_type -> dieter.v1.CreateBoardRequest
-	97,  // 228: dieter.v1.DieterService.GetBoard:input_type -> dieter.v1.BoardRef
-	42,  // 229: dieter.v1.DieterService.ListRetiredBoards:input_type -> dieter.v1.ListRetiredBoardsRequest
-	44,  // 230: dieter.v1.DieterService.SetBoardRetired:input_type -> dieter.v1.SetBoardRetiredRequest
-	96,  // 231: dieter.v1.DieterService.RenameBoard:input_type -> dieter.v1.RenameBoardRequest
-	98,  // 232: dieter.v1.DieterService.SetBoardArchivePolicy:input_type -> dieter.v1.SetBoardArchivePolicyRequest
-	232, // 233: dieter.v1.DieterService.UpdateBoardHostnames:input_type -> dieter.v1.UpdateBoardHostnamesRequest
-	230, // 234: dieter.v1.DieterService.UpdateBoardGitSettings:input_type -> dieter.v1.UpdateBoardGitSettingsRequest
-	97,  // 235: dieter.v1.DieterService.ListArchivedCards:input_type -> dieter.v1.BoardRef
-	99,  // 236: dieter.v1.DieterService.CreateBoardLabel:input_type -> dieter.v1.CreateBoardLabelRequest
-	100, // 237: dieter.v1.DieterService.UpdateBoardLabel:input_type -> dieter.v1.UpdateBoardLabelRequest
-	101, // 238: dieter.v1.DieterService.DeleteBoardLabel:input_type -> dieter.v1.DeleteBoardLabelRequest
-	103, // 239: dieter.v1.DieterService.CreateCard:input_type -> dieter.v1.CreateConversationRequest
-	103, // 240: dieter.v1.DieterService.CreateChat:input_type -> dieter.v1.CreateConversationRequest
-	105, // 241: dieter.v1.DieterService.ForkChat:input_type -> dieter.v1.ForkChatRequest
-	104, // 242: dieter.v1.DieterService.ListChats:input_type -> dieter.v1.ListChatsRequest
-	107, // 243: dieter.v1.DieterService.GetCard:input_type -> dieter.v1.GetCardRequest
-	108, // 244: dieter.v1.DieterService.GetConversation:input_type -> dieter.v1.GetConversationRequest
-	110, // 245: dieter.v1.DieterService.PollConversation:input_type -> dieter.v1.PollConversationRequest
-	109, // 246: dieter.v1.DieterService.WatchConversation:input_type -> dieter.v1.WatchConversationRequest
-	112, // 247: dieter.v1.DieterService.GetToolOutput:input_type -> dieter.v1.GetToolOutputRequest
-	57,  // 248: dieter.v1.DieterService.PresentConversationContent:input_type -> dieter.v1.PresentConversationContentRequest
-	114, // 249: dieter.v1.DieterService.SendMessage:input_type -> dieter.v1.SendMessageRequest
-	231, // 250: dieter.v1.DieterService.RemoveQueuedMessage:input_type -> dieter.v1.RemoveQueuedMessageRequest
-	261, // 251: dieter.v1.DieterService.MarkConversationRead:input_type -> dieter.v1.MarkConversationReadRequest
-	116, // 252: dieter.v1.DieterService.MoveCard:input_type -> dieter.v1.MoveCardRequest
-	121, // 253: dieter.v1.DieterService.MergeCard:input_type -> dieter.v1.MergeCardRequest
-	117, // 254: dieter.v1.DieterService.StartCard:input_type -> dieter.v1.StartCardRequest
-	119, // 255: dieter.v1.DieterService.SetCardLabels:input_type -> dieter.v1.SetCardLabelsRequest
-	107, // 256: dieter.v1.DieterService.CancelCard:input_type -> dieter.v1.GetCardRequest
-	120, // 257: dieter.v1.DieterService.RenameCard:input_type -> dieter.v1.RenameCardRequest
-	123, // 258: dieter.v1.DieterService.UpdateCard:input_type -> dieter.v1.UpdateCardRequest
-	124, // 259: dieter.v1.DieterService.ArchiveCard:input_type -> dieter.v1.ArchiveCardRequest
-	125, // 260: dieter.v1.DieterService.PinChat:input_type -> dieter.v1.PinChatRequest
-	128, // 261: dieter.v1.DieterService.UpdateConversationWorkspace:input_type -> dieter.v1.UpdateConversationWorkspaceRequest
-	127, // 262: dieter.v1.DieterService.GetWorkspace:input_type -> dieter.v1.ConversationRef
-	126, // 263: dieter.v1.DieterService.ListProjectWorkspaces:input_type -> dieter.v1.ProjectRef
-	135, // 264: dieter.v1.DieterService.GetChangeset:input_type -> dieter.v1.GetChangesetRequest
-	136, // 265: dieter.v1.DieterService.GetFileDiff:input_type -> dieter.v1.GetDiffRequest
-	136, // 266: dieter.v1.DieterService.GetCommitDiff:input_type -> dieter.v1.GetDiffRequest
-	139, // 267: dieter.v1.DieterService.AddChangeComment:input_type -> dieter.v1.AddChangeCommentRequest
-	140, // 268: dieter.v1.DieterService.ListChangeComments:input_type -> dieter.v1.ListChangeCommentsRequest
-	127, // 269: dieter.v1.DieterService.GetSCMCapabilities:input_type -> dieter.v1.ConversationRef
-	147, // 270: dieter.v1.DieterService.StartGitOperation:input_type -> dieter.v1.StartGitOperationRequest
-	148, // 271: dieter.v1.DieterService.GetGitOperation:input_type -> dieter.v1.GitOperationRef
-	149, // 272: dieter.v1.DieterService.WatchGitOperation:input_type -> dieter.v1.WatchGitOperationRequest
-	148, // 273: dieter.v1.DieterService.CancelGitOperation:input_type -> dieter.v1.GitOperationRef
-	152, // 274: dieter.v1.DieterService.ListFiles:input_type -> dieter.v1.ListFilesRequest
-	155, // 275: dieter.v1.DieterService.ReadFile:input_type -> dieter.v1.ReadFileRequest
-	213, // 276: dieter.v1.DieterService.SaveFile:input_type -> dieter.v1.SaveFileRequest
-	214, // 277: dieter.v1.DieterService.CreateFile:input_type -> dieter.v1.CreateFileRequest
-	215, // 278: dieter.v1.DieterService.MoveFile:input_type -> dieter.v1.MoveFileRequest
-	217, // 279: dieter.v1.DieterService.DeleteFile:input_type -> dieter.v1.DeleteFileRequest
-	159, // 280: dieter.v1.DieterService.ListTerminals:input_type -> dieter.v1.ListTerminalsRequest
-	161, // 281: dieter.v1.DieterService.CreateTerminal:input_type -> dieter.v1.CreateTerminalRequest
-	162, // 282: dieter.v1.DieterService.WatchTerminal:input_type -> dieter.v1.WatchTerminalRequest
-	164, // 283: dieter.v1.DieterService.WriteTerminal:input_type -> dieter.v1.TerminalInputRequest
-	165, // 284: dieter.v1.DieterService.ResizeTerminal:input_type -> dieter.v1.ResizeTerminalRequest
-	166, // 285: dieter.v1.DieterService.RenameTerminal:input_type -> dieter.v1.RenameTerminalRequest
-	158, // 286: dieter.v1.DieterService.CloseTerminal:input_type -> dieter.v1.TerminalRef
-	169, // 287: dieter.v1.DieterService.ListExecutions:input_type -> dieter.v1.ListExecutionsRequest
-	171, // 288: dieter.v1.DieterService.StartExecution:input_type -> dieter.v1.StartExecutionRequest
-	168, // 289: dieter.v1.DieterService.GetExecution:input_type -> dieter.v1.ExecutionRef
-	172, // 290: dieter.v1.DieterService.WatchExecution:input_type -> dieter.v1.WatchExecutionRequest
-	174, // 291: dieter.v1.DieterService.WriteExecutionInput:input_type -> dieter.v1.ExecutionInputRequest
-	175, // 292: dieter.v1.DieterService.SignalExecution:input_type -> dieter.v1.SignalExecutionRequest
-	176, // 293: dieter.v1.DieterService.ResizeExecution:input_type -> dieter.v1.ResizeExecutionRequest
-	168, // 294: dieter.v1.DieterService.CancelExecution:input_type -> dieter.v1.ExecutionRef
-	168, // 295: dieter.v1.DieterService.CloseExecution:input_type -> dieter.v1.ExecutionRef
-	278, // 296: dieter.v1.DieterService.GetRemoteDesktopCapabilities:input_type -> google.protobuf.Empty
-	196, // 297: dieter.v1.DieterService.ListRemoteDesktopDisplayModes:input_type -> dieter.v1.RemoteDesktopRef
-	180, // 298: dieter.v1.DieterService.SetRemoteDesktopDisplayMode:input_type -> dieter.v1.SetRemoteDesktopDisplayModeRequest
-	196, // 299: dieter.v1.DieterService.RestoreRemoteDesktopDisplayMode:input_type -> dieter.v1.RemoteDesktopRef
-	196, // 300: dieter.v1.DieterService.GetRemoteDesktopVirtualDisplay:input_type -> dieter.v1.RemoteDesktopRef
-	182, // 301: dieter.v1.DieterService.SetRemoteDesktopVirtualDisplay:input_type -> dieter.v1.SetRemoteDesktopVirtualDisplayRequest
-	183, // 302: dieter.v1.DieterService.ConfirmRemoteDesktopVirtualDisplay:input_type -> dieter.v1.ConfirmRemoteDesktopVirtualDisplayRequest
-	196, // 303: dieter.v1.DieterService.RestoreRemoteDesktopVirtualDisplay:input_type -> dieter.v1.RemoteDesktopRef
-	185, // 304: dieter.v1.DieterService.ProbeRemoteDesktopPermissions:input_type -> dieter.v1.ProbeRemoteDesktopPermissionsRequest
-	190, // 305: dieter.v1.DieterService.StartRemoteDesktop:input_type -> dieter.v1.StartRemoteDesktopRequest
-	212, // 306: dieter.v1.DieterService.SendRemoteDesktopSignal:input_type -> dieter.v1.RemoteDesktopSignal
-	196, // 307: dieter.v1.DieterService.GetRemoteDesktopSession:input_type -> dieter.v1.RemoteDesktopRef
-	278, // 308: dieter.v1.DieterService.ListRemoteDesktopSessions:input_type -> google.protobuf.Empty
-	193, // 309: dieter.v1.DieterService.SetRemoteDesktopControl:input_type -> dieter.v1.RemoteDesktopControlRequest
-	195, // 310: dieter.v1.DieterService.UpdateRemoteDesktopSession:input_type -> dieter.v1.UpdateRemoteDesktopSessionRequest
-	233, // 311: dieter.v1.DieterService.ExchangeRemoteDesktopClipboard:input_type -> dieter.v1.RemoteDesktopClipboardRequest
-	196, // 312: dieter.v1.DieterService.CloseRemoteDesktop:input_type -> dieter.v1.RemoteDesktopRef
-	218, // 313: dieter.v1.DieterService.ListSchedules:input_type -> dieter.v1.ListSchedulesRequest
-	225, // 314: dieter.v1.DieterService.GetSchedule:input_type -> dieter.v1.ScheduleRef
-	223, // 315: dieter.v1.DieterService.PreviewSchedule:input_type -> dieter.v1.PreviewScheduleRequest
-	222, // 316: dieter.v1.DieterService.CreateSchedule:input_type -> dieter.v1.SaveScheduleRequest
-	222, // 317: dieter.v1.DieterService.UpdateSchedule:input_type -> dieter.v1.SaveScheduleRequest
-	225, // 318: dieter.v1.DieterService.DeleteSchedule:input_type -> dieter.v1.ScheduleRef
-	225, // 319: dieter.v1.DieterService.RunSchedule:input_type -> dieter.v1.ScheduleRef
-	226, // 320: dieter.v1.DieterService.SetScheduleEnabled:input_type -> dieter.v1.SetScheduleEnabledRequest
-	227, // 321: dieter.v1.DieterService.ListScheduleRuns:input_type -> dieter.v1.ListScheduleRunsRequest
-	252, // 322: dieter.v1.DieterService.GetKV:output_type -> dieter.v1.KVEntry
-	255, // 323: dieter.v1.DieterService.ListKV:output_type -> dieter.v1.KVPage
-	252, // 324: dieter.v1.DieterService.PutKV:output_type -> dieter.v1.KVEntry
-	252, // 325: dieter.v1.DieterService.DeleteKV:output_type -> dieter.v1.KVEntry
-	252, // 326: dieter.v1.DieterService.MoveKV:output_type -> dieter.v1.KVEntry
-	260, // 327: dieter.v1.DieterService.WatchKV:output_type -> dieter.v1.KVFrame
-	250, // 328: dieter.v1.DieterService.GetPeerChanges:output_type -> dieter.v1.PeerChangesResponse
-	241, // 329: dieter.v1.DieterService.GetPeerRecord:output_type -> dieter.v1.PeerRecord
-	242, // 330: dieter.v1.DieterService.GetPeerStoreStatus:output_type -> dieter.v1.PeerStoreStatus
-	245, // 331: dieter.v1.DieterService.ListPeerRecords:output_type -> dieter.v1.PeerSnapshot
-	241, // 332: dieter.v1.DieterService.PutPeerRecord:output_type -> dieter.v1.PeerRecord
-	278, // 333: dieter.v1.DieterService.MergePeerRecords:output_type -> google.protobuf.Empty
-	14,  // 334: dieter.v1.DieterService.Health:output_type -> dieter.v1.HealthResponse
-	15,  // 335: dieter.v1.DieterService.GetRuntimeStatus:output_type -> dieter.v1.RuntimeStatus
-	239, // 336: dieter.v1.DieterService.StartControlConnection:output_type -> dieter.v1.ControlConnection
-	239, // 337: dieter.v1.DieterService.GetControlConnection:output_type -> dieter.v1.ControlConnection
-	278, // 338: dieter.v1.DieterService.CloseControlConnection:output_type -> google.protobuf.Empty
-	16,  // 339: dieter.v1.DieterService.GetMachineInformation:output_type -> dieter.v1.MachineInformation
-	24,  // 340: dieter.v1.DieterService.PerformMachineOperation:output_type -> dieter.v1.MachineOperationResponse
-	27,  // 341: dieter.v1.DieterService.GetState:output_type -> dieter.v1.State
-	30,  // 342: dieter.v1.DieterService.WatchChanges:output_type -> dieter.v1.ChangesFrame
-	69,  // 343: dieter.v1.DieterService.GetHarnesses:output_type -> dieter.v1.HarnessCatalog
-	76,  // 344: dieter.v1.DieterService.GetSettings:output_type -> dieter.v1.Settings
-	77,  // 345: dieter.v1.DieterService.GetSettingsOptions:output_type -> dieter.v1.SettingsOptions
-	76,  // 346: dieter.v1.DieterService.UpdateSettings:output_type -> dieter.v1.Settings
-	79,  // 347: dieter.v1.DieterService.GetPromptSettings:output_type -> dieter.v1.PromptSettings
-	79,  // 348: dieter.v1.DieterService.UpdatePromptSettings:output_type -> dieter.v1.PromptSettings
-	39,  // 349: dieter.v1.DieterService.SetProjectPromptTemplate:output_type -> dieter.v1.Project
-	40,  // 350: dieter.v1.DieterService.SetBoardPromptTemplate:output_type -> dieter.v1.Board
-	83,  // 351: dieter.v1.DieterService.PreviewPrompt:output_type -> dieter.v1.PromptPreview
-	87,  // 352: dieter.v1.DieterService.ListDirectories:output_type -> dieter.v1.DirectoryListing
-	39,  // 353: dieter.v1.DieterService.ConsolidateProject:output_type -> dieter.v1.Project
-	34,  // 354: dieter.v1.DieterService.AttachCheckout:output_type -> dieter.v1.Checkout
-	278, // 355: dieter.v1.DieterService.DetachCheckout:output_type -> google.protobuf.Empty
-	38,  // 356: dieter.v1.DieterService.ListCheckouts:output_type -> dieter.v1.CheckoutsResponse
-	89,  // 357: dieter.v1.DieterService.CreateProject:output_type -> dieter.v1.CreateProjectResponse
-	39,  // 358: dieter.v1.DieterService.UpdateProject:output_type -> dieter.v1.Project
-	39,  // 359: dieter.v1.DieterService.UpdateProjectWorkspaceSettings:output_type -> dieter.v1.Project
-	39,  // 360: dieter.v1.DieterService.ArchiveProject:output_type -> dieter.v1.Project
-	32,  // 361: dieter.v1.DieterService.ListArchivedProjects:output_type -> dieter.v1.ProjectsResponse
-	40,  // 362: dieter.v1.DieterService.CreateBoard:output_type -> dieter.v1.Board
-	40,  // 363: dieter.v1.DieterService.GetBoard:output_type -> dieter.v1.Board
-	43,  // 364: dieter.v1.DieterService.ListRetiredBoards:output_type -> dieter.v1.ListRetiredBoardsResponse
-	40,  // 365: dieter.v1.DieterService.SetBoardRetired:output_type -> dieter.v1.Board
-	40,  // 366: dieter.v1.DieterService.RenameBoard:output_type -> dieter.v1.Board
-	40,  // 367: dieter.v1.DieterService.SetBoardArchivePolicy:output_type -> dieter.v1.Board
-	40,  // 368: dieter.v1.DieterService.UpdateBoardHostnames:output_type -> dieter.v1.Board
-	40,  // 369: dieter.v1.DieterService.UpdateBoardGitSettings:output_type -> dieter.v1.Board
-	33,  // 370: dieter.v1.DieterService.ListArchivedCards:output_type -> dieter.v1.CardsResponse
-	40,  // 371: dieter.v1.DieterService.CreateBoardLabel:output_type -> dieter.v1.Board
-	40,  // 372: dieter.v1.DieterService.UpdateBoardLabel:output_type -> dieter.v1.Board
-	40,  // 373: dieter.v1.DieterService.DeleteBoardLabel:output_type -> dieter.v1.Board
-	50,  // 374: dieter.v1.DieterService.CreateCard:output_type -> dieter.v1.Card
-	50,  // 375: dieter.v1.DieterService.CreateChat:output_type -> dieter.v1.Card
-	50,  // 376: dieter.v1.DieterService.ForkChat:output_type -> dieter.v1.Card
-	106, // 377: dieter.v1.DieterService.ListChats:output_type -> dieter.v1.ChatsResponse
-	52,  // 378: dieter.v1.DieterService.GetCard:output_type -> dieter.v1.CardDetail
-	68,  // 379: dieter.v1.DieterService.GetConversation:output_type -> dieter.v1.ConversationSnapshot
-	111, // 380: dieter.v1.DieterService.PollConversation:output_type -> dieter.v1.ConversationUpdate
-	111, // 381: dieter.v1.DieterService.WatchConversation:output_type -> dieter.v1.ConversationUpdate
-	113, // 382: dieter.v1.DieterService.GetToolOutput:output_type -> dieter.v1.ToolOutput
-	56,  // 383: dieter.v1.DieterService.PresentConversationContent:output_type -> dieter.v1.ContentPresentation
-	115, // 384: dieter.v1.DieterService.SendMessage:output_type -> dieter.v1.SendMessageResponse
-	65,  // 385: dieter.v1.DieterService.RemoveQueuedMessage:output_type -> dieter.v1.QueuedMessage
-	50,  // 386: dieter.v1.DieterService.MarkConversationRead:output_type -> dieter.v1.Card
-	50,  // 387: dieter.v1.DieterService.MoveCard:output_type -> dieter.v1.Card
-	50,  // 388: dieter.v1.DieterService.MergeCard:output_type -> dieter.v1.Card
-	118, // 389: dieter.v1.DieterService.StartCard:output_type -> dieter.v1.StartCardResponse
-	50,  // 390: dieter.v1.DieterService.SetCardLabels:output_type -> dieter.v1.Card
-	278, // 391: dieter.v1.DieterService.CancelCard:output_type -> google.protobuf.Empty
-	50,  // 392: dieter.v1.DieterService.RenameCard:output_type -> dieter.v1.Card
-	50,  // 393: dieter.v1.DieterService.UpdateCard:output_type -> dieter.v1.Card
-	50,  // 394: dieter.v1.DieterService.ArchiveCard:output_type -> dieter.v1.Card
-	50,  // 395: dieter.v1.DieterService.PinChat:output_type -> dieter.v1.Card
-	50,  // 396: dieter.v1.DieterService.UpdateConversationWorkspace:output_type -> dieter.v1.Card
-	130, // 397: dieter.v1.DieterService.GetWorkspace:output_type -> dieter.v1.Workspace
-	131, // 398: dieter.v1.DieterService.ListProjectWorkspaces:output_type -> dieter.v1.WorkspacesResponse
-	134, // 399: dieter.v1.DieterService.GetChangeset:output_type -> dieter.v1.Changeset
-	137, // 400: dieter.v1.DieterService.GetFileDiff:output_type -> dieter.v1.FileDiff
-	137, // 401: dieter.v1.DieterService.GetCommitDiff:output_type -> dieter.v1.FileDiff
-	138, // 402: dieter.v1.DieterService.AddChangeComment:output_type -> dieter.v1.ChangeComment
-	141, // 403: dieter.v1.DieterService.ListChangeComments:output_type -> dieter.v1.ChangeCommentsResponse
-	142, // 404: dieter.v1.DieterService.GetSCMCapabilities:output_type -> dieter.v1.SCMCapabilities
-	146, // 405: dieter.v1.DieterService.StartGitOperation:output_type -> dieter.v1.GitOperation
-	146, // 406: dieter.v1.DieterService.GetGitOperation:output_type -> dieter.v1.GitOperation
-	151, // 407: dieter.v1.DieterService.WatchGitOperation:output_type -> dieter.v1.GitOperationFrame
-	146, // 408: dieter.v1.DieterService.CancelGitOperation:output_type -> dieter.v1.GitOperation
-	154, // 409: dieter.v1.DieterService.ListFiles:output_type -> dieter.v1.FileList
-	156, // 410: dieter.v1.DieterService.ReadFile:output_type -> dieter.v1.FileDocument
-	156, // 411: dieter.v1.DieterService.SaveFile:output_type -> dieter.v1.FileDocument
-	153, // 412: dieter.v1.DieterService.CreateFile:output_type -> dieter.v1.FileEntry
-	216, // 413: dieter.v1.DieterService.MoveFile:output_type -> dieter.v1.MoveFileResponse
-	278, // 414: dieter.v1.DieterService.DeleteFile:output_type -> google.protobuf.Empty
-	160, // 415: dieter.v1.DieterService.ListTerminals:output_type -> dieter.v1.TerminalsResponse
-	157, // 416: dieter.v1.DieterService.CreateTerminal:output_type -> dieter.v1.Terminal
-	163, // 417: dieter.v1.DieterService.WatchTerminal:output_type -> dieter.v1.TerminalFrame
-	157, // 418: dieter.v1.DieterService.WriteTerminal:output_type -> dieter.v1.Terminal
-	157, // 419: dieter.v1.DieterService.ResizeTerminal:output_type -> dieter.v1.Terminal
-	157, // 420: dieter.v1.DieterService.RenameTerminal:output_type -> dieter.v1.Terminal
-	278, // 421: dieter.v1.DieterService.CloseTerminal:output_type -> google.protobuf.Empty
-	170, // 422: dieter.v1.DieterService.ListExecutions:output_type -> dieter.v1.ExecutionsResponse
-	167, // 423: dieter.v1.DieterService.StartExecution:output_type -> dieter.v1.Execution
-	167, // 424: dieter.v1.DieterService.GetExecution:output_type -> dieter.v1.Execution
-	173, // 425: dieter.v1.DieterService.WatchExecution:output_type -> dieter.v1.ExecutionEvent
-	167, // 426: dieter.v1.DieterService.WriteExecutionInput:output_type -> dieter.v1.Execution
-	167, // 427: dieter.v1.DieterService.SignalExecution:output_type -> dieter.v1.Execution
-	167, // 428: dieter.v1.DieterService.ResizeExecution:output_type -> dieter.v1.Execution
-	167, // 429: dieter.v1.DieterService.CancelExecution:output_type -> dieter.v1.Execution
-	278, // 430: dieter.v1.DieterService.CloseExecution:output_type -> google.protobuf.Empty
-	177, // 431: dieter.v1.DieterService.GetRemoteDesktopCapabilities:output_type -> dieter.v1.RemoteDesktopCapabilities
-	179, // 432: dieter.v1.DieterService.ListRemoteDesktopDisplayModes:output_type -> dieter.v1.RemoteDesktopDisplayModes
-	179, // 433: dieter.v1.DieterService.SetRemoteDesktopDisplayMode:output_type -> dieter.v1.RemoteDesktopDisplayModes
-	179, // 434: dieter.v1.DieterService.RestoreRemoteDesktopDisplayMode:output_type -> dieter.v1.RemoteDesktopDisplayModes
-	181, // 435: dieter.v1.DieterService.GetRemoteDesktopVirtualDisplay:output_type -> dieter.v1.RemoteDesktopVirtualDisplay
-	181, // 436: dieter.v1.DieterService.SetRemoteDesktopVirtualDisplay:output_type -> dieter.v1.RemoteDesktopVirtualDisplay
-	181, // 437: dieter.v1.DieterService.ConfirmRemoteDesktopVirtualDisplay:output_type -> dieter.v1.RemoteDesktopVirtualDisplay
-	181, // 438: dieter.v1.DieterService.RestoreRemoteDesktopVirtualDisplay:output_type -> dieter.v1.RemoteDesktopVirtualDisplay
-	186, // 439: dieter.v1.DieterService.ProbeRemoteDesktopPermissions:output_type -> dieter.v1.RemoteDesktopPermissionProbe
-	212, // 440: dieter.v1.DieterService.StartRemoteDesktop:output_type -> dieter.v1.RemoteDesktopSignal
-	278, // 441: dieter.v1.DieterService.SendRemoteDesktopSignal:output_type -> google.protobuf.Empty
-	205, // 442: dieter.v1.DieterService.GetRemoteDesktopSession:output_type -> dieter.v1.RemoteDesktopSessionState
-	191, // 443: dieter.v1.DieterService.ListRemoteDesktopSessions:output_type -> dieter.v1.RemoteDesktopSessions
-	205, // 444: dieter.v1.DieterService.SetRemoteDesktopControl:output_type -> dieter.v1.RemoteDesktopSessionState
-	205, // 445: dieter.v1.DieterService.UpdateRemoteDesktopSession:output_type -> dieter.v1.RemoteDesktopSessionState
-	235, // 446: dieter.v1.DieterService.ExchangeRemoteDesktopClipboard:output_type -> dieter.v1.RemoteDesktopClipboardResponse
-	278, // 447: dieter.v1.DieterService.CloseRemoteDesktop:output_type -> google.protobuf.Empty
-	219, // 448: dieter.v1.DieterService.ListSchedules:output_type -> dieter.v1.SchedulesResponse
-	220, // 449: dieter.v1.DieterService.GetSchedule:output_type -> dieter.v1.Schedule
-	224, // 450: dieter.v1.DieterService.PreviewSchedule:output_type -> dieter.v1.SchedulePreview
-	220, // 451: dieter.v1.DieterService.CreateSchedule:output_type -> dieter.v1.Schedule
-	220, // 452: dieter.v1.DieterService.UpdateSchedule:output_type -> dieter.v1.Schedule
-	278, // 453: dieter.v1.DieterService.DeleteSchedule:output_type -> google.protobuf.Empty
-	228, // 454: dieter.v1.DieterService.RunSchedule:output_type -> dieter.v1.ScheduleRun
-	220, // 455: dieter.v1.DieterService.SetScheduleEnabled:output_type -> dieter.v1.Schedule
-	229, // 456: dieter.v1.DieterService.ListScheduleRuns:output_type -> dieter.v1.ScheduleRunsResponse
-	322, // [322:457] is the sub-list for method output_type
-	187, // [187:322] is the sub-list for method input_type
-	187, // [187:187] is the sub-list for extension type_name
-	187, // [187:187] is the sub-list for extension extendee
-	0,   // [0:187] is the sub-list for field type_name
+	263, // 187: dieter.v1.VaultStatus.members:type_name -> dieter.v1.VaultMember
+	262, // 188: dieter.v1.VaultStatus.caller:type_name -> dieter.v1.VaultCaller
+	264, // 189: dieter.v1.InitVaultResponse.status:type_name -> dieter.v1.VaultStatus
+	264, // 190: dieter.v1.JoinVaultResponse.status:type_name -> dieter.v1.VaultStatus
+	264, // 191: dieter.v1.RotateVaultResponse.status:type_name -> dieter.v1.VaultStatus
+	273, // 192: dieter.v1.VaultItemsResponse.items:type_name -> dieter.v1.VaultItem
+	273, // 193: dieter.v1.RevealVaultItemResponse.item:type_name -> dieter.v1.VaultItem
+	298, // 194: dieter.v1.RevealVaultItemResponse.values:type_name -> dieter.v1.RevealVaultItemResponse.ValuesEntry
+	282, // 195: dieter.v1.VaultAuditResponse.entries:type_name -> dieter.v1.VaultAuditEntry
+	251, // 196: dieter.v1.DieterService.GetKV:input_type -> dieter.v1.KVRef
+	254, // 197: dieter.v1.DieterService.ListKV:input_type -> dieter.v1.KVListRequest
+	256, // 198: dieter.v1.DieterService.PutKV:input_type -> dieter.v1.KVPutRequest
+	257, // 199: dieter.v1.DieterService.DeleteKV:input_type -> dieter.v1.KVDeleteRequest
+	258, // 200: dieter.v1.DieterService.MoveKV:input_type -> dieter.v1.KVMoveRequest
+	259, // 201: dieter.v1.DieterService.WatchKV:input_type -> dieter.v1.KVWatchRequest
+	249, // 202: dieter.v1.DieterService.GetPeerChanges:input_type -> dieter.v1.PeerChangesRequest
+	248, // 203: dieter.v1.DieterService.GetPeerRecord:input_type -> dieter.v1.PeerRecordRef
+	301, // 204: dieter.v1.DieterService.GetPeerStoreStatus:input_type -> google.protobuf.Empty
+	244, // 205: dieter.v1.DieterService.ListPeerRecords:input_type -> dieter.v1.PeerSnapshotRequest
+	246, // 206: dieter.v1.DieterService.PutPeerRecord:input_type -> dieter.v1.PutPeerRecordRequest
+	247, // 207: dieter.v1.DieterService.MergePeerRecords:input_type -> dieter.v1.MergePeerRecordsRequest
+	301, // 208: dieter.v1.DieterService.Health:input_type -> google.protobuf.Empty
+	301, // 209: dieter.v1.DieterService.GetRuntimeStatus:input_type -> google.protobuf.Empty
+	237, // 210: dieter.v1.DieterService.StartControlConnection:input_type -> dieter.v1.StartControlConnectionRequest
+	238, // 211: dieter.v1.DieterService.GetControlConnection:input_type -> dieter.v1.ControlConnectionRef
+	238, // 212: dieter.v1.DieterService.CloseControlConnection:input_type -> dieter.v1.ControlConnectionRef
+	301, // 213: dieter.v1.DieterService.GetMachineInformation:input_type -> google.protobuf.Empty
+	23,  // 214: dieter.v1.DieterService.PerformMachineOperation:input_type -> dieter.v1.MachineOperationRequest
+	26,  // 215: dieter.v1.DieterService.GetState:input_type -> dieter.v1.GetStateRequest
+	29,  // 216: dieter.v1.DieterService.WatchChanges:input_type -> dieter.v1.ChangesRequest
+	301, // 217: dieter.v1.DieterService.GetHarnesses:input_type -> google.protobuf.Empty
+	301, // 218: dieter.v1.DieterService.GetSettings:input_type -> google.protobuf.Empty
+	301, // 219: dieter.v1.DieterService.GetSettingsOptions:input_type -> google.protobuf.Empty
+	78,  // 220: dieter.v1.DieterService.UpdateSettings:input_type -> dieter.v1.UpdateSettingsRequest
+	301, // 221: dieter.v1.DieterService.GetPromptSettings:input_type -> google.protobuf.Empty
+	80,  // 222: dieter.v1.DieterService.UpdatePromptSettings:input_type -> dieter.v1.UpdatePromptSettingsRequest
+	81,  // 223: dieter.v1.DieterService.SetProjectPromptTemplate:input_type -> dieter.v1.SetScopedPromptTemplateRequest
+	81,  // 224: dieter.v1.DieterService.SetBoardPromptTemplate:input_type -> dieter.v1.SetScopedPromptTemplateRequest
+	82,  // 225: dieter.v1.DieterService.PreviewPrompt:input_type -> dieter.v1.PreviewPromptRequest
+	84,  // 226: dieter.v1.DieterService.ListDirectories:input_type -> dieter.v1.ListDirectoriesRequest
+	35,  // 227: dieter.v1.DieterService.ConsolidateProject:input_type -> dieter.v1.ConsolidateProjectRequest
+	36,  // 228: dieter.v1.DieterService.AttachCheckout:input_type -> dieter.v1.AttachCheckoutRequest
+	37,  // 229: dieter.v1.DieterService.DetachCheckout:input_type -> dieter.v1.CheckoutRef
+	126, // 230: dieter.v1.DieterService.ListCheckouts:input_type -> dieter.v1.ProjectRef
+	88,  // 231: dieter.v1.DieterService.CreateProject:input_type -> dieter.v1.CreateProjectRequest
+	90,  // 232: dieter.v1.DieterService.UpdateProject:input_type -> dieter.v1.UpdateProjectRequest
+	93,  // 233: dieter.v1.DieterService.UpdateProjectWorkspaceSettings:input_type -> dieter.v1.UpdateProjectWorkspaceSettingsRequest
+	94,  // 234: dieter.v1.DieterService.ArchiveProject:input_type -> dieter.v1.ArchiveProjectRequest
+	301, // 235: dieter.v1.DieterService.ListArchivedProjects:input_type -> google.protobuf.Empty
+	95,  // 236: dieter.v1.DieterService.CreateBoard:input_type -> dieter.v1.CreateBoardRequest
+	97,  // 237: dieter.v1.DieterService.GetBoard:input_type -> dieter.v1.BoardRef
+	42,  // 238: dieter.v1.DieterService.ListRetiredBoards:input_type -> dieter.v1.ListRetiredBoardsRequest
+	44,  // 239: dieter.v1.DieterService.SetBoardRetired:input_type -> dieter.v1.SetBoardRetiredRequest
+	96,  // 240: dieter.v1.DieterService.RenameBoard:input_type -> dieter.v1.RenameBoardRequest
+	98,  // 241: dieter.v1.DieterService.SetBoardArchivePolicy:input_type -> dieter.v1.SetBoardArchivePolicyRequest
+	232, // 242: dieter.v1.DieterService.UpdateBoardHostnames:input_type -> dieter.v1.UpdateBoardHostnamesRequest
+	230, // 243: dieter.v1.DieterService.UpdateBoardGitSettings:input_type -> dieter.v1.UpdateBoardGitSettingsRequest
+	97,  // 244: dieter.v1.DieterService.ListArchivedCards:input_type -> dieter.v1.BoardRef
+	99,  // 245: dieter.v1.DieterService.CreateBoardLabel:input_type -> dieter.v1.CreateBoardLabelRequest
+	100, // 246: dieter.v1.DieterService.UpdateBoardLabel:input_type -> dieter.v1.UpdateBoardLabelRequest
+	101, // 247: dieter.v1.DieterService.DeleteBoardLabel:input_type -> dieter.v1.DeleteBoardLabelRequest
+	103, // 248: dieter.v1.DieterService.CreateCard:input_type -> dieter.v1.CreateConversationRequest
+	103, // 249: dieter.v1.DieterService.CreateChat:input_type -> dieter.v1.CreateConversationRequest
+	105, // 250: dieter.v1.DieterService.ForkChat:input_type -> dieter.v1.ForkChatRequest
+	104, // 251: dieter.v1.DieterService.ListChats:input_type -> dieter.v1.ListChatsRequest
+	107, // 252: dieter.v1.DieterService.GetCard:input_type -> dieter.v1.GetCardRequest
+	108, // 253: dieter.v1.DieterService.GetConversation:input_type -> dieter.v1.GetConversationRequest
+	110, // 254: dieter.v1.DieterService.PollConversation:input_type -> dieter.v1.PollConversationRequest
+	109, // 255: dieter.v1.DieterService.WatchConversation:input_type -> dieter.v1.WatchConversationRequest
+	112, // 256: dieter.v1.DieterService.GetToolOutput:input_type -> dieter.v1.GetToolOutputRequest
+	57,  // 257: dieter.v1.DieterService.PresentConversationContent:input_type -> dieter.v1.PresentConversationContentRequest
+	114, // 258: dieter.v1.DieterService.SendMessage:input_type -> dieter.v1.SendMessageRequest
+	231, // 259: dieter.v1.DieterService.RemoveQueuedMessage:input_type -> dieter.v1.RemoveQueuedMessageRequest
+	261, // 260: dieter.v1.DieterService.MarkConversationRead:input_type -> dieter.v1.MarkConversationReadRequest
+	116, // 261: dieter.v1.DieterService.MoveCard:input_type -> dieter.v1.MoveCardRequest
+	121, // 262: dieter.v1.DieterService.MergeCard:input_type -> dieter.v1.MergeCardRequest
+	117, // 263: dieter.v1.DieterService.StartCard:input_type -> dieter.v1.StartCardRequest
+	119, // 264: dieter.v1.DieterService.SetCardLabels:input_type -> dieter.v1.SetCardLabelsRequest
+	107, // 265: dieter.v1.DieterService.CancelCard:input_type -> dieter.v1.GetCardRequest
+	120, // 266: dieter.v1.DieterService.RenameCard:input_type -> dieter.v1.RenameCardRequest
+	123, // 267: dieter.v1.DieterService.UpdateCard:input_type -> dieter.v1.UpdateCardRequest
+	124, // 268: dieter.v1.DieterService.ArchiveCard:input_type -> dieter.v1.ArchiveCardRequest
+	125, // 269: dieter.v1.DieterService.PinChat:input_type -> dieter.v1.PinChatRequest
+	128, // 270: dieter.v1.DieterService.UpdateConversationWorkspace:input_type -> dieter.v1.UpdateConversationWorkspaceRequest
+	127, // 271: dieter.v1.DieterService.GetWorkspace:input_type -> dieter.v1.ConversationRef
+	126, // 272: dieter.v1.DieterService.ListProjectWorkspaces:input_type -> dieter.v1.ProjectRef
+	135, // 273: dieter.v1.DieterService.GetChangeset:input_type -> dieter.v1.GetChangesetRequest
+	136, // 274: dieter.v1.DieterService.GetFileDiff:input_type -> dieter.v1.GetDiffRequest
+	136, // 275: dieter.v1.DieterService.GetCommitDiff:input_type -> dieter.v1.GetDiffRequest
+	139, // 276: dieter.v1.DieterService.AddChangeComment:input_type -> dieter.v1.AddChangeCommentRequest
+	140, // 277: dieter.v1.DieterService.ListChangeComments:input_type -> dieter.v1.ListChangeCommentsRequest
+	127, // 278: dieter.v1.DieterService.GetSCMCapabilities:input_type -> dieter.v1.ConversationRef
+	147, // 279: dieter.v1.DieterService.StartGitOperation:input_type -> dieter.v1.StartGitOperationRequest
+	148, // 280: dieter.v1.DieterService.GetGitOperation:input_type -> dieter.v1.GitOperationRef
+	149, // 281: dieter.v1.DieterService.WatchGitOperation:input_type -> dieter.v1.WatchGitOperationRequest
+	148, // 282: dieter.v1.DieterService.CancelGitOperation:input_type -> dieter.v1.GitOperationRef
+	152, // 283: dieter.v1.DieterService.ListFiles:input_type -> dieter.v1.ListFilesRequest
+	155, // 284: dieter.v1.DieterService.ReadFile:input_type -> dieter.v1.ReadFileRequest
+	213, // 285: dieter.v1.DieterService.SaveFile:input_type -> dieter.v1.SaveFileRequest
+	214, // 286: dieter.v1.DieterService.CreateFile:input_type -> dieter.v1.CreateFileRequest
+	215, // 287: dieter.v1.DieterService.MoveFile:input_type -> dieter.v1.MoveFileRequest
+	217, // 288: dieter.v1.DieterService.DeleteFile:input_type -> dieter.v1.DeleteFileRequest
+	159, // 289: dieter.v1.DieterService.ListTerminals:input_type -> dieter.v1.ListTerminalsRequest
+	161, // 290: dieter.v1.DieterService.CreateTerminal:input_type -> dieter.v1.CreateTerminalRequest
+	162, // 291: dieter.v1.DieterService.WatchTerminal:input_type -> dieter.v1.WatchTerminalRequest
+	164, // 292: dieter.v1.DieterService.WriteTerminal:input_type -> dieter.v1.TerminalInputRequest
+	165, // 293: dieter.v1.DieterService.ResizeTerminal:input_type -> dieter.v1.ResizeTerminalRequest
+	166, // 294: dieter.v1.DieterService.RenameTerminal:input_type -> dieter.v1.RenameTerminalRequest
+	158, // 295: dieter.v1.DieterService.CloseTerminal:input_type -> dieter.v1.TerminalRef
+	169, // 296: dieter.v1.DieterService.ListExecutions:input_type -> dieter.v1.ListExecutionsRequest
+	171, // 297: dieter.v1.DieterService.StartExecution:input_type -> dieter.v1.StartExecutionRequest
+	168, // 298: dieter.v1.DieterService.GetExecution:input_type -> dieter.v1.ExecutionRef
+	172, // 299: dieter.v1.DieterService.WatchExecution:input_type -> dieter.v1.WatchExecutionRequest
+	174, // 300: dieter.v1.DieterService.WriteExecutionInput:input_type -> dieter.v1.ExecutionInputRequest
+	175, // 301: dieter.v1.DieterService.SignalExecution:input_type -> dieter.v1.SignalExecutionRequest
+	176, // 302: dieter.v1.DieterService.ResizeExecution:input_type -> dieter.v1.ResizeExecutionRequest
+	168, // 303: dieter.v1.DieterService.CancelExecution:input_type -> dieter.v1.ExecutionRef
+	168, // 304: dieter.v1.DieterService.CloseExecution:input_type -> dieter.v1.ExecutionRef
+	301, // 305: dieter.v1.DieterService.GetRemoteDesktopCapabilities:input_type -> google.protobuf.Empty
+	196, // 306: dieter.v1.DieterService.ListRemoteDesktopDisplayModes:input_type -> dieter.v1.RemoteDesktopRef
+	180, // 307: dieter.v1.DieterService.SetRemoteDesktopDisplayMode:input_type -> dieter.v1.SetRemoteDesktopDisplayModeRequest
+	196, // 308: dieter.v1.DieterService.RestoreRemoteDesktopDisplayMode:input_type -> dieter.v1.RemoteDesktopRef
+	196, // 309: dieter.v1.DieterService.GetRemoteDesktopVirtualDisplay:input_type -> dieter.v1.RemoteDesktopRef
+	182, // 310: dieter.v1.DieterService.SetRemoteDesktopVirtualDisplay:input_type -> dieter.v1.SetRemoteDesktopVirtualDisplayRequest
+	183, // 311: dieter.v1.DieterService.ConfirmRemoteDesktopVirtualDisplay:input_type -> dieter.v1.ConfirmRemoteDesktopVirtualDisplayRequest
+	196, // 312: dieter.v1.DieterService.RestoreRemoteDesktopVirtualDisplay:input_type -> dieter.v1.RemoteDesktopRef
+	185, // 313: dieter.v1.DieterService.ProbeRemoteDesktopPermissions:input_type -> dieter.v1.ProbeRemoteDesktopPermissionsRequest
+	190, // 314: dieter.v1.DieterService.StartRemoteDesktop:input_type -> dieter.v1.StartRemoteDesktopRequest
+	212, // 315: dieter.v1.DieterService.SendRemoteDesktopSignal:input_type -> dieter.v1.RemoteDesktopSignal
+	196, // 316: dieter.v1.DieterService.GetRemoteDesktopSession:input_type -> dieter.v1.RemoteDesktopRef
+	301, // 317: dieter.v1.DieterService.ListRemoteDesktopSessions:input_type -> google.protobuf.Empty
+	193, // 318: dieter.v1.DieterService.SetRemoteDesktopControl:input_type -> dieter.v1.RemoteDesktopControlRequest
+	195, // 319: dieter.v1.DieterService.UpdateRemoteDesktopSession:input_type -> dieter.v1.UpdateRemoteDesktopSessionRequest
+	233, // 320: dieter.v1.DieterService.ExchangeRemoteDesktopClipboard:input_type -> dieter.v1.RemoteDesktopClipboardRequest
+	196, // 321: dieter.v1.DieterService.CloseRemoteDesktop:input_type -> dieter.v1.RemoteDesktopRef
+	218, // 322: dieter.v1.DieterService.ListSchedules:input_type -> dieter.v1.ListSchedulesRequest
+	225, // 323: dieter.v1.DieterService.GetSchedule:input_type -> dieter.v1.ScheduleRef
+	223, // 324: dieter.v1.DieterService.PreviewSchedule:input_type -> dieter.v1.PreviewScheduleRequest
+	222, // 325: dieter.v1.DieterService.CreateSchedule:input_type -> dieter.v1.SaveScheduleRequest
+	222, // 326: dieter.v1.DieterService.UpdateSchedule:input_type -> dieter.v1.SaveScheduleRequest
+	225, // 327: dieter.v1.DieterService.DeleteSchedule:input_type -> dieter.v1.ScheduleRef
+	225, // 328: dieter.v1.DieterService.RunSchedule:input_type -> dieter.v1.ScheduleRef
+	226, // 329: dieter.v1.DieterService.SetScheduleEnabled:input_type -> dieter.v1.SetScheduleEnabledRequest
+	227, // 330: dieter.v1.DieterService.ListScheduleRuns:input_type -> dieter.v1.ListScheduleRunsRequest
+	301, // 331: dieter.v1.DieterService.GetVaultStatus:input_type -> google.protobuf.Empty
+	265, // 332: dieter.v1.DieterService.InitVault:input_type -> dieter.v1.InitVaultRequest
+	267, // 333: dieter.v1.DieterService.JoinVault:input_type -> dieter.v1.JoinVaultRequest
+	269, // 334: dieter.v1.DieterService.ApproveVaultMember:input_type -> dieter.v1.ApproveVaultMemberRequest
+	270, // 335: dieter.v1.DieterService.RemoveVaultMember:input_type -> dieter.v1.VaultMemberRef
+	271, // 336: dieter.v1.DieterService.RotateVault:input_type -> dieter.v1.RotateVaultRequest
+	274, // 337: dieter.v1.DieterService.ListVaultItems:input_type -> dieter.v1.ListVaultItemsRequest
+	276, // 338: dieter.v1.DieterService.GetVaultItem:input_type -> dieter.v1.VaultItemRef
+	277, // 339: dieter.v1.DieterService.RevealVaultItem:input_type -> dieter.v1.RevealVaultItemRequest
+	279, // 340: dieter.v1.DieterService.CreateVaultItem:input_type -> dieter.v1.CreateVaultItemRequest
+	280, // 341: dieter.v1.DieterService.UpdateVaultItem:input_type -> dieter.v1.UpdateVaultItemRequest
+	276, // 342: dieter.v1.DieterService.DeleteVaultItem:input_type -> dieter.v1.VaultItemRef
+	281, // 343: dieter.v1.DieterService.ListVaultAudit:input_type -> dieter.v1.ListVaultAuditRequest
+	252, // 344: dieter.v1.DieterService.GetKV:output_type -> dieter.v1.KVEntry
+	255, // 345: dieter.v1.DieterService.ListKV:output_type -> dieter.v1.KVPage
+	252, // 346: dieter.v1.DieterService.PutKV:output_type -> dieter.v1.KVEntry
+	252, // 347: dieter.v1.DieterService.DeleteKV:output_type -> dieter.v1.KVEntry
+	252, // 348: dieter.v1.DieterService.MoveKV:output_type -> dieter.v1.KVEntry
+	260, // 349: dieter.v1.DieterService.WatchKV:output_type -> dieter.v1.KVFrame
+	250, // 350: dieter.v1.DieterService.GetPeerChanges:output_type -> dieter.v1.PeerChangesResponse
+	241, // 351: dieter.v1.DieterService.GetPeerRecord:output_type -> dieter.v1.PeerRecord
+	242, // 352: dieter.v1.DieterService.GetPeerStoreStatus:output_type -> dieter.v1.PeerStoreStatus
+	245, // 353: dieter.v1.DieterService.ListPeerRecords:output_type -> dieter.v1.PeerSnapshot
+	241, // 354: dieter.v1.DieterService.PutPeerRecord:output_type -> dieter.v1.PeerRecord
+	301, // 355: dieter.v1.DieterService.MergePeerRecords:output_type -> google.protobuf.Empty
+	14,  // 356: dieter.v1.DieterService.Health:output_type -> dieter.v1.HealthResponse
+	15,  // 357: dieter.v1.DieterService.GetRuntimeStatus:output_type -> dieter.v1.RuntimeStatus
+	239, // 358: dieter.v1.DieterService.StartControlConnection:output_type -> dieter.v1.ControlConnection
+	239, // 359: dieter.v1.DieterService.GetControlConnection:output_type -> dieter.v1.ControlConnection
+	301, // 360: dieter.v1.DieterService.CloseControlConnection:output_type -> google.protobuf.Empty
+	16,  // 361: dieter.v1.DieterService.GetMachineInformation:output_type -> dieter.v1.MachineInformation
+	24,  // 362: dieter.v1.DieterService.PerformMachineOperation:output_type -> dieter.v1.MachineOperationResponse
+	27,  // 363: dieter.v1.DieterService.GetState:output_type -> dieter.v1.State
+	30,  // 364: dieter.v1.DieterService.WatchChanges:output_type -> dieter.v1.ChangesFrame
+	69,  // 365: dieter.v1.DieterService.GetHarnesses:output_type -> dieter.v1.HarnessCatalog
+	76,  // 366: dieter.v1.DieterService.GetSettings:output_type -> dieter.v1.Settings
+	77,  // 367: dieter.v1.DieterService.GetSettingsOptions:output_type -> dieter.v1.SettingsOptions
+	76,  // 368: dieter.v1.DieterService.UpdateSettings:output_type -> dieter.v1.Settings
+	79,  // 369: dieter.v1.DieterService.GetPromptSettings:output_type -> dieter.v1.PromptSettings
+	79,  // 370: dieter.v1.DieterService.UpdatePromptSettings:output_type -> dieter.v1.PromptSettings
+	39,  // 371: dieter.v1.DieterService.SetProjectPromptTemplate:output_type -> dieter.v1.Project
+	40,  // 372: dieter.v1.DieterService.SetBoardPromptTemplate:output_type -> dieter.v1.Board
+	83,  // 373: dieter.v1.DieterService.PreviewPrompt:output_type -> dieter.v1.PromptPreview
+	87,  // 374: dieter.v1.DieterService.ListDirectories:output_type -> dieter.v1.DirectoryListing
+	39,  // 375: dieter.v1.DieterService.ConsolidateProject:output_type -> dieter.v1.Project
+	34,  // 376: dieter.v1.DieterService.AttachCheckout:output_type -> dieter.v1.Checkout
+	301, // 377: dieter.v1.DieterService.DetachCheckout:output_type -> google.protobuf.Empty
+	38,  // 378: dieter.v1.DieterService.ListCheckouts:output_type -> dieter.v1.CheckoutsResponse
+	89,  // 379: dieter.v1.DieterService.CreateProject:output_type -> dieter.v1.CreateProjectResponse
+	39,  // 380: dieter.v1.DieterService.UpdateProject:output_type -> dieter.v1.Project
+	39,  // 381: dieter.v1.DieterService.UpdateProjectWorkspaceSettings:output_type -> dieter.v1.Project
+	39,  // 382: dieter.v1.DieterService.ArchiveProject:output_type -> dieter.v1.Project
+	32,  // 383: dieter.v1.DieterService.ListArchivedProjects:output_type -> dieter.v1.ProjectsResponse
+	40,  // 384: dieter.v1.DieterService.CreateBoard:output_type -> dieter.v1.Board
+	40,  // 385: dieter.v1.DieterService.GetBoard:output_type -> dieter.v1.Board
+	43,  // 386: dieter.v1.DieterService.ListRetiredBoards:output_type -> dieter.v1.ListRetiredBoardsResponse
+	40,  // 387: dieter.v1.DieterService.SetBoardRetired:output_type -> dieter.v1.Board
+	40,  // 388: dieter.v1.DieterService.RenameBoard:output_type -> dieter.v1.Board
+	40,  // 389: dieter.v1.DieterService.SetBoardArchivePolicy:output_type -> dieter.v1.Board
+	40,  // 390: dieter.v1.DieterService.UpdateBoardHostnames:output_type -> dieter.v1.Board
+	40,  // 391: dieter.v1.DieterService.UpdateBoardGitSettings:output_type -> dieter.v1.Board
+	33,  // 392: dieter.v1.DieterService.ListArchivedCards:output_type -> dieter.v1.CardsResponse
+	40,  // 393: dieter.v1.DieterService.CreateBoardLabel:output_type -> dieter.v1.Board
+	40,  // 394: dieter.v1.DieterService.UpdateBoardLabel:output_type -> dieter.v1.Board
+	40,  // 395: dieter.v1.DieterService.DeleteBoardLabel:output_type -> dieter.v1.Board
+	50,  // 396: dieter.v1.DieterService.CreateCard:output_type -> dieter.v1.Card
+	50,  // 397: dieter.v1.DieterService.CreateChat:output_type -> dieter.v1.Card
+	50,  // 398: dieter.v1.DieterService.ForkChat:output_type -> dieter.v1.Card
+	106, // 399: dieter.v1.DieterService.ListChats:output_type -> dieter.v1.ChatsResponse
+	52,  // 400: dieter.v1.DieterService.GetCard:output_type -> dieter.v1.CardDetail
+	68,  // 401: dieter.v1.DieterService.GetConversation:output_type -> dieter.v1.ConversationSnapshot
+	111, // 402: dieter.v1.DieterService.PollConversation:output_type -> dieter.v1.ConversationUpdate
+	111, // 403: dieter.v1.DieterService.WatchConversation:output_type -> dieter.v1.ConversationUpdate
+	113, // 404: dieter.v1.DieterService.GetToolOutput:output_type -> dieter.v1.ToolOutput
+	56,  // 405: dieter.v1.DieterService.PresentConversationContent:output_type -> dieter.v1.ContentPresentation
+	115, // 406: dieter.v1.DieterService.SendMessage:output_type -> dieter.v1.SendMessageResponse
+	65,  // 407: dieter.v1.DieterService.RemoveQueuedMessage:output_type -> dieter.v1.QueuedMessage
+	50,  // 408: dieter.v1.DieterService.MarkConversationRead:output_type -> dieter.v1.Card
+	50,  // 409: dieter.v1.DieterService.MoveCard:output_type -> dieter.v1.Card
+	50,  // 410: dieter.v1.DieterService.MergeCard:output_type -> dieter.v1.Card
+	118, // 411: dieter.v1.DieterService.StartCard:output_type -> dieter.v1.StartCardResponse
+	50,  // 412: dieter.v1.DieterService.SetCardLabels:output_type -> dieter.v1.Card
+	301, // 413: dieter.v1.DieterService.CancelCard:output_type -> google.protobuf.Empty
+	50,  // 414: dieter.v1.DieterService.RenameCard:output_type -> dieter.v1.Card
+	50,  // 415: dieter.v1.DieterService.UpdateCard:output_type -> dieter.v1.Card
+	50,  // 416: dieter.v1.DieterService.ArchiveCard:output_type -> dieter.v1.Card
+	50,  // 417: dieter.v1.DieterService.PinChat:output_type -> dieter.v1.Card
+	50,  // 418: dieter.v1.DieterService.UpdateConversationWorkspace:output_type -> dieter.v1.Card
+	130, // 419: dieter.v1.DieterService.GetWorkspace:output_type -> dieter.v1.Workspace
+	131, // 420: dieter.v1.DieterService.ListProjectWorkspaces:output_type -> dieter.v1.WorkspacesResponse
+	134, // 421: dieter.v1.DieterService.GetChangeset:output_type -> dieter.v1.Changeset
+	137, // 422: dieter.v1.DieterService.GetFileDiff:output_type -> dieter.v1.FileDiff
+	137, // 423: dieter.v1.DieterService.GetCommitDiff:output_type -> dieter.v1.FileDiff
+	138, // 424: dieter.v1.DieterService.AddChangeComment:output_type -> dieter.v1.ChangeComment
+	141, // 425: dieter.v1.DieterService.ListChangeComments:output_type -> dieter.v1.ChangeCommentsResponse
+	142, // 426: dieter.v1.DieterService.GetSCMCapabilities:output_type -> dieter.v1.SCMCapabilities
+	146, // 427: dieter.v1.DieterService.StartGitOperation:output_type -> dieter.v1.GitOperation
+	146, // 428: dieter.v1.DieterService.GetGitOperation:output_type -> dieter.v1.GitOperation
+	151, // 429: dieter.v1.DieterService.WatchGitOperation:output_type -> dieter.v1.GitOperationFrame
+	146, // 430: dieter.v1.DieterService.CancelGitOperation:output_type -> dieter.v1.GitOperation
+	154, // 431: dieter.v1.DieterService.ListFiles:output_type -> dieter.v1.FileList
+	156, // 432: dieter.v1.DieterService.ReadFile:output_type -> dieter.v1.FileDocument
+	156, // 433: dieter.v1.DieterService.SaveFile:output_type -> dieter.v1.FileDocument
+	153, // 434: dieter.v1.DieterService.CreateFile:output_type -> dieter.v1.FileEntry
+	216, // 435: dieter.v1.DieterService.MoveFile:output_type -> dieter.v1.MoveFileResponse
+	301, // 436: dieter.v1.DieterService.DeleteFile:output_type -> google.protobuf.Empty
+	160, // 437: dieter.v1.DieterService.ListTerminals:output_type -> dieter.v1.TerminalsResponse
+	157, // 438: dieter.v1.DieterService.CreateTerminal:output_type -> dieter.v1.Terminal
+	163, // 439: dieter.v1.DieterService.WatchTerminal:output_type -> dieter.v1.TerminalFrame
+	157, // 440: dieter.v1.DieterService.WriteTerminal:output_type -> dieter.v1.Terminal
+	157, // 441: dieter.v1.DieterService.ResizeTerminal:output_type -> dieter.v1.Terminal
+	157, // 442: dieter.v1.DieterService.RenameTerminal:output_type -> dieter.v1.Terminal
+	301, // 443: dieter.v1.DieterService.CloseTerminal:output_type -> google.protobuf.Empty
+	170, // 444: dieter.v1.DieterService.ListExecutions:output_type -> dieter.v1.ExecutionsResponse
+	167, // 445: dieter.v1.DieterService.StartExecution:output_type -> dieter.v1.Execution
+	167, // 446: dieter.v1.DieterService.GetExecution:output_type -> dieter.v1.Execution
+	173, // 447: dieter.v1.DieterService.WatchExecution:output_type -> dieter.v1.ExecutionEvent
+	167, // 448: dieter.v1.DieterService.WriteExecutionInput:output_type -> dieter.v1.Execution
+	167, // 449: dieter.v1.DieterService.SignalExecution:output_type -> dieter.v1.Execution
+	167, // 450: dieter.v1.DieterService.ResizeExecution:output_type -> dieter.v1.Execution
+	167, // 451: dieter.v1.DieterService.CancelExecution:output_type -> dieter.v1.Execution
+	301, // 452: dieter.v1.DieterService.CloseExecution:output_type -> google.protobuf.Empty
+	177, // 453: dieter.v1.DieterService.GetRemoteDesktopCapabilities:output_type -> dieter.v1.RemoteDesktopCapabilities
+	179, // 454: dieter.v1.DieterService.ListRemoteDesktopDisplayModes:output_type -> dieter.v1.RemoteDesktopDisplayModes
+	179, // 455: dieter.v1.DieterService.SetRemoteDesktopDisplayMode:output_type -> dieter.v1.RemoteDesktopDisplayModes
+	179, // 456: dieter.v1.DieterService.RestoreRemoteDesktopDisplayMode:output_type -> dieter.v1.RemoteDesktopDisplayModes
+	181, // 457: dieter.v1.DieterService.GetRemoteDesktopVirtualDisplay:output_type -> dieter.v1.RemoteDesktopVirtualDisplay
+	181, // 458: dieter.v1.DieterService.SetRemoteDesktopVirtualDisplay:output_type -> dieter.v1.RemoteDesktopVirtualDisplay
+	181, // 459: dieter.v1.DieterService.ConfirmRemoteDesktopVirtualDisplay:output_type -> dieter.v1.RemoteDesktopVirtualDisplay
+	181, // 460: dieter.v1.DieterService.RestoreRemoteDesktopVirtualDisplay:output_type -> dieter.v1.RemoteDesktopVirtualDisplay
+	186, // 461: dieter.v1.DieterService.ProbeRemoteDesktopPermissions:output_type -> dieter.v1.RemoteDesktopPermissionProbe
+	212, // 462: dieter.v1.DieterService.StartRemoteDesktop:output_type -> dieter.v1.RemoteDesktopSignal
+	301, // 463: dieter.v1.DieterService.SendRemoteDesktopSignal:output_type -> google.protobuf.Empty
+	205, // 464: dieter.v1.DieterService.GetRemoteDesktopSession:output_type -> dieter.v1.RemoteDesktopSessionState
+	191, // 465: dieter.v1.DieterService.ListRemoteDesktopSessions:output_type -> dieter.v1.RemoteDesktopSessions
+	205, // 466: dieter.v1.DieterService.SetRemoteDesktopControl:output_type -> dieter.v1.RemoteDesktopSessionState
+	205, // 467: dieter.v1.DieterService.UpdateRemoteDesktopSession:output_type -> dieter.v1.RemoteDesktopSessionState
+	235, // 468: dieter.v1.DieterService.ExchangeRemoteDesktopClipboard:output_type -> dieter.v1.RemoteDesktopClipboardResponse
+	301, // 469: dieter.v1.DieterService.CloseRemoteDesktop:output_type -> google.protobuf.Empty
+	219, // 470: dieter.v1.DieterService.ListSchedules:output_type -> dieter.v1.SchedulesResponse
+	220, // 471: dieter.v1.DieterService.GetSchedule:output_type -> dieter.v1.Schedule
+	224, // 472: dieter.v1.DieterService.PreviewSchedule:output_type -> dieter.v1.SchedulePreview
+	220, // 473: dieter.v1.DieterService.CreateSchedule:output_type -> dieter.v1.Schedule
+	220, // 474: dieter.v1.DieterService.UpdateSchedule:output_type -> dieter.v1.Schedule
+	301, // 475: dieter.v1.DieterService.DeleteSchedule:output_type -> google.protobuf.Empty
+	228, // 476: dieter.v1.DieterService.RunSchedule:output_type -> dieter.v1.ScheduleRun
+	220, // 477: dieter.v1.DieterService.SetScheduleEnabled:output_type -> dieter.v1.Schedule
+	229, // 478: dieter.v1.DieterService.ListScheduleRuns:output_type -> dieter.v1.ScheduleRunsResponse
+	264, // 479: dieter.v1.DieterService.GetVaultStatus:output_type -> dieter.v1.VaultStatus
+	266, // 480: dieter.v1.DieterService.InitVault:output_type -> dieter.v1.InitVaultResponse
+	268, // 481: dieter.v1.DieterService.JoinVault:output_type -> dieter.v1.JoinVaultResponse
+	264, // 482: dieter.v1.DieterService.ApproveVaultMember:output_type -> dieter.v1.VaultStatus
+	264, // 483: dieter.v1.DieterService.RemoveVaultMember:output_type -> dieter.v1.VaultStatus
+	272, // 484: dieter.v1.DieterService.RotateVault:output_type -> dieter.v1.RotateVaultResponse
+	275, // 485: dieter.v1.DieterService.ListVaultItems:output_type -> dieter.v1.VaultItemsResponse
+	273, // 486: dieter.v1.DieterService.GetVaultItem:output_type -> dieter.v1.VaultItem
+	278, // 487: dieter.v1.DieterService.RevealVaultItem:output_type -> dieter.v1.RevealVaultItemResponse
+	273, // 488: dieter.v1.DieterService.CreateVaultItem:output_type -> dieter.v1.VaultItem
+	273, // 489: dieter.v1.DieterService.UpdateVaultItem:output_type -> dieter.v1.VaultItem
+	273, // 490: dieter.v1.DieterService.DeleteVaultItem:output_type -> dieter.v1.VaultItem
+	283, // 491: dieter.v1.DieterService.ListVaultAudit:output_type -> dieter.v1.VaultAuditResponse
+	344, // [344:492] is the sub-list for method output_type
+	196, // [196:344] is the sub-list for method input_type
+	196, // [196:196] is the sub-list for extension type_name
+	196, // [196:196] is the sub-list for extension extendee
+	0,   // [0:196] is the sub-list for field type_name
 }
 
 func init() { file_dieter_v1_dieter_proto_init() }
@@ -25257,13 +27058,14 @@ func file_dieter_v1_dieter_proto_init() {
 		(*RemoteDesktopSignal_Error)(nil),
 		(*RemoteDesktopSignal_LeaseHeartbeat)(nil),
 	}
+	file_dieter_v1_dieter_proto_msgTypes[266].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dieter_v1_dieter_proto_rawDesc), len(file_dieter_v1_dieter_proto_rawDesc)),
 			NumEnums:      14,
-			NumMessages:   262,
+			NumMessages:   285,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

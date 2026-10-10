@@ -21,6 +21,13 @@ Machine enrollment requires GitHub sign-in and a separate browser approval of
 the machine name and enrollment code. The page also shows the public-key
 fingerprint. Merely opening the verification link does not enroll a machine.
 
+App sign-in also ends on a gateway confirmation page that names the GitHub
+account and the app callback. GitHub can skip its own consent for an app you
+authorized before, so this page is what stops another app on the same device
+from silently starting a sign-in and receiving your session. Only continue if
+you just started signing in from a Dieter app. The gateway accepts only its
+configured app callbacks, never loopback addresses.
+
 ## Machine identity and transport
 
 An enrolled daemon proves possession of its Ed25519 key on each tunnel connection.
@@ -29,6 +36,12 @@ routes verify the daemon certificate and a short-lived daemon-targeted bearer.
 WebRTC API routes retain this daemon TLS authentication, including through TURN.
 
 The raw daemon API stays on loopback (`127.0.0.1:4242`). Never publish that port.
+Loopback alone admits every user and process on the host, so each raw request
+must also carry a random local API token. The daemon rotates it on every start
+and writes it to `DIETER_HOME/runtime/local-api-token`, readable only by the
+daemon user. The CLI reads it automatically; other local users, containers
+sharing the host network, and request-forgery bugs in other local services
+cannot.
 Enrolled daemons advertise a separate authenticated loopback TLS route; an
 additional LAN or tailnet TLS route is optional. Public gateway origins require
 HTTPS. Literal loopback HTTP is reserved for isolated local setups.
@@ -37,13 +50,19 @@ External TLS uses TLS 1.3. If a reverse proxy terminates TLS, configure that
 policy at the proxy too. Relay messages, queues, and concurrent streams are
 bounded. Transport cancellation never implicitly stops an agent.
 
+The gateway stores no state for a sign-in until GitHub returns; the attempt is
+sealed in a browser cookie. Unauthenticated work is limited per client network
+(per IPv4 address or IPv6 /64): concurrent machine handshakes, public
+enrollment and compatibility calls, and pending enrollments. One source cannot
+fill a pool that every machine and client shares.
+
 ## Storage is different from transit
 
-| Location | Stored data |
-| --- | --- |
-| Daemon | Checkouts and local execution state; transcripts, files, schedules; shared metadata replicas; local harness credentials in their normal configuration locations |
-| Gateway | Account sessions, daemon identities, presence, routes, revocation metadata, and normalized credential-free provider quota snapshots |
-| Native client | Session credential, caches, drafts, and pending commands appropriate to that platform |
+| Location      | Stored data                                                                                                                                                                                                                  |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Daemon        | Checkouts and local execution state; transcripts, files, schedules; shared metadata replicas; encrypted vault replica and this machine's vault member key; local harness credentials in their normal configuration locations |
+| Gateway       | Account sessions, daemon identities, presence, routes, revocation metadata, and normalized credential-free provider quota snapshots                                                                                          |
+| Native client | Session credential, caches, drafts, and pending commands appropriate to that platform                                                                                                                                        |
 
 The gateway **does not store** repositories, transcripts, project files, schedules,
 provider credentials, or raw provider responses. Authenticated API payloads can
@@ -57,6 +76,17 @@ not raw provider account IDs.
 Agent model requests follow your provider's configuration. Cloud model providers
 may receive prompts, code, and tool output. Dieter does not make that inference
 local or replace the provider's data policy.
+
+## Vault
+
+[Vault](/docs/vault/) items replicate as AES-256-GCM ciphertext. Vault keys are
+sealed to each member machine's hybrid ML-KEM-768/X25519 key. A new machine
+joins by matching a code on two machines or by using the offline recovery key.
+That way, a relay or replica that can write peer records still can't substitute
+keys. Commands that return decrypted vault content refuse the gateway relay
+route. Agent turns use the vault only when their conversation was created with
+vault access. Agents run unsandboxed as your user, so treat that rule as
+protection against mistakes plus an audit trail, not as isolation.
 
 ## Revocation
 

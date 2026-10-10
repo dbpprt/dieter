@@ -41,7 +41,10 @@ import okio.Path
 import okio.Path.Companion.toPath
 import okio.fakefilesystem.FakeFileSystem
 
-/** Counts file writes; [CoreStorage] completes each with an atomic move. While [full], every write fails. */
+/**
+ * Counts file writes; [CoreStorage] completes each with an atomic move. While [full], every write
+ * fails.
+ */
 private class CountingFileSystem(delegate: FileSystem) : ForwardingFileSystem(delegate) {
     var writes = 0
     var full = false
@@ -56,8 +59,11 @@ private class CountingFileSystem(delegate: FileSystem) : ForwardingFileSystem(de
 class CompositionTest {
     private val fileSystem = FakeFileSystem()
     private val clock = ManualClock()
+
     private fun storage(name: String) = CoreStorage(fileSystem, "/state/$name".toPath())
+
     private fun bytes(count: Int): ByteString = ByteArray(count).toByteString()
+
     private val key = DraftKey("d1", "card-1")
 
     @Test
@@ -82,10 +88,13 @@ class CompositionTest {
         assertFalse(drafts.beginQueueEdit(key, "queue-1"), "the same edit cannot run twice")
         assertTrue(drafts.beginQueueEdit(key, "queue-2"))
         val queuedFile = MessagePart(type = "file", filename = "queued.pdf", data_ = bytes(4))
-        val removed = QueuedMessage(
-            id = "queue-1", parts = listOf(MessagePart(type = "text", text = "queued text"), queuedFile),
-            selection = HarnessSelection("codex", "queued-model", "high", mapOf("fast_mode" to "true")),
-        )
+        val removed =
+            QueuedMessage(
+                id = "queue-1",
+                parts = listOf(MessagePart(type = "text", text = "queued text"), queuedFile),
+                selection =
+                    HarnessSelection("codex", "queued-model", "high", mapOf("fast_mode" to "true")),
+            )
         val draft = drafts.finishQueueEdit(key, "queue-1", removed)
         assertEquals("queued text\n\ncurrent draft", draft.text)
         assertEquals(listOf(queuedFile, existing), draft.attachments)
@@ -107,14 +116,26 @@ class CompositionTest {
 
         val relaunched = ConversationDrafts(clock, SilentLogger).also { it.bind(storage("g")) }
         assertEquals("offline idea\n\nalready here", relaunched.draft(DraftKey("d1", "c_1")).text)
-        relaunched.acceptSend(DraftKey("d1", "c_1"), relaunched.draft(DraftKey("d1", "c_1")).revision)
-        assertTrue(ConversationDrafts(clock, SilentLogger).also { it.bind(storage("g")) }.state.value.isEmpty())
+        relaunched.acceptSend(
+            DraftKey("d1", "c_1"),
+            relaunched.draft(DraftKey("d1", "c_1")).revision,
+        )
+        assertTrue(
+            ConversationDrafts(clock, SilentLogger)
+                .also { it.bind(storage("g")) }
+                .state
+                .value
+                .isEmpty()
+        )
     }
 
     @Test
     fun anEditorTypesAtOnceAndABurstIsWrittenOnce() = runTest {
         val counting = CountingFileSystem(fileSystem)
-        val drafts = ConversationDrafts(clock, SilentLogger, backgroundScope).also { it.bind(CoreStorage(counting, "/state/typing".toPath())) }
+        val drafts =
+            ConversationDrafts(clock, SilentLogger, backgroundScope).also {
+                it.bind(CoreStorage(counting, "/state/typing".toPath()))
+            }
         val editor = drafts.editor(key)
         val text = "typing faster than the core can echo"
         for (end in 1..text.length) {
@@ -128,7 +149,13 @@ class CompositionTest {
         advanceTimeBy(ConversationDrafts.SAVE_INTERVAL)
         runCurrent()
         assertEquals(1, counting.writes, "a burst is written once")
-        assertEquals(text, ConversationDrafts(clock, SilentLogger).also { it.bind(storage("typing")) }.draft(key).text)
+        assertEquals(
+            text,
+            ConversationDrafts(clock, SilentLogger)
+                .also { it.bind(storage("typing")) }
+                .draft(key)
+                .text,
+        )
 
         editor.setText("$text!")
         drafts.flush()
@@ -139,7 +166,8 @@ class CompositionTest {
 
     @Test
     fun aSendThroughAnOpenEditorClearsOnlyWhatWasSent() = runTest {
-        val drafts = ConversationDrafts(clock, SilentLogger, backgroundScope).also { it.bind(storage("g")) }
+        val drafts =
+            ConversationDrafts(clock, SilentLogger, backgroundScope).also { it.bind(storage("g")) }
         val editor = drafts.editor(key)
         editor.setText("hello")
         assertTrue(drafts.acceptSend(key, drafts.draft(key).revision))
@@ -155,7 +183,11 @@ class CompositionTest {
         drafts.release(editor)
         editor.setText("still held")
         runCurrent()
-        assertEquals("still held", drafts.draft(key).text, "the editor lives until its last holder lets go")
+        assertEquals(
+            "still held",
+            drafts.draft(key).text,
+            "the editor lives until its last holder lets go",
+        )
         drafts.release(editor)
         editor.setText("after release")
         runCurrent()
@@ -165,7 +197,8 @@ class CompositionTest {
 
     @Test
     fun retargetingMovesAnOpenEditorsDraft() = runTest {
-        val drafts = ConversationDrafts(clock, SilentLogger, backgroundScope).also { it.bind(storage("g")) }
+        val drafts =
+            ConversationDrafts(clock, SilentLogger, backgroundScope).also { it.bind(storage("g")) }
         val local = drafts.editor(DraftKey("d1", "local_1"))
         local.setText("offline idea")
         drafts.retargetAll("local_1", "c_1")
@@ -189,11 +222,26 @@ class CompositionTest {
     @Test
     fun attachmentLimitsMatchTheDaemon() {
         val mb = 1024 * 1024
-        assertNull(Attachments.limitError(List(4) { MessagePart(type = "file", data_ = bytes(mb)) }))
-        assertEquals("You can attach up to 4 images or files.", Attachments.limitError(List(5) { MessagePart(type = "file", data_ = bytes(1)) }))
-        assertEquals("Each attachment must be at most 5 MB.", Attachments.limitError(listOf(MessagePart(data_ = bytes(5 * mb + 1)))))
-        assertEquals("Attachments must total at most 6 MB.", Attachments.limitError(listOf(MessagePart(data_ = bytes(3 * mb)), MessagePart(data_ = bytes(3 * mb + 1)))))
-        assertTrue(Attachments.limitError(listOf(MessagePart(filename = "a.txt")))!!.contains("empty"))
+        assertNull(
+            Attachments.limitError(List(4) { MessagePart(type = "file", data_ = bytes(mb)) })
+        )
+        assertEquals(
+            "You can attach up to 4 images or files.",
+            Attachments.limitError(List(5) { MessagePart(type = "file", data_ = bytes(1)) }),
+        )
+        assertEquals(
+            "Each attachment must be at most 5 MB.",
+            Attachments.limitError(listOf(MessagePart(data_ = bytes(5 * mb + 1)))),
+        )
+        assertEquals(
+            "Attachments must total at most 6 MB.",
+            Attachments.limitError(
+                listOf(MessagePart(data_ = bytes(3 * mb)), MessagePart(data_ = bytes(3 * mb + 1)))
+            ),
+        )
+        assertTrue(
+            Attachments.limitError(listOf(MessagePart(filename = "a.txt")))!!.contains("empty")
+        )
         assertEquals(5, Attachments.size(MessagePart(url = "data:text/plain;base64,aGVsbG8=")))
         assertEquals("image/png", Attachments.mediaType("Image/PNG; charset=binary", "x"))
         assertEquals("application/pdf", Attachments.mediaType(null, "report.PDF"))
@@ -201,7 +249,10 @@ class CompositionTest {
         assertEquals("secret.txt", Attachments.filename("..\\..\\secret.txt", "text/plain"))
         assertEquals("attached-image", Attachments.filename(" ", "image/png"))
         assertEquals("file", Attachments.part("a.png", "image/png", bytes(1)).type)
-        assertEquals(listOf("text", "file"), Attachments.messageParts("  hi  ", listOf(MessagePart(type = "file"))).map { it.type })
+        assertEquals(
+            listOf("text", "file"),
+            Attachments.messageParts("  hi  ", listOf(MessagePart(type = "file"))).map { it.type },
+        )
         assertEquals("hi", Attachments.messageParts("  hi  ", emptyList()).single().text)
         assertTrue(Attachments.messageParts(" ", emptyList()).isEmpty())
     }
@@ -214,40 +265,115 @@ class CompositionTest {
         assertEquals("First line", Titles.task("\n  First line \nsecond"))
         assertEquals("a".repeat(80), Titles.task("a".repeat(100)))
         assertEquals("New chat", Titles.chat(" "))
-        assertEquals("screenshot.png", Titles.chat("", listOf(MessagePart(filename = "screenshot.png"))))
+        assertEquals(
+            "screenshot.png",
+            Titles.chat("", listOf(MessagePart(filename = "screenshot.png"))),
+        )
         assertEquals("b".repeat(69) + "…", Titles.chat("b".repeat(100)))
-        assertEquals("screenshot.png", Titles.creation("", "", listOf(MessagePart(filename = "screenshot.png"))))
+        assertEquals(
+            "screenshot.png",
+            Titles.creation("", "", listOf(MessagePart(filename = "screenshot.png"))),
+        )
         assertEquals("New task", Titles.creation("", "", emptyList()))
     }
 
-    private val sol = HarnessModel(id = "sol", default_effort = "low", efforts = listOf("low", "high", "xhigh"))
+    private val sol =
+        HarnessModel(id = "sol", default_effort = "low", efforts = listOf("low", "high", "xhigh"))
     private val spark = HarnessModel(id = "spark", efforts = listOf("low"))
-    private val codex = Harness(
-        id = "codex", default_model = "sol", models = listOf(sol, spark),
-        effort = EffortConfig(options = listOf(EffortOption("low"), EffortOption("medium"), EffortOption("high"), EffortOption("xhigh"))),
-        capabilities = listOf(HarnessCapability("model-selection", "between-turns")),
-        options = listOf(
-            ProviderOption(id = "fast_mode", type = "bool", default_value = "false", mutable = true, models = listOf("sol")),
-            ProviderOption(id = "mode", type = "enum", default_value = "safe", choices = listOf(ProviderOptionChoice("safe"), ProviderOptionChoice("yolo"))),
-            ProviderOption(id = "future", type = "text", default_value = "x"),
-        ),
-    )
-    private val claude = Harness(id = "claude", default_model = "opus", models = listOf(HarnessModel(id = "opus")))
+    private val codex =
+        Harness(
+            id = "codex",
+            default_model = "sol",
+            models = listOf(sol, spark),
+            effort =
+                EffortConfig(
+                    options =
+                        listOf(
+                            EffortOption("low"),
+                            EffortOption("medium"),
+                            EffortOption("high"),
+                            EffortOption("xhigh"),
+                        )
+                ),
+            capabilities = listOf(HarnessCapability("model-selection", "between-turns")),
+            options =
+                listOf(
+                    ProviderOption(
+                        id = "fast_mode",
+                        type = "bool",
+                        default_value = "false",
+                        mutable = true,
+                        models = listOf("sol"),
+                    ),
+                    ProviderOption(
+                        id = "mode",
+                        type = "enum",
+                        default_value = "safe",
+                        choices =
+                            listOf(ProviderOptionChoice("safe"), ProviderOptionChoice("yolo")),
+                    ),
+                    ProviderOption(id = "future", type = "text", default_value = "x"),
+                ),
+        )
+    private val claude =
+        Harness(id = "claude", default_model = "opus", models = listOf(HarnessModel(id = "opus")))
 
     @Test
     fun selectionsResolveAgainstTheCatalog() {
-        assertEquals(HarnessSelection("codex", "sol", "xhigh", mapOf("fast_mode" to "true", "mode" to "safe", "future" to "x")),
-            Selections.resolve(HarnessSelection("codex", "sol", "xhigh", mapOf("fast_mode" to "TRUE", "mode" to "bogus", "obsolete" to "1")), listOf(codex)))
-        assertEquals(HarnessSelection("codex", "sol", "low", mapOf("fast_mode" to "false", "mode" to "safe", "future" to "x")),
-            Selections.resolve(HarnessSelection("gone", "gone", "high"), listOf(codex)), "a stale choice falls back to the first harness and its defaults")
-        assertEquals("low", Selections.resolve(HarnessSelection("codex", "spark", "medium"), listOf(codex))!!.effort, "an effort the model rejects is replaced")
-        assertEquals(HarnessSelection(), Selections.resolve(HarnessSelection(), listOf(codex), allowServerDefault = true))
+        assertEquals(
+            HarnessSelection(
+                "codex",
+                "sol",
+                "xhigh",
+                mapOf("fast_mode" to "true", "mode" to "safe", "future" to "x"),
+            ),
+            Selections.resolve(
+                HarnessSelection(
+                    "codex",
+                    "sol",
+                    "xhigh",
+                    mapOf("fast_mode" to "TRUE", "mode" to "bogus", "obsolete" to "1"),
+                ),
+                listOf(codex),
+            ),
+        )
+        assertEquals(
+            HarnessSelection(
+                "codex",
+                "sol",
+                "low",
+                mapOf("fast_mode" to "false", "mode" to "safe", "future" to "x"),
+            ),
+            Selections.resolve(HarnessSelection("gone", "gone", "high"), listOf(codex)),
+            "a stale choice falls back to the first harness and its defaults",
+        )
+        assertEquals(
+            "low",
+            Selections.resolve(HarnessSelection("codex", "spark", "medium"), listOf(codex))!!
+                .effort,
+            "an effort the model rejects is replaced",
+        )
+        assertEquals(
+            HarnessSelection(),
+            Selections.resolve(HarnessSelection(), listOf(codex), allowServerDefault = true),
+        )
         assertNull(Selections.resolve(HarnessSelection("codex"), emptyList()))
-        assertEquals(mapOf("mode" to "safe", "future" to "x"), Selections.normalizedOptions(codex, "spark", mapOf("fast_mode" to "true")))
-        val switched = Selections.selectingModel(HarnessSelection("codex", "sol", "high", mapOf("fast_mode" to "true")), codex, "spark")
+        assertEquals(
+            mapOf("mode" to "safe", "future" to "x"),
+            Selections.normalizedOptions(codex, "spark", mapOf("fast_mode" to "true")),
+        )
+        val switched =
+            Selections.selectingModel(
+                HarnessSelection("codex", "sol", "high", mapOf("fast_mode" to "true")),
+                codex,
+                "spark",
+            )
         assertEquals("default", switched.effort)
         assertFalse("fast_mode" in switched.provider_options)
-        assertEquals(HarnessSelection("claude", "opus", "default"), Selections.selectingProvider(claude))
+        assertEquals(
+            HarnessSelection("claude", "opus", "default"),
+            Selections.selectingProvider(claude),
+        )
         assertTrue(Selections.supports(listOf(codex), HarnessSelection("codex", "sol")))
         assertFalse(Selections.supports(listOf(codex), HarnessSelection("codex", "retired")))
         assertFalse(Selections.supports(listOf(codex), HarnessSelection("claude", "sol")))
@@ -266,11 +392,26 @@ class CompositionTest {
         assertFalse(Selections.optionEnabled(codex.options[1], locked = true))
         val card = Card(provider = "codex", model = "sol", effort = "high")
         assertEquals(HarnessSelection("codex", "sol", "high"), Selections.forSend(null, card))
-        assertEquals(HarnessSelection("codex", "spark", "default"), Selections.forSend(HarnessSelection("codex", "spark"), card))
+        assertEquals(
+            HarnessSelection("codex", "spark", "default"),
+            Selections.forSend(HarnessSelection("codex", "spark"), card),
+        )
     }
 
-    private val project = Project(id = "p", base_branch = "main", base_remote = "origin", checkouts = listOf(Checkout(id = "k1", daemon_id = "d1")))
-    private val board = Board(id = "b", project_id = "p", lanes = listOf(Lane("todo", "Todo"), Lane("running", "Running")), labels = listOf(Label(id = "l1")))
+    private val project =
+        Project(
+            id = "p",
+            base_branch = "main",
+            base_remote = "origin",
+            checkouts = listOf(Checkout(id = "k1", daemon_id = "d1")),
+        )
+    private val board =
+        Board(
+            id = "b",
+            project_id = "p",
+            lanes = listOf(Lane("todo", "Todo"), Lane("running", "Running")),
+            labels = listOf(Label(id = "l1")),
+        )
 
     @Test
     fun creationRulesAndRequests() {
@@ -281,35 +422,97 @@ class CompositionTest {
         assertTrue(Creation.opensAfterCreate(chat = false, lane = "running"))
         assertTrue(Creation.opensAfterCreate(chat = true, lane = ""))
 
-        val two = project.copy(checkouts = project.checkouts + Checkout(id = "k2", daemon_id = "d2"))
+        val two =
+            project.copy(checkouts = project.checkouts + Checkout(id = "k2", daemon_id = "d2"))
         assertEquals("k1", Creation.checkout(project, null)?.id)
         assertNull(Creation.checkout(two, null), "several checkouts need a choice")
         assertNull(Creation.checkout(two, "stale"))
         assertEquals("k2", Creation.checkout(two, "k2")?.id)
-        assertNull(Creation.checkout(project.copy(checkouts = listOf(Checkout(id = "k", detached = true))), null))
+        assertNull(
+            Creation.checkout(
+                project.copy(checkouts = listOf(Checkout(id = "k", detached = true))),
+                null,
+            )
+        )
         assertEquals("k2", Creation.preferredCheckout(two, null, localDaemonId = "d2")?.id)
-        assertEquals("k1", Creation.preferredCheckout(two, "gone", localDaemonId = "d1")?.id, "a choice that is gone falls back")
-        assertNull(Creation.preferredCheckout(two, null, localDaemonId = "d3"), "several checkouts and no preference: the user chooses")
+        assertEquals(
+            "k1",
+            Creation.preferredCheckout(two, "gone", localDaemonId = "d1")?.id,
+            "a choice that is gone falls back",
+        )
+        assertNull(
+            Creation.preferredCheckout(two, null, localDaemonId = "d3"),
+            "several checkouts and no preference: the user chooses",
+        )
 
-        val input = CreationInput(project, board, lane = "todo", prompt = "Fix it", selection = HarnessSelection("codex", "sol", "low"), labelIds = listOf("l1"))
+        val input =
+            CreationInput(
+                project,
+                board,
+                lane = "todo",
+                prompt = "Fix it",
+                selection = HarnessSelection("codex", "sol", "low"),
+                labelIds = listOf("l1"),
+            )
         assertNull(Creation.problem(input, listOf(codex)))
         assertEquals("Loading agent models…", Creation.problem(input, null))
-        assertEquals("Remove labels unavailable on this board", Creation.problem(input.copy(labelIds = listOf("gone")), listOf(codex)))
-        assertEquals("Choose where this task will run", Creation.problem(input.copy(project = two), listOf(codex)))
-        assertEquals("Describe the task.", Creation.problem(input.copy(prompt = " "), listOf(codex)))
+        assertEquals(
+            "Remove labels unavailable on this board",
+            Creation.problem(input.copy(labelIds = listOf("gone")), listOf(codex)),
+        )
+        assertEquals(
+            "Choose where this task will run",
+            Creation.problem(input.copy(project = two), listOf(codex)),
+        )
+        assertEquals(
+            "Describe the task.",
+            Creation.problem(input.copy(prompt = " "), listOf(codex)),
+        )
         assertNull(Creation.problem(input.copy(prompt = " ", title = "Title only"), listOf(codex)))
         val reviewing = board.copy(lanes = board.lanes + Lane("review", "Review"))
-        assertEquals("A new task starts in Todo or Running.", Creation.problem(input.copy(board = reviewing, lane = "review"), listOf(codex)))
+        assertEquals(
+            "A new task starts in Todo or Running.",
+            Creation.problem(input.copy(board = reviewing, lane = "review"), listOf(codex)),
+        )
         assertNull(Creation.problem(input.copy(board = reviewing, lane = "running"), listOf(codex)))
-        assertEquals("todo", Creation.defaultLane(Board(lanes = listOf(Lane("backlog", "Backlog"), Lane("todo", "Todo")))), "the first lane a task may start in")
+        assertEquals(
+            "todo",
+            Creation.defaultLane(
+                Board(lanes = listOf(Lane("backlog", "Backlog"), Lane("todo", "Todo")))
+            ),
+            "the first lane a task may start in",
+        )
 
         val request = Creation.request(input)
-        assertEquals(CreateConversationRequest(
-            checkout_id = "k1", project_id = "p", board_id = "b", lane = "todo", title = "Fix it", prompt = "Fix it", provider = "codex", model = "sol", effort = "low",
-            label_ids = listOf("l1"), defer_start = true, workspace_mode = "worktree", workspace_base_branch = "main", workspace_base_remote = "origin",
-            remote_publish_mode = "manual", auto_generate_title = true,
-        ), request)
-        val chat = Creation.request(input.copy(chat = true, workspaceMode = WorkspaceMode.PROJECT, title = "Named"))
+        assertEquals(
+            CreateConversationRequest(
+                checkout_id = "k1",
+                project_id = "p",
+                board_id = "b",
+                lane = "todo",
+                title = "Fix it",
+                prompt = "Fix it",
+                provider = "codex",
+                model = "sol",
+                effort = "low",
+                label_ids = listOf("l1"),
+                defer_start = true,
+                workspace_mode = "worktree",
+                workspace_base_branch = "main",
+                workspace_base_remote = "origin",
+                remote_publish_mode = "manual",
+                auto_generate_title = true,
+            ),
+            request,
+        )
+        assertTrue(
+            Creation.request(input.copy(vaultAccess = true)).vault_access,
+            "vault access is requested per conversation",
+        )
+        val chat =
+            Creation.request(
+                input.copy(chat = true, workspaceMode = WorkspaceMode.PROJECT, title = "Named")
+            )
         assertEquals("", chat.board_id)
         assertEquals("", chat.lane)
         assertFalse(chat.defer_start)
@@ -317,10 +520,42 @@ class CompositionTest {
         assertFalse(chat.auto_generate_title)
         assertEquals("Fix it", Creation.request(input.copy(chat = true)).title)
         assertTrue(Creation.request(input.copy(chat = true)).auto_generate_title)
-        val overridden = Creation.request(input.copy(workspaceBaseBranch = " develop ", workspaceBaseRemote = "upstream", remotePublishMode = "pull_request"))
-        assertEquals(listOf("develop", "upstream", "pull_request"), listOf(overridden.workspace_base_branch, overridden.workspace_base_remote, overridden.remote_publish_mode))
-        val inProject = Creation.request(input.copy(workspaceMode = WorkspaceMode.PROJECT, workspaceBranch = "b", workspaceBaseBranch = "develop", workspaceBaseRemote = "upstream", remotePublishMode = "pull_request"))
-        assertEquals(listOf("", "", "", ""), listOf(inProject.workspace_branch, inProject.workspace_base_branch, inProject.workspace_base_remote, inProject.remote_publish_mode), "workspace fields only in worktree mode")
+        val overridden =
+            Creation.request(
+                input.copy(
+                    workspaceBaseBranch = " develop ",
+                    workspaceBaseRemote = "upstream",
+                    remotePublishMode = "pull_request",
+                )
+            )
+        assertEquals(
+            listOf("develop", "upstream", "pull_request"),
+            listOf(
+                overridden.workspace_base_branch,
+                overridden.workspace_base_remote,
+                overridden.remote_publish_mode,
+            ),
+        )
+        val inProject =
+            Creation.request(
+                input.copy(
+                    workspaceMode = WorkspaceMode.PROJECT,
+                    workspaceBranch = "b",
+                    workspaceBaseBranch = "develop",
+                    workspaceBaseRemote = "upstream",
+                    remotePublishMode = "pull_request",
+                )
+            )
+        assertEquals(
+            listOf("", "", "", ""),
+            listOf(
+                inProject.workspace_branch,
+                inProject.workspace_base_branch,
+                inProject.workspace_base_remote,
+                inProject.remote_publish_mode,
+            ),
+            "workspace fields only in worktree mode",
+        )
         assertTrue(Titles.generated(" ", "Fix it"))
         assertFalse(Titles.generated("Named", "Fix it"))
         assertFalse(Titles.generated("", " "), "nothing to name a task after")
@@ -331,25 +566,73 @@ class CompositionTest {
     fun creationMemoryRestoresTheLastValidChoice() {
         val memory = CreationMemory(storage("install"), SilentLogger)
         assertEquals(WorkspaceMode.WORKTREE, memory.workspaceMode)
-        memory.remember(HarnessSelection("codex", "sol", "xhigh"), WorkspaceMode.PROJECT, projectId = "p", boardId = "b")
+        memory.remember(
+            HarnessSelection("codex", "sol", "xhigh"),
+            WorkspaceMode.PROJECT,
+            projectId = "p",
+            boardId = "b",
+        )
         val restored = CreationMemory(storage("install"), SilentLogger)
-        assertEquals(HarnessSelection("codex", "sol", "xhigh", mapOf("fast_mode" to "false", "mode" to "safe", "future" to "x")), restored.selection(listOf(codex)))
+        assertEquals(
+            HarnessSelection(
+                "codex",
+                "sol",
+                "xhigh",
+                mapOf("fast_mode" to "false", "mode" to "safe", "future" to "x"),
+            ),
+            restored.selection(listOf(codex)),
+        )
         assertEquals(WorkspaceMode.PROJECT, restored.workspaceMode)
-        assertEquals("b", restored.rememberedBoard(project, listOf(Board(id = "a"), Board(id = "b")))?.id)
+        assertEquals(
+            "b",
+            restored.rememberedBoard(project, listOf(Board(id = "a"), Board(id = "b")))?.id,
+        )
         assertEquals("a", restored.rememberedBoard(project, listOf(Board(id = "a")))?.id)
-        assertEquals("a", restored.rememberedBoard(project, listOf(Board(id = "a"), Board(id = "b", retired = true)))?.id, "a retired board is not preselected")
+        assertEquals(
+            "a",
+            restored
+                .rememberedBoard(project, listOf(Board(id = "a"), Board(id = "b", retired = true)))
+                ?.id,
+            "a retired board is not preselected",
+        )
 
         // The checkout chosen in a project is preselected there while it is attached.
-        val two = project.copy(checkouts = project.checkouts + Checkout(id = "k2", daemon_id = "d2"))
+        val two =
+            project.copy(checkouts = project.checkouts + Checkout(id = "k2", daemon_id = "d2"))
         assertNull(restored.preferredCheckout(two, localDaemonId = null))
         restored.remember(projectId = "p", checkoutId = "k2")
         val reloaded = CreationMemory(storage("install"), SilentLogger)
         assertEquals("k2", reloaded.preferredCheckout(two, localDaemonId = "d1")?.id)
-        assertEquals("b", reloaded.state.value.boards["p"], "remembering a checkout keeps the board")
+        assertEquals(
+            "b",
+            reloaded.state.value.boards["p"],
+            "remembering a checkout keeps the board",
+        )
 
         // A queued chat remembers its agent, mode, project, and checkout, never a board.
-        reloaded.remember(CreationInput(two, board = Board(id = "a"), checkoutId = "k1", chat = true, selection = HarnessSelection("codex", "spark", "low"), workspaceMode = WorkspaceMode.WORKTREE))
-        assertEquals(listOf("codex", "spark", "low", "worktree", "b", "k1"), reloaded.state.value.let { listOf(it.provider, it.model, it.effort, it.workspace_mode, it.boards["p"], it.checkouts["p"]) })
+        reloaded.remember(
+            CreationInput(
+                two,
+                board = Board(id = "a"),
+                checkoutId = "k1",
+                chat = true,
+                selection = HarnessSelection("codex", "spark", "low"),
+                workspaceMode = WorkspaceMode.WORKTREE,
+            )
+        )
+        assertEquals(
+            listOf("codex", "spark", "low", "worktree", "b", "k1"),
+            reloaded.state.value.let {
+                listOf(
+                    it.provider,
+                    it.model,
+                    it.effort,
+                    it.workspace_mode,
+                    it.boards["p"],
+                    it.checkouts["p"],
+                )
+            },
+        )
     }
 
     @Test
@@ -359,20 +642,45 @@ class CompositionTest {
         val captures = TaskCaptures(clock, SilentLogger).also { it.bind(storage("g")) }
         assertTrue(captures.view.value.bound)
         val draft = captures.begin(projectId = "p", boardId = "b")
-        captures.update(draft.id) { it.copy(request = it.request!!.copy(prompt = "Ship it"), importing = true) }
+        captures.update(draft.id) {
+            it.copy(request = it.request!!.copy(prompt = "Ship it"), importing = true)
+        }
         // Process death during an import.
         val restarted = TaskCaptures(clock, SilentLogger).also { it.bind(storage("g")) }
         val restored = restarted.draft(draft.id)!!
         assertEquals("Ship it", restored.request!!.prompt)
-        assertEquals("Import was interrupted. Choose the file again.", restored.failures.single().message)
-        assertEquals(TaskDrafts.NOT_READY, assertFailsWith<CoreException> { restarted.freeze(draft.id, restored.request!!) }.message)
+        assertEquals(
+            "Import was interrupted. Choose the file again.",
+            restored.failures.single().message,
+        )
+        assertEquals(
+            TaskDrafts.NOT_READY,
+            assertFailsWith<CoreException> { restarted.freeze(draft.id, restored.request!!) }
+                .message,
+        )
         restarted.update(draft.id) { it.copy(failures = emptyList()) }
 
-        val frozen = restarted.freeze(draft.id, CreateConversationRequest(project_id = "p", prompt = "Ship it"))
+        val frozen =
+            restarted.freeze(
+                draft.id,
+                CreateConversationRequest(project_id = "p", prompt = "Ship it"),
+            )
         assertTrue(frozen.submission_id.isNotEmpty())
-        assertEquals(frozen.submission_id, restarted.freeze(draft.id, CreateConversationRequest(prompt = "changed")).submission_id)
-        assertEquals(TaskCaptures.SUBMISSION_PENDING, assertFailsWith<CoreException> { restarted.update(draft.id) { it.copy(request = CreateConversationRequest(prompt = "late edit")) } }.message)
-        val again = TaskCaptures(clock, SilentLogger).also { it.bind(storage("g")) }.draft(draft.id)!!
+        assertEquals(
+            frozen.submission_id,
+            restarted.freeze(draft.id, CreateConversationRequest(prompt = "changed")).submission_id,
+        )
+        assertEquals(
+            TaskCaptures.SUBMISSION_PENDING,
+            assertFailsWith<CoreException> {
+                    restarted.update(draft.id) {
+                        it.copy(request = CreateConversationRequest(prompt = "late edit"))
+                    }
+                }
+                .message,
+        )
+        val again =
+            TaskCaptures(clock, SilentLogger).also { it.bind(storage("g")) }.draft(draft.id)!!
         assertEquals(frozen.submission_id, again.submission_id)
         assertEquals("Ship it", again.request!!.prompt)
         restarted.accepted(draft.id)
@@ -381,35 +689,68 @@ class CompositionTest {
 
     @Test
     fun aFreezeReachesTheOpenEditorAndLateEditsStayOut() = runTest {
-        val captures = TaskCaptures(clock, SilentLogger, backgroundScope).also { it.bind(storage("g")) }
+        val captures =
+            TaskCaptures(clock, SilentLogger, backgroundScope).also { it.bind(storage("g")) }
         val editor = captures.editor(captures.begin().id)
         editor.edit { TaskDrafts.prompt(it, "original") }
         captures.flush(editor.id)
         val frozen = captures.freeze(editor.id, editor.state.value.task)
-        assertEquals(frozen.submission_id, editor.state.value.submission_id, "the open editor adopts the frozen draft")
+        assertEquals(
+            frozen.submission_id,
+            editor.state.value.submission_id,
+            "the open editor adopts the frozen draft",
+        )
         editor.edit { TaskDrafts.prompt(it, "late edit") }
         captures.flush(editor.id)
         assertEquals("original", editor.state.value.task.prompt)
-        assertEquals("original", TaskCaptures(clock, SilentLogger).also { it.bind(storage("g")) }.draft(editor.id)!!.task.prompt)
+        assertEquals(
+            "original",
+            TaskCaptures(clock, SilentLogger)
+                .also { it.bind(storage("g")) }
+                .draft(editor.id)!!
+                .task
+                .prompt,
+        )
     }
 
     @Test
     fun aFailedJournalWriteKeepsTheEditAndTheSavedDraft() = runTest {
         val disk = CountingFileSystem(fileSystem)
-        val captures = TaskCaptures(clock, SilentLogger, backgroundScope).also { it.bind(CoreStorage(disk, "/state/full".toPath())) }
+        val captures =
+            TaskCaptures(clock, SilentLogger, backgroundScope).also {
+                it.bind(CoreStorage(disk, "/state/full".toPath()))
+            }
         val editor = captures.editor(captures.begin().id)
         editor.edit { TaskDrafts.prompt(it, "Saved first") }
         captures.flush(editor.id)
         disk.full = true
         editor.edit { TaskDrafts.prompt(it, "Cannot be saved") }
-        assertEquals(FailureKind.OUT_OF_STORAGE, assertFailsWith<CoreException> { captures.flush(editor.id) }.kind)
+        assertEquals(
+            FailureKind.OUT_OF_STORAGE,
+            assertFailsWith<CoreException> { captures.flush(editor.id) }.kind,
+        )
         assertNotNull(editor.error.value)
-        assertEquals("Cannot be saved", editor.state.value.task.prompt, "the edit stays in the editor")
-        assertEquals("Saved first", captures.draft(editor.id)!!.task.prompt, "the saved draft is kept")
+        assertEquals(
+            "Cannot be saved",
+            editor.state.value.task.prompt,
+            "the edit stays in the editor",
+        )
+        assertEquals(
+            "Saved first",
+            captures.draft(editor.id)!!.task.prompt,
+            "the saved draft is kept",
+        )
         disk.full = false
         captures.flush(editor.id)
         assertNull(editor.error.value)
-        assertEquals("Cannot be saved", TaskCaptures(clock, SilentLogger).also { it.bind(storage("full")) }.draft(editor.id)!!.task.prompt)
+        assertEquals(
+            "Cannot be saved",
+            TaskCaptures(clock, SilentLogger)
+                .also { it.bind(storage("full")) }
+                .draft(editor.id)!!
+                .task
+                .prompt,
+        )
     }
 
     @Test
@@ -420,10 +761,16 @@ class CompositionTest {
         captures.update(first.id) { it.copy(request = CreateConversationRequest(prompt = "first")) }
         repeat(TaskCaptures.MAX_DRAFTS - 1) { index ->
             val draft = captures.create(id = "draft-$index")
-            captures.update(draft.id) { it.copy(request = CreateConversationRequest(prompt = "task $index")) }
+            captures.update(draft.id) {
+                it.copy(request = CreateConversationRequest(prompt = "task $index"))
+            }
         }
         assertEquals(TaskCaptures.MAX_DRAFTS, captures.view.value.drafts.size)
         assertFailsWith<CoreException> { captures.create(id = "overflow") }
-        assertEquals(captures.view.value.drafts.last().id, captures.begin().id, "a full journal resumes the latest draft")
+        assertEquals(
+            captures.view.value.drafts.last().id,
+            captures.begin().id,
+            "a full journal resumes the latest draft",
+        )
     }
 }

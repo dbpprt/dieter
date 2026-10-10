@@ -39,7 +39,7 @@ func TestQueuedSelectionSurvivesCommandReplayAndRemoval(t *testing.T) {
 	application := NewWithRunner(data, slog.New(slog.NewTextHandler(io.Discard, nil)), gatedRunner{release: release, stopped: stopped})
 	httpServer := httptest.NewServer(application.Handler())
 	t.Cleanup(httpServer.Close)
-	client := dieterv1connect.NewDieterServiceClient(httpServer.Client(), httpServer.URL)
+	client := dieterv1connect.NewDieterServiceClient(localHTTPClient(httpServer.Client(), application.store.Root), httpServer.URL)
 	updates, err := application.app.StartCardWithMessageParts(card.ID, []model.UIMessagePart{{Type: "text", Text: "First"}}, card.Provider, card.Model, card.Effort, card.ProviderOptions, "")
 	if err != nil {
 		t.Fatal(err)

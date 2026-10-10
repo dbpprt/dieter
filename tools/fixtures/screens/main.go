@@ -29,6 +29,7 @@ import (
 	"github.com/dbpprt/dieter/internal/fixtureturn"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/localauth"
 	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"github.com/dbpprt/dieter/internal/server"
 	"github.com/dbpprt/dieter/internal/store"
@@ -165,6 +166,12 @@ func run(helper, kind, ready string, authenticate bool) error {
 	}
 	token := base64.RawURLEncoding.EncodeToString(tokenBytes)
 	handler := api.Handler()
+	// The fixture fronts the raw API with its own bearer, as the daemon's
+	// direct route does, and forwards with the local API token.
+	localToken, err := localauth.Read(data.Root)
+	if err != nil {
+		return err
+	}
 	var rejectLeaseRPC atomic.Bool
 	var rejectedSignals atomic.Int64
 	var signalingMu sync.Mutex
@@ -236,6 +243,7 @@ func run(helper, kind, ready string, authenticate bool) error {
 			return
 		}
 		r.Header.Set("x-dieter-operator-subject", "github:1")
+		r.Header.Set(localauth.Header, localToken)
 		handler.ServeHTTP(w, r)
 	}), &http2.Server{})}
 	defer httpServer.Close()

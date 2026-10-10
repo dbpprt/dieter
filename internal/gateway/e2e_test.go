@@ -305,7 +305,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	defer runner.Release()
 
 	tunnel := &daemon.GatewayClient{
-		Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "0.4.1-dev", Log: logger,
+		Identity: identity, LocalTarget: boardListener.Addr().String(), LocalToken: testLocalToken(t, boardStore.Root), Version: "0.4.1-dev", Log: logger,
 		Timing: daemon.GatewayTiming{
 			// The broad relay workload uses production liveness deadlines.
 			// Watchdog expiry is exercised separately without Git/WebRTC work
@@ -616,7 +616,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	direct, err := daemon.NewDirectServer(identity, boardListener.Addr().String())
+	direct, err := daemon.NewDirectServer(identity, boardListener.Addr().String(), testLocalToken(t, boardStore.Root))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -848,7 +848,7 @@ func TestGatewayDetectsBlackholedTunnelAndReconnects(t *testing.T) {
 	// seconds of scheduling/SQLite slack even here, then check exact failures
 	// with bounded event waits instead of retrying a failed relay operation.
 	tunnel := &daemon.GatewayClient{
-		Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "0.4.1-dev", Log: logger,
+		Identity: identity, LocalTarget: boardListener.Addr().String(), LocalToken: testLocalToken(t, boardStore.Root), Version: "0.4.1-dev", Log: logger,
 		Timing: daemon.GatewayTiming{
 			HeartbeatActiveInterval: 100 * time.Millisecond, HeartbeatIdleMaxInterval: 100 * time.Millisecond,
 			HeartbeatAckTimeout: 3 * time.Second, HandshakeTimeout: 3 * time.Second,
@@ -1017,7 +1017,7 @@ func TestGatewayRoutesMultipleDaemonsAndTracksPresenceIndependently(t *testing.T
 		})
 
 		machineCtx, stop := context.WithCancel(ctx)
-		tunnel := &daemon.GatewayClient{Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "0.4.1-dev", Log: logger}
+		tunnel := &daemon.GatewayClient{Identity: identity, LocalTarget: boardListener.Addr().String(), LocalToken: testLocalToken(t, boardStore.Root), Version: "0.4.1-dev", Log: logger}
 		go func() { _ = tunnel.Run(machineCtx) }()
 		machines = append(machines, machine{identity: identity, store: boardStore, stop: stop})
 	}

@@ -364,6 +364,7 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 		Instructions: resolution.Instructions, SessionID: detail.Card.ID, Session: conversation.Session,
 		ProjectPath: workspaceValue.Path, RuntimeRoot: filepath.Join(s.Store.RuntimeDir(), "sessions", detail.Project.ID), Continue: true,
 		ContentPresentationEnabled: true, RuntimeDigest: runtimeReference.Digest,
+		Environment: s.agentEnvironment(detail.Card.ID, turnID),
 	}
 	// The card is the active/last-admitted selection shown by clients. Restore
 	// every field from the same snapshot used by the recovered request.
