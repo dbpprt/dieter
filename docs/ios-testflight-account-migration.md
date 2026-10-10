@@ -1,8 +1,10 @@
 # Move internal TestFlight to Dennis Bappert's account
 
-Prepared 4 October 2026; account setup updated 10 October 2026. This change targets a new iPhone/iPad app in Dennis
-Bappert's Apple team. It does not transfer, delete, revoke, or modify Michael
-Ermer's app or credentials. Current GitHub secrets have not been changed.
+Account setup and GitHub credential replacement completed 10 October 2026.
+This change targets a new iPhone/iPad app in Dennis Bappert's Apple team.
+The previous account's nine repository signing/upload secrets were overwritten
+directly. Michael Ermer's Apple app and account resources were not transferred
+or revoked.
 
 ## Registration details
 
@@ -50,24 +52,35 @@ and isolated E2E/development identities remain unchanged.
    from the existing eligible App Store Connect users. Do not create a public
    link, external group, or send invitations as part of setup.
 
-The main App ID and iOS App Store Connect record were created on 4 October 2026
-under Dennis's account. The record uses the name, bundle ID, primary language and
-SKU above. The Share App ID, App Group and its assignments, certificate issuance,
-and profiles are still pending. The dedicated Developer API key
-`Dieter GitHub iOS Upload` and the internal `Dieter Internal` group were created
-on 10 October 2026. API authentication verified the app record; the group has no
-public link or testers yet.
-The CSR/private key/export password are prepared locally outside Git; no private
-paths or key material belong here. No IPA has been uploaded or submitted for review.
+The main App ID and iOS App Store Connect record were created on 4 October 2026.
+On 10 October 2026, the Share App ID and App Group were registered, the group
+was assigned to both app IDs, and Apple Distribution certificate `B7DJMGA37D`
+was issued under `FNGU8JFNPL` (expires 10 October 2027). App Store distribution
+profiles `Dieter iOS App Store` (`3JJVD8638U`) and `Dieter iOS Share App Store`
+(`R95N72PBJX`) contain the correct bundle IDs, shared group and certificate.
+CMS signature and PKCS#12/private-key validation passed before upload.
+
+The dedicated Developer API key `Dieter GitHub iOS Upload` (`YUMY82B98N`)
+authenticated against the app record. The internal `Dieter Internal` group has
+Dennis's existing account as its sole tester and no public link. No additional
+users were invited. Private signing material and passwords are stored outside
+Git. No IPA has been uploaded or submitted for review as part of this setup.
 Open the app in [App Store Connect](https://appstoreconnect.apple.com/apps/6819060438/distribution).
 
 ## Coordinate GitHub cutover with the PR
 
-The nine existing repository secrets are still the previous account's material.
-Prepare and validate all replacements before changing any of them. Freeze new
-iOS production/distribution admissions during cutover and let current owners
-finish; do not cancel or rebuild a consumed release identity. Rotate the whole
-set together while no signing/upload job can read a partial set.
+All nine repository secrets listed below were replaced on 10 October 2026,
+13:45 CEST. The existing credential helper validated the complete set locally
+before writing it through stdin to GitHub's encrypted repository secrets. New
+CI, release, TestFlight and promotion workflow admissions were briefly disabled
+while no signing/upload job was active, then restored to their prior active
+state. Existing qualification runs were preserved. No copies of the previous
+iOS credentials were retained under alternate secret names.
+
+For future rotations, prepare and validate every replacement before changing
+any secret. Freeze new production/distribution admissions and let current
+owners finish; never cancel or rebuild a consumed release identity. Rotate the
+whole set while no signing/upload job can read a partial set.
 
 Use the existing helper with explicit private files:
 
@@ -97,7 +110,7 @@ secrets; values go through stdin rather than command arguments:
 - `IOS_TEAM_ID`
 - `IOS_BUNDLE_ID`
 
-Merge this PR only when that account setup and credential cutover are ready.
+The account setup and credential cutover are complete. Merge after required CI passes.
 Old credentials fail the new release identity check. A signed retained release
 from the old account cannot be distributed to this account by retrying upload.
 Keep Mac, Android, Homebrew and gateway credentials independent. This iOS change
