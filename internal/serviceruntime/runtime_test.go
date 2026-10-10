@@ -95,6 +95,38 @@ func fixturePair(t *testing.T, version string) string {
 	return dir
 }
 
+func TestSignedReleaseRequiresMatchingPrivacyHelperTeam(t *testing.T) {
+	for _, tc := range []struct {
+		name, pairTeam, privacyTeam string
+		accepted                    bool
+	}{
+		{"current", TeamID, TeamID, true},
+		{"previous", previousTeamID, previousTeamID, true},
+		{"mixed privacy", TeamID, previousTeamID, false},
+		{"mixed pair", previousTeamID, TeamID, false},
+		{"missing privacy", TeamID, "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			check := func(_ context.Context, path, requirement string) error {
+				team := tc.pairTeam
+				if filepath.Base(path) == "DieterPrivacyHelper.app" {
+					team = tc.privacyTeam
+					if !strings.Contains(requirement, `identifier "com.dbpprt.dieter.privacy"`) {
+						t.Fatal("privacy helper identity constraint missing")
+					}
+				}
+				if team == "" || !strings.Contains(requirement, `certificate leaf[subject.OU] = "`+team+`"`) {
+					return errors.New("signature team mismatch")
+				}
+				return nil
+			}
+			if err := verifySignedRelease(context.Background(), t.TempDir(), check); (err == nil) != tc.accepted {
+				t.Fatalf("accepted = %v, want %v: %v", err == nil, tc.accepted, err)
+			}
+		})
+	}
+}
+
 func fixturePrivacyRelease(t *testing.T, version string) string {
 	t.Helper()
 	source := fixturePair(t, version)
