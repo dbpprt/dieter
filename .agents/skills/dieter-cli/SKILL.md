@@ -118,7 +118,8 @@ Different keys or accounts require a separate audited recovery process.
 
 `dieter harness list` returns the selected machine's catalog. OMP discovery uses
 the same Dieter-pinned OMP build as new turns, not a separately installed global
-`omp`, and exposes only GPT-6 Luna, Sol, Astra, and the Tailscale GLM route. The
+`omp`, and exposes OMP's complete available catalog, including authenticated
+Codex/Claude subscription models and configured local routes. The
 first OMP catalog refresh can install that pinned build and Dieter's pinned Bun;
 later refreshes reuse them. Turns use native OMP RPC, inheriting the execution
 host's OMP settings, profile, configured MCP servers, plugins, extensions and

@@ -17,6 +17,7 @@ import (
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 // Exercise the unchanged client protocol through the real daemon turn pipeline,
@@ -27,9 +28,10 @@ func TestOMPNativeRPCConversationEndToEnd(t *testing.T) {
 	}
 	t.Setenv("DIETER_HARNESS_RUNTIME_DIR", "")
 	data := store.New(t.TempDir())
+	t.Setenv("DIETER_HOME", data.Root)
 	runner := harness.NewSubprocessRunner(data.Root)
 	application := NewWithOptions(data, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{
-		Runner: runner, HarnessCatalog: func(context.Context, bool) []harness.Adapter { return harness.Catalog(false) },
+		Runner: runner,
 	})
 	server := httptest.NewServer(application.Handler())
 	t.Cleanup(server.Close)
@@ -46,6 +48,23 @@ func TestOMPNativeRPCConversationEndToEnd(t *testing.T) {
 	if modelID == "" {
 		modelID = "tailscale/glm-5.3-flash-exl3"
 	}
+	catalog, err := client.GetHarnesses(ctx, connect.NewRequest(&emptypb.Empty{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, adapter := range catalog.Msg.GetHarnesses() {
+		if adapter.GetId() != "omp" {
+			continue
+		}
+		for _, advertised := range adapter.GetModels() {
+			found = found || advertised.GetId() == modelID
+		}
+	}
+	if !found {
+		t.Fatalf("configured OMP model %q is hidden from the client catalog", modelID)
+	}
+	t.Logf("OMP selector %s is visible through the client API", modelID)
 	created, err := client.CreateCard(ctx, connect.NewRequest(&dieterv1.CreateConversationRequest{
 		ProjectId: workspace.Msg.GetProject().GetId(), BoardId: workspace.Msg.GetBoard().GetId(), Lane: model.LaneTodo,
 		Title: "Native question", Prompt: "RPC question test", Provider: "omp", Model: modelID, Effort: "low", DeferStart: true, WorkspaceMode: model.WorkspaceModeProject,

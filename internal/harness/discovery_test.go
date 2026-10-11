@@ -199,19 +199,12 @@ func TestLiveProviderDiscovery(t *testing.T) {
 				}
 			}
 			if provider == "omp" {
-				want := []string{
-					"tailscale/glm-5.3-flash-exl3",
-					"openai-codex/gpt-6-luna",
-					"openai-codex/gpt-6-sol",
-					"openai-codex/gpt-6-astra",
-				}
-				if len(models) != len(want) {
-					t.Fatalf("OMP models=%#v, want %v", models, want)
-				}
-				for index := range want {
-					if models[index].ID != want[index] {
-						t.Fatalf("OMP model %d=%q, want %q", index, models[index].ID, want[index])
+				seen := map[string]bool{}
+				for _, model := range models {
+					if !strings.Contains(model.ID, "/") || seen[model.ID] {
+						t.Fatalf("OMP returned an invalid or duplicate selector: %q", model.ID)
 					}
+					seen[model.ID] = true
 				}
 			}
 		})
@@ -334,6 +327,32 @@ func TestDiscoverOMPModelsUsesPinnedCatalog(t *testing.T) {
 	}
 	if len(models) != 1 || models[0].ID != "openrouter/openai/gpt-6-sol" {
 		t.Fatalf("unexpected pinned OMP models: %#v", models)
+	}
+}
+
+func TestDiscoverOMPModelsPreservesSubscriptionAndCustomRoutes(t *testing.T) {
+	previous := runOMPDiscovery
+	runOMPDiscovery = func(context.Context) ([]byte, error) {
+		return []byte(`{"models":[{"provider":"anthropic","id":"claude-sonnet-5","name":"Claude Sonnet 5","contextWindow":200000,"thinking":["low","high"]},{"provider":"openai-codex","id":"gpt-5.6-luna","name":"GPT-5.6 Luna","thinking":["low","medium"]},{"selector":"local/custom:free","name":"Custom","thinking":["high"]}]}`), nil
+	}
+	t.Cleanup(func() { runOMPDiscovery = previous })
+	models, err := discoverModels(context.Background(), "omp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter, ok := ResolveAdapter("omp", false)
+	if !ok {
+		t.Fatal("OMP adapter missing")
+	}
+	merged := mergeDiscoveredAdapter(adapter, models)
+	want := []string{"anthropic/claude-sonnet-5", "openai-codex/gpt-5.6-luna", "local/custom:free"}
+	if len(merged.Models) < len(want) {
+		t.Fatalf("missing discovered models: %#v", merged.Models)
+	}
+	for index, id := range want {
+		if model := merged.Models[index]; model.ID != id || model.Hidden || len(model.Efforts) == 0 {
+			t.Fatalf("discovered model hidden or changed: %#v, want %q", model, id)
+		}
 	}
 }
 

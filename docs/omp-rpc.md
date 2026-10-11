@@ -29,6 +29,12 @@ provider/plugin environment variables can be explicitly forwarded with
 `DIETER_HARNESS_ENV` on the daemon host; named MCP environment entries remain
 OMP-owned.
 
+The model picker and `dieter harness list` show OMP's complete available catalog
+from the execution host, including Codex/Claude subscription models and custom
+routes. Dieter does not restrict OMP discovery to a fixed model list or invent
+unavailable routes. OMP supplies model selectors, context windows and supported
+thinking levels. Discovery failures retain the last successful catalog.
+
 OMP owns provider authentication locally. Existing OMP logins continue to work;
 this change does not import or copy Codex/Claude credential stores. Automatically
 reusing those foreign logins would require a separate credential integration.
@@ -105,6 +111,9 @@ DIETER_TEST_OMP_RPC_E2E=1 mise exec -- go test -v ./internal/harness ./internal/
 ```
 
 Set `DIETER_TEST_OMP_MODEL` to another configured OMP selector when appropriate.
+The daemon test also checks that this selector appears in the client catalog
+before creating the conversation. Run it with an authenticated Codex or Claude
+selector to verify subscription discovery and native RPC through the same API.
 Tests use private Dieter roots and projects and leave the operator daemon and
 system configuration running. They require Node, npm, network access and the
 execution host's configured model. They do not install OpenViking or navigate
