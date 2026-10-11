@@ -10,6 +10,12 @@ let helperFrameworks: [LinkerSetting] = [
     "ServiceManagement", "SystemConfiguration", "ScreenCaptureKit", "VideoToolbox",
 ].map { .linkedFramework($0) }
 
+// The root privacy helper links only what it needs; serviceruntime's package
+// smoke test rejects ScreenCaptureKit, VideoToolbox and AppKit in it.
+let privacyFrameworks: [LinkerSetting] = [
+    "Foundation", "IOKit", "Security", "ServiceManagement", "SystemConfiguration",
+].map { .linkedFramework($0) }
+
 let package = Package(
     name: "DieterNative",
     platforms: [.macOS(.v15), .iOS(.v18)],
@@ -49,7 +55,7 @@ let package = Package(
                 // packaged with; release builds require Developer ID signatures.
                 .define("DIETER_PRIVACY_DEVELOPMENT", .when(configuration: .debug)),
             ],
-            linkerSettings: helperFrameworks),
+            linkerSettings: privacyFrameworks),
         .executableTarget(
             name: "InputTarget",
             swiftSettings: [.swiftLanguageMode(.v5)],
