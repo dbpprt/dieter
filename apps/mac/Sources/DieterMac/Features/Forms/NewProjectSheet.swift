@@ -118,7 +118,7 @@ struct NewProjectSheet: View {
                         }
                         .buttonStyle(DieterBarButtonStyle(size: 30))
                         .accessibilityIdentifier("new-project.browse")
-                        .smokeTarget("new-project.browse")
+                        .e2eTarget("new-project.browse")
                         .disabled(submitting || machineID.isEmpty || !selectedMachineAvailable)
                     }
                     Text(pathHelp)

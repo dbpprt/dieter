@@ -112,70 +112,42 @@ class AndroidLocalSigningTest < Minitest::Test
   end
 end
 
-class AndroidJourneyTest < Minitest::Test
+class AndroidE2ETest < Minitest::Test
   APP = "com.dbpprt.dieter.e2e"
   E2E_APK = "apps/android/app/build/outputs/apk/e2e/app-e2e.apk"
-  TEST_APK = "apps/android/app/build/outputs/apk/androidTest/e2e/app-e2e-androidTest.apk"
 
   class Context
-    attr_reader :root, :output, :private_dir, :environment, :secrets, :commands, :leases, :inputs
+    attr_reader :root, :output, :private_dir, :environment, :secrets, :commands, :leases, :cleanups
     def initialize(root)
       @root, @output, @private_dir = root, File.join(root, "output"), File.join(root, "private")
       [@output, @private_dir].each { |path| FileUtils.mkdir_p(path) }
-      @environment, @secrets, @commands, @leases, @inputs =
+      @environment, @secrets, @commands, @leases, @cleanups =
         { "ANDROID_HOME" => "/sdk" },
         [],
         [],
         [],
-        {}
+        []
     end
     def lease(name, **) = leases << name
-    def during_cleanup = yield
-    def command(argv, input: nil, **)
+    def cleanup(&block) = cleanups << block
+    def command(argv, **)
       commands << argv
-      inputs[argv] = input if input
-      if argv.first.end_with?("gradlew")
-        [E2E_APK, TEST_APK].each do |path|
-          FileUtils.mkdir_p(File.dirname(File.join(root, path)))
-          File.write(File.join(root, path), "#{path} bytes")
-        end
-        return ""
-      end
-      return "openjdk 21" if argv.last == "-version"
+      return "" if argv.first.end_with?("gradlew")
       unless argv.first(3) == %w[/sdk/platform-tools/adb -s emulator-5554]
         raise "Unexpected command: #{argv.inspect}"
       end
       arguments = argv.drop(3)
       return "Success" if arguments.first == "install"
-      return "" unless arguments.first == "shell"
-      shell = Shellwords.split(arguments.last)
-      return "Success" if shell.first(2) == %w[pm clear]
-      return "INSTRUMENTATION_CODE: -1" if shell.first(2) == %w[am instrument]
       ""
     end
-    def shell_commands
-      commands.select { |argv| argv[3] == "shell" }.map { |argv| Shellwords.split(argv.last) }
-    end
+    def adb_commands =
+      commands.select { |argv| argv.first.end_with?("adb") }.map { |argv| argv.drop(3) }
   end
 
   def setup
-    @root = Dir.mktmpdir("android-journey-")
+    @root = Dir.mktmpdir("android-e2e-")
     @context = Context.new(@root)
-    @qualified = []
-    contract = Object.new
-    qualified = @qualified
-    contract.define_singleton_method(:call) do |operation, request = {}, **|
-      case operation
-      when "qualify"
-        qualified << request
-        { "status" => "passed", "reason" => "" }
-      when "android-digest"
-        { "sha256" => "b" * 64 }
-      else
-        raise "Unexpected contract #{operation}"
-      end
-    end
-    @adapter = Dieter::Contract.stub(:new, ->(*) { contract }) { Dieter::Android.new(@context) }
+    @adapter = Dieter::Android.new(@context)
   end
 
   def teardown = FileUtils.remove_entry_secure(@root)
@@ -189,131 +161,22 @@ class AndroidJourneyTest < Minitest::Test
     assert_equal [%w[:app:lintDebug]], gradle
   end
 
-  def test_preparation_builds_only_the_e2e_variant_and_reuses_unchanged_products
-    java = File.join(@root, "jdk")
-    FileUtils.mkdir_p(File.join(java, "bin"))
-    File.write(File.join(java, "bin/java"), "")
-    File.chmod(0o755, File.join(java, "bin/java"))
-    @context.environment["JAVA_HOME"] = java
-    compiled = []
-    Dieter::GatewayFixture.stub(:compile, ->(context) { compiled << context }) do
-      2.times { @adapter.prepare({}, []) }
-    end
-    assert_equal [%w[:app:assembleE2e :app:assembleE2eAndroidTest -Pdieter.testBuildType=e2e]],
-                 gradle
-    assert_equal [E2E_APK, TEST_APK].map { |path| File.join(@root, path) },
-                 @adapter.instance_variable_get(:@products)
-    assert_equal [@context, @context], compiled
+  def test_e2e_build_assembles_only_the_separate_e2e_application
+    assert_equal File.join(@root, E2E_APK), @adapter.e2e_build
+    assert_equal ["android-build"], @context.leases
+    assert_equal [%w[:app:assembleE2e]], gradle
   end
 
-  def journey(fixture)
+  def test_install_and_reverse_port_stay_owned_by_the_run
     @adapter.instance_variable_set(:@serial, "emulator-5554")
-    @adapter.instance_variable_set(
-      :@products,
-      [E2E_APK, TEST_APK].map do |path|
-        FileUtils.mkdir_p(File.dirname(File.join(@root, path)))
-        File.write(File.join(@root, path), "#{path} bytes")
-        File.join(@root, path)
-      end
-    )
-    test_case = {
-      "id" => "android.journey",
-      "fixture" => fixture,
-      "native" => {
-        "class" => "com.dbpprt.dieter.e2e.JourneyTest",
-        "methods" => %w[journey]
-      }
-    }
-    @adapter.execute_case({ "kind" => "emulator" }, test_case)
-  end
-
-  def instrumentation = @context.shell_commands.find { |argv| argv.first(2) == %w[am instrument] }
-
-  def test_gateway_journey_runs_the_junit_runner_against_the_isolated_mobile_fixture
-    fixtures = []
-    factory =
-      lambda do |context, suite, state, evidence:|
-        fixture = Object.new
-        record = { context: context, suite: suite, state: state, evidence: evidence, closed: false }
-        fixture.define_singleton_method(:start) do
-          {
-            "DIETER_ISOLATED_ADDR" => "127.0.0.1:43123",
-            "DIETER_ISOLATED_TOKEN" => "token-fixture"
-          }
-        end
-        fixture.define_singleton_method(:close) { record[:closed] = true }
-        fixtures << record
-        fixture
-      end
-    result = Dieter::GatewayFixture.stub(:new, factory) { journey("gateway") }
-
-    assert_equal "passed", result.fetch("status")
-    assert_equal "", result.fetch("cleanupError")
-    assert_equal 1, fixtures.length
-    assert_equal "mobile", fixtures.first.fetch(:suite)
-    assert fixtures.first.fetch(:closed)
-    assert_equal [
-                   "am",
-                   "instrument",
-                   "-w",
-                   "-r",
-                   "-e",
-                   "class",
-                   "com.dbpprt.dieter.e2e.JourneyTest#journey",
-                   "-e",
-                   "additionalTestOutputDir",
-                   "/sdcard/Android/data/#{APP}/files",
-                   "#{APP}.test/androidx.test.runner.AndroidJUnitRunner"
-                 ],
-                 instrumentation
-    # The disposable session reaches the app's private files, never instrumentation argv.
-    write =
-      @context.commands.find do |argv|
-        argv[3] == "shell" &&
-          Shellwords.split(argv.last) == ["run-as", APP, "tee", "files/fixture.json"]
-      end
-    assert_equal(
-      { "port" => "43123", "token" => "token-fixture" },
-      JSON.parse(@context.inputs.fetch(write))
-    )
-    refute @context.commands.flatten.any? { |argument| argument.include?("token-fixture") }
-    adb = @context.commands.map { |argv| argv.drop(3) }
-    assert_includes adb, %w[reverse --no-rebind tcp:43123 tcp:43123]
-    assert_includes adb, %w[reverse --remove tcp:43123]
-    installs = adb.select { |argv| argv.first == "install" }.map(&:last)
-    assert_equal [E2E_APK, TEST_APK].map { |path| File.join(@root, path) }, installs
-    shells = @context.shell_commands
-    assert_operator shells.index(["pm", "clear", APP]),
-                    :<,
-                    shells.index(["run-as", APP, "tee", "files/fixture.json"])
-    assert_operator shells.index(["run-as", APP, "tee", "files/fixture.json"]),
-                    :<,
-                    shells.index(instrumentation)
-    assert_includes shells, ["am", "force-stop", APP]
-    assert_equal "android", @qualified.first.fetch(:platform)
-    assert_equal "instrumentation.log", File.basename(@qualified.first.fetch(:path))
-  end
-
-  def test_fixture_free_journey_receives_no_gateway_route
-    result =
-      Dieter::GatewayFixture.stub(:new, ->(*) { flunk "fixture started without a gateway case" }) do
-        journey("none")
-      end
-    assert_equal "passed", result.fetch("status")
-    assert_equal [
-                   "am",
-                   "instrument",
-                   "-w",
-                   "-r",
-                   "-e",
-                   "class",
-                   "com.dbpprt.dieter.e2e.JourneyTest#journey",
-                   "-e",
-                   "additionalTestOutputDir",
-                   "/sdcard/Android/data/#{APP}/files",
-                   "#{APP}.test/androidx.test.runner.AndroidJUnitRunner"
-                 ],
-                 instrumentation
-    refute @context.commands.any? { |argv| argv[3] == "reverse" }
+    apk = File.join(@root, "app-e2e.apk")
+    File.write(apk, "apk bytes")
+    @adapter.install(apk)
+    @adapter.reverse("43123")
+    assert_includes @context.adb_commands, ["install", "-r", "-t", apk]
+    assert_includes @context.adb_commands, %w[reverse --no-rebind tcp:43123 tcp:43123]
+    assert_equal 1, @context.cleanups.length
+    @context.cleanups.first.call
+    assert_equal %w[reverse --remove tcp:43123], @context.adb_commands.last
   end
 end

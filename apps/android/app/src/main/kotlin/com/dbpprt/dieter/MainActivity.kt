@@ -8,6 +8,9 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
@@ -36,7 +39,9 @@ class MainActivity : ComponentActivity() {
         // After recreation the store already holds this share.
         if (savedInstanceState == null) receiveShare(intent)
         setContent {
-            Box {
+            // Debuggable builds (debug and e2e) expose the shared Compose testTags as
+            // Android resource ids, which Maestro flows select.
+            Box(Modifier.semantics { testTagsAsResourceId = BuildConfig.DEBUG }) {
                 MobileApp(
                     store,
                     openUrl = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))) },

@@ -58,7 +58,7 @@ struct LaneColumn: View {
                         .foregroundStyle(DieterTheme.tertiary)
                         .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
-                        .smokeTarget("lane-sort.\(lane.laneID).\(sortDirection.systemImage)")
+                        .e2eTarget("lane-sort.\(lane.laneID).\(sortDirection.systemImage)")
                         .id(sortDirection.systemImage)
                 }
                 .buttonStyle(.plain)
@@ -66,7 +66,7 @@ struct LaneColumn: View {
                 .accessibilityLabel("\(lane.name) lane sorted \(sortDirection.title.lowercased())")
                 .accessibilityHint("Sort \(sortDirection.toggled.title.lowercased())")
                 .accessibilityIdentifier("lane-sort.\(lane.laneID)")
-                .smokeTarget("lane-sort.\(lane.laneID)")
+                .e2eTarget("lane-sort.\(lane.laneID)")
                 Button {
                     store.newCardLaneID = acceptsNewCards ? lane.laneID : ""
                     store.createConversationPresented = true

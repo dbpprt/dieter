@@ -132,7 +132,7 @@ struct ChatRowContent: View, Equatable {
         }
         .modifier(ChatContextMenu(card: card))
         .accessibilityIdentifier("chat.\(card.id)")
-        .smokeTarget("chat.\(card.id)")
+        .e2eTarget("chat.\(card.id)")
     }
 
 }
@@ -247,7 +247,7 @@ struct ChatRowMachineBadge: View {
             ProjectMachineBadge(machine: machine, online: online, compact: true)
                 .frame(maxWidth: 72, alignment: .trailing)
                 .accessibilityIdentifier("chat.\(card.id).machine")
-                .smokeTarget("chat.\(card.id).machine.\(online ? "online" : "offline")")
+                .e2eTarget("chat.\(card.id).machine.\(online ? "online" : "offline")")
         }
     }
 }

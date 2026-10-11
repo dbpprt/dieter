@@ -3,6 +3,7 @@
 require "optparse"
 require "yaml"
 require_relative "runtime"
+require_relative "pipeline/contract"
 require_relative "platforms/linux_capture"
 
 module Dieter
@@ -94,7 +95,7 @@ module Dieter
       puts "Selected checks:"
       plan.fetch("checks").each { |request| puts "  #{JSON.generate(request)}" }
       unless plan.fetch("nativeChecks", []).empty?
-        puts "Related native checks (select --native or execute specific catalog cases):"
+        puts "Related native checks (select --native or run a platform e2e lane):"
         plan.fetch("nativeChecks").each { |request| puts "  #{JSON.generate(request)}" }
       end
       return plan if dry
@@ -111,10 +112,8 @@ module Dieter
     def self.execute(request)
       component, operation = request.values_at("component", "operation")
       options = request.fetch("options", {})
-      if component == "ios" && operation == "e2e" && options["profiles"]
-        return Runtime.ios_qualify(options)
-      end
-      if %w[test_unit build e2e].include?(operation)
+      return E2E.invoke(component, options) if operation == "e2e"
+      if %w[test_unit build].include?(operation)
         return Runtime.invoke(operation, component, options)
       end
       context = RunContext.new(Config.new(Runtime::ROOT))
@@ -172,7 +171,7 @@ module Dieter
           timeout: 300,
           log: File.join(context.output, "pipeline-contracts.log")
         )
-        Contract.new(context).call("lint")
+        puts "Maestro flows parsed: #{E2E.lint}"
       when %w[portable support_tests]
         %w[scripts fastlane/spec/native].each do |directory|
           next unless File.directory?(File.join(context.root, directory))

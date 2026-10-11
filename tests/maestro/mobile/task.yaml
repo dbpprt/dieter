@@ -1,0 +1,54 @@
+# New task → live mock turn → follow-up in the same conversation → Review.
+appId: ${APP_ID}
+name: Task turn
+tags: [smoke]
+---
+- runFlow: common/launch.yaml
+- tapOn:
+    text: "Projects"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Main"
+    timeout: 40000
+- tapOn:
+    text: "Main"
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: chrome-new-task
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: task-title
+    waitToSettleTimeoutMs: 500
+- inputText: "Maestro task"
+- tapOn:
+    id: task-prompt
+    waitToSettleTimeoutMs: 500
+- inputText: "First turn"
+- tapOn:
+    id: chrome-start-working
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Mock harness received: First turn.*"
+    timeout: 60000
+- tapOn:
+    id: message-input
+    waitToSettleTimeoutMs: 500
+- inputText: "Second turn"
+- tapOn:
+    id: send-message
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Mock harness received: Second turn.*"
+    timeout: 60000
+- tapOn:
+    id: move-review
+    waitToSettleTimeoutMs: 500
+# Android draws its own back button; iOS uses the system one.
+- tapOn:
+    id: "chrome-back|BackButton"
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: lane-2
+    waitToSettleTimeoutMs: 500
+- assertVisible: "Maestro task"
+- takeScreenshot: task-review

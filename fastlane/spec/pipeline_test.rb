@@ -122,13 +122,7 @@ class PipelineConfigTest < Minitest::Test
   end
 
   def with_ci_environment(values)
-    keys = %w[
-      DIETER_CI_DEVICE_CONFIG
-      DIETER_CI_IOS_RUNTIME
-      GITHUB_ACTIONS
-      GITHUB_REF
-      RUNNER_ENVIRONMENT
-    ]
+    keys = %w[DIETER_CI_IOS_RUNTIME GITHUB_ACTIONS GITHUB_REF RUNNER_ENVIRONMENT]
     previous = keys.to_h { |key| [key, ENV[key]] }
     keys.each { |key| values[key] ? ENV[key] = values[key] : ENV.delete(key) }
     yield
@@ -154,47 +148,6 @@ class PipelineConfigTest < Minitest::Test
       '{"profiles":{"ios-iphone":{"runtime":"a","runtime":"b"}}}'
     )
     assert_raises(Dieter::PipelineError) { Dieter::Config.new(@root, ci: false) }
-  end
-
-  def test_physical_ci_configuration_requires_trusted_main_and_preserves_policy
-    trusted = {
-      "GITHUB_ACTIONS" => "true",
-      "GITHUB_REF" => "refs/heads/main",
-      "RUNNER_ENVIRONMENT" => "self-hosted",
-      "DIETER_CI_DEVICE_CONFIG" =>
-        JSON.generate(profiles: { "android-device" => { enabled: true, serial: "fixture-phone" } })
-    }
-    with_ci_environment(trusted) do
-      config = Dieter::Config.new(@root, ci: true)
-      assert_equal "fixture-phone", config.profile("android-device").fetch("serial")
-      assert_equal "emulator-5554", config.profile("android-emulator").fetch("serial")
-      refute config.local_loaded
-    end
-    [
-      { "GITHUB_ACTIONS" => "false" },
-      { "GITHUB_REF" => "refs/pull/1/merge" },
-      { "RUNNER_ENVIRONMENT" => "github-hosted" }
-    ].each do |change|
-      with_ci_environment(trusted.merge(change)) do
-        assert_raises(Dieter::PipelineError) { Dieter::Config.new(@root, ci: true) }
-      end
-    end
-    [
-      { defaults: { android_profile: "android-device" } },
-      { profiles: { "android-emulator" => { enabled: false } } },
-      { signing: { "android-release" => { keystore_file: "evil" } } },
-      { profiles: [] },
-      { fixture_routes: [] }
-    ].each do |value|
-      with_ci_environment(trusted.merge("DIETER_CI_DEVICE_CONFIG" => JSON.generate(value))) do
-        assert_raises(Dieter::PipelineError) { Dieter::Config.new(@root, ci: true) }
-      end
-    end
-    ["invalid JSON", " " * 16_385, '{"profiles":{},"profiles":{}}'].each do |raw|
-      with_ci_environment(trusted.merge("DIETER_CI_DEVICE_CONFIG" => raw)) do
-        assert_raises(Dieter::PipelineError) { Dieter::Config.new(@root, ci: true) }
-      end
-    end
   end
 end
 
@@ -424,107 +377,37 @@ class PipelinePrimitivesTest < Minitest::Test
 end
 
 class PipelineExecutionTest < Minitest::Test
-  Config =
-    Struct.new(:root) do
-      def environment = {}
-      def data =
-        {
-          "defaults" => {
-            "suite" => "functional"
-          },
-          "profiles" => {
-            "target" => {
-              "layout" => "iphone"
-            }
-          }
-        }
-      def default_profile(_component) = "target"
-      def profile(name, **) = { "name" => name }
-    end
-
-  class FakeContract
-    attr_reader :reports, :plans
-    def initialize
-      @reports = []
-      @plans = []
-    end
-    def call(operation, request, **)
-      if operation == "plan"
-        @plans << request
-        return { "cases" => %w[first second].map { |id| { "id" => id, "timeout" => "10s" } } }
-      end
-      @reports << Marshal.load(Marshal.dump(request.fetch(:report))) if operation == "report"
-      {}
-    end
-  end
+  Config = Struct.new(:root) { def environment = {} }
 
   class FakeAdapter
     attr_reader :calls
-    def initialize(failure: nil, cleanup: false)
-      @calls, @failure, @cleanup = [], failure, cleanup
-    end
-    def admit(*)
-      @calls << :admit
-      raise @failure if @failure
-    end
-    def prepare(*) = @calls << :prepare
-    def execute_case(_target, test_case)
-      @calls << test_case.fetch("id")
-      {
-        "status" => "passed",
-        "setupMs" => 0,
-        "executionMs" => 0,
-        "cleanupError" => @cleanup ? "fixture still running" : ""
-      }
-    end
+    def initialize = @calls = []
+    def unit(options) = @calls << [:unit, options]
+    def build(options) = @calls << [:build, options]
   end
 
   def setup
     @root = Dir.mktmpdir("pipeline-execution-")
     @context = Dieter::RunContext.new(Config.new(@root))
-    @contract = FakeContract.new
-    @request = Dieter::PipelineRequest.new("e2e", "ios")
   end
 
   def teardown
     FileUtils.remove_entry_secure(@root)
   end
 
-  def test_shared_loop_prepares_once_and_requires_all_selected_cases
+  def test_compositions_run_their_stage_and_close_the_context
     adapter = FakeAdapter.new
-    Dieter::Pipeline.new(@context, @request, adapter, contract: @contract).run
-    assert_equal [:admit, :prepare, "first", "second"], adapter.calls
-    assert_equal %w[first second],
-                 @contract.reports.last.fetch("results").map { |value| value.fetch("id") }
+    request = Dieter::PipelineRequest.new("test_unit", "mac", { filter: "Board" })
+    Dieter::Pipeline.new(@context, request, adapter).run
+    assert_equal [[:unit, { "filter" => "Board" }]], adapter.calls
     assert JSON.parse(File.read(File.join(@context.output, "cleanup.json"))).fetch("passed")
-    assert_equal "functional", @contract.plans.last.fetch(:suite)
-  end
-
-  def test_explicit_cases_do_not_expand_the_configured_default_suite
-    request = Dieter::PipelineRequest.new("e2e", "ios", { cases: "first" })
-    Dieter::Pipeline.new(@context, request, FakeAdapter.new, contract: @contract).run
-    assert_equal "", @contract.plans.last.fetch(:suite)
-    assert_equal ["first"], @contract.plans.last.fetch(:ids)
-  end
-
-  def test_android_preparation_builds_without_device_admission_or_cases
-    adapter = FakeAdapter.new(failure: Dieter::Unavailable.new("no device attached"))
-    adapter.define_singleton_method(:admit_preparation) { |*| @calls << :admit_preparation }
-    request = Dieter::PipelineRequest.new("prepare_tests", "android")
-    Dieter::Pipeline.new(@context, request, adapter, contract: @contract).run
-    assert_equal %i[admit_preparation prepare], adapter.calls
-    assert_empty @contract.reports
-    assert JSON.parse(File.read(File.join(@context.output, "cleanup.json"))).fetch("passed")
-  end
-
-  def test_android_execution_prepares_before_booting_but_still_requires_device_admission
-    adapter = FakeAdapter.new
-    adapter.define_singleton_method(:admit_preparation) { |*| @calls << :admit_preparation }
-    request = Dieter::PipelineRequest.new("e2e", "android")
-    Dieter::Pipeline.new(@context, request, adapter, contract: @contract).run
-    assert_equal [:admit_preparation, :prepare, :admit, "first", "second"], adapter.calls
-    assert_equal %w[passed passed],
-                 @contract.reports.last.fetch("results").map { |value| value.fetch("status") }
+    assert_raises(Dieter::PipelineError) do
+      Dieter::Pipeline.new(
+        Dieter::RunContext.new(Config.new(@root)),
+        Dieter::PipelineRequest.new("e2e", "ios"),
+        adapter
+      ).run
+    end
   end
 
   def test_relative_artifact_verification_resolves_from_repository_while_fastlane_changes_directory
@@ -544,38 +427,17 @@ class PipelineExecutionTest < Minitest::Test
     File.write(File.join(lane_directory, "artifacts.json"), "invalid shadow manifest")
     request = Dieter::PipelineRequest.new("verify", "android", { artifact: "artifacts.json" })
     Dir.chdir(lane_directory) do
-      assert_equal @context.output,
-                   Dieter::Pipeline.new(@context, request, FakeAdapter.new, contract: @contract).run
+      assert_equal @context.output, Dieter::Pipeline.new(@context, request, FakeAdapter.new).run
     end
     assert JSON.parse(File.read(File.join(@context.output, "cleanup.json"))).fetch("passed")
   end
 
-  def test_unavailable_admission_accounts_for_every_required_case
-    adapter = FakeAdapter.new(failure: Dieter::Unavailable.new("leased target"))
-    assert_raises(Dieter::Unavailable) do
-      Dieter::Pipeline.new(@context, @request, adapter, contract: @contract).run
-    end
-    assert_equal [:admit], adapter.calls
-    assert_equal %w[unavailable unavailable],
-                 @contract.reports.last.fetch("results").map { |value| value.fetch("status") }
-  end
-
-  def test_cleanup_failure_stops_loop_and_fails_remaining_cases
-    adapter = FakeAdapter.new(cleanup: true)
-    assert_raises(Dieter::CleanupError) do
-      Dieter::Pipeline.new(@context, @request, adapter, contract: @contract).run
-    end
-    assert_equal [:admit, :prepare, "first"], adapter.calls
-    assert_equal %w[failed interrupted],
-                 @contract.reports.last.fetch("results").map { |value| value.fetch("status") }
-  end
-
-  def test_unknown_options_and_invalid_booleans_fail_before_execution
+  def test_unknown_options_fail_before_execution
     assert_raises(Dieter::PipelineError) do
-      Dieter::PipelineRequest.new("e2e", "ios", { upload: true })
+      Dieter::PipelineRequest.new("build", "ios", { upload: true })
     end
     assert_raises(Dieter::PipelineError) do
-      Dieter::PipelineRequest.new("e2e", "android", { changed: "maybe" })
+      Dieter::PipelineRequest.new("build", "android", { cases: "journey" })
     end
   end
 end

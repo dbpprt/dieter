@@ -312,7 +312,7 @@ struct AttachmentMarkupEditor: View {
                 Divider()
                 AttachmentMarkupCanvas(document: document)
                     .frame(minHeight: 220, maxHeight: .infinity)
-                    .smokeTarget("attachment.markup.canvas")
+                    .e2eTarget("attachment.markup.canvas")
                 Divider()
                 if let error { Text(error).font(.caption).foregroundStyle(.orange).padding(8) }
                 HStack(spacing: 8) {
@@ -323,7 +323,7 @@ struct AttachmentMarkupEditor: View {
                         document.clear(); cancel?()
                     }
                     .buttonStyle(DieterBarButtonStyle())
-                    .accessibilityIdentifier("attachment.markup.cancel").smokeTarget("attachment.markup.cancel")
+                    .accessibilityIdentifier("attachment.markup.cancel").e2eTarget("attachment.markup.cancel")
                     Button("Apply") {
                         do {
                             guard document.original == part else { throw AttachmentMarkupError.attachmentChanged }
@@ -332,7 +332,7 @@ struct AttachmentMarkupEditor: View {
                         } catch { self.error = error.localizedDescription }
                     }
                     .buttonStyle(DieterBarButtonStyle(prominent: true)).disabled(!document.hasChanges)
-                    .accessibilityIdentifier("attachment.markup.apply").smokeTarget("attachment.markup.apply")
+                    .accessibilityIdentifier("attachment.markup.apply").e2eTarget("attachment.markup.apply")
                 }
                 .padding(10)
             } else {
@@ -362,7 +362,7 @@ struct AttachmentMarkupEditor: View {
                         .help(tool.title).accessibilityLabel(tool.title)
                         .accessibilityAddTraits(document.tool == tool ? .isSelected : [])
                         .accessibilityIdentifier("attachment.markup.tool.\(tool.rawValue)")
-                        .smokeTarget("attachment.markup.tool.\(tool.rawValue)")
+                        .e2eTarget("attachment.markup.tool.\(tool.rawValue)")
                     }
                 }
                 Spacer(minLength: 0)
@@ -373,7 +373,7 @@ struct AttachmentMarkupEditor: View {
                 }
                 .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28))
                 .disabled(!document.canUndo).help("Undo (⌘Z)").accessibilityLabel("Undo mark")
-                .accessibilityIdentifier("attachment.markup.undo").smokeTarget("attachment.markup.undo")
+                .accessibilityIdentifier("attachment.markup.undo").e2eTarget("attachment.markup.undo")
                 Button {
                     document.redo()
                 } label: {
@@ -383,7 +383,7 @@ struct AttachmentMarkupEditor: View {
                 .disabled(!document.canRedo).help("Redo (⇧⌘Z)").accessibilityLabel("Redo mark")
                 Button("Clear") { document.clear() }
                     .buttonStyle(DieterBarButtonStyle(size: 28)).disabled(!document.hasChanges)
-                    .accessibilityIdentifier("attachment.markup.clear").smokeTarget("attachment.markup.clear")
+                    .accessibilityIdentifier("attachment.markup.clear").e2eTarget("attachment.markup.clear")
             }
             HStack(spacing: 7) {
                 ForEach(AttachmentMarkupColor.allCases) { color in
@@ -397,7 +397,7 @@ struct AttachmentMarkupEditor: View {
                     .buttonStyle(.plain).accessibilityLabel(color.rawValue.capitalized)
                     .accessibilityAddTraits(document.color == color ? .isSelected : [])
                     .accessibilityIdentifier("attachment.markup.color.\(color.rawValue)")
-                    .smokeTarget("attachment.markup.color.\(color.rawValue)")
+                    .e2eTarget("attachment.markup.color.\(color.rawValue)")
                 }
                 Spacer(minLength: 4)
                 Stepper(
@@ -450,6 +450,6 @@ struct ScreenshotMarkupInspector: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(DieterTheme.border))
         .accessibilityIdentifier("quick-task.screenshot-inspector")
-        .smokeTarget("quick-task.screenshot-inspector")
+        .e2eTarget("quick-task.screenshot-inspector")
     }
 }

@@ -81,7 +81,7 @@ the unchanged native-library hashes. The instrumented ownership, codec and
 recovery tests that exercised this extension on devices
 (`DieterSurfaceOutputTest`, `ScreenCodecEndToEndTest` and the former `sdk` and
 `screens` suites) were removed with the previous Android app, and the current
-`android.journey` case does not open a screen. Direct output therefore has no
+Maestro flows do not open a screen. Direct output therefore has no
 device test today. It stays off by default
 (`AndroidScreenMedia.directSurfacePresentation`); add instrumentation and
 qualify on an explicit physical profile (`profile:android-device`) before

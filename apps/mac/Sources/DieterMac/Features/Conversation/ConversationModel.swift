@@ -36,10 +36,6 @@ final class ConversationModel {
     /// Task plans of messages that are not loaded, shown after the transcript.
     private(set) var unattachedPlanIDs: [String] = []
     var conversationPresentationRevision = 0
-    #if DIETER_UI_SMOKE
-        /// Agent pickers a UI fixture shows over a catalog the core does not know.
-        var agentFixture: ClientAgentControlsState?
-    #endif
     var conversationHistoryTotal = 0
     var conversationHistoryHasMore = false
     var conversationHistoryLoading = false
@@ -60,23 +56,10 @@ final class ConversationModel {
     /// activity, and what can be done next, as the core presents it.
     var state = ClientConversationState()
     @ObservationIgnored var core: CoreClient?
-    /// Synthetic earlier history UI fixtures render ahead of the core's.
-    @ObservationIgnored var fixtureHistory: [Dieter_V1_UiMessage] = [] {
-        didSet { if fixtureHistory != oldValue, let slice { present(slice) } }
-    }
     @ObservationIgnored var onAccepted: @MainActor (Dieter_V1_ConversationSnapshot, Bool) -> Void = { _, _ in }
     @ObservationIgnored var onContentPresentation: @MainActor (Dieter_V1_ContentPresentation, String) -> Void = {
         _, _ in
     }
-    #if DIETER_UI_SMOKE
-        /// Whether a UI fixture's conversation shows reasoning traces; the
-        /// core regroups every real conversation itself.
-        @ObservationIgnored var fixtureShowsReasoning = false {
-            didSet {
-                if fixtureShowsReasoning != oldValue { refreshConversationPresentationState(invalidate: true) }
-            }
-        }
-    #endif
     @ObservationIgnored private var subscription: SliceSubscription?
     @ObservationIgnored private(set) var observedCardID: String?
     @ObservationIgnored private var slice: ClientConversationSlice?
@@ -88,7 +71,7 @@ final class ConversationModel {
     init(presentationDefaults: UserDefaults? = nil) {
         self.presentationDefaults = presentationDefaults
     }
-    /// A slice is being presented; otherwise a UI fixture set the conversation.
+    /// A slice is being presented; otherwise a unit test set the conversation.
     @ObservationIgnored private var presenting = false
 
     /// Observes `cardID` through the core, which opens it on the machine that
@@ -99,7 +82,6 @@ final class ConversationModel {
         subscription = nil
         slice = nil
         presentationBaselineDaemons = []
-        fixtureHistory = []
         state = ClientConversationState()
         turnFailure = nil
         observedCardID = cardID
@@ -145,7 +127,7 @@ final class ConversationModel {
         snapshot.conversation.messages = Array(slice.messages.dropFirst(earlier))
         snapshot.page = slice.page
         let hasContent = slice.hasCard || slice.hasConversation || !slice.messages.isEmpty
-        let older = fixtureHistory + slice.messages.prefix(earlier)
+        let older = Array(slice.messages.prefix(earlier))
         if olderConversationMessages != older { olderConversationMessages = older }
         if hasContent {
             if conversation != snapshot { conversation = snapshot }
@@ -156,13 +138,7 @@ final class ConversationModel {
         if conversationHistoryLoading != slice.loadingEarlier { conversationHistoryLoading = slice.loadingEarlier }
         let total = max(Int(slice.page.total), slice.messages.count)
         if conversationHistoryTotal != total { conversationHistoryTotal = total }
-        var rows = slice.timeline
-        #if DIETER_UI_SMOKE
-            // A UI fixture's earlier history has no core rows; lay it out by the core's rules.
-            if !fixtureHistory.isEmpty {
-                rows = ConversationTimelineFixture.rows(fixtureHistory, showReasoning: slice.state.showReasoning) + rows
-            }
-        #endif
+        let rows = slice.timeline
         if timeline != rows {
             timeline = rows
             // One slice is one presentation change, whether its messages, its rows, or both changed.
@@ -197,15 +173,19 @@ final class ConversationModel {
             conversationMessages = next
             messages = ConversationMessages(next)
         }
-        #if DIETER_UI_SMOKE
-            // A conversation a UI fixture installed has no core rows or state.
+        #if DEBUG
+            // A conversation a unit test installed has no core rows or state;
+            // lay it out by the core's rules.
             if !presenting, subscription == nil {
                 if messagesChanged || invalidate {
-                    let queued = Set((conversation?.conversation.queue ?? []).map(\.id))
-                    timeline = ConversationTimelineFixture.rows(
-                        next, queued: queued, showReasoning: fixtureShowsReasoning)
+                    let queued = (conversation?.conversation.queue ?? []).map(\.id).sorted()
+                    timeline =
+                        ClientTimelineRows(
+                            rules: SharedRules.shared.timelineRows(
+                                messages: ClientTimelineMessages.with { $0.messages = next }.rulesData,
+                                queuedIds: queued, showReasoning: false)
+                        ).items
                 }
-                state.showReasoning = fixtureShowsReasoning
                 if let card = conversation?.detail.card {
                     state.chat = SharedRules.shared.isChat(scope: card.scope, boardId: card.boardID)
                     state.runtime =

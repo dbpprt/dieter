@@ -163,7 +163,7 @@ struct DieterIslandView: View {
                 animated: activity.runningCount > 0
             )
             .frame(width: DieterIslandLayout.collapsedWingWidth)
-            .smokeTarget("island.collapsed-running")
+            .e2eTarget("island.collapsed-running")
             if presentation.hasPhysicalNotch {
                 Color.clear.frame(width: presentation.notchWidth)
             } else {
@@ -175,7 +175,7 @@ struct DieterIslandView: View {
                 color: activity.attentionCount > 0 ? DieterTheme.amber : connectionColor
             )
             .frame(width: DieterIslandLayout.collapsedWingWidth)
-            .smokeTarget("island.collapsed-attention")
+            .e2eTarget("island.collapsed-attention")
         }
         .frame(maxHeight: .infinity)
         .contentShape(Rectangle())
@@ -246,7 +246,7 @@ struct DieterIslandView: View {
                 .accessibilityLabel("Collapse Dieter Island")
             }
             .font(.system(size: 10.5, weight: .medium))
-            .smokeTarget("island.header")
+            .e2eTarget("island.header")
             .padding(.horizontal, DieterIslandLayout.horizontalInset)
             .frame(height: DieterIslandLayout.headerHeight)
             .contentShape(Rectangle())
@@ -297,13 +297,13 @@ struct DieterIslandView: View {
                             .foregroundStyle(.white.opacity(0.28))
                     }
                     .frame(height: DieterIslandLayout.activityHeadingHeight)
-                    .smokeTarget("island.activity-heading")
+                    .e2eTarget("island.activity-heading")
 
                     ForEach(activity.items) { item in
                         IslandActivityRow(item: item) {
                             open(item)
                         }
-                        .smokeTarget("island.activity-row.\(item.id)")
+                        .e2eTarget("island.activity-row.\(item.id)")
                     }
                 }
                 .padding(.horizontal, DieterIslandLayout.horizontalInset)
@@ -323,7 +323,7 @@ struct DieterIslandView: View {
                 }
                 .buttonStyle(DieterBarButtonStyle(prominent: true, size: 28))
                 .accessibilityIdentifier("island.open-inbox")
-                .smokeTarget("island.open-inbox")
+                .e2eTarget("island.open-inbox")
 
                 Button {
                     store.reopenWorkspaceWindow()
@@ -344,7 +344,7 @@ struct DieterIslandView: View {
                 .buttonStyle(DieterBarButtonStyle(prominent: true, size: 28))
                 .help("Select a screen area and create a Quick Task")
                 .accessibilityIdentifier("island.capture-task")
-                .smokeTarget("island.capture-task")
+                .e2eTarget("island.capture-task")
                 if activity.subagentCount > 0 {
                     Label(
                         SharedRules.shared.count(
@@ -358,7 +358,7 @@ struct DieterIslandView: View {
                     .background(DieterTheme.primary.opacity(0.09), in: Capsule())
                 }
             }
-            .smokeTarget("island.footer")
+            .e2eTarget("island.footer")
             .padding(.horizontal, DieterIslandLayout.horizontalInset)
             .frame(height: DieterIslandLayout.footerHeight)
         }
@@ -377,7 +377,7 @@ struct DieterIslandView: View {
         .accessibilityLabel("Move island to display")
         .accessibilityValue(presentation.currentDisplayID.flatMap { titles[$0] } ?? "Automatic")
         .accessibilityIdentifier("island.display-picker")
-        .smokeTarget("island.display-picker")
+        .e2eTarget("island.display-picker")
         .popover(isPresented: $displayPickerPresented) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Move to display")
@@ -403,7 +403,7 @@ struct DieterIslandView: View {
             .frame(minWidth: 230, maxWidth: 340)
             .fixedSize(horizontal: true, vertical: true)
             .accessibilityIdentifier("island.display-options")
-            .smokeTarget("island.display-options")
+            .e2eTarget("island.display-options")
         }
     }
 
@@ -432,7 +432,7 @@ struct DieterIslandView: View {
         .accessibilityLabel(title)
         .accessibilityValue(selected ? "Selected" : (current ? "Current display" : ""))
         .accessibilityIdentifier(identifier)
-        .smokeTarget(identifier)
+        .e2eTarget(identifier)
     }
 
     private var connectionSymbol: String { store.phase.isConnected ? "checkmark" : "wifi.slash" }

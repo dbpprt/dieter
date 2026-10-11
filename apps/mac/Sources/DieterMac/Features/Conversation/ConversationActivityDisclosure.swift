@@ -34,7 +34,7 @@ struct ConversationActivityDisclosure<Content: View>: View {
                     content()
                         .padding(.top, 6)
                         .padding(.bottom, 3)
-                        .smokeTarget("conversation.activity.\(identifier).content")
+                        .e2eTarget("conversation.activity.\(identifier).content")
                 }
             } label: {
                 Text(summary)
@@ -42,13 +42,13 @@ struct ConversationActivityDisclosure<Content: View>: View {
                     .foregroundStyle(DieterTheme.tertiary)
                     .lineLimit(2)
                     .textSelection(.disabled)
-                    .smokeTarget("conversation.activity.\(identifier).label")
+                    .e2eTarget("conversation.activity.\(identifier).label")
             }
             .disclosureGroupStyle(ConversationActivityDisclosureStyle(identifier: identifier))
             .tint(DieterTheme.tertiary)
             .accessibilityIdentifier("conversation.activity.\(identifier)")
             .accessibilityLabel(summary)
-            .smokeTarget("conversation.activity.\(identifier)")
+            .e2eTarget("conversation.activity.\(identifier)")
 
             if let footer, !expanded {
                 MessageFooter(

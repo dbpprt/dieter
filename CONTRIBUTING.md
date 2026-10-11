@@ -69,14 +69,14 @@ git diff --check
 ```
 
 The selector includes all uncommitted files by default. It executes affected fast
-checks and lists related native checks separately. Run focused catalog cases for
-the behavior you changed, or use `--native` for every related device/desktop gate.
+checks and lists related native checks separately. Run one platform's `e2e` lane
+for the behavior you changed, or use `--native` for every related device/desktop gate.
 Native integration is needed for related app, shared schema, or fixture changes;
 a documentation correction does not require a device suite.
 Shared Swift package, dependency-lock, vendor, and `SharedCore` changes also
 select iOS validation. Core and shared mobile UI (`apps/core/mobile`) changes
 select the Android and iOS apps, and mock-harness changes select both mobile
-journeys.
+flow runs.
 Installer changes select the release regression suite; Mac lifecycle changes
 select process-ownership tests before native qualification.
 The website has an explicit `just site check` for links and assets.
@@ -96,7 +96,7 @@ observable behavior and meaningful failure cases, rather than repeat the code.
 
 Do not stop, restart, replace, or install over an operator's live daemon for a
 test. Use the existing disposable gateway/daemon fixtures, temporary data roots,
-random loopback listeners, and mock harnesses. Mac UI smoke refuses a running
+random loopback listeners, and mock harnesses. Mac E2E refuses a running
 Dieter app. Android commands pin the selected emulator and retain app data.
 If a native integration environment is unavailable, say so in the PR.
 

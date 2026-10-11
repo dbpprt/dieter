@@ -168,41 +168,20 @@ class CIOptionsTest < Minitest::Test
     end
   end
 
-  def test_android_ci_compiles_only_the_e2e_journey_without_running_an_emulator
-    [false, true].each do |full|
+  def test_android_ci_lints_and_leaves_the_app_build_to_its_maestro_run
+    [[false, [[:unit, {}], [:build, {}]]], [true, [[:unit, {}]]]].each do |e2e, expected|
       context = Struct.new(:root, :environment, :output).new("/isolated", {}, "/evidence")
-      started, waited, calls = [], [], []
-      context.define_singleton_method(:start) do |argv, **options|
-        started << [argv, options.fetch(:log)]
-        argv
-      end
-      context.define_singleton_method(:wait) { |process, **| waited << process }
+      calls = []
       adapter = Object.new
       %i[unit build].each do |name|
         adapter.define_singleton_method(name) { |options| calls << [name, options] }
       end
       Dieter::SourceIdentity.stub(:version, "0.4.413") do
         Dieter::Android.stub(:new, ->(*) { adapter }) do
-          Dieter::CI.check(context, "android", full: full)
+          Dieter::CI.check(context, "android", full: false, e2e: e2e)
         end
       end
-      assert_equal [[:unit, {}], [:build, {}]], calls
-      assert_equal [
-                     [
-                       %w[
-                         /isolated/apps/android/gradlew
-                         --project-dir
-                         apps/android
-                         --console=plain
-                         -Pdieter.testBuildType=e2e
-                         :app:assembleE2e
-                         :app:assembleE2eAndroidTest
-                       ],
-                       "/evidence/e2e-build.log"
-                     ]
-                   ],
-                   started
-      assert_equal [started.first.first], waited
+      assert_equal expected, calls
     end
   end
 

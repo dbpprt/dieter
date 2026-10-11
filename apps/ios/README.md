@@ -8,9 +8,8 @@ tasks, transcripts, and files; the iOS app never starts a local daemon.
 
 ## What lives here
 
-- `Dieter.xcodeproj`: the `Dieter` app target (`Dieter.app`), its embedded
-  `DieterShare` Share extension and the `DieterUITests` journey target, built
-  with the shared `Dieter` scheme.
+- `Dieter.xcodeproj`: the `Dieter` app target (`Dieter.app`) and its embedded
+  `DieterShare` Share extension, built with the shared `Dieter` scheme.
 - `App/DieterApp.swift`: the app entry. It presents the UIKit shell, forwards
   the sign-in callback URL and reports foreground state to the core.
 - `App/Info.plist` and `App/Assets.xcassets` (`DieterAppIcon`, generated from
@@ -18,7 +17,6 @@ tasks, transcripts, and files; the iOS app never starts a local daemon.
 - `Share/`: the Share extension. It asks whether shared items start a new task
   or go to an existing task or chat, stages them in the `group.<bundle ID>` App
   Group, and the app delivers them when it next becomes active.
-- `Tests/JourneyUITests.swift`: the native journey and the share case.
 
 The Swift host is the `DieterIOS` target of `apps/mac/Package.swift`, sources in
 `apps/mac/Sources/DieterIOS`. The package selects its iOS graph when
@@ -51,58 +49,42 @@ mise exec -- just pipeline config_init
 mise exec -- just pipeline doctor
 mise exec -- just pipeline core_test        # core and shared UI JVM tests
 mise exec -- just pipeline ios build
-mise exec -- just pipeline ios e2e profile:ios-iphone
-mise exec -- just pipeline ios e2e profile:ios-ipad
-mise exec -- just pipeline ios_qualify profiles:ios-iphone,ios-ipad
+mise exec -- just pipeline ios e2e
+mise exec -- just pipeline ios e2e tags:full profile:ios-ipad
 ```
 
 The build assembles the needed framework slice (it needs a Java runtime and uses
-Android Studio's JBR when `JAVA_HOME` is absent), then builds the app and its
-test bundle with Xcode. Simulator builds use ad-hoc signing so tests exercise
-real Keychain access. Framework slices and SwiftPM caches are canonical and
+Android Studio's JBR when `JAVA_HOME` is absent), then builds only the simulator
+app (Debug by default) with Fastlane `build_app`, without an archive or a test
+bundle. Simulator builds use ad-hoc signing so flows exercise real Keychain
+access. Framework slices and SwiftPM caches are canonical and
 protected by the Apple build lease. Xcode products live in `.build/`; evidence
 is printed under `tmp/app-pipelines/UUID`. Source builds embed the
 source-derived compatibility SemVer; release archives embed the single reserved
 SemVer used by every component. There is no separate iOS unit lane: the shared
 UI's tests run with `core_test` and its rules are tested in the core.
 
-Fastlane `run_tests` owns XCTest command generation; `build_app` owns
-distribution archive/export. Dieter retains leases, private launch files,
-exact-result qualification and cleanup around those maintained actions.
+Fastlane `build_app` owns the simulator build and distribution archive/export.
+Dieter retains leases, private inputs, deadlines and cleanup around that
+maintained action.
 
-`ios e2e` runs the catalog case `ios.journey` (`JourneyUITests/testSharedTaskJourney`)
-as the separate `com.dbpprt.dieter.ios.e2e` app. Each run creates and journals its
-own exact simulator, starts a disposable authenticated gateway, enrolled daemon
-and mock harness, and walks Inbox, Projects, a board and its card menu, a task
-and its subagents, task creation with live replies, Review, Chats, Tools,
-Machines, Files, Schedules and dark appearance. The creation header and composer
-must stay reachable with the keyboard open; iPad runs in landscape with the
-board beside the conversation. Missing, skipped, failed, interrupted,
-unavailable and cleanup failures fail required runs. Only that simulator is
-deleted; existing simulators and operator daemons are left untouched.
-`ios.share` (`JourneyUITests/testShareExtensionStartsATask`, iPhone only) places
-an owned PNG in the E2E app's Documents, shares it from the Files app through
-the Share extension, and checks that Dieter opens a new task holding that file.
-`ios_qualify` verifies one simulator build and runs both layouts on the same
-worker with fresh simulator and client state.
+`ios e2e` runs the shared mobile [Maestro flows](../../tests/maestro/README.md),
+which Android also runs, against the separate `com.dbpprt.dieter.ios.e2e` app.
+Each run creates, journals and boots its own simulator while the app builds,
+starts one isolated gateway fixture with an enrolled daemon and mock harness,
+and passes the fixture session as launch arguments. The `smoke` flows open a
+seeded board card's conversation and subagents and run a new task's live first
+and follow-up turns into Review; `tags:full` adds Chats, Machines, Files,
+Schedules and dark appearance. Failed, missing, interrupted and unavailable
+flows and cleanup failures fail required runs. Only that simulator is deleted;
+existing simulators and operator daemons are left untouched. There is no
+physical-iPhone E2E and no device Share-extension test.
 
-For physical tests, explicitly configure `ios-device` in ignored
-`fastlane/local.json`: exact UDID, an existing Apple Development identity,
-development profiles covering the `.e2e` app, its `.e2e.share` extension with
-the `group.<.e2e bundle ID>` App Group, and its test runner, and a
-reachable authenticated TLS fixture route. The pipeline refuses unowned
-installed fixture apps and journals/cleans up only its own packages. No Apple
-resources or operator credentials are replaced.
-
-```sh
-mise exec -- just pipeline ios prepare_tests profile:ios-device
-mise exec -- just pipeline ios e2e profile:ios-device
-```
-
-PR/main CI builds the app and runs the journey on iPhone and iPad simulators for
-affected changes; the manual **Native qualification** workflow reruns it. Main
-calls Release without repeating qualification. Manual releases qualify first.
-Required producer bytes are retained separately from bounded diagnostic uploads.
+PR/main CI builds the app and runs the `smoke` flows on an iPhone simulator for
+affected changes; scheduled and manual qualification runs every flow on iPhone
+and iPad. Main calls Release without repeating qualification. Manual releases
+qualify first. Required producer bytes are retained separately from bounded
+diagnostic uploads.
 
 ## Identity and sign-in
 
@@ -117,7 +99,7 @@ Sign-in opens the gateway's sign-in page in the browser and returns to the app
 through `dieter-mac://oauth/callback`, the redirect the Mac client also uses, so
 gateways configured for the Mac accept it. The core begins and completes the
 PKCE sign-in. Remote plaintext endpoints are rejected; Debug builds accept the
-journeys' isolated loopback fixture session, release builds do not.
+flows' isolated loopback fixture session, release builds do not.
 
 The app observes the workspace while it is open. It has no widgets or
 notifications.

@@ -37,16 +37,6 @@
          </BuildableReference>
       </MacroExpansion>
       <Testables>
-         <TestableReference
-            skipped = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "0FC672E15C8D8F33831FA0B6"
-               BuildableName = "DieterUITests.xctest"
-               BlueprintName = "DieterUITests"
-               ReferencedContainer = "container:Dieter.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction

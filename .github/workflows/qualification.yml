@@ -56,6 +56,8 @@ jobs:
     with:
       component: core-apple
       runner: macos-26
+  # Native clients run their tests/maestro flows: smoke on pushes and pull
+  # requests, every flow (and the iPad layout) on scheduled and manual runs.
   mac:
     name: macOS client
     needs: changes
@@ -64,18 +66,17 @@ jobs:
     with:
       component: mac
       runner: macos-26
-      native_cases: ${{ github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' && 'mac.core,mac.board' || '' }}
-      native_suite: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'functional' || '' }}
+      e2e: ${{ inputs.full && 'full' || 'smoke' }}
   ios:
-    name: iOS client (iPhone and iPad)
+    name: iOS client
     needs: changes
     if: inputs.full || needs.changes.outputs.ios == 'true'
     uses: ./.github/workflows/component-check.yml
     with:
       component: ios
       runner: macos-26
-      native_profiles: ios-iphone,ios-ipad
-      native_suite: smoke
+      e2e: ${{ inputs.full && 'full' || 'smoke' }}
+      profile: ${{ inputs.full && 'ios-iphone,ios-ipad' || 'ios-iphone' }}
   android:
     name: Android client
     needs: changes
@@ -84,6 +85,8 @@ jobs:
     with:
       component: android
       runner: ubuntu-latest
+      e2e: ${{ inputs.full && 'full' || 'smoke' }}
+      profile: android-ci
   required:
     name: Required checks
     needs: [changes, portable, core, core-apple, mac, ios, android]

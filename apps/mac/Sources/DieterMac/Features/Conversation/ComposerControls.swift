@@ -168,7 +168,7 @@ struct ComposerAttachmentButton: View {
         .disabled(!isEnabled)
         .accessibilityLabel("Attach")
         .accessibilityIdentifier("\(identifierPrefix).attach")
-        .smokeTarget("\(identifierPrefix).attach")
+        .e2eTarget("\(identifierPrefix).attach")
         .quickHelp("Attach")
         .popover(isPresented: $presented) {
             VStack(alignment: .leading, spacing: 2) {
@@ -179,7 +179,7 @@ struct ComposerAttachmentButton: View {
                     Label("Upload file…", systemImage: "doc.badge.plus")
                 }
                 .accessibilityIdentifier("\(identifierPrefix).attach.upload")
-                .smokeTarget("\(identifierPrefix).attach.upload")
+                .e2eTarget("\(identifierPrefix).attach.upload")
                 if let onCapture {
                     Button {
                         presented = false
@@ -188,7 +188,7 @@ struct ComposerAttachmentButton: View {
                         Label("Take screenshot…", systemImage: "viewfinder")
                     }
                     .accessibilityIdentifier("\(identifierPrefix).attach.capture")
-                    .smokeTarget("\(identifierPrefix).attach.capture")
+                    .e2eTarget("\(identifierPrefix).attach.capture")
                 }
             }
             .buttonStyle(ComposerPopoverRowButtonStyle())
@@ -280,7 +280,7 @@ struct AgentComposerMenus: View {
         }
         .accessibilityLabel("Provider: \(controls.providerLabel)")
         .accessibilityIdentifier("\(identifierPrefix).provider")
-        .smokeTarget("\(identifierPrefix).provider")
+        .e2eTarget("\(identifierPrefix).provider")
         .disabled(!controls.providerEnabled)
         ComposerSelectionMenu(
             title: compact ? controls.modelLabel.replacingOccurrences(of: "GPT-", with: "") : controls.modelLabel,
@@ -292,7 +292,7 @@ struct AgentComposerMenus: View {
         }
         .accessibilityLabel("Model: \(controls.modelLabel)")
         .accessibilityIdentifier("\(identifierPrefix).model")
-        .smokeTarget("\(identifierPrefix).model")
+        .e2eTarget("\(identifierPrefix).model")
         .disabled(!controls.modelEnabled)
         .layoutPriority(1)
         if !controls.efforts.isEmpty {
@@ -306,13 +306,13 @@ struct AgentComposerMenus: View {
             }
             .accessibilityLabel("Reasoning: \(controls.effortLabel)")
             .accessibilityIdentifier("\(identifierPrefix).reasoning")
-            .smokeTarget("\(identifierPrefix).reasoning")
+            .e2eTarget("\(identifierPrefix).reasoning")
             .disabled(!controls.effortEnabled)
         }
         ComposerProviderOptions(
             controls: controls, choose: choose, identity: identity, identifierPrefix: identifierPrefix
         )
-        .smokeTarget("\(identifierPrefix).provider-options")
+        .e2eTarget("\(identifierPrefix).provider-options")
         .fixedSize()
     }
 }
@@ -333,7 +333,7 @@ struct ComposerProviderOptions: View {
         HStack(spacing: 4) {
             if let fast = options.first(where: { $0.id == controls.fastOptionID }) {
                 ProviderOptionChip(option: fast, controls: controls, choose: choose, isEnabled: enabled(fast))
-                    .smokeTarget("\(identifierPrefix).fast-mode")
+                    .e2eTarget("\(identifierPrefix).fast-mode")
             }
             if !additionalOptions.isEmpty {
                 Button {
@@ -346,14 +346,14 @@ struct ComposerProviderOptions: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Provider options")
                 .accessibilityIdentifier("\(identifierPrefix).additional-options")
-                .smokeTarget("\(identifierPrefix).additional-options")
+                .e2eTarget("\(identifierPrefix).additional-options")
                 .quickHelp("Provider options")
                 .popover(isPresented: $presented) {
                     Form {
                         ForEach(additionalOptions, id: \.id) { option in
                             ProviderOptionField(option: option, controls: controls, choose: choose)
                                 .disabled(!enabled(option))
-                                .smokeTarget("\(identifierPrefix).other-option.\(option.id)")
+                                .e2eTarget("\(identifierPrefix).other-option.\(option.id)")
                         }
                     }
                     .formStyle(.grouped)

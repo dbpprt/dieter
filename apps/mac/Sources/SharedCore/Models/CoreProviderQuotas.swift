@@ -42,7 +42,7 @@ package final class CoreProviderQuotas {
     }
 
     /// Shows fixture groups the core does not watch, as its rows lay them
-    /// out, e.g. in UI smoke runs.
+    /// out, e.g. in rendering tests.
     package func install(groups: [Dieter_Gateway_V1_ProviderQuotaGroup]) {
         installed = true
         providerQuotaGroups = groups

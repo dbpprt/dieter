@@ -61,7 +61,7 @@ private struct MachineDeliveryToast: View {
                     .foregroundStyle(DieterTheme.text)
                     .lineLimit(outbox.phase == .waitingForStorage ? nil : 1)
                     .accessibilityIdentifier("\(identifier).queue-title")
-                    .smokeTarget("\(identifier).queue-title")
+                    .e2eTarget("\(identifier).queue-title")
 
                 Text(outbox.detail)
                     .font(.system(size: 10.5))
@@ -80,7 +80,7 @@ private struct MachineDeliveryToast: View {
                         Button(outbox.retryTitle) { Task { await store.retryOutbox(daemonID: outbox.daemonID) } }
                             .buttonStyle(DieterBarButtonStyle(prominent: true, tint: tint, size: 26))
                             .accessibilityIdentifier("\(identifier).retry")
-                            .smokeTarget("\(identifier).retry")
+                            .e2eTarget("\(identifier).retry")
                     }
                 }
                 .padding(.top, 3)
@@ -100,7 +100,7 @@ private struct MachineDeliveryToast: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("\(identifier).queue")
-        .smokeTarget("\(identifier).queue")
+        .e2eTarget("\(identifier).queue")
         .confirmationDialog(
             "Cancel delivery to \(outbox.machineName)?",
             isPresented: $discardConfirmationPresented,

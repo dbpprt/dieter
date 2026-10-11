@@ -31,7 +31,6 @@ type goPackage struct {
 	EmbedFiles, TestEmbedFiles, XTestEmbedFiles []string
 }
 
-var macSmokeSuites = []string{"core", "board", "conversation", "machine", "sidebar", "terminal", "island", "workspace", "inbox"}
 var ciComponents = []string{"core", "macos", "ios", "android", "kmp"}
 
 // The iOS app's own sources: its Xcode shell and the Swift host of the shared Compose UI.
@@ -45,31 +44,6 @@ func codePaths(paths []string) []string {
 	return slices.DeleteFunc(slices.Clone(paths), func(path string) bool {
 		return path == "" || (!strings.Contains(path, "/testdata/") && (strings.HasSuffix(path, ".md") || strings.HasSuffix(path, ".txt")))
 	})
-}
-func macChecks(paths []string) []string {
-	selected := map[string]bool{}
-	for _, path := range paths {
-		if !strings.HasPrefix(path, "apps/mac/") || prefixAny(path, append(iosRoots, "apps/mac/Tests/")...) {
-			continue
-		}
-		relative := strings.TrimPrefix(path, "apps/mac/Sources/DieterMac/")
-		suites, ok := macSmokeFiles[relative]
-		if !ok {
-			for prefix, candidates := range macSmokeComponents {
-				if strings.HasPrefix(relative, prefix) {
-					suites, ok = candidates, true
-					break
-				}
-			}
-		}
-		if !ok {
-			return slices.Clone(macSmokeSuites)
-		}
-		for _, suite := range suites {
-			selected[suite] = true
-		}
-	}
-	return slices.DeleteFunc(slices.Clone(macSmokeSuites), func(suite string) bool { return !selected[suite] })
 }
 
 func goChanged(paths []string) bool {
@@ -209,41 +183,34 @@ func planChecks(paths []string, packages []string) CheckPlan {
 	bridge := any(func(p string) bool {
 		return prefixAny(p, "apps/mac/Sources/SharedCore/", "apps/mac/Tests/SharedCoreTests/") || p == "fastlane/lib/dieter/platforms/framework.rb"
 	})
-	framework := any(func(p string) bool { return p == "fastlane/lib/dieter/platforms/framework.rb" })
-	mac := schema || fixture || brand || kmp || bridge || any(func(p string) bool {
-		return strings.HasPrefix(p, "apps/mac/") && !prefixAny(p, iosRoots...) || prefixAny(p, "fastlane/lib/dieter/native/mac_") || p == "fastlane/lib/dieter/platforms/mac.rb"
+	// Maestro flows: mobile flows are shared by Android and iOS, Mac flows run in-app.
+	maestroMobile := any(func(p string) bool { return strings.HasPrefix(p, "tests/maestro/mobile/") })
+	// The Mac flows qualify the app's sources (including its SharedCore bridge),
+	// never its unit tests: apps/mac/Tests/ selects only the unit lanes.
+	macE2E := schema || fixture || brand || kmp || any(func(p string) bool {
+		return strings.HasPrefix(p, "apps/mac/") && !prefixAny(p, iosRoots...) && !strings.HasPrefix(p, "apps/mac/Tests/") || prefixAny(p, "fastlane/lib/dieter/native/mac_", "tests/maestro/mac/") || slices.Contains([]string{"fastlane/lib/dieter/platforms/mac.rb", "fastlane/lib/dieter/platforms/framework.rb"}, p)
 	})
-	ios := schema || fixture || brand || kmp || mobile || journeyFixture || shared || bridge || any(func(p string) bool {
-		return prefixAny(p, iosRoots...) || prefixAny(p, "fastlane/lib/dieter/native/ios_") || p == "fastlane/lib/dieter/platforms/ios.rb" || p == "fastlane/lib/dieter/fixtures/device_route.rb"
+	mac := macE2E || any(func(p string) bool { return strings.HasPrefix(p, "apps/mac/Tests/") })
+	ios := schema || fixture || brand || kmp || mobile || journeyFixture || shared || bridge || maestroMobile || any(func(p string) bool {
+		return prefixAny(p, iosRoots...) || prefixAny(p, "fastlane/lib/dieter/native/ios_") || p == "fastlane/lib/dieter/platforms/ios.rb"
 	})
-	android := kmp || mobile || journeyFixture || brand || any(func(p string) bool {
+	android := kmp || mobile || journeyFixture || brand || maestroMobile || any(func(p string) bool {
 		return prefixAny(p, "apps/android/", "native/android-webrtc/") || slices.Contains([]string{"fastlane/lib/dieter/platforms/android.rb", "fastlane/lib/dieter/platforms/emulator.rb"}, p)
 	})
+	// The Maestro runner and installer are shared by every native E2E lane.
 	orchestration := any(func(p string) bool {
-		return prefixAny(p, "fastlane/lib/dieter/pipeline/") || slices.Contains([]string{"fastlane/Fastfile", "fastlane/lib/dieter/runtime.rb", "fastlane/lib/dieter/ci.rb", "fastlane/lib/dieter/config.rb", "fastlane/lib/dieter/operations.rb", "fastlane/lib/dieter/screens.rb", "fastlane/config.json", "fastlane/config.schema.json", "Gemfile", "Gemfile.lock", ".ruby-version", "justfile"}, p)
+		return prefixAny(p, "fastlane/lib/dieter/pipeline/") || slices.Contains([]string{"fastlane/Fastfile", "fastlane/lib/dieter/runtime.rb", "fastlane/lib/dieter/ci.rb", "fastlane/lib/dieter/config.rb", "fastlane/lib/dieter/operations.rb", "fastlane/lib/dieter/screens.rb", "fastlane/lib/dieter/e2e.rb", "fastlane/lib/dieter/maestro.rb", "fastlane/config.json", "fastlane/config.schema.json", "Gemfile", "Gemfile.lock", ".ruby-version", "justfile"}, p)
 	})
 	selector := any(func(p string) bool {
 		return prefixAny(p, "internal/pipeline/check", ".github/workflows/ci.yml", ".github/workflows/qualification.yml", ".github/actions/pipeline-setup/") || p == "justfile"
 	})
-	catalog := any(func(p string) bool { return prefixAny(p, "tests/e2e/", "internal/pipeline/") })
+	contracts := any(func(p string) bool { return prefixAny(p, "tests/maestro/", "internal/pipeline/") })
 	// Orchestration contracts can be verified without compiling every native
 	// client locally. CI still selects all components for these shared changes.
-	if catalog || orchestration || any(func(p string) bool {
+	if contracts || orchestration || any(func(p string) bool {
 		return prefixAny(p, "fastlane/spec/", "fastlane/lib/dieter/distribution/", "fastlane/release-policy.json", "fastlane/local.example.json")
 	}) {
 		add("portable", "contracts", nil)
-	}
-	for _, platform := range []string{"android", "mac", "ios"} {
-		if any(func(p string) bool { return prefixAny(p, "tests/e2e/cases/"+platform+"/") }) {
-			switch platform {
-			case "android":
-				android = true
-			case "ios":
-				ios = true
-			case "mac":
-				mac = true
-			}
-		}
 	}
 	if any(func(p string) bool {
 		return prefixAny(p, "scripts/", "fastlane/lib/dieter/native/") && !strings.HasSuffix(p, ".go")
@@ -321,24 +288,11 @@ func planChecks(paths []string, packages []string) CheckPlan {
 	}
 	if ios {
 		add("ios", "build", nil)
-		add("ios", "e2e", map[string]string{"profiles": "ios-iphone,ios-ipad"})
+		// Affected runs use the iPhone; full CI qualification adds the iPad.
+		add("ios", "e2e", map[string]string{"profile": "ios-iphone"})
 	}
-	suites := macChecks(code)
-	if kmp || schema || fixture || brand || framework || any(func(p string) bool {
-		return prefixAny(p, "fastlane/lib/dieter/native/mac_") || p == "fastlane/lib/dieter/platforms/mac.rb" || prefixAny(p, "tests/e2e/cases/mac/")
-	}) {
-		suites = macSmokeSuites
-	}
-	if len(suites) > 0 {
-		options := map[string]string{"suite": "smoke"}
-		if !slices.Equal(suites, macSmokeSuites) {
-			ids := []string{}
-			for _, suite := range suites {
-				ids = append(ids, "mac."+suite)
-			}
-			options = map[string]string{"cases": strings.Join(ids, ",")}
-		}
-		add("mac", "e2e", options)
+	if macE2E {
+		add("mac", "e2e", nil)
 	}
 	if brand || any(func(p string) bool { return prefixAny(p, "landingpage/") || p == "just/site.just" }) {
 		add("portable", "site_build", nil)

@@ -227,7 +227,7 @@ struct ConversationTimeline: View {
                 onScrollIntent: handleUserScrollIntent,
                 onTailCorrection: onTailScroll)
         }
-        .smokeTarget("conversation.viewport")
+        .e2eTarget("conversation.viewport")
         .overlay(alignment: .bottom) {
             if showsJumpToLatest {
                 Button {
@@ -238,7 +238,7 @@ struct ConversationTimeline: View {
                 .buttonStyle(DieterBarButtonStyle())
                 .padding(.bottom, 12)
                 .accessibilityIdentifier("conversation.jump-to-latest")
-                .smokeTarget("conversation.jump-to-latest")
+                .e2eTarget("conversation.jump-to-latest")
                 .onHover(perform: updateJumpToLatestCursor)
                 .onDisappear { updateJumpToLatestCursor(false) }
             }
@@ -250,25 +250,12 @@ struct ConversationTimeline: View {
                     isLoading: { historyLoadInFlight || windowChangePending }))
         }
         .task(id: responseReadKey) { await acknowledgeVisibleResponse() }
-        .onChange(of: showsJumpToLatest) { _, visible in
-            #if DIETER_UI_SMOKE
-                ConversationUISmokeRunner.recordJumpToLatestVisibility(visible, conversationID: conversationID)
-            #endif
-        }
         .onChange(of: timelineReadyForDisplay, initial: true) { _, ready in
             BoardRenderingDiagnostics.recordConversationReady(conversationID, ready: ready)
             onReadinessChange?(ready)
         }
         .onChange(of: viewportObservation, initial: true) { _, observation in
             onViewportObservation?(observation)
-            #if DIETER_UI_SMOKE
-                ConversationUISmokeRunner.recordViewportObservation(
-                    conversationID: observation.conversationID,
-                    isAtLatest: observation.isAtLatest,
-                    followsLatest: observation.followsLatest,
-                    initialPositionComplete: observation.initialPositionComplete
-                )
-            #endif
         }
         .onChange(of: conversationID, initial: true) { _, selectedID in
             latestMessageLimit = ConversationRenderWindow.initialMessages
@@ -452,7 +439,7 @@ struct ConversationTimeline: View {
         .accessibilityElement(children: .combine)
         .accessibilityHidden(!available && !loading)
         .accessibilityIdentifier(earlier ? "conversation.history.earlier" : "conversation.history.later")
-        .smokeTarget(earlier ? "conversation.history.earlier" : "conversation.history.later")
+        .e2eTarget(earlier ? "conversation.history.earlier" : "conversation.history.later")
         .accessibilityLabel(earlier ? "Earlier conversation history" : "Later conversation history")
         .accessibilityAction(named: earlier ? "Load earlier messages" : "Load later messages") {
             if earlier { showEarlierMessages() } else { showLaterMessages() }

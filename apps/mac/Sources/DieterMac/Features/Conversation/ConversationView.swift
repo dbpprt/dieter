@@ -179,14 +179,6 @@ struct ConversationView: View {
         .onChange(of: conversationID) { _, _ in fileImportRequest = nil }
         .onChange(of: tab) { _, _ in fileImportRequest = nil }
         .onDisappear { fileImportRequest = nil }
-        #if DIETER_UI_SMOKE
-            .onReceive(
-                NotificationCenter.default.publisher(for: WorkspaceUISmokeRunner.selectTabNotification)
-            ) {
-                note in
-                if let name = note.object as? String { content.conversationTab = name }
-            }
-        #endif
         .background {
             if let request = fileImportRequest {
                 ConversationFileImporter(

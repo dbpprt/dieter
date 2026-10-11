@@ -49,7 +49,7 @@ struct ConversationAgentWorkingIndicator: View {
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("conversation.agent-working")
-        .smokeTarget("conversation.agent-working")
+        .e2eTarget("conversation.agent-working")
         .onAppear {
             guard !reduceMotion else { return }
             withAnimation(.linear(duration: 2).repeatForever(autoreverses: false)) { shimmer = true }

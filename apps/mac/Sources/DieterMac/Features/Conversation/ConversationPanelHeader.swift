@@ -93,7 +93,7 @@ struct ConversationTitleRow: View {
                 .help(card?.title ?? "")
             StatusPill(runtime: status, showsDot: false)
                 .accessibilityIdentifier("conversation.status")
-                .smokeTarget("conversation.status")
+                .e2eTarget("conversation.status")
             Spacer(minLength: 6)
             if context.conversationSyncing {
                 HStack(spacing: 5) {
@@ -206,7 +206,7 @@ struct ConversationKanbanToggle: View {
         .accessibilityLabel("Kanban")
         .accessibilityAddTraits(presented ? [.isSelected] : [])
         .accessibilityIdentifier("conversation-tab-kanban")
-        .smokeTarget("conversation-tab-kanban")
+        .e2eTarget("conversation-tab-kanban")
     }
 }
 
@@ -236,7 +236,7 @@ struct ConversationSplitToggle: View {
         .buttonStyle(DieterBarButtonStyle(shape: .circle, size: size))
         .help(workspacePresented ? "Single pane" : "Split conversation and workspace")
         .accessibilityLabel(workspacePresented ? "Single pane" : "Split conversation and workspace")
-        .accessibilityIdentifier("conversation.content.close").smokeTarget("conversation.content.close")
+        .accessibilityIdentifier("conversation.content.close").e2eTarget("conversation.content.close")
     }
 }
 
@@ -266,6 +266,6 @@ struct ConversationAddTabMenu: View {
         .dieterCircleChrome()
         .help("Open a workspace tab")
         .accessibilityLabel("Open a workspace tab")
-        .accessibilityIdentifier("conversation.content.add").smokeTarget("conversation.content.add")
+        .accessibilityIdentifier("conversation.content.add").e2eTarget("conversation.content.add")
     }
 }

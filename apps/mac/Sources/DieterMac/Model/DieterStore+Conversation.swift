@@ -160,13 +160,6 @@ extension DieterStore {
     /// choice in its draft and checks the pickers allow it.
     func chooseAgent(_ choice: ClientAgentChoice.OneOf_Choice) async {
         guard let id = selectedCardID ?? selectedChatID else { return }
-        #if DIETER_UI_SMOKE
-            if let fixture = conversationModel.agentFixture {
-                conversationModel.agentFixture = AgentControlFields.controls(
-                    fixture.selection, catalog: harnessCatalog, choice: choice)
-                return
-            }
-        #endif
         await perform {
             $0.chooseAgent = .with {
                 $0.cardID = id

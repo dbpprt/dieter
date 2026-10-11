@@ -20,7 +20,7 @@ struct ProjectDirectoryChangesRedirect: View {
                 Task { await context.openProjectChanges(projectID) }
             }
             .buttonStyle(DieterBarButtonStyle(prominent: true))
-            .accessibilityIdentifier("changes.open-project").smokeTarget("changes.open-project")
+            .accessibilityIdentifier("changes.open-project").e2eTarget("changes.open-project")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -39,7 +39,7 @@ struct ConversationCloseButton: View {
         .accessibilityLabel("Close conversation")
         .quickHelp("Close")
         .accessibilityIdentifier("board.conversation-close")
-        .smokeTarget("board.conversation-close")
+        .e2eTarget("board.conversation-close")
     }
 }
 

@@ -14,7 +14,7 @@ struct ConversationMarkdownView: View {
             if preview != source {
                 Button("Open full text…") { showingFullText = true }
                     .buttonStyle(.plain).foregroundStyle(DieterTheme.action)
-                    .accessibilityIdentifier("conversation.full-text").smokeTarget("conversation.full-text")
+                    .accessibilityIdentifier("conversation.full-text").e2eTarget("conversation.full-text")
             }
         }
         // Always report the full wrapped height back to the conversation
@@ -41,7 +41,7 @@ private struct FullConversationText: View {
                 Button("Done") { dismiss() }
                     .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
                     .accessibilityIdentifier("conversation.full-text.done")
-                    .smokeTarget("conversation.full-text.done")
+                    .e2eTarget("conversation.full-text.done")
             }.padding(14)
             FullConversationTextEditor(source: source)
                 .environment(

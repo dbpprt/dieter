@@ -66,11 +66,20 @@ extension ScriptedCoreClient {
             build(&slice)
             if slice.timeline.isEmpty {
                 let queued = Set(slice.conversation.queue.map(\.id))
-                slice.timeline = ConversationTimelineFixture.rows(slice.messages, queued: queued)
+                slice.timeline = timelineRows(slice.messages, queued: queued)
             }
             update.conversation = slice
         }
     }
+}
+
+/// Timeline rows for `messages`, laid out by the shared core's rules.
+/// Queued messages are not rows.
+func timelineRows(_ messages: [Dieter_V1_UiMessage], queued: Set<String> = []) -> [ClientTimelineItem] {
+    let encoded = ClientTimelineMessages.with { $0.messages = messages }.rulesData
+    return ClientTimelineRows(
+        rules: SharedRules.shared.timelineRows(messages: encoded, queuedIds: queued.sorted(), showReasoning: false)
+    ).items
 }
 
 /// A transcript message with one text part.

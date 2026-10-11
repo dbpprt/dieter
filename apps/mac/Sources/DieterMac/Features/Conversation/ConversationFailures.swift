@@ -37,7 +37,7 @@ struct TurnFailureBanner: View {
                 Button("View log", action: onViewLog)
                     .buttonStyle(DieterBarButtonStyle(size: 26))
                     .accessibilityIdentifier("conversation.failure.view-log")
-                    .smokeTarget("conversation.failure.view-log")
+                    .e2eTarget("conversation.failure.view-log")
                 Button(action: onRetry) {
                     HStack(spacing: 6) {
                         if retrying { ProgressView().controlSize(.mini) }
@@ -128,7 +128,7 @@ struct TurnFailureLogSheet: View {
                     .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
                     .keyboardShortcut(.defaultAction)
                     .accessibilityIdentifier("conversation.failure.done")
-                    .smokeTarget("conversation.failure.done")
+                    .e2eTarget("conversation.failure.done")
             }
             ScrollView([.horizontal, .vertical]) {
                 Text(log)
@@ -153,6 +153,6 @@ struct TurnFailureLogSheet: View {
         .frame(minWidth: 640, minHeight: 440)
         .background(DieterTheme.surface)
         .accessibilityIdentifier("conversation.failure.log-sheet")
-        .smokeTarget("conversation.failure.log-sheet")
+        .e2eTarget("conversation.failure.log-sheet")
     }
 }

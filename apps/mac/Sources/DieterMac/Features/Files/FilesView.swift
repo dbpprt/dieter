@@ -92,7 +92,7 @@ struct FilesView: View {
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityIdentifier("files.row.\(entry.path)")
-                                .smokeTarget("files.row.\(entry.path)")
+                                .e2eTarget("files.row.\(entry.path)")
                                 .disabled(entry.kind == "directory" && model.fileNavigationLoading)
                                 .listRowInsets(EdgeInsets(top: 0, leading: 6, bottom: 0, trailing: 6))
                                 .listRowSeparator(.hidden)
@@ -267,7 +267,7 @@ struct FilesView: View {
             .textSelection(.enabled)
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("files.document-title")
-            .smokeTarget("files.document-title")
+            .e2eTarget("files.document-title")
             .contextMenu {
                 Button("Copy File Name") { FileExternalActions.copy(document.name) }
                 Button("Copy Path") { FileExternalActions.copy(preparedExternalActions?.displayPath ?? document.path) }
@@ -288,13 +288,13 @@ struct FilesView: View {
                 Button("Reload") { Task { await model.reloadDocument() } }
                     .buttonStyle(DieterBarButtonStyle(size: 28))
                     .help("Replace your edits with the version on disk")
-                    .accessibilityIdentifier("files.reload").smokeTarget("files.reload")
+                    .accessibilityIdentifier("files.reload").e2eTarget("files.reload")
                     .disabled(!model.isLive || model.saving)
             }
             Button("Save") { Task { await model.saveCurrentDocument() } }
                 .buttonStyle(DieterBarButtonStyle(prominent: true, size: 28))
                 .keyboardShortcut("s", modifiers: .command)
-                .accessibilityIdentifier("files.save").smokeTarget("files.save")
+                .accessibilityIdentifier("files.save").e2eTarget("files.save")
                 .disabled(document.binary || !editorSession.isDirty || !model.isLive || model.saving)
         }
         .controlSize(.small)
@@ -492,7 +492,7 @@ struct FilesView: View {
             .buttonStyle(DieterBarButtonStyle(size: 28))
             .help(actions?.fileURL == nil ? "Save a local copy of this file" : "Open the saved file in its default app")
             .accessibilityIdentifier("files.open-menu")
-            .smokeTarget("files.open-menu")
+            .e2eTarget("files.open-menu")
             openOptionsMenu(document, actions: actions)
         }
     }

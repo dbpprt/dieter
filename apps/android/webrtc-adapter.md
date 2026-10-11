@@ -35,7 +35,7 @@ and compiles the adapter against this contract. The low-latency request
 (`directSurfacePresentation`) are off by default, and nothing in the app turns
 them on. The instrumented codec, surface-ownership and recovery tests that
 exercised them on devices were removed with the previous Android app; the
-`android.journey` case does not cover screens. Add device instrumentation and
+Maestro flows do not cover screens. Add device instrumentation and
 qualify on an explicit physical profile (`profile:android-device`) before
 enabling any of these paths.
 

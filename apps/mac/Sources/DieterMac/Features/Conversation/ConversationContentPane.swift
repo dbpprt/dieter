@@ -74,7 +74,7 @@ struct ConversationContentPane: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("conversation.content-pane")
-        .smokeTarget("conversation.content-pane")
+        .e2eTarget("conversation.content-pane")
         .task(id: "\(model.conversationID):\(selectedFixedTab?.rawValue ?? "workspace")") {
             await synchronizeFixedSelection()
         }
@@ -138,7 +138,7 @@ struct ConversationContentPane: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("conversation.content.launch.\(kind.rawValue)")
-                    .smokeTarget("conversation.content.launch.\(kind.rawValue)")
+                    .e2eTarget("conversation.content.launch.\(kind.rawValue)")
                 }
             }
             .padding(4)
@@ -324,7 +324,7 @@ struct ConversationRailTabLabel: View {
         .accessibilityLabel(title)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .accessibilityIdentifier("conversation-tab-\(title.lowercased())")
-        .smokeTarget("conversation-tab-\(title.lowercased())")
+        .e2eTarget("conversation-tab-\(title.lowercased())")
         .fixedSize(horizontal: true, vertical: false)
     }
 }
@@ -355,7 +355,7 @@ private struct ConversationFixedSidebarTabLabel: View {
         .accessibilityLabel(count > 0 ? "\(tab.rawValue), \(count)" : tab.rawValue)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .accessibilityIdentifier("conversation.content.fixed.\(tab.rawValue.lowercased())")
-        .smokeTarget("conversation.content.fixed.\(tab.rawValue.lowercased())")
+        .e2eTarget("conversation.content.fixed.\(tab.rawValue.lowercased())")
         .fixedSize(horizontal: true, vertical: false)
     }
 }
@@ -382,13 +382,13 @@ private struct ConversationWorkspaceTabLabel: View {
             .accessibilityLabel(tab.title)
             .accessibilityAddTraits(selected ? [.isSelected] : [])
             .accessibilityIdentifier("conversation.content.tab.\(tab.id.uuidString)")
-            .smokeTarget("conversation.content.tab.\(tab.id.uuidString)")
+            .e2eTarget("conversation.content.tab.\(tab.id.uuidString)")
             Button(action: close) { Image(systemName: "xmark").font(.system(size: 8.5, weight: .bold)) }
                 .buttonStyle(.plain).frame(width: 16, height: 16)
                 .opacity(selected || hovering ? 1 : 0)
                 .help("Close \(tab.title)").accessibilityLabel("Close \(tab.title)")
                 .accessibilityIdentifier("conversation.content.tab.\(tab.id.uuidString).close")
-                .smokeTarget("conversation.content.tab.\(tab.id.uuidString).close")
+                .e2eTarget("conversation.content.tab.\(tab.id.uuidString).close")
         }
         .padding(.leading, 11).padding(.trailing, 5)
         .modifier(ConversationSegmentChrome(selected: selected))
@@ -425,7 +425,7 @@ private struct ConversationWorkspaceTabView: View {
                     }
                 }
                 .accessibilityIdentifier("conversation.content.review")
-                .smokeTarget("conversation.content.review")
+                .e2eTarget("conversation.content.review")
             case .files:
                 filePane
             }
@@ -497,14 +497,14 @@ private struct ConversationWorkspaceTabView: View {
                     .buttonStyle(DieterBarButtonStyle(size: 28))
                     .disabled(tab.files.saving || !active || !tab.files.isLive)
                     .help("Replace your edits with the version on disk")
-                    .accessibilityIdentifier("conversation.content.reload").smokeTarget("conversation.content.reload")
+                    .accessibilityIdentifier("conversation.content.reload").e2eTarget("conversation.content.reload")
             }
             if tab.dirty {
                 Button("Save") { Task { await tab.files.saveCurrentDocument() } }
                     .keyboardShortcut("s", modifiers: .command)
                     .buttonStyle(DieterBarButtonStyle(prominent: true, size: 28))
                     .disabled(tab.files.saving || !active || !tab.files.isLive)
-                    .accessibilityIdentifier("conversation.content.save").smokeTarget("conversation.content.save")
+                    .accessibilityIdentifier("conversation.content.save").e2eTarget("conversation.content.save")
             }
             Button {
                 tab.showFileNavigator.toggle()
@@ -513,7 +513,7 @@ private struct ConversationWorkspaceTabView: View {
             }
             .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28)).help("Toggle file navigator")
             .accessibilityIdentifier("conversation.content.files.toggle")
-            .smokeTarget("conversation.content.files.toggle")
+            .e2eTarget("conversation.content.files.toggle")
         }
         .padding(.horizontal, 12).frame(height: 34)
     }

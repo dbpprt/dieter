@@ -1,0 +1,11 @@
+# Fresh app state bound to the run's isolated gateway fixture.
+appId: ${APP_ID}
+---
+- launchApp:
+    clearState: true
+    arguments:
+      fixture_url: ${FIXTURE_URL}
+      fixture_token: ${FIXTURE_TOKEN}
+- extendedWaitUntil:
+    visible: "Projects"
+    timeout: 30000

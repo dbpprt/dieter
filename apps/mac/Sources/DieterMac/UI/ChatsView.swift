@@ -73,7 +73,7 @@ struct ChatsView: View {
                     .disabled(showArchived)
                     .help("New standalone chat")
                     .accessibilityIdentifier("chats.new")
-                    .smokeTarget("chats.new")
+                    .e2eTarget("chats.new")
                 }
                 DieterSearchField(text: $search, placeholder: "Search chats")
                     .padding(.leading, 14).padding(.trailing, 6).padding(.bottom, 8)
@@ -194,7 +194,7 @@ struct ChatsView: View {
             .ignoresSafeArea(.container, edges: .top)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("chats.browser-pane")
-            .smokeTarget("chats.browser-pane")
+            .e2eTarget("chats.browser-pane")
         } detail: {
             if active { ChatDetailPane(showArchived: showArchived) }
         }

@@ -161,7 +161,7 @@ struct StandaloneChatStartView: View {
                     text: $form.intent.prompt, focus: $promptFocused
                 )
                 .accessibilityIdentifier("chats.new.prompt")
-                .smokeTarget("chats.new.prompt")
+                .e2eTarget("chats.new.prompt")
                 .onKeyPress(.return, phases: .down) { press in
                     if !ComposerReturnPolicy.sendsMessage(shiftPressed: press.modifiers.contains(.shift)) {
                         return .ignored
@@ -190,10 +190,10 @@ struct StandaloneChatStartView: View {
                         Task { await submit() }
                     }
                     .accessibilityIdentifier("chats.new.send")
-                    .smokeTarget("chats.new.send")
+                    .e2eTarget("chats.new.send")
                 }
             }
-            .smokeTarget("chats.new.composer-shell")
+            .e2eTarget("chats.new.composer-shell")
             .attachmentDropTarget(isTargeted: $attachmentDropTargeted) { providers in
                 Task {
                     do {
@@ -228,7 +228,7 @@ struct StandaloneChatStartView: View {
                 .disabled(destinationGroups.isEmpty)
                 .accessibilityIdentifier("chats.new.machine")
                 .accessibilityValue(destinationGroup?.title ?? "No machine selected")
-                .smokeTarget("chats.new.machine")
+                .e2eTarget("chats.new.machine")
 
                 ComposerSelectionMenu(
                     title: destination?.project.name ?? "Project", symbol: "folder", help: "Project",
@@ -250,7 +250,7 @@ struct StandaloneChatStartView: View {
                 .disabled(machineDestinations.isEmpty)
                 .accessibilityIdentifier("chats.new.project")
                 .accessibilityValue(destination?.project.name ?? "No project selected")
-                .smokeTarget("chats.new.project")
+                .e2eTarget("chats.new.project")
 
                 ComposerSelectionMenu(
                     title: form.workspaceMode.shortTitle, symbol: "square.stack.3d.up", help: "Workspace",
@@ -262,7 +262,7 @@ struct StandaloneChatStartView: View {
                 }
                 .help(preview.workspaceDetail)
                 .accessibilityIdentifier("chats.new.workspace")
-                .smokeTarget("chats.new.workspace")
+                .e2eTarget("chats.new.workspace")
                 Toggle(isOn: $form.intent.vaultAccess) {
                     Label("Vault", systemImage: form.intent.vaultAccess ? "key.fill" : "key")
                 }
@@ -295,7 +295,7 @@ struct StandaloneChatStartView: View {
                 }
                 .lineLimit(1)
                 .accessibilityIdentifier("chats.new.destination")
-                .smokeTarget("chats.new.destination")
+                .e2eTarget("chats.new.destination")
             }
         }
         .padding(.horizontal, 16)

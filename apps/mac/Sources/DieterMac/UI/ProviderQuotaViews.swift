@@ -46,7 +46,7 @@ struct ProviderQuotaCompactView: View {
                                     account: item.account
                                 )
                                 .fixedSize(horizontal: false, vertical: true)
-                                .smokeTarget("sidebar.quota.\(item.id)")
+                                .e2eTarget("sidebar.quota.\(item.id)")
                             }
                         }
                         .fixedSize(horizontal: false, vertical: true)
@@ -79,7 +79,7 @@ struct ProviderQuotaSidebarBlock: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 Text("Quotas")
-                    .smokeTarget("sidebar.quotas-title")
+                    .e2eTarget("sidebar.quotas-title")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(DieterTheme.tertiary)
                 Spacer(minLength: 4)
@@ -203,7 +203,7 @@ struct ProviderQuotaDetailsView: View {
                 .buttonStyle(DieterBarButtonStyle(size: 28))
                 .disabled(store.quotas.providerQuotasLoading)
                 .accessibilityIdentifier("provider-quotas.refresh")
-                .smokeTarget("provider-quotas.refresh")
+                .e2eTarget("provider-quotas.refresh")
             }
 
             if let error = store.quotas.providerQuotaError, !error.isEmpty {

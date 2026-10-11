@@ -32,7 +32,7 @@ struct ConversationTerminalPane: View {
                 .id(terminal.id)
                 .background(DieterTheme.terminalBackground)
                 .accessibilityIdentifier("conversation.content.terminal.surface")
-                .smokeTarget("conversation.content.terminal.surface")
+                .e2eTarget("conversation.content.terminal.surface")
                 HStack(spacing: 6) {
                     Circle().fill(model.terminalStreamConnected ? DieterTheme.eyes : DieterTheme.tertiary)
                         .frame(width: 5, height: 5)

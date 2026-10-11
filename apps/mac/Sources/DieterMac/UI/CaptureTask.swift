@@ -189,9 +189,6 @@ enum TaskScreenCapture {
 final class CaptureTaskController {
     private let store: DieterStore
     private var window: NSWindow?
-    #if DIETER_UI_SMOKE
-        var fixtureCapture: (URL, CaptureBrowserContext)?
-    #endif
     private(set) var capturing = false
 
     init(store: DieterStore) { self.store = store }
@@ -207,23 +204,9 @@ final class CaptureTaskController {
         Task {
             defer { capturing = false; restoreIsland() }
             do {
-                let browser: CaptureBrowserContext
-                let capture: URL?
-                #if DIETER_UI_SMOKE
-                    if let fixtureCapture {
-                        browser = fixtureCapture.1
-                        capture = fixtureCapture.0
-                        self.fixtureCapture = nil
-                    } else {
-                        browser = await CaptureBrowserContext.read(
-                            bundleID: source?.bundleIdentifier, pid: source?.processIdentifier)
-                        capture = try await TaskScreenCapture.region()
-                    }
-                #else
-                    browser = await CaptureBrowserContext.read(
-                        bundleID: source?.bundleIdentifier, pid: source?.processIdentifier)
-                    capture = try await TaskScreenCapture.region()
-                #endif
+                let browser = await CaptureBrowserContext.read(
+                    bundleID: source?.bundleIdentifier, pid: source?.processIdentifier)
+                let capture = try await TaskScreenCapture.region()
                 guard let file = capture else { return }
                 defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
                 let boards = store.projects.filter { !$0.archived }.flatMap { store.boards(for: $0.id) }

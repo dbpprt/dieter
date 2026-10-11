@@ -206,18 +206,17 @@ The [hook guide](fastlane/README.md#local-commit-checks) covers Mac/Linux setup
 and safe partial commits.
 
 The default runs affected fast checks and lists related device/desktop work.
-Select specific native cases or add `--native`; avoid full-suite reruns between
+Run one platform's `e2e` lane or add `--native`; avoid full-suite reruns between
 edits. Generic pipeline changes are verified through shared contracts.
 
-Run the Android journey with `just pipeline android e2e profile:android-emulator`,
-macOS with `just pipeline mac e2e suite:smoke`, or iOS with
-`just pipeline ios e2e profile:ios-iphone` (also `profile:ios-ipad`). The
-[native test guide](tests/e2e/README.md) covers catalog cases, suite selection,
-shared lifecycle and failure evidence. [The pipeline guide](fastlane/README.md)
-covers local emulator/device profiles, builds, signing and dev/stable releases.
-`just pipeline ios_qualify profiles:ios-iphone,ios-ipad suite:smoke` builds and
-verifies simulator products once for both layouts. Main CI qualifies once before
-calling Release, preserving the existing immutable candidates and stable policy.
+Run the native device flows with
+`just pipeline android e2e profile:android-emulator`, `just pipeline mac e2e`,
+or `just pipeline ios e2e` (add `tags:full profile:ios-ipad` for the iPad). The
+[Maestro guide](tests/maestro/README.md) covers flows, tags, evidence and
+writing fast flows. [The pipeline guide](fastlane/README.md) covers local
+emulator/device profiles, builds, signing and dev/stable releases. Main CI
+qualifies once before calling Release, preserving the existing immutable
+candidates and stable policy.
 
 [Mac](apps/mac/README.md) · [Android](apps/android/README.md) ·
 [iOS](apps/ios/README.md) · [Website](landingpage/README.md)

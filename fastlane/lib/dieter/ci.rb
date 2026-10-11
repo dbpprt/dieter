@@ -2,7 +2,6 @@
 
 require_relative "runtime"
 require_relative "checks"
-require_relative "pipeline/gradle_diagnostics"
 require_relative "pipeline/evidence"
 
 module Dieter
@@ -24,7 +23,7 @@ module Dieter
       options = options.transform_keys(&:to_sym)
       unknown =
         options.keys.map(&:to_s) -
-          %w[action component fixture native output cases suite profile profiles full channel]
+          %w[action component fixture native output e2e profile full channel]
       raise PipelineError, "Unknown CI options: #{unknown.join(", ")}" unless unknown.empty?
       component = options.fetch(:component, "portable")
       raise PipelineError, "Unknown CI component #{component}" unless COMPONENTS.include?(component)
@@ -42,26 +41,23 @@ module Dieter
             options.fetch(:native, "false")
           )
         when "check"
+          tags = options.fetch(:e2e, "").to_s
+          unless ["", *E2E::TAGS].include?(tags)
+            raise PipelineError, "e2e must be smoke, full or empty"
+          end
           check(
             context,
             component,
-            full: boolean_option(options.fetch(:full, true), "full") == "true"
+            full: boolean_option(options.fetch(:full, true), "full") == "true",
+            e2e: !tags.empty?
           )
-          native =
-            options.slice(:cases, :suite, :profile, :profiles).reject { |_key, value| value == "" }
-          unless native.empty?
-            if component == "ios" && native[:profiles]
-              Runtime.ios_qualify(
-                native.except(:profile),
-                actions: actions,
-                parent: context,
-                prepared: File.join(context.output, "artifacts.json")
-              )
-            else
-              Runtime.invoke(
-                "e2e",
+          unless tags.empty?
+            # Each profile is a separate device run; the second reuses the build.
+            profiles = options.fetch(:profile, "").to_s.split(",")
+            (profiles.empty? ? [""] : profiles).each do |profile|
+              E2E.invoke(
                 component,
-                native.transform_keys(&:to_s),
+                { "tags" => tags, "profile" => profile },
                 actions: actions,
                 parent: context
               )
@@ -211,7 +207,19 @@ module Dieter
       end
       if component == "android" && !RUBY_PLATFORM.include?("darwin") &&
            ENV["RUNNER_ENVIRONMENT"] != "self-hosted"
-        context.command(%w[sdkmanager platforms;android-37.1 build-tools;37.0.0], timeout: 600)
+        packages = %w[platforms;android-37.1 build-tools;37.0.0]
+        # Maestro flows boot the android-ci emulator with KVM acceleration.
+        packages += %w[emulator system-images;android-35;default;x86_64] if native == "true"
+        context.command(["sdkmanager", *packages], timeout: 900)
+        if native == "true"
+          context.command(
+            %w[sudo tee /etc/udev/rules.d/99-kvm.rules],
+            input: "KERNEL==\"kvm\", GROUP=\"kvm\", MODE=\"0666\", OPTIONS+=\"static_node=kvm\"\n",
+            timeout: 30
+          )
+          context.command(%w[sudo udevadm control --reload-rules], timeout: 30)
+          context.command(%w[sudo udevadm trigger --name-match=kvm], timeout: 30)
+        end
       end
       if component == "distribution" || component == "gateway"
         %w[cosign oras].each do |tool|
@@ -236,7 +244,9 @@ module Dieter
       raise PipelineError, "#{name} must be true or false"
     end
 
-    def self.check(context, component, full: true)
+    # With e2e the Maestro run builds the app it tests, so the separate app
+    # build is skipped.
+    def self.check(context, component, full: true, e2e: false)
       context.environment["DIETER_RELEASE_VERSION"] = SourceIdentity.version(context)
       case component
       when "portable"
@@ -297,32 +307,16 @@ module Dieter
       when "android"
         adapter = Android.new(context)
         adapter.unit({})
-        adapter.build({})
-        # Compile the journey without pretending to execute an emulator.
-        diagnostics = HostedGradleDiagnostics.new(context, "e2e")
-        process =
-          context.start(
-            [
-              File.join(context.root, "apps/android/gradlew"),
-              "--project-dir",
-              "apps/android",
-              "--console=plain",
-              "-Pdieter.testBuildType=e2e",
-              ":app:assembleE2e",
-              ":app:assembleE2eAndroidTest"
-            ],
-            log: File.join(context.output, "e2e-build.log")
-          )
-        context.wait(process, timeout: 2400) { |running| diagnostics.progress(running) }
+        adapter.build({}) unless e2e
       when "ios"
-        IOS.new(context).build({})
+        IOS.new(context).build({}) unless e2e
       when "mac"
         context.command(%w[bash apps/mac/scripts/format-swift.sh --check], timeout: 300)
         context.command(%w[bash apps/mac/scripts/sync-proto.sh --check], timeout: 300)
         adapter = Mac.new(context)
         adapter.privacy_native_test
         adapter.unit({ "filter" => "DieterMacTests|SharedCoreTests" })
-        adapter.build({})
+        adapter.build({}) unless e2e
         adapter.core_test
       when "daemon", "gateway"
         adapter = Server.new(context, component: component)

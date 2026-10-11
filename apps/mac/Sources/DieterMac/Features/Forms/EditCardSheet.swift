@@ -133,7 +133,7 @@ struct EditCardSheet: View {
                         .font(.system(size: 12, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
                     AgentControlFields(catalog: catalog, selection: $selection)
                         .accessibilityIdentifier("edit-card.agent-settings")
-                        .smokeTarget("edit-card.agent-settings")
+                        .e2eTarget("edit-card.agent-settings")
                     Divider().overlay(DieterTheme.border)
                     Text("Agent workspace")
                         .font(.system(size: 12, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
@@ -183,7 +183,7 @@ struct EditCardSheet: View {
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .buttonStyle(DieterBarButtonStyle(size: 30)).disabled(saving)
-                    .smokeTarget("card-editor.cancel")
+                    .e2eTarget("card-editor.cancel")
                 Button {
                     Task { await save() }
                 } label: {
@@ -201,7 +201,7 @@ struct EditCardSheet: View {
             .padding(.horizontal, 24).padding(.vertical, 14)
         }
         .frame(width: 620, height: min(700, max(360, availableHeight - 80)))
-        .smokeTarget("card-editor.\(card.id)")
+        .e2eTarget("card-editor.\(card.id)")
         .background(DieterTheme.background)
         .background(SheetOutsideClickDismissal(enabled: !saving && !hasChanges) { dismiss() })
         .interactiveDismissDisabled(saving || hasChanges)

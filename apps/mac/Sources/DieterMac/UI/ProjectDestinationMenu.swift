@@ -45,6 +45,6 @@ struct ProjectCheckoutMenu: View {
         .dieterMenuChrome()
         .help("Choose the machine and checkout for files, Git, and new conversations")
         .accessibilityIdentifier(resolvedAccessibilityIdentifier)
-        .smokeTarget(resolvedAccessibilityIdentifier)
+        .e2eTarget(resolvedAccessibilityIdentifier)
     }
 }

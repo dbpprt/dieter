@@ -57,19 +57,31 @@ conversation.
 
 Read `fastlane/README.md` before changing app builds, E2E or releases.
 `just pipeline` / `just app` forward to the pinned Fastlane implementation.
-Add compositions to `fastlane/lib/dieter`; add typed catalog/result contracts to
-`internal/pipeline` and isolated fixtures to `tools/fixtures`. Do not reintroduce
-platform Just modules, host test loops in scripts, or workflow shell pipelines.
-Use Fastlane's maintained actions for Apple tests and archive/export.
+Add compositions to `fastlane/lib/dieter` and isolated fixtures to
+`tools/fixtures`. `internal/pipeline` holds only the affected-checks planner and
+the `pipeline-support device-lease` primitive. Do not reintroduce platform Just
+modules, host test loops in scripts, or workflow shell pipelines.
+Use Fastlane's maintained actions for Apple builds and archive/export.
 `pipeline/action.rb` runs them inside owned processes with private input and
 deadlines. Shared process, evidence, lease and product contracts belong in
 `fastlane/lib/dieter/pipeline`, not duplicated adapters or workflow code.
 
+Native UI tests are the Maestro flows in `tests/maestro` (see its README):
+`mobile/` is shared by Android and iOS; `mac/` uses Maestro syntax that the
+debug Mac app interprets in-process, because Maestro has no macOS driver.
+`just pipeline <android|ios|mac> e2e [tags:smoke|full] [flows:NAME,…]` builds
+the app, starts one isolated gateway fixture, installs the separate E2E app and
+runs the pinned Maestro CLI. `smoke` flows run on every push and PR, `full` in
+scheduled/manual CI. Favour execution speed over completeness: add only
+meaningful device flows, and keep rules and their assertions in the Kotlin
+core and its unit tests.
+
 Use `fastlane/local.example.json` as the template for ignored `fastlane/local.json`;
 run `just pipeline config_init` once, then edit explicit named target profiles.
-Local JSON cannot override release policy and CI ignores it. Physical Android/iOS
-tests require an explicit exact-serial/UDID profile, separate E2E identities, and
-existing development signing/network configuration. Never auto-select a phone.
+Local JSON cannot override release policy and CI ignores it. iOS flows run only
+on disposable simulators; there is no physical-iPhone E2E. A physical Android
+run requires the explicit exact-serial `android-device` profile and uses the
+separate E2E app identity. Never auto-select a phone.
 
 Preserve exact-device, desktop, build and signing leases and ownership journals.
 Manage only devices/processes started by the task; preserve operator apps and the
@@ -83,12 +95,13 @@ immutable checkpoints; never upload DerivedData, app bundles, archives or produc
 copies as diagnostics. Diagnostic upload outages do not require rerunning passed
 tests. Required assertions, cleanup and producer retention still fail closed.
 
-The Android device gate is the `android.journey` and `android.share` cases
-(`just pipeline android e2e profile:android-emulator`). CI compiles them but runs
-no emulator, so run it locally for Android or shared mobile UI changes. A
+Android flows run with `just pipeline android e2e profile:android-emulator`;
+`just check-changed --native` selects them for Android and shared mobile UI
+changes, and CI runs them on a headless KVM emulator (`profile:android-ci`). A
 software-rendered boot can leave a System UI ANR dialog that steals test focus.
-Locally, keep one warm emulator (`just pipeline android local action:emulator_run`
-as its own registered process) so runs borrow a booted device. Between runs, if
+Locally, keep one warm emulator
+(`just pipeline android local action:emulator_run profile:android-emulator` as
+its own registered process) so runs borrow a booted device. Between runs, if
 that emulator shows a System UI "isn't responding" dialog, tap **Wait** (for
 example `uiautomator dump`, then `input tap` on its bounds) and force-stop only
 the isolated `com.dbpprt.dieter.e2e` package an interrupted run left open. Keep
@@ -117,33 +130,31 @@ Docker; see `fastlane/README.md`. Gateway `deployment_integration`, which
 TURN probe changes, builds the gateway image and needs a running Docker engine
 with Buildx (Docker Desktop, OrbStack or colima). Restore the previous Docker
 context after stopping a runtime you started. iOS builds need an installed iOS
-simulator runtime; when no simulator exists, the build creates and deletes its
-own.
+simulator runtime; `ios e2e` creates, boots and deletes its own simulator.
 
 For local development, inspect `just check-changed --dry-run`, then run selected
 fast checks with `just check-changed`. Include branch changes with `--base REF`.
-Device/desktop checks are listed separately: use `--native` or specific catalog
-cases for related app, schema, fixture or lifecycle changes. Shared orchestration
-edits require pipeline contracts, not every local native build. During refactors,
-run focused checks as needed and affected contracts once at the integration
-boundary. Repeat passing checks only after a relevant change or new failure.
-Do not repeatedly run `just check`, `check-all`, full E2E catalogs, or unrelated
-components between edits. Preserve the existing app,
+Device/desktop checks are listed separately: use `--native` or one platform's
+`e2e` lane (optionally `flows:NAME`) for related app, schema, fixture or
+lifecycle changes. Shared orchestration edits require pipeline contracts, which
+parse every Maestro flow without a device, not every local native build. During
+refactors, run focused checks as needed and affected contracts once at the
+integration boundary. Repeat passing checks only after a relevant change or new
+failure. Do not repeatedly run `just check`, `check-all`, `tags:full` flow runs,
+or unrelated components between edits. Preserve the existing app,
 daemon, and emulator lifecycle rules; report an unavailable integration run
 instead of disrupting a running operator app. Full checks below remain for CI
 and explicitly requested repository-wide validation.
 
 CI uses `.github/workflows/qualification.yml`: affected checks on PRs and main,
-full qualification on scheduled/manual runs. iOS checks build the app and run
-the `ios.journey` case on iPhone and iPad simulators; Android checks lint, build
-and compile the journey without running it. Measure cold builds, cache transfer
-and native execution separately;
-the ten-minute feedback target is not a promise for full catalogs or TestFlight.
+full qualification on scheduled/manual runs. The macOS, iOS and Android jobs run
+the Maestro `smoke` flows on pushes and PRs (iOS on iPhone only) and every flow
+on scheduled/manual runs (iOS on iPhone and iPad). Android runs on
+`ubuntu-latest` with a headless KVM emulator. Measure cold builds, cache
+transfer and native execution separately;
+the ten-minute feedback target is not a promise for full flow runs or TestFlight.
 CI calls Release after qualification passes; Release must
 not independently repeat those checks. Manual releases qualify first.
-`ios_qualify` verifies one simulator build for explicit iPhone/iPad profiles under
-one build lease. Physical tests require their separate exact profile, existing
-development signing and authenticated fixtures; never reuse simulator bytes.
 
 The shared Kotlin client core in `apps/core` has its own checks: `just pipeline core_test` (JVM unit and isolated end-to-end tests over the OkHttp transport that
 Android shares, plus the shared mobile UI's JVM tests) and, on macOS,
@@ -154,8 +165,8 @@ thin native shells: `apps/android`, and `apps/ios` with its Swift host in
 `apps/mac/Sources/DieterIOS`. The macOS app links the core as `DieterShared`
 through `apps/mac/Sources/SharedCore`. Put rules in the core, not in an app or
 the shared UI. `just pipeline ios build` assembles the `DieterMobile` framework
-slice (it needs a Java runtime) and compiles the iOS app and its UI test bundle;
-the iOS journey runs through `just pipeline ios e2e`. There is no iOS unit lane.
+slice (it needs a Java runtime) and builds only the simulator app; the mobile
+flows run through `just pipeline ios e2e`. There is no iOS unit lane.
 
 ```sh
 mise exec -- just check

@@ -132,13 +132,6 @@ let package =
                 name: "DieterMac",
                 dependencies: [
                     "DieterAPI", "SharedCore", "DieterShared", "DieterTransport",
-                    // The gRPC client modules serve only the DEBUG UI smoke
-                    // fixtures (Testing/SmokeFixtureClient.swift); SwiftPM cannot
-                    // scope a dependency to one configuration.
-                    .product(name: "GRPCCore", package: "grpc-swift-2"),
-                    .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
-                    .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
-                    .product(name: "SwiftProtobuf", package: "swift-protobuf"),
                     .product(name: "SwiftTerm", package: "SwiftTerm"),
                     .product(name: "MarkdownEngine", package: "swift-markdown-engine"),
                     .product(name: "MarkdownEngineCodeBlocks", package: "swift-markdown-engine"),
@@ -146,7 +139,8 @@ let package =
                 ],
                 resources: [.copy("Resources/MarkdownPreview"), .copy("Resources/MarkdownEditorLicenses.txt")],
                 swiftSettings: [
-                    .define("DIETER_UI_SMOKE", .when(configuration: .debug))
+                    // The in-app Maestro flow runner (Sources/DieterMac/Testing).
+                    .define("DIETER_E2E", .when(configuration: .debug))
                 ],
                 linkerSettings: [
                     .unsafeFlags([
@@ -170,6 +164,8 @@ let package =
                     .product(name: "MarkdownEngine", package: "swift-markdown-engine"),
                     "DieterAPI",
                     .product(name: "GRPCCore", package: "grpc-swift-2"),
+                    // FixtureRPCClient talks to disposable fixture daemons.
+                    .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
                     .product(name: "SwiftTerm", package: "SwiftTerm"),
                 ]
             ),

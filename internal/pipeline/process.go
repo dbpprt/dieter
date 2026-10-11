@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,7 +15,7 @@ import (
 	"time"
 )
 
-// Keep child output bounded, including a failed Gradle build or verbose fixture.
+// Keep child output bounded, including a failed Git or Go inventory.
 type tailBuffer struct {
 	mu    sync.Mutex
 	data  []byte
@@ -35,8 +34,8 @@ func (b *tailBuffer) Write(p []byte) (int, error) {
 }
 func (b *tailBuffer) String() string { b.mu.Lock(); defer b.mu.Unlock(); return string(b.data) }
 
-// Build commands own a separate process group. Cancellation stops its descendants
-// before returning to the caller that releases a build/device lease. Shared workers
+// Commands own a separate process group. Cancellation stops its descendants
+// before returning to the caller that releases a device lease. Shared workers
 // already running outside this group are never signalled.
 func buildCommand(ctx context.Context, executable string, args ...string) (*exec.Cmd, func(error) error) {
 	c := exec.CommandContext(ctx, executable, args...)
@@ -85,59 +84,9 @@ func buildCommand(ctx context.Context, executable string, args ...string) (*exec
 	}
 }
 
-// Emit bounded, credential-free progress while native tools buffer their output.
-// This reports liveness and the deadline, not successful test progress.
-func progress(ctx context.Context, label string) func() {
-	started := time.Now()
-	fmt.Println(label)
-	stop, done := make(chan struct{}), make(chan struct{})
-	go func() {
-		defer close(done)
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-stop:
-				return
-			case <-ticker.C:
-				remaining := ""
-				if deadline, ok := ctx.Deadline(); ok {
-					remaining = fmt.Sprintf("; deadline in %s", time.Until(deadline).Round(time.Second))
-				}
-				fmt.Printf("Still running %s: elapsed %s%s\n", label, time.Since(started).Round(time.Second), remaining)
-			}
-		}
-	}()
-	return func() { close(stop); <-done }
-}
-
-func progressCommand(ctx context.Context, root, label string, args ...string) (string, error) {
-	stop := progress(ctx, label)
-	defer stop()
-	return command(ctx, root, nil, args...)
-}
-
-type appleBuildLeaseRoot struct{}
-
-func leaseAppleBuild(ctx context.Context, root string) (context.Context, func(), error) {
-	canonical, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		return ctx, nil, err
-	}
-	path := filepath.Join(os.TempDir(), fmt.Sprintf("dieter-apple-build-%x.lock", sha256.Sum256([]byte(canonical))))
-	unlock, err := acquireLease(path)
-	if err != nil {
-		return ctx, nil, err
-	}
-	return context.WithValue(ctx, appleBuildLeaseRoot{}, root), unlock, nil
-}
-
 func command(ctx context.Context, root string, input []byte, args ...string) (string, error) {
 	c, finish := buildCommand(ctx, args[0], args[1:]...)
 	c.Dir = root
-	if leaseRoot, ok := ctx.Value(appleBuildLeaseRoot{}).(string); ok {
-		c.Env = append(os.Environ(), "DIETER_APPLE_BUILD_LEASE="+leaseRoot)
-	}
 	if input != nil {
 		c.Stdin = bytes.NewReader(input)
 	}
@@ -146,14 +95,6 @@ func command(ctx context.Context, root string, input []byte, args ...string) (st
 	c.Stderr = out
 	err := finish(c.Run())
 	return out.String(), err
-}
-func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
-func shellArgs(args []string) string {
-	q := make([]string, len(args))
-	for i, s := range args {
-		q[i] = shellQuote(s)
-	}
-	return strings.Join(q, " ")
 }
 
 // Interoperates with the old Android lease inode; never unlink a lock file.
@@ -186,75 +127,6 @@ func deviceLease(serial string) (func(), error) {
 	return acquireLease(filepath.Join("/tmp", fmt.Sprintf("android-device-leases-%d", os.Getuid()), fmt.Sprintf("%x.lock", sha256.Sum256([]byte(serial)))))
 }
 
-type ownedProcess struct {
-	cmd  *exec.Cmd
-	out  *tailBuffer
-	done chan struct{}
-	err  error
-}
-
-func startOwned(root string, args ...string) (*ownedProcess, error) {
-	p := &ownedProcess{cmd: exec.Command(args[0], args[1:]...), out: &tailBuffer{limit: 2 << 20}, done: make(chan struct{})}
-	p.cmd.Dir = root
-	p.cmd.Stdout = p.out
-	p.cmd.Stderr = p.out
-	p.cmd.Env = append(os.Environ(), "DIETER_HARNESS_RUNTIME_DIR="+filepath.Join(root, "internal/harness/runtime"))
-	if err := p.cmd.Start(); err != nil {
-		return nil, err
-	}
-	go func() { p.err = p.cmd.Wait(); close(p.done) }()
-	return p, nil
-}
-func (p *ownedProcess) stop() error {
-	select {
-	case <-p.done:
-		return nil
-	default:
-	}
-	_ = p.cmd.Process.Signal(os.Interrupt)
-	select {
-	case <-p.done:
-		return nil
-	case <-time.After(15 * time.Second):
-	}
-	_ = p.cmd.Process.Signal(syscall.SIGTERM)
-	select {
-	case <-p.done:
-		return nil
-	case <-time.After(10 * time.Second):
-		return fmt.Errorf("owned child %d did not exit; resources retained", p.cmd.Process.Pid)
-	}
-}
-func digest(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err = io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%x", h.Sum(nil)), nil
-}
-
-// Binary evidence must never mix stderr into tar/PNG or silently keep a truncated tail.
-func binaryCommand(ctx context.Context, root string, args ...string) (string, error) {
-	c, finish := buildCommand(ctx, args[0], args[1:]...)
-	c.Dir = root
-	out, diagnostic := &tailBuffer{limit: 32 << 20}, &tailBuffer{limit: 64 << 10}
-	c.Stdout, c.Stderr = out, diagnostic
-	err := finish(c.Run())
-	data := out.String()
-	if len(data) >= 32<<20 {
-		return "", fmt.Errorf("binary evidence exceeded 32 MiB")
-	}
-	if err != nil {
-		return "", fmt.Errorf("binary capture: %w: %s", err, diagnostic.String())
-	}
-	return data, nil
-}
-
 // Direct Gradle installs share the runner's device lease; cancellation waits for the child.
 func leasedCommand(ctx context.Context, args []string) error {
 	if len(args) < 2 {
@@ -270,4 +142,18 @@ func leasedCommand(ctx context.Context, args []string) error {
 	c.Env = append(os.Environ(), "DIETER_SCREEN_DEVICE_LEASE_V2="+serial)
 	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
 	return finish(c.Run())
+}
+
+// Support keeps primitive argv process/lease semantics available independently
+// of Ruby: the Android Gradle wrappers hold the exact-device lease through it.
+// It never selects tests, discovers products, or sequences builds.
+func Support(ctx context.Context, args []string) error {
+	if len(args) == 0 || args[0] == "--help" {
+		fmt.Println("pipeline-support device-lease SERIAL COMMAND [ARGS...]\nHold one exact-device lease across an exact-argv child; cancellation waits for owned children.")
+		return nil
+	}
+	if strings.TrimSpace(args[0]) != "device-lease" {
+		return fmt.Errorf("unknown primitive %q", args[0])
+	}
+	return leasedCommand(ctx, args[1:])
 }

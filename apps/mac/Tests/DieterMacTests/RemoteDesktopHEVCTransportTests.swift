@@ -55,7 +55,7 @@ private func envRecovery(_ name: String) -> [String]? {
     }
     try await hevcWait { FileManager.default.fileExists(atPath: ready.path) }
     let connection = try JSONDecoder().decode(HEVCFixture.self, from: Data(contentsOf: ready))
-    let rpc = try SmokeFixtureClient(origin: connection.url, token: connection.token)
+    let rpc = try FixtureRPCClient(origin: connection.url, token: connection.token)
     defer { rpc.shutdown() }
     let caps = try await rpc.remoteDesktopCapabilities()
     try #require(caps.codecModes.contains { $0.codec == "H265" })

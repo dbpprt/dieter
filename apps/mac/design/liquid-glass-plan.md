@@ -708,7 +708,7 @@ Delete these, keeping only what the composer still uses (§4.4):
 | `WorkspaceChromeUISmoke`                                           | Quotas ordering is now relative to the footer gear.                                                                                                 |
 | `NativeUISmokeRunner`                                              | The `board.settings` path through the picker menu; titlebar double-click; Quick Task position.                                                      |
 | `ConversationPaneFeatureSmoke:672-689`                             | New header and track geometry. Kanban becomes `board.layout-toggle`.                                                                                |
-| `tests/e2e/cases/mac/{navigation,sidebar,board,conversation}.yaml` | ID changes.                                                                                                                                         |
+| `tests/maestro/mac/{navigation,conversation}.yaml` (Maestro flows) | ID changes.                                                                                                                                         |
 
 **Performance gates.** Compare against the Phase 0 baseline.
 

@@ -10,7 +10,9 @@ struct DieterMacApp: App {
     private let islandController: DieterIslandController
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openWindow) private var openWindow
-    @State private var didStartSmoke = false
+    #if DIETER_E2E
+        @State private var didStartE2E = false
+    #endif
     @AppStorage(DieterAppearance.storageKey, store: DieterAppearance.applicationDefaults())
     private var appearanceValue = DieterAppearance.defaultValue.rawValue
     @AppStorage(DieterPalette.storageKey, store: DieterAppearance.applicationDefaults())
@@ -24,9 +26,6 @@ struct DieterMacApp: App {
         let store = DieterStore(liveCore: true)
         _store = State(initialValue: store)
         islandController = DieterIslandController(store: store)
-        #if DIETER_UI_SMOKE
-            NativeUISmokeRunner.prepareWindowIfNeeded()
-        #endif
     }
 
     var body: some Scene {
@@ -67,58 +66,13 @@ struct DieterMacApp: App {
                 }
                 .onOpenURL { store.completeAuthentication(url: $0) }
                 .task {
-                    #if DIETER_UI_SMOKE
-                        let arguments = ProcessInfo.processInfo.arguments
+                    #if DIETER_E2E
                         // Normal app startup is owned by the always-present menu
-                        // bar label below. Keep this window task only for smoke
-                        // modes, which install their own isolated test state.
-                        guard arguments.contains(where: { $0.hasSuffix("-ui-smoke") }), !didStartSmoke else { return }
-                        didStartSmoke = true
-                        // macOS can restore a closed workspace while constructing
-                        // its scene. Every UI suite needs that real window; the
-                        // island must never become an accidental fallback target.
-                        openWindow(id: "workspace")
-                        guard await NativeUISmokeActivation.awaitForeground() else { return }
-                        if arguments.contains("--island-ui-smoke") {
-                            await IslandUISmokeRunner.run(store: store, controller: islandController)
-                            return
-                        }
-                        if arguments.contains("--sidebar-ui-smoke") {
-                            await SidebarNavigationUISmokeRunner.run(store: store)
-                            return
-                        }
-                        let conversationSmoke = arguments.contains("--conversation-ui-smoke")
-                        if conversationSmoke {
-                            ConversationUISmokeRunner.progress(
-                                "task fired, connecting", in: ConversationUISmokeRunner.outputDirectory())
-                        }
-                        await store.connect()
-                        if arguments.contains("--flow-ui-smoke") {
-                            await NativeUIFlowRunner.run(store: store)
-                            return
-                        }
-                        if arguments.contains("--inbox-ui-smoke") {
-                            await InboxUISmokeRunner.run(store: store)
-                            return
-                        }
-                        if arguments.contains("--machine-ui-smoke") {
-                            await MachineUISmokeRunner.run(store: store)
-                            return
-                        }
-                        if arguments.contains("--terminal-ui-smoke") {
-                            await TerminalUISmokeRunner.run(store: store)
-                            return
-                        }
-                        if arguments.contains("--workspace-ui-smoke") {
-                            await WorkspaceUISmokeRunner.run(store: store)
-                            return
-                        }
-                        if arguments.contains("--ui-smoke") {
-                            await NativeUISmokeRunner.run(store: store)
-                        }
-                        if conversationSmoke {
-                            await ConversationUISmokeRunner.run(store: store)
-                        }
+                        // bar label below. An E2E flow runs in the workspace
+                        // window against its isolated fixture.
+                        guard NativeTestSupport.isE2E, !didStartE2E else { return }
+                        didStartE2E = true
+                        await NativeUIFlowRunner.run(store: store)
                     #endif
                 }
                 .frame(minWidth: 1_080, minHeight: 680)
@@ -225,9 +179,13 @@ struct DieterMacApp: App {
                     }
                 }
                 .task {
-                    #if DIETER_UI_SMOKE
-                        let arguments = ProcessInfo.processInfo.arguments
-                        guard !arguments.contains(where: { $0.hasSuffix("-ui-smoke") }) else { return }
+                    #if DIETER_E2E
+                        // macOS can restore Dieter without its workspace window;
+                        // the flow runs there and connects itself.
+                        if NativeTestSupport.isE2E {
+                            openWindow(id: "workspace")
+                            return
+                        }
                     #endif
                     await store.connect()
                 }

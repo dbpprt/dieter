@@ -3,47 +3,26 @@
   "title": "Dieter pipeline machine configuration",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "schema_version",
-    "toolchains",
-    "defaults",
-    "profiles",
-    "signing",
-    "fixture_routes"
-  ],
+  "required": ["schema_version", "toolchains", "defaults", "profiles", "signing"],
   "properties": {
     "schema_version": {
-      "enum": [
-        1
-      ]
+      "enum": [1]
     },
     "toolchains": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "java_home": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         },
         "android_sdk": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         },
         "developer_dir": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         },
         "swift_jobs": {
-          "type": [
-            "integer",
-            "null"
-          ],
+          "type": ["integer", "null"],
           "minimum": 1,
           "maximum": 32
         }
@@ -72,10 +51,6 @@
         "gateway_profile": {
           "type": "string",
           "minLength": 1
-        },
-        "suite": {
-          "type": "string",
-          "minLength": 1
         }
       }
     },
@@ -87,106 +62,43 @@
         "^[a-z][a-z0-9-]{0,80}$": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "kind",
-            "enabled"
-          ],
+          "required": ["kind", "enabled"],
           "properties": {
             "platform": {
-              "enum": [
-                "android",
-                "ios",
-                "mac"
-              ]
+              "enum": ["android", "ios", "mac"]
             },
             "component": {
-              "enum": [
-                "daemon",
-                "gateway"
-              ]
+              "enum": ["daemon", "gateway"]
             },
             "kind": {
-              "enum": [
-                "emulator",
-                "device",
-                "simulator",
-                "desktop",
-                "host"
-              ]
+              "enum": ["emulator", "device", "simulator", "desktop", "host"]
             },
             "enabled": {
               "type": "boolean"
             },
             "layout": {
-              "enum": [
-                "iphone",
-                "ipad"
-              ]
+              "enum": ["iphone", "ipad"]
             },
             "lifecycle": {
-              "enum": [
-                "borrow",
-                "managed",
-                "disposable",
-                "exclusive-test-app",
-                "manage-if-started"
-              ]
+              "enum": ["borrow", "managed", "disposable", "exclusive-test-app", "manage-if-started"]
             },
             "serial": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "udid": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "avd": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "device_type": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "runtime": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "signing": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "fixture_route": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "target_os": {
-              "enum": [
-                "native",
-                "linux",
-                "darwin"
-              ]
+              "enum": ["native", "linux", "darwin"]
             },
             "architecture": {
-              "enum": [
-                "native",
-                "amd64",
-                "arm64"
-              ]
+              "enum": ["native", "amd64", "arm64"]
             },
             "visible": {
               "type": "boolean"
@@ -198,14 +110,12 @@
                 "software",
                 "swiftshader",
                 "swangle",
-                "lavapipe"
+                "lavapipe",
+                "swiftshader_indirect"
               ]
             },
             "system_image": {
-              "type": [
-                "string",
-                "null"
-              ],
+              "type": ["string", "null"],
               "pattern": "^system-images;android-[0-9]+;[a-z0-9_]+;(native|arm64-v8a|x86_64)$"
             },
             "boot_timeout": {
@@ -214,23 +124,16 @@
               "maximum": 600
             },
             "storage_dir": {
-              "type": [
-                "string",
-                "null"
-              ],
+              "type": ["string", "null"],
               "pattern": "^\\.android(-[A-Za-z0-9_-]+)?$"
             }
           },
           "oneOf": [
             {
-              "required": [
-                "platform"
-              ]
+              "required": ["platform"]
             },
             {
-              "required": [
-                "component"
-              ]
+              "required": ["component"]
             }
           ]
         }
@@ -245,64 +148,16 @@
           "additionalProperties": false,
           "properties": {
             "keystore_file": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "keystore_password_env": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "key_alias_env": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "key_password_env": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          }
-        },
-        "ios-development": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "team_id": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "app_bundle_id": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "share_bundle_id": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "app_group_id": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "provisioning_mode": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             }
           }
         },
@@ -311,46 +166,25 @@
           "additionalProperties": false,
           "properties": {
             "certificate_file": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "certificate_password_env": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "app_profile_file": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "share_profile_file": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "api_key_file": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "api_key_id_env": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "api_issuer_id_env": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             }
           }
         },
@@ -359,72 +193,19 @@
           "additionalProperties": false,
           "properties": {
             "certificate_file": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "certificate_password_env": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "notary_key_file": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "notary_key_id_env": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "notary_issuer_id_env": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          }
-        }
-      }
-    },
-    "fixture_routes": {
-      "type": "object",
-      "additionalProperties": false,
-      "patternProperties": {
-        "^[a-z][a-z0-9-]{0,80}$": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "kind": {
-              "enum": [
-                "authenticated-tls-proxy"
-              ]
-            },
-            "enabled": {
-              "type": "boolean"
-            },
-            "host_address": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "certificate_file": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "private_key_file": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             }
           }
         }

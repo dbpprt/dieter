@@ -155,14 +155,14 @@ struct ConversationFileNavigator: View {
                 }
                 .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28)).help("Refresh files")
                 .accessibilityIdentifier("conversation.content.files.refresh")
-                .smokeTarget("conversation.content.files.refresh")
+                .e2eTarget("conversation.content.files.refresh")
             }
             .padding(.horizontal, 10).frame(height: 36)
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.tertiary)
                 TextField("Filter files", text: $filter).textFieldStyle(.plain)
                     .accessibilityIdentifier("conversation.content.files.filter")
-                    .smokeTarget("conversation.content.files.filter")
+                    .e2eTarget("conversation.content.files.filter")
             }
             .font(.system(size: 11)).padding(7)
             .dieterCapsuleChrome(interactive: false)
@@ -204,7 +204,7 @@ struct ConversationFileNavigator: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         .accessibilityIdentifier("conversation.content.files.navigator")
-        .smokeTarget("conversation.content.files.navigator")
+        .e2eTarget("conversation.content.files.navigator")
         .task(id: tab.transportRevision) { await tab.tree.reveal(selectedPath) }
     }
 
@@ -233,7 +233,7 @@ struct ConversationFileNavigator: View {
         .buttonStyle(.plain)
         .accessibilityLabel(row.entry.name)
         .accessibilityIdentifier("conversation.content.files.row.\(row.id)")
-        .smokeTarget("conversation.content.files.row.\(row.id)")
-        .smokeTarget("conversation.content.files.\(tab.id.uuidString).row.\(row.id)")
+        .e2eTarget("conversation.content.files.row.\(row.id)")
+        .e2eTarget("conversation.content.files.\(tab.id.uuidString).row.\(row.id)")
     }
 }

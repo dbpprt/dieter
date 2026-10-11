@@ -46,14 +46,16 @@ mise exec -- just pipeline android build      # configuration:release for a sign
 mise exec -- just pipeline ci action:check component:android
 ```
 
-The component check runs lint, the debug build and compilation of the `e2e`
-app and journey test APKs; it does not start a device. Debug output is
-`app/build/outputs/apk/debug/app-debug.apk`; build manifests are printed under
-`tmp/app-pipelines/UUID`.
+The component check runs lint and the debug build; it starts no device. CI adds
+the Maestro flows, whose run builds the `e2e` app instead of the debug build.
+Debug output is `app/build/outputs/apk/debug/app-debug.apk`; build manifests are
+printed under `tmp/app-pipelines/UUID`.
 
-Build types are `debug`, `release` and `e2e`. The `e2e` type uses the
-`com.dbpprt.dieter.e2e` application ID so journeys never touch the operator's
-app or session.
+Build types are `debug`, `release` and `e2e`. The `e2e` type
+(`:app:assembleE2e`) uses the `com.dbpprt.dieter.e2e` application ID so Maestro
+flows never touch the operator's app or session. Debuggable builds (`debug` and
+`e2e`) expose the shared Compose `testTag`s as resource ids, which the flows
+select.
 
 ## Emulator and physical devices
 
@@ -72,20 +74,26 @@ an emulator warm for repeated tests and manual operations; run
 mise exec -- just pipeline android local action:status
 mise exec -- just pipeline android local action:emulator_setup # once: project-local runtime/image
 mise exec -- just pipeline android local action:emulator_check
+mise exec -- just pipeline android local action:emulator_run profile:android-emulator # keep running
 mise exec -- just pipeline android e2e profile:android-emulator
 ```
 
-`android e2e` runs the catalog cases `android.journey` and `android.share`
-(`JourneyTest` in `app/src/androidTest`). It installs the `e2e` app and its test APK, starts a
-disposable authenticated gateway, enrolled daemon and mock harness, and walks
-Inbox, Projects, a board, task creation with live replies, Review, Chats,
-Tools, Machines, Files, Schedules and dark appearance. The fixture offers WebRTC
-control channels like production, so the app reaches it over that route. The
-Activity is recreated before submitting the task and before the follow-up.
-`android.share` sends text and a screenshot to the app as
-another app's share would, and checks that they prefill one new task that
-survives recreation and starts a conversation with the attachment. Screenshots
-and the instrumentation log are retained in the printed evidence directory.
+`android e2e` runs the shared mobile [Maestro flows](../../tests/maestro/README.md),
+which iOS also runs. It builds and installs the `e2e` app before using the
+device, starts one isolated gateway fixture with an enrolled daemon and mock
+harness, reaches it through an owned `adb reverse` port, and passes the fixture
+URL and token as intent extras through Maestro `launchApp` arguments. The
+fixture offers WebRTC control channels like production, so the app reaches it
+over that route. The `smoke` flows open a seeded board card's conversation and
+subagents and run a new task's live first and follow-up turns into Review;
+`tags:full` adds Chats, Machines, Files, Schedules and dark appearance.
+`results.json`, Maestro's `junit.xml`, logs and screenshots are retained in the
+printed evidence directory. There is no device share-sheet test.
+
+If the warm emulator shows a System UI "isn't responding" dialog between runs,
+tap **Wait**, and force-stop only `com.dbpprt.dieter.e2e` when an interrupted
+run left it open; never wipe userdata. CI runs the same flows on
+`ubuntu-latest` with a headless KVM emulator (`profile:android-ci`).
 
 Set the exact ADB serial and enable `android-device` in ignored
 `fastlane/local.json`, then pass `profile:android-device` explicitly. A physical
@@ -116,7 +124,7 @@ store, so saved sessions carry over.
 
 Sign-in opens the gateway's sign-in page in the browser and returns through
 `dieter-android://oauth/callback`. Debug builds also accept an isolated fixture
-session for journeys; release builds do not.
+session for Maestro flows; release builds do not.
 
 Release builds check the latest public GitHub release when the app starts. When
 it is newer, the app downloads `Dieter-Android.apk`, verifies the SHA-256 digest

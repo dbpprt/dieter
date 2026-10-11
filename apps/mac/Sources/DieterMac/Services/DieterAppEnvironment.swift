@@ -30,7 +30,7 @@ struct DieterAppEnvironment {
             storageRoot: FileManager.default.temporaryDirectory.appending(path: "dieter-client-\(UUID().uuidString)"))
     }
 
-    /// Smoke runs point the app's state at a throwaway directory so isolated
+    /// E2E runs point the app's state at a throwaway directory so isolated
     /// fixtures neither read nor write the real state.
     static func stateRoot(arguments: [String]) -> URL? {
         guard let index = arguments.firstIndex(of: "--dieter-state-root"), arguments.indices.contains(index + 1)

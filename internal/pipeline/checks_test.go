@@ -2,6 +2,8 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,7 +36,7 @@ func checkKeys(plan CheckPlan) []string {
 
 var (
 	androidGate = []string{"android:build", "android:e2e profile=android-emulator", "android:test_unit"}
-	iosGate     = []string{"ios:build", "ios:e2e profiles=ios-iphone,ios-ipad"}
+	iosGate     = []string{"ios:build", "ios:e2e profile=ios-iphone"}
 )
 
 func sortedKeys(groups ...[]string) []string {
@@ -58,12 +60,10 @@ func TestAffectedCheckOwnership(t *testing.T) {
 		{"apps/android/app/src/main/kotlin/com/dbpprt/dieter/MainActivity.kt", []string{"android"}, true},
 		{"apps/android/app/src/main/kotlin/com/dbpprt/dieter/screens/ScreenCanvasHost.kt", []string{"android"}, true},
 		{"apps/android/app/src/main/java/org/webrtc/DieterLowLatencyDecoderFactory.java", []string{"android"}, true},
-		{"apps/android/app/src/androidTest/kotlin/com/dbpprt/dieter/JourneyTest.kt", []string{"android"}, true},
 		{"native/android-webrtc/build_sdk.py", []string{"android"}, true},
 		{"apps/mac/Tests/DieterMacTests/Test.swift", []string{"macos"}, false},
 		{"apps/mac/Sources/DieterMac/UI/BoardView.swift", []string{"macos"}, true},
 		{"apps/ios/App/DieterApp.swift", []string{"ios"}, true},
-		{"apps/ios/Tests/JourneyUITests.swift", []string{"ios"}, true},
 		{"apps/ios/Dieter.xcodeproj/project.pbxproj", []string{"ios"}, true},
 		{"apps/mac/Sources/DieterIOS/ComposeHost.swift", []string{"ios"}, true},
 		{"apps/mac/Sources/DieterTransport/ControlRTCBridge.swift", []string{"macos", "ios"}, true},
@@ -78,11 +78,14 @@ func TestAffectedCheckOwnership(t *testing.T) {
 		{"fastlane/lib/dieter/fixtures/gateway.rb", []string{"core", "android", "ios"}, true},
 		{"internal/harness/runtime/bridge.js", []string{"core", "android", "ios"}, true},
 		{"config/harnesses.yaml", []string{"core", "android", "ios"}, true},
-		{"tools/fixtures/gateway/mobile_fixture.go", ciComponents, true},
+		{"tools/fixtures/gateway/e2e_fixture.go", ciComponents, true},
 		{"fastlane/lib/dieter/distribution/apple.rb", []string{"core"}, false},
-		{"tests/e2e/cases/android/journey.yaml", []string{"core", "android"}, true},
-		{"tests/e2e/cases/ios/journey.yaml", []string{"core", "ios"}, true},
-		{"internal/pipeline/result_test.go", []string{"core"}, false},
+		{"tests/maestro/mobile/board.yaml", []string{"core", "android", "ios"}, true},
+		{"tests/maestro/mobile/common/launch.yaml", []string{"core", "android", "ios"}, true},
+		{"tests/maestro/mac/navigation.yaml", []string{"core", "macos"}, true},
+		{"fastlane/lib/dieter/e2e.rb", ciComponents, false},
+		{"fastlane/lib/dieter/maestro.rb", ciComponents, false},
+		{"internal/pipeline/process.go", []string{"core"}, false},
 	} {
 		t.Run(test.path, func(t *testing.T) {
 			plan := planChecks([]string{test.path}, nil)
@@ -118,7 +121,6 @@ func TestMobileAppChecksSelectExactGates(t *testing.T) {
 		{[]string{"apps/android/app/build.gradle.kts"}, androidGate},
 		{[]string{"native/android-webrtc/sdk.gradle"}, androidGate},
 		{[]string{"apps/ios/App/DieterApp.swift"}, iosGate},
-		{[]string{"apps/ios/Tests/JourneyUITests.swift"}, iosGate},
 		{[]string{"apps/mac/Sources/DieterIOS/NativeViews.swift"}, iosGate},
 		// The shared Compose UI: core test_unit runs its JVM tests; the Mac does not link it.
 		{[]string{"apps/core/mobile/src/commonMain/kotlin/com/dbpprt/dieter/ui/BoardCardDrag.kt"}, sortedKeys([]string{"core:test_unit"}, androidGate, iosGate)},
@@ -167,11 +169,11 @@ func TestSharedCoreCheckParity(t *testing.T) {
 		if journeys["android"]["profile"] != "android-emulator" || len(journeys["android"]) != 1 {
 			t.Fatalf("%s: Android journey = %v", path, journeys["android"])
 		}
-		if journeys["ios"]["profiles"] != "ios-iphone,ios-ipad" || len(journeys["ios"]) != 1 {
-			t.Fatalf("%s: iPhone and iPad both required: %v", path, journeys["ios"])
+		if journeys["ios"]["profile"] != "ios-iphone" || len(journeys["ios"]) != 1 {
+			t.Fatalf("%s: iOS journey = %v", path, journeys["ios"])
 		}
-		if journeys["mac"]["suite"] != "smoke" {
-			t.Fatalf("%s: shared core must run the full Mac smoke: %v", path, journeys["mac"])
+		if options, ok := journeys["mac"]; !ok || len(options) != 0 {
+			t.Fatalf("%s: shared core must run every Mac flow: %v", path, journeys["mac"])
 		}
 	}
 	// The Compose UI is not linked by the Mac and has no Apple bridge.
@@ -196,7 +198,7 @@ func TestPrivacyPackagingSelectsItsIsolatedNativeGate(t *testing.T) {
 }
 
 func TestOrchestrationContractsDoNotRequireLocalNativeCompilation(t *testing.T) {
-	for _, path := range []string{"fastlane/lib/dieter/pipeline/process.rb", "fastlane/lib/dieter/pipeline/evidence.rb", "fastlane/lib/dieter/ci.rb", "fastlane/lib/dieter/config.rb", "fastlane/lib/dieter/pipeline/engine.rb", "internal/pipeline/checks.go", ".github/workflows/ci.yml", ".github/workflows/qualification.yml", ".github/actions/pipeline-setup/action.yml", "justfile"} {
+	for _, path := range []string{"fastlane/lib/dieter/pipeline/process.rb", "fastlane/lib/dieter/pipeline/evidence.rb", "fastlane/lib/dieter/e2e.rb", "fastlane/lib/dieter/maestro.rb", "fastlane/lib/dieter/ci.rb", "fastlane/lib/dieter/config.rb", "fastlane/lib/dieter/pipeline/engine.rb", "internal/pipeline/checks.go", ".github/workflows/ci.yml", ".github/workflows/qualification.yml", ".github/actions/pipeline-setup/action.yml", "justfile"} {
 		plan := planChecks([]string{path}, nil)
 		if !checkExists(plan, "portable", "contracts") {
 			t.Fatalf("missing contracts for %s", path)
@@ -213,22 +215,60 @@ func TestOrchestrationContractsDoNotRequireLocalNativeCompilation(t *testing.T) 
 		}
 	}
 }
-func TestMacCheckSelectionUsesConservativeMap(t *testing.T) {
-	for relative, expected := range macSmokeFiles {
-		actual := macChecks([]string{"apps/mac/Sources/DieterMac/" + relative})
-		ordered := slices.DeleteFunc(slices.Clone(macSmokeSuites), func(value string) bool { return !slices.Contains(expected, value) })
-		if !slices.Equal(actual, ordered) {
-			t.Fatalf("%s: %v != %v", relative, actual, ordered)
+
+// Maestro flows and app sources select exact native E2E requests: the mobile
+// flows run on Android and the iPhone, the Mac flows run whenever the Mac app's
+// sources change, and the shared runner is orchestration verified in CI.
+func TestMaestroE2ESelection(t *testing.T) {
+	for _, test := range []struct {
+		path string
+		want []string
+		ci   []string
+	}{
+		{"tests/maestro/mobile/board.yaml", sortedKeys([]string{"portable:contracts"}, androidGate, iosGate), []string{"core", "ios", "android"}},
+		{"tests/maestro/mobile/common/launch.yaml", sortedKeys([]string{"portable:contracts"}, androidGate, iosGate), []string{"core", "ios", "android"}},
+		{"tests/maestro/mac/navigation.yaml", []string{"mac:e2e", "mac:test_unit", "portable:contracts"}, []string{"core", "macos"}},
+		{"apps/mac/Sources/DieterMac/UI/BoardView.swift", []string{"mac:e2e", "mac:test_unit"}, []string{"macos"}},
+		{"fastlane/lib/dieter/platforms/mac.rb", []string{"mac:e2e", "mac:test_unit"}, []string{"core", "macos"}},
+		{"apps/mac/Tests/DieterMacTests/BoardProjectionTests.swift", []string{"mac:test_unit"}, []string{"macos"}},
+		{"apps/android/app/src/main/kotlin/com/dbpprt/dieter/MainActivity.kt", androidGate, []string{"android"}},
+		{"apps/ios/App/DieterApp.swift", iosGate, []string{"ios"}},
+		{"fastlane/lib/dieter/e2e.rb", []string{"portable:contracts"}, ciComponents},
+		{"fastlane/lib/dieter/maestro.rb", []string{"portable:contracts"}, ciComponents},
+	} {
+		plan := planChecks([]string{test.path}, nil)
+		if got := checkKeys(plan); !slices.Equal(got, test.want) {
+			t.Errorf("%s planned %v, want %v", test.path, got, test.want)
+		}
+		for _, component := range ciComponents {
+			if plan.CI[component] != slices.Contains(test.ci, component) {
+				t.Errorf("%s: CI = %v, want %v", test.path, plan.CI, test.ci)
+				break
+			}
 		}
 	}
-	paths := []string{"apps/mac/Sources/DieterMac/UI/DieterIslandView.swift", "apps/mac/Sources/DieterMac/Features/Conversation/Composer.swift", "apps/mac/Sources/DieterMac/Features/Terminals/Deleted.swift"}
-	expected := []string{"core", "board", "conversation", "terminal", "island", "workspace", "inbox"}
-	if !slices.Equal(macChecks(paths), expected) {
-		t.Fatalf("union = %v", macChecks(paths))
+}
+
+// Fastlane consumes the native E2E requests verbatim.
+func TestNativeE2ERequestEncoding(t *testing.T) {
+	plan := planChecks([]string{"api/proto/dieter/v1/dieter.proto"}, nil)
+	encoded := map[string]string{}
+	for _, check := range plan.Checks {
+		if check.Operation == "e2e" {
+			data, err := json.Marshal(check)
+			if err != nil {
+				t.Fatal(err)
+			}
+			encoded[check.Component] = string(data)
+		}
 	}
-	paths = append(paths, "apps/mac/Sources/DieterMac/Unknown.swift")
-	if !slices.Equal(macChecks(paths), macSmokeSuites) {
-		t.Fatal("unknown source must broaden")
+	want := map[string]string{
+		"android": `{"component":"android","operation":"e2e","options":{"profile":"android-emulator"}}`,
+		"ios":     `{"component":"ios","operation":"e2e","options":{"profile":"ios-iphone"}}`,
+		"mac":     `{"component":"mac","operation":"e2e"}`,
+	}
+	if !maps.Equal(encoded, want) {
+		t.Fatalf("e2e requests = %v, want %v", encoded, want)
 	}
 }
 func TestAffectedGoIncludesEmbeddedDeletedAndTestOnlyImporters(t *testing.T) {

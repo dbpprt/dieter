@@ -103,7 +103,7 @@ struct ChatPaneSplit<Browser: View, Detail: View>: View {
                     .ignoresSafeArea(.container, edges: .top)
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("\(layout.identifier).detail-pane")
-                    .smokeTarget("\(layout.identifier).detail-pane")),
+                    .e2eTarget("\(layout.identifier).detail-pane")),
             preferredWidth: CGFloat(storedWidth),
             onWidthChange: { storedWidth = Double($0) }
         )

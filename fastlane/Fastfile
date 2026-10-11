@@ -19,11 +19,6 @@ lane :screens_qualify do |options|
   Dieter::Screens.invoke(options)
 end
 
-desc "Run validated native qualification on an explicit CI runner/profile"
-lane :native_ci do |options|
-  Dieter::Runtime.native_ci(options, actions: self)
-end
-
 desc "Inspect or run affected fast checks; dry_run:true base:REF native:true ci:true"
 lane :checks do |options|
   Dieter::Checks.invoke(options)
@@ -40,11 +35,6 @@ lane :ci do |options|
   Dieter::CI.invoke(options, actions: self)
 end
 
-desc "Qualify configured iOS layouts with one verified build; profiles:ios-iphone,ios-ipad suite:smoke|functional cases:IDS"
-lane :ios_qualify do |options|
-  Dieter::Runtime.ios_qualify(options, actions: self)
-end
-
 desc "Inspect configured targets/toolchains; optional profile:NAME"
 lane :doctor do |options|
   Dieter::Runtime.doctor(options)
@@ -53,11 +43,6 @@ end
 desc "Create an ignored local configuration; select runtime:IDENTIFIER when several runtimes exist"
 lane :config_init do |options|
   Dieter::Runtime.configure(options)
-end
-
-desc "Validate/list/plan the native catalog; action:lint|list|plan platform:android|ios|mac suite:NAME cases:IDS"
-lane :catalog do |options|
-  Dieter::Runtime.catalog(options)
 end
 
 desc "Run shared Kotlin core and Compose UI JVM unit and isolated transport tests"
@@ -124,14 +109,9 @@ end
       Dieter::Runtime.invoke("build", component.to_s, options, actions: self)
     end
 
-    desc "Execute isolated native cases; profile:NAME suite:smoke|functional cases:IDS changed:true base:REF output:PATH"
+    desc "Run tests/maestro flows against an isolated fixture; tags:smoke|full flows:NAMES profile:NAME output:PATH"
     lane :e2e do |options|
-      Dieter::Runtime.invoke("e2e", component.to_s, options, actions: self)
-    end
-
-    desc "Build native test products without executing cases; profile:NAME suite:NAME"
-    lane :prepare_tests do |options|
-      Dieter::Runtime.invoke("prepare_tests", component.to_s, options, actions: self)
+      Dieter::E2E.invoke(component.to_s, options, actions: self)
     end
 
     desc "Verify existing artifact:MANIFEST without rebuilding"

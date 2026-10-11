@@ -8,33 +8,12 @@ import SharedCore
 /// makes it and shows the core's slice.
 extension AppSession {
     func foldNavigation(_ slice: ClientNavigationSlice) {
-        var slice = slice
-        #if DIETER_UI_SMOKE
-            // A fixture's projects exist only on this Mac; lay them out from the saved layout.
-            if coreFoldsHeld { slice.projects = NavigationFixture.projects(slice, available: projects) }
-        #endif
         if navigation != slice { navigation = slice }
         if navigationPendingCount != Int(slice.pending) { navigationPendingCount = Int(slice.pending) }
         let error = slice.error.isEmpty ? nil : slice.error
         if navigationSyncError != error { navigationSyncError = error }
         navigationCaughtUp = slice.caughtUp
-        #if DIETER_UI_SMOKE
-            if coreFoldsHeld { showFixtureChats() }
-        #endif
     }
-
-    #if DIETER_UI_SMOKE
-        /// While folds are held, the chats list lays out the chats a UI fixture
-        /// installed on this Mac only.
-        func showFixtureChats() {
-            chatsList.fixture = { [weak self] query in
-                guard let self, self.coreFoldsHeld else { return nil }
-                return NavigationFixture.chats(
-                    self.chats, projects: self.projects, navigation: self.navigation, query: query)
-            }
-            chatsList.showFixture()
-        }
-    #endif
 
     /// Sends a layout edit the user made, after the ones made before it.
     private func editNavigation(_ build: @escaping (inout ClientCommand) -> Void) {

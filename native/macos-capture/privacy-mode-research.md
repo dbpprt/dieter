@@ -141,7 +141,6 @@ mise exec -- just pipeline check component:mac operation:privacy_native_test
 mise exec -- just pipeline check component:mac operation:screens_native_test
 DIETER_TEST_PRIVACY_PHYSICAL=1 mise exec -- just pipeline check component:mac operation:screens_native_test
 mise exec -- just pipeline core_test
-mise exec -- just pipeline mac e2e cases:mac.machine
 ```
 
 Set `DIETER_TEST_PRIVACY_HELPER` to the absolute path of the exact capture binary
@@ -166,10 +165,8 @@ the new privileged HID seizure. Lease tests cover degraded audits and retryable 
 Go suite covers helper adoption, bounded protocol, boot requests, uncertain
 mutations, change-stream updates and isolated CLI routes. Shared-core tests
 cover cache/reset, freshness, degraded presentation and operation menus. The
-packaged Mac case clicks the real Actions menu, Lock/Unlock confirmations and
-result alerts through the isolated authenticated fixture. After closing details
-it verifies the sidebar shield's VoiceOver label and captures the rendered row;
-it never blanks the operator screen through that fixture.
+packaged Mac machine smoke case that clicked the Actions menu and Lock/Unlock
+confirmations was removed with the move to Maestro flows (2026-10-11).
 
 On 2026-10-07, the enhanced implementation passed the isolated packaged Mac
 machine journey (18 assertions, including setup, lock, unlock and the rendered

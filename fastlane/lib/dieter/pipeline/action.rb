@@ -8,7 +8,7 @@ module Dieter
   # Fastlane owns Apple command construction. The parent retains deadlines,
   # output redaction and process-group ownership, including cancellation.
   module NativeAction
-    ACTIONS = %w[run_tests build_app].freeze
+    ACTIONS = %w[build_app].freeze
 
     # Fastlane reads build settings before every action. On hosted runners right
     # after a simulator boot that lookup has exceeded 120s; it usually takes 20-47s.
@@ -38,9 +38,6 @@ module Dieter
     def self.configuration_options(options)
       values = options.transform_keys(&:to_sym).merge(disable_package_automatic_updates: true)
       values[:xcodebuild_formatter] = "xcpretty" if values[:xcodebuild_formatter].to_s.empty?
-      # A verified xctestrun consumes existing products. Re-resolving the package
-      # graph for every native case adds network work and cannot improve them.
-      values[:skip_package_dependencies_resolution] = true if values[:test_without_building]
       values
     end
 

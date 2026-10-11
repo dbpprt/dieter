@@ -50,7 +50,7 @@ struct ConversationWorkspacePickerSheet: View {
                             Text(mode.choiceTitle)
                                 .tag(mode)
                                 .accessibilityIdentifier("workspace.mode.\(mode.rawValue)")
-                                .smokeTarget("workspace.mode.\(mode.rawValue)")
+                                .e2eTarget("workspace.mode.\(mode.rawValue)")
                         }
                     }
                     .pickerStyle(.radioGroup)
@@ -63,10 +63,10 @@ struct ConversationWorkspacePickerSheet: View {
                     Section {
                         TextField("New branch", text: $draftBranch, prompt: Text("Automatic"))
                             .accessibilityIdentifier("workspace.branch")
-                            .smokeTarget("workspace.branch")
+                            .e2eTarget("workspace.branch")
                         TextField("Base branch", text: $draftBaseBranch, prompt: Text("Current branch"))
                             .accessibilityIdentifier("workspace.base-branch")
-                            .smokeTarget("workspace.base-branch")
+                            .e2eTarget("workspace.base-branch")
                     } header: {
                         Text("Worktree")
                     } footer: {
@@ -78,13 +78,13 @@ struct ConversationWorkspacePickerSheet: View {
                 Section {
                     TextField("Remote", text: $draftBaseRemote, prompt: Text("None"))
                         .accessibilityIdentifier("workspace.base-remote")
-                        .smokeTarget("workspace.base-remote")
+                        .e2eTarget("workspace.base-remote")
                     Picker("Publishing", selection: $draftRemotePublishMode) {
                         ForEach(AdminChoices.options.publishModes, id: \.id) { mode in Text(mode.title).tag(mode.id) }
                     }
                     .pickerStyle(.menu)
                     .accessibilityIdentifier("workspace.publishing")
-                    .smokeTarget("workspace.publishing")
+                    .e2eTarget("workspace.publishing")
                 } header: {
                     Text("Remote")
                 } footer: {
@@ -104,12 +104,12 @@ struct ConversationWorkspacePickerSheet: View {
                     .buttonStyle(DieterBarButtonStyle())
                     .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("workspace.close")
-                    .smokeTarget("workspace.close")
+                    .e2eTarget("workspace.close")
                 Button("Done") { applySelection() }
                     .buttonStyle(DieterBarButtonStyle(prominent: true))
                     .keyboardShortcut(.defaultAction)
                     .accessibilityIdentifier("workspace.confirm")
-                    .smokeTarget("workspace.confirm")
+                    .e2eTarget("workspace.confirm")
             }
             .padding(.horizontal, 20).padding(.bottom, 20)
         }

@@ -39,12 +39,12 @@ struct ConversationBrowserView: View {
             HStack(spacing: 8) {
                 Button("Back", systemImage: "chevron.left") { browser.webView.goBack() }
                     .disabled(!browser.canGoBack)
-                    .accessibilityIdentifier("conversation.browser.back").smokeTarget("conversation.browser.back")
-                    .smokeTarget(scopedTarget("back"))
+                    .accessibilityIdentifier("conversation.browser.back").e2eTarget("conversation.browser.back")
+                    .e2eTarget(scopedTarget("back"))
                 Button("Forward", systemImage: "chevron.right") { browser.webView.goForward() }
                     .disabled(!browser.canGoForward)
-                    .accessibilityIdentifier("conversation.browser.forward").smokeTarget("conversation.browser.forward")
-                    .smokeTarget(scopedTarget("forward"))
+                    .accessibilityIdentifier("conversation.browser.forward").e2eTarget("conversation.browser.forward")
+                    .e2eTarget(scopedTarget("forward"))
                 Button(
                     browser.loading ? "Stop loading" : "Reload",
                     systemImage: browser.loading ? "xmark" : "arrow.clockwise"
@@ -60,16 +60,16 @@ struct ConversationBrowserView: View {
                     .padding(.horizontal, 9).frame(height: 27)
                     .dieterCapsuleChrome(interactive: false)
                     .accessibilityLabel("Browser address")
-                    .accessibilityIdentifier("conversation.browser.address").smokeTarget("conversation.browser.address")
-                    .smokeTarget(scopedTarget("address"))
+                    .accessibilityIdentifier("conversation.browser.address").e2eTarget("conversation.browser.address")
+                    .e2eTarget(scopedTarget("address"))
                 Button("Open in default browser", systemImage: "arrow.up.forward.app") {
                     if let destination = browser.currentURL, browser.accepts(destination) {
                         NSWorkspace.shared.open(destination)
                     }
                 }
                 .disabled(browser.currentURL == nil)
-                .accessibilityIdentifier("conversation.browser.external").smokeTarget("conversation.browser.external")
-                .smokeTarget(scopedTarget("external"))
+                .accessibilityIdentifier("conversation.browser.external").e2eTarget("conversation.browser.external")
+                .e2eTarget(scopedTarget("external"))
             }
             .labelStyle(.iconOnly).buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28))
             .padding(.horizontal, 10).frame(height: 38)
@@ -98,7 +98,7 @@ struct ConversationBrowserView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("conversation.browser.empty")
-                .smokeTarget(scopedTarget("empty"))
+                .e2eTarget(scopedTarget("empty"))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

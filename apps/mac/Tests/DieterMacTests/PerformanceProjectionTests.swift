@@ -72,25 +72,6 @@ import Testing
     #expect(recorder.screen.revision == 100)
 }
 
-@Test func nativeSmokeClickCoordinatesRespectContentOrientation() {
-    let bounds = NSRect(x: 0, y: 0, width: 200, height: 100)
-
-    #expect(
-        NativeUIEventDispatcher.contentLocation(
-            x: 100,
-            distanceFromTop: 20,
-            contentBounds: bounds,
-            isFlipped: true
-        ) == NSPoint(x: 100, y: 20))
-    #expect(
-        NativeUIEventDispatcher.contentLocation(
-            x: 100,
-            distanceFromTop: 20,
-            contentBounds: bounds,
-            isFlipped: false
-        ) == NSPoint(x: 100, y: 80))
-}
-
 @MainActor
 private final class TerminalPublishRecorder {
     var publishCount = 0

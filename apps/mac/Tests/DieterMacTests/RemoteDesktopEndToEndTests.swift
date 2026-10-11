@@ -881,7 +881,7 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer, @unchecked S
     // Hovering the focused viewer changes the single local cursor at once,
     // before any network acknowledgement could arrive.
     // SwiftPM does not run NSApplication's event loop. Supply the focused
-    // window here; ScreenShareUISmoke validates real application/key activation.
+    // window here.
     surface.windowIsActive = { [weak detached] in $0 != nil && $0 === detached }
     controller.showFixture {
         $0.cursorVisible = true

@@ -96,20 +96,23 @@ just check-changed --dry-run
 just check-changed
 just pipeline check component:portable operation:support_tests
 just pipeline mac test_unit
-just pipeline mac e2e cases:mac.core
+just pipeline mac e2e
 ```
 
-Run selected cases with `just pipeline mac e2e cases:mac.board,mac.inbox`.
-`just pipeline mac e2e suite:smoke` builds once and runs all nine native
-suites plus the YAML navigation journey. There are no separate Mac smoke aliases.
+`just pipeline mac e2e` builds the debug app once and runs the Mac
+[Maestro flows](../../tests/maestro/README.md), `navigation` and `conversation`
+(both `smoke`); select one with `flows:navigation`. Maestro has no macOS driver,
+so the pipeline converts each flow to a JSON plan that the app interprets
+in-process (`--e2e-activation-ready PIDFILE --e2e-flow PLAN.json --e2e-output DIR`).
 
 The shared Fastlane pipeline refuses any running Dieter app and owns its exact app/gateway PIDs.
 It uses a random loopback port, disposable credentials, unique state/preferences,
 and a mock harness. It preserves reports, logs, and screenshots under
-`tmp/e2e-<run-id>` (including shared JSON/JUnit summaries) and verifies shutdown. Read reports and inspect
+`tmp/app-pipelines/<run>` (including `results.json` and each flow's `report.json`) and verifies shutdown. Read reports and inspect
 screenshots; an exit code alone does not verify the visual result.
 
-Smoke hooks exist only in debug builds. Screen integration uses
+The flow runner (`Sources/DieterMac/Testing`) exists only in debug builds
+(`DIETER_E2E`). Screen integration uses
 `just pipeline check component:mac operation:screens_native_test` and `just pipeline check component:mac operation:screens_test`; real capture modes
 need OS permissions and inject input only into their owned fixture window.
 
@@ -145,7 +148,8 @@ The package's modules:
   package graph selected with `DIETER_SWIFT_PACKAGE=ios`. The iOS app's Xcode
   project is in `apps/ios`; see [its README](../ios/README.md).
 
-The Mac links grpc-swift directly only for its debug UI smoke fixtures.
+The Mac app does not link grpc-swift; only `DieterMacTests` uses it
+(`FixtureRPCClient`) against disposable fixture daemons.
 
 SwiftProtobuf messages and grpc-swift v2 stubs are checked in. `just proto`
 regenerates authoritative schema outputs; `just pipeline mac local action:proto_check` checks fingerprints.

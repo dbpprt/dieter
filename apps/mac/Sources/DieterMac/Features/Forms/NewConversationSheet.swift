@@ -48,7 +48,7 @@ struct NewConversationSheet: View {
                         .focused($focusedField, equals: .title)
                         .onSubmit { focusedField = .prompt }
                         .accessibilityIdentifier("new-card.title")
-                        .smokeTarget("new-card.title")
+                        .e2eTarget("new-card.title")
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
@@ -66,7 +66,7 @@ struct NewConversationSheet: View {
                             .buttonStyle(DieterBarButtonStyle(size: 26))
                             .help("Attach files, or drop files and paste images into the task")
                             .accessibilityIdentifier("new-card.attach")
-                            .smokeTarget("new-card.attach")
+                            .e2eTarget("new-card.attach")
                             Spacer()
                             Text(SharedRules.shared.attachmentLimits()).font(.caption).foregroundStyle(.secondary)
                         }
@@ -92,7 +92,7 @@ struct NewConversationSheet: View {
                         }
                     }
                     .accessibilityIdentifier("new-card.lane")
-                    .smokeTarget("new-card.lane")
+                    .e2eTarget("new-card.lane")
                     LabeledContent("Workspace") {
                         Picker("Workspace", selection: $workspaceDraft.mode) {
                             Text("New worktree").tag(ConversationWorkspaceMode.worktree)
@@ -103,7 +103,7 @@ struct NewConversationSheet: View {
                         Button("Options…") { workspacePickerPresented = true }
                             .buttonStyle(DieterBarButtonStyle(size: 26))
                             .accessibilityIdentifier("new-card.workspace")
-                            .smokeTarget("new-card.workspace")
+                            .e2eTarget("new-card.workspace")
                             .help("Configure the branch, base and publishing options")
                     }
                     .help(preview.workspaceDetail)
@@ -194,7 +194,7 @@ struct NewConversationSheet: View {
                 .help("\(preview.defersStart ? "Save card" : "Start task") (⌘Return)")
                 .disabled(!canSubmit)
                 .accessibilityIdentifier("new-card.create")
-                .smokeTarget("new-card.create")
+                .e2eTarget("new-card.create")
             }
             .padding(20)
         }
@@ -261,7 +261,7 @@ struct NewConversationSheet: View {
             }
             .accessibilityLabel("Initial task")
             .accessibilityIdentifier("new-card.prompt")
-            .smokeTarget("new-card.prompt")
+            .e2eTarget("new-card.prompt")
             .attachmentDropTarget(isTargeted: $attachmentDropTargeted) { providers in
                 Task {
                     do {

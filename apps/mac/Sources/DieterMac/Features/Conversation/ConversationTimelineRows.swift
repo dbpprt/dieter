@@ -57,7 +57,7 @@ struct ConversationTimelineItemView: View {
             // so neither the message nor its details can paint into the next row.
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .smokeTarget("conversation.message.row.\(footerMessageID)")
+            .e2eTarget("conversation.message.row.\(footerMessageID)", text: footer.markdown)
         }
     }
 }

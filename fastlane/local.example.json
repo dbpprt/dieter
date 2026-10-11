@@ -9,8 +9,7 @@
   "defaults": {
     "android_profile": "android-emulator",
     "ios_profile": "ios-iphone",
-    "mac_profile": "mac-desktop",
-    "suite": "smoke"
+    "mac_profile": "mac-desktop"
   },
   "profiles": {
     "android-emulator": {
@@ -51,16 +50,6 @@
       "runtime": null,
       "lifecycle": "disposable"
     },
-    "ios-device": {
-      "platform": "ios",
-      "kind": "device",
-      "enabled": false,
-      "layout": "iphone",
-      "udid": null,
-      "lifecycle": "borrow",
-      "signing": "ios-development",
-      "fixture_route": "ios-local-network"
-    },
     "mac-desktop": {
       "platform": "mac",
       "kind": "desktop",
@@ -74,13 +63,6 @@
       "keystore_password_env": "DIETER_ANDROID_KEYSTORE_PASSWORD",
       "key_alias_env": "DIETER_ANDROID_KEY_ALIAS",
       "key_password_env": "DIETER_ANDROID_KEY_PASSWORD"
-    },
-    "ios-development": {
-      "team_id": null,
-      "app_bundle_id": "com.dbpprt.dieter.ios.e2e",
-      "share_bundle_id": "com.dbpprt.dieter.ios.e2e.share",
-      "app_group_id": "group.com.dbpprt.dieter.ios.e2e",
-      "provisioning_mode": "existing-local"
     },
     "ios-distribution": {
       "certificate_file": null,
@@ -97,15 +79,6 @@
       "notary_key_file": null,
       "notary_key_id_env": "NOTARY_KEY_ID",
       "notary_issuer_id_env": "NOTARY_ISSUER_ID"
-    }
-  },
-  "fixture_routes": {
-    "ios-local-network": {
-      "kind": "authenticated-tls-proxy",
-      "enabled": false,
-      "host_address": null,
-      "certificate_file": null,
-      "private_key_file": null
     }
   }
 }

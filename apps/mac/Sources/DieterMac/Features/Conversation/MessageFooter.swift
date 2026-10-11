@@ -63,7 +63,7 @@ struct MessageFooter: View {
                 .accessibilityLabel(content.timestampDescription)
                 .accessibilityHidden(!isLatest && !showsActions)
                 .accessibilityIdentifier("conversation.message.timestamp.\(messageID)")
-                .smokeTarget("conversation.message.timestamp.\(messageID)")
+                .e2eTarget("conversation.message.timestamp.\(messageID)")
 
             Button {
                 content.copy()
@@ -83,40 +83,8 @@ struct MessageFooter: View {
             .accessibilityLabel("Copy message")
             .accessibilityHint("Copies the original message text and Markdown")
             .accessibilityIdentifier("conversation.message.copy.\(messageID)")
-            .smokeTarget("conversation.message.copy.\(messageID)")
+            .e2eTarget("conversation.message.copy.\(messageID)")
         }
         .frame(height: 24)
-        .background {
-            #if DIETER_UI_SMOKE
-                if NativeUISmokeTargets.enabled {
-                    MessageFooterSmokeProbe(
-                        messageID: messageID, timestampVisible: isLatest || showsActions, actionsVisible: showsActions)
-                }
-            #endif
-        }
     }
 }
-
-#if DIETER_UI_SMOKE
-    /// Read-only observation of the mounted footer. The smoke driver must
-    /// deliver native pointer events; this probe cannot change hover state.
-    struct MessageFooterSmokeProbe: NSViewRepresentable {
-        let messageID: String
-        let timestampVisible: Bool
-        let actionsVisible: Bool
-
-        final class Anchor: NSView {
-            var messageID = ""
-            var timestampVisible = false
-            var actionsVisible = false
-            override func hitTest(_ point: NSPoint) -> NSView? { nil }
-        }
-
-        func makeNSView(context: Context) -> Anchor { Anchor() }
-        func updateNSView(_ view: Anchor, context: Context) {
-            view.messageID = messageID
-            view.timestampVisible = timestampVisible
-            view.actionsVisible = actionsVisible
-        }
-    }
-#endif

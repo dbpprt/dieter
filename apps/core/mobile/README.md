@@ -119,7 +119,7 @@ mise exec -- just pipeline android build
 mise exec -- just pipeline android e2e profile:android-emulator
 mise exec -- just pipeline ios build
 mise exec -- just pipeline ios e2e profile:ios-iphone
-mise exec -- just pipeline ios_qualify profiles:ios-iphone,ios-ipad
+mise exec -- just pipeline ios e2e tags:full profile:ios-ipad
 ```
 
 `core_test` runs `:shared:jvmTest` and `:mobile:jvmTest`. The JVM journey in
@@ -130,20 +130,20 @@ Further tests cover late updates from a closed conversation, queued command
 targets, terminal delta retention, preview cancellation, draft flushing and
 navigation-stack binding.
 
-The native journeys (catalog cases `android.journey` and `ios.journey`) drive
-the real controls against a disposable authenticated gateway, enrolled daemon
-and mock harness: Inbox, Projects, a board, a seeded task and its subagents,
-task creation with live replies, Review, Chats, Tools, Machines, Files,
-Markdown preview, Schedules and dark appearance. Android recreates the Activity
-before submitting the task and before the follow-up; iPad runs in landscape with
-the board beside the conversation. Like production daemons, the fixture offers
-WebRTC control channels, so Android reaches it over that route. Configure exact
-simulator profiles with `just pipeline config_init`; Android emulator ownership
-follows [the pipeline guide](../../../fastlane/README.md). Missing, skipped or
-failed assertions and cleanup failures fail the run. Evidence, including the
-journey screenshots, is printed as `tmp/app-pipelines/<UUID>`.
+Android and iOS run the same [Maestro flows](../../../tests/maestro/README.md)
+(`tests/maestro/mobile`), which select this module's `testTag`s, against one
+isolated gateway fixture with an enrolled daemon and mock harness. The `smoke`
+flows open a seeded board card's conversation and subagents and run a new
+task's live first and follow-up turns into Review; `tags:full` adds Chats,
+Machines, Files with Markdown preview, Schedules and dark appearance. Like
+production daemons, the fixture offers WebRTC control channels, so Android
+reaches it over that route. Configure exact simulator profiles with
+`just pipeline config_init`; Android emulator ownership follows
+[the pipeline guide](../../../fastlane/README.md). Failed or missing flows and
+cleanup failures fail the run. Evidence, including the flow screenshots, is
+printed as `tmp/app-pipelines/<UUID>`.
 
 Interactive sign-in uses the exact callbacks `dieter-android://oauth/callback`
 (Android) and `dieter-mac://oauth/callback` (iOS, shared with the Mac). Debug
-builds accept an isolated fixture session for these journeys; release builds do
+builds accept an isolated fixture session for these flows; release builds do
 not.

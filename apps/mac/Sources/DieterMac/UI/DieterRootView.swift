@@ -153,7 +153,9 @@ struct DieterRootView: View {
                 }
             }
             .environment(\.dieterTitleBandLeadingInset, titleBandLeadingInset)
-            .navigationSmokeDestination(store.section)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("destination.\(store.section.rawValue)")
+            .e2eTarget("destination.\(store.section.rawValue)")
         }
         .ignoresSafeArea(.container, edges: .top)
         .background(DieterTheme.canvas)
@@ -407,7 +409,7 @@ struct AppSidebar: View {
                 .scrollIndicators(.automatic)
             }
             .clipped()
-            .smokeTarget("sidebar.scroll-region")
+            .e2eTarget("sidebar.scroll-region")
             sidebarActions
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -417,7 +419,7 @@ struct AppSidebar: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("sidebar.main-pane")
-        .smokeTarget("sidebar.main-pane")
+        .e2eTarget("sidebar.main-pane")
         .ignoresSafeArea(.container, edges: .top)
         .task(id: store.phase.isConnected) {
             // The quota subscription starts with the workspace, not with the
@@ -451,7 +453,7 @@ struct AppSidebar: View {
         }
         .padding(.trailing, 8)
         .frame(height: 36)
-        .background(DieterTitleBandRegion().smokeTarget("workspace.title-band"))
+        .background(DieterTitleBandRegion().e2eTarget("workspace.title-band"))
         .padding(.bottom, 6)
     }
 
@@ -464,14 +466,14 @@ struct AppSidebar: View {
             } action: {
                 Task { await store.openInbox() }
             }
-            .accessibilityIdentifier("sidebar.inbox").smokeTarget("sidebar.inbox")
+            .accessibilityIdentifier("sidebar.inbox").e2eTarget("sidebar.inbox")
 
             DieterNavRow(title: "Chats", symbol: "bubble.left.and.bubble.right", selected: store.section == .chats) {
                 if !activeChats.isEmpty { DieterRowCount(count: activeChats.count) }
             } action: {
                 Task { await store.openChats() }
             }
-            .accessibilityIdentifier("sidebar.all-chats").smokeTarget("sidebar.all-chats")
+            .accessibilityIdentifier("sidebar.all-chats").e2eTarget("sidebar.all-chats")
 
             let runningTerminals = store.terminalsModel.terminals.filter { $0.status == "running" }.count
             DieterNavRow(title: "Terminals", symbol: "terminal", selected: store.section == .terminals) {
@@ -479,7 +481,7 @@ struct AppSidebar: View {
             } action: {
                 Task { await store.openTerminals() }
             }
-            .accessibilityIdentifier("sidebar.terminals").smokeTarget("sidebar.terminals")
+            .accessibilityIdentifier("sidebar.terminals").e2eTarget("sidebar.terminals")
 
             let screens = store.screensModel.connectedCount
             DieterNavRow(
@@ -490,7 +492,7 @@ struct AppSidebar: View {
             } action: {
                 store.openScreens()
             }
-            .accessibilityIdentifier("sidebar.screens").smokeTarget("sidebar.screens")
+            .accessibilityIdentifier("sidebar.screens").e2eTarget("sidebar.screens")
         }
         .padding(.horizontal, 8)
     }
@@ -627,7 +629,7 @@ struct AppSidebar: View {
             .accessibilityAddTraits(store.section == .settings ? .isSelected : [])
             .help("Settings (⌘,)")
             .accessibilityLabel("Settings")
-            .accessibilityIdentifier("sidebar.settings").smokeTarget("sidebar.settings")
+            .accessibilityIdentifier("sidebar.settings").e2eTarget("sidebar.settings")
         }
         .padding(.horizontal, 8).padding(.bottom, 8).padding(.top, 2)
     }
@@ -882,7 +884,7 @@ private struct SidebarProjectFolderGroup<Content: View>: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel("\(folder.name), \(visibleCount) projects")
             .accessibilityIdentifier("sidebar.project-folder.\(folder.id)")
-            .smokeTarget("sidebar.project-folder.\(folder.id)")
+            .e2eTarget("sidebar.project-folder.\(folder.id)")
 
             if folder.expanded {
                 VStack(alignment: .leading, spacing: 0) { content }
@@ -928,7 +930,7 @@ private struct SidebarProjectRow: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                             .layoutPriority(1)
-                            .smokeTarget("sidebar.project.\(project.id).name")
+                            .e2eTarget("sidebar.project.\(project.id).name")
                         if pinned {
                             Image(systemName: "pin.fill")
                                 .font(.system(size: 8, weight: .semibold))
@@ -971,7 +973,7 @@ private struct SidebarProjectRow: View {
                     .help("Project context for \(project.name)")
                     .accessibilityLabel("Project context for \(project.name)")
                     .accessibilityIdentifier("sidebar.project.\(project.id).settings")
-                    .smokeTarget("sidebar.project.\(project.id).settings")
+                    .e2eTarget("sidebar.project.\(project.id).settings")
                     .disabled(!store.projectIsAvailable(project.id))
                     .transition(.opacity)
 
@@ -986,7 +988,7 @@ private struct SidebarProjectRow: View {
                     .help("New board in \(project.name)")
                     .accessibilityLabel("New board in \(project.name)")
                     .accessibilityIdentifier("sidebar.project.\(project.id).new-board")
-                    .smokeTarget("sidebar.project.\(project.id).new-board")
+                    .e2eTarget("sidebar.project.\(project.id).new-board")
                     .transition(.opacity)
                 }
 
@@ -1003,7 +1005,9 @@ private struct SidebarProjectRow: View {
                 .help(expanded ? "Collapse \(project.name)" : "Expand \(project.name)")
                 .accessibilityLabel(expanded ? "Collapse \(project.name)" : "Expand \(project.name)")
                 .accessibilityIdentifier("sidebar.project.\(project.id).toggle")
-                .smokeTarget("sidebar.project.\(project.id).toggle")
+                .e2eTarget(
+                    "sidebar.project.\(project.id).toggle",
+                    text: expanded ? "Collapse \(project.name)" : "Expand \(project.name)")
             }
             .padding(.leading, 10).padding(.trailing, 6).frame(height: DieterMetrics.rowHeight + 2)
             .background {
@@ -1153,7 +1157,7 @@ private struct SidebarProjectTabs: View {
         .accessibilityLabel(title)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier(id)
-        .smokeTarget(id)
+        .e2eTarget(id)
     }
 }
 
@@ -1472,7 +1476,7 @@ struct GlobalQuickTaskButton: View {
         .help("New task")
         .accessibilityLabel("Quick task")
         .accessibilityIdentifier("sidebar.quick-task")
-        .smokeTarget("sidebar.quick-task")
+        .e2eTarget("sidebar.quick-task")
         .popover(isPresented: $presented, arrowEdge: .top) {
             QuickTaskPopover(isPresented: $presented, draft: store.quickTaskForm, chooseDestination: true)
                 .environment(store)

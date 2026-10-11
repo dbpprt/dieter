@@ -101,8 +101,8 @@ final class ScreenFixtureRoutes: NSObject, NativeScreenFixture, @unchecked Senda
 }
 
 /// A direct client to the fixture for host-side assertions the app never makes.
-func screenFixtureRPC(_ fixture: ScreenFixtureConnection) throws -> SmokeFixtureClient {
-    try SmokeFixtureClient(origin: fixture.url, token: fixture.token)
+func screenFixtureRPC(_ fixture: ScreenFixtureConnection) throws -> FixtureRPCClient {
+    try FixtureRPCClient(origin: fixture.url, token: fixture.token)
 }
 
 @MainActor func screenWait(_ label: String, timeout: Double, condition: () -> Bool) async throws {

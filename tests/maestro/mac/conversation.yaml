@@ -1,0 +1,25 @@
+# Maestro syntax, run in-app: Maestro has no macOS driver.
+# Seeded board → card → transcript → follow-up → live mock reply.
+appId: com.dbpprt.dieter
+name: Mac conversation
+tags: [smoke]
+---
+- launchApp
+- tapOn: "Expand Isolated E2E"
+- tapOn:
+    id: 'sidebar\.board\..+'
+- assertVisible:
+    id: destination.Board
+- tapOn:
+    id: 'card\..+'
+    text: "Design the mobile workspace"
+- assertVisible: 'Bring the board and conversation together on phone and tablet\..*'
+- tapOn:
+    id: conversation.composer
+- inputText: "Ping from the Mac"
+- pressKey: Enter
+# The seeded card is a fork, so the mock echoes its context before the message.
+- extendedWaitUntil:
+    visible: "Mock harness received: .*Ping from the Mac.*"
+    timeout: 60000
+- takeScreenshot: mac-conversation

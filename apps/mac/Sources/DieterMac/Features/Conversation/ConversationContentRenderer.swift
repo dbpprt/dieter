@@ -64,7 +64,7 @@ struct ConversationContentRenderer: View {
             Button("Save a Copy…", systemImage: "square.and.arrow.down") { saveCopy(document) }
                 .buttonStyle(DieterBarButtonStyle(size: 30))
                 .accessibilityIdentifier("conversation.content.download")
-                .smokeTarget("conversation.content.download")
+                .e2eTarget("conversation.content.download")
         }
     }
 
@@ -119,7 +119,7 @@ struct ConversationPDFDocumentRenderer<Unavailable: View>: View {
             if let document {
                 ConversationPDFRenderer(document: document)
                     .accessibilityIdentifier("conversation.content.pdf")
-                    .smokeTarget("conversation.content.pdf")
+                    .e2eTarget("conversation.content.pdf")
             } else if loaded {
                 unavailable()
             } else {
@@ -192,7 +192,7 @@ private struct ConversationImageRenderer: View {
             }
         }
         .accessibilityIdentifier("conversation.content.image")
-        .smokeTarget("conversation.content.image")
+        .e2eTarget("conversation.content.image")
     }
 }
 

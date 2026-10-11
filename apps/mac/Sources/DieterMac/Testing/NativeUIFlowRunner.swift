@@ -1,170 +1,373 @@
-#if DIETER_UI_SMOKE
+#if DIETER_E2E
     import AppKit
     import Foundation
 
-    /// Interprets the shared runner's bounded plan using native accessibility
-    /// and mouse/key events. Fixture setup stays in the host runner.
+    /// Runs one Maestro flow in-process. Maestro has no macOS driver and
+    /// external accessibility cannot see inside SwiftUI hosting views, so the
+    /// pipeline converts the YAML into a bounded JSON plan that this runner
+    /// interprets against the app's own accessibility hierarchy. It writes
+    /// `report.json`, `events.jsonl` and screenshots to `--e2e-output`, then quits.
     @MainActor enum NativeUIFlowRunner {
-        private struct Failure: Error, CustomStringConvertible {
+        struct Failure: Error, CustomStringConvertible {
             let description: String
             init(_ description: String) { self.description = description }
         }
 
+        /// A Maestro selector. `id` and `text` are regular expressions that
+        /// match the whole identifier or text; both must match when given.
+        struct ElementSelector: CustomStringConvertible {
+            struct Pattern {
+                let source: String
+                let regex: NSRegularExpression
+
+                init(_ source: String) throws {
+                    guard let regex = try? NSRegularExpression(pattern: "\\A(?:\(source))\\z") else {
+                        throw Failure("Invalid regular expression \(String(reflecting: source))")
+                    }
+                    self.source = source
+                    self.regex = regex
+                }
+
+                /// Maestro also accepts the literal pattern and text with line breaks as spaces.
+                func matches(_ value: String) -> Bool {
+                    let flattened = value.replacingOccurrences(of: "\n", with: " ")
+                    return [value, flattened].contains { candidate in
+                        candidate == source
+                            || regex.firstMatch(in: candidate, range: NSRange(candidate.startIndex..., in: candidate))
+                                != nil
+                    }
+                }
+            }
+
+            let id: Pattern?
+            let text: Pattern?
+            let index: Int
+
+            init(_ value: Any) throws {
+                if let text = value as? String {
+                    id = nil
+                    self.text = try Pattern(text)
+                    index = 0
+                    return
+                }
+                guard let fields = value as? [String: Any] else { throw Failure("Invalid selector") }
+                if let key = fields.keys.sorted().first(where: { !["id", "text", "index"].contains($0) }) {
+                    throw Failure("Unsupported selector \(key) on macOS")
+                }
+                func pattern(_ key: String) throws -> Pattern? {
+                    guard let value = fields[key] else { return nil }
+                    guard let source = value as? String, !source.isEmpty else {
+                        throw Failure("Invalid \(key) selector")
+                    }
+                    return try Pattern(source)
+                }
+                id = try pattern("id")
+                text = try pattern("text")
+                guard id != nil || text != nil else { throw Failure("Selector needs id or text") }
+                if let value = fields["index"] {
+                    guard let index = value as? Int, index >= 0 else { throw Failure("Invalid selector index") }
+                    self.index = index
+                } else {
+                    index = 0
+                }
+            }
+
+            var description: String {
+                var parts: [String] = []
+                if let id { parts.append("id: \(String(reflecting: id.source))") }
+                if let text { parts.append("text: \(String(reflecting: text.source))") }
+                if index > 0 { parts.append("index: \(index)") }
+                return parts.joined(separator: ", ")
+            }
+
+            func matches(_ element: NativeUIAccessibility.Element) -> Bool {
+                if let id, !(element.identifier.map(id.matches) ?? false) { return false }
+                if let text, !element.texts.contains(where: text.matches) { return false }
+                return true
+            }
+
+            /// The visible match Maestro would pick: the `index`th in document order.
+            @MainActor func resolve(in window: NSWindow) -> NativeUIAccessibility.Element? {
+                var remaining = index
+                for host in NativeUIAccessibility.windows(from: window) {
+                    for element in NativeUIAccessibility.elements(in: host)
+                    where element.isVisible && matches(element) {
+                        if remaining == 0 { return element }
+                        remaining -= 1
+                    }
+                }
+                return nil
+            }
+        }
+
+        enum Key: String {
+            case enter, tab, backspace, escape
+
+            var event: (characters: String, code: UInt16) {
+                switch self {
+                case .enter: ("\r", 36)
+                case .tab: ("\t", 48)
+                case .backspace: ("\u{7f}", 51)
+                case .escape: ("\u{1b}", 53)
+                }
+            }
+        }
+
+        enum Command {
+            case launchApp
+            case tapOn(ElementSelector)
+            case assertVisible(ElementSelector, visible: Bool)
+            case inputText(String)
+            case extendedWaitUntil(ElementSelector, visible: Bool, timeout: TimeInterval)
+            case takeScreenshot(String)
+            case pressKey(Key)
+        }
+
+        struct Step {
+            let name: String
+            let line: Int
+            let command: Command
+        }
+
+        /// Maestro waits this long for an element before failing a step.
+        static let elementTimeout: TimeInterval = 15
+
         static func run(store: DieterStore) async {
-            let output = NativeTestSupport.outputDirectory()
+            let output = NativeTestSupport.outputDirectory
             var results: [String: String] = [:]
             var window: NSWindow?
             do {
                 try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
-                guard let path = NativeTestSupport.argument("--e2e-plan") else { throw Failure("Missing plan") }
-                let data = try Data(contentsOf: URL(fileURLWithPath: path))
-                guard data.count <= 256 * 1024,
-                    let plan = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                    plan["version"] as? Int == 1,
-                    let test = plan["case"] as? [String: Any], test["platform"] as? String == "mac",
-                    let steps = test["steps"] as? [[String: Any]], (1...100).contains(steps.count)
-                else { throw Failure("Invalid versioned Mac flow plan") }
+                try await NativeTestSupport.awaitForeground()
+                let (source, raw) = try loadPlan()
+                var steps: [Step] = []
+                for (index, value) in raw.enumerated() {
+                    do {
+                        steps.append(try parse(value))
+                    } catch {
+                        let line = (value as? [String: Any])?["line"] as? Int ?? 0
+                        let failure = "failed: \(source):\(line): \(error)"
+                        results["step-\(index)"] = failure
+                        throw Failure("\(source):\(line): \(error)")
+                    }
+                }
+                await store.connect()
                 for (index, step) in steps.enumerated() {
                     let start = Date()
-                    let actions = step.keys.filter { $0 != "line" }
-                    guard actions.count == 1, let action = actions.first else { throw Failure("Invalid step") }
-                    try event(index, step, action, "started", start, output)
+                    try event(index, step, "started", start, output)
                     do {
-                        if action == "launch" {
-                            guard step[action] as? String == "connected",
-                                await NativeUIAccessibility.wait(timeout: 30, until: { store.workspaceIsLive })
-                            else { throw Failure("Fixture connection did not become live") }
-                            let ready = await NativeUIAccessibility.wait {
-                                window = NSApp.windows.first {
-                                    $0.title == "Dieter" && $0.isVisible && $0.frame.width >= 600
-                                }
-                                return window != nil
-                            }
-                            guard ready, let window else { throw Failure("Workspace window unavailable") }
-                            NSApp.activate(ignoringOtherApps: true)
-                            window.makeKeyAndOrderFront(nil)
-                        } else {
-                            guard let window else { throw Failure("Launch must precede UI actions") }
-                            try await perform(action, step, window, output)
-                        }
+                        try await perform(step.command, store: store, window: &window, output: output)
                         results["step-\(index)"] = "passed"
-                        try event(index, step, action, "passed", start, output)
+                        try event(index, step, "passed", start, output)
                     } catch {
-                        results["step-\(index)"] = "failed: \(test["source"] ?? "plan"):\(step["line"] ?? 0): \(error)"
-                        try? event(index, step, action, "failed", start, output)
-                        throw error
+                        results["step-\(index)"] = "failed: \(source):\(step.line): \(error)"
+                        try? event(index, step, "failed", start, output)
+                        throw Failure("\(source):\(step.line): \(error)")
                     }
                 }
-                if let window { try capture(window, name: "final", output: output) }
             } catch {
                 results["flow"] = "failed: \(error)"
-                if let window { try? capture(window, name: "failure", output: output) }
+                if let failed = window ?? workspaceWindow() {
+                    try? capture(failed, name: "failure", output: output)
+                }
             }
-            NativeTestSupport.writeReport(results, to: output)
+            NativeTestSupport.finish(results, to: output)
         }
 
-        private static func perform(_ action: String, _ step: [String: Any], _ window: NSWindow, _ output: URL)
-            async throws
-        {
-            if action == "screenshot" {
-                guard let name = step[action] as? String else { throw Failure("Missing screenshot name") }
+        private static func loadPlan() throws -> (source: String, steps: [Any]) {
+            guard let path = NativeTestSupport.argument("--e2e-flow") else { throw Failure("Missing --e2e-flow") }
+            let url = URL(fileURLWithPath: path)
+            let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+            guard size <= 256 * 1_024 else { throw Failure("Flow plan exceeds 256 KiB") }
+            guard let plan = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any],
+                plan["version"] as? Int == 1,
+                let steps = plan["steps"] as? [Any], (1...100).contains(steps.count)
+            else { throw Failure("Invalid flow plan: expected version 1 with 1…100 steps") }
+            return (plan["source"] as? String ?? url.lastPathComponent, steps)
+        }
+
+        /// One Maestro command. Bare commands arrive as `true`; string
+        /// shorthands select by text.
+        static func parse(_ value: Any) throws -> Step {
+            guard let fields = value as? [String: Any] else { throw Failure("Invalid step") }
+            let line = fields["line"] as? Int ?? 0
+            let names = fields.keys.filter { $0 != "line" }
+            guard names.count == 1, let name = names.first, let argument = fields[name] else {
+                throw Failure("A step needs exactly one command")
+            }
+            func options(_ allowed: Set<String>) throws -> [String: Any] {
+                guard let options = argument as? [String: Any] else { throw Failure("Invalid \(name) options") }
+                if let key = options.keys.sorted().first(where: { !allowed.contains($0) }) {
+                    throw Failure("Unsupported \(name) option \(key) on macOS")
+                }
+                return options
+            }
+            let command: Command
+            switch name {
+            case "launchApp":
+                if argument as? Bool != true { _ = try options(["appId"]) }
+                command = .launchApp
+            case "tapOn":
+                command = .tapOn(try ElementSelector(argument))
+            case "assertVisible", "assertNotVisible":
+                command = .assertVisible(try ElementSelector(argument), visible: name == "assertVisible")
+            case "inputText":
+                guard let text = argument as? String, !text.isEmpty else { throw Failure("Invalid inputText") }
+                command = .inputText(text)
+            case "extendedWaitUntil":
+                let fields = try options(["visible", "notVisible", "timeout"])
+                let target = fields["visible"] ?? fields["notVisible"]
+                guard let target, (fields["visible"] == nil) != (fields["notVisible"] == nil) else {
+                    throw Failure("extendedWaitUntil needs visible or notVisible")
+                }
+                guard let timeout = fields["timeout"] as? Int, (1...300_000).contains(timeout) else {
+                    throw Failure("extendedWaitUntil needs a timeout of 1…300000 ms")
+                }
+                command = .extendedWaitUntil(
+                    try ElementSelector(target), visible: fields["visible"] != nil, timeout: Double(timeout) / 1_000)
+            case "takeScreenshot":
+                let path = try (argument as? String) ?? (options(["path"])["path"] as? String)
+                guard let path, path.range(of: "^[A-Za-z0-9._-]{1,100}$", options: .regularExpression) != nil,
+                    !path.hasPrefix(".")
+                else { throw Failure("Invalid screenshot name") }
+                command = .takeScreenshot(path)
+            case "pressKey":
+                guard let keyName = argument as? String, let key = Key(rawValue: keyName.lowercased()) else {
+                    throw Failure("Unsupported key \(argument) on macOS")
+                }
+                command = .pressKey(key)
+            default:
+                throw Failure("Unsupported Maestro command \(name) on macOS")
+            }
+            return Step(name: name, line: line, command: command)
+        }
+
+        private static func perform(
+            _ command: Command, store: DieterStore, window: inout NSWindow?, output: URL
+        ) async throws {
+            if case .launchApp = command {
+                window = try await launch(store: store)
+                return
+            }
+            guard let window else { throw Failure("launchApp must precede UI commands") }
+            switch command {
+            case .launchApp:
+                return
+            case .tapOn(let selector):
+                try await tap(selector, in: window)
+            case .assertVisible(let selector, let visible):
+                try await waitFor(selector, visible: visible, timeout: elementTimeout, in: window)
+            case .extendedWaitUntil(let selector, let visible, let timeout):
+                try await waitFor(selector, visible: visible, timeout: timeout, in: window)
+            case .inputText(let text):
+                // A preceding tap's posted click focuses the field asynchronously.
+                var input: NSTextInputClient?
+                let focused = try await NativeUIAccessibility.wait(timeout: elementTimeout) {
+                    input = (NSApp.keyWindow ?? window).firstResponder as? NSTextInputClient
+                    return input != nil
+                }
+                guard focused, let input else { throw Failure("No focused text input") }
+                input.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
+            case .takeScreenshot(let name):
                 try capture(window, name: name, output: output)
-                return
-            }
-            guard let target = step[action] as? [String: Any] else { throw Failure("Missing target for \(action)") }
-            if action == "expect" {
-                var selectorError: Error?
-                let passed = await NativeUIAccessibility.wait(timeout: 15) {
-                    let resolved: NativeUIAccessibility.Element?
-                    do { resolved = try resolve(target, window) } catch { selectorError = error; return true }
-                    guard let element = resolved else { return target["visible"] as? Bool == false }
-                    if target["visible"] as? Bool == false { return false }
-                    if target["visible"] as? Bool == true && !visible(element, window) { return false }
-                    if let expected = target["enabled"] as? Bool,
-                        property(element, "isAccessibilityEnabled", window) as? Bool != expected
-                    {
-                        return false
-                    }
-                    if let expected = target["selected"] as? Bool,
-                        property(element, "isAccessibilitySelected", window) as? Bool != expected
-                    {
-                        return false
-                    }
-                    if let expected = target["value"] as? String,
-                        property(element, "accessibilityValue", window) as? String != expected
-                    {
-                        return false
-                    }
-                    return true
-                }
-                if let selectorError { throw selectorError }
-                guard passed else { throw Failure("Expectation not satisfied: \(target)") }
-                return
-            }
-            guard action == "tap" else { throw Failure("Unsupported action \(action)") }
-            var previous: CGRect?
-            var stable = 0
-            let ready = await NativeUIAccessibility.wait(timeout: 15) {
-                guard let element = try? resolve(target, window), visible(element, window) else {
-                    stable = 0; return false
-                }
-                let frame = element.recordedFrame ?? element.frame
-                stable = frame == previous ? stable + 1 : 0
-                previous = frame
-                return stable >= 3
-            }
-            guard ready, let element = try resolve(target, window), let frame = previous else {
-                throw Failure("Target did not settle: \(target)")
-            }
-            if let accessible = element.object as? NSAccessibilityProtocol, accessible.accessibilityPerformPress() {
-                // Native accessibility dispatched exactly one action.
-            } else {
-                let point = window.convertPoint(fromScreen: NSPoint(x: frame.midX, y: frame.midY))
-                for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            case .pressKey(let key):
+                let target = NSApp.keyWindow ?? window
+                for type in [NSEvent.EventType.keyDown, .keyUp] {
                     guard
-                        let event = NSEvent.mouseEvent(
-                            with: type, location: point, modifierFlags: [],
-                            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-                            context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0)
-                    else { throw Failure("Native mouse event unavailable") }
+                        let event = NSEvent.keyEvent(
+                            with: type, location: .zero, modifierFlags: [],
+                            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: target.windowNumber,
+                            context: nil, characters: key.event.characters,
+                            charactersIgnoringModifiers: key.event.characters, isARepeat: false,
+                            keyCode: key.event.code)
+                    else { throw Failure("Native key event unavailable") }
                     NSApp.postEvent(event, atStart: false)
                 }
             }
         }
 
-        private static func resolve(_ target: [String: Any], _ window: NSWindow) throws -> NativeUIAccessibility
-            .Element?
-        {
-            if let id = target["id"] as? String { return NativeUIAccessibility.find(id, in: window) }
-            let text = target["text"] as? String ?? target["description"] as? String
-            guard let text else { throw Failure("Invalid selector") }
-            let matches = NativeUIAccessibility.elements(in: window).filter { element in
-                ["accessibilityValue", "accessibilityTitle", "accessibilityLabel"].contains {
-                    element.value($0) as? String == text
-                }
-                    && element.frame.width > 0 && element.frame.height > 0
+        /// The fixture connection is live and the workspace window is key.
+        private static func launch(store: DieterStore) async throws -> NSWindow {
+            guard try await NativeUIAccessibility.wait(timeout: 30, until: { store.workspaceIsLive }) else {
+                throw Failure("Fixture connection did not become live")
             }
-            guard matches.count <= 1 else { throw Failure("Ambiguous selector: \(text)") }
-            return matches.first
+            var window: NSWindow?
+            guard
+                try await NativeUIAccessibility.wait(
+                    timeout: 10,
+                    until: {
+                        window = workspaceWindow()
+                        return window != nil
+                    }), let window
+            else { throw Failure("Workspace window unavailable") }
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            return window
         }
-        private static func property(_ element: NativeUIAccessibility.Element, _ name: String, _ window: NSWindow)
-            -> Any?
+
+        private static func workspaceWindow() -> NSWindow? {
+            NSApp.windows.first { $0.title == "Dieter" && $0.isVisible && $0.frame.width >= 600 }
+        }
+
+        private static func waitFor(
+            _ selector: ElementSelector, visible: Bool, timeout: TimeInterval, in window: NSWindow
+        )
+            async throws
         {
-            if let value = element.value(name) { return value }
-            guard let id = element.identifier else { return nil }
-            return NativeUIAccessibility.elements(in: window).first { $0.identifier == id && $0.value(name) != nil }?
-                .value(name)
+            let satisfied = try await NativeUIAccessibility.wait(timeout: timeout) {
+                (selector.resolve(in: window) != nil) == visible
+            }
+            guard satisfied else { throw Failure("\(visible ? "No visible" : "Still visible"): \(selector)") }
         }
-        private static func visible(_ element: NativeUIAccessibility.Element, _ window: NSWindow) -> Bool {
-            let frame = element.recordedFrame ?? element.frame
-            return window.isVisible && frame.width > 0 && frame.height > 0 && window.frame.intersects(frame)
+
+        /// Waits for the element's frame to settle, then presses it through
+        /// accessibility. Text inputs and elements without a press action get
+        /// a native click at their center.
+        private static func tap(_ selector: ElementSelector, in window: NSWindow) async throws {
+            var previous: CGRect?
+            var stable = 0
+            var target: NativeUIAccessibility.Element?
+            let settled = try await NativeUIAccessibility.wait(timeout: elementTimeout) {
+                guard let element = selector.resolve(in: window) else {
+                    stable = 0
+                    return false
+                }
+                let frame = element.frame
+                stable = frame == previous ? stable + 1 : 0
+                previous = frame
+                target = element
+                return stable >= 2
+            }
+            guard settled, let element = target else { throw Failure("No visible element: \(selector)") }
+            let textInput = [NSAccessibility.Role.textField, .textArea, .comboBox].contains(element.role)
+            // Anchors never handle events; click the control they cover.
+            if !textInput, element.anchor == nil, let accessible = element.object as? NSAccessibilityProtocol,
+                accessible.accessibilityPerformPress()
+            {
+                return
+            }
+            try click(element)
         }
-        private static func event(
-            _ index: Int, _ step: [String: Any], _ action: String, _ status: String, _ start: Date, _ output: URL
-        ) throws {
+
+        private static func click(_ element: NativeUIAccessibility.Element) throws {
+            let frame = element.frame
+            let host = element.window
+            let point = host.convertPoint(fromScreen: NSPoint(x: frame.midX, y: frame.midY))
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                guard
+                    let event = NSEvent.mouseEvent(
+                        with: type, location: point, modifierFlags: [],
+                        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: host.windowNumber,
+                        context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0)
+                else { throw Failure("Native mouse event unavailable") }
+                NSApp.postEvent(event, atStart: false)
+            }
+        }
+
+        private static func event(_ index: Int, _ step: Step, _ status: String, _ start: Date, _ output: URL) throws {
             let row: [String: Any] = [
-                "step": index, "line": step["line"] ?? 0, "action": action, "status": status,
-                "elapsedMs": Int(Date().timeIntervalSince(start) * 1000),
+                "step": index, "line": step.line, "action": step.name, "status": status,
+                "elapsedMs": Int(Date().timeIntervalSince(start) * 1_000),
             ]
             let path = output.appending(path: "events.jsonl")
             if !FileManager.default.fileExists(atPath: path.path) {
@@ -176,15 +379,23 @@
             try handle.write(
                 contentsOf: JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]) + Data([10]))
         }
+
+        /// `NAME.png` and its accessibility hierarchy as `NAME.txt`.
         private static func capture(_ window: NSWindow, name: String, output: URL) throws {
-            NativeUISmokeRunner.capture(window, to: output.appending(path: name + ".png"))
-            guard NSImage(contentsOf: output.appending(path: name + ".png")) != nil else {
-                throw Failure("Screenshot unavailable")
+            try NativeTestSupport.capture(window, to: output.appending(path: name + ".png"))
+            let hierarchy = NativeUIAccessibility.windows(from: window).flatMap {
+                NativeUIAccessibility.elements(in: $0)
             }
-            let hierarchy = NativeUIAccessibility.elements(in: window).map {
-                "\($0.identifier ?? "-") \($0.text.prefix(200))"
-            }.joined(separator: "\n")
-            try hierarchy.write(to: output.appending(path: name + ".txt"), atomically: true, encoding: .utf8)
+            .map { element in
+                let frame = element.frame
+                let geometry =
+                    element.isVisible
+                    ? "\(Int(frame.minX)),\(Int(frame.minY)) \(Int(frame.width))x\(Int(frame.height))" : "hidden"
+                let text = element.texts.joined(separator: " | ").replacingOccurrences(of: "\n", with: "⏎")
+                return "\(element.identifier ?? "-") [\(element.role?.rawValue ?? "-")] \(geometry) \(text.prefix(200))"
+            }
+            try hierarchy.joined(separator: "\n").write(
+                to: output.appending(path: name + ".txt"), atomically: true, encoding: .utf8)
         }
     }
 #endif

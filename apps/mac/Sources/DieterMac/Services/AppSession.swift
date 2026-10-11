@@ -132,9 +132,6 @@ final class AppSession {
     var showReasoning = false {
         didSet {
             guard showReasoning != oldValue else { return }
-            #if DIETER_UI_SMOKE
-                conversationModel.fixtureShowsReasoning = showReasoning
-            #endif
             guard !foldingShowReasoning else { return }
             let show = showReasoning
             Task { await perform { $0.setShowReasoning = .with { $0.show = show } } }
@@ -224,10 +221,6 @@ final class AppSession {
     var errorMessage: String?
 
     var boardSelectionGeneration: UInt64 = 0
-    #if DIETER_UI_SMOKE
-        /// The `--dieter-access-token-file` session smoke fixtures use for host-side calls.
-        let accessTokenOverride: String?
-    #endif
     @ObservationIgnored let themeDefaults: UserDefaults
     var gatewayOrigins: [MachineEndpoint]
     @ObservationIgnored let environment: DieterAppEnvironment
@@ -268,9 +261,6 @@ final class AppSession {
         {
             tokenOverride = token
         }
-        #if DIETER_UI_SMOKE
-            accessTokenOverride = tokenOverride
-        #endif
         let override = arguments.firstIndex(of: "--dieter-endpoint")
             .flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
             .flatMap { MachineEndpoint(address: $0, name: "Command line") }

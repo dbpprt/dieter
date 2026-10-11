@@ -9,27 +9,27 @@ release implementation.
 
 ## Architecture and verification cost
 
-`pipeline/action.rb` runs Fastlane `run_tests` and `build_app` in owned subprocesses
-with private JSON input, redacted live output and Dieter deadlines. Fastlane builds
-the Apple commands; Dieter retains exact-device leases, isolated fixtures and
-qualification from structured native results. Adapters consume shared process,
-product, input-hash and evidence modules instead of implementing them.
-Apple builds use locked package versions; execution of verified xctestrun products
-skips package resolution, avoiding repeated network work for each native case.
-The pinned `xcpretty` formatter keeps Apple progress compact. Build-settings
-discovery has one 120-second deadline rather than repeated three-second queries.
+`pipeline/action.rb` runs Fastlane `build_app` in owned subprocesses with private
+JSON input, redacted live output and Dieter deadlines. Fastlane builds the Apple
+commands; Dieter retains exact-device leases, isolated fixtures and qualification
+from structured results. Adapters consume shared process, product, input-hash and
+evidence modules instead of implementing them. Apple builds use locked package
+versions. The pinned `xcpretty` formatter keeps Apple progress compact.
+Build-settings discovery has one 240-second deadline rather than repeated
+three-second queries.
 
 Inspect `just check-changed --dry-run` before testing. The default executes fast
 affected checks and lists related device/desktop checks separately. Use `--native`
-to execute those, or select specific catalog cases. During implementation, rerun
-only a failed or newly affected check; run affected contracts once after changes
-are integrated. Shared orchestration edits do not select every local native build.
-Full repository/device suites belong to explicit full checks and release gates.
+to execute those, or run one platform's `e2e` lane with `flows:NAME`. During
+implementation, rerun only a failed or newly affected check; run affected
+contracts once after changes are integrated. Shared orchestration edits do not
+select every local native build. Full repository/device suites belong to explicit
+full checks and release gates.
 
-Assertions stay in Compose/XCTest/Swift/Go tests. The catalog provides shared
-selection and results, rather than replacing native tests with another language.
-Shared core behavior is tested below the UI; device journeys qualify native
-presentation and platform bindings.
+Rules and their assertions belong in the Kotlin core and its unit tests, with
+Swift and Go tests below the UI. The device tests are a few short
+[Maestro flows](../tests/maestro/README.md) that qualify native presentation and
+platform bindings; they favour execution speed over completeness.
 
 ## Setup and machine configuration
 
@@ -106,8 +106,8 @@ Profiles select exact targets:
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `android-emulator`              | Project-local `.android/` AOSP `Dieter_AOSP_API_35`, serial `emulator-5554`, headless automatic rendering, no snapshots; borrow a healthy running AVD or manage one launched by the run |
 | `android-device`                | Disabled until an exact ADB serial is configured; phone lifecycle remains with its owner                                                                                                |
+| `android-ci`                    | CI only: `Dieter_CI_API_35` from the host SDK's x86_64 API 35 image, headless `swiftshader_indirect` with KVM; created, booted and closed by the run                                    |
 | `ios-iphone`, `ios-ipad`        | Exact runtime and device type; create and delete a recorded disposable simulator                                                                                                        |
-| `ios-device`                    | Disabled until exact UDID, existing development signing and authenticated TLS fixture route are configured                                                                              |
 | `mac-desktop`                   | Exclusive packaged test app on a logged-in desktop                                                                                                                                      |
 | `daemon-local`, `gateway-local` | Native host OS and architecture; build output never installs over a running service                                                                                                     |
 
@@ -118,18 +118,9 @@ explicitly on every operation:
 {"profiles":{"android-device":{"enabled":true,"serial":"EXACT_ADB_SERIAL"}}}
 ```
 
-Physical iOS uses separate `.e2e` app, Share extension, runner and app-group
-identities. Configure an existing development team and profiles that cover the
-exact UDID and share one available Apple Development private key. No Apple
-account resources are created automatically. The fixture route uses a reachable
-local-network host address and existing certificate/key; USB pairing controls
-the device and does not itself expose host loopback to it. Credentials and
-offline controls cross that route through authenticated TLS. `ios.share` stages
-an exact PNG in the isolated E2E app's Documents container on simulators and
-physical devices and shares it through Files. Only Debug `.e2e` apps expose that
-container as `Dieter E2E`; package cleanup removes the owned media. No Share
-fixture imports media into Photos. Physical hardware remains unqualified until its
-configured native plan actually passes; unavailable cells fail.
+There is no physical-iPhone E2E: iOS flows run only on the disposable
+`ios-iphone` and `ios-ipad` simulators. Hosted CI uses `android-ci`; local runs
+use `android-emulator` or an explicit `android-device`.
 
 ## Local checks and app work
 
@@ -229,7 +220,6 @@ just pipeline android test_unit
 just pipeline android build
 just pipeline android local action:emulator_setup # copy installed runtime/image into .android
 just pipeline android local action:emulator_check # boot/readiness/owned cleanup
-just pipeline ios_qualify profiles:ios-iphone,ios-ipad suite:smoke
 just pipeline ios build
 just pipeline mac test_unit
 just pipeline mac build configuration:release
@@ -262,14 +252,11 @@ flags would quietly rewrite untidy module files, Go tests first fail when
 Local Android Release builds require `signing.android-release.keystore_file`
 and its three environment references, or the canonical signing environment
 provided by the candidate workflow. Missing credentials fail before Gradle.
-iOS local builds honor `configuration:debug|release` for simulator test products;
-signed device archives and Apple distribution credentials belong to the trusted
-candidate workflow. Fastlane's test action resolves an installed iOS simulator
-even for a generic build-for-testing destination, so a build needs an installed
-iOS simulator runtime. When no iOS simulator exists, the build creates an
-unbooted `Dieter Pipeline build` simulator, records it in
-`tmp/e2e-cache/ios-build-simulator.json`, and deletes it afterwards; other
-simulators are only read.
+`ios build` honors `configuration:debug|release` and builds only the simulator
+app, with Fastlane `build_app` and no archive or test bundle, under the separate
+`com.dbpprt.dieter.ios.e2e` identity. Signed device archives and Apple
+distribution credentials belong to the trusted candidate workflow. Building
+needs an installed iOS simulator runtime but creates no simulator.
 
 ```sh
 just pipeline framework configuration:debug platforms:ios-simulator
@@ -297,50 +284,52 @@ Never delete locks or use broad process kills to bypass them.
 
 ## Native end-to-end tests
 
+The native clients' device tests are the
+[Maestro flows](../tests/maestro/README.md); that guide covers their layout,
+tags, the Mac interpreter and how to write fast flows.
+
 ```sh
-just pipeline catalog action:lint
-just pipeline catalog action:plan platform:android suite:functional changed:true base:main
-just pipeline android prepare_tests # build APKs without starting a device
 just pipeline android e2e profile:android-emulator
+just pipeline android e2e profile:android-emulator flows:task
 just pipeline android e2e profile:android-device
-just pipeline ios e2e profile:ios-iphone
-just pipeline ios e2e profile:ios-ipad
-just pipeline ios_qualify profiles:ios-iphone,ios-ipad
-just pipeline ios e2e profile:ios-device
-just pipeline mac e2e suite:functional
-just pipeline mac e2e cases:mac.navigation,mac.sidebar
-just pipeline ios prepare_tests profile:ios-iphone
+just pipeline ios e2e
+just pipeline ios e2e tags:full profile:ios-ipad
+just pipeline mac e2e
 just pipeline check component:mac operation:screens_native_test
 just pipeline check component:mac operation:screens_test
 just pipeline check component:mac operation:screens_hevc_test
 ```
 
-The [existing catalog](../tests/e2e/README.md) and its native assertions remain
-authoritative. One shared stage loop plans, admits, prepares, executes, qualifies
-and cleans up. Android builds APKs and fixtures before device admission to avoid
-compiler contention during emulator boot. Adapters own platform tools; they do not implement another test
-loop. Every case gets fresh private client/daemon/gateway state. Exact native
-methods and phase assertions must pass once; missing, skipped, duplicate,
-failed, interrupted, unavailable and failed-cleanup results fail required gates.
-Changed-only selections with no affected cases report `not-required` explicitly.
-The Android and iOS catalogs each hold one native journey through the shared
-mobile UI (`android.journey`, `ios.journey`) and one share case (`android.share`,
-`ios.share` on iPhone).
+`PLATFORM e2e` accepts `tags:smoke|full` (default `smoke`; `full` selects every
+flow), `flows:NAME,…` (flow file names, overriding tags), `profile:NAME` and
+`output:PATH`. Each run builds the app it tests, starts one isolated gateway
+fixture (`tools/fixtures/gateway -e2e-fixture`) that its flows share, installs
+the separate E2E app (Android `com.dbpprt.dieter.e2e`, iOS
+`com.dbpprt.dieter.ios.e2e`) and runs the pinned Maestro CLI. Fastlane downloads
+Maestro `cli-2.11.0`, verifies its SHA-256 and installs it into
+`tmp/tools/maestro/` ([maestro.rb](lib/dieter/maestro.rb)); Java comes from the
+pipeline toolchain.
 
-`ios_qualify` prepares one simulator build of the `Dieter` scheme (the
-`com.dbpprt.dieter.ios.e2e` app) and verifies source inputs,
-Xcode identity, configuration and full product hashes before each layout. Both
-layouts execute on the same worker with fresh simulators and per-case state. The
-parent holds the build lease while child runs clean up their own resources. Test
-assertion failures still qualify the other layout; interruption or cleanup failure
-stops the group. Phones use `ios e2e` with existing development signing; simulator
-products cannot be reused on physical devices.
+- **Android** builds `:app:assembleE2e` before admitting the device, so
+  low-memory hosts do not compile and boot at once. Debug builds expose the
+  shared Compose `testTag`s as resource ids; the fixture URL and token arrive as
+  intent extras through Maestro `launchApp` arguments, and the emulator reaches
+  the fixture through an owned `adb reverse` port.
+- **iOS** creates and journals its own simulator, boots it while the app builds,
+  and deletes it afterwards; existing simulators are only read.
+- **macOS** holds the desktop lease, needs a logged-in desktop and refuses while
+  any `DieterMac` runs. Maestro has no macOS driver: the pipeline converts each
+  flow to a JSON plan that the debug app (`DIETER_E2E`) interprets in-process
+  (`--e2e-activation-ready PIDFILE --e2e-flow PLAN.json --e2e-output DIR`).
+  Commands outside its supported subset fail the flow.
 
-Evidence is printed as `tmp/app-pipelines/UUID`: plan, stage events, JSON/JUnit,
-native result trees, sanitized logs, screenshots and cleanup results. `output:PATH`
-must select a fresh directory. Private credentials, xctestrun launch environments
-and raw credential-bearing results are removed on successful cleanup. Preserve
-failed ownership journals and diagnostics until recovery is understood.
+Evidence is printed as `tmp/app-pipelines/<run>`: `request.json`,
+`results.json`, Maestro's `junit.xml`, logs and screenshots. The fixture token
+is redacted from Maestro's evidence. `output:PATH` must select a fresh
+directory. Failed, missing, interrupted and unavailable flows and cleanup
+failures fail the run. Preserve failed ownership journals and diagnostics until
+recovery is understood. The `portable contracts` check parses every flow and
+its subflow references without a device.
 
 Android emulator lifecycle is implemented in
 [platforms/emulator.rb](lib/dieter/platforms/emulator.rb), shared by E2E and local
@@ -363,15 +352,15 @@ emulator preferences in `.android/user/`. Setup copies only missing packages
 from the configured host SDK, under a runtime lease, with atomic package
 publication. It never downloads or updates existing packages. App builds keep
 using the host SDK. To refresh a project runtime, close its managed emulator,
-remove the project cache, and run setup again. CI hardware runners need the same
-one-time setup in their checkout; CI ignores `fastlane/local.json`.
+remove the project cache, and run setup again. CI ignores `fastlane/local.json`;
+hosted CI installs the emulator and x86_64 image into the runner's SDK and
+enables KVM for the `android-ci` profile.
 
 Missing packages fail with their path and setup instruction. Test runs create a
 missing selected AVD from the local `system_image` with a Pixel 2 hardware profile,
 a 720p display and requested 4 GiB userdata (API 35 may increase it to 6 GiB).
 Fresh boot requires at least 8 GiB free; existing userdata requires 4 GiB free.
-Existing AVDs are never recreated, wiped or reconfigured. Android `prepare_tests`
-only leases/builds cached APK products and needs no running emulator or phone.
+Existing AVDs are never recreated, wiped or reconfigured.
 
 The default boot disables snapshots, audio and boot animation and uses
 `-no-window -gpu auto`, which selects an available backend without a foreground
@@ -447,9 +436,10 @@ Software-rendered boots can leave a System UI "isn't responding" dialog that
 steals test focus. Between runs on a warm emulator, tap **Wait** (for example
 `adb -s emulator-5554 shell uiautomator dump`, then `input tap` on its bounds)
 and force-stop only the isolated `com.dbpprt.dieter.e2e` package an interrupted
-run left open. Do not relax assertions to hide emulator failures.
+run left open; `android e2e` refuses a device where it still runs. Do not relax
+assertions to hide emulator failures.
 
-Software rendering is suitable for the functional journey; use an explicit
+Software rendering is suitable for the Maestro flows; use an explicit
 `renderer: host` profile for GPU-dependent investigation. Required assertions,
 unavailable hardware and cleanup failures still fail gates.
 
@@ -477,11 +467,13 @@ CI calls the same lanes through pinned reusable workflows. `qualification.yml`
 selects affected PR/main components and requires all components on scheduled and
 manual full runs. Its jobs are `changes` (affected selection), `portable` (Go,
 CLI and harness), `core` (Kotlin core and shared mobile UI JVM tests),
-`core-apple`, `mac`, `ios`, `android` and the aggregate `required`. The iOS job
-builds once and runs the `ios.journey`
-case on iPhone and iPad simulators. Mac core/board cases remain required, with
-full Mac functional qualification on scheduled and manual runs. The Android job
-lints, builds and compiles the journey APKs; hosted CI runs no emulator. The
+`core-apple`, `mac`, `ios`, `android` and the aggregate `required`. The `mac`,
+`ios` and `android` jobs (through `component-check.yml` with its `e2e` and
+`profile` inputs) run the Maestro `smoke` flows on pushes and pull requests and
+every flow (`full`) on scheduled and manual runs; the Maestro run builds the app
+it tests, so those jobs skip the separate app build. iOS uses the iPhone
+simulator and adds the iPad on full runs. Android lints, then runs its flows on
+`ubuntu-latest` with a headless KVM emulator (`android-ci`). The
 Kotlin Apple job runs only its Mac-target assertions and the Mac job owns Swift
 fixture integration, avoiding duplicate assertions and unnecessary all-slice
 assembly across the Apple jobs. Dev releases carry the APK and IPA; there are no
@@ -495,13 +487,12 @@ fixture state and logs are excluded from the Xcode cache. Mac qualification uses
 one SwiftPM scratch graph for tests and app packaging. Local/self-hosted builds
 keep their existing paths. Release producers do not restore qualification caches.
 The first cache fill is still cold; cache transfer has a measurable cost and these
-changes alone do not promise a ten-minute complete functional catalog.
+changes alone do not promise a ten-minute full flow run.
 Routine portable CI executes the typed affected check/package plan, including
 reverse Go dependencies, without unrelated Go/harness/native suites. Full runs and
 events with no usable change base retain complete portable qualification.
-`native-e2e.yml` manually selects an iOS catalog suite and runs both iPhone and
-iPad simulator profiles on one GitHub-hosted macOS worker. Android, Mac desktop,
-and physical-device journeys run locally with explicit configured profiles.
+Physical Android runs locally with an explicit exact-serial profile; there is no
+physical-iPhone E2E.
 
 Main CI calls reusable `release.yml` after qualification; Release does not repeat
 those checks. Manual Release dispatch performs full qualification first. Main
@@ -510,19 +501,13 @@ branch-protection check is **Qualification / Required checks**; update an existi
 rule naming retired reporter jobs when adopting these workflows.
 
 Build/test output streams with redaction and stream identity. Runs retain elapsed
-heartbeats, `timings.json` and per-case setup/execution/cleanup evidence. CI writes
-a case/target summary and uploads an explicit diagnostic manifest: 64 MiB total;
-logs 4 MiB, JSON/XML 1 MiB, images 8 MiB and failure videos 16 MiB per file. Omissions
-are recorded. Passing iOS cases do not export bulk attachments. Diagnostics exclude
-archives, app bundles, caches and producer copies. Diagnostic upload outages do
-not rerun passed gates. Evidence collection, required assertions, cleanup and
-immutable producer retention remain mandatory. Producer checkpoints avoid extra
-compression of signed archives.
-
-Unsigned Android variant checks on disposable hosted runners retain bounded
-Gradle thread/heap and host resource diagnostics after five minutes without new
-build output. They keep the same build deadline and failure gate. Local and
-self-hosted runs never inspect operator JVMs.
+heartbeats, `timings.json` and per-flow results. CI writes a flow/target summary
+and uploads an explicit diagnostic manifest: 64 MiB total; logs 4 MiB, JSON/XML
+1 MiB, images 8 MiB and failure videos 16 MiB per file. Omissions are recorded.
+Diagnostics exclude archives, app bundles, caches and producer copies. Diagnostic
+upload outages do not rerun passed gates. Evidence collection, required
+assertions, cleanup and immutable producer retention remain mandatory. Producer
+checkpoints avoid extra compression of signed archives.
 
 Every push to main reserves one numeric SemVer and monotonically increasing
 native build counter before producing candidates. All gateway, daemon/CLI and

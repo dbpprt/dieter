@@ -279,7 +279,7 @@ private struct TerminalTab: View {
                     .padding(.vertical, 2)
                     .background(DieterTheme.tileHover, in: Capsule())
                     .accessibilityIdentifier("terminal.node.\(machineID)")
-                    .smokeTarget("terminal.node.\(machineID).\(terminal.id)")
+                    .e2eTarget("terminal.node.\(machineID).\(terminal.id)")
                 if !row.running {
                     Text(row.status)
                         .font(.system(size: 8, weight: .semibold))
@@ -413,7 +413,7 @@ private struct NewTerminalSheet: View {
                     .pickerStyle(.menu)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityIdentifier("new-terminal.project")
-                    .smokeTarget("new-terminal.project")
+                    .e2eTarget("new-terminal.project")
                 }
                 .padding(.horizontal, 12)
                 .frame(maxWidth: .infinity, minHeight: 44)

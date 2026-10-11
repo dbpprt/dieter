@@ -2,16 +2,15 @@
 
 require_relative "framework"
 require_relative "apple_build"
+require "digest"
 require_relative "../fixtures/gateway"
 require_relative "../fixtures/screen"
-require_relative "../pipeline/contract"
 
 module Dieter
   class Mac
     def initialize(context, actions: nil)
       @context, @root, @actions = context, context.root, actions
       @framework = SharedFramework.new(context)
-      @contract = Contract.new(context)
     end
 
     def unit(options)
@@ -23,7 +22,7 @@ module Dieter
     def core_test(options = {})
       @context.lease("apple-build")
       @framework.build
-      fixture = GatewayFixture.new(@context, "core", @context.private_dir, direct: true)
+      fixture = GatewayFixture.new(@context, @context.private_dir, direct: true)
       values = fixture.start
       @context.cleanup { fixture.close }
       swift_test(
@@ -381,7 +380,7 @@ module Dieter
       swift_test("remoteDesktopHEVC", environment)
     end
 
-    def admit(target, _plan)
+    def admit
       raise Unavailable, "Mac execution requires macOS" unless RUBY_PLATFORM.include?("darwin")
       @context.lease("mac-desktop")
       assert_stopped
@@ -392,130 +391,66 @@ module Dieter
       @context.lease("apple-build")
     end
 
-    def prepare(_target, _plan)
-      @bundle = build({})
-      GatewayFixture.compile(@context)
-    end
-
-    def execute_case(_target, test_case)
-      started = monotonic
-      evidence = File.join(@context.output, test_case.fetch("id"))
+    # Runs one Maestro-syntax plan in a fresh debug app; the app interprets it
+    # in-process, writes report.json and quits.
+    def run_flow(bundle, plan, evidence, endpoint:, token:)
       FileUtils.mkdir_p(evidence, mode: 0o700)
-      state = Dir.mktmpdir("mac-case-", @context.private_dir)
-      preferences = "com.dbpprt.dieter.e2e.#{Digest::SHA256.hexdigest(state)}"
-      fixture, app = nil, nil
-      result = { "status" => "failed", "reason" => "", "setupMs" => 0, "executionMs" => 0 }
+      state = Dir.mktmpdir("mac-flow-", @context.private_dir)
+      preferences = "com.dbpprt.dieter.e2e.#{Digest::SHA256.hexdigest(state)[0, 16]}"
+      app = nil
       begin
         assert_stopped
-        suite = test_case.dig("native", "suite") || "flow"
-        base = [
-          "--dieter-state-root",
-          File.join(state, "client"),
-          "--appearance-defaults-suite",
-          preferences
-        ]
-        if test_case.fetch("fixture") == "gateway"
-          fixture = GatewayFixture.new(@context, suite, state, evidence: evidence)
-          values = fixture.start
-          token = File.join(state, "session-token")
-          Atomic.write(token, values.fetch("DIETER_ISOLATED_TOKEN"))
-          base += [
-            "--dieter-endpoint",
-            "http://#{values.fetch("DIETER_ISOLATED_ADDR")}",
-            "--dieter-access-token-file",
-            token,
-            "--ui-smoke-fixture-root",
-            File.join(state, "gateway"),
-            "--ui-smoke-fixture-daemon",
-            values.fetch("DIETER_ISOLATED_DAEMON")
-          ]
-        end
-        if suite == "island"
-          @context.command(
-            ["defaults", "write", preferences, "DieterAppearance", "-string", "dark"],
-            timeout: 15
+        token_file = File.join(state, "session-token")
+        Atomic.write(token_file, token)
+        plan_file = File.join(state, "plan.json")
+        Atomic.json(plan_file, plan)
+        activation = File.join(evidence, "activation.pid")
+        app =
+          @context.start(
+            [
+              File.join(bundle, "Contents/MacOS/DieterMac"),
+              "--dieter-state-root",
+              File.join(state, "client"),
+              "--appearance-defaults-suite",
+              preferences,
+              "--dieter-endpoint",
+              endpoint,
+              "--dieter-access-token-file",
+              token_file,
+              "--e2e-activation-ready",
+              activation,
+              "--e2e-flow",
+              plan_file,
+              "--e2e-output",
+              evidence
+            ],
+            log: File.join(evidence, "app.log")
           )
+        await_file(app, activation, timeout: 30)
+        unless File.read(activation).strip == app.pid.to_s
+          raise PipelineError, "Activation PID does not match owned app"
         end
-        if test_case["native"]
-          phases =
-            @contract.call("mac-phases", { suite: suite, output: evidence, target: preferences })
-        else
-          plan = File.join(state, "plan.json")
-          Atomic.json(plan, { version: 1, case: test_case })
-          phases = [
-            {
-              "name" => "flow",
-              "report" => "report.json",
-              "argv" => ["--flow-ui-smoke", "--e2e-plan", plan, "--ui-smoke-output", evidence]
-            }
-          ]
+        actual = @context.command(%w[pgrep -x DieterMac], timeout: 10).strip
+        unless actual == app.pid.to_s
+          raise PipelineError, "Activation requires exactly the owned app"
         end
-        result["setupMs"] = ((monotonic - started) * 1000).round
-        began = monotonic
-        results = {}
-        phases.each do |phase|
-          if suite == "terminal" && phase.fetch("name") == "resume"
-            trigger = File.join(evidence, "daemon-restart")
-            Atomic.write(trigger, "")
-            await_file(fixture.process, trigger + ".ready", timeout: 15)
-          end
-          assert_stopped
-          path = File.join(evidence, phase.fetch("report"))
-          FileUtils.mkdir_p(File.dirname(path))
-          activation = File.join(evidence, "activation-#{phase.fetch("name")}.pid")
-          executable = File.join(@bundle, "Contents/MacOS/DieterMac")
-          app =
-            @context.start(
-              [executable, *base, "--e2e-activation-ready", activation, *phase.fetch("argv")],
-              log: File.join(evidence, "app-#{phase.fetch("name")}.log")
-            )
-          await_file(app, activation, timeout: 20)
-          unless File.read(activation).strip == app.pid.to_s
-            raise PipelineError, "Activation PID does not match owned app"
-          end
-          actual = @context.command(%w[pgrep -x DieterMac], timeout: 10).strip
-          unless actual == app.pid.to_s
-            raise PipelineError, "Activation requires exactly the owned app"
-          end
-          @context.command(["open", @bundle], timeout: 15)
-          await_file(app, path, timeout: 1200)
-          if File.symlink?(path) || File.size(path) > 1024 * 1024
-            raise PipelineError, "Invalid or oversized Mac report"
-          end
-          phase_results = JSON.parse(File.read(path))
-          app.wait(timeout: 5) # A failing app cannot override passing report fragments.
-          app = nil
-          phase_results.each { |key, value| results["#{phase.fetch("name")}.#{key}"] = value }
+        @context.command(["open", bundle], timeout: 15)
+        report = File.join(evidence, "report.json")
+        await_file(app, report, timeout: 300)
+        if File.symlink?(report) || File.size(report) > 1024 * 1024
+          raise PipelineError, "Invalid or oversized Mac report"
         end
-        result["executionMs"] = ((monotonic - began) * 1000).round
-        report = File.join(evidence, "qualified-checks.json")
-        Atomic.json(report, results)
-        required =
-          test_case.dig("native", "checks") ||
-            test_case.fetch("steps").each_index.map { |index| "flow.step-#{index}" }
-        qualified_case = test_case.merge("native" => { "checks" => required })
-        result.merge!(
-          @contract.call("qualify", { platform: "mac", path: report, case: qualified_case })
-        )
-      rescue StandardError => error
-        result["status"] = error.is_a?(Unavailable) ?
-          "unavailable" :
-          error.is_a?(Interrupted) ? "interrupted" : "failed"
-        result["reason"] = error.message
+        results = JSON.parse(File.read(report))
+        app.wait(timeout: 15) # The app quits after publishing its report.
+        app = nil
+        results
       ensure
-        problems = []
         @context.during_cleanup do
-          [app, fixture].compact.each do |process|
-            process.respond_to?(:stop) ? process.stop : process.close
-          rescue StandardError => error
-            problems << error.message
-          end
+          app&.stop
           @context.command(["defaults", "delete", preferences], timeout: 15, check: false)
-          FileUtils.remove_entry_secure(state) if problems.empty?
+          FileUtils.remove_entry_secure(state)
         end
-        result["cleanupError"] = problems.join("; ")
       end
-      result
     end
 
     private

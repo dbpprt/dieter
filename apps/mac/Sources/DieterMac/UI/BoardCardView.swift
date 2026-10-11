@@ -494,7 +494,7 @@ struct BoardCardView: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("card.\(card.id)")
         .accessibilityHint("Click to open chat. Double-click to edit.")
-        .smokeTarget("card.\(card.id)")
+        .e2eTarget("card.\(card.id)", text: card.title)
     }
 
     /// A leading dot only while the agent works, waits, or failed.
@@ -593,7 +593,7 @@ struct BoardCardContextMenu: ViewModifier {
                         Spacer()
                         Button("Cancel") { renamePresented = false }
                             .buttonStyle(DieterBarButtonStyle())
-                            .smokeTarget("card-editor.cancel")
+                            .e2eTarget("card-editor.cancel")
                         Button("Rename") {
                             Task {
                                 await store.rename(card, title: renameText)
@@ -603,7 +603,7 @@ struct BoardCardContextMenu: ViewModifier {
                             renameText.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }.padding(22).frame(width: 440)
-                    .smokeTarget("card-editor.\(card.id)")
+                    .e2eTarget("card-editor.\(card.id)")
             }
             .sheet(isPresented: $editPresented) {
                 EditCardSheet(card: card).environment(store)

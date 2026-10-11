@@ -121,21 +121,6 @@ struct WorkspaceChangesView: View {
             viewedRevision = revision ?? ""
             viewedPaths = []
         }
-        #if DIETER_UI_SMOKE
-            .onReceive(
-                NotificationCenter.default.publisher(for: WorkspaceUISmokeRunner.openMergeSheetNotification)
-            ) {
-                _ in
-                mergeSheetPresented = true
-            }
-            .onReceive(
-                NotificationCenter.default.publisher(
-                    for: WorkspaceUISmokeRunner.closeMergeSheetNotification)
-            ) {
-                _ in
-                mergeSheetPresented = false
-            }
-        #endif
         .sheet(item: $operationKind) { kind in
             GitOperationSheet(model: model, kind: kind, card: card, baseBranch: baseBranch)
         }
@@ -243,7 +228,7 @@ struct WorkspaceChangesView: View {
                 Button(mode.rawValue) { diffModeRaw = mode.rawValue }
                     .buttonStyle(DieterSegmentStyle(selected: diffMode == mode, height: 22))
                     .accessibilityIdentifier("changes.view-mode-\(mode.rawValue.lowercased())")
-                    .smokeTarget("changes.view-mode-\(mode.rawValue.lowercased())")
+                    .e2eTarget("changes.view-mode-\(mode.rawValue.lowercased())")
             }
         }
         .fixedSize()
@@ -626,7 +611,7 @@ struct WorkspaceChangesView: View {
                     Task { await model.loadConversationDiff(path: file.path) }
                 }
                 .accessibilityIdentifier("changes.file.\(file.path)")
-                .smokeTarget("changes.file.\(file.path)")
+                .e2eTarget("changes.file.\(file.path)")
             }
         }
     }

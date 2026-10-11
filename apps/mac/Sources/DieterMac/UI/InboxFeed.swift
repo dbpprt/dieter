@@ -44,7 +44,7 @@ struct InboxFeed: View {
                     }
                     .padding(.leading, 14).padding(.trailing, 6).padding(.vertical, 6)
                 }
-                .accessibilityIdentifier("inbox.feed").smokeTarget("inbox.feed")
+                .accessibilityIdentifier("inbox.feed").e2eTarget("inbox.feed")
             }
         }
         .foregroundStyle(DieterTheme.text)
@@ -96,7 +96,7 @@ struct InboxFeed: View {
                 .buttonStyle(DieterBarButtonStyle(prominent: true))
                 .fixedSize()
                 .help("Create a task in any project")
-                .accessibilityIdentifier("inbox.new-task").smokeTarget("inbox.new-task")
+                .accessibilityIdentifier("inbox.new-task").e2eTarget("inbox.new-task")
                 .popover(isPresented: $newTaskPresented, arrowEdge: .top) {
                     QuickTaskPopover(
                         isPresented: $newTaskPresented, draft: store.quickTaskForm, chooseDestination: true
@@ -122,7 +122,7 @@ struct InboxFeed: View {
                             .textFieldStyle(.plain).font(.system(size: 12))
                             .foregroundStyle(DieterTheme.text)
                             .accessibilityLabel("Search activity")
-                            .accessibilityIdentifier("inbox.search").smokeTarget("inbox.search")
+                            .accessibilityIdentifier("inbox.search").e2eTarget("inbox.search")
                         if !query.isEmpty {
                             Button {
                                 query = ""
@@ -154,7 +154,7 @@ struct InboxFeed: View {
                     }
                     .dieterMenuChrome()
                     .accessibilityLabel("Filter by project")
-                    .accessibilityIdentifier("inbox.project-filter").smokeTarget("inbox.project-filter")
+                    .accessibilityIdentifier("inbox.project-filter").e2eTarget("inbox.project-filter")
                 }
             }
             .padding(.leading, 14).padding(.trailing, 6)
@@ -179,7 +179,7 @@ struct InboxFeed: View {
                 }
                 .dieterMenuChrome()
                 .accessibilityLabel("Timeline range")
-                .accessibilityIdentifier("inbox.range").smokeTarget("inbox.range")
+                .accessibilityIdentifier("inbox.range").e2eTarget("inbox.range")
             }
             if intervals.isEmpty {
                 Text(SharedRules.shared.timelineEmpty(hours: Int32(hours)))
@@ -193,7 +193,7 @@ struct InboxFeed: View {
             }
             HStack {
                 Text("−\(hours)h")
-                    .smokeTarget("inbox.range.current.\(hours)")
+                    .e2eTarget("inbox.range.current.\(hours)")
                 Spacer()
                 Text(hours == 1 ? "−30m" : "−\(hours / 2)h")
                 Spacer()
@@ -215,7 +215,7 @@ struct InboxFeed: View {
             }
             .foregroundStyle(DieterTheme.tertiary).padding(.horizontal, 4).padding(.top, 12).padding(.bottom, 2)
             .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("inbox.section.\(id)").smokeTarget("inbox.section.\(id)")
+            .accessibilityIdentifier("inbox.section.\(id)").e2eTarget("inbox.section.\(id)")
             ForEach(entries.prefix(visibleLimit)) { entry in
                 InboxActivityRow(entry: entry, now: now, onOpen: onOpen)
             }
@@ -227,7 +227,7 @@ struct InboxFeed: View {
         Button("Show more activity") { visibleLimit += 20 }
             .buttonStyle(DieterBarButtonStyle(size: 26))
             .frame(maxWidth: .infinity).padding(.vertical, 9)
-            .accessibilityIdentifier("inbox.show-more").smokeTarget("inbox.show-more")
+            .accessibilityIdentifier("inbox.show-more").e2eTarget("inbox.show-more")
     }
 
     private func emptyState(filtered: Bool) -> some View {
@@ -245,7 +245,7 @@ struct InboxFeed: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 24).padding(.horizontal, 4)
         .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("inbox.empty").smokeTarget("inbox.empty")
+        .accessibilityIdentifier("inbox.empty").e2eTarget("inbox.empty")
     }
 
 }
@@ -285,7 +285,7 @@ private struct InboxActivityRow: View {
                     RoundedRectangle(cornerRadius: 2).fill(accent).frame(width: 3)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(entry.row.title)
-                            .smokeTarget("inbox.title.\(entry.id).\(entry.row.title)")
+                            .e2eTarget("inbox.title.\(entry.id).\(entry.row.title)")
                             .font(.system(size: 13, weight: .semibold)).lineLimit(2)
                             .foregroundStyle(DieterTheme.text)
                             .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
@@ -323,7 +323,7 @@ private struct InboxActivityRow: View {
             .buttonStyle(.plain)
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(selected ? .isSelected : [])
-            .accessibilityIdentifier("inbox.row.\(entry.id)").smokeTarget("inbox.row.\(entry.id)")
+            .accessibilityIdentifier("inbox.row.\(entry.id)").e2eTarget("inbox.row.\(entry.id)")
             if entry.canFinish {
                 Button {
                     Task { await store.finish(entry.card) }
@@ -337,7 +337,7 @@ private struct InboxActivityRow: View {
                 .buttonStyle(.plain)
                 .disabled(store.movingCardIDs.contains(entry.id) || !store.projectIsAvailable(entry.card.projectID))
                 .accessibilityLabel("Finish \(entry.row.title)")
-                .accessibilityIdentifier("inbox.finish.\(entry.id)").smokeTarget("inbox.finish.\(entry.id)")
+                .accessibilityIdentifier("inbox.finish.\(entry.id)").e2eTarget("inbox.finish.\(entry.id)")
                 .padding(10)
             }
         }

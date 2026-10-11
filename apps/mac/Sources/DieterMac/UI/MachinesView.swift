@@ -72,7 +72,7 @@ struct MachinePopover: View {
                     Task { await store.fleet.performMachineOperation(action) }
                 }
                 .accessibilityIdentifier("machine.confirm-operation")
-                .smokeTarget("machine.confirm-operation")
+                .e2eTarget("machine.confirm-operation")
             }
             Button("Cancel", role: .cancel) { pendingAction = nil }
         } message: {
@@ -87,7 +87,7 @@ struct MachinePopover: View {
         ) {
             Button("OK") { store.fleet.machineOperationMessage = nil }
                 .accessibilityIdentifier("machine.operation-ok")
-                .smokeTarget("machine.operation-ok")
+                .e2eTarget("machine.operation-ok")
         } message: {
             Text(store.fleet.machineOperationMessage ?? "")
         }
@@ -201,7 +201,7 @@ struct MachinePopover: View {
             .disabled(store.fleet.machineOperationInFlight)
             .help("Machine operations")
             .accessibilityIdentifier("machine.actions")
-            .smokeTarget("machine.actions")
+            .e2eTarget("machine.actions")
 
             Button {
                 store.fleet.dismissMachinePopover()

@@ -8,22 +8,14 @@ on:
       runner:
         type: string
         required: true
-      native_cases:
+      e2e:
+        description: Maestro flow tags to run (smoke or full); empty runs none
         type: string
         default: ""
-      native_suite:
+      profile:
+        description: Device profiles for the Maestro run, comma-separated
         type: string
         default: ""
-      native_profile:
-        type: string
-        default: ""
-      native_profiles:
-        description: Simulator profiles sharing one verified build on the same worker
-        type: string
-        default: ""
-      native_only:
-        type: boolean
-        default: false
       full:
         description: Include release-only variant compilation
         type: boolean
@@ -43,33 +35,20 @@ jobs:
         with:
           component: ${{ inputs.component }}
           fixture: "true"
-          native: ${{ inputs.native_cases != '' || inputs.native_suite != '' }}
+          native: ${{ inputs.e2e != '' }}
       - uses: ./.github/actions/apple-check-cache
         if: runner.environment == 'github-hosted' && (inputs.component == 'mac' || inputs.component == 'ios')
         with:
           component: ${{ inputs.component }}
       - name: Run component checks
-        if: ${{ !inputs.native_only }}
         env:
           PIPELINE_COMPONENT: ${{ inputs.component }}
-          PIPELINE_CASES: ${{ inputs.native_cases }}
-          PIPELINE_SUITE: ${{ inputs.native_suite }}
-          PIPELINE_PROFILE: ${{ inputs.native_profile }}
-          PIPELINE_PROFILES: ${{ inputs.native_profiles }}
+          PIPELINE_E2E: ${{ inputs.e2e }}
+          PIPELINE_PROFILE: ${{ inputs.profile }}
           PIPELINE_FULL: ${{ inputs.full }}
           CI_CHANGE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           DIETER_APPLE_CHECK_CACHE: "true"
-        run: just pipeline ci action:check component:"$PIPELINE_COMPONENT" full:"$PIPELINE_FULL" cases:"$PIPELINE_CASES" suite:"$PIPELINE_SUITE" profile:"$PIPELINE_PROFILE" profiles:"$PIPELINE_PROFILES"
-      - name: Execute required native cases
-        if: inputs.native_only && (inputs.native_cases != '' || inputs.native_suite != '')
-        env:
-          PIPELINE_COMPONENT: ${{ inputs.component }}
-          PIPELINE_CASES: ${{ inputs.native_cases }}
-          PIPELINE_SUITE: ${{ inputs.native_suite }}
-          PIPELINE_PROFILE: ${{ inputs.native_profile }}
-          PIPELINE_PROFILES: ${{ inputs.native_profiles }}
-          DIETER_APPLE_CHECK_CACHE: "true"
-        run: just pipeline native_ci component:"$PIPELINE_COMPONENT" cases:"$PIPELINE_CASES" suite:"$PIPELINE_SUITE" profile:"$PIPELINE_PROFILE" profiles:"$PIPELINE_PROFILES"
+        run: just pipeline ci action:check component:"$PIPELINE_COMPONENT" full:"$PIPELINE_FULL" e2e:"$PIPELINE_E2E" profile:"$PIPELINE_PROFILE"
       - name: Collect bounded diagnostic evidence
         if: always()
         run: just pipeline ci action:evidence component:report output:tmp/ci-evidence
@@ -77,7 +56,7 @@ jobs:
         if: always()
         continue-on-error: true
         with:
-          name: check-${{ inputs.component }}-${{ inputs.runner }}-${{ inputs.native_profile }}-${{ github.run_attempt }}
+          name: check-${{ inputs.component }}-${{ inputs.runner }}-${{ github.run_attempt }}
           path: tmp/ci-evidence/
           retention-days: 14
           if-no-files-found: error

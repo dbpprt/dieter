@@ -31,7 +31,6 @@ android {
         targetSdk = 37
         versionCode = releaseVersionCode.get()
         versionName = releaseVersionName.get()
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -46,7 +45,8 @@ android {
     }
 
     buildTypes {
-        // Journeys install a separate application, preserving the operator's app and session.
+        // Maestro flows install this separate application, preserving the operator's
+        // installed app and session.
         create("e2e") {
             initWith(getByName("debug"))
             applicationIdSuffix = ".e2e"
@@ -58,11 +58,6 @@ android {
             }
         }
     }
-
-    testBuildType =
-        providers.gradleProperty("dieter.testBuildType").orElse("debug").get().also {
-            require(it in listOf("debug", "e2e")) { "Unsupported test build type" }
-        }
 
     buildFeatures {
         compose = true
@@ -91,10 +86,6 @@ dependencies {
     implementation(coreLibs.kotlinx.coroutines.android)
     implementation(libs.bouncycastle)
     implementation(libs.bouncycastle.tls)
-
-    androidTestImplementation(libs.androidx.junit)
-    androidTestImplementation(libs.androidx.test.runner)
-    androidTestImplementation(libs.compose.ui.test.junit4)
 }
 
 // The adapter uses a package-private injection seam. Pin the exact AAR, so an

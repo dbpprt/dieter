@@ -12,13 +12,11 @@ struct DieterApp: App {
                 .ignoresSafeArea()
                 .task {
                     #if DEBUG
-                        let environment = ProcessInfo.processInfo.environment
-                        if let url = environment["DIETER_IOS_TEST_GATEWAY"],
-                            let token = environment["DIETER_IOS_TEST_TOKEN"]
-                        {
+                        // Maestro flows sign in to the isolated E2E gateway fixture and may run a debug script.
+                        if let url = launchArgument("fixture_url"), let token = launchArgument("fixture_token") {
                             host.adoptFixture(url: url, token: token)
                         }
-                        if let script = environment["DIETER_IOS_TEST_SCRIPT"] { host.runDebugScript(script) }
+                        if let script = launchArgument("script") { host.runDebugScript(script) }
                     #endif
                 }
                 .onOpenURL { host.completeSignIn(url: $0.absoluteString) }
@@ -26,6 +24,17 @@ struct DieterApp: App {
         }
     }
 }
+
+#if DEBUG
+    /// Maestro's launchApp arguments arrive as `-key value` launch arguments.
+    private func launchArgument(_ key: String) -> String? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let index = arguments.firstIndex(where: { $0 == "-" + key || $0 == key }),
+            arguments.indices.contains(index + 1)
+        else { return nil }
+        return arguments[index + 1]
+    }
+#endif
 
 /// The native tab bar, navigation stacks and sheets live in UIKit; Compose draws each screen.
 private struct ShellView: UIViewControllerRepresentable {

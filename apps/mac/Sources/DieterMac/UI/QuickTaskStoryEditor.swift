@@ -23,20 +23,11 @@ struct QuickTaskStoryEditor: NSViewRepresentable {
         view.textView.canPasteAttachment = canPasteAttachment
         view.textView.pasteAttachment = pasteAttachment
         context.coordinator.apply(text, to: view.textView)
-        #if DIETER_UI_SMOKE
-            QuickTaskStoryTextView.smokeLiveInstance = view.textView
-        #endif
         return view
     }
 
     func updateNSView(_ view: QuickTaskStoryEditorContainer, context: Context) {
         context.coordinator.parent = self
-        #if DIETER_UI_SMOKE
-            // SwiftUI can dismantle and recreate representables while the
-            // popover is being mounted. Refresh the nonretaining smoke hook on
-            // every reconciliation so it always identifies the live editor.
-            QuickTaskStoryTextView.smokeLiveInstance = view.textView
-        #endif
         view.textView.canPasteAttachment = canPasteAttachment
         view.textView.pasteAttachment = pasteAttachment
         if view.textView.string != text {
@@ -57,11 +48,6 @@ struct QuickTaskStoryEditor: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ view: QuickTaskStoryEditorContainer, coordinator: Coordinator) {
-        #if DIETER_UI_SMOKE
-            if QuickTaskStoryTextView.smokeLiveInstance === view.textView {
-                QuickTaskStoryTextView.smokeLiveInstance = nil
-            }
-        #endif
         view.textView.delegate = nil
         view.textView.onFocusChange = nil
         view.textView.canPasteAttachment = nil
@@ -173,10 +159,6 @@ final class QuickTaskStoryEditorContainer: NSScrollView {
 
 @MainActor
 final class QuickTaskStoryTextView: NSTextView, AttachmentPasteFirstResponder {
-    #if DIETER_UI_SMOKE
-        static weak var smokeLiveInstance: QuickTaskStoryTextView?
-    #endif
-
     var canPasteAttachment: ((NSPasteboard) -> Bool)?
     var pasteAttachment: ((NSPasteboard) -> Bool)?
     var onFocusChange: ((Bool) -> Void)?

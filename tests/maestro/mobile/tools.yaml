@@ -1,0 +1,52 @@
+# Machines, files with markdown preview, schedules and dark appearance.
+appId: ${APP_ID}
+name: Tools
+tags: [full]
+---
+- runFlow: common/launch.yaml
+- tapOn:
+    text: "Chats"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Mobile release checklist"
+    timeout: 40000
+- tapOn:
+    text: "Tools"
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: tool-machines
+    waitToSettleTimeoutMs: 500
+- assertVisible: "Isolated E2E machine"
+- tapOn:
+    id: "chrome-back|BackButton"
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: tool-files
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: "README.md"
+    waitToSettleTimeoutMs: 500
+- assertVisible: ".*One durable conversation.*"
+- tapOn:
+    id: "chrome-back|BackButton"
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: "chrome-back|BackButton"
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: tool-schedules
+    waitToSettleTimeoutMs: 500
+- assertVisible: "Daily workspace review"
+- tapOn:
+    id: "chrome-back|BackButton"
+    waitToSettleTimeoutMs: 500
+- scrollUntilVisible:
+    element:
+      id: tool-settings
+- tapOn:
+    id: tool-settings
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: appearance-2
+    waitToSettleTimeoutMs: 500
+- takeScreenshot: tools-settings-dark

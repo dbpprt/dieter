@@ -41,12 +41,12 @@ struct RequiredPermissionsView: View {
                     Button("Check Again") { permissions.refresh() }
                         .buttonStyle(DieterBarButtonStyle())
                         .accessibilityIdentifier("permissions.check")
-                        .smokeTarget("permissions.check")
+                        .e2eTarget("permissions.check")
                     Spacer()
                     Button("Skip for Now") { permissions.skipSetup() }
                         .buttonStyle(DieterBarButtonStyle())
                         .accessibilityIdentifier("permissions.skip")
-                        .smokeTarget("permissions.skip")
+                        .e2eTarget("permissions.skip")
                     Button("Quit Dieter") { NSApp.terminate(nil) }
                         .buttonStyle(DieterBarButtonStyle())
                 }
@@ -79,7 +79,7 @@ struct RequiredPermissionsView: View {
                     Button("Grant \(permission.title)…") { permissions.grant(permission) }
                         .buttonStyle(DieterBarButtonStyle(prominent: true))
                         .accessibilityIdentifier("permissions.grant.\(permission.rawValue)")
-                        .smokeTarget("permissions.grant.\(permission.rawValue)")
+                        .e2eTarget("permissions.grant.\(permission.rawValue)")
                 }
             }
             Spacer(minLength: 0)

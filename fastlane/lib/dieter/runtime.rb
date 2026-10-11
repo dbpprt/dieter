@@ -3,6 +3,7 @@
 require_relative "config"
 require_relative "pipeline/context"
 require_relative "pipeline/engine"
+require_relative "e2e"
 require_relative "platforms/android"
 require_relative "platforms/mac"
 require_relative "platforms/ios"
@@ -17,26 +18,6 @@ require_relative "distribution/retention"
 
 module Dieter
   module Runtime
-    def self.native_ci(options, actions: nil)
-      unless ENV["GITHUB_ACTIONS"] == "true"
-        raise PipelineError, "Native CI composition requires Actions"
-      end
-      values = options.transform_keys(&:to_s)
-      unless (values.keys - %w[component cases suite profile profiles]).empty?
-        raise PipelineError, "Unknown native CI options"
-      end
-      component = values.delete("component")
-      unless %w[mac ios android].include?(component)
-        raise PipelineError, "Invalid native CI component"
-      end
-      values.reject! { |_key, value| value == "" }
-      if values["suite"] && !%w[smoke functional].include?(values["suite"])
-        raise PipelineError, "Invalid native CI suite"
-      end
-      return ios_qualify(values, actions: actions) if component == "ios" && values["profiles"]
-      invoke("e2e", component, values, actions: actions)
-    end
-
     ROOT = File.expand_path("../../..", __dir__)
 
     def self.invoke(operation, component, options, actions: nil, parent: nil)
@@ -59,97 +40,6 @@ module Dieter
       end
       puts "Pipeline evidence: #{context.output}"
       Pipeline.new(context, request, adapter).run
-    end
-
-    def self.ios_qualify(options, actions: nil, parent: nil, prepared: nil)
-      values = options.transform_keys(&:to_s).reject { |_key, value| value == "" }
-      unless (values.keys - %w[profiles suite cases changed base output]).empty?
-        raise PipelineError, "Unknown iOS qualification options"
-      end
-      profiles = values.fetch("profiles", "ios-iphone,ios-ipad").split(",")
-      if profiles.empty? || profiles.uniq != profiles
-        raise PipelineError, "Select one or more unique simulator profiles"
-      end
-      group = RunContext.new(Config.new(ROOT), output: values.delete("output"), parent: parent)
-      puts "iOS qualification evidence: #{group.output}"
-      begin
-        group.environment["DIETER_RELEASE_VERSION"] ||= SourceIdentity.version(group)
-        contract = Contract.new(group)
-        build_adapter = IOS.new(group, actions: actions)
-        selections =
-          profiles.map do |name|
-            request =
-              PipelineRequest.new("e2e", "ios", values.except("profiles").merge("profile" => name))
-            target = group.config.profile(name, component: "ios")
-            unless target["kind"] == "simulator"
-              raise PipelineError,
-                    "iOS qualification requires simulator profiles; use ios e2e for an exact physical profile"
-            end
-            plan = request.plan(group.config, contract)
-            build_adapter.admit(target, plan) unless plan.empty?
-            [name, request, plan]
-          end
-        required = selections.any? { |_, _, plan| !plan.empty? }
-        Atomic.json(
-          File.join(group.output, "selection.json"),
-          {
-            status: required ? "required" : "not-required",
-            profiles:
-              selections.to_h do |name, _, plan|
-                [name, plan.map { |test_case| test_case.fetch("id") }]
-              end
-          }
-        )
-        unless prepared || !required
-          build_adapter.build({})
-          prepared = File.join(group.output, "artifacts.json")
-        end
-        failures = []
-        selections.each do |name, request, plan|
-          context =
-            RunContext.new(group.config, output: File.join(group.output, name), parent: group)
-          adapter = IOS.new(context, actions: actions)
-          adapter.prepared_products(prepared)
-          begin
-            Pipeline.new(context, request, adapter, planned_cases: plan).run
-          rescue CleanupError, Interrupted
-            raise
-          rescue PipelineError => error
-            failures << "#{name}: #{error.message}"
-          end
-        end
-        raise PipelineError, failures.join("; ") unless failures.empty?
-      ensure
-        group.close
-      end
-      group.output
-    end
-
-    def self.catalog(options)
-      unknown =
-        options.keys.map(&:to_s) - %w[action platform suite cases device changed base output]
-      raise PipelineError, "Unknown catalog options: #{unknown.join(", ")}" unless unknown.empty?
-      context = RunContext.new(Config.new(ROOT), output: options[:output])
-      begin
-        action = options.fetch(:action, "lint")
-        unless %w[lint list plan].include?(action)
-          raise PipelineError, "catalog action must be lint, list or plan"
-        end
-        request = {
-          platform: options.fetch(:platform, "android"),
-          suite: options.fetch(:suite, ""),
-          ids: options.fetch(:cases, "").split(","),
-          device: options.fetch(:device, "iphone"),
-          changed: options[:changed] == "true" || options[:changed] == true,
-          base: options.fetch(:base, "")
-        }
-        result = Contract.new(context).call(action == "lint" ? "lint" : "plan", request)
-        puts JSON.pretty_generate(result)
-        Atomic.json(File.join(context.output, "catalog.json"), result)
-        result
-      ensure
-        context.close
-      end
     end
 
     def self.core_apple(options)

@@ -71,7 +71,7 @@ struct ProjectContextSheet: View {
                 Button("Cancel") { dismiss() }
                     .buttonStyle(DieterBarButtonStyle())
                     .keyboardShortcut(.cancelAction)
-                    .smokeTarget("project.context.cancel")
+                    .e2eTarget("project.context.cancel")
                 Button("Save") { save() }
                     .buttonStyle(DieterBarButtonStyle(prominent: true))
                     .keyboardShortcut(.defaultAction)
@@ -132,7 +132,7 @@ struct ProjectContextFields: View {
             Section {
                 TextEditor(text: $prompt)
                     .accessibilityIdentifier("project.context.instructions")
-                    .smokeTarget("project.context.instructions")
+                    .e2eTarget("project.context.instructions")
                     .font(.body)
                     .scrollContentBackground(.hidden)
                     .padding(8)

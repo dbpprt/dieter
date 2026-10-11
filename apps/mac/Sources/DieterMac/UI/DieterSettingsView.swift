@@ -64,7 +64,7 @@ struct DieterSettingsView: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("settings.\(section.rawValue.lowercased())")
-                            .smokeTarget("settings.\(section.rawValue.lowercased())")
+                            .e2eTarget("settings.\(section.rawValue.lowercased())")
                         }
                     }
                     .padding(8)
@@ -616,7 +616,7 @@ struct GeneralSettings: View {
                         )
                     )
                     .accessibilityIdentifier("settings.windowTransparency")
-                    .smokeTarget("settings.windowTransparency")
+                    .e2eTarget("settings.windowTransparency")
                     Text("Let the desktop show through blurred workspace surfaces.")
                         .font(.caption)
                         .foregroundStyle(DieterTheme.tertiary)
@@ -690,7 +690,7 @@ struct GeneralSettings: View {
                     )
                     .toggleStyle(.switch)
                     .accessibilityIdentifier("settings.screenShare.captureKeyboard")
-                    .smokeTarget("settings.screenShare.captureKeyboard")
+                    .e2eTarget("settings.screenShare.captureKeyboard")
                     Text("Forward system shortcuts such as ⌘Tab to the remote Mac. Press ⌘⇧Esc to release input.")
                         .font(.caption).foregroundStyle(DieterTheme.tertiary)
                     Text(
@@ -707,7 +707,7 @@ struct GeneralSettings: View {
                     )
                     .toggleStyle(.switch)
                     .accessibilityIdentifier("settings.screenShare.inactivityTimeoutEnabled")
-                    .smokeTarget("settings.screenShare.inactivityTimeoutEnabled")
+                    .e2eTarget("settings.screenShare.inactivityTimeoutEnabled")
                     if store.screensModel.inactivityTimeoutEnabled {
                         Divider().overlay(DieterTheme.border)
                         Stepper(
@@ -719,7 +719,7 @@ struct GeneralSettings: View {
                             in: 1...240
                         )
                         .accessibilityIdentifier("settings.screenShare.inactivityTimeoutMinutes")
-                        .smokeTarget("settings.screenShare.inactivityTimeoutMinutes")
+                        .e2eTarget("settings.screenShare.inactivityTimeoutMinutes")
                     }
                     Text(
                         store.screensModel.inactivityTimeoutEnabled
@@ -802,7 +802,7 @@ private struct PaletteOption: View {
         .accessibilityLabel("\(palette.title) design")
         .accessibilityValue(selected ? "Selected" : "Not selected")
         .accessibilityIdentifier("settings.palette.\(palette.rawValue)")
-        .smokeTarget("settings.palette.\(palette.rawValue)")
+        .e2eTarget("settings.palette.\(palette.rawValue)")
     }
 }
 
@@ -837,7 +837,7 @@ private struct AppearanceOption: View {
         .accessibilityLabel("\(appearance.title) appearance")
         .accessibilityValue(selected ? "Selected" : "Not selected")
         .accessibilityIdentifier("settings.appearance.\(appearance.rawValue)")
-        .smokeTarget("settings.appearance.\(appearance.rawValue)")
+        .e2eTarget("settings.appearance.\(appearance.rawValue)")
     }
 }
 
@@ -1194,7 +1194,7 @@ struct ExperimentalSettings: View {
                         .toggleStyle(.switch)
                         .accessibilityLabel("Match remote resolution in fullscreen")
                         .accessibilityIdentifier("settings.experimental.screenResolution")
-                        .smokeTarget("settings.experimental.screenResolution")
+                        .e2eTarget("settings.experimental.screenResolution")
                     }
                     Text(
                         "Off by default. Temporarily changes the remote monitor for everyone using it, using the closest supported resolution and Retina scale. Restores on fullscreen exit or disconnect. Video quality limits still apply."

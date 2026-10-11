@@ -30,7 +30,7 @@ struct ArchivePolicySheet: View {
                 "Settings section", selection: $selectedTab, options: ["general", "routing"], fillsWidth: true
             ) { $0 == "general" ? "General" : "Browser routing" }
             .accessibilityIdentifier("board.settings.sections")
-            .smokeTarget("board.settings.sections")
+            .e2eTarget("board.settings.sections")
             .padding(.horizontal, 24)
             .padding(.bottom, 8)
 
@@ -40,7 +40,7 @@ struct ArchivePolicySheet: View {
                         Section("Board") {
                             TextField("Name", text: $boardName)
                                 .accessibilityIdentifier("board.settings.name")
-                                .smokeTarget("board.settings.name")
+                                .e2eTarget("board.settings.name")
                         }
                         Section("New conversations") {
                             TextField("Default Git remote", text: $baseRemote)
@@ -76,7 +76,7 @@ struct ArchivePolicySheet: View {
                                 .frame(minHeight: 140)
                                 .dieterInset(radius: 8)
                                 .accessibilityIdentifier("board.hostnames")
-                                .smokeTarget("board.hostnames")
+                                .e2eTarget("board.hostnames")
                             Text(
                                 "One per line. Include a port to match a specific app, such as localhost:4018. Without a port, the hostname matches any port. URL paths are ignored."
                             )
@@ -96,7 +96,7 @@ struct ArchivePolicySheet: View {
                 Spacer()
                 Button("Cancel") { dismiss() }.buttonStyle(DieterBarButtonStyle()).disabled(saving)
                     .keyboardShortcut(.cancelAction)
-                    .smokeTarget("board.settings.cancel")
+                    .e2eTarget("board.settings.cancel")
                 Button(saving ? "Saving…" : "Save changes") { Task { await save() } }
                     .buttonStyle(DieterBarButtonStyle(prominent: true))
                     .keyboardShortcut(.defaultAction)

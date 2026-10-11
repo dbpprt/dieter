@@ -55,9 +55,6 @@ final class ConversationContext {
     /// The composer's agent pickers as the core shows them; nil until the
     /// conversation's card and machine are known.
     var agentControls: ClientAgentControlsState? {
-        #if DIETER_UI_SMOKE
-            if let fixture = model.agentFixture { return fixture }
-        #endif
         return model.state.hasAgent ? model.state.agent : nil
     }
     @ObservationIgnored var onChooseAgent: (ClientAgentChoice.OneOf_Choice) async -> Void = { _ in }

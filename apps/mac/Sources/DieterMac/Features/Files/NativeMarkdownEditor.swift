@@ -47,7 +47,7 @@ struct NativeMarkdownEditor: View {
                 scrollCoordinator: scrollCoordinator
             )
             .accessibilityIdentifier("files.markdown.rich-editor")
-            .smokeTarget("files.markdown.rich-editor")
+            .e2eTarget("files.markdown.rich-editor")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -61,7 +61,7 @@ struct NativeMarkdownEditor: View {
         .quickHelp(label)
         .accessibilityLabel(label)
         .accessibilityIdentifier("files.markdown.format.\(command.rawValue)")
-        .smokeTarget("files.markdown.format.\(command.rawValue)")
+        .e2eTarget("files.markdown.format.\(command.rawValue)")
     }
 }
 

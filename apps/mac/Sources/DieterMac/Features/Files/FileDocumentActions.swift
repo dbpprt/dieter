@@ -34,7 +34,7 @@ struct FileDocumentActions: View {
                 .help(actions?.unavailableReason ?? "Show in Finder")
                 .accessibilityLabel("Show in Finder")
                 .accessibilityIdentifier("\(identifierPrefix).show-in-finder")
-                .smokeTarget("\(identifierPrefix).show-in-finder")
+                .e2eTarget("\(identifierPrefix).show-in-finder")
 
                 if FilePresentation.renderer(document) == .markdown {
                     Menu {
@@ -59,7 +59,7 @@ struct FileDocumentActions: View {
                     .disabled(!active || exportingMarkdown || files.fileEditorSession.documentKey != files.documentKey)
                     .help("Export the current draft as PDF or HTML")
                     .accessibilityIdentifier("\(identifierPrefix).export-menu")
-                    .smokeTarget("\(identifierPrefix).export-menu")
+                    .e2eTarget("\(identifierPrefix).export-menu")
                 } else if actions?.fileURL == nil {
                     Button {
                         saveCopy(document, key: key, session: session)
@@ -75,7 +75,7 @@ struct FileDocumentActions: View {
                     .help("Save a local copy of this file")
                     .accessibilityLabel("Save a Copy…")
                     .accessibilityIdentifier("\(identifierPrefix).save-copy")
-                    .smokeTarget("\(identifierPrefix).save-copy")
+                    .e2eTarget("\(identifierPrefix).save-copy")
                 }
                 if exportingMarkdown {
                     ProgressView().controlSize(.small).accessibilityLabel("Exporting Markdown")
@@ -156,9 +156,6 @@ struct FileDocumentActions: View {
     }
 
     private func destination(for panel: NSSavePanel, window: NSWindow?) async -> URL? {
-        #if DIETER_UI_SMOKE
-            ConversationFileActionsUISmoke.configureSavePanel?(panel, window)
-        #endif
         let response = await withCheckedContinuation { continuation in
             if let window {
                 panel.beginSheetModal(for: window) { continuation.resume(returning: $0) }
@@ -172,7 +169,7 @@ struct FileDocumentActions: View {
 
 extension View {
     /// Glass bar chrome around a native control. These stay AppKit buttons and
-    /// pop-up buttons: the Finder smoke and the hosted tests read their state.
+    /// pop-up buttons: the hosted tests read their state.
     fileprivate func nativeControlChrome(iconOnly: Bool) -> some View {
         padding(.horizontal, iconOnly ? 0 : 10)
             .frame(width: iconOnly ? 28 : nil, height: 28)

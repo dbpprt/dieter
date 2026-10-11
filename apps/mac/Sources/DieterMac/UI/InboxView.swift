@@ -14,7 +14,7 @@ struct InboxView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("inbox.browser-pane")
-            .smokeTarget("inbox.browser-pane")
+            .e2eTarget("inbox.browser-pane")
         } detail: {
             if active { InboxDetailPane() }
         }
@@ -50,7 +50,7 @@ private struct InboxDetailPane: View {
             .padding(24)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityIdentifier("inbox.empty-detail")
-            .smokeTarget("inbox.empty-detail")
+            .e2eTarget("inbox.empty-detail")
         }
     }
 }

@@ -112,7 +112,7 @@ struct ProjectChangesView: View {
                 discard = nil
             }
             .accessibilityIdentifier("project-changes.confirm-discard")
-            .smokeTarget("project-changes.confirm-discard")
+            .e2eTarget("project-changes.confirm-discard")
             Button("Cancel", role: .cancel) { discard = nil }
         } message: { request in
             Text(
@@ -191,7 +191,7 @@ struct ProjectChangesView: View {
         .buttonStyle(DieterBarButtonStyle(shape: .circle, size: size))
         .disabled(model.refreshing).help("Refresh changes")
         .accessibilityLabel("Refresh changes").accessibilityIdentifier("project-changes.refresh")
-        .smokeTarget("project-changes.refresh")
+        .e2eTarget("project-changes.refresh")
     }
 
     /// The branch, its base, and how far it has drifted from its upstream.
@@ -239,7 +239,7 @@ struct ProjectChangesView: View {
         .buttonStyle(DieterBarButtonStyle(shape: iconOnly ? .circle : .capsule, size: size))
         .disabled(!can(kind))
         .accessibilityLabel(title)
-        .accessibilityIdentifier("project-changes.\(kind)").smokeTarget("project-changes.\(kind)")
+        .accessibilityIdentifier("project-changes.\(kind)").e2eTarget("project-changes.\(kind)")
     }
 
     // MARK: Navigator
@@ -287,7 +287,7 @@ struct ProjectChangesView: View {
                         if let selection { proxy.scrollTo(rowID(selection.section, selection.path)) }
                     }
                     .accessibilityElement(children: .contain).accessibilityLabel("Changed files")
-                    .accessibilityIdentifier("project-changes.files").smokeTarget("project-changes.files")
+                    .accessibilityIdentifier("project-changes.files").e2eTarget("project-changes.files")
                 }
             } else {
                 initialState
@@ -321,7 +321,7 @@ struct ProjectChangesView: View {
                     )
                     .font(.system(size: 12, weight: .medium))
                     .accessibilityIdentifier("project-changes.commit-subject")
-                    .smokeTarget("project-changes.commit-subject")
+                    .e2eTarget("project-changes.commit-subject")
                     if model.commitSubject.count > 50 {
                         Text("\(model.commitSubject.count)/72").monospacedDigit()
                             .font(.system(size: 10))
@@ -334,7 +334,7 @@ struct ProjectChangesView: View {
                     prompt: Text("Description").foregroundStyle(DieterTheme.tertiary), axis: .vertical
                 )
                 .font(.system(size: 11)).lineLimit(1...6).padding(.horizontal, 8).padding(.bottom, 6)
-                .accessibilityIdentifier("project-changes.commit-body").smokeTarget("project-changes.commit-body")
+                .accessibilityIdentifier("project-changes.commit-body").e2eTarget("project-changes.commit-body")
             }
             .textFieldStyle(.plain).disabled(model.pendingKind == "commit")
             .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 6))
@@ -361,7 +361,7 @@ struct ProjectChangesView: View {
             .keyboardShortcut(.return, modifiers: .command)
             .disabled(!can("commit") || !commitReady)
             .help(count == 0 ? "Stage files to commit" : "Commit staged changes (⌘↩)")
-            .accessibilityIdentifier("project-changes.commit").smokeTarget("project-changes.commit")
+            .accessibilityIdentifier("project-changes.commit").e2eTarget("project-changes.commit")
         }
     }
 
@@ -385,7 +385,7 @@ struct ProjectChangesView: View {
                     prompt: Text("Filter files").foregroundStyle(DieterTheme.tertiary)
                 )
                 .textFieldStyle(.plain).font(.system(size: 11))
-                .accessibilityIdentifier("project-changes.filter").smokeTarget("project-changes.filter")
+                .accessibilityIdentifier("project-changes.filter").e2eTarget("project-changes.filter")
                 if !filter.isEmpty {
                     Button {
                         filter = ""
@@ -638,7 +638,7 @@ struct ProjectChangesView: View {
             .accessibilityLabel("\(section.capitalized) \(file.path)")
             .accessibilityAddTraits(selected ? .isSelected : [])
             .accessibilityIdentifier("project-changes.\(section).\(file.path)")
-            .smokeTarget("project-changes.\(section).\(file.path)")
+            .e2eTarget("project-changes.\(section).\(file.path)")
             if emphasized {
                 if standalone, status != "deleted" {
                     rowIconButton("Open file in Files", symbol: "arrow.up.forward.square") {
@@ -713,7 +713,7 @@ struct ProjectChangesView: View {
         .foregroundStyle(emphasized ? DieterTheme.text : DieterTheme.tertiary.opacity(0.7))
         .disabled(!can(kind)).opacity(can(kind) ? 1 : 0.4)
         .help(title).accessibilityLabel(title)
-        .accessibilityIdentifier(identifier).smokeTarget(identifier)
+        .accessibilityIdentifier(identifier).e2eTarget(identifier)
     }
 
     private func rowIconButton(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
@@ -802,7 +802,7 @@ struct ProjectChangesView: View {
                             loadingMore: model.diffLoading, reviewSection: selection.section
                         )
                         .id("\(model.projectID)|\(selection.section)|\(selection.path)")
-                        .accessibilityIdentifier("project-changes.diff").smokeTarget("project-changes.diff")
+                        .accessibilityIdentifier("project-changes.diff").e2eTarget("project-changes.diff")
                     }
                 } else if model.diffLoading {
                     ProgressView("Loading diff…").frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -817,7 +817,7 @@ struct ProjectChangesView: View {
                     description: Text("No local changes in \(projectName).")
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .accessibilityIdentifier("project-changes.clean").smokeTarget("project-changes.clean")
+                .accessibilityIdentifier("project-changes.clean").e2eTarget("project-changes.clean")
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -855,7 +855,7 @@ struct ProjectChangesView: View {
                 .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28)).help("Back to files").accessibilityLabel(
                     "Back to files"
                 )
-                .accessibilityIdentifier("project-changes.back").smokeTarget("project-changes.back")
+                .accessibilityIdentifier("project-changes.back").e2eTarget("project-changes.back")
             }
             Image(systemName: FilePresentation.symbol(name: label.filename)).font(.system(size: 11))
                 .foregroundStyle(DieterTheme.tertiary)
@@ -890,13 +890,13 @@ struct ProjectChangesView: View {
                 .buttonStyle(DieterBarButtonStyle(destructive: true, size: 28))
                 .disabled(!can("discard_changes"))
                 .help("Discard all changes to this file")
-                .accessibilityIdentifier("project-changes.discard").smokeTarget("project-changes.discard")
+                .accessibilityIdentifier("project-changes.discard").e2eTarget("project-changes.discard")
             Button(staged ? "Unstage" : "Stage") {
                 model.startOperation(kind: staged ? "unstage" : "stage", path: selection.path)
             }
             .buttonStyle(DieterBarButtonStyle(prominent: true, size: 28)).disabled(!can(staged ? "unstage" : "stage"))
             .help(staged ? "Unstage this file (Space)" : "Stage this file (Space)")
-            .accessibilityIdentifier("project-changes.stage-file").smokeTarget("project-changes.stage-file")
+            .accessibilityIdentifier("project-changes.stage-file").e2eTarget("project-changes.stage-file")
             Menu {
                 if standalone, status != "deleted" {
                     Button("Open in Files") { openInFiles(selection.path, directory: false) }
@@ -949,11 +949,11 @@ struct ProjectChangesView: View {
                     .buttonStyle(DieterSegmentStyle(selected: diffMode == mode, height: 22))
                     .accessibilityLabel("\(mode) diff").accessibilityAddTraits(diffMode == mode ? .isSelected : [])
                     .accessibilityIdentifier("project-changes.diff-mode.\(mode.lowercased())")
-                    .smokeTarget("project-changes.diff-mode.\(mode.lowercased())")
+                    .e2eTarget("project-changes.diff-mode.\(mode.lowercased())")
             }
         }
         .fixedSize()
-        .accessibilityIdentifier("project-changes.diff-mode").smokeTarget("project-changes.diff-mode")
+        .accessibilityIdentifier("project-changes.diff-mode").e2eTarget("project-changes.diff-mode")
     }
 
     // MARK: Status
@@ -981,6 +981,6 @@ struct ProjectChangesView: View {
         .font(.system(size: 10, design: .monospaced)).foregroundStyle(DieterTheme.tertiary).lineLimit(1)
         .padding(.horizontal, 12).frame(minHeight: 22).background(DieterTheme.sidebar)
         .overlay(alignment: .top) { Divider().overlay(DieterTheme.border) }
-        .accessibilityIdentifier("project-changes.status").smokeTarget("project-changes.status")
+        .accessibilityIdentifier("project-changes.status").e2eTarget("project-changes.status")
     }
 }

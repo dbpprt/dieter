@@ -48,7 +48,7 @@ struct ConversationComposer: View {
                     placeholder: "Message the local agent…", text: $context.composerText, focus: $composerFocused
                 )
                 .accessibilityIdentifier("conversation.composer")
-                .smokeTarget("conversation.composer")
+                .e2eTarget("conversation.composer")
                 .onKeyPress(.return, phases: .down) { press in
                     if !ComposerReturnPolicy.sendsMessage(shiftPressed: press.modifiers.contains(.shift)) {
                         return .ignored
@@ -96,7 +96,7 @@ struct ConversationComposer: View {
                     composerActions
                 }
             }
-            .smokeTarget("conversation.composer-shell")
+            .e2eTarget("conversation.composer-shell")
             .attachmentDropTarget(isTargeted: $attachmentDropTargeted) { providers in
                 context.addPastedAttachments(providers)
             }
@@ -219,12 +219,12 @@ struct ConversationComposer: View {
                 .quickHelp("Stop")
                 .accessibilityLabel("Stop agent")
                 .accessibilityIdentifier("conversation.stop")
-                .smokeTarget("conversation.stop")
+                .e2eTarget("conversation.stop")
             }
 
             ComposerSendButton(isEnabled: hasDraft, queuesMessage: working, action: submitComposer)
                 .accessibilityIdentifier("conversation.send")
-                .smokeTarget("conversation.send")
+                .e2eTarget("conversation.send")
         }
         .fixedSize()
     }

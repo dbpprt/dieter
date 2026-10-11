@@ -94,7 +94,7 @@ import Testing
 
 @Test func conversationHeaderRowKeepsItsControlsInsideThePaneTitlebarBand() {
     // Beside a split workspace each column shows one header row; its glass
-    // circles stay within the top 40 points the pane smoke test measures.
+    // circles stay within the top 40 points of the pane titlebar band.
     let circleBottom =
         (ConversationPanelHeaderMetrics.rowHeight + ConversationPanelHeaderMetrics.circleSize) / 2
     #expect(circleBottom <= 40)

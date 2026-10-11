@@ -95,9 +95,6 @@ struct WorkspaceDiffContent: View {
 
     @State private var horizontalScroll = DiffHorizontalScrollState()
     @State private var expandedFolds: Set<Int> = []
-    #if DIETER_UI_SMOKE
-        @State private var smokeTargetID = UUID()
-    #endif
 
     private var split: Bool { layout.split }
 
@@ -141,22 +138,6 @@ struct WorkspaceDiffContent: View {
         }
         .onChange(of: layout.revision, initial: true) {
             expandedFolds = []
-            #if DIETER_UI_SMOKE
-                if NativeUISmokeTargets.enabled {
-                    NativeUISmokeTargets.diffOwner = smokeTargetID
-                    NativeUISmokeTargets.diffText = layout.texts.joined(separator: "\n")
-                    NativeUISmokeTargets.diffSplit = split
-                }
-            #endif
-        }
-        .onDisappear {
-            #if DIETER_UI_SMOKE
-                // A view that replaced this one, e.g. after a resize, may already show its diff.
-                if NativeUISmokeTargets.diffOwner == smokeTargetID {
-                    NativeUISmokeTargets.diffText = ""
-                    NativeUISmokeTargets.diffSplit = nil
-                }
-            #endif
         }
     }
 
@@ -228,7 +209,7 @@ struct WorkspaceDiffContent: View {
                 .overlay(alignment: .bottom) { Divider().overlay(DieterTheme.border.opacity(0.5)) }
             }
             .id(id)
-            .smokeTarget("workspace-diff.hunk.\(id)")
+            .e2eTarget("workspace-diff.hunk.\(id)")
         case .fold(let id, let count, let lines, let pairs):
             if expandedFolds.contains(id) {
                 VStack(spacing: 0) {
@@ -276,26 +257,6 @@ struct WorkspaceDiffContent: View {
     }
 
 }
-
-#if DIETER_UI_SMOKE
-    extension WorkspaceDiffLayout {
-        /// The shown code lines, for smoke checks of the diff.
-        var texts: [String] { rows.flatMap(\.texts) }
-    }
-
-    extension WorkspaceDiffRow {
-        /// The row's code lines, for smoke checks of the shown diff.
-        var texts: [String] {
-            switch self {
-            case .line(let line): [line.line.text]
-            case .pair(let pair): [pair.old?.text, pair.new?.text].compactMap { $0 }
-            case .file(_, let path): [path]
-            case .hunk(_, let text, _, _, _): [text]
-            case .fold(_, _, let lines, _): lines.map(\.line.text)
-            }
-        }
-    }
-#endif
 
 private struct WorkspaceDiffPositionedRow<Content: View>: View {
     let split: Bool

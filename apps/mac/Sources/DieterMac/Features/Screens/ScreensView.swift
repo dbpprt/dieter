@@ -34,7 +34,7 @@ struct ScreensView: View {
                     .help("Open screen share in full screen")
                     .accessibilityLabel("Undock screen share in full screen")
                     .accessibilityIdentifier("screens.undock")
-                    .smokeTarget("screens.undock")
+                    .e2eTarget("screens.undock")
                 }
                 ScreenShareOptions(controller: selectedSession.controller)
                 primaryAction(selectedSession)
@@ -51,7 +51,7 @@ struct ScreensView: View {
             .keyboardShortcut("s", modifiers: [.command, .shift])
             .disabled(machines.isEmpty)
             .accessibilityIdentifier("screens.new")
-            .smokeTarget("screens.new")
+            .e2eTarget("screens.new")
         } content: {
             VStack(spacing: 0) {
                 if !model.sessions.isEmpty {
@@ -317,7 +317,7 @@ private struct ScreenShareTab: View {
                     .padding(.vertical, 2)
                     .background(DieterTheme.tileHover, in: Capsule())
                     .accessibilityIdentifier("screen.node.\(session.machineID)")
-                    .smokeTarget("screen.badge.\(session.id)")
+                    .e2eTarget("screen.badge.\(session.id)")
             }
             .frame(minWidth: 120, maxWidth: 210, alignment: .leading)
             // Room for the close button, which sits inside the segment's trailing edge.
@@ -326,7 +326,7 @@ private struct ScreenShareTab: View {
         .buttonStyle(DieterSegmentStyle(selected: selected))
         .accessibilityLabel("Screen, \(session.machineName)")
         .accessibilityIdentifier("screen.select.\(session.id)")
-        .smokeTarget("screen.select.\(session.id)")
+        .e2eTarget("screen.select.\(session.id)")
         .overlay(alignment: .trailing) {
             Button(action: close) {
                 Image(systemName: "xmark")
@@ -341,7 +341,7 @@ private struct ScreenShareTab: View {
             .help("Close screen share")
             .accessibilityLabel("Close screen share, \(session.machineName)")
             .accessibilityIdentifier("screen.close.\(session.id)")
-            .smokeTarget("screen.close.\(session.id)")
+            .e2eTarget("screen.close.\(session.id)")
             .padding(.trailing, 7)
         }
         .contextMenu { Button("Close screen share", action: close) }
@@ -435,7 +435,7 @@ struct ScreenShareOptions: View {
             .buttonStyle(DieterBarButtonStyle(size: size))
             .disabled(controller.controlTransferPending)
             .accessibilityIdentifier("screens.control")
-            .smokeTarget("screens.control")
+            .e2eTarget("screens.control")
             .help(
                 controller.controlTransferError.isEmpty
                     ? "One client controls the machine at a time" : controller.controlTransferError)

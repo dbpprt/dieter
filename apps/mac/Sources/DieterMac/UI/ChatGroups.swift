@@ -55,7 +55,7 @@ struct ChatProjectGroup: View {
                 .help(collapsed ? "Expand \(project.name) chats" : "Collapse \(project.name) chats")
                 .accessibilityLabel(headerAccessibilityLabel)
                 .accessibilityIdentifier("chats.project.\(project.id).toggle")
-                .smokeTarget("chats.project.\(project.id).toggle")
+                .e2eTarget("chats.project.\(project.id).toggle")
                 if !showArchived {
                     Button {
                         store.beginStandaloneChat(projectID: project.id)
@@ -224,7 +224,7 @@ struct ChatNavigationFolderGroup: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel("\(folder.name), \(chats.count) chats")
             .accessibilityIdentifier("chats.folder.\(folder.folderID)")
-            .smokeTarget("chats.folder.\(folder.folderID)")
+            .e2eTarget("chats.folder.\(folder.folderID)")
 
             if folder.showChats {
                 if chats.isEmpty {

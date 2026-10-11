@@ -58,7 +58,7 @@ struct BoardCanvas: View {
         content
             .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
             .ignoresSafeArea(.container, edges: .top)
-            .smokeTarget("board.canvas")
+            .e2eTarget("board.canvas")
     }
 
     private var content: some View {
@@ -92,7 +92,7 @@ struct BoardCanvas: View {
                             Button("Restore board") { Task { await store.restoreBoard(board.id) } }
                                 .buttonStyle(DieterBarButtonStyle(prominent: true))
                                 .accessibilityIdentifier("board.restore")
-                                .smokeTarget("board.restore")
+                                .e2eTarget("board.restore")
                         }
                     } else if let board = store.selectedBoard {
                         KanbanView(board: board)

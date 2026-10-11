@@ -194,9 +194,9 @@ struct QuickTaskPopover: View {
                     .frame(width: 30, height: 30)
                     .background(DieterTheme.tileSelected, in: RoundedRectangle(cornerRadius: 8))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Quick task").font(.system(size: 18, weight: .semibold)).smokeTarget(
+                    Text("Quick task").font(.system(size: 18, weight: .semibold)).e2eTarget(
                         "quick-task.title"
-                    ).smokeTarget("quick-task.title")
+                    ).e2eTarget("quick-task.title")
                     Text("Describe the task. A short title is created automatically.")
                         .font(.system(size: 11)).foregroundStyle(DieterTheme.tertiary)
                 }
@@ -214,17 +214,17 @@ struct QuickTaskPopover: View {
                     ) {
                         Text("Choose project").tag("")
                         ForEach(store.projects.filter { !$0.archived }, id: \.id) { Text($0.name).tag($0.id) }
-                    }.accessibilityIdentifier("quick-task.project").smokeTarget("quick-task.project")
+                    }.accessibilityIdentifier("quick-task.project").e2eTarget("quick-task.project")
                     Picker("Board", selection: $draftBoardID) {
                         Text("Choose board").tag("")
                         ForEach(store.boards(for: draftProjectID), id: \.id) { Text($0.name).tag($0.id) }
-                    }.accessibilityIdentifier("quick-task.board").smokeTarget("quick-task.board")
+                    }.accessibilityIdentifier("quick-task.board").e2eTarget("quick-task.board")
                     LabeledContent("Run on") {
                         if draftProjectID.isEmpty {
                             Text("Choose a project")
                                 .foregroundStyle(.tertiary)
                                 .accessibilityIdentifier("quick-task.machine")
-                                .smokeTarget("quick-task.machine")
+                                .e2eTarget("quick-task.machine")
                         } else {
                             ProjectCheckoutMenu(
                                 projectID: draftProjectID,
@@ -276,7 +276,7 @@ struct QuickTaskPopover: View {
                 }
             }
             .accessibilityIdentifier("quick-task.story")
-            .smokeTarget("quick-task.story")
+            .e2eTarget("quick-task.story")
             .attachmentDropTarget(isTargeted: $attachmentDropTargeted) { providers in
                 let generation = formDraft.intakeGeneration
                 Task {
@@ -306,7 +306,7 @@ struct QuickTaskPopover: View {
             if !attachments.isEmpty {
                 AttachmentPreviewStrip(attachments: $attachments)
                     .accessibilityIdentifier("quick-task.attachments")
-                    .smokeTarget("quick-task.attachments")
+                    .e2eTarget("quick-task.attachments")
             }
 
             Group {
@@ -315,7 +315,7 @@ struct QuickTaskPopover: View {
                     .padding(10)
                     .dieterInset(radius: 8)
                     .accessibilityIdentifier("quick-task.source-url")
-                    .smokeTarget("quick-task.source-url")
+                    .e2eTarget("quick-task.source-url")
                 if let host = CaptureBrowserContext.hostname(sourceURL) {
                     Toggle("Remember \(host) for this board", isOn: $rememberHostname)
                         .font(.caption)
@@ -376,7 +376,7 @@ struct QuickTaskPopover: View {
             Divider()
             HStack(spacing: 9) {
                 Button("Cancel") { isPresented = false }
-                    .smokeTarget("quick-task.cancel")
+                    .e2eTarget("quick-task.cancel")
                     .buttonStyle(DieterBarButtonStyle())
                 Spacer()
                 Button {
@@ -395,7 +395,7 @@ struct QuickTaskPopover: View {
                 .disabled(cannotSubmit)
                 .keyboardShortcut(.return, modifiers: [.command])
                 .accessibilityIdentifier("quick-task.create")
-                .smokeTarget("quick-task.create")
+                .e2eTarget("quick-task.create")
                 Button {
                     Task { await submit(runImmediately: true) }
                 } label: {
@@ -406,13 +406,13 @@ struct QuickTaskPopover: View {
                 .keyboardShortcut(.return, modifiers: [.command, .shift])
                 .help("Create this task and start the agent immediately")
                 .accessibilityIdentifier("quick-task.run")
-                .smokeTarget("quick-task.run")
+                .e2eTarget("quick-task.run")
             }
         }
         .padding(20)
         .frame(width: 430)
         .fixedSize(horizontal: false, vertical: true)
-        .smokeTarget("quick-task.content")
+        .e2eTarget("quick-task.content")
         .task {
             if !initialized {
                 // A capture's own form starts from what the core remembers

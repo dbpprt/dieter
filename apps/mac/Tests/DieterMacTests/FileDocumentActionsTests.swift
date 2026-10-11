@@ -48,9 +48,8 @@ import Testing
     #expect(mounted)
     let local = try #require(documentActionButtons(in: host).first)
     #expect(local.window === window && !local.isHiddenOrHasHiddenAncestor && local.bounds.width > 0)
-    // Native smoke exercises the actual rendered controls. Here invoke their
-    // shared handler to verify click-time path revalidation independently of
-    // SwiftUI's private button dispatch machinery.
+    // Invoke the rendered controls' shared handler to verify click-time path
+    // revalidation independently of SwiftUI's private button dispatch machinery.
     actions.showInFinder()
     #expect(revealed == file.resolvingSymlinksInPath())
 
@@ -76,8 +75,8 @@ import Testing
 
 @MainActor private func documentActionButtons(in host: NSView) -> [NSButton] {
     // The hosted unit process mounts real AppKit controls but does not publish
-    // SwiftUI's virtual accessibility labels/identifiers. The packaged native
-    // smoke checks those semantics; here press the actual toolbar controls.
+    // SwiftUI's virtual accessibility labels/identifiers; press the actual
+    // toolbar controls.
     // Finder is the first action, followed by a plain Save a Copy button when
     // unavailable. Markdown's Export menu is a separate NSPopUpButton.
     var pending = [host]

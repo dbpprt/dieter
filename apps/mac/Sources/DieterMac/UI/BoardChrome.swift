@@ -248,7 +248,7 @@ struct BoardTopBar: View {
             .help("Board settings")
             .accessibilityLabel("Board settings")
             .accessibilityIdentifier("board.settings")
-            .smokeTarget("board.settings")
+            .e2eTarget("board.settings")
             if workspacePresented && store.kanbanPresentedAlongsideConversation {
                 Button {
                     store.kanbanPresentedAlongsideConversation = false
@@ -321,7 +321,7 @@ struct BoardTopBar: View {
         .help("Create a task from its story")
         .accessibilityLabel("Quick task")
         .accessibilityIdentifier("board.quick-task")
-        .smokeTarget("board.quick-task")
+        .e2eTarget("board.quick-task")
         .disabled(store.selectedBoard == nil)
         .popover(isPresented: $quickTaskPresented, arrowEdge: .top) {
             QuickTaskPopover(isPresented: $quickTaskPresented, draft: store.quickTaskForm)

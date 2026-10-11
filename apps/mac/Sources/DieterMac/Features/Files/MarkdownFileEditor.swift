@@ -58,8 +58,8 @@ struct MarkdownFileEditor: View {
                 }
                 .frame(width: MarkdownFileEditorMode.pickerWidth)
                 .accessibilityIdentifier("files.markdown.layout")
-                .smokeTarget("files.markdown.layout")
-                .smokeTarget("files.markdown.layout.\(documentKey)")
+                .e2eTarget("files.markdown.layout")
+                .e2eTarget("files.markdown.layout.\(documentKey)")
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 12)
@@ -71,7 +71,7 @@ struct MarkdownFileEditor: View {
                 scrollCoordinator: scrollCoordinator, richEditing: editing
             )
             .accessibilityIdentifier("files.markdown.split")
-            .smokeTarget("files.markdown.split")
+            .e2eTarget("files.markdown.split")
         }
         .onChange(of: revealID) { _, _ in mode = .edit }
         .onChange(of: mode) { _, _ in
@@ -87,7 +87,7 @@ struct MarkdownFileEditor: View {
                     active: showingSource && active
                 )
                 .accessibilityIdentifier("files.editor")
-                .smokeTarget("files.markdown.source")
+                .e2eTarget("files.markdown.source")
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -208,23 +208,12 @@ final class DieterIslandController: NSObject {
     private var choosingDisplay = false
     private var enabled = false
     private var started = false
-    #if DIETER_UI_SMOKE
-        private let automaticHoverEnabled = !ProcessInfo.processInfo.arguments.contains("--island-ui-smoke")
-    #else
-        private let automaticHoverEnabled = true
-    #endif
 
     init(store: DieterStore, defaults: UserDefaults = DieterAppearance.applicationDefaults()) {
         self.store = store
         self.defaults = defaults
         edge = DieterIslandEdge(rawValue: defaults.string(forKey: "DieterIslandEdge") ?? "right") ?? .right
     }
-
-    #if DIETER_UI_SMOKE
-        func installCaptureFixture(file: URL, browser: CaptureBrowserContext) {
-            captureTask.fixtureCapture = (file, browser)
-        }
-    #endif
 
     var islandWindow: NSWindow? { panel }
     var isVisible: Bool { panel?.isVisible == true }
@@ -286,7 +275,7 @@ final class DieterIslandController: NSObject {
     }
 
     private func checkPointerLocation() {
-        guard automaticHoverEnabled, enabled, !dragging, !choosingDisplay, let panel else { return }
+        guard enabled, !dragging, !choosingDisplay, let panel else { return }
         let point = NSEvent.mouseLocation
         if panel.frame.insetBy(dx: -5, dy: -5).contains(point) {
             closeTask?.cancel()
@@ -504,7 +493,7 @@ final class DieterIslandController: NSObject {
     }
 
     private func installPointerMonitors() {
-        guard automaticHoverEnabled, globalPointerMonitor == nil, localPointerMonitor == nil else { return }
+        guard globalPointerMonitor == nil, localPointerMonitor == nil else { return }
         globalPointerMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown]) {
             [weak self] _ in
             Task { @MainActor [weak self] in self?.checkPointerLocation() }

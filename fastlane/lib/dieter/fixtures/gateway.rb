@@ -18,23 +18,10 @@ module Dieter
 
     attr_reader :values, :process
 
-    def initialize(
-      context,
-      suite,
-      state,
-      evidence: nil,
-      direct: false,
-      usage: false,
-      offline_trigger: nil
-    )
-      @context, @suite, @state, @evidence, @direct, @usage, @offline =
-        context,
-        suite,
-        state,
-        evidence,
-        direct,
-        usage,
-        offline_trigger
+    # e2e seeds the workspace every Maestro flow shares; direct adds the
+    # authenticated direct route the Swift-to-core integration tests use.
+    def initialize(context, state, evidence: nil, e2e: false, direct: false)
+      @context, @state, @evidence, @e2e, @direct = context, state, evidence, e2e, direct
     end
 
     def start
@@ -42,26 +29,14 @@ module Dieter
       self.class.compile(@context) unless File.file?(binary)
       argv = [binary, "-addr", "127.0.0.1:0", "-home", File.join(@state, "gateway")]
       argv += %w[-direct-route live] if @direct
-      argv += ["-offline-trigger", @offline] if @offline
-      if @evidence
-        argv += ["-offline-trigger", File.join(@evidence, "daemon-offline")] if %w[
-          core
-          board
-        ].include?(@suite)
-        argv += ["-daemon-restart-trigger", File.join(@evidence, "daemon-restart")] if @suite ==
-          "terminal"
-      end
-      argv << "-board-stress-fixture" if @suite == "board"
-      argv << "-inbox-fixture" if @suite == "inbox"
-      argv << "-mobile-fixture" if @suite == "mobile"
-      argv << "-usage-fixture" if @usage
+      argv << "-e2e-fixture" if @e2e
       @process =
         @context.start(
           argv,
           environment: {
             "DIETER_HARNESS_RUNTIME_DIR" => File.join(@context.root, "internal/harness/runtime"),
-            # Production daemons offer WebRTC control channels; the Android journey uses them too.
-            "DIETER_TEST_CONTROL_WEBRTC" => @suite == "mobile" ? "1" : nil
+            # Production daemons offer WebRTC control channels; the Android app uses them too.
+            "DIETER_TEST_CONTROL_WEBRTC" => @e2e ? "1" : nil
           }.compact
         )
       # Seeding runs git and starts two daemons; a CI runner that just tore down a

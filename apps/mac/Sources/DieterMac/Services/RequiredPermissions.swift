@@ -63,8 +63,8 @@ final class RequiredPermissions {
     }
 
     static func live() -> RequiredPermissions {
-        #if DIETER_UI_SMOKE
-            if ProcessInfo.processInfo.arguments.contains(where: { $0.hasSuffix("-ui-smoke") }) {
+        #if DIETER_E2E
+            if NativeTestSupport.isE2E {
                 return RequiredPermissions(check: { _ in true }, request: { _ in }, openSettings: { _ in true })
             }
         #endif

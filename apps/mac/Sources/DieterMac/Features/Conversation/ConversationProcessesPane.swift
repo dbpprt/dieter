@@ -63,7 +63,7 @@ struct ConversationProcessesPane: View {
                 }
             }
             .accessibilityIdentifier("conversation.content.processes")
-            .smokeTarget("conversation.content.processes")
+            .e2eTarget("conversation.content.processes")
         } else {
             Color.clear
         }
@@ -83,7 +83,7 @@ struct ConversationProcessesPane: View {
                         .buttonStyle(DieterBarButtonStyle(destructive: true, size: 28))
                         .disabled(!model.canStop || !model.connected)
                         .accessibilityIdentifier("conversation.content.processes.stop")
-                        .smokeTarget("conversation.content.processes.stop")
+                        .e2eTarget("conversation.content.processes.stop")
                 }.padding(12)
                 Divider()
                 if model.outputTruncated {
@@ -105,7 +105,7 @@ struct ConversationProcessesPane: View {
                 // inside its viewport. Logs always begin at the top-left.
                 .defaultScrollAnchor(.topLeading, for: .alignment)
                 .defaultScrollAnchor(.topLeading, for: .initialOffset)
-                .smokeTarget("conversation.content.processes.output-viewport")
+                .e2eTarget("conversation.content.processes.output-viewport")
             }.help(process.workingDirectory)
         } else {
             Text("Select a process").foregroundStyle(.secondary)
@@ -116,7 +116,7 @@ struct ConversationProcessesPane: View {
         if !data.isEmpty {
             VStack(alignment: .leading, spacing: 5) {
                 Text(title).font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                    .smokeTarget("conversation.content.processes.\(identifier)-heading")
+                    .e2eTarget("conversation.content.processes.\(identifier)-heading")
                 Text(String(decoding: data, as: UTF8.self)).font(.system(.caption, design: .monospaced))
                     .textSelection(.enabled).fixedSize(horizontal: true, vertical: true)
             }
