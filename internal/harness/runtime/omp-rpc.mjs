@@ -56,6 +56,7 @@ export class OMPConnection {
         for await (const record of jsonLines(socket, rpcPayloadLimit + 1024)) {
           if (record.attached) {
             this.dialogs = record.dialogs || [];
+            this.canceledHostTools = record.canceledHostTools || [];
             this.onAttach();
             continue;
           }
@@ -410,6 +411,9 @@ export async function runNativeOMP({
       promptId = randomUUID();
     }
     stream.start(request.continue === true);
+    // Replay can contain a tool request whose native timeout fired while no
+    // worker was attached. Consult the bridge snapshot before admitting it.
+    for (const id of connection.canceledHostTools) canceledTools.add(id);
     connection.onFrame = (frame) => {
       if (frame.type === "host_tool_cancel") {
         canceledTools.add(frame.targetId);

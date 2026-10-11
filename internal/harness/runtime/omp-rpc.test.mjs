@@ -337,3 +337,33 @@ test("large Unicode text stays intact and large tool results get explicit bounde
   assert.match(result.note, /OMP session/);
   assert.ok(Buffer.byteLength(JSON.stringify(result)) < 3 * 1024 * 1024);
 });
+
+test("reattachment skips host requests canceled while the worker was detached", async (t) => {
+  const f = await fixture(t);
+  let signaled = false;
+  const first = await f.run(
+    { prompt: "detached-cancel", backgroundProcessesEnabled: true },
+    (output, child) => {
+      if (output.chunk?.type === "text-delta" && !signaled) {
+        signaled = true;
+        child.kill("SIGUSR1");
+      }
+    },
+  );
+  assert.equal(first.code, 0, first.stderr);
+  const journal = join(first.state.data.ompRPC.stateDir, "events.ndjson");
+  for (let attempt = 0; attempt < 200; attempt++) {
+    if ((await readFile(journal, "utf8")).includes('"host_tool_cancel"')) break;
+    if (attempt === 199) assert.fail("Native cancellation not emitted while detached");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  const continued = await f.run({
+    continue: true,
+    session: first.state,
+    backgroundProcessesEnabled: true,
+  });
+  assert.equal(continued.code, 0, continued.stderr);
+  assert.equal(text(continued), "Canceled host request skipped");
+  assert.ok(!continued.outputs.some((x) => x.type === "fixture-host-admission"));
+  assert.ok((await f.commands()).some((x) => x.type === "host_tool_result" && x.isError === true));
+});

@@ -123,7 +123,7 @@ input.on("line", (line) => {
           toolName: "list_background_processes",
           arguments: {},
         });
-      } else if (command.message === "long") {
+      } else if (command.message === "long" || command.message === "detached-cancel") {
         emit({ type: "message_start", messageId: "long", message: { role: "assistant" } });
         emit({
           type: "message_update",
@@ -131,6 +131,24 @@ input.on("line", (line) => {
           assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "before " },
         });
         timer = setTimeout(() => {
+          if (command.message === "detached-cancel") {
+            emit({
+              type: "tool_execution_start",
+              toolCallId: "slow-1",
+              toolName: "list_background_processes",
+              args: {},
+            });
+            emit({
+              type: "host_tool_call",
+              id: "host-1",
+              toolCallId: "slow-1",
+              toolName: "list_background_processes",
+              arguments: {},
+            });
+            emit({ type: "host_tool_cancel", targetId: "host-1" });
+            timer = undefined;
+            return;
+          }
           emit({
             type: "message_update",
             messageId: "long",
@@ -167,14 +185,18 @@ input.on("line", (line) => {
       break;
     }
     case "host_tool_result":
-      if (prompt.message === "slow-host") {
+      if (prompt.message === "slow-host" || prompt.message === "detached-cancel") {
         emit({
           type: "tool_execution_end",
           toolCallId: "slow-1",
           toolName: "list_background_processes",
           result: command.result,
         });
-        answer("Host admission completed");
+        answer(
+          prompt.message === "detached-cancel"
+            ? "Canceled host request skipped"
+            : "Host admission completed",
+        );
         finish();
         break;
       }

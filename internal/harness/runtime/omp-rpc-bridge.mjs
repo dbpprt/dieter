@@ -16,6 +16,7 @@ let journalBytes = 0,
   shuttingDown = false,
   terminalError;
 const dialogs = new Set();
+const canceledHostTools = new Set();
 const child = spawn(config.executable, config.args, {
   cwd: config.cwd,
   env: process.env,
@@ -60,6 +61,7 @@ async function pump(client) {
 }
 
 async function record(frame) {
+  if (frame.type === "host_tool_cancel") canceledHostTools.add(frame.targetId);
   if (frame.type === "extension_ui_request") {
     if (["select", "confirm", "input", "editor"].includes(frame.method)) dialogs.add(frame.id);
     if (frame.method === "cancel") dialogs.delete(frame.targetId);
@@ -96,7 +98,11 @@ const server = createServer((socket) => {
         owner?.socket.destroy();
         client = { socket, after: message.after, pumping: false };
         owner = client;
-        await writeJSON(socket, { attached: true, dialogs: [...dialogs] });
+        await writeJSON(socket, {
+          attached: true,
+          dialogs: [...dialogs],
+          canceledHostTools: [...canceledHostTools],
+        });
         void pump(client);
       } else {
         if (owner !== client) throw new Error("OMP bridge attachment replaced");
@@ -106,6 +112,7 @@ const server = createServer((socket) => {
         }
         if (message.type !== "send" || !message.frame || typeof message.frame.type !== "string")
           throw new Error("Invalid OMP bridge command");
+        if (message.frame.type === "host_tool_result") canceledHostTools.delete(message.frame.id);
         if (message.frame.type === "extension_ui_response") dialogs.delete(message.frame.id);
         await writeJSON(child.stdin, message.frame, rpcPayloadLimit);
       }
