@@ -2,7 +2,7 @@ name: Build Apple
 
 # The Apple signing domain: the notarized Mac app, the App Store IPA and the
 # notarized darwin daemon (tarball + side-by-side pkg). Every job references
-# the `apple-signing` environment, which alone holds the signing secrets.
+# the `apple-signing` environment (main only); the caller passes the signing secrets.
 on:
   workflow_call:
     inputs:

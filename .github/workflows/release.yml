@@ -9,9 +9,10 @@ name: Release
 #   the next version, build per signing domain, publish a prerelease, TestFlight.
 # stable: dispatch with the tested dev tag; promotes those exact bytes.
 #
-# Signing material lives only in GitHub environments (apple-signing,
-# android-signing, stable-release) restricted to main; the builder jobs
-# reference their environment, so no secret is passed or inherited.
+# Signing jobs run in GitHub environments (apple-signing, android-signing,
+# stable-release) restricted to main. The signing secrets are repository
+# secrets today, so the builder calls inherit them; once they are moved into
+# those environments, drop `secrets: inherit`.
 on:
   workflow_call:
     inputs:
@@ -104,6 +105,7 @@ jobs:
     with:
       version: ${{ needs.version.outputs.version }}
       build: ${{ needs.version.outputs.build }}
+    secrets: inherit
 
   android:
     needs: version
@@ -114,6 +116,7 @@ jobs:
     with:
       version: ${{ needs.version.outputs.version }}
       build: ${{ needs.version.outputs.build }}
+    secrets: inherit
 
   publish:
     needs: [version, server, apple, android]

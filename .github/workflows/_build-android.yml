@@ -1,7 +1,7 @@
 name: Build Android
 
 # The Android signing domain: the signed release APK. The job references the
-# `android-signing` environment, which alone holds the keystore secrets.
+# `android-signing` environment (main only); the caller passes the keystore secrets.
 on:
   workflow_call:
     inputs:
