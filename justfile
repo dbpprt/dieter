@@ -89,6 +89,11 @@ generate:
     if [[ "$(uname -s)" == Darwin ]]; then
         # Swift plugins come from DieterKit's resolved packages, so generated
         # code always matches the SwiftProtobuf/GRPC runtime the apps link.
+        # Resolving DieterKit needs its DieterCore binary target.
+        if [[ ! -d apps/apple/Frameworks/DieterCore.xcframework ]]; then
+            echo "Swift bindings need apps/apple/Frameworks/DieterCore.xcframework: run 'just framework slices:macos' first." >&2
+            exit 1
+        fi
         plugins="${DIETER_SWIFT_PROTOC_PLUGINS:-$PWD/tmp/swift-protoc-plugins}"
         for plugin in protoc-gen-swift protoc-gen-grpc-swift-2; do
             swift build --package-path apps/apple/DieterKit --scratch-path "$plugins" \

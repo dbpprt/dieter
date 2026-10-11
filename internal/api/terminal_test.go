@@ -1,5 +1,8 @@
 package api
 
+// These tests start real tmux servers; they stay serial because concurrent
+// tmux server starts on loaded CI runners exit unexpectedly.
+
 import (
 	"bytes"
 	"context"
@@ -24,7 +27,6 @@ import (
 )
 
 func TestTerminalWorkingDirectoryStaysInsideProjectAfterSymlinkResolution(t *testing.T) {
-	t.Parallel()
 	repository := filepath.Join(t.TempDir(), "repository")
 	inside := filepath.Join(repository, "nested")
 	outside := filepath.Join(t.TempDir(), "outside")
@@ -64,7 +66,6 @@ func TestTerminalWorkingDirectoryStaysInsideProjectAfterSymlinkResolution(t *tes
 }
 
 func TestMachineTerminalWorkingDirectoryStaysInsideHome(t *testing.T) {
-	t.Parallel()
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +86,6 @@ func TestMachineTerminalWorkingDirectoryStaysInsideHome(t *testing.T) {
 }
 
 func TestTerminalGRPCPersistsAcrossWatchReconnect(t *testing.T) {
-	t.Parallel()
 	repository := filepath.Join(t.TempDir(), "repository")
 	if err := os.MkdirAll(filepath.Join(repository, ".git"), 0o755); err != nil {
 		t.Fatal(err)
@@ -176,7 +176,6 @@ func TestTerminalGRPCPersistsAcrossWatchReconnect(t *testing.T) {
 }
 
 func TestTerminalPersistsAcrossServerReconstruction(t *testing.T) {
-	t.Parallel()
 	data := testkit.Store(t)
 	first := New(data, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if !first.terminals.Durable() {

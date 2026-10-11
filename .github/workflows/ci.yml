@@ -167,8 +167,8 @@ jobs:
       - name: End-to-end tests
         run: |
           mkdir -p tmp/junit
-          packages=$(grep -rl --include='*_test.go' '^//go:build e2e' cmd internal tools | xargs -n1 dirname | sort -u | sed 's|^|./|')
-          gotestsum --format github-actions --junitfile tmp/junit/go-e2e.xml -- -tags e2e -timeout 20m $packages
+          mapfile -t packages < <(grep -rl --include='*_test.go' '^//go:build e2e' cmd internal tools | xargs -n1 dirname | sort -u | sed 's|^|./|')
+          gotestsum --format github-actions --junitfile tmp/junit/go-e2e.xml -- -tags e2e -timeout 20m "${packages[@]}"
       - uses: mikepenz/action-junit-report@6ef3fdcfcd5f0b5d14df3e659ef19b8c6820f93d # v6.6.1
         if: always()
         with:
@@ -270,6 +270,14 @@ jobs:
             apps/apple/mac/.build
             apps/apple/ios/.build/DerivedData/SourcePackages
             native/macos/.build
+      - name: Kotlin macOS tests
+        run: bundle exec fastlane core_apple_test
+      - name: Swift tests (count-guarded) and privacy helper packaging
+        run: |
+          bundle exec fastlane mac test_unit
+          bundle exec fastlane mac privacy_test
+      # After the test lanes: building the Swift protoc plugins resolves
+      # DieterKit, whose DieterCore.xcframework they assemble.
       - name: Swift generated code
         run: |
           echo "::group::buf generate (Swift)"
@@ -279,12 +287,6 @@ jobs:
             echo "::error title=Generated Swift drift::Run 'just generate' on macOS and commit the result."
             exit 1
           fi
-      - name: Kotlin macOS tests
-        run: bundle exec fastlane core_apple_test
-      - name: Swift tests (count-guarded) and privacy helper packaging
-        run: |
-          bundle exec fastlane mac test_unit
-          bundle exec fastlane mac privacy_test
       - name: Swift formatting of this change
         if: env.CHANGE_BASE != ''
         run: |
@@ -476,7 +478,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup
         with:
-          tools: ruby gem:bundler just actionlint
+          tools: ruby gem:bundler just actionlint shellcheck
           bundle: "true"
       - name: Workflows
         run: just lint-workflows
