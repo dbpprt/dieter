@@ -120,9 +120,16 @@ Different keys or accounts require a separate audited recovery process.
 the same Dieter-pinned OMP build as new turns, not a separately installed global
 `omp`, and exposes only GPT-6 Luna, Sol, Astra, and the Tailscale GLM route. The
 first OMP catalog refresh can install that pinned build and Dieter's pinned Bun;
-later refreshes reuse them. New turns pass the selected model at OMP launch rather
-than relying on OMP's narrower ACP cycling-model option; old durable sessions
-retain bounded resume compatibility.
+later refreshes reuse them. Turns use native OMP RPC, inheriting the execution
+host's OMP settings, profile, configured MCP servers, plugins, extensions and
+skills. The selected model is passed at launch. Completed ACP sessions reopen
+their saved OMP history through RPC; an already dispatched ACP continuation
+retains its original transport until it finishes.
+OMP questions appear as ordinary chat text. Reply with the option number or
+exact label, yes/no for confirmations, or text for input/editor questions.
+`/cancel` cancels the pending question; `card cancel` stops its provider process.
+Archiving a card cancels its pending native question. `/compact` and `/handoff`
+use OMP's authoritative RPC completion. See `docs/omp-rpc.md` for details.
 OMP bootstrap installs revalidate npm metadata even when the host prefers offline
 cache reads. OMP's bounded publication retries therefore observe newly published
 dependencies while retaining the exact pinned version and saved session.

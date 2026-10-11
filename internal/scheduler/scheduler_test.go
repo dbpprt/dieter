@@ -274,3 +274,50 @@ func TestSkipIfOpenRecordsOccurrenceWithoutBrokenCardLink(t *testing.T) {
 		t.Fatalf("cards=%#v", cards)
 	}
 }
+
+type parkedOMPRunner struct {
+	testRunner
+	canceled []string
+}
+
+func (r *parkedOMPRunner) Cancel(id, _ string) error {
+	r.canceled = append(r.canceled, id)
+	return nil
+}
+
+func TestTickArchivesAndCancelsPendingNativeOMPQuestion(t *testing.T) {
+	manager, data, project, board := setup(t)
+	runner := &parkedOMPRunner{}
+	manager.app.Runner = runner
+	if _, err := data.UpdateBoardDoneArchivePolicy(board.ID, model.DoneArchiveImmediately); err != nil {
+		t.Fatal(err)
+	}
+	card, err := data.CreateCard(store.CreateCardInput{Project: project.ID, Board: board.ID, Title: "Pending OMP question", Provider: "omp", Model: "tailscale/glm-5.3-flash-exl3"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := json.RawMessage(`{"harnessId":"omp","data":{"ompRPC":{"version":1,"sessionFile":"native.jsonl","promptId":"prompt","pendingDialog":{"id":"dialog","method":"select"}}}}`)
+	if _, err := data.SetConversationSession(card.ID, "", state); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := data.MoveCard(card.ID, model.LaneDone, nil); err != nil {
+		t.Fatal(err)
+	}
+	manager.now = func() time.Time { return time.Now().UTC().Add(time.Second) }
+	manager.Tick()
+	stored, err := data.ResolveCard(card.ID)
+	if err != nil || !stored.Archived {
+		t.Fatalf("archive=%v error=%v", stored.Archived, err)
+	}
+	conversation, err := data.Conversation(card.ID)
+	if err != nil || harness.AwaitingOMPInput(conversation.Session) || !strings.Contains(string(conversation.Session), "native.jsonl") {
+		t.Fatalf("native history or question cleanup incorrect: %s %v", conversation.Session, err)
+	}
+	if len(runner.canceled) != 1 || runner.canceled[0] != card.ID {
+		t.Fatalf("canceled=%v", runner.canceled)
+	}
+	manager.Tick()
+	if len(runner.canceled) != 1 {
+		t.Fatalf("repeated cancellation=%v", runner.canceled)
+	}
+}

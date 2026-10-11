@@ -57,7 +57,7 @@ func TestCleanupTerminatesBridgeInSandboxHome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, stateDir := range []string{stateDirs[1], stateDirs[3]} {
+	for _, stateDir := range []string{stateDirs[1], stateDirs[3], stateDirs[4]} {
 		t.Run(filepath.Base(filepath.Dir(filepath.Dir(stateDir))), func(t *testing.T) {
 			if err := os.MkdirAll(stateDir, 0o700); err != nil {
 				t.Fatal(err)

@@ -217,7 +217,7 @@ func TestConfiguredEffortValidationIsProviderAndModelAware(t *testing.T) {
 
 func TestCatalogIncludesConfiguredOMPModels(t *testing.T) {
 	adapter, valid := ResolveAdapter("omp", false)
-	if !valid || adapter.Runtime != "omp-acp" || adapter.DefaultModel != "tailscale/glm-5.3-flash-exl3" || len(adapter.Models) != 4 {
+	if !valid || adapter.Runtime != "omp-rpc" || adapter.DefaultModel != "tailscale/glm-5.3-flash-exl3" || len(adapter.Models) != 4 {
 		t.Fatalf("omp catalog=%#v valid=%v", adapter, valid)
 	}
 	if adapter.Models[0].RuntimeID() != "tailscale/glm-5.3-flash-exl3" || adapter.Models[0].ContextWindow != 1000000 || adapter.Models[3].ID != "openai-codex/gpt-6-astra" {
@@ -675,7 +675,7 @@ func TestSubprocessRunnerOMPLiveModels(t *testing.T) {
 			var chunks []string
 			var response strings.Builder
 			err := runner.Run(ctx, Request{
-				Harness: "omp", Adapter: "omp-acp", Model: model.id, ConfiguredModel: model.id, Effort: "low",
+				Harness: "omp", Adapter: "omp-rpc", Model: model.id, ConfiguredModel: model.id, Effort: "low",
 				Prompt:    "Reply with exactly " + model.expected + " and nothing else. Do not use tools.",
 				SessionID: "omp-e2e-" + string(rune('a'+index)), ResponseMessageID: "assistant_omp_e2e",
 				ProjectPath: repo, RuntimeRoot: runtimeRoot,

@@ -161,6 +161,16 @@ func (s *Service) CleanupInactiveProviderBridges() ([]string, error) {
 			if active {
 				continue
 			}
+			if !card.Archived {
+				conversation, conversationErr := s.Store.Conversation(card.ID)
+				if conversationErr != nil {
+					cleanupErrors = append(cleanupErrors, conversationErr)
+					continue
+				}
+				if conversation.Status == "idle" && harness.AwaitingOMPInput(conversation.Session) {
+					continue
+				}
+			}
 			runtimeRoot := filepath.Join(s.Store.RuntimeDir(), "sessions", project.ID)
 			stateDirs, stateErr := harness.ProviderBridgeStateDirs(card.ID, runtimeRoot)
 			if stateErr != nil {

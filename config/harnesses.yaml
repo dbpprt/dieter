@@ -164,7 +164,7 @@ harnesses:
 
   - id: omp
     name: Oh My Pi
-    adapter: omp-acp
+    adapter: omp-rpc
     capabilities:
       - id: model-selection
         level: between-turns
