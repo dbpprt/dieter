@@ -1234,6 +1234,17 @@ func (api *grpcAPI) ArchiveCard(_ context.Context, request *dieterv1.ArchiveCard
 	if err != nil {
 		return nil, grpcFailure(err)
 	}
+	if value.Archived && value.Provider == "omp" {
+		conversation, readErr := api.server.store.Conversation(value.ID)
+		if readErr != nil {
+			return nil, grpcFailure(readErr)
+		}
+		if harness.AwaitingOMPInput(conversation.Session) {
+			if err := api.server.app.CancelCard(value.ID); err != nil {
+				return nil, grpcFailure(err)
+			}
+		}
+	}
 	return protoCard(value), nil
 }
 

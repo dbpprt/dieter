@@ -137,6 +137,7 @@ type parallelRunner struct {
 }
 
 type interruptQueueRunner struct {
+	state    json.RawMessage
 	mu       sync.Mutex
 	requests []harness.Request
 	started  chan int
@@ -328,7 +329,11 @@ func (runner *interruptQueueRunner) Run(ctx context.Context, request harness.Req
 		if err := emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(`{"type":"tool-output-available","toolCallId":"tool-inspect","toolName":"bash","output":{"exitCode":0,"output":" M retained.txt"}}`)}); err != nil {
 			return err
 		}
-		if err := emit(harness.Output{Type: "session", State: json.RawMessage(`{"type":"resume-session","data":{"acpSessionId":"interrupted"},"continueFrom":{"type":"continue-turn"}}`)}); err != nil {
+		state := runner.state
+		if len(state) == 0 {
+			state = json.RawMessage(`{"type":"resume-session","data":{"acpSessionId":"interrupted"},"continueFrom":{"type":"continue-turn"}}`)
+		}
+		if err := emit(harness.Output{Type: "session", State: state}); err != nil {
 			return err
 		}
 		<-ctx.Done()
@@ -1111,7 +1116,7 @@ func TestSeparateChatsRunConcurrentlyInSameProjectFolder(t *testing.T) {
 	}
 }
 
-func TestOMPSelectionUsesConfiguredACPAdapterAndContextWindow(t *testing.T) {
+func TestOMPSelectionUsesConfiguredRPCAdapterAndContextWindow(t *testing.T) {
 	service, fake, project, board := appSetup(t)
 	card, err := service.CreateCard(context.Background(), CardInput{
 		Project: project.ID, Board: board.ID, Lane: model.LaneRunning,
@@ -1126,7 +1131,7 @@ func TestOMPSelectionUsesConfiguredACPAdapterAndContextWindow(t *testing.T) {
 		return fake.count() == 1 && stored.Runtime == "idle" && len(conversation.Session) > 0 && !hasActiveTurn(service, project.ID)
 	})
 	request := fake.request(0)
-	if card.Provider != "omp" || card.Model != "tailscale/glm-5.3-flash-exl3" || request.Adapter != "omp-acp" || request.ContextWindow != 1000000 {
+	if card.Provider != "omp" || card.Model != "tailscale/glm-5.3-flash-exl3" || request.Adapter != "omp-rpc" || request.ContextWindow != 1000000 {
 		t.Fatalf("card=%#v request=%#v", card, request)
 	}
 }
@@ -1600,97 +1605,113 @@ func TestCancelCardAcknowledgesBeforeSlowTurnStopsAndPromotesQueue(t *testing.T)
 }
 
 func TestQueuedMessageStartsAfterInterruptWithoutRecordingFailure(t *testing.T) {
-	service, _, project, board := appSetup(t)
-	runner := &interruptQueueRunner{started: make(chan int, 2)}
-	service.Runner = runner
-	card, err := service.CreateCard(context.Background(), CardInput{Project: project.ID, Board: board.ID, Lane: model.LaneRunning, Title: "Queue", Prompt: "Keep working", Provider: "omp", Model: "tailscale/glm-5.3-flash-exl3", DeferStart: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	updates, err := service.StartCard(card.ID, "", card.Provider, card.Model, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go drainTurnUpdates(updates)
-	if turn := <-runner.started; turn != 1 {
-		t.Fatalf("first turn=%d", turn)
-	}
-	waitFor(t, func() bool {
-		conversation, conversationErr := service.Store.Conversation(card.ID)
-		if conversationErr != nil {
-			return false
+	for _, native := range []bool{false, true} {
+		name := "legacy ACP"
+		if native {
+			name = "native RPC"
 		}
-		for _, message := range conversation.Messages {
-			for _, part := range message.Parts {
-				if part.ToolCallID == "tool-inspect" && strings.Contains(string(part.Output), "M retained.txt") {
-					return true
+		t.Run(name, func(t *testing.T) {
+			service, _, project, board := appSetup(t)
+			runner := &interruptQueueRunner{started: make(chan int, 2)}
+			if native {
+				runner.state = json.RawMessage(`{"type":"resume-session","harnessId":"omp","data":{"ompRPC":{"version":1,"sessionFile":"native-history.jsonl"}},"continueFrom":{"type":"continue-session"}}`)
+			}
+			service.Runner = runner
+			card, err := service.CreateCard(context.Background(), CardInput{Project: project.ID, Board: board.ID, Lane: model.LaneRunning, Title: "Queue", Prompt: "Keep working", Provider: "omp", Model: "tailscale/glm-5.3-flash-exl3", DeferStart: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			updates, err := service.StartCard(card.ID, "", card.Provider, card.Model, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			go drainTurnUpdates(updates)
+			if turn := <-runner.started; turn != 1 {
+				t.Fatalf("first turn=%d", turn)
+			}
+			waitFor(t, func() bool {
+				conversation, conversationErr := service.Store.Conversation(card.ID)
+				if conversationErr != nil {
+					return false
+				}
+				for _, message := range conversation.Messages {
+					for _, part := range message.Parts {
+						if part.ToolCallID == "tool-inspect" && strings.Contains(string(part.Output), "M retained.txt") {
+							return true
+						}
+					}
+				}
+				return false
+			})
+			queuedParts := []model.UIMessagePart{
+				{Type: "text", Text: "Use this instead"},
+				{Type: "file", MediaType: "image/png", Filename: "queued.png", URL: "data:image/png;base64,iVBORw0KGgo="},
+			}
+			queued, err := service.SubmitCardParts(card.ID, queuedParts, card.Provider, card.Model, "", nil)
+			if err != nil || !queued {
+				t.Fatalf("queued=%v err=%v", queued, err)
+			}
+			conversation, _ := service.Store.Conversation(card.ID)
+			if len(conversation.Queue) != 1 || conversation.Queue[0].Text != "Use this instead" || len(conversation.Queue[0].Parts) != 2 {
+				t.Fatalf("queue=%#v", conversation.Queue)
+			}
+			if err := service.CancelCard(card.ID); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case turn := <-runner.started:
+				if turn != 2 {
+					t.Fatalf("second turn=%d", turn)
+				}
+			case <-time.After(10 * time.Second):
+				t.Fatal("queued turn did not start after interrupt")
+			}
+			service.mu.Lock()
+			secondTurn := service.active[card.ID]
+			service.mu.Unlock()
+			if secondTurn == nil {
+				t.Fatal("queued turn was not registered as active")
+			}
+			select {
+			case <-secondTurn.done:
+			case <-time.After(10 * time.Second):
+				t.Fatal("queued turn did not finish")
+			}
+			conversation, _ = service.Store.Conversation(card.ID)
+			stored, _ := service.Store.ResolveCard(card.ID)
+			service.mu.Lock()
+			active := service.active[card.ID]
+			service.mu.Unlock()
+			if conversation.Status != "idle" || len(conversation.Queue) != 0 || stored.Runtime != "idle" || active != nil {
+				t.Fatalf("queued turn did not settle: status=%q queue=%d runtime=%q active=%v", conversation.Status, len(conversation.Queue), stored.Runtime, active != nil)
+			}
+			prompts := runner.prompts()
+			if len(prompts) != 2 || prompts[0] != "Keep working" || !strings.Contains(prompts[1], "<interrupted_turn_context>") || !strings.Contains(prompts[1], `git status --short`) || !strings.Contains(prompts[1], `M retained.txt`) || !strings.HasSuffix(prompts[1], "USER:\nUse this instead") {
+				t.Fatalf("prompts=%#v", prompts)
+			}
+			runner.mu.Lock()
+			secondSession := append(json.RawMessage(nil), runner.requests[1].Session...)
+			secondContinues := runner.requests[1].Continue
+			secondAttachments := append([]harness.Attachment(nil), runner.requests[1].Attachments...)
+			runner.mu.Unlock()
+			if len(secondAttachments) != 1 || secondAttachments[0].Filename != "queued.png" {
+				t.Fatalf("queued attachment was not delivered: %#v", secondAttachments)
+			}
+			if native {
+				if !strings.Contains(string(secondSession), `"sessionFile":"native-history.jsonl"`) || secondContinues {
+					t.Fatalf("native history lost or interrupted inference replayed: %s", secondSession)
+				}
+			} else if len(secondSession) != 0 && string(secondSession) != "null" {
+				t.Fatalf("OMP queued turn retained interrupted session: %s", secondSession)
+			}
+			for _, message := range conversation.Messages {
+				for _, part := range message.Parts {
+					if strings.Contains(part.Text, "harness worker") || part.State == "error" {
+						t.Fatalf("interrupt was recorded as failure: %#v", conversation.Messages)
+					}
 				}
 			}
-		}
-		return false
-	})
-	queuedParts := []model.UIMessagePart{
-		{Type: "text", Text: "Use this instead"},
-		{Type: "file", MediaType: "image/png", Filename: "queued.png", URL: "data:image/png;base64,iVBORw0KGgo="},
-	}
-	queued, err := service.SubmitCardParts(card.ID, queuedParts, card.Provider, card.Model, "", nil)
-	if err != nil || !queued {
-		t.Fatalf("queued=%v err=%v", queued, err)
-	}
-	conversation, _ := service.Store.Conversation(card.ID)
-	if len(conversation.Queue) != 1 || conversation.Queue[0].Text != "Use this instead" || len(conversation.Queue[0].Parts) != 2 {
-		t.Fatalf("queue=%#v", conversation.Queue)
-	}
-	if err := service.CancelCard(card.ID); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case turn := <-runner.started:
-		if turn != 2 {
-			t.Fatalf("second turn=%d", turn)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("queued turn did not start after interrupt")
-	}
-	service.mu.Lock()
-	secondTurn := service.active[card.ID]
-	service.mu.Unlock()
-	if secondTurn == nil {
-		t.Fatal("queued turn was not registered as active")
-	}
-	select {
-	case <-secondTurn.done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("queued turn did not finish")
-	}
-	conversation, _ = service.Store.Conversation(card.ID)
-	stored, _ := service.Store.ResolveCard(card.ID)
-	service.mu.Lock()
-	active := service.active[card.ID]
-	service.mu.Unlock()
-	if conversation.Status != "idle" || len(conversation.Queue) != 0 || stored.Runtime != "idle" || active != nil {
-		t.Fatalf("queued turn did not settle: status=%q queue=%d runtime=%q active=%v", conversation.Status, len(conversation.Queue), stored.Runtime, active != nil)
-	}
-	prompts := runner.prompts()
-	if len(prompts) != 2 || prompts[0] != "Keep working" || !strings.Contains(prompts[1], "<interrupted_turn_context>") || !strings.Contains(prompts[1], `git status --short`) || !strings.Contains(prompts[1], `M retained.txt`) || !strings.HasSuffix(prompts[1], "USER:\nUse this instead") {
-		t.Fatalf("prompts=%#v", prompts)
-	}
-	runner.mu.Lock()
-	secondSession := append(json.RawMessage(nil), runner.requests[1].Session...)
-	secondAttachments := append([]harness.Attachment(nil), runner.requests[1].Attachments...)
-	runner.mu.Unlock()
-	if len(secondAttachments) != 1 || secondAttachments[0].Filename != "queued.png" {
-		t.Fatalf("queued attachment was not delivered: %#v", secondAttachments)
-	}
-	if len(secondSession) != 0 && string(secondSession) != "null" {
-		t.Fatalf("OMP queued turn retained interrupted session: %s", secondSession)
-	}
-	for _, message := range conversation.Messages {
-		for _, part := range message.Parts {
-			if strings.Contains(part.Text, "harness worker") || part.State == "error" {
-				t.Fatalf("interrupt was recorded as failure: %#v", conversation.Messages)
-			}
-		}
+		})
 	}
 }
 
@@ -2207,6 +2228,17 @@ func TestStartupCleansOnlyInactiveProviderBridges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	parked, err := service.CreateCard(context.Background(), CardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneTodo,
+		Title: "Native OMP question", Prompt: "Choose", Provider: "omp", DeferStart: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	questionState := json.RawMessage(`{"type":"resume-session","harnessId":"omp","data":{"ompRPC":{"version":1,"sessionFile":"native.jsonl","promptId":"prompt","pendingDialog":{"id":"question","method":"select"}}}}`)
+	if _, err := service.Store.SetConversationSession(parked.ID, "", questionState); err != nil {
+		t.Fatal(err)
+	}
 	active, err := service.CreateCard(context.Background(), CardInput{
 		Project: project.ID, Board: board.ID, Lane: model.LaneTodo,
 		Title: "Active", Prompt: "Now", Provider: "codex", DeferStart: true,
@@ -2216,7 +2248,7 @@ func TestStartupCleansOnlyInactiveProviderBridges(t *testing.T) {
 	}
 	runtimeRoot := filepath.Join(service.Store.RuntimeDir(), "sessions", project.ID)
 	metadata := map[string]string{}
-	for _, cardID := range []string{idle.ID, active.ID} {
+	for _, cardID := range []string{idle.ID, active.ID, parked.ID} {
 		stateDirs, stateErr := harness.ProviderBridgeStateDirs(cardID, runtimeRoot)
 		if stateErr != nil {
 			t.Fatal(stateErr)
@@ -2248,6 +2280,9 @@ func TestStartupCleansOnlyInactiveProviderBridges(t *testing.T) {
 	}
 	if _, err := os.Stat(metadata[active.ID]); err != nil {
 		t.Fatalf("active bridge metadata was removed: %v", err)
+	}
+	if _, err := os.Stat(metadata[parked.ID]); err != nil {
+		t.Fatalf("pending native question bridge was removed: %v", err)
 	}
 }
 

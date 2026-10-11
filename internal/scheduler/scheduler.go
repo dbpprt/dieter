@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -178,7 +179,18 @@ func (m *Manager) RunNow(ref string) (model.ScheduleRun, error) {
 
 func (m *Manager) Tick() {
 	now := m.now().UTC()
-	_, _ = m.store.ArchiveDoneCards(now)
+	archived, _ := m.store.ArchiveDoneCards(now)
+	for _, card := range archived {
+		if card.Provider != "omp" {
+			continue
+		}
+		conversation, err := m.store.Conversation(card.ID)
+		if err == nil && harness.AwaitingOMPInput(conversation.Session) {
+			if err := m.app.CancelCard(card.ID); err != nil {
+				slog.Warn("clean archived OMP dialog", "card", card.ID, "error", err)
+			}
+		}
+	}
 	schedules, err := m.store.ListDueSchedules(now, 100)
 	if err == nil {
 		for _, schedule := range schedules {

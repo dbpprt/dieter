@@ -153,6 +153,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 		}
 		return nil
 	}
+	var providerState json.RawMessage
 	err := runBatchedTurnOutputs(ctx, s.Runner, request, persistChunks, func(output harness.Output) error {
 		endHostWork, ok := s.beginTurnHostWork(detail.Card.ID, turnID)
 		if !ok {
@@ -165,6 +166,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 		case "chunk":
 			return persistChunks([]json.RawMessage{output.Chunk})
 		case "session":
+			providerState = output.State
 			return retryWhileStoreBusy(ctx, func() error {
 				_, err := s.Store.SetConversationSession(detail.Card.ID, turnID, output.State)
 				return err
@@ -200,7 +202,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 		err = reportedFailure
 	}
 	suspending := s.turnIsSuspending(detail.Card.ID, turnID)
-	if !suspending {
+	if !suspending && !(err == nil && ctx.Err() == nil && harness.AwaitingOMPInput(providerState)) {
 		if cleaner, ok := s.Runner.(harness.Cleaner); ok {
 			if cleanupErr := cleaner.Cleanup(detail.Card.ID, request.RuntimeRoot); cleanupErr != nil {
 				if err == nil {
@@ -272,7 +274,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 		// ACP implementations can persist the interrupted prompt inside their
 		// own session even when the Harness continuation envelope is discarded.
 		// A queued message must replace that prompt, so restart ACP cleanly.
-		if request.Adapter == "omp-acp" || request.Adapter == "dsh-acp" {
+		if request.Adapter == "omp-acp" || request.Adapter == "dsh-acp" || (request.Adapter == "omp-rpc" && harness.LegacyOMPSession(providerState)) {
 			_, _ = s.Store.SetConversationSession(detail.Card.ID, turnID, json.RawMessage("null"))
 		}
 		_ = finish(true, store.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: "idle"})
@@ -378,6 +380,15 @@ func (s *Service) CancelCard(ref string) error {
 		if canceller, ok := s.Runner.(harness.Canceller); ok {
 			err = canceller.Cancel(card.ID, filepath.Join(s.Store.RuntimeDir(), "sessions", card.ProjectID))
 			if err != nil && !errors.Is(err, os.ErrProcessDone) && !errors.Is(err, harness.ErrNoActiveTurn) {
+				return err
+			}
+		}
+		conversation, conversationErr := s.Store.Conversation(card.ID)
+		if conversationErr != nil {
+			return conversationErr
+		}
+		if harness.AwaitingOMPInput(conversation.Session) {
+			if _, err := s.Store.SetConversationSession(card.ID, "", harness.ClearOMPInput(conversation.Session)); err != nil {
 				return err
 			}
 		}

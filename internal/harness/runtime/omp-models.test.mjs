@@ -1,38 +1,53 @@
-import assert from 'node:assert/strict';
-import test from 'node:test';
-import { normalizeOMPDiscovery, ompVisibleModelSelectors } from './omp-models.mjs';
+import assert from "node:assert/strict";
+import test from "node:test";
+import { normalizeOMPDiscovery } from "./omp-models.mjs";
 
-test('combines the pinned OMP catalog with its configured default role', () => {
-  const model = { selector: 'openai-codex/gpt-6-sol', name: 'GPT-6 Sol' };
-  const normalized = normalizeOMPDiscovery({ models: [model] }, {
-    default: 'openai-codex/gpt-6-sol:high',
-  });
-  assert.deepEqual(normalized.models.map(item => item.selector), ompVisibleModelSelectors);
-  assert.equal(normalized.models[2], model);
-  assert.equal(normalized.defaultModel, 'openai-codex/gpt-6-sol:high');
-});
-
-test('keeps a usable OMP catalog when role discovery is unavailable', () => {
-  const model = { selector: 'openai-codex/gpt-6-astra', name: 'GPT-6 Astra' };
-  const normalized = normalizeOMPDiscovery({ models: [model] });
-  assert.deepEqual(normalized.models.map(item => item.selector), ompVisibleModelSelectors);
-  assert.equal(normalized.models[3], model);
-  assert.deepEqual(normalizeOMPDiscovery({ models: [] }).models.map(item => item.selector), ompVisibleModelSelectors);
-  assert.throws(() => normalizeOMPDiscovery({}), /catalog is invalid/);
-});
-
-test('publishes only the curated selectors in stable order', () => {
-  const catalog = [
-    { selector: 'openrouter/other/model', name: 'Other' },
-    ...[...ompVisibleModelSelectors].reverse().map(selector => ({ selector, name: selector })),
+test("publishes the complete authenticated OMP catalog without fabricating routes", () => {
+  const models = [
+    {
+      provider: "anthropic",
+      id: "claude-sonnet-5",
+      name: "Claude Sonnet 5",
+      thinking: ["low", "high"],
+    },
+    {
+      provider: "openai-codex",
+      id: "gpt-5.6-luna",
+      name: "GPT-5.6 Luna",
+      thinking: ["low", "medium"],
+    },
+    { selector: "tailscale/deepseek", name: "DeepSeek", contextWindow: 1_048_576 },
+    { selector: "openrouter/vendor/model:free", name: "Free", thinking: ["high"] },
   ];
-  const normalized = normalizeOMPDiscovery({ models: catalog }, { default: 'openrouter/other/model' });
-  assert.deepEqual(normalized.models.map(model => model.selector), ompVisibleModelSelectors);
-  assert.equal(normalized.defaultModel, undefined);
+  const normalized = normalizeOMPDiscovery(
+    { models },
+    { default: "anthropic/claude-sonnet-5:high" },
+  );
+  assert.deepEqual(normalized.models, models);
+  assert.equal(normalized.defaultModel, "anthropic/claude-sonnet-5:high");
 });
 
-test('fills unavailable curated routes from the stable Dieter catalog', () => {
-  const normalized = normalizeOMPDiscovery({ models: [{ selector: 'openrouter/other/model' }] });
-  assert.deepEqual(normalized.models.map(model => model.selector), ompVisibleModelSelectors);
-  assert.equal(normalized.models[0].contextWindow, 1_000_000);
+test("keeps native selectors containing colons and rejects unsupported default efforts", () => {
+  const models = [{ selector: "openrouter/vendor/model:free", name: "Free", thinking: ["high"] }];
+  assert.equal(
+    normalizeOMPDiscovery({ models }, { default: "openrouter/vendor/model:free" }).defaultModel,
+    "openrouter/vendor/model:free",
+  );
+  assert.equal(
+    normalizeOMPDiscovery({ models }, { default: "openrouter/vendor/model:free:high" })
+      .defaultModel,
+    "openrouter/vendor/model:free:high",
+  );
+  assert.equal(
+    normalizeOMPDiscovery({ models }, { default: "openrouter/vendor/model:free:max" }).defaultModel,
+    undefined,
+  );
+});
+
+test("retains the native catalog when role discovery is unavailable or references an unavailable model", () => {
+  const models = [{ provider: "anthropic", id: "claude-sonnet-5", name: "Claude Sonnet 5" }];
+  assert.deepEqual(normalizeOMPDiscovery({ models }), { models });
+  assert.deepEqual(normalizeOMPDiscovery({ models }, { default: "unavailable/model" }), { models });
+  assert.deepEqual(normalizeOMPDiscovery({ models: [] }), { models: [] });
+  assert.throws(() => normalizeOMPDiscovery({}), /catalog is invalid/);
 });

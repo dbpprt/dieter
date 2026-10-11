@@ -570,7 +570,7 @@ type Suspender interface {
 	Suspend(sessionID, runtimeRoot string) error
 }
 
-//go:embed runtime/package.json runtime/package-lock.json runtime/runner.mjs runtime/content-presentation.mjs runtime/background-processes.mjs runtime/dsh-discovery.mjs runtime/dsh-models.mjs runtime/omp-discovery.mjs runtime/omp-models.mjs runtime/claude-resilience.mjs runtime/claude-runtime.mjs runtime/local-attachments.mjs runtime/local-sandbox.mjs runtime/codex-runtime.mjs runtime/capabilities.mjs runtime/stream-reconciliation.mjs runtime/omp-capabilities-hook.mjs runtime/omp-resilience.mjs runtime/provider-options.mjs runtime/harness-errors.mjs runtime/usage-metadata.mjs runtime/quota-openai.mjs runtime/quota-claude.mjs
+//go:embed runtime/package.json runtime/package-lock.json runtime/runner.mjs runtime/content-presentation.mjs runtime/background-processes.mjs runtime/dsh-discovery.mjs runtime/dsh-models.mjs runtime/omp-discovery.mjs runtime/omp-models.mjs runtime/omp-rpc.mjs runtime/omp-rpc-bridge.mjs runtime/omp-rpc-protocol.mjs runtime/omp-rpc-stream.mjs runtime/claude-resilience.mjs runtime/claude-runtime.mjs runtime/local-attachments.mjs runtime/local-sandbox.mjs runtime/codex-runtime.mjs runtime/capabilities.mjs runtime/stream-reconciliation.mjs runtime/omp-capabilities-hook.mjs runtime/omp-resilience.mjs runtime/provider-options.mjs runtime/harness-errors.mjs runtime/usage-metadata.mjs runtime/quota-openai.mjs runtime/quota-claude.mjs
 var runtimeAssets embed.FS
 
 type SubprocessRunner struct {
@@ -695,13 +695,18 @@ func (r *SubprocessRunner) RuntimeDirectory(ctx context.Context) (string, error)
 }
 
 func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(Output) error) error {
+	// A dispatched ACP turn remains pinned to its original worker/bridge until
+	// completion. Its next human message opens the same OMP persistence via RPC.
+	if request.Harness == "omp" && request.Adapter == "omp-rpc" && request.Continue && legacyOMPContinuation(request.Session) {
+		request.Adapter = "omp-acp"
+	}
 	reference, err := r.PrepareRuntime(ctx, request.RuntimeDigest)
 	if err != nil {
 		return err
 	}
 	dir := reference.Directory
 	var runtimePaths []string
-	if request.Adapter == "omp-acp" {
+	if request.Adapter == "omp-acp" || request.Adapter == "omp-rpc" {
 		bunBin, bunErr := ensureManagedBun(ctx, filepath.Dir(filepath.Dir(r.root)))
 		if bunErr != nil {
 			return fmt.Errorf("prepare OMP runtime: %w", bunErr)
@@ -719,7 +724,7 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 	// just beyond that window and below Service.CancelCard's timeout.
 	command.WaitDelay = 9 * time.Second
 	command.Dir = dir
-	if request.Adapter == "omp-acp" {
+	if request.Adapter == "omp-acp" || request.Adapter == "omp-rpc" {
 		command.Env = ompHarnessEnvironment(runtimePaths...)
 	} else {
 		command.Env = harnessEnvironment()
@@ -978,6 +983,7 @@ func ProviderBridgeStateDirs(sessionID, runtimeRoot string) ([]string, error) {
 		filepath.Join(home, ".ai-sdk", "harness-acp", "omp", key, "bridge"),
 		filepath.Join(home, ".ai-sdk", "harness-acp", "dsh", key, "bridge"),
 		filepath.Join(home, ".ai-sdk-harness", ".agent-runs", sessionID, "bridge"),
+		filepath.Join(runtimeRoot, ".agent-runs", sessionID, "omp-rpc", "bridge"),
 	}, nil
 }
 
@@ -1056,7 +1062,7 @@ func harnessEnvironment(runtimePaths ...string) []string {
 		"OPENAI_API_KEY":     true, "CODEX_API_KEY": true, "OPENAI_BASE_URL": true, "CODEX_HOME": true,
 		"AI_GATEWAY_API_KEY": true, "AI_GATEWAY_BASE_URL": true, "VERCEL_OIDC_TOKEN": true,
 		"ANTHROPIC_API_KEY": true, "ANTHROPIC_AUTH_TOKEN": true, "ANTHROPIC_BASE_URL": true, "CLAUDE_CODE_OAUTH_TOKEN": true, "CLAUDE_CONFIG_DIR": true,
-		"PI_AGENT_DIR": true, "PI_CODING_AGENT_DIR": true, "OMP_PROFILE": true,
+		"PI_AGENT_DIR": true, "PI_CODING_AGENT_DIR": true, "OMP_PROFILE": true, "PI_CONFIG_FILES": true,
 		"DSH_HOME": true, "DEEPSEEK_API_KEY": true, "DEEPSEEK_BASE_URL": true, "DEEPSEEK_SEARCH_BASE_URL": true,
 		"DSH_PERMISSION_MODE": true, "DSH_TOOLS_MODE": true, "DSH_TELEMETRY_MODE": true, "DSH_TELEMETRY_DISABLED": true, "DSH_TELEMETRY_OTLP_URL": true,
 		"NODE_EXTRA_CA_CERTS": true, "NODE_USE_ENV_PROXY": true, "HTTP_PROXY": true, "HTTPS_PROXY": true, "NO_PROXY": true,
