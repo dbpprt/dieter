@@ -63,7 +63,6 @@ jobs:
         if: steps.mode.outputs.full != 'true'
         with:
           filters: .github/filters.yml
-          list-files: json
       - name: Summarize the selection
         env:
           FULL: ${{ steps.mode.outputs.full }}
@@ -72,15 +71,17 @@ jobs:
         run: |
           {
             echo "### Selected components"
-            if [[ "$FULL" == true ]]; then echo "Full qualification: every component, every flow."; exit 0; fi
-            echo "| Component | Why (matching paths) |"
-            echo "|---|---|"
-            for name in $(jq -r '.[]' <<<"$CHANGES"); do
-              files=$(jq -r --arg key "${name}_files" '.[$key] // "[]" | fromjson | .[:3] | join(", ")' <<<"$OUTPUTS")
-              count=$(jq -r --arg key "${name}_count" '.[$key] // "0"' <<<"$OUTPUTS")
-              echo "| \`$name\` | $files$([[ $count -gt 3 ]] && echo " … ($count files)") |"
-            done
-            [[ "$CHANGES" == "[]" ]] && echo "| (none) | no component paths changed |"
+            if [[ "$FULL" == true ]]; then
+              echo "Full qualification: every component, every flow."
+            elif [[ "$CHANGES" == "[]" ]]; then
+              echo "No component paths changed (see .github/filters.yml)."
+            else
+              echo "| Component | Changed files matching .github/filters.yml |"
+              echo "|---|---|"
+              for name in $(jq -r '.[]' <<<"$CHANGES"); do
+                echo "| \`$name\` | $(jq -r --arg key "${name}_count" '.[$key] // "?"' <<<"$OUTPUTS") |"
+              done
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   go:
