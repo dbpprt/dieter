@@ -1,9 +1,79 @@
 package store
 
 import (
+	"errors"
+	"os"
 	"sync"
+	"syscall"
 	"testing"
 )
+
+func TestReadersKeepDurableConversationWhenCommitRecoveryRunsOutOfSpace(t *testing.T) {
+	for _, capacity := range []error{syscall.ENOSPC, syscall.EDQUOT} {
+		t.Run(capacity.Error(), func(t *testing.T) {
+			data, card := batchFixture(t)
+			before, err := data.MetadataRevision()
+			if err != nil {
+				t.Fatal(err)
+			}
+			data.syncWrite = func(path string, _ []byte, _ os.FileMode) error {
+				return &os.PathError{Op: "write", Path: path, Err: capacity}
+			}
+			if _, _, err := data.AppendUIChunks(card.ID, "turn", tokenBatch(1, "durable reply")); err != nil {
+				t.Fatal(err)
+			}
+			if !data.SyncMutationPending() {
+				t.Fatal("failed counter publication must retain its recovery marker")
+			}
+			active, err := data.MetadataRevision()
+			if err != nil || active != before {
+				t.Fatalf("text invalidated metadata before a reader boundary: %+v %v", active, err)
+			}
+			if err := data.WaitForWriter(t.Context()); err != nil {
+				t.Fatalf("reader needs no free disk space: %v", err)
+			}
+			after, err := data.MetadataRevision()
+			if err != nil || after.Sequence <= before.Sequence {
+				t.Fatalf("durable but unpublished change was missed: %+v %v", after, err)
+			}
+			conversation, err := data.Conversation(card.ID)
+			if err != nil || len(conversation.Messages) != 2 || conversation.Messages[1].Parts[0].Text != "durable reply" {
+				t.Fatalf("durable reply became unreadable: %+v %v", conversation, err)
+			}
+			if _, err := data.GlobalState(); err != nil {
+				t.Fatalf("the workspace became unreadable: %v", err)
+			}
+			if _, _, err := data.AppendUIChunks(card.ID, "turn", tokenBatch(1, "cannot commit")); !errors.Is(err, capacity) {
+				t.Fatalf("writers must still report storage failure: %v", err)
+			}
+			if !data.SyncMutationPending() {
+				t.Fatal("reader must not discard the pending commit")
+			}
+			data.syncWrite = nil
+			if err := data.WaitForWriter(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if data.SyncMutationPending() {
+				t.Fatal("recovery must finish when storage returns")
+			}
+			committed, err := data.MetadataRevision()
+			if err != nil || committed != after {
+				t.Fatalf("recovery changed the observed revision: %+v %v", committed, err)
+			}
+		})
+	}
+}
+
+func TestReaderRecoveryDoesNotHideNonCapacityFailures(t *testing.T) {
+	data, card := batchFixture(t)
+	data.syncWrite = func(string, []byte, os.FileMode) error { return syscall.EIO }
+	if _, _, err := data.AppendUIChunks(card.ID, "turn", tokenBatch(1, "reply")); err != nil {
+		t.Fatal(err)
+	}
+	if err := data.WaitForWriter(t.Context()); !errors.Is(err, syscall.EIO) {
+		t.Fatalf("lost storage corruption failure: %v", err)
+	}
+}
 
 // changeCounters reads the committed change counter and its metadata part.
 func changeCounters(t *testing.T, s *Store) (changes, metadata uint64) {

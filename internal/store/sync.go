@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 // The store's change counter. Every committed mutation advances highwater;
@@ -51,6 +52,12 @@ func (s *Store) MetadataRevision() (StoreRevision, error) {
 		return StoreRevision{}, err
 	}
 	sequence, err := readCounter(s.syncMetadataPath())
+	if err != nil {
+		return StoreRevision{}, err
+	}
+	// Set only after a reader crossed the writer boundary and recovery ran
+	// out of storage. Ordinary in-progress text writes never advance metadata.
+	sequence = max(sequence, s.deferredSyncSequence.Load())
 	return StoreRevision{Epoch: strings.TrimSpace(string(epoch)), Sequence: sequence}, err
 }
 
@@ -145,6 +152,10 @@ func (s *Store) commitSyncMutation(pending *pendingMutation) error {
 	if pending == nil {
 		return nil
 	}
+	write := s.syncWrite
+	if write == nil {
+		write = atomicWriteMode
+	}
 	highwater, err := readCounter(s.syncHighwaterPath())
 	if err != nil {
 		return err
@@ -152,12 +163,12 @@ func (s *Store) commitSyncMutation(pending *pendingMutation) error {
 	// Metadata has its own boundary: text chunks cannot continuously
 	// invalidate an otherwise unchanged directory.
 	if pending.Kind != conversationChange {
-		if err := atomicWriteMode(s.syncMetadataPath(), []byte(strconv.FormatUint(pending.Sequence, 10)+"\n"), 0o600); err != nil {
+		if err := write(s.syncMetadataPath(), []byte(strconv.FormatUint(pending.Sequence, 10)+"\n"), 0o600); err != nil {
 			return err
 		}
 	}
 	if pending.Sequence > highwater {
-		if err := atomicWriteMode(s.syncHighwaterPath(), []byte(strconv.FormatUint(pending.Sequence, 10)+"\n"), 0o600); err != nil {
+		if err := write(s.syncHighwaterPath(), []byte(strconv.FormatUint(pending.Sequence, 10)+"\n"), 0o600); err != nil {
 			return err
 		}
 	}
@@ -175,7 +186,29 @@ func (s *Store) WaitForWriter(ctx context.Context) error {
 		return err
 	}
 	defer release()
-	return s.recoverSyncMutation()
+	return s.recoverSyncMutationForRead()
+}
+
+// Must hold the central writer lock. Capacity must not turn a read into a
+// failed mutation; the pending marker remains authoritative for writers.
+func (s *Store) recoverSyncMutationForRead() error {
+	err := s.recoverSyncMutation()
+	if errors.Is(err, syscall.ENOSPC) || errors.Is(err, syscall.EDQUOT) {
+		// The lock proved no writer remains. Keep the durable recovery marker
+		// for the next writer, but let reads use the data already on disk.
+		pending, readErr := s.readPendingMutation()
+		if readErr != nil {
+			return readErr
+		}
+		if pending != nil {
+			s.deferredSyncSequence.Store(pending.Sequence)
+		}
+		return nil
+	}
+	if err == nil {
+		s.deferredSyncSequence.Store(0)
+	}
+	return err
 }
 
 // SyncMutationPending lets a watcher recover a writer that died before commit,

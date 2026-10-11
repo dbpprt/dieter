@@ -33,6 +33,7 @@ class NativeChrome(
     val primary: NativeAction?,
     val confirm: NativeAction?,
     val cancel: NativeAction?,
+    val refreshing: String,
 )
 
 /** A bar button or menu element. [perform] always runs the screen's latest handler. */
@@ -85,6 +86,7 @@ internal class AppleChromeHost(private val sink: NativeChromeSink) : ChromeHost 
                 chrome.primary?.let(::native),
                 chrome.confirm?.let(::native),
                 chrome.cancel?.let(::native),
+                chrome.refreshing,
             )
         )
     }

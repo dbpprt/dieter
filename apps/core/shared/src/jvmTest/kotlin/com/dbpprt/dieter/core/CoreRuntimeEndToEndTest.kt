@@ -373,6 +373,31 @@ class CoreRuntimeEndToEndTest : EndToEnd() {
             ConnectionPhase.DISCONNECTED,
             second.connection.state.await { it.gateway != null }.phase,
         )
+        val slices = MutableStateFlow<SessionSlice?>(null)
+        val observation =
+            ClientApi(second).observe(Slice.SLICE_SESSION, "") {
+                slices.value = it.session
+            }
+        try {
+            val machine =
+                slices
+                    .await {
+                        it?.machines?.any { machine -> machine.id == fixture.daemonId } == true
+                    }!!
+                    .machines
+                    .first { it.id == fixture.daemonId }
+            assertTrue(machine.online, "the last reported presence survives a cold launch")
+            assertFalse(machine.available, "cached presence cannot authorize operations")
+            assertTrue(second.choice.reachable().isEmpty())
+            second.setActive(true)
+            second.awaitSync(fixture.daemonId, SyncState.OFFLINE)
+            slices.await {
+                it?.machines?.firstOrNull { machine -> machine.id == fixture.daemonId }?.online ==
+                    false
+            }
+        } finally {
+            observation.close()
+        }
     }
 
     @Test
