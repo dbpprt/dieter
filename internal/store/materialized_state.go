@@ -67,7 +67,7 @@ func (s *Store) GlobalStateContext(ctx context.Context) (model.State, error) {
 		return model.State{}, err
 	}
 	defer release()
-	if err := s.recoverSyncMutation(); err != nil {
+	if err := s.recoverSyncMutationForRead(); err != nil {
 		return model.State{}, err
 	}
 	revision, err := s.MetadataRevision()

@@ -869,6 +869,7 @@ private fun Gauge(title: String, value: String, fraction: Float) {
 @Composable
 internal fun UsageScreen(store: MobileStore) {
     val view by store.quotas.collectAsState()
+    val now = rememberNow()
     var reset by remember { mutableStateOf<QuotaAccountRow?>(null) }
     Screen(
         ScreenChrome(
@@ -985,9 +986,10 @@ internal fun UsageScreen(store: MobileStore) {
                                                 if (window.remaining >= 0)
                                                     "${window.remaining}% left"
                                                 else "Not reported",
-                                                window.resets_at
-                                                    .takeIf { it.isNotEmpty() }
-                                                    ?.let { "resets $it" },
+                                                com.dbpprt.dieter.core.quotas.Quotas.resetText(
+                                                    window.resets_at,
+                                                    now,
+                                                ),
                                             )
                                             .joinToString(" · "),
                                         style = type.subheadline,

@@ -100,9 +100,19 @@ internal fun CoreRuntime.sessionSlices(): Flow<SessionSlice> =
     ) { inputs, sync, gateway, cached ->
         val (state, machines, accounts, routes, showReasoning) = inputs
         val active = accounts.active
+        val checking =
+            state.phase == ConnectionPhase.CONNECTING || state.phase == ConnectionPhase.RECONNECTING
         val rows =
-            machines.all.map { MachineRows.of(it, it.online(machines.evaluatedAt), routes[it.id]) }
-        // Without a live gateway connection, cached presence is never shown as online.
+            machines.all.map {
+                MachineRows.of(
+                    it,
+                    if (checking || !machines.confirmed) it.serverOnline
+                    else it.online(machines.evaluatedAt),
+                    routes[it.id],
+                )
+            }
+        // Presence stays displayed during a refresh; command availability still needs a live
+        // session.
         val presented = MachineRows.presented(rows, state.phase, emptySet(), emptyMap())
         val connected = state.phase == ConnectionPhase.CONNECTED
         val now = platform.clock.now()
@@ -148,7 +158,7 @@ internal fun CoreRuntime.sessionSlices(): Flow<SessionSlice> =
                         MachineEntry(
                             id = machine.id,
                             name = machine.name,
-                            online = machine.online(machines.evaluatedAt),
+                            online = rows[index].online,
                             privacy_label = privacy.label,
                             privacy_active = privacy.active,
                             privacy_stale = privacy.stale,
@@ -164,13 +174,13 @@ internal fun CoreRuntime.sessionSlices(): Flow<SessionSlice> =
                             remote_desktop_reason = machine.remoteDesktop?.reason.orEmpty(),
                             detail = status.detail,
                             show_last_seen = status.showsLastSeen,
-                            available = shown.hostsProjects,
+                            available = machines.confirmed && shown.hostsProjects,
                             unavailable_message = shown.unavailableMessage.orEmpty(),
                             screen_status = shown.screenStatus,
                             can_share_screen = shown.canShareScreen,
-                            presence = MachineRows.presence(machine.online(machines.evaluatedAt)),
+                            presence = MachineRows.presence(rows[index].online),
                             display_name = machine.name.ifBlank { machine.id },
-                            tone = MachineRows.tone(shown.hostsProjects, machine.compatible),
+                            tone = MachineRows.tone(rows[index].online, machine.compatible),
                             sync_state = syncState(machineSync?.state),
                             sync_label = (machineSync ?: MachineSync()).label,
                             stale_since_millis =

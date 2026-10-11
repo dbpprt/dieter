@@ -15,9 +15,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.dbpprt.dieter.core.connection.RefreshPresentation
+import com.dbpprt.dieter.core.connection.StorageWarnings
 
 /** A toolbar or menu command. iOS renders it as a bar button or UIMenu element. */
 @Immutable
@@ -67,6 +71,8 @@ internal class ScreenChrome(
     val confirm: ChromeAction? = null,
     /** Modal dismissal. iOS shows a close button; Android a navigation close icon. */
     val cancel: ChromeAction? = null,
+    /** Accessible description of the refresh shown before the title; empty when current. */
+    val refreshing: String = "",
 ) {
     val signature: String
         get() =
@@ -74,12 +80,16 @@ internal class ScreenChrome(
                     title,
                     subtitle,
                     large.toString(),
+                    refreshing,
                     actions.joinToString("/") { it.signature },
                     primary?.signature.orEmpty(),
                     confirm?.signature.orEmpty(),
                     cancel?.signature.orEmpty(),
                 )
                 .joinToString("‖")
+
+    fun withRefresh(label: String) =
+        ScreenChrome(title, subtitle, large, actions, primary, confirm, cancel, label)
 }
 
 /** Implemented by the iOS host for each native navigation item. */
@@ -154,12 +164,44 @@ internal fun Screen(
     bottomBar: (@Composable () -> Unit)? = null,
     content: @Composable ScreenScope.() -> Unit,
 ) {
+    val store = LocalMobileStore.current
+    val session = store?.session?.collectAsState()?.value
+    val manual = store?.refreshing?.collectAsState()?.value == true
+    val refreshing = chrome.refreshing.ifEmpty { RefreshPresentation.label(session, manual) }
+    val shown = chrome.withRefresh(refreshing)
+    val outbox = store?.outbox?.collectAsState()?.value
+    val warnings = StorageWarnings.of(session?.machines.orEmpty(), outbox?.machines.orEmpty())
+    val noticedContent: @Composable ScreenScope.() -> Unit = {
+        if (warnings.isEmpty()) content()
+        else
+            Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
+                warnings.forEach { warning ->
+                    Banner(
+                        warning.title,
+                        warning.detail,
+                        Modifier.padding(horizontal = ScreenMargin, vertical = 6.dp)
+                            .testTag("storage-warning-${warning.machineId}"),
+                        tone = Tone.WARNING,
+                        glyph = Glyph.WARNING,
+                    )
+                }
+                Box(Modifier.weight(1f)) {
+                    ScreenScope(
+                            PaddingValues(bottom = padding.calculateBottomPadding()),
+                            listState,
+                            shown,
+                            shown.large && apple,
+                        )
+                        .content()
+                }
+            }
+    }
     val host = LocalChromeHost.current
     if (host != null) {
-        AppleScreen(host, chrome, modifier, listState, bottomBar, content)
+        AppleScreen(host, shown, modifier, listState, bottomBar, noticedContent)
         return
     }
-    MaterialScreen(chrome, modifier, listState, bottomBar, content)
+    MaterialScreen(shown, modifier, listState, bottomBar, noticedContent)
 }
 
 @Composable
@@ -269,25 +311,36 @@ private fun MaterialScreen(
                     ?.let { { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } }
             val barInsets = insets.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
             val title: @Composable () -> Unit = {
-                Column {
-                    Text(
-                        chrome.title,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style =
-                            if (chrome.large) LocalTextStyle.current
-                            else
-                                MaterialTheme.typography.titleLarge.copy(
-                                    fontWeight = FontWeight.Medium
-                                ),
-                    )
-                    if (subtitle != null)
-                        CompositionLocalProvider(
-                            LocalTextStyle provides MaterialTheme.typography.bodyMedium,
-                            LocalContentColor provides colors.onSurfaceVariant,
-                        ) {
-                            subtitle()
-                        }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (chrome.refreshing.isNotEmpty())
+                        Spinner(
+                            Modifier.size(18.dp).testTag("chrome-refreshing").semantics {
+                                contentDescription = chrome.refreshing
+                            }
+                        )
+                    Column {
+                        Text(
+                            chrome.title,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style =
+                                if (chrome.large) LocalTextStyle.current
+                                else
+                                    MaterialTheme.typography.titleLarge.copy(
+                                        fontWeight = FontWeight.Medium
+                                    ),
+                        )
+                        if (subtitle != null)
+                            CompositionLocalProvider(
+                                LocalTextStyle provides MaterialTheme.typography.bodyMedium,
+                                LocalContentColor provides colors.onSurfaceVariant,
+                            ) {
+                                subtitle()
+                            }
+                    }
                 }
             }
             if (chrome.large)

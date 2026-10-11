@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	md "github.com/dbpprt/dieter/internal/markdown"
@@ -50,6 +51,9 @@ type Store struct {
 	globalStateMu       contextMutex
 	globalStateSnapshot *model.State
 	globalStateRevision StoreRevision
+	// Defaults to atomicWriteMode; permits isolated storage fault injection.
+	syncWrite            func(string, []byte, os.FileMode) error
+	deferredSyncSequence atomic.Uint64
 }
 
 func DefaultRoot() string {

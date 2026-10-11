@@ -57,8 +57,13 @@ data class ConnectionState(
 )
 
 /** The daemons of the active account, with presence evaluated at [evaluatedAt]. */
-data class MachineDirectory(val all: List<Machine> = emptyList(), val evaluatedAt: Instant = Instant.DISTANT_PAST) {
-    val online: List<Machine> get() = all.filter { it.online(evaluatedAt) }
+data class MachineDirectory(
+    val all: List<Machine> = emptyList(),
+    val evaluatedAt: Instant = Instant.DISTANT_PAST,
+    val confirmed: Boolean = true,
+) {
+    val online: List<Machine>
+        get() = if (confirmed) all.filter { it.online(evaluatedAt) } else emptyList()
 
     fun machine(id: String): Machine? = all.firstOrNull { it.id == id }
 }
@@ -71,10 +76,9 @@ data class SupervisorConfig(
 )
 
 /**
- * Owns the gateway connection: its phase, presence, and a change stream to
- * every online, compatible machine ([MachineStreams]). A machine that fails
- * only affects its own view; only the gateway rejecting or losing the
- * session reconnects the app.
+ * Owns the gateway connection: its phase, presence, and a change stream to every online, compatible
+ * machine ([MachineStreams]). A machine that fails only affects its own view; only the gateway
+ * rejecting or losing the session reconnects the app.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ConnectionSupervisor(
@@ -109,34 +113,43 @@ class ConnectionSupervisor(
     val streams = MachineStreams(sessions, sync, config.streams, clock, logger)
 
     /** Machine ID → how current its part of the account view is. */
-    val syncs: StateFlow<Map<String, MachineSync>> get() = streams.syncs
+    val syncs: StateFlow<Map<String, MachineSync>>
+        get() = streams.syncs
 
     private val running = MutableStateFlow(false)
     private val leases = MutableStateFlow(0)
     private val restarts = MutableStateFlow(0L)
     private var prepared: Gateway? = null
+    private var directoryStorage: CoreStorage? = null
     private var loop: Job? = null
 
     fun start() {
         if (loop != null) return
         scope.launch { streams.expire() }
         loop = scope.launch {
-            combine(accounts.state.map { it.active to it.wantsConnection }.distinctUntilChanged(), running, leases, restarts) { account, run, leased, restart ->
-                Triple(account.first, account.second && (run || leased > 0), restart)
-            }.distinctUntilChanged().collectLatest { (gateway, shouldRun, _) ->
-                prepareGateway(gateway)
-                try {
-                    if (!shouldRun) {
-                        publish(ConnectionState(ConnectionPhase.DISCONNECTED, gateway))
-                        sessions.attach(null)
-                        return@collectLatest
-                    }
-                    supervise(gateway)
-                } finally {
-                    mutableSession.value = null
-                    sync.flush()
+            combine(
+                    accounts.state.map { it.active to it.wantsConnection }.distinctUntilChanged(),
+                    running,
+                    leases,
+                    restarts,
+                ) { account, run, leased, restart ->
+                    Triple(account.first, account.second && (run || leased > 0), restart)
                 }
-            }
+                .distinctUntilChanged()
+                .collectLatest { (gateway, shouldRun, _) ->
+                    prepareGateway(gateway)
+                    try {
+                        if (!shouldRun) {
+                            publish(ConnectionState(ConnectionPhase.DISCONNECTED, gateway))
+                            sessions.attach(null)
+                            return@collectLatest
+                        }
+                        supervise(gateway)
+                    } finally {
+                        mutableSession.value = null
+                        sync.flush()
+                    }
+                }
         }
     }
 
@@ -146,10 +159,9 @@ class ConnectionSupervisor(
     }
 
     /**
-     * Connects briefly for a widget or background check without changing
-     * [setRunning]: waits until every online, compatible machine is live (or
-     * a terminal state) and releases the connection. Returns true when every
-     * reachable machine was current.
+     * Connects briefly for a widget or background check without changing [setRunning]: waits until
+     * every online, compatible machine is live (or a terminal state) and releases the connection.
+     * Returns true when every reachable machine was current.
      */
     suspend fun refreshForWidget(timeout: Duration): Boolean {
         if (!accounts.state.value.wantsConnection) return false
@@ -157,12 +169,15 @@ class ConnectionSupervisor(
         try {
             return withTimeoutOrNull(timeout) {
                 combine(state, machines, syncs) { connection, directory, syncs ->
-                    when (connection.phase) {
-                        ConnectionPhase.AUTH_REQUIRED, ConnectionPhase.UPDATE_REQUIRED -> false
-                        ConnectionPhase.CONNECTED -> MachineSyncs.current(directory, syncs).takeIf { it }
-                        else -> null
+                        when (connection.phase) {
+                            ConnectionPhase.AUTH_REQUIRED,
+                            ConnectionPhase.UPDATE_REQUIRED -> false
+                            ConnectionPhase.CONNECTED ->
+                                MachineSyncs.current(directory, syncs).takeIf { it }
+                            else -> null
+                        }
                     }
-                }.first { it != null }
+                    .first { it != null }
             } == true
         } finally {
             leases.update { it - 1 }
@@ -170,9 +185,8 @@ class ConnectionSupervisor(
     }
 
     /**
-     * Forgets the prepared gateway and unbinds its machine views, so nothing
-     * writes its namespace and the next start prepares it afresh. Call
-     * [restart] afterwards.
+     * Forgets the prepared gateway and unbinds its machine views, so nothing writes its namespace
+     * and the next start prepares it afresh. Call [restart] afterwards.
      */
     fun unprepare() {
         prepared = null
@@ -190,7 +204,9 @@ class ConnectionSupervisor(
 
     /** Reads the directory from [session], with the gateway's build. */
     private suspend fun refreshMachines(session: GatewaySession) {
-        setMachines(session.machines())
+        val machines = session.machines()
+        setMachines(machines)
+        directoryStorage?.let { DirectoryCache.write(it, machines, logger) }
         session.information?.let { mutableGatewayInformation.value = it }
     }
 
@@ -201,6 +217,8 @@ class ConnectionSupervisor(
         mutableGatewayInformation.value = null
         streams.reset()
         val storage = storageFor(gateway)
+        directoryStorage = storage
+        mutableMachines.value = DirectoryCache.read(storage, logger)
         // Offline-first: every machine's cached view renders before any network access.
         sync.bind(storage)
         prepared = gateway
@@ -218,7 +236,13 @@ class ConnectionSupervisor(
             val session = GatewaySession(gateway, token, transport, config.clientVersion, clock)
             sessions.attach(session)
             try {
-                publish(ConnectionState(if (attempt == 0) ConnectionPhase.CONNECTING else ConnectionPhase.RECONNECTING, gateway))
+                publish(
+                    ConnectionState(
+                        if (attempt == 0) ConnectionPhase.CONNECTING
+                        else ConnectionPhase.RECONNECTING,
+                        gateway,
+                    )
+                )
                 session.verify()
                 refreshMachines(session)
                 attempt = 0
@@ -234,17 +258,39 @@ class ConnectionSupervisor(
             } catch (error: Throwable) {
                 when (Failures.kind(error)) {
                     FailureKind.UNAUTHENTICATED -> {
-                        publish(ConnectionState(ConnectionPhase.AUTH_REQUIRED, gateway, error = Failures.message(error)))
+                        publish(
+                            ConnectionState(
+                                ConnectionPhase.AUTH_REQUIRED,
+                                gateway,
+                                error = Failures.message(error),
+                            )
+                        )
                         awaitCancellation()
                     }
                     FailureKind.UPDATE_REQUIRED -> {
-                        publish(ConnectionState(ConnectionPhase.UPDATE_REQUIRED, gateway, error = Failures.message(error)))
+                        publish(
+                            ConnectionState(
+                                ConnectionPhase.UPDATE_REQUIRED,
+                                gateway,
+                                error = Failures.message(error),
+                            )
+                        )
                         awaitCancellation()
                     }
                     else -> {
                         val wait = Backoff.CONNECTION.delay(attempt++)
-                        logger.info(TAG, "session ended: ${Failures.message(error)}; retrying in $wait")
-                        publish(ConnectionState(ConnectionPhase.RECONNECTING, gateway, error = Failures.message(error), retryAt = clock.now() + wait))
+                        logger.info(
+                            TAG,
+                            "session ended: ${Failures.message(error)}; retrying in $wait",
+                        )
+                        publish(
+                            ConnectionState(
+                                ConnectionPhase.RECONNECTING,
+                                gateway,
+                                error = Failures.message(error),
+                                retryAt = clock.now() + wait,
+                            )
+                        )
                         delay(wait)
                     }
                 }
@@ -257,10 +303,9 @@ class ConnectionSupervisor(
     }
 
     /**
-     * Keeps presence current. The gateway reports every heartbeat, so a
-     * stream silent for two is restarted before its last report goes stale.
-     * A broken stream re-verifies the session: only the gateway decides
-     * whether it is gone, which ends this session.
+     * Keeps presence current. The gateway reports every heartbeat, so a stream silent for two is
+     * restarted before its last report goes stale. A broken stream re-verifies the session: only
+     * the gateway decides whether it is gone, which ends this session.
      */
     private suspend fun watchPresence(session: GatewaySession): Nothing {
         var attempt = 0
@@ -269,6 +314,7 @@ class ConnectionSupervisor(
                 session.presence(config.presenceHeartbeat).collectLatest { machines ->
                     attempt = 0
                     setMachines(machines)
+                    directoryStorage?.let { DirectoryCache.write(it, machines, logger) }
                     session.information?.let { mutableGatewayInformation.value = it }
                     delay(config.presenceHeartbeat * 2)
                     error("presence stream stalled")
@@ -288,7 +334,10 @@ class ConnectionSupervisor(
     private suspend fun expirePresence() {
         while (true) {
             val next = MachinePresence.nextExpiry(mutableMachines.value.all, clock.now())
-            delay(next?.let { (it - clock.now()).coerceAtLeast(Duration.ZERO) + 50.milliseconds } ?: 5.seconds)
+            delay(
+                next?.let { (it - clock.now()).coerceAtLeast(Duration.ZERO) + 50.milliseconds }
+                    ?: 5.seconds
+            )
             setMachines(mutableMachines.value.all)
         }
     }

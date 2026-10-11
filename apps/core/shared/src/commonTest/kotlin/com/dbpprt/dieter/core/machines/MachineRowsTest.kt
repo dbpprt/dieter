@@ -206,7 +206,7 @@ class MachineRowsTest {
         )
         // Without a live gateway connection, presence cannot be trusted.
         assertEquals(
-            MachineStatus("Unavailable", showsLastSeen = true),
+            MachineStatus("Online"),
             status(routed, phase = ConnectionPhase.RECONNECTING),
         )
         assertEquals(

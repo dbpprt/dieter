@@ -474,11 +474,13 @@ final class RouteChrome: NSObject, @preconcurrency NativeChromeSink {
     private var title = ""
     private var large = false
     private var collapsed = true
+    private var refreshing = ""
 
     func apply(chrome: NativeChrome) {
         guard let item else { return }
         title = chrome.title
         large = chrome.large
+        refreshing = chrome.refreshing
         updateTitle(animated: false)
         if #available(iOS 26.0, *) {
             item.subtitle = chrome.large || chrome.subtitle.isEmpty ? nil : chrome.subtitle
@@ -509,6 +511,25 @@ final class RouteChrome: NSObject, @preconcurrency NativeChromeSink {
 
     private func updateTitle(animated: Bool) {
         let shown = !large || collapsed ? title : ""
+        if !refreshing.isEmpty {
+            let spinner = UIActivityIndicatorView(style: .medium)
+            spinner.startAnimating()
+            spinner.isAccessibilityElement = true
+            spinner.accessibilityLabel = refreshing
+            spinner.accessibilityIdentifier = "chrome-refreshing"
+            let label = UILabel()
+            label.text = shown
+            label.font = .preferredFont(forTextStyle: .headline)
+            label.adjustsFontForContentSizeCategory = true
+            label.lineBreakMode = .byTruncatingTail
+            let stack = UIStackView(arrangedSubviews: [spinner, label])
+            stack.axis = .horizontal
+            stack.alignment = .center
+            stack.spacing = 8
+            item?.titleView = stack
+        } else {
+            item?.titleView = nil
+        }
         guard item?.title != shown else { return }
         if animated, let bar = bar() {
             UIView.transition(with: bar, duration: 0.18, options: .transitionCrossDissolve) { self.item?.title = shown }

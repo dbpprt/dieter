@@ -84,6 +84,12 @@ struct ConversationTitleRow: View {
     var body: some View {
         HStack(spacing: 8) {
             DieterStatusDot(color: runtimeColor(status))
+            if context.conversationSyncing {
+                ProgressView().controlSize(.mini)
+                    .accessibilityLabel("Refreshing conversation")
+                    .accessibilityIdentifier("conversation.refreshing")
+                    .help("Checking for updates. Displayed activity may be out of date.")
+            }
             Text(card?.title.isEmpty == false ? card!.title : "Conversation")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(DieterTheme.text)
@@ -95,19 +101,6 @@ struct ConversationTitleRow: View {
                 .accessibilityIdentifier("conversation.status")
                 .e2eTarget("conversation.status")
             Spacer(minLength: 6)
-            if context.conversationSyncing {
-                HStack(spacing: 5) {
-                    ProgressView().controlSize(.mini)
-                    Text("Refreshing…")
-                        .font(.system(size: 11))
-                        .foregroundStyle(DieterTheme.tertiary)
-                }
-                .fixedSize()
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Refreshing conversation")
-                .accessibilityIdentifier("conversation.refreshing")
-                .help("Checking for updates. Displayed activity may be out of date.")
-            }
             GlassEffectContainer(spacing: 6) {
                 HStack(spacing: 6) {
                     if let toggleKanban {

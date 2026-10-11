@@ -30,37 +30,57 @@ enum class FailureKind {
 }
 
 /** A core failure with a user-safe message. */
-open class CoreException(val kind: FailureKind, message: String, cause: Throwable? = null) : Exception(message, cause)
+open class CoreException(val kind: FailureKind, message: String, cause: Throwable? = null) :
+    Exception(message, cause)
 
 object Failures {
-    private val permanent = setOf(
-        GrpcStatus.NOT_FOUND, GrpcStatus.INVALID_ARGUMENT, GrpcStatus.PERMISSION_DENIED,
-        GrpcStatus.FAILED_PRECONDITION, GrpcStatus.ALREADY_EXISTS,
-    )
-    private val transient = setOf(
-        GrpcStatus.CANCELLED, GrpcStatus.DEADLINE_EXCEEDED, GrpcStatus.UNAVAILABLE, GrpcStatus.UNKNOWN,
-        GrpcStatus.INTERNAL, GrpcStatus.RESOURCE_EXHAUSTED,
-    )
-    private val storagePhrases = listOf(
-        "insufficient free disk space", "no space left on device", "disk quota exceeded", "disc quota exceeded",
-    )
+    private val permanent =
+        setOf(
+            GrpcStatus.NOT_FOUND,
+            GrpcStatus.INVALID_ARGUMENT,
+            GrpcStatus.PERMISSION_DENIED,
+            GrpcStatus.FAILED_PRECONDITION,
+            GrpcStatus.ALREADY_EXISTS,
+        )
+    private val transient =
+        setOf(
+            GrpcStatus.CANCELLED,
+            GrpcStatus.DEADLINE_EXCEEDED,
+            GrpcStatus.UNAVAILABLE,
+            GrpcStatus.UNKNOWN,
+            GrpcStatus.INTERNAL,
+            GrpcStatus.RESOURCE_EXHAUSTED,
+        )
+    private val storagePhrases =
+        listOf(
+            "insufficient free disk space",
+            "no space left on device",
+            "disk quota exceeded",
+            "disc quota exceeded",
+            "disk is full",
+            "disk full",
+            "database or disk is full",
+        )
 
-    fun kind(error: Throwable): FailureKind = when (error) {
-        is CoreException -> error.kind
-        is CancellationException -> FailureKind.CANCELLED
-        is GrpcException -> when {
-            isInsufficientStorage(error.grpcMessage) -> FailureKind.OUT_OF_STORAGE
-            error.grpcStatus == GrpcStatus.UNAUTHENTICATED -> FailureKind.UNAUTHENTICATED
-            error.grpcStatus == GrpcStatus.ABORTED -> FailureKind.CONFLICT
-            error.grpcStatus == GrpcStatus.FAILED_PRECONDITION && isUpdateRequired(error.grpcMessage) -> FailureKind.UPDATE_REQUIRED
-            error.grpcStatus in permanent -> FailureKind.PERMANENT
-            error.grpcStatus in transient -> FailureKind.TRANSIENT
-            else -> FailureKind.PERMANENT
+    fun kind(error: Throwable): FailureKind =
+        when (error) {
+            is CoreException -> error.kind
+            is CancellationException -> FailureKind.CANCELLED
+            is GrpcException ->
+                when {
+                    isInsufficientStorage(error.grpcMessage) -> FailureKind.OUT_OF_STORAGE
+                    error.grpcStatus == GrpcStatus.UNAUTHENTICATED -> FailureKind.UNAUTHENTICATED
+                    error.grpcStatus == GrpcStatus.ABORTED -> FailureKind.CONFLICT
+                    error.grpcStatus == GrpcStatus.FAILED_PRECONDITION &&
+                        isUpdateRequired(error.grpcMessage) -> FailureKind.UPDATE_REQUIRED
+                    error.grpcStatus in permanent -> FailureKind.PERMANENT
+                    error.grpcStatus in transient -> FailureKind.TRANSIENT
+                    else -> FailureKind.PERMANENT
+                }
+            // Socket, TLS, and stream failures below gRPC.
+            is IOException -> FailureKind.TRANSIENT
+            else -> error.cause?.let(::kind) ?: FailureKind.TRANSIENT
         }
-        // Socket, TLS, and stream failures below gRPC.
-        is IOException -> FailureKind.TRANSIENT
-        else -> error.cause?.let(::kind) ?: FailureKind.TRANSIENT
-    }
 
     /** A failed read may be retried on a replacement transport. Mutations never are. */
     fun isRetryableRead(error: Throwable): Boolean = kind(error) == FailureKind.TRANSIENT
@@ -75,19 +95,23 @@ object Failures {
         message != null && message.contains("update required", ignoreCase = true)
 
     /** A single-line, token-free description suitable for UI and logs. */
-    fun message(error: Throwable): String = when (error) {
-        is CoreException -> error.message.orEmpty()
-        is GrpcException -> {
-            val detail = scrub(error.grpcMessage.orEmpty())
-            if (detail.isEmpty()) "gRPC ${error.grpcStatus.name}" else "gRPC ${error.grpcStatus.name}: $detail"
+    fun message(error: Throwable): String =
+        when (error) {
+            is CoreException -> error.message.orEmpty()
+            is GrpcException -> {
+                val detail = scrub(error.grpcMessage.orEmpty())
+                if (detail.isEmpty()) "gRPC ${error.grpcStatus.name}"
+                else "gRPC ${error.grpcStatus.name}: $detail"
+            }
+            else -> scrub(error.message ?: error.toString())
         }
-        else -> scrub(error.message ?: error.toString())
-    }
 
     fun scrub(value: String): String {
-        var result = value.replace(Regex("[\\r\\n\\t]+"), " ")
-            .replace(Regex("(?i)bearer\\s+[^ ]+"), "Bearer [redacted]")
-            .trim()
+        var result =
+            value
+                .replace(Regex("[\\r\\n\\t]+"), " ")
+                .replace(Regex("(?i)bearer\\s+[^ ]+"), "Bearer [redacted]")
+                .trim()
         if (result.length > 500) result = result.take(500) + "…"
         return result
     }
