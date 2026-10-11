@@ -8,7 +8,8 @@ import (
 	"strings"
 
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/peerstore"
+	"github.com/dbpprt/dieter/internal/platform/fault"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
 )
 
 // The scheduler's authoritative occurrence database never runs peer definitions.
@@ -84,7 +85,7 @@ func (s *Store) flushScheduleOutbox() error {
 			continue
 		}
 		// Keep the immutable registration project after consolidation.
-		if raw, ok := peerstore.Selected(data.record(peerstore.Key("schedule", item.ID+".summary"))); ok {
+		if raw, ok := crdt.Selected(data.record(crdt.Key("schedule", item.ID+".summary"))); ok {
 			var previous model.Schedule
 			if json.Unmarshal(raw, &previous) == nil {
 				item.ProjectID = previous.ProjectID
@@ -165,7 +166,7 @@ func (s *Store) ListSharedSchedulesPage(projectRef string, pageSize int, pageTok
 	cursor := schedulePageCursor{ProjectID: projectID}
 	if pageToken != "" {
 		if err = decodeScheduleCursor(pageToken, &cursor); err != nil || cursor.ProjectID != projectID {
-			return SchedulePage{}, errors.New("invalid schedule page token")
+			return SchedulePage{}, fault.New(fault.Invalid, "invalid schedule page token")
 		}
 	}
 	result := SchedulePage{TotalCount: len(items)}
@@ -200,7 +201,7 @@ func (s *Store) localScheduleIDs() ([]string, error) {
 	}
 	var ids []string
 	for _, id := range entityIDs(data, "schedule", "summary") {
-		raw, ok := peerstore.Selected(data.record(peerstore.Key("schedule", id+".summary")))
+		raw, ok := crdt.Selected(data.record(crdt.Key("schedule", id+".summary")))
 		if !ok {
 			continue
 		}

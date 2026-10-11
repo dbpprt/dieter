@@ -257,7 +257,7 @@ func (s *displayActivityTestSource) Stream(ctx context.Context, _ func(media.Sam
 	})
 	defer close(s.finished)
 	if release != nil {
-		defer release()
+		defer func() { _ = release() }()
 	}
 	if err != nil {
 		return err

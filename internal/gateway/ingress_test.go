@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/binary"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -33,6 +34,7 @@ func grpcEnvelopeHeader(size uint32, compressed byte) []byte {
 }
 
 func TestPublicGatewayEnvelopeRejectedBeforeExposingAllocationSize(t *testing.T) {
+	t.Parallel()
 	for _, limit := range []uint32{publicGatewayMessageBytes, maxDaemonPresenceBytes} {
 		for _, compressed := range []byte{0, 1} {
 			header := grpcEnvelopeHeader(limit+1, compressed)
@@ -56,6 +58,7 @@ func TestPublicGatewayEnvelopeRejectedBeforeExposingAllocationSize(t *testing.T)
 }
 
 func TestDaemonEnvelopeBoundsBothHelloAndProof(t *testing.T) {
+	t.Parallel()
 	hello := append(grpcEnvelopeHeader(maxDaemonPresenceBytes, 0), make([]byte, maxDaemonPresenceBytes)...)
 	source := bytes.NewReader(append(hello, grpcEnvelopeHeader(maxRelayPayload, 0)...))
 	reader := limitGatewayEnvelopes(t.Context(), io.NopCloser(source), 2, maxDaemonPresenceBytes)
@@ -67,6 +70,7 @@ func TestDaemonEnvelopeBoundsBothHelloAndProof(t *testing.T) {
 }
 
 func TestDaemonEnvelopeReadAheadWaitsForProofOrClose(t *testing.T) {
+	t.Parallel()
 	for _, authenticate := range []bool{false, true} {
 		t.Run(map[bool]string{false: "close", true: "authenticate"}[authenticate], func(t *testing.T) {
 			source := bytes.NewReader(append(make([]byte, 10), []byte("authenticated relay payload")...))
@@ -94,7 +98,7 @@ func TestDaemonEnvelopeReadAheadWaitsForProofOrClose(t *testing.T) {
 			}
 			select {
 			case err := <-result:
-				if authenticate && err != nil || !authenticate && err != context.Canceled {
+				if authenticate && err != nil || !authenticate && !errors.Is(err, context.Canceled) {
 					t.Fatalf("read after authentication/close: %v", err)
 				}
 			case <-time.After(time.Second):
@@ -105,6 +109,7 @@ func TestDaemonEnvelopeReadAheadWaitsForProofOrClose(t *testing.T) {
 }
 
 func TestGatewayClientAddressTrustBoundary(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name, remote string
 		proxy        bool
@@ -136,6 +141,7 @@ func TestGatewayClientAddressTrustBoundary(t *testing.T) {
 }
 
 func TestProxyAuthRateLimitsArePerClient(t *testing.T) {
+	t.Parallel()
 	auth := NewAuth(Config{ProxyMode: true}, nil, nil)
 	request := httptest.NewRequest(http.MethodGet, "/auth/github/start", nil)
 	request.RemoteAddr = "127.0.0.1:42"
@@ -155,6 +161,7 @@ func TestProxyAuthRateLimitsArePerClient(t *testing.T) {
 }
 
 func TestProxyEnrollmentRateLimitsThroughHTTP2(t *testing.T) {
+	t.Parallel()
 	store, err := OpenStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -201,6 +208,7 @@ func TestProxyEnrollmentRateLimitsThroughHTTP2(t *testing.T) {
 }
 
 func TestGatewayRejectsOversizedEnvelopesThroughTLSProxyWithoutPayload(t *testing.T) {
+	t.Parallel()
 	gateway, frontend := securityTLSProxy(t, Config{AllowedUserIDs: map[int64]struct{}{1234: {}}})
 	public, _, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -270,6 +278,7 @@ func TestGatewayRejectsOversizedEnvelopesThroughTLSProxyWithoutPayload(t *testin
 }
 
 func TestGatewayRejectsExcessHandshakesBeforeReadingBody(t *testing.T) {
+	t.Parallel()
 	store, err := OpenStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -295,6 +304,7 @@ func TestGatewayRejectsExcessHandshakesBeforeReadingBody(t *testing.T) {
 }
 
 func TestTLSProxyForwardingCannotBeSpoofed(t *testing.T) {
+	t.Parallel()
 	gateway, frontend := securityTLSProxy(t, Config{})
 	for i := range 31 {
 		request, err := http.NewRequest(http.MethodGet, frontend.URL+"/auth/github/start", nil)

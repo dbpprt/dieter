@@ -2,9 +2,9 @@ package store
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/platform/fault"
 )
 
 const (
@@ -18,7 +18,7 @@ const (
 // Larger individual chunks retain the existing AppendUIChunk path and limit.
 func (s *Store) AppendUIChunks(cardRef, turnID string, chunks []json.RawMessage) ([]model.ConversationEvent, model.Conversation, error) {
 	if len(chunks) == 0 || len(chunks) > MaxUIChunkBatchEvents {
-		return nil, model.Conversation{}, fmt.Errorf("UI chunk batch must contain 1–%d events", MaxUIChunkBatchEvents)
+		return nil, model.Conversation{}, fault.Invalidf("UI chunk batch must contain 1–%d events", MaxUIChunkBatchEvents)
 	}
 	size := 0
 	writeKind := conversationChange
@@ -26,7 +26,7 @@ func (s *Store) AppendUIChunks(cardRef, turnID string, chunks []json.RawMessage)
 	for i, chunk := range chunks {
 		size += len(chunk)
 		if size > MaxUIChunkBatchBytes || !json.Valid(chunk) {
-			return nil, model.Conversation{}, fmt.Errorf("UI chunk batch must contain valid JSON within %d bytes", MaxUIChunkBatchBytes)
+			return nil, model.Conversation{}, fault.Invalidf("UI chunk batch must contain valid JSON within %d bytes", MaxUIChunkBatchBytes)
 		}
 		if conversationEventWriteKind("ui-chunk", chunk) == metadataChange {
 			writeKind = metadataChange

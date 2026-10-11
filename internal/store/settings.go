@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/platform/fsx"
 	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
 	"gopkg.in/yaml.v3"
 )
@@ -77,7 +78,7 @@ func (s *Store) UpdateSettings(value model.Settings) (model.Settings, error) {
 	if err != nil {
 		return model.Settings{}, err
 	}
-	if err := atomicWrite(s.settingsPath(), data); err != nil {
+	if err := fsx.WriteFile(s.settingsPath(), data, 0o600); err != nil {
 		return model.Settings{}, err
 	}
 	return normalized, nil

@@ -12,6 +12,7 @@ import (
 )
 
 func TestClientNetworkKeyGroupsIPv6ByPrefix(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct{ address, want string }{
 		{"192.0.2.1", "192.0.2.1"},
 		{"2001:db8:1:2:aaaa::1", "2001:db8:1:2::/64"},
@@ -26,6 +27,7 @@ func TestClientNetworkKeyGroupsIPv6ByPrefix(t *testing.T) {
 }
 
 func TestClientSlotsBoundEachNetworkIndependently(t *testing.T) {
+	t.Parallel()
 	slots := newClientSlots(2)
 	first, ok := slots.acquire("2001:db8::1")
 	if !ok {
@@ -53,6 +55,7 @@ func TestClientSlotsBoundEachNetworkIndependently(t *testing.T) {
 }
 
 func TestEnrollmentReservationsAreBoundedPerNetworkUntilExpiry(t *testing.T) {
+	t.Parallel()
 	service := NewService(nil, nil, nil, nil, Config{})
 	from := func(address string) *peer.Peer {
 		return &peer.Peer{Addr: &net.TCPAddr{IP: net.ParseIP(address), Port: 1234}}
@@ -82,6 +85,7 @@ func TestEnrollmentReservationsAreBoundedPerNetworkUntilExpiry(t *testing.T) {
 }
 
 func TestGatewayBoundsHandshakesPerClientBeforeReadingBody(t *testing.T) {
+	t.Parallel()
 	store, err := OpenStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)

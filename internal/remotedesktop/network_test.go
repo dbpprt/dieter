@@ -2,12 +2,12 @@ package remotedesktop
 
 import (
 	"context"
-	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/pion/ice/v4"
 	"github.com/pion/logging"
 	"github.com/pion/transport/v4/vnet"
@@ -22,7 +22,6 @@ func TestCongestionFeedbackOnLossyMediaKeepsControlResponsive(t *testing.T) {
 }
 
 func TestFastBitrateReceivesRealTWCCOnConstrainedWebRTC(t *testing.T) {
-	t.Setenv("DIETER_SCREEN_FAST_BITRATE", "1")
 	exerciseCongestionFeedback(t, true)
 }
 
@@ -70,9 +69,9 @@ func exerciseCongestionFeedback(t *testing.T, fast bool) {
 	if err = router.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer router.Stop()
+	defer func() { _ = router.Stop() }()
 	source, _ := NewFrameSource(SourceOptions{Kind: "synthetic"})
-	api, pacer, estimator, err := newMediaAPI(senderSettings, source)
+	api, pacer, estimator, err := newMediaAPI(senderSettings, source, true)
 	if err != nil {
 		t.Fatal(err)
 	}

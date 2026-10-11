@@ -1,0 +1,104 @@
+# Files in Sources/DieterMacKit outside Adapters/ that still name the network
+# API (import DieterAPI or a Dieter_V1_/gateway type), each with the reason.
+# Checked by scripts/check-api-boundary.sh: `<path relative to apps/apple/mac>
+# <reason>`. The list can only shrink: an entry whose file no longer names the
+# API fails the check. Each reason names the dieter.v1 value the file works on,
+# the client slice it comes from, and the client row that would replace it.
+
+# App store: the workspace replica and the stores' command APIs keep the
+# dieter.v1 Project/Board/Card/State values of ClientWorkspaceSlice and the
+# conversation, files, and settings values their feature slices embed.
+Sources/DieterMacKit/App/Session/AppSession.swift holds archived dieter.v1 Projects/Cards and gateway GatewayInformation (ClientWorkspaceSlice, ClientSessionSlice); needs project/card rows
+Sources/DieterMacKit/App/Session/AppSession+CoreSession.swift folds ClientWorkspaceSlice into dieter.v1 Project/Board/Card maps, builds gateway GatewayInformation, reads HarnessCatalog from ClientMachineMetadata
+Sources/DieterMacKit/App/Session/AppSession+Forwarding.swift forwards the replica's and models' dieter.v1 values (State, Project, Card, Board, conversation snapshot/messages, Workspace, GitOperation, FileDocument, Schedule, MessagePart)
+Sources/DieterMacKit/App/Session/WorkspaceReplica.swift the workspace replica: dieter.v1 State, Project, Board, and Card collections from ClientWorkspaceSlice
+Sources/DieterMacKit/App/Store/DieterStore+Conversation.swift conversation commands over dieter.v1 Card, MessagePart attachments, QueuedMessage, ToolOutput, and DraftAgentSettings
+Sources/DieterMacKit/App/Store/DieterStore+FilesAndSettings.swift settings and files commands returning dieter.v1 PromptSettings/PromptPreview/Label, FileDocument, and ScheduleDraft (AdminPromptSettings, ClientFilesSlice, SaveSchedule)
+Sources/DieterMacKit/App/Store/DieterStore+Navigation.swift opens a conversation's files and terminal from its dieter.v1 Card
+Sources/DieterMacKit/App/Store/DieterStore+Projection.swift projects the replica's dieter.v1 Cards/Boards/Projects onto the board view (ClientBoardViewSlice carries card IDs only)
+Sources/DieterMacKit/App/Store/DieterStore+Selection.swift publishes the selected project's dieter.v1 State/Project slice of the replica
+Sources/DieterMacKit/App/Store/DieterStore+SharedProjects.swift checkout selection and card moves over dieter.v1 Checkout and Card
+Sources/DieterMacKit/App/Store/DieterStore+Workspace.swift admin commands taking or returning dieter.v1 Board, Card, Workspace, ValidationCommand, DirectoryListing, CreateProjectResponse, MessagePart
+
+# Attachments: composers hold attachments as dieter.v1 MessageParts, the type
+# ClientCreationIntent.attachments and ClientSendMessage.parts take. A client
+# attachment draft type would remove these.
+Sources/DieterMacKit/Features/Attachments/Views/Attachments.swift attachment strip and intake edit composer attachments as dieter.v1 MessageParts (ClientCreationIntent.attachments)
+Sources/DieterMacKit/Features/Attachments/Views/AttachmentMarkup.swift image markup reads and re-encodes a dieter.v1 MessagePart attachment
+Sources/DieterMacKit/Features/Creation/Model/CreationFormModel.swift the creation form keeps its attachments as dieter.v1 MessageParts for ClientCreationIntent.attachments
+Sources/DieterMacKit/Features/Conversation/Model/ConversationSupport.swift the composer draft keeps dieter.v1 MessagePart attachments and restores dieter.v1 QueuedMessages for editing
+Sources/DieterMacKit/Features/QuickTask/Views/QuickTaskPopover.swift quick task attachments are dieter.v1 MessageParts; start lanes are ClientCreationPreview's dieter.v1 Lanes
+Sources/DieterMacKit/Features/QuickTask/Views/CaptureTask.swift captured browser content as dieter.v1 MessageParts; filters the replica's dieter.v1 Projects/Boards
+
+# Board, chats, sidebar: views render the replica's dieter.v1 Card, Board,
+# Project, and Label values; ClientBoardViewSlice, ClientChatsSlice, and
+# ClientNavigationSlice carry only IDs and flags.
+Sources/DieterMacKit/Features/Board/Model/BoardProjection.swift groups the replica's dieter.v1 Cards into ClientBoardViewSlice lanes (lanes list card IDs only)
+Sources/DieterMacKit/Features/Board/Views/BoardCardView.swift the card cell renders a dieter.v1 Card (title, labels, workspace, pull request, subagents) on its dieter.v1 Board; needs a board card row
+Sources/DieterMacKit/Features/Board/Views/BoardChrome.swift label filter segments render dieter.v1 Labels (name, color)
+Sources/DieterMacKit/Features/Board/Views/BoardLaneList.swift lane lists lay out dieter.v1 Cards of a dieter.v1 Board
+Sources/DieterMacKit/Features/Board/Views/EditCardSheet.swift edits a draft dieter.v1 Card with HarnessCatalog/HarnessSelection/DraftAgentSettings (UpdateCardDraft.agent)
+Sources/DieterMacKit/Features/Board/Views/KanbanView.swift lane columns pass the projection's dieter.v1 Cards to the lane lists
+Sources/DieterMacKit/Features/Board/Views/LabelForms.swift label editor forms edit dieter.v1 Labels
+Sources/DieterMacKit/Features/Chats/Views/ChatGroups.swift chat sections render dieter.v1 Card chats per dieter.v1 Project (ClientChatsSlice lists chat IDs)
+Sources/DieterMacKit/Features/Chats/Views/ChatRow.swift the chat row renders a dieter.v1 Card; needs a chat row
+Sources/DieterMacKit/Features/Chats/Views/PinnedChats.swift pinned chat rows pass their dieter.v1 Card to ChatRow and the drag preview
+Sources/DieterMacKit/Features/Sidebar/Views/AppSidebar.swift passes the replica's dieter.v1 Projects to the sidebar rows (ClientProjectNavigation lists IDs)
+Sources/DieterMacKit/Features/Sidebar/Views/SidebarProjectRow.swift the sidebar row renders a dieter.v1 Project and its dieter.v1 Boards; needs a project row
+
+# Changes: ClientReviewSlice and ClientProjectChangesSlice embed the dieter.v1
+# Workspace, Changeset, ChangedFile, FileDiff, GitOperation, and ChangeComment
+# values the review renders; ChangedFileLabel/DiffDisplayRow cover only part.
+Sources/DieterMacKit/Features/Changes/Model/ProjectChangesModel.swift holds ClientProjectChangesSlice's dieter.v1 Changeset, FileDiff, GitOperation, and ChangedFiles
+Sources/DieterMacKit/Features/Changes/Model/WorkspaceReview.swift diff lines keep ClientDiffDisplayLine's dieter.v1 ChangeComment threads
+Sources/DieterMacKit/Features/Changes/Model/WorktreeChangesModel.swift holds ClientReviewSlice's dieter.v1 Workspace, Changeset, SCMCapabilities, FileDiff, GitOperation(+logs), ChangeComments, and the conversation's Card
+Sources/DieterMacKit/Features/Changes/Views/MergeIntoBaseSheet.swift reads the dieter.v1 Card, Workspace, and Changeset (branches, title, prompt, counts) to draft a merge
+Sources/DieterMacKit/Features/Changes/Views/ProjectChangesView.swift lists and acts on dieter.v1 ChangedFiles (stage, discard, open)
+Sources/DieterMacKit/Features/Changes/Views/WorkspaceChangesView.swift renders the dieter.v1 Workspace, Changeset, ChangedFiles, and GitOperation of a conversation's Card
+Sources/DieterMacKit/Features/Changes/Views/WorkspaceRows.swift rows render dieter.v1 ChangedFile, WorkspaceCommit, and ChangeComment
+
+# Conversation: the transcript renders ClientConversationSlice's dieter.v1
+# UiMessages, MessageParts, TaskPlans, Subagents, PendingTools, QueuedMessages,
+# and ToolOutput; TimelineItem/TimelineStep carry IDs and summaries only.
+Sources/DieterMacKit/Features/Conversation/Model/ConversationContentModel.swift content tabs keep the conversation's dieter.v1 Card for review sends
+Sources/DieterMacKit/Features/Conversation/Model/ConversationContext.swift the conversation environment exposes dieter.v1 Card, CardDetail, snapshot, UiMessages, QueuedMessage, ToolOutput, and HarnessCatalog
+Sources/DieterMacKit/Features/Conversation/Model/ConversationModel.swift folds ClientConversationSlice into dieter.v1 ConversationSnapshot, CardDetail, UiMessages, TaskPlans, Subagents, ContentPresentation
+Sources/DieterMacKit/Features/Conversation/Model/ConversationPresentation.swift the render window measures dieter.v1 UiMessages (IDs, text cost)
+Sources/DieterMacKit/Features/Conversation/Model/ConversationProcessesModel.swift holds ClientProcessesSlice's dieter.v1 Executions; needs process rows
+Sources/DieterMacKit/Features/Conversation/Views/ConversationActivity.swift renders dieter.v1 TaskPlan/TaskPlanItem and Subagent details
+Sources/DieterMacKit/Features/Conversation/Views/ConversationComposer.swift recalls and edits the conversation's dieter.v1 QueuedMessages
+Sources/DieterMacKit/Features/Conversation/Views/ConversationContentRenderer.swift renders an opened dieter.v1 FileDocument in a content tab
+Sources/DieterMacKit/Features/Conversation/Views/ConversationFileTree.swift the workspace file tree lists dieter.v1 FileEntries (ClientFileTreeFolder.entries)
+Sources/DieterMacKit/Features/Conversation/Views/ConversationProcessesPane.swift words a dieter.v1 Execution's status, exit code, and pid; needs a process row with its status label
+Sources/DieterMacKit/Features/Conversation/Views/ConversationTimeline.swift the transcript windows dieter.v1 UiMessages and shows unsent dieter.v1 MessagePart attachments and PendingTools
+Sources/DieterMacKit/Features/Conversation/Views/ConversationViewport.swift the unsent task view shows dieter.v1 MessagePart attachments
+Sources/DieterMacKit/Features/Conversation/Views/MessageParts.swift renders dieter.v1 MessageParts, PendingTools, and loaded ToolOutput
+Sources/DieterMacKit/Features/Conversation/Views/QuickTaskQueue.swift renders queued dieter.v1 QueuedMessages/MessageParts and a never-started dieter.v1 Card
+
+# Creation and projects: agent pickers, destinations, and project
+# administration work on the dieter.v1 values the client contract embeds.
+Sources/DieterMacKit/Features/Creation/Views/ConversationWorkspacePickerSheet.swift reads the dieter.v1 Project's name, path, and base branch/remote for workspace options
+Sources/DieterMacKit/Features/Creation/Views/HarnessFields.swift agent pickers render ClientAgentControlsState's dieter.v1 ProviderOptions/Choices, HarnessCatalog, and HarnessSelection
+Sources/DieterMacKit/Features/Projects/Model/ProjectDestinations.swift destinations carry the dieter.v1 Project and Checkout (ClientChatDestination has IDs and titles only)
+Sources/DieterMacKit/Features/Projects/Model/ProjectSetup.swift builds the dieter.v1 CreateProjectRequest and ValidationCommands the store sends as ClientAdminCreateProject
+Sources/DieterMacKit/Features/Projects/Views/RemoteDirectoryBrowserSheet.swift browses dieter.v1 DirectoryListing/DirectoryEntries (AdminDirectories result)
+Sources/DieterMacKit/Features/Projects/Views/SharedConflictsView.swift resolves dieter.v1 PeerRecord/PeerVersion conflicts (ClientConflictRecord, AdminResolveConflict)
+
+# Files, terminals, schedules, machines, quotas, screens, settings: feature
+# slices embed the dieter.v1 (or gateway) values these views render.
+Sources/DieterMacKit/Features/Files/Model/FilesModel.swift holds ClientFilesSlice's dieter.v1 FileEntries and FileDocument
+Sources/DieterMacKit/Features/Files/Views/FileDocumentActions.swift export and save-copy actions take the open dieter.v1 FileDocument
+Sources/DieterMacKit/Features/Files/Views/FilesView.swift renders dieter.v1 FileEntries and the open FileDocument
+Sources/DieterMacKit/Features/Terminals/Model/TerminalsModel.swift holds ClientTerminalsSlice's dieter.v1 Terminals (TerminalRow lacks name, shell, directory, size)
+Sources/DieterMacKit/Features/Terminals/Views/TerminalsView.swift renders dieter.v1 Terminals and a destination's dieter.v1 Project
+Sources/DieterMacKit/Features/Schedules/Model/SchedulesModel.swift holds ClientSchedulesSlice's dieter.v1 Schedules, ScheduleRuns, and editor ScheduleDraft (SaveSchedule.draft) with HarnessCatalog and Boards
+Sources/DieterMacKit/Features/Schedules/Views/ScheduleEditor.swift edits a dieter.v1 ScheduleDraft (board, HarnessSelection)
+Sources/DieterMacKit/Features/Schedules/Views/SchedulesView.swift renders dieter.v1 Schedules (name, enabled, cron, timezone, templates); ScheduleRow lacks them
+Sources/DieterMacKit/Features/Machines/Model/FleetModel.swift holds ClientTelemetrySlice's dieter.v1 MachineInformation and sends MachineOperationActions
+Sources/DieterMacKit/Features/Machines/Views/MachinesView.swift renders dieter.v1 MachineInformation, GPUDevices, MachineProcesses, and MachineOperationActions
+Sources/DieterMacKit/Features/ProviderQuotas/Model/CoreProviderQuotas.swift holds ClientQuotasSlice's gateway ProviderQuotaGroups and sends QuotaInclusion with a gateway ProviderQuotaProvider
+Sources/DieterMacKit/Features/ProviderQuotas/Views/ProviderQuotaViews.swift keys, tints, and picks symbols by ClientQuotaGroupRow's gateway ProviderQuotaProvider
+Sources/DieterMacKit/Features/Screens/Model/ScreenSessionModel.swift holds ClientScreenSlice's dieter.v1 RemoteDesktopCapabilities and RemoteDesktopSessionState
+Sources/DieterMacKit/Features/Screens/Rendering/RemoteDesktopController.swift sends ClientScreenCommands with dieter.v1 RemoteDesktop codec, quality, and pointer-button enums
+Sources/DieterMacKit/Features/Screens/Views/RemoteDesktopInputView.swift maps AppKit mouse buttons to dieter.v1 RemoteDesktopPointerButton.Button (ClientScreenButton.button)
+Sources/DieterMacKit/Features/Settings/Views/PromptSettingsEditor.swift edits dieter.v1 PromptSettings and label instructions, previews a dieter.v1 PromptPreview

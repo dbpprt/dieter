@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/daemon"
 	"github.com/dbpprt/dieter/internal/gateway"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/link"
+	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -22,6 +22,7 @@ import (
 )
 
 func TestDirectCredentialSharesRefreshAndHonorsCancellation(t *testing.T) {
+	t.Parallel()
 	var exchanges atomic.Int32
 	entered, release := make(chan struct{}), make(chan struct{})
 	credential := &directCredential{timeout: time.Second, exchange: func(ctx context.Context) (*gatewayv1.DaemonAccessToken, error) {
@@ -57,6 +58,7 @@ func TestDirectCredentialSharesRefreshAndHonorsCancellation(t *testing.T) {
 }
 
 func TestDirectCredentialRejectsInvalidRefresh(t *testing.T) {
+	t.Parallel()
 	for _, access := range []*gatewayv1.DaemonAccessToken{nil, {TokenType: "Bearer", AccessToken: "expired", ExpiresAt: time.Now().Add(-time.Minute).Format(time.RFC3339Nano)}, {TokenType: "Other", AccessToken: "wrong-type", ExpiresAt: time.Now().Add(time.Hour).Format(time.RFC3339Nano)}} {
 		credential := &directCredential{timeout: time.Second, exchange: func(context.Context) (*gatewayv1.DaemonAccessToken, error) { return access, nil }}
 		if _, err := credential.GetRequestMetadata(t.Context()); status.Code(err) != codes.Unauthenticated {
@@ -65,13 +67,17 @@ func TestDirectCredentialRejectsInvalidRefresh(t *testing.T) {
 	}
 }
 
-type expiringExecutionServer struct {
-	dieterv1.UnimplementedDieterServiceServer
-	requests chan uint64
+type expiringMachineServer struct {
+	dieterv1.UnimplementedMachineServiceServer
 }
 
-func (*expiringExecutionServer) Health(context.Context, *emptypb.Empty) (*dieterv1.HealthResponse, error) {
+func (expiringMachineServer) Health(context.Context, *emptypb.Empty) (*dieterv1.HealthResponse, error) {
 	return &dieterv1.HealthResponse{Status: "ok", ReleaseVersion: "0.4.1-dev"}, nil
+}
+
+type expiringExecutionServer struct {
+	dieterv1.UnimplementedExecutionServiceServer
+	requests chan uint64
 }
 
 func (*expiringExecutionServer) GetExecution(context.Context, *dieterv1.ExecutionRef) (*dieterv1.Execution, error) {
@@ -106,11 +112,12 @@ func (s *expiringExecutionServer) WatchExecution(request *dieterv1.WatchExecutio
 // server token deadline (including skew), and output/exit semantics over two
 // successive token lifetimes. All identities, listeners and state are isolated.
 func TestRemoteWaitSurvivesTwoDirectTokenExpirations(t *testing.T) {
+	t.Parallel()
 	keys, err := gateway.LoadOrCreateKeys(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	identity, err := daemon.LoadOrCreateEnrollmentIdentity(t.TempDir(), "security", "https://gateway.example")
+	identity, err := link.LoadOrCreateEnrollmentIdentity(t.TempDir(), "security", "https://gateway.example")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,10 +142,11 @@ func TestRemoteWaitSurvivesTwoDirectTokenExpirations(t *testing.T) {
 	}
 	local := grpc.NewServer()
 	execution := &expiringExecutionServer{requests: make(chan uint64, 4)}
-	dieterv1.RegisterDieterServiceServer(local, execution)
+	dieterv1.RegisterMachineServiceServer(local, expiringMachineServer{})
+	dieterv1.RegisterExecutionServiceServer(local, execution)
 	go func() { _ = local.Serve(localListener) }()
 	t.Cleanup(local.Stop)
-	direct, err := daemon.NewDirectServer(identity, localListener.Addr().String(), "local-token")
+	direct, err := link.NewDirectServer(identity, localListener.Addr().String(), "local-token")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,13 +162,13 @@ func TestRemoteWaitSurvivesTwoDirectTokenExpirations(t *testing.T) {
 		token, expiry, err := keys.SignDaemonToken(identity.GatewayURL, identity.ID, 123, 1, "", time.Second)
 		return &gatewayv1.DaemonAccessToken{TokenType: "Bearer", AccessToken: token, ExpiresAt: expiry.Format(time.RFC3339Nano)}, err
 	}}
-	connection, err := daemon.DialDirectWithCredentials(t.Context(), directListener.Addr().String(), identity.ID, keys.DaemonCAPEM, credential)
+	connection, err := link.DialDirectWithCredentials(t.Context(), directListener.Addr().String(), identity.ID, keys.DaemonCAPEM, credential)
 	if err != nil {
 		t.Fatal(err)
 	}
-	client := New(store.New(t.TempDir()))
+	client := New(t.TempDir())
 
-	client.transport = &dieterTransport{conn: connection, client: dieterv1.NewDieterServiceClient(readResumingConn{connection}), route: "direct", daemonID: identity.ID}
+	client.transport = &dieterTransport{conn: connection, client: dieterclient.New(readResumingConn{connection}), route: "direct", daemonID: identity.ID}
 	t.Cleanup(client.Close)
 	var stdout, stderr bytes.Buffer
 	client.Out, client.Err = &stdout, &stderr

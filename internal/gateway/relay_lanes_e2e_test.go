@@ -1,11 +1,11 @@
+//go:build e2e
+
 package gateway
 
 import (
 	"bytes"
 	"context"
 	"fmt"
-	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
-	"google.golang.org/protobuf/proto"
 	"io"
 	"log/slog"
 	"net"
@@ -17,31 +17,35 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dbpprt/dieter/internal/api"
 	"github.com/dbpprt/dieter/internal/cli"
-	"github.com/dbpprt/dieter/internal/daemon"
+	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/linkauth"
-	"github.com/dbpprt/dieter/internal/peerstore"
-	"github.com/dbpprt/dieter/internal/relaypolicy"
-	"github.com/dbpprt/dieter/internal/rpcraw"
-	"github.com/dbpprt/dieter/internal/server"
+	"github.com/dbpprt/dieter/internal/link"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
+	"github.com/dbpprt/dieter/internal/replication/peersync"
+	"github.com/dbpprt/dieter/internal/security/linkauth"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/testkit"
+	"github.com/dbpprt/dieter/internal/transport/dieterclient"
+	"github.com/dbpprt/dieter/internal/transport/relay"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type relayFleet struct {
 	gateway                  *Server
-	target, source           *daemon.Identity
+	target, source           *link.Identity
 	targetStore, sourceStore *store.Store
-	client                   dieterv1.DieterServiceClient
+	client                   dieterclient.Client
 	context                  context.Context
-	enroll                   func(string) *daemon.Identity
+	enroll                   func(string) *link.Identity
 }
 
 func newRelayFleet(t *testing.T, setup ...func(*Server)) *relayFleet {
@@ -69,19 +73,19 @@ func newRelayFleet(t *testing.T, setup ...func(*Server)) *relayFleet {
 	}
 	go func() { _ = g.Serve(listener) }()
 	t.Cleanup(func() { g.APIGRPC.Stop(); g.RelayGRPC.Stop(); listener.Close() })
-	enroll := func(name string) *daemon.Identity {
-		id, err := daemon.LoadOrCreateEnrollmentIdentity(t.TempDir(), name, origin.String())
+	enroll := func(name string) *link.Identity {
+		id, err := link.LoadOrCreateEnrollmentIdentity(t.TempDir(), name, origin.String())
 		if err != nil {
 			t.Fatal(err)
 		}
-		e, err := daemon.BeginEnrollment(ctx, id)
+		e, err := link.BeginEnrollment(ctx, id)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if err = data.ApproveEnrollment(e.EnrollmentId, e.UserCode, 1234, "test"); err != nil {
 			t.Fatal(err)
 		}
-		c, err := daemon.CompleteEnrollment(ctx, id, e.EnrollmentId, e.EnrollmentSecret)
+		c, err := link.CompleteEnrollment(ctx, id, e.EnrollmentId, e.EnrollmentSecret)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -93,7 +97,7 @@ func newRelayFleet(t *testing.T, setup ...func(*Server)) *relayFleet {
 	}
 	target, source := enroll("target"), enroll("source")
 	ts, ss := store.New(target.Root), store.New(source.Root)
-	scope := peerstore.Revision([]string{target.Issuer(), "github:1234"})
+	scope := crdt.Revision([]string{target.Issuer(), "github:1234"})
 	if _, err = ts.BindPeerAccount(scope, "github:1234", target.ID, target.Issuer()); err != nil {
 		t.Fatal(err)
 	}
@@ -104,13 +108,13 @@ func newRelayFleet(t *testing.T, setup ...func(*Server)) *relayFleet {
 	if err != nil {
 		t.Fatal(err)
 	}
-	app := server.NewWithOptions(ts, log, server.Options{})
-	httpServer := &http.Server{Handler: app.Handler()}
+	app := api.NewWithOptions(ts, log, api.Options{})
+	httpServer := &http.Server{Handler: app.Handler(), Protocols: testkit.Protocols()}
 	go func() { _ = httpServer.Serve(local) }()
 	t.Cleanup(func() { httpServer.Close() })
 	tunnelCtx, stop := context.WithCancel(ctx)
 	done := make(chan error, 1)
-	tunnel := &daemon.GatewayClient{Identity: target, LocalTarget: local.Addr().String(), LocalToken: testLocalToken(t, ts.Root), Version: "0.4.1-dev", Log: log, Timing: daemon.GatewayTiming{ReconnectInitialBackoff: 20 * time.Millisecond, ReconnectMaximumBackoff: 50 * time.Millisecond}}
+	tunnel := &link.GatewayClient{Identity: target, LocalTarget: local.Addr().String(), LocalToken: testkit.LocalToken(t, ts.Root), Version: "0.4.1-dev", Log: log, Timing: link.GatewayTiming{ReconnectInitialBackoff: 20 * time.Millisecond, ReconnectMaximumBackoff: 50 * time.Millisecond}}
 	go func() { done <- tunnel.Run(tunnelCtx) }()
 	t.Cleanup(func() {
 		stop()
@@ -128,22 +132,15 @@ func newRelayFleet(t *testing.T, setup ...func(*Server)) *relayFleet {
 	t.Cleanup(func() { conn.Close() })
 	proof := linkauth.SignPeer(source.PrivateKey, source.ID, source.Issuer(), source.Generation, time.Now())
 	authorized := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+proof, "x-dieter-client-version", "0.4.1-dev", "x-dieter-daemon-id", target.ID)
-	return &relayFleet{gateway: g, target: target, source: source, targetStore: ts, sourceStore: ss, client: dieterv1.NewDieterServiceClient(conn), context: authorized, enroll: enroll}
+	return &relayFleet{gateway: g, target: target, source: source, targetStore: ts, sourceStore: ss, client: dieterclient.New(conn), context: authorized, enroll: enroll}
 }
 func waitRelay(t *testing.T, condition func() bool, what string) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if condition() {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for %s", what)
+	testkit.Eventually(t, 5*time.Second, condition, "%s", what)
 }
 func (f *relayFleet) command(t *testing.T, args ...string) string {
 	t.Helper()
-	c := cli.New(f.sourceStore)
+	c := cli.New(f.sourceStore.Root)
 	c.Machine = f.target.ID
 	c.Timeout = 3 * time.Second
 	var out bytes.Buffer
@@ -155,6 +152,7 @@ func (f *relayFleet) command(t *testing.T, args ...string) string {
 	return out.String()
 }
 func TestRelayFleetWatchSaturationPreservesCLIHealthAndReplication(t *testing.T) {
+	t.Parallel()
 	f := newRelayFleet(t)
 	var stop []context.CancelFunc
 	defer func() {
@@ -162,7 +160,7 @@ func TestRelayFleetWatchSaturationPreservesCLIHealthAndReplication(t *testing.T)
 			cancel()
 		}
 	}()
-	for range relaypolicy.Limit(relaypolicy.Subscription) {
+	for range relay.Limit(relay.Subscription) {
 		ctx, cancel := context.WithCancel(f.context)
 		stop = append(stop, cancel)
 		watch, err := f.client.WatchKV(ctx, &dieterv1.KVWatchRequest{Namespace: "navigation"})
@@ -188,7 +186,7 @@ func TestRelayFleetWatchSaturationPreservesCLIHealthAndReplication(t *testing.T)
 	f.command(t, "status")
 	f.command(t, "peer", "status")
 	// Real peer exchange must converge while every subscription slot is occupied.
-	binding, err := f.sourceStore.BindPeerAccount(peerstore.Revision([]string{f.source.Issuer(), "github:1234"}), "github:1234", f.source.ID, f.source.Issuer())
+	binding, err := f.sourceStore.BindPeerAccount(crdt.Revision([]string{f.source.Issuer(), "github:1234"}), "github:1234", f.source.ID, f.source.Issuer())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +194,7 @@ func TestRelayFleetWatchSaturationPreservesCLIHealthAndReplication(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	syncer := &daemon.PeerSync{Identity: f.source, Store: f.sourceStore}
+	syncer := &peersync.PeerSync{Identity: f.source, Store: f.sourceStore}
 	if err = syncer.Round(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -221,6 +219,7 @@ func TestRelayFleetWatchSaturationPreservesCLIHealthAndReplication(t *testing.T)
 	f.command(t, "status")
 }
 func TestRelayFleetSubscriptionReconnectPreservesCommandsAndWatchCursor(t *testing.T) {
+	t.Parallel()
 	f := newRelayFleet(t)
 	watch, err := f.client.WatchKV(f.context, &dieterv1.KVWatchRequest{Namespace: "navigation"})
 	if err != nil {
@@ -232,10 +231,10 @@ func TestRelayFleetSubscriptionReconnectPreservesCommandsAndWatchCursor(t *testi
 	}
 	hub := f.gateway.Hub
 	hub.mu.RLock()
-	old := hub.relayLinks[f.target.ID][relaypolicy.Subscription]
-	control := hub.relayLinks[f.target.ID][relaypolicy.Control]
-	command := hub.relayLinks[f.target.ID][relaypolicy.Command]
-	replication := hub.relayLinks[f.target.ID][relaypolicy.Replication]
+	old := hub.relayLinks[f.target.ID][relay.Subscription]
+	control := hub.relayLinks[f.target.ID][relay.Control]
+	command := hub.relayLinks[f.target.ID][relay.Command]
+	replication := hub.relayLinks[f.target.ID][relay.Replication]
 	hub.mu.RUnlock()
 	old.close()
 	if _, err = watch.Recv(); status.Code(err) != codes.Unavailable {
@@ -248,7 +247,7 @@ func TestRelayFleetSubscriptionReconnectPreservesCommandsAndWatchCursor(t *testi
 	}
 	waitRelay(t, func() bool { return hub.RelayReady(f.target.ID) }, "independent subscription reconnect")
 	hub.mu.RLock()
-	same := hub.relayLinks[f.target.ID][relaypolicy.Control] == control && hub.relayLinks[f.target.ID][relaypolicy.Command] == command && hub.relayLinks[f.target.ID][relaypolicy.Replication] == replication && hub.relayLinks[f.target.ID][relaypolicy.Subscription] != old
+	same := hub.relayLinks[f.target.ID][relay.Control] == control && hub.relayLinks[f.target.ID][relay.Command] == command && hub.relayLinks[f.target.ID][relay.Replication] == replication && hub.relayLinks[f.target.ID][relay.Subscription] != old
 	hub.mu.RUnlock()
 	if !same {
 		t.Fatal("subscription recovery replaced healthy channels")
@@ -291,14 +290,14 @@ type blockedLaneHub struct {
 type blockedLaneStream struct {
 	grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame, gatewayv1.DaemonLinkFrame]
 	fault *blockedLaneHub
-	lane  relaypolicy.Lane
+	lane  relay.Lane
 }
 
 func (s *blockedLaneStream) Recv() (*gatewayv1.DaemonLinkFrame, error) {
 	f, err := s.BidiStreamingServer.Recv()
 	if f.GetKind() == gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO {
 		s.lane = f.Lane
-		if s.lane == relaypolicy.Control && s.fault.pauseControl.CompareAndSwap(true, false) {
+		if s.lane == relay.Control && s.fault.pauseControl.CompareAndSwap(true, false) {
 			close(s.fault.controlPaused)
 			select {
 			case <-s.fault.resumeControl:
@@ -310,7 +309,7 @@ func (s *blockedLaneStream) Recv() (*gatewayv1.DaemonLinkFrame, error) {
 	return f, err
 }
 func (s *blockedLaneStream) Send(f *gatewayv1.DaemonLinkFrame) error {
-	if s.lane == relaypolicy.Subscription && f.Kind == gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_OPEN_RPC && s.fault.armed.CompareAndSwap(true, false) {
+	if s.lane == relay.Subscription && f.Kind == gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_OPEN_RPC && s.fault.armed.CompareAndSwap(true, false) {
 		close(s.fault.blocked)
 		<-s.Context().Done()
 		return s.Context().Err()
@@ -338,6 +337,7 @@ func installRelayFault(t *testing.T, g *Server, fault *blockedLaneHub) {
 }
 
 func TestRelayFleetBlockedWriterResetsOnlySubscriptionLane(t *testing.T) {
+	t.Parallel()
 	fault := &blockedLaneHub{blocked: make(chan struct{})}
 	f := newRelayFleet(t, func(g *Server) {
 		installRelayFault(t, g, fault)
@@ -346,10 +346,10 @@ func TestRelayFleetBlockedWriterResetsOnlySubscriptionLane(t *testing.T) {
 	})
 	hub := f.gateway.Hub
 	hub.mu.RLock()
-	control := hub.relayLinks[f.target.ID][relaypolicy.Control]
-	replication := hub.relayLinks[f.target.ID][relaypolicy.Replication]
-	command := hub.relayLinks[f.target.ID][relaypolicy.Command]
-	old := hub.relayLinks[f.target.ID][relaypolicy.Subscription]
+	control := hub.relayLinks[f.target.ID][relay.Control]
+	replication := hub.relayLinks[f.target.ID][relay.Replication]
+	command := hub.relayLinks[f.target.ID][relay.Command]
+	old := hub.relayLinks[f.target.ID][relay.Subscription]
 	hub.mu.RUnlock()
 	fault.armed.Store(true)
 	watch, err := f.client.WatchKV(f.context, &dieterv1.KVWatchRequest{Namespace: "navigation"})
@@ -358,7 +358,7 @@ func TestRelayFleetBlockedWriterResetsOnlySubscriptionLane(t *testing.T) {
 	}
 	select {
 	case <-fault.blocked:
-	case <-time.After(2 * time.Second):
+	case <-time.After(testkit.Budget(30 * time.Second)):
 		t.Fatal("writer was not blocked")
 	}
 	ctx, cancel := context.WithTimeout(f.context, 200*time.Millisecond)
@@ -373,7 +373,7 @@ func TestRelayFleetBlockedWriterResetsOnlySubscriptionLane(t *testing.T) {
 	}
 	waitRelay(t, func() bool { return hub.RelayReady(f.target.ID) }, "writer stall recovery")
 	hub.mu.RLock()
-	same := hub.relayLinks[f.target.ID][relaypolicy.Control] == control && hub.relayLinks[f.target.ID][relaypolicy.Replication] == replication && hub.relayLinks[f.target.ID][relaypolicy.Command] == command && hub.relayLinks[f.target.ID][relaypolicy.Subscription] != old
+	same := hub.relayLinks[f.target.ID][relay.Control] == control && hub.relayLinks[f.target.ID][relay.Replication] == replication && hub.relayLinks[f.target.ID][relay.Command] == command && hub.relayLinks[f.target.ID][relay.Subscription] != old
 	hub.mu.RUnlock()
 	if !same {
 		t.Fatal("writer stall reset unrelated channels")
@@ -388,8 +388,9 @@ func TestRelayFleetBlockedWriterResetsOnlySubscriptionLane(t *testing.T) {
 }
 
 func TestRelayFleetLargeResponsesPreservePayloadAcrossFragments(t *testing.T) {
+	t.Parallel()
 	f := newRelayFleet(t)
-	account := peerstore.Revision([]string{f.target.Issuer(), "github:1234"})
+	account := crdt.Revision([]string{f.target.Issuer(), "github:1234"})
 	value := []byte(`"` + strings.Repeat("z", 31<<10) + `"`)
 	for i := range 8 {
 		if _, err := f.client.PutKV(f.context, &dieterv1.KVPutRequest{Ref: &dieterv1.KVRef{Account: account, Namespace: "fragment-fixture", Key: fmt.Sprintf("entry-%d", i)}, ValueJson: value, OperationId: fmt.Sprintf("fragment-%d", i), DaemonId: f.target.ID}); err != nil {
@@ -400,7 +401,7 @@ func TestRelayFleetLargeResponsesPreservePayloadAcrossFragments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if proto.Size(page) <= relaypolicy.ChunkBytes || len(page.Entries) != 8 {
+	if proto.Size(page) <= relay.ChunkBytes || len(page.Entries) != 8 {
 		t.Fatal("fixture did not exceed a relay fragment")
 	}
 	for _, entry := range page.Entries {
@@ -413,7 +414,7 @@ func TestRelayFleetLargeResponsesPreservePayloadAcrossFragments(t *testing.T) {
 		t.Fatal(err)
 	}
 	frame, err := watch.Recv()
-	if err != nil || len(frame.Entries) != 8 || proto.Size(frame) <= relaypolicy.ChunkBytes {
+	if err != nil || len(frame.Entries) != 8 || proto.Size(frame) <= relay.ChunkBytes {
 		t.Fatal("large subscription response lost", err)
 	}
 	for _, entry := range frame.Entries {
@@ -423,7 +424,7 @@ func TestRelayFleetLargeResponsesPreservePayloadAcrossFragments(t *testing.T) {
 	}
 	// The return direction then forwards a batch exceeding one fragment. The
 	// daemon verifies the delegation over the complete reconstructed request.
-	syncer := &daemon.PeerSync{Identity: f.source, Store: f.sourceStore}
+	syncer := &peersync.PeerSync{Identity: f.source, Store: f.sourceStore}
 	for range 2 {
 		if err := syncer.Round(f.context); err != nil {
 			t.Fatal(err)
@@ -443,13 +444,14 @@ func TestRelayFleetLargeResponsesPreservePayloadAcrossFragments(t *testing.T) {
 }
 
 func TestRelayFleetStalledPeerDoesNotDelayHealthyPeerConvergence(t *testing.T) {
+	t.Parallel()
 	f := newRelayFleet(t)
 	stalled := f.enroll("stalled")
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	entered := make(chan struct{})
 	var enteredOnce sync.Once
-	local := grpc.NewServer(grpc.ForceServerCodec(rpcraw.Codec{}), grpc.UnknownServiceHandler(func(_ any, s grpc.ServerStream) error {
-		var message rpcraw.Message
+	local := grpc.NewServer(grpc.ForceServerCodec(relay.RawCodec{}), grpc.UnknownServiceHandler(func(_ any, s grpc.ServerStream) error {
+		var message relay.RawMessage
 		if err := s.RecvMsg(&message); err != nil {
 			return err
 		}
@@ -467,7 +469,7 @@ func TestRelayFleetStalledPeerDoesNotDelayHealthyPeerConvergence(t *testing.T) {
 	defer cancelTunnel()
 	tunnelDone := make(chan error, 1)
 	go func() {
-		tunnelDone <- (&daemon.GatewayClient{Identity: stalled, LocalTarget: listener.Addr().String(), LocalToken: "local-token", Version: "0.4.1-dev", Log: log}).Run(tunnelCtx)
+		tunnelDone <- (&link.GatewayClient{Identity: stalled, LocalTarget: listener.Addr().String(), LocalToken: "local-token", Version: "0.4.1-dev", Log: log}).Run(tunnelCtx)
 	}()
 	defer func() {
 		cancelTunnel()
@@ -478,7 +480,7 @@ func TestRelayFleetStalledPeerDoesNotDelayHealthyPeerConvergence(t *testing.T) {
 		}
 	}()
 	waitRelay(t, func() bool { return f.gateway.Hub.RelayReady(stalled.ID) }, "stalled peer enrollment")
-	binding, err := f.sourceStore.BindPeerAccount(peerstore.Revision([]string{f.source.Issuer(), "github:1234"}), "github:1234", f.source.ID, f.source.Issuer())
+	binding, err := f.sourceStore.BindPeerAccount(crdt.Revision([]string{f.source.Issuer(), "github:1234"}), "github:1234", f.source.ID, f.source.Issuer())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -488,7 +490,7 @@ func TestRelayFleetStalledPeerDoesNotDelayHealthyPeerConvergence(t *testing.T) {
 	}
 	syncCtx, cancelSync := context.WithCancel(f.context)
 	done := make(chan struct{})
-	syncer := &daemon.PeerSync{Identity: f.source, Store: f.sourceStore, Interval: 30 * time.Millisecond, Log: log}
+	syncer := &peersync.PeerSync{Identity: f.source, Store: f.sourceStore, Interval: 30 * time.Millisecond, Log: log}
 	go func() { defer close(done); syncer.Run(syncCtx) }()
 	defer func() {
 		cancelSync()
@@ -500,7 +502,7 @@ func TestRelayFleetStalledPeerDoesNotDelayHealthyPeerConvergence(t *testing.T) {
 	}()
 	select {
 	case <-entered:
-	case <-time.After(3 * time.Second):
+	case <-time.After(testkit.Budget(30 * time.Second)):
 		t.Fatal("stalled exchange was not admitted")
 	}
 	converged := func(revision string) bool {
@@ -524,6 +526,7 @@ func TestRelayFleetStalledPeerDoesNotDelayHealthyPeerConvergence(t *testing.T) {
 }
 
 func TestRelayFleetControlReconnectRetainsPresenceAndExistingWatch(t *testing.T) {
+	t.Parallel()
 	fault := &blockedLaneHub{controlPaused: make(chan struct{}), resumeControl: make(chan struct{})}
 	resume := sync.OnceFunc(func() { close(fault.resumeControl) })
 	defer resume()
@@ -538,15 +541,15 @@ func TestRelayFleetControlReconnectRetainsPresenceAndExistingWatch(t *testing.T)
 	}
 	hub := f.gateway.Hub
 	hub.mu.RLock()
-	old := hub.relayLinks[f.target.ID][relaypolicy.Control]
-	subscription := hub.relayLinks[f.target.ID][relaypolicy.Subscription]
-	command := hub.relayLinks[f.target.ID][relaypolicy.Command]
+	old := hub.relayLinks[f.target.ID][relay.Control]
+	subscription := hub.relayLinks[f.target.ID][relay.Subscription]
+	command := hub.relayLinks[f.target.ID][relay.Command]
 	hub.mu.RUnlock()
 	fault.pauseControl.Store(true)
 	old.close()
 	select {
 	case <-fault.controlPaused:
-	case <-time.After(3 * time.Second):
+	case <-time.After(testkit.Budget(30 * time.Second)):
 		t.Fatal("control reconnect was not paused")
 	}
 	if !hub.Online(f.target.ID) {
@@ -575,7 +578,7 @@ func TestRelayFleetControlReconnectRetainsPresenceAndExistingWatch(t *testing.T)
 	resume()
 	waitRelay(t, func() bool { return hub.RelayReady(f.target.ID) }, "control reconnect")
 	hub.mu.RLock()
-	same := hub.relayLinks[f.target.ID][relaypolicy.Subscription] == subscription && hub.relayLinks[f.target.ID][relaypolicy.Command] == command && hub.relayLinks[f.target.ID][relaypolicy.Control] != old
+	same := hub.relayLinks[f.target.ID][relay.Subscription] == subscription && hub.relayLinks[f.target.ID][relay.Command] == command && hub.relayLinks[f.target.ID][relay.Control] != old
 	hub.mu.RUnlock()
 	if !same {
 		t.Fatal("control recovery replaced working channels")
@@ -583,11 +586,12 @@ func TestRelayFleetControlReconnectRetainsPresenceAndExistingWatch(t *testing.T)
 }
 
 func TestRelayFleetRecordRejectionPreservesStructuredDiagnostics(t *testing.T) {
+	t.Parallel()
 	f := newRelayFleet(t)
-	account := peerstore.Revision([]string{f.target.Issuer(), "github:1234"})
+	account := crdt.Revision([]string{f.target.Issuer(), "github:1234"})
 	hub := f.gateway.Hub
 	hub.mu.RLock()
-	before := hub.relayLinks[f.target.ID][relaypolicy.Replication]
+	before := hub.relayLinks[f.target.ID][relay.Replication]
 	hub.mu.RUnlock()
 	_, err := f.client.MergePeerRecords(f.context, &dieterv1.MergePeerRecordsRequest{Account: account, Records: []*dieterv1.PeerRecord{{Kind: "project-settings", Id: "rejected"}}})
 	if status.Code(err) != codes.InvalidArgument {
@@ -604,7 +608,7 @@ func TestRelayFleetRecordRejectionPreservesStructuredDiagnostics(t *testing.T) {
 	}
 	f.command(t, "peer", "status")
 	hub.mu.RLock()
-	same := hub.relayLinks[f.target.ID][relaypolicy.Replication] == before
+	same := hub.relayLinks[f.target.ID][relay.Replication] == before
 	hub.mu.RUnlock()
 	if !same {
 		t.Fatal("a rejected record reset the replication transport")

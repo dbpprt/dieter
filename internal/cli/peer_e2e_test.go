@@ -1,3 +1,5 @@
+//go:build e2e
+
 package cli
 
 import (
@@ -10,24 +12,26 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/controlrtc"
-	"github.com/dbpprt/dieter/internal/daemon"
+	"github.com/dbpprt/dieter/internal/api"
 	"github.com/dbpprt/dieter/internal/gateway"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/linkauth"
-	"github.com/dbpprt/dieter/internal/localauth"
-	"github.com/dbpprt/dieter/internal/peerstore"
-	"github.com/dbpprt/dieter/internal/server"
+	"github.com/dbpprt/dieter/internal/link"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
+	"github.com/dbpprt/dieter/internal/replication/peersync"
+	"github.com/dbpprt/dieter/internal/replication/schema"
+	"github.com/dbpprt/dieter/internal/security/linkauth"
+	"github.com/dbpprt/dieter/internal/security/localauth"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/testkit"
+	"github.com/dbpprt/dieter/internal/testkit/topology"
+	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 	"github.com/pion/turn/v5"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -39,24 +43,23 @@ import (
 )
 
 func TestPeerMachineSynchronizationRoutes(t *testing.T) {
-	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
+	t.Parallel()
 	for _, route := range []string{"direct-tls", "webrtc-direct", "webrtc-turn", "relay"} {
-		t.Run(route, func(t *testing.T) { testPeerMachines(t, route) })
+		t.Run(route, func(t *testing.T) {
+			t.Parallel()
+			testPeerMachines(t, route)
+		})
 	}
 }
 func testPeerMachines(t *testing.T, wantRoute string) {
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancel()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer listener.Close()
-	origin, _ := url.Parse("http://" + listener.Addr().String())
-	issuerURL, _ := url.Parse("https://durable-gateway.example.test")
-	config := gateway.Config{IssuerURL: issuerURL, Root: t.TempDir(), Address: listener.Addr().String(), PublicURL: origin, GitHubClientID: "test", GitHubSecret: "test", AllowedUserIDs: map[int64]struct{}{42: {}, 43: {}}, AuthSecret: []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour, NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid", DevInsecure: true, RTCTTL: 5 * time.Minute}
-	if wantRoute == "webrtc-turn" {
+	const issuer = "https://durable-gateway.example.test"
+	g := topology.StartGateway(t, topology.GatewayOptions{Accounts: []int64{42, 43}, Issuer: issuer, Configure: func(config *gateway.Config) {
+		if wantRoute != "webrtc-turn" {
+			return
+		}
 		socket, e := net.ListenPacket("udp4", "127.0.0.1:0")
 		if e != nil {
 			t.Fatal(e)
@@ -72,45 +75,10 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		defer turnServer.Close()
-	}
-	gatewayStore, err := gateway.OpenStore(config.Root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer gatewayStore.Close()
-	gatewayServer, err := gateway.NewServer(config, gatewayStore, logger)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = gatewayServer.Serve(listener) }()
-	defer gatewayServer.APIGRPC.Stop()
-	defer gatewayServer.RelayGRPC.Stop()
-	enroll := func(name string, account int64) *daemon.Identity {
-		t.Helper()
-		identity, e := daemon.LoadOrCreateEnrollmentIdentity(t.TempDir(), name, origin.String())
-		if e != nil {
-			t.Fatal(e)
-		}
-		enrollment, e := daemon.BeginEnrollment(ctx, identity)
-		if e != nil {
-			t.Fatal(e)
-		}
-		if e = gatewayStore.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), account, "owner"); e != nil {
-			t.Fatal(e)
-		}
-		credential, e := daemon.CompleteEnrollment(ctx, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
-		if e != nil {
-			t.Fatal(e)
-		}
-		identity.GatewayIssuer = credential.GetGatewayIssuer()
-		if e = identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetDaemonCaPem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); e != nil {
-			t.Fatal(e)
-		}
-		return identity
-	}
-	a, b, other := enroll("A", 42), enroll("B", 42), enroll("Other", 43)
-	scope := peerstore.Revision([]string{issuerURL.String(), "github:42"})
+		t.Cleanup(func() { _ = turnServer.Close() })
+	}})
+	a, b, other := topology.Machine(t, g, "A", 42), topology.Machine(t, g, "B", 42), topology.Machine(t, g, "Other", 43)
+	scope := crdt.Revision([]string{issuer, "github:42"})
 	sa, sb := store.New(a.Root), store.New(b.Root)
 	ba, err := sa.BindPeerAccount(scope, "github:42", a.ID, a.Issuer())
 	if err != nil {
@@ -120,46 +88,11 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	localListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	direct, err := newDaemonDirectRoute(b, localListener.Addr().String(), testLocalToken(t, sb.Root), "peer-test", "127.0.0.1:0", "127.0.0.1", "loopback", 1000)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = direct.server.Serve(direct.listener) }()
-	defer direct.server.Stop()
-	defer direct.listener.Close()
-	var control *controlrtc.Manager
 	rtc := wantRoute == "webrtc-direct" || wantRoute == "webrtc-turn"
-	if rtc {
-		control = controlrtc.New(controlrtc.Identity{DaemonID: b.ID, GatewayURL: b.Issuer(), Generation: b.Generation, GatewaySigningPublicKey: b.GatewaySigningPublicKey}, direct.listener.Addr().String())
-		defer control.Close()
-	}
-	application := server.NewWithOptions(sb, logger, server.Options{ControlRTC: control, Runner: &fakeRunner{}})
-	httpServer := &http.Server{Handler: application.Handler()}
-	go func() { _ = httpServer.Serve(localListener) }()
-	defer httpServer.Close()
-	var routes []*gatewayv1.DirectCandidate
-	if wantRoute == "direct-tls" {
-		routes = []*gatewayv1.DirectCandidate{direct.candidate}
-	}
-	tunnelCtx, stopTunnel := context.WithCancel(ctx)
-	defer stopTunnel()
-	tunnelDone := make(chan struct{})
-	go func() {
-		defer close(tunnelDone)
-		_ = (&daemon.GatewayClient{Identity: b, LocalTarget: localListener.Addr().String(), LocalToken: testLocalToken(t, sb.Root), Version: "0.4.1-dev", Routes: routes, ControlWebRTC: rtc, Log: logger}).Run(tunnelCtx)
-	}()
-	defer func() { stopTunnel(); <-tunnelDone }()
-	deadline := time.Now().Add(5 * time.Second)
-	for !gatewayServer.Hub.RelayReady(b.ID) && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
-	if !gatewayServer.Hub.Online(b.ID) {
-		t.Fatal("peer not connected")
-	}
+	daemonB := topology.StartDaemon(t, g, topology.DaemonOptions{
+		Identity: b, Store: sb, Direct: wantRoute == "direct-tls", ControlWebRTC: rtc,
+		API: api.Options{Runner: newFakeRunner(), Catalog: testkit.MockCatalog()}, Logger: logger,
+	})
 	left, err := sa.PutPeerRecord(ba, "project-settings", "shared", "", []byte(`{"name":"From A"}`), false)
 	if err != nil {
 		t.Fatal(err)
@@ -168,7 +101,7 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner := &daemon.PeerSync{Identity: a, Store: sa, RelayOnly: wantRoute == "webrtc-turn"}
+	runner := &peersync.PeerSync{Identity: a, Store: sa, RelayOnly: wantRoute == "webrtc-turn"}
 	if err = runner.Round(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +113,7 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if da.LastRoute != wantRoute || peerstore.Revision(da.State) != peerstore.Revision(db.State) || len(da.Records["project-settings/shared"].Versions) != 2 {
+	if da.LastRoute != wantRoute || crdt.Revision(da.State) != crdt.Revision(db.State) || len(da.Records["project-settings/shared"].Versions) != 2 {
 		t.Fatalf("route=%s wanted=%s A=%+v B=%+v", da.LastRoute, wantRoute, da.State, db.State)
 	}
 	if _, err = sa.PutPeerRecord(ba, "project-settings", "shared", left.Revision(), []byte(`{}`), false); err == nil {
@@ -201,10 +134,10 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	}
 	// Exercise the actual CLI over local and routed transports.
 	cliRoot := store.New(a.Root)
-	client := New(cliRoot)
+	client := New(cliRoot.Root)
 
 	client.Machine = b.ID
-	client.GatewayURL = origin.String()
+	client.GatewayURL = g.URL
 	client.Timeout = 15 * time.Second
 	var output bytes.Buffer
 	client.Out = &output
@@ -265,16 +198,16 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 		t.Fatal(err)
 	}
 	shared, e := sa.PeerData(scope)
-	if e != nil || !peerstore.SelectedKV(shared.Records["kv.navigation/projects-folder.fixture.name"]).Deleted {
+	if e != nil || !schema.SelectedKV(shared.Records["kv.navigation/projects-folder.fixture.name"]).Deleted {
 		t.Fatal(shared, e)
 	}
 	// Real raw local API, with only the local token, has the same record view.
-	local, err := grpc.NewClient(localListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithPerRPCCredentials(localauth.FileCredentials{Root: sb.Root}))
+	local, err := grpc.NewClient(daemonB.Address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithPerRPCCredentials(localauth.FileCredentials{Root: sb.Root}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer local.Close()
-	if _, err = dieterv1.NewDieterServiceClient(local).ListPeerRecords(ctx, &dieterv1.PeerSnapshotRequest{}); err != nil {
+	if _, err = dieterclient.New(local).ListPeerRecords(ctx, &dieterv1.PeerSnapshotRequest{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -301,7 +234,7 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldSummary := beforeLegacy.Records[peerstore.Key("item", ownedA.ID+".summary")]
+	oldSummary := beforeLegacy.Records[crdt.Key("item", ownedA.ID+".summary")]
 	var legacyFields map[string]json.RawMessage
 	if err := json.Unmarshal(oldSummary.Versions[0].Value, &legacyFields); err != nil {
 		t.Fatal(err)
@@ -319,7 +252,7 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 		t.Fatal(err)
 	}
 	afterLegacy, err := sb.PeerData(scope)
-	if err != nil || afterLegacy.Records[peerstore.Key("item", oldSummary.ID)].Revision() != legacyRecord.Revision() {
+	if err != nil || afterLegacy.Records[crdt.Key("item", oldSummary.ID)].Revision() != legacyRecord.Revision() {
 		t.Fatalf("legacy summary changed in transit: %v", err)
 	}
 	output.Reset()
@@ -333,7 +266,7 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	}
 	runDaemonCLI(t, client, &output, "board", "show", board.ID)
 	assertBoardRetirementCLI(t, client, &output, project.ID)
-	localAPIForProjects := dieterv1.NewDieterServiceClient(local)
+	localAPIForProjects := dieterclient.New(local)
 	created, err := localAPIForProjects.CreateCard(ctx, &dieterv1.CreateConversationRequest{ProjectId: project.ID, BoardId: board.ID, CheckoutId: checkout.Id, Title: "B conversation", Prompt: "Draft only", WorkspaceMode: "project", DeferStart: true, Provider: "mock", Model: "mock", CommandId: "shared-project-card", ClientId: "peer-test"})
 	if err != nil {
 		t.Fatal(err)
@@ -380,12 +313,12 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 		t.Fatal("replication moved conversation ownership")
 	}
 	// Multi-page snapshots and unattended Run catch up without a native client.
-	for n := 0; n <= peerstore.PageSize; n++ {
+	for n := 0; n <= crdt.PageSize; n++ {
 		if _, err = sb.PutPeerRecord(bb, "project-settings", "page_"+strconv.Itoa(n), "", []byte(`{"name":"Paged"}`), false); err != nil {
 			t.Fatal(err)
 		}
 	}
-	localAPI := dieterv1.NewDieterServiceClient(local)
+	localAPI := dieterclient.New(local)
 	first, err := localAPI.ListPeerRecords(ctx, &dieterv1.PeerSnapshotRequest{})
 	if err != nil || first.GetNextKey() == "" {
 		t.Fatal(first, err)
@@ -397,7 +330,7 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 		t.Fatal(err)
 	}
 	var routedFirst dieterv1.PeerSnapshot
-	if err = protojson.Unmarshal(output.Bytes(), &routedFirst); err != nil || len(routedFirst.Records) != peerstore.PageSize || routedFirst.NextKey == "" {
+	if err = protojson.Unmarshal(output.Bytes(), &routedFirst); err != nil || len(routedFirst.Records) != crdt.PageSize || routedFirst.NextKey == "" {
 		t.Fatalf("routed first page: %v", err)
 	}
 	output.Reset()
@@ -408,7 +341,7 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	if err = protojson.Unmarshal(output.Bytes(), &routedNext); err != nil || len(routedNext.Records) == 0 {
 		t.Fatalf("routed continuation: %v", err)
 	}
-	if peerstore.Key(routedNext.Records[0].Kind, routedNext.Records[0].Id) <= routedFirst.NextKey {
+	if crdt.Key(routedNext.Records[0].Kind, routedNext.Records[0].Id) <= routedFirst.NextKey {
 		t.Fatal("routed continuation repeated a record")
 	}
 	if _, err = sb.PutPeerRecord(bb, "project-settings", "changed_page", "", []byte(`{}`), false); err != nil {
@@ -441,13 +374,13 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 		t.Fatal("background sync did not catch up")
 	}
 	// Possession proof does not authorize another account or a revoked enrollment.
-	gatewayConn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	gatewayConn, err := grpc.NewClient(g.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer gatewayConn.Close()
 	gw := gatewayv1.NewGatewayServiceClient(gatewayConn)
-	auth := func(i *daemon.Identity) context.Context {
+	auth := func(i *link.Identity) context.Context {
 		return metadata.AppendToOutgoingContext(ctx,
 			"authorization", "Bearer "+linkauth.SignPeer(i.PrivateKey, i.ID, i.Issuer(), i.Generation, time.Now()),
 			"x-dieter-client-version", "0.4.1-dev",
@@ -456,7 +389,7 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	if _, err = gw.ResolveDaemonRoute(auth(other), &gatewayv1.DaemonRef{DaemonId: b.ID}); status.Code(err) != codes.NotFound {
 		t.Fatalf("cross-account route: %v", err)
 	}
-	if _, err = gatewayStore.RevokeDaemon(a.ID, 42); err != nil {
+	if _, err = g.Store.RevokeDaemon(a.ID, 42); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = gw.GetAccount(auth(a), &emptypb.Empty{}); status.Code(err) != codes.Unauthenticated {

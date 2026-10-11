@@ -10,7 +10,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/dbpprt/dieter/internal/peerstore"
+	"github.com/dbpprt/dieter/internal/platform/fault"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
+	"github.com/dbpprt/dieter/internal/replication/schema"
 )
 
 type peerCredential struct {
@@ -31,15 +33,15 @@ func (s *Store) peerCredential() (peerCredential, error) {
 	err = json.Unmarshal(raw, &credential)
 	return credential, err
 }
-func recordOwner(data PeerData, r peerstore.Record, v peerstore.Version) string {
+func recordOwner(data PeerData, r crdt.Record, v crdt.Version) string {
 	raw := v.Value
 	field := "ownerDaemonId"
 	if r.Kind == "checkout" {
 		field = "daemonId"
 	}
-	entity, suffix := peerstore.SplitField(r.ID)
+	entity, suffix := crdt.SplitField(r.ID)
 	if r.Kind == "item" && suffix == "summary" {
-		raw, _ = peerstore.Selected(data.record(peerstore.Key("item", entity+".identity")))
+		raw, _ = crdt.Selected(data.record(crdt.Key("item", entity+".identity")))
 	}
 	var fields map[string]json.RawMessage
 	_ = json.Unmarshal(raw, &fields)
@@ -47,8 +49,8 @@ func recordOwner(data PeerData, r peerstore.Record, v peerstore.Version) string 
 	_ = json.Unmarshal(fields[field], &owner)
 	return owner
 }
-func (s *Store) signOwnerRecord(account string, data PeerData, r peerstore.Record) (peerstore.Record, error) {
-	if !peerstore.OwnerField(r.Kind, r.ID) {
+func (s *Store) signOwnerRecord(account string, data PeerData, r crdt.Record) (crdt.Record, error) {
+	if !schema.OwnerField(r.Kind, r.ID) {
 		return r, nil
 	}
 	credential, err := s.peerCredential()
@@ -56,7 +58,7 @@ func (s *Store) signOwnerRecord(account string, data PeerData, r peerstore.Recor
 		return r, err
 	}
 	var private ed25519.PrivateKey
-	versions := append([]peerstore.Version(nil), r.Versions...)
+	versions := append([]crdt.Version(nil), r.Versions...)
 	for i, v := range versions {
 		if len(v.Provenance) > 0 || recordOwner(data, r, v) != credential.ID {
 			continue
@@ -68,7 +70,7 @@ func (s *Store) signOwnerRecord(account string, data PeerData, r peerstore.Recor
 			}
 			block, _ := pem.Decode(raw)
 			if block == nil {
-				return r, errors.New("invalid daemon signing key")
+				return r, fault.New(fault.Invalid, "invalid daemon signing key")
 			}
 			key, e := x509.ParsePKCS8PrivateKey(block.Bytes)
 			if e != nil {
@@ -77,25 +79,25 @@ func (s *Store) signOwnerRecord(account string, data PeerData, r peerstore.Recor
 			var ok bool
 			private, ok = key.(ed25519.PrivateKey)
 			if !ok {
-				return r, errors.New("invalid daemon signing key type")
+				return r, fault.New(fault.Invalid, "invalid daemon signing key type")
 			}
 		}
-		versions[i] = peerstore.SignOwnerVersion(account, r, v, credential.ID, credential.Certificate, private)
+		versions[i] = crdt.SignOwnerVersion(account, r, v, credential.ID, credential.Certificate, private)
 	}
 	r.Versions = versions
 	return r, nil
 }
-func (s *Store) validatePeerDomainMerge(data PeerData, old, incoming peerstore.Record) error {
-	if !peerstore.DomainKind(incoming.Kind) {
+func (s *Store) validatePeerDomainMerge(data PeerData, old, incoming crdt.Record) error {
+	if !schema.DomainKind(incoming.Kind) {
 		return nil
 	}
-	_, field := peerstore.SplitField(incoming.ID)
+	_, field := crdt.SplitField(incoming.ID)
 	// An enrolled owner's immutable routing identity can never be replaced by a
 	// causally newer claim, including when forwarded through a third machine.
 	for _, a := range old.Versions {
 		for _, b := range incoming.Versions {
 			if field == "identity" && !bytes.Equal(a.Value, b.Value) {
-				return errors.New("shared identity is immutable")
+				return fault.New(fault.Invalid, "shared identity is immutable")
 			}
 			if incoming.Kind == "checkout" || incoming.Kind == "schedule" {
 				var x, y map[string]json.RawMessage
@@ -103,13 +105,13 @@ func (s *Store) validatePeerDomainMerge(data PeerData, old, incoming peerstore.R
 				_ = json.Unmarshal(b.Value, &y)
 				for _, key := range []string{"id", "projectId", "daemonId", "ownerDaemonId", "checkoutId"} {
 					if !bytes.Equal(x[key], y[key]) {
-						return errors.New("shared owner identity is immutable")
+						return fault.New(fault.Invalid, "shared owner identity is immutable")
 					}
 				}
 			}
 		}
 	}
-	if !peerstore.OwnerField(incoming.Kind, incoming.ID) {
+	if !schema.OwnerField(incoming.Kind, incoming.ID) {
 		return nil
 	}
 	credential, err := s.peerCredential()
@@ -118,26 +120,26 @@ func (s *Store) validatePeerDomainMerge(data PeerData, old, incoming peerstore.R
 	}
 	roots := x509.NewCertPool()
 	if !roots.AppendCertsFromPEM(credential.CA) {
-		return errors.New("missing enrolled trust root")
+		return fault.New(fault.Invalid, "missing enrolled trust root")
 	}
 	identity, err := s.PeerIdentity()
 	if err != nil {
 		return err
 	}
-	entity, field := peerstore.SplitField(incoming.ID)
+	entity, field := crdt.SplitField(incoming.ID)
 	for _, v := range incoming.Versions {
-		owner, e := peerstore.VerifyOwnerVersion(identity.Account, incoming, v, roots)
+		owner, e := crdt.VerifyOwnerVersion(identity.Account, incoming, v, roots)
 		if e != nil {
 			return e
 		}
 		if expected := recordOwner(data, incoming, v); expected != "" && expected != owner {
-			return errors.New("owner provenance does not match directory identity")
+			return fault.New(fault.Invalid, "owner provenance does not match directory identity")
 		}
 		if incoming.Kind == "item" && field == "identity" {
-			for _, summary := range data.record(peerstore.Key("item", entity+".summary")).Versions {
-				proofOwner, err := peerstore.VerifyOwnerVersion(identity.Account, data.record(peerstore.Key("item", entity+".summary")), summary, roots)
+			for _, summary := range data.record(crdt.Key("item", entity+".summary")).Versions {
+				proofOwner, err := crdt.VerifyOwnerVersion(identity.Account, data.record(crdt.Key("item", entity+".summary")), summary, roots)
 				if err != nil || proofOwner != owner {
-					return errors.New("pending summary does not belong to item owner")
+					return fault.New(fault.Invalid, "pending summary does not belong to item owner")
 				}
 			}
 		}

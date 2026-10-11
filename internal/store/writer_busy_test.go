@@ -8,6 +8,7 @@ import (
 )
 
 func TestWriterLockTimeoutIsRetryableBusy(t *testing.T) {
+	t.Parallel()
 	s := New(t.TempDir())
 	// Another Dieter process holds the central storage lock.
 	unlock, err := s.writerAdmission(context.Background())

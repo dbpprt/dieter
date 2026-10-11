@@ -15,16 +15,19 @@ import (
 	"sync"
 	"time"
 
-	md "github.com/dbpprt/dieter/internal/markdown"
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/platform/fault"
 )
 
-var (
-	ErrNotFound = errors.New("not found")
-	writeMu     contextMutex
-)
+var ErrNotFound = fault.New(fault.NotFound, "not found")
 
 type Store struct {
+	// writeMu queues this instance's writers in process before they contend
+	// for the cross-process writer admission lock under Root.
+	writeMu contextMutex
+	// peerSnapshotSlots bounds concurrent peer read transactions.
+	peerSnapshotSlots chan struct{}
+
 	peerWakeOnce     sync.Once
 	peerWake         chan struct{}
 	peerCacheMu      sync.Mutex
@@ -40,10 +43,8 @@ type Store struct {
 	checkpoints   conversationCheckpoints
 	notifications changeNotifications
 
-	usageMu             sync.Mutex
-	usageCache          map[string]cardUsageCacheEntry
-	compatibilityMu     sync.RWMutex
-	compatibilityPolicy *GatewayCompatibilityPolicy
+	usageMu    sync.Mutex
+	usageCache map[string]cardUsageCacheEntry
 
 	scheduleDBMu        sync.Mutex
 	scheduleDB          *sql.DB
@@ -52,27 +53,18 @@ type Store struct {
 	globalStateRevision StoreRevision
 }
 
-func DefaultRoot() string {
-	if value := os.Getenv("DIETER_HOME"); value != "" {
-		return value
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ".dieter"
-	}
-	return filepath.Join(home, ".dieter")
-}
-
+// New opens the central store rooted at the absolute DIETER_HOME root. The
+// composition root resolves DIETER_HOME; an empty root is a programming error.
 func New(root string) *Store {
-	if root == "" {
-		root = DefaultRoot()
+	if strings.TrimSpace(root) == "" {
+		panic("store: DIETER_HOME root is required")
 	}
 	if !filepath.IsAbs(root) {
 		if absolute, err := filepath.Abs(root); err == nil {
 			root = absolute
 		}
 	}
-	return &Store{Root: root}
+	return &Store{Root: root, peerSnapshotSlots: make(chan struct{}, maxPeerSnapshots)}
 }
 
 // Close releases database handles owned by the store. Callers must stop
@@ -137,12 +129,39 @@ func (s *Store) Ensure() error {
 	if err := s.ensureSyncEpoch(); err != nil {
 		return err
 	}
+	return s.Recover()
+}
+
+// Recover completes work a crashed or failed writer left behind: local file
+// effects of committed peer transactions, an uncommitted change counter, and
+// the schedule publication outbox. Ensure runs it at startup and the daemon
+// sweeps periodically (RecoverEvery). Writers do not repeat it: every peer
+// transaction applies all pending effects after its own commit, and every new
+// change first commits a pending predecessor (prepareSyncMutation).
+func (s *Store) Recover() error {
 	release, err := s.beginWriteLock()
 	if err != nil {
 		return err
 	}
 	defer release()
-	return s.recoverCardWrites()
+	return errors.Join(s.recoverCardWrites(), s.recoverSyncMutation(), s.flushScheduleOutbox())
+}
+
+// RecoverEvery runs Recover every interval until ctx ends. Failures are
+// retried on the next tick; the store stays usable meanwhile.
+func (s *Store) RecoverEvery(ctx context.Context, interval time.Duration, logger *slog.Logger) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := s.Recover(); err != nil && ctx.Err() == nil {
+				logger.Warn("storage recovery sweep failed; retrying", "error", err)
+			}
+		}
+	}
 }
 
 // beginWriteLock serializes access both within the process and across CLI/server
@@ -157,13 +176,13 @@ func (s *Store) beginWriteLock() (func(), error) {
 
 func (s *Store) beginWriteLockContext(ctx context.Context) (func(), error) {
 	requestedAt := time.Now()
-	if err := writeMu.LockContext(ctx); err != nil {
+	if err := s.writeMu.LockContext(ctx); err != nil {
 		return nil, writerBusy(err)
 	}
 	releaseProcess := true
 	defer func() {
 		if releaseProcess {
-			writeMu.Unlock()
+			s.writeMu.Unlock()
 		}
 	}()
 	if err := os.MkdirAll(s.Root, 0o700); err != nil {
@@ -189,7 +208,7 @@ func (s *Store) beginWriteLockContext(ctx context.Context) (func(), error) {
 			slog.Debug("store writer lock", "waitMs", acquiredAt.Sub(requestedAt).Milliseconds(), "heldMs", held.Milliseconds())
 		}
 		unlockAdmission()
-		writeMu.Unlock()
+		s.writeMu.Unlock()
 	}, nil
 }
 
@@ -211,8 +230,8 @@ func (s *Store) beginWriteKind(kind string) (func(), error) {
 	return write.finish, nil
 }
 
-// Conditional writers compare under the same lock and recovery lifecycle as
-// ordinary writers, but publish a new mutation only when domain data changes.
+// Conditional writers compare under the same lock as ordinary writers, but
+// publish a new mutation only when domain data changes.
 type storeWrite struct {
 	store   *Store
 	release func()
@@ -222,18 +241,6 @@ type storeWrite struct {
 func (s *Store) beginConditionalWrite() (*storeWrite, error) {
 	release, err := s.beginWriteLock()
 	if err != nil {
-		return nil, err
-	}
-	if err := s.flushScheduleOutbox(); err != nil {
-		release()
-		return nil, err
-	}
-	if err := s.recoverCardWrites(); err != nil {
-		release()
-		return nil, err
-	}
-	if err := s.recoverSyncMutation(); err != nil {
-		release()
 		return nil, err
 	}
 	return &storeWrite{store: s, release: release}, nil
@@ -292,54 +299,6 @@ func newID(prefix string) string {
 	return prefix + hex.EncodeToString(buffer)
 }
 
-func atomicWrite(path string, data []byte) error {
-	return atomicWriteMode(path, data, 0o600)
-}
-
-func atomicWriteMode(path string, data []byte, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".dieter-write-*")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	if err := tmp.Chmod(mode); err != nil {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		return err
-	}
-	dir, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
-}
-
-func writeMarkdown(path string, value any, body string) error {
-	data, err := md.Marshal(value, body)
-	if err != nil {
-		return err
-	}
-	return atomicWrite(path, data)
-}
-
 func readMarkdown(path string, value any) (string, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -348,7 +307,7 @@ func readMarkdown(path string, value any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return md.Unmarshal(data, value)
+	return unmarshalMarkdown(data, value)
 }
 
 func listMarkdown(dir string) ([]string, error) {
@@ -376,7 +335,7 @@ func hasGitDirectory(path string) bool {
 
 func normalizePath(path string) (string, error) {
 	if path == "" {
-		return "", errors.New("project path is required")
+		return "", fault.New(fault.Invalid, "project path is required")
 	}
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -391,10 +350,10 @@ func normalizePath(path string) (string, error) {
 		return "", fmt.Errorf("project path: %w", err)
 	}
 	if !info.IsDir() {
-		return "", errors.New("project path must be a directory")
+		return "", fault.New(fault.Invalid, "project path must be a directory")
 	}
 	if !hasGitDirectory(abs) {
-		return "", errors.New("project path must be a Git working tree (missing .git)")
+		return "", fault.New(fault.Invalid, "project path must be a Git working tree (missing .git)")
 	}
 	return abs, nil
 }

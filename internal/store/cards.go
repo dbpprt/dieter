@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/dbpprt/dieter/internal/model"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/platform/fault"
 )
 
 // Public mutations retain the central Store write lock and change-count transaction.
@@ -78,7 +80,7 @@ func (s *Store) CreateCard(input CreateCardInput) (model.Card, error) {
 		input.ID = newID("c_")
 	}
 	if !validFileID(input.ID) {
-		return model.Card{}, errors.New("card ID is invalid")
+		return model.Card{}, fault.New(fault.Invalid, "card ID is invalid")
 	}
 	project, err := s.ProjectForCheckout(input.Project, input.CheckoutID)
 	if err != nil {
@@ -93,10 +95,10 @@ func (s *Store) CreateCard(input CreateCardInput) (model.Card, error) {
 		lane = model.LaneTodo
 	}
 	if !validLane(board, lane) {
-		return model.Card{}, fmt.Errorf("lane %q is not part of the %s workflow", lane, board.Workflow)
+		return model.Card{}, fault.Invalidf("lane %q is not part of the %s workflow", lane, board.Workflow)
 	}
 	if strings.TrimSpace(input.Title) == "" {
-		return model.Card{}, errors.New("card title is required")
+		return model.Card{}, fault.New(fault.Invalid, "card title is required")
 	}
 	labelIDs, err := validateCardLabels(board, input.LabelIDs)
 	if err != nil {
@@ -112,7 +114,7 @@ func (s *Store) CreateCard(input CreateCardInput) (model.Card, error) {
 	}
 
 	if s.cardExists(input.ID) {
-		return model.Card{}, fmt.Errorf("card already exists")
+		return model.Card{}, fault.Invalidf("card already exists")
 	}
 	existing, _ := s.ListCards(CardFilter{Board: board.ID, Lane: canonicalLane(board, lane)})
 	workspaceMode, err := normalizeWorkspaceMode(input.WorkspaceMode)
@@ -154,7 +156,7 @@ func (s *Store) CreateChat(input CreateCardInput) (model.Card, error) {
 		input.ID = newID("c_")
 	}
 	if !validFileID(input.ID) {
-		return model.Card{}, errors.New("chat ID is invalid")
+		return model.Card{}, fault.New(fault.Invalid, "chat ID is invalid")
 	}
 	project, err := s.ProjectForCheckout(input.Project, input.CheckoutID)
 	if err != nil {
@@ -162,7 +164,7 @@ func (s *Store) CreateChat(input CreateCardInput) (model.Card, error) {
 	}
 	title := strings.TrimSpace(input.Title)
 	if title == "" {
-		return model.Card{}, errors.New("chat title is required")
+		return model.Card{}, fault.New(fault.Invalid, "chat title is required")
 	}
 	release, err := s.beginWrite()
 	if err != nil {
@@ -170,7 +172,7 @@ func (s *Store) CreateChat(input CreateCardInput) (model.Card, error) {
 	}
 	defer release()
 	if s.cardExists(input.ID) {
-		return model.Card{}, errors.New("chat already exists")
+		return model.Card{}, fault.New(fault.Invalid, "chat already exists")
 	}
 	existing, _ := s.ListCards(CardFilter{Project: project.ID, Scope: model.ConversationScopeChat})
 	workspaceMode, err := normalizeWorkspaceMode(input.WorkspaceMode)
@@ -534,7 +536,7 @@ func (s *Store) MarkPromptSent(ref string) (model.Card, error) {
 
 func (s *Store) RenameCard(ref, title string) (model.Card, error) {
 	if strings.TrimSpace(title) == "" {
-		return model.Card{}, errors.New("title is required")
+		return model.Card{}, fault.New(fault.Invalid, "title is required")
 	}
 	release, err := s.beginWrite()
 	if err != nil {
@@ -561,10 +563,10 @@ type DraftAgentSettings struct {
 func (s *Store) UpdateCard(ref, title, initialPrompt string, settings ...DraftAgentSettings) (model.Card, error) {
 	title, initialPrompt = strings.TrimSpace(title), strings.TrimSpace(initialPrompt)
 	if title == "" {
-		return model.Card{}, errors.New("title is required")
+		return model.Card{}, fault.New(fault.Invalid, "title is required")
 	}
 	if initialPrompt == "" {
-		return model.Card{}, errors.New("agent task is required")
+		return model.Card{}, fault.New(fault.Invalid, "agent task is required")
 	}
 	release, err := s.beginWrite()
 	if err != nil {
@@ -579,10 +581,10 @@ func (s *Store) UpdateCard(ref, title, initialPrompt string, settings ...DraftAg
 		return model.Card{}, err
 	}
 	if initialPrompt != item.InitialPrompt && item.InitialPromptSentAt != "" {
-		return model.Card{}, errors.New("agent task can only be edited before it is sent")
+		return model.Card{}, fault.New(fault.Invalid, "agent task can only be edited before it is sent")
 	}
 	if item.MergePending {
-		return model.Card{}, errors.New("card merge is pending")
+		return model.Card{}, fault.New(fault.Invalid, "card merge is pending")
 	}
 	if len(settings) > 0 {
 		active, leaseErr := s.CardHasRuntimeLease(item.ID)
@@ -590,7 +592,7 @@ func (s *Store) UpdateCard(ref, title, initialPrompt string, settings ...DraftAg
 			return model.Card{}, leaseErr
 		}
 		if item.InitialPromptSentAt != "" || active {
-			return model.Card{}, errors.New("agent settings can only be edited before the initial task is sent")
+			return model.Card{}, fault.New(fault.Invalid, "agent settings can only be edited before the initial task is sent")
 		}
 		config := settings[0]
 		item.Provider, item.Model, item.Effort, item.ProviderOptions = config.Provider, config.Model, config.Effort, config.ProviderOptions
@@ -617,7 +619,7 @@ func (s *Store) PinChat(ref string, pinned bool) (model.Card, error) {
 		return model.Card{}, err
 	}
 	if item.Scope != model.ConversationScopeChat {
-		return model.Card{}, errors.New("only standalone chats can be pinned")
+		return model.Card{}, fault.New(fault.Invalid, "only standalone chats can be pinned")
 	}
 	if item.LastActivityAt == "" {
 		item.LastActivityAt = item.UpdatedAt
@@ -648,7 +650,7 @@ func (s *Store) UpdateCardWorkspaceSelection(ref, mode, branch, baseBranch, base
 		return model.Card{}, err
 	}
 	if !allowStarted && item.InitialPromptSentAt != "" {
-		return model.Card{}, errors.New("workspace mode is locked after the first agent turn")
+		return model.Card{}, fault.New(fault.Invalid, "workspace mode is locked after the first agent turn")
 	}
 	item.WorkspaceMode = mode
 	if mode == model.WorkspaceModeWorktree {

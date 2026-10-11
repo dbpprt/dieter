@@ -172,9 +172,6 @@ GEM
       reline (>= 0.4.2)
     jmespath (1.6.2)
     json (2.21.2)
-    json-schema (5.2.2)
-      addressable (~> 2.8)
-      bigdecimal (~> 3.1)
     jwt (3.3.0)
       base64
     logger (1.7.0)
@@ -262,7 +259,6 @@ PLATFORMS
 
 DEPENDENCIES
   fastlane (= 2.240.1)
-  json-schema (~> 5.2)
   minitest (~> 5.25)
 
 RUBY VERSION

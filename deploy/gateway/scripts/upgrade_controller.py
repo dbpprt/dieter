@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Upgrade deployment controls from a verified bundle without activating services."""
+
 import argparse
 import json
 import os
@@ -17,8 +18,10 @@ def upgrade(distribution, policy):
     host = Host(policy)
     host.initialize()
     with host.lock():
-        require(all(read_json(path)["state"] in TERMINAL for path in host.ops.glob("*/status.json")),
-                "deployment operations are still pending")
+        require(
+            all(read_json(path)["state"] in TERMINAL for path in host.ops.glob("*/status.json")),
+            "deployment operations are still pending",
+        )
         link = Path(host.config["controllerLink"])
         require(link.is_absolute() and link.is_symlink(), "existing controller link is required")
         previous = link.resolve(strict=True)
@@ -28,16 +31,22 @@ def upgrade(distribution, policy):
         receipt_path = host.state / "controller-upgrades" / (target.name + ".json")
         if previous == target:
             return read_json(receipt_path)
-        require(not target.exists(), "controller target already exists; inspect the previous upgrade")
+        require(
+            not target.exists(), "controller target already exists; inspect the previous upgrade"
+        )
         with tempfile.TemporaryDirectory(prefix=".controller-", dir=parent) as temporary:
             staged = Path(temporary) / "bundle"
             extract(distribution / ARCHIVE, staged)
             for name in (ARCHIVE, MANIFEST, SIGNATURE):
                 shutil.copyfile(distribution / name, staged / name)
             os.rename(staged, target)
-        receipt = {"previousController": str(previous), "controller": str(target),
-                   "sourceRevision": manifest["sourceRevision"], "upgradedAt": now(),
-                   "serviceActivation": False}
+        receipt = {
+            "previousController": str(previous),
+            "controller": str(target),
+            "sourceRevision": manifest["sourceRevision"],
+            "upgradedAt": now(),
+            "serviceActivation": False,
+        }
         atomic(receipt_path, canonical(receipt))
         pointer(link, target)
         return receipt

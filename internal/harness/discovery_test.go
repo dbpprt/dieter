@@ -11,47 +11,30 @@ import (
 	"time"
 )
 
-func installDiscoveryTestCatalog(t *testing.T, discover func(context.Context, string) ([]Model, error)) {
+// discoveryTestCatalog is an isolated catalog with one dynamic provider whose
+// discovery is replaced by discover.
+func discoveryTestCatalog(t *testing.T, discover func(context.Context, string) ([]Model, error)) *Catalog {
 	t.Helper()
-	discoveryMu.Lock()
-	catalogMu.Lock()
-	previousConfigured := configuredCatalog
-	previousSource := configuredCatalogSource
-	previousDiscovered := discoveredCatalog
-	previousUpdated := discoveryUpdated
-	previousDiscover := discoverProvider
-	configuredCatalog = []Adapter{{
+	catalog := StaticCatalog(false)
+	catalog.static = false
+	catalog.configured = []Adapter{{
 		ID: "dynamic", Name: "Dynamic", Runtime: "dynamic", DefaultModel: "default",
 		Models: []Model{{ID: "default", Name: "Configured default"}},
 	}}
-	configuredCatalogSource = "test"
-	discoveredCatalog = nil
-	discoveryUpdated = time.Time{}
-	discoverProvider = discover
-	catalogMu.Unlock()
-	discoveryMu.Unlock()
-	t.Cleanup(func() {
-		discoveryMu.Lock()
-		catalogMu.Lock()
-		configuredCatalog = previousConfigured
-		configuredCatalogSource = previousSource
-		discoveredCatalog = previousDiscovered
-		discoveryUpdated = previousUpdated
-		discoverProvider = previousDiscover
-		catalogMu.Unlock()
-		discoveryMu.Unlock()
-	})
+	catalog.source = "test"
+	catalog.discoverProvider = discover
+	return catalog
 }
 
-func expireDiscoveryCache() {
-	discoveryMu.Lock()
-	discoveryUpdated = time.Time{}
-	discoveryMu.Unlock()
+func (c *Catalog) expireDiscoveryCache() {
+	c.mu.Lock()
+	c.discoveryUpdated = time.Time{}
+	c.mu.Unlock()
 }
 
 func TestRefreshCatalogRetainsLastKnownGoodProviderModels(t *testing.T) {
 	calls := 0
-	installDiscoveryTestCatalog(t, func(context.Context, string) ([]Model, error) {
+	catalog := discoveryTestCatalog(t, func(context.Context, string) ([]Model, error) {
 		calls++
 		if calls == 1 {
 			return []Model{{ID: "dynamic/model", Name: "Dynamic model", Efforts: []string{"high"}}}, nil
@@ -59,13 +42,13 @@ func TestRefreshCatalogRetainsLastKnownGoodProviderModels(t *testing.T) {
 		return nil, errors.New("provider temporarily unavailable")
 	})
 
-	RefreshCatalog(context.Background(), false)
-	if _, _, err := ResolveSelection("dynamic", "dynamic/model", false); err != nil {
+	catalog.Refresh(context.Background())
+	if _, _, err := catalog.ResolveSelection("dynamic", "dynamic/model"); err != nil {
 		t.Fatalf("initial dynamic selection: %v", err)
 	}
-	expireDiscoveryCache()
-	RefreshCatalog(context.Background(), false)
-	if _, _, err := ResolveSelection("dynamic", "dynamic/model", false); err != nil {
+	catalog.expireDiscoveryCache()
+	catalog.Refresh(context.Background())
+	if _, _, err := catalog.ResolveSelection("dynamic", "dynamic/model"); err != nil {
 		t.Fatalf("selection after failed refresh: %v", err)
 	}
 	if calls != 2 {
@@ -75,7 +58,7 @@ func TestRefreshCatalogRetainsLastKnownGoodProviderModels(t *testing.T) {
 
 func TestResolveSelectionWithRefreshRecoversDynamicMiss(t *testing.T) {
 	calls := 0
-	installDiscoveryTestCatalog(t, func(_ context.Context, provider string) ([]Model, error) {
+	catalog := discoveryTestCatalog(t, func(_ context.Context, provider string) ([]Model, error) {
 		calls++
 		if provider != "dynamic" {
 			t.Fatalf("provider=%q", provider)
@@ -83,7 +66,7 @@ func TestResolveSelectionWithRefreshRecoversDynamicMiss(t *testing.T) {
 		return []Model{{ID: "dynamic/model", Name: "Dynamic model", DefaultEffort: "high", Efforts: []string{"high"}}}, nil
 	})
 
-	adapter, model, err := ResolveSelectionWithRefresh(context.Background(), "dynamic", "dynamic/model", false)
+	adapter, model, err := catalog.ResolveSelectionWithRefresh(context.Background(), "dynamic", "dynamic/model")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,11 +79,11 @@ func TestResolveSelectionWithRefreshRecoversDynamicMiss(t *testing.T) {
 }
 
 func TestResolveSelectionWithRefreshReportsDiscoveryFailureAsTemporary(t *testing.T) {
-	installDiscoveryTestCatalog(t, func(context.Context, string) ([]Model, error) {
+	catalog := discoveryTestCatalog(t, func(context.Context, string) ([]Model, error) {
 		return nil, errors.New("provider is starting")
 	})
 
-	_, _, err := ResolveSelectionWithRefresh(context.Background(), "dynamic", "dynamic/model", false)
+	_, _, err := catalog.ResolveSelectionWithRefresh(context.Background(), "dynamic", "dynamic/model")
 	if !errors.Is(err, ErrCatalogUnavailable) {
 		t.Fatalf("error=%v, want ErrCatalogUnavailable", err)
 	}
@@ -110,7 +93,7 @@ func TestRefreshCatalogPublishesAtomicallyAcrossFailure(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	calls := 0
-	installDiscoveryTestCatalog(t, func(context.Context, string) ([]Model, error) {
+	catalog := discoveryTestCatalog(t, func(context.Context, string) ([]Model, error) {
 		calls++
 		if calls == 1 {
 			return []Model{{ID: "dynamic/model", Name: "Dynamic model"}}, nil
@@ -120,20 +103,20 @@ func TestRefreshCatalogPublishesAtomicallyAcrossFailure(t *testing.T) {
 		return nil, errors.New("provider temporarily unavailable")
 	})
 
-	RefreshCatalog(context.Background(), false)
-	expireDiscoveryCache()
+	catalog.Refresh(context.Background())
+	catalog.expireDiscoveryCache()
 	done := make(chan struct{})
 	go func() {
-		RefreshCatalog(context.Background(), false)
+		catalog.Refresh(context.Background())
 		close(done)
 	}()
 	<-started
-	if _, _, err := ResolveSelection("dynamic", "dynamic/model", false); err != nil {
+	if _, _, err := catalog.ResolveSelection("dynamic", "dynamic/model"); err != nil {
 		t.Fatalf("selection during refresh: %v", err)
 	}
 	close(release)
 	<-done
-	if _, _, err := ResolveSelection("dynamic", "dynamic/model", false); err != nil {
+	if _, _, err := catalog.ResolveSelection("dynamic", "dynamic/model"); err != nil {
 		t.Fatalf("selection after failed refresh: %v", err)
 	}
 }
@@ -142,7 +125,7 @@ func TestTargetedRefreshDoesNotWaitForStalledFullCatalogRefresh(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var calls atomic.Int32
-	installDiscoveryTestCatalog(t, func(context.Context, string) ([]Model, error) {
+	catalog := discoveryTestCatalog(t, func(context.Context, string) ([]Model, error) {
 		if calls.Add(1) == 1 {
 			close(started)
 			<-release
@@ -153,12 +136,12 @@ func TestTargetedRefreshDoesNotWaitForStalledFullCatalogRefresh(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		RefreshCatalog(context.Background(), false)
+		catalog.Refresh(context.Background())
 		close(done)
 	}()
 	<-started
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	_, model, resolveErr := ResolveSelectionWithRefresh(ctx, "dynamic", "dynamic/model", false)
+	_, model, resolveErr := catalog.ResolveSelectionWithRefresh(ctx, "dynamic", "dynamic/model")
 	cancel()
 	close(release)
 	<-done
@@ -169,7 +152,7 @@ func TestTargetedRefreshDoesNotWaitForStalledFullCatalogRefresh(t *testing.T) {
 	if model.ID != "dynamic/model" {
 		t.Fatalf("model=%#v", model)
 	}
-	if _, _, err := ResolveSelection("dynamic", "dynamic/model", false); err != nil {
+	if _, _, err := catalog.ResolveSelection("dynamic", "dynamic/model"); err != nil {
 		t.Fatalf("full refresh overwrote targeted recovery: %v", err)
 	}
 }
@@ -178,6 +161,7 @@ func TestLiveProviderDiscovery(t *testing.T) {
 	if os.Getenv("DIETER_TEST_LIVE_DISCOVERY") != "1" {
 		t.Skip("set DIETER_TEST_LIVE_DISCOVERY=1 to query installed provider integrations")
 	}
+	catalog := DefaultCatalog(t.TempDir(), false)
 	for _, provider := range []string{"codex", "claude-code", "pi", "omp", "dsh"} {
 		t.Run(provider, func(t *testing.T) {
 			timeout := 45 * time.Second
@@ -186,7 +170,7 @@ func TestLiveProviderDiscovery(t *testing.T) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
-			models, err := discoverModels(ctx, provider)
+			models, err := catalog.discoverModels(ctx, provider)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -200,7 +184,6 @@ func TestLiveProviderDiscovery(t *testing.T) {
 			}
 			if provider == "omp" {
 				want := []string{
-					"tailscale/glm-5.3-flash-exl3",
 					"openai-codex/gpt-6-luna",
 					"openai-codex/gpt-6-sol",
 					"openai-codex/gpt-6-astra",
@@ -263,7 +246,7 @@ func TestDiscoverCodexModelsIncludesVisibleGPT61(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	models, err := discoverCodexModels()
+	models, err := StaticCatalog(false).discoverCodexModels()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,12 +267,11 @@ func TestDiscoverCodexModelsIncludesVisibleGPT61(t *testing.T) {
 }
 
 func TestDiscoverDSHModelsPreservesOpaqueACPSelectors(t *testing.T) {
-	previous := runDSHDiscovery
-	runDSHDiscovery = func(context.Context) ([]byte, error) {
+	catalog := StaticCatalog(false)
+	catalog.runDSHDiscovery = func(context.Context) ([]byte, error) {
 		return []byte(`{"models":[{"id":"local/fast","name":"Fast · Local","runtimeModel":"[\"local\",\"fast\"]"}]}`), nil
 	}
-	t.Cleanup(func() { runDSHDiscovery = previous })
-	models, err := discoverModels(context.Background(), "dsh")
+	models, err := catalog.discoverModels(context.Background(), "dsh")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,22 +281,21 @@ func TestDiscoverDSHModelsPreservesOpaqueACPSelectors(t *testing.T) {
 }
 
 func TestDiscoverDSHModelsRejectsInvalidCatalog(t *testing.T) {
-	previous := runDSHDiscovery
-	runDSHDiscovery = func(context.Context) ([]byte, error) {
+	catalog := StaticCatalog(false)
+	catalog.runDSHDiscovery = func(context.Context) ([]byte, error) {
 		return []byte(`{"models":[{"id":"","name":"Broken","runtimeModel":""}]}`), nil
 	}
-	t.Cleanup(func() { runDSHDiscovery = previous })
-	if _, err := discoverModels(context.Background(), "dsh"); err == nil || !strings.Contains(err.Error(), "empty") {
+	if _, err := catalog.discoverModels(context.Background(), "dsh"); err == nil || !strings.Contains(err.Error(), "empty") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestParseOMPModelsUsesIntegrationSelectorsAndThinking(t *testing.T) {
-	models, err := parseOMPModels([]byte(`{"models":[{"provider":"tailscale","id":"deepseek","selector":"tailscale/deepseek","name":"DeepSeek","contextWindow":1048576,"thinking":["high","max"]}]}`))
+	models, err := parseOMPModels([]byte(`{"models":[{"provider":"local","id":"deepseek","selector":"local/deepseek","name":"DeepSeek","contextWindow":1048576,"thinking":["high","max"]}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(models) != 1 || models[0].ID != "tailscale/deepseek" || models[0].ContextWindow != 1048576 {
+	if len(models) != 1 || models[0].ID != "local/deepseek" || models[0].ContextWindow != 1048576 {
 		t.Fatalf("unexpected models: %#v", models)
 	}
 	if got := models[0].Efforts; len(got) != 2 || got[0] != "high" || got[1] != "max" {
@@ -323,12 +304,11 @@ func TestParseOMPModelsUsesIntegrationSelectorsAndThinking(t *testing.T) {
 }
 
 func TestDiscoverOMPModelsUsesPinnedCatalog(t *testing.T) {
-	previous := runOMPDiscovery
-	runOMPDiscovery = func(context.Context) ([]byte, error) {
+	catalog := StaticCatalog(false)
+	catalog.runOMPDiscovery = func(context.Context) ([]byte, error) {
 		return []byte(`{"models":[{"selector":"openrouter/openai/gpt-6-sol","name":"GPT-6 Sol","thinking":["max"]}]}`), nil
 	}
-	t.Cleanup(func() { runOMPDiscovery = previous })
-	models, err := discoverModels(context.Background(), "omp")
+	models, err := catalog.discoverModels(context.Background(), "omp")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -365,8 +345,8 @@ func TestParseClaudeHelpUsesAdvertisedAliasesAndEfforts(t *testing.T) {
 
 func TestMergeDiscoveredCatalogHidesCompatibilityModels(t *testing.T) {
 	adapter := Adapter{ID: "pi", DefaultModel: "default", Models: []Model{{ID: "default"}, {ID: "old"}}}
-	merged := mergeDiscoveredAdapter(adapter, []Model{{ID: "box/current", Efforts: []string{"low"}}})
-	if merged.DefaultModel != "box/current" || len(merged.Models) != 3 || merged.Models[1].Hidden != true {
+	merged := mergeDiscoveredAdapter(adapter, []Model{{ID: "local/current", Efforts: []string{"low"}}})
+	if merged.DefaultModel != "local/current" || len(merged.Models) != 3 || merged.Models[1].Hidden != true {
 		t.Fatalf("unexpected merged adapter: %#v", merged)
 	}
 	if merged.Effort == nil || len(merged.Effort.Options) != 1 || merged.Effort.Options[0].ID != "low" {

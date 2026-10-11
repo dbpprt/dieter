@@ -1,3 +1,5 @@
+//go:build e2e
+
 package cli
 
 import (
@@ -10,6 +12,7 @@ import (
 )
 
 func TestDaemonCLICardMerge(t *testing.T) {
+	t.Parallel()
 	client, output, data := daemonCLIForTest(t)
 	project, err := data.CreateProject(store.CreateProjectInput{Path: initTestRepository(t, "merge"), Name: "Merge"})
 	if err != nil {
@@ -40,7 +43,7 @@ func assertCardMergeCLI(t *testing.T, client *CLI, output *bytes.Buffer, data *s
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer data.ReleaseRuntimeLease(lease)
+	defer func() { _ = data.ReleaseRuntimeLease(lease) }()
 	for range 2 {
 		raw := runDaemonCLI(t, client, output, "card", "merge", "--into", target.ID, source.ID)
 		var card dieterv1.Card
@@ -58,6 +61,7 @@ func assertCardMergeCLI(t *testing.T, client *CLI, output *bytes.Buffer, data *s
 }
 
 func TestDaemonCLIDraftAgentSettings(t *testing.T) {
+	t.Parallel()
 	client, output, data := daemonCLIForTest(t)
 	project, err := data.CreateProject(store.CreateProjectInput{Path: initTestRepository(t, "settings"), Name: "Settings"})
 	if err != nil {

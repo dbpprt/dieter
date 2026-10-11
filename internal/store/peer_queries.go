@@ -7,7 +7,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/dbpprt/dieter/internal/peerstore"
+	"github.com/dbpprt/dieter/internal/platform/fault"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
+	"github.com/dbpprt/dieter/internal/replication/schema"
 )
 
 type PeerStoreInfo struct {
@@ -43,27 +45,27 @@ func (s *Store) PeerStoreInfo(ctx context.Context, account string) (PeerStoreInf
 	result.LastSyncAt, result.LastPeerID, result.LastRoute = progress.LastSyncAt, progress.LastPeerID, progress.LastRoute
 	return result, nil
 }
-func (s *Store) ReadPeerRecord(ctx context.Context, account, kind, id string) (peerstore.Record, error) {
-	if !peerstore.ValidID(kind) || !peerstore.ValidID(id) {
-		return peerstore.Record{}, errors.New("invalid peer record identity")
+func (s *Store) ReadPeerRecord(ctx context.Context, account, kind, id string) (crdt.Record, error) {
+	if !crdt.ValidID(kind) || !crdt.ValidID(id) {
+		return crdt.Record{}, fault.New(fault.Invalid, "invalid peer record identity")
 	}
 	db, err := s.peerDatabase(account)
 	if err != nil {
-		return peerstore.Record{}, err
+		return crdt.Record{}, err
 	}
 	var raw []byte
-	err = db.QueryRowContext(ctx, "SELECT value FROM peer_records WHERE key=?", peerstore.Key(kind, id)).Scan(&raw)
+	err = db.QueryRowContext(ctx, "SELECT value FROM peer_records WHERE key=?", crdt.Key(kind, id)).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
-		return peerstore.Record{}, ErrNotFound
+		return crdt.Record{}, ErrNotFound
 	}
 	if err != nil {
-		return peerstore.Record{}, err
+		return crdt.Record{}, err
 	}
 	return decodePeerRecord(raw)
 }
 
 type PeerRecordPage struct {
-	Records           []peerstore.Record
+	Records           []crdt.Record
 	NextKey, Revision string
 	PeerCheckpoint
 }
@@ -84,23 +86,23 @@ func (s *Store) ListPeerRecordPage(ctx context.Context, account, kind, idPrefix,
 	if err = tx.QueryRow("SELECT epoch,sequence FROM peer_metadata WHERE id=1").Scan(&result.Epoch, &result.Sequence); err != nil {
 		return result, err
 	}
-	result.Revision = peerstore.Revision([]any{account, result.Epoch, result.Sequence})
+	result.Revision = crdt.Revision([]any{account, result.Epoch, result.Sequence})
 	if revision != "" && revision != result.Revision || cursor != nil && (cursor.Epoch != result.Epoch || cursor.Sequence != result.Sequence) {
-		return result, peerstore.ErrConflict
+		return result, crdt.ErrConflict
 	}
 	prefix := ""
-	var accept func(peerstore.Record) bool
-	if kind == peerstore.KVKindPrefix {
+	var accept func(crdt.Record) bool
+	if kind == schema.KVKindPrefix {
 		prefix = kind
-		accept = func(r peerstore.Record) bool {
-			return strings.HasPrefix(r.Kind, peerstore.KVKindPrefix) && strings.HasPrefix(r.ID, idPrefix)
+		accept = func(r crdt.Record) bool {
+			return strings.HasPrefix(r.Kind, schema.KVKindPrefix) && strings.HasPrefix(r.ID, idPrefix)
 		}
 	} else if kind != "" {
 		prefix = kind + "/" + idPrefix
 	}
 	var more bool
-	maxBytes := peerstore.MaxPageBytes
-	if strings.HasPrefix(kind, peerstore.KVKindPrefix) {
+	maxBytes := crdt.MaxPageBytes
+	if strings.HasPrefix(kind, schema.KVKindPrefix) {
 		maxBytes /= 2
 	}
 	result.Records, more, err = readPeerPage(tx, prefix, "", after, maxBytes, accept)
@@ -109,7 +111,7 @@ func (s *Store) ListPeerRecordPage(ctx context.Context, account, kind, idPrefix,
 	}
 	if more {
 		last := result.Records[len(result.Records)-1]
-		result.NextKey = peerstore.Key(last.Kind, last.ID)
+		result.NextKey = crdt.Key(last.Kind, last.ID)
 	}
 	return result, tx.Commit()
 }

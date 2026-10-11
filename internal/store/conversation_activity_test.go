@@ -9,6 +9,7 @@ import (
 )
 
 func TestConversationActivityCoalescesOnlyTokens(t *testing.T) {
+	t.Parallel()
 	at := time.Now().UTC()
 	for _, kind := range []string{"text-delta", "reasoning-delta", "tool-input-delta", "finish", "abort", "error", "message-metadata", "tool-input-start"} {
 		data, _ := json.Marshal(map[string]string{"type": kind})
@@ -24,6 +25,7 @@ func TestConversationActivityCoalescesOnlyTokens(t *testing.T) {
 }
 
 func TestCoalescedActivityRetainsJournalAndFlushesSemanticEventToPeer(t *testing.T) {
+	t.Parallel()
 	s, project, _ := setup(t, model.WorkflowReview)
 	card, err := s.CreateChat(CreateCardInput{Project: project.ID, Title: "stream"})
 	if err != nil {

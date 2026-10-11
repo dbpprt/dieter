@@ -1,3 +1,5 @@
+//go:build e2e
+
 package gateway_test
 
 import (
@@ -12,13 +14,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/daemon"
 	"github.com/dbpprt/dieter/internal/gateway"
-	"github.com/dbpprt/dieter/internal/peerstore"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/link"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
+	"github.com/dbpprt/dieter/internal/testkit"
 )
 
 func TestGatewayRelocationPreservesEnrollmentAndPeerIdentity(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 	oldListener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -47,22 +50,19 @@ func TestGatewayRelocationPreservesEnrollmentAndPeerIdentity(t *testing.T) {
 	defer g.RelayGRPC.Stop()
 	go func() { _ = g.APIGRPC.Serve(oldListener) }()
 	go func() { _ = g.APIGRPC.Serve(newListener) }()
-	local := store.New(t.TempDir())
-	if err := local.Ensure(); err != nil {
-		t.Fatal(err)
-	}
-	identity, err := daemon.LoadOrCreateEnrollmentIdentity(local.Root, "relocation", oldURL.String())
+	local := testkit.Store(t)
+	identity, err := link.LoadOrCreateEnrollmentIdentity(local.Root, "relocation", oldURL.String())
 	if err != nil {
 		t.Fatal(err)
 	}
-	enrollment, err := daemon.BeginEnrollment(ctx, identity)
+	enrollment, err := link.BeginEnrollment(ctx, identity)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := data.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), 42, "fixture"); err != nil {
 		t.Fatal(err)
 	}
-	credential, err := daemon.CompleteEnrollment(ctx, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
+	credential, err := link.CompleteEnrollment(ctx, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestGatewayRelocationPreservesEnrollmentAndPeerIdentity(t *testing.T) {
 	if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetDaemonCaPem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
 		t.Fatal(err)
 	}
-	scope := peerstore.Revision([]string{identity.Issuer(), "github:42"})
+	scope := crdt.Revision([]string{identity.Issuer(), "github:42"})
 	binding, err := local.BindPeerAccount(scope, "github:42", identity.ID, identity.Issuer())
 	if err != nil {
 		t.Fatal(err)
@@ -83,17 +83,19 @@ func TestGatewayRelocationPreservesEnrollmentAndPeerIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	endpoint, err := daemon.ResolveGatewayEndpoint(ctx, identity)
+	endpoint, err := link.ResolveGatewayEndpoint(ctx, identity)
 	if err != nil || endpoint != newURL.String() {
 		t.Fatalf("resolve %q: %v", endpoint, err)
 	}
-	if err := local.RelocateDaemonGateway("wrong-id", identity.GatewayURL, identity.Issuer(), endpoint, identity.GatewaySigningPublicKey); err == nil {
+	changed := *identity
+	changed.ID = "wrong-id"
+	if err := link.RelocateGateway(&changed, endpoint); err == nil {
 		t.Fatal("changed enrollment accepted")
 	}
-	if err := local.RelocateDaemonGateway(identity.ID, identity.GatewayURL, identity.Issuer(), endpoint, identity.GatewaySigningPublicKey); err != nil {
+	if err := link.RelocateGateway(identity, endpoint); err != nil {
 		t.Fatal(err)
 	}
-	moved, err := daemon.LoadIdentity(local.Root)
+	moved, err := link.LoadIdentity(local.Root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,10 +110,10 @@ func TestGatewayRelocationPreservesEnrollmentAndPeerIdentity(t *testing.T) {
 	if err != nil || next != binding {
 		t.Fatalf("peer binding/actor changed: %v", err)
 	}
-	if resolved, err := daemon.ResolveGatewayEndpoint(ctx, moved); err != nil || resolved != endpoint {
+	if resolved, err := link.ResolveGatewayEndpoint(ctx, moved); err != nil || resolved != endpoint {
 		t.Fatalf("relocated enrollment cannot authenticate: %v", err)
 	}
-	if err := daemon.Unenroll(ctx, moved); err != nil {
+	if err := link.Unenroll(ctx, moved); err != nil {
 		t.Fatalf("relocated possession proof failed: %v", err)
 	}
 }

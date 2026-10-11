@@ -13,6 +13,7 @@ import (
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -50,60 +51,6 @@ func protoJSONLine(out io.Writer, value proto.Message) error {
 	}
 	_, err = fmt.Fprintf(out, "%s\n", raw)
 	return err
-}
-
-func (c *CLI) runDaemonCommand(args []string) (bool, error) {
-	if len(args) == 0 {
-		return false, nil
-	}
-	switch args[0] {
-	case "setup", "serve", "daemon", "version":
-		return false, nil
-	case "machine", "machines":
-		return true, c.machineCommand(args[1:])
-	case "quota", "quotas":
-		return true, c.quotaCommand(args[1:])
-	case "status":
-		return true, c.daemonBackedStatus(args[1:])
-	case "storage":
-		return true, c.daemonBackedStorage(args[1:])
-	case "harness", "harnesses":
-		return true, c.harnessCommand(args[1:])
-	case "project", "projects":
-		return true, c.rpcProject(args[1:])
-	case "board", "boards":
-		return true, c.rpcBoard(args[1:])
-	case "card", "cards":
-		return true, c.rpcCard(args[1:], false)
-	case "chat", "chats":
-		return true, c.rpcCard(args[1:], true)
-	case "workspace", "workspaces", "git":
-		return true, c.rpcWorkspace(args[1:])
-	case "schedule", "schedules":
-		return true, c.rpcSchedule(args[1:])
-	case "kv":
-		return true, c.rpcKV(args[1:])
-	case "vault":
-		return true, c.rpcVault(args[1:])
-	case "peer":
-		return true, c.rpcPeer(args[1:])
-	case "settings":
-		return true, c.rpcSettings(args[1:])
-	case "prompt", "prompts":
-		return true, c.rpcPrompt(args[1:])
-	case "file", "files":
-		return true, c.rpcFile(args[1:])
-	case "terminal", "terminals":
-		return true, c.rpcTerminal(args[1:])
-	case "remote":
-		return true, c.rpcRemote(args[1:])
-	case "screen", "screens":
-		return true, c.rpcScreen(args[1:])
-	case "watch":
-		return true, c.rpcWatch(args[1:])
-	default:
-		return false, nil
-	}
 }
 
 func (c *CLI) daemonBackedStatus(args []string) error {
@@ -402,7 +349,7 @@ func (c *CLI) machineAction(action string, args []string) error {
 	return nil
 }
 
-func (c *CLI) machineRPCAction(client dieterv1.DieterServiceClient, ctx context.Context, action, confirmation string) error {
+func (c *CLI) machineRPCAction(client dieterclient.Client, ctx context.Context, action, confirmation string) error {
 	if action == "info" {
 		value, err := client.GetMachineInformation(ctx, &emptypb.Empty{})
 		if err != nil {

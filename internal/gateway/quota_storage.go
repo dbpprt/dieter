@@ -8,7 +8,7 @@ import (
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
-	"github.com/dbpprt/dieter/internal/providerquota/policy"
+	"github.com/dbpprt/dieter/internal/transport/relay"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -318,7 +318,7 @@ func (s *Store) SaveProviderQuotaSnapshot(githubID int64, daemonID string, snaps
 	copy := proto.Clone(snapshot).(*gatewayv1.ProviderQuotaSnapshot)
 	copy.RefreshedAt = now.Format(time.RFC3339Nano)
 	copy.LastSuccessAt = copy.RefreshedAt
-	copy.NextRefreshAt = now.Add(policy.RefreshInterval(copy.GetProvider())).Format(time.RFC3339Nano)
+	copy.NextRefreshAt = now.Add(relay.QuotaRefreshInterval(copy.GetProvider())).Format(time.RFC3339Nano)
 	copy.FreshUntil = copy.NextRefreshAt
 	copy.RefreshState = gatewayv1.ProviderQuotaRefreshState_PROVIDER_QUOTA_REFRESH_STATE_IDLE
 	raw, err := proto.MarshalOptions{Deterministic: true}.Marshal(copy)

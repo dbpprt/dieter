@@ -8,6 +8,7 @@ import (
 )
 
 func TestCommitNotificationsBroadcastAcrossStoresAndReleaseWatcher(t *testing.T) {
+	t.Parallel()
 	s, project, _ := setup(t, model.WorkflowReview)
 	other := New(s.Root)
 	defer other.Close()
@@ -40,6 +41,7 @@ func TestCommitNotificationsBroadcastAcrossStoresAndReleaseWatcher(t *testing.T)
 }
 
 func TestCommitNotificationsCoalesceSlowConsumers(t *testing.T) {
+	t.Parallel()
 	s := New(t.TempDir())
 	ch, stop := s.SubscribeChanges()
 	defer stop()

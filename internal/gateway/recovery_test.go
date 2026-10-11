@@ -15,7 +15,7 @@ import (
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
-	"github.com/dbpprt/dieter/internal/linkauth"
+	"github.com/dbpprt/dieter/internal/security/linkauth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -91,6 +91,7 @@ func (f *recoveryFixture) request() *gatewayv1.RecoverDaemonRequest {
 }
 
 func TestInspectDaemonRecoveryReturnsCurrentGenerationsWithoutMutation(t *testing.T) {
+	t.Parallel()
 	f := newRecoveryFixture(t)
 	ref := &gatewayv1.DaemonRecoveryRef{RevokedDaemonId: f.old.ID, ReplacementDaemonId: f.replacement.ID}
 	for _, revoked := range []bool{true, false} {
@@ -122,6 +123,7 @@ func TestInspectDaemonRecoveryReturnsCurrentGenerationsWithoutMutation(t *testin
 }
 
 func TestInspectDaemonRecoveryRejectsIneligibleWithoutMutation(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		change func(*testing.T, *recoveryFixture, *gatewayv1.DaemonRecoveryRef) context.Context
@@ -194,6 +196,7 @@ func TestInspectDaemonRecoveryRejectsIneligibleWithoutMutation(t *testing.T) {
 }
 
 func TestRecoverDaemonPreservesOriginalCredentialAndRetries(t *testing.T) {
+	t.Parallel()
 	f := newRecoveryFixture(t)
 	request := f.request()
 	credential, err := f.service.RecoverDaemon(f.ctx, request)
@@ -227,6 +230,7 @@ func TestRecoverDaemonPreservesOriginalCredentialAndRetries(t *testing.T) {
 }
 
 func TestRecoverDaemonRejectsStaleSignedProofAfterLaterRevocation(t *testing.T) {
+	t.Parallel()
 	f := newRecoveryFixture(t)
 	stale := f.request()
 	if _, err := f.service.RecoverDaemon(f.ctx, stale); err != nil {
@@ -255,6 +259,7 @@ func TestRecoverDaemonRejectsStaleSignedProofAfterLaterRevocation(t *testing.T) 
 }
 
 func TestRecoverDaemonRejectsUnauthorizedAndMismatchedProofsWithoutMutation(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		change func(*testing.T, *recoveryFixture, *gatewayv1.RecoverDaemonRequest) context.Context
@@ -392,6 +397,7 @@ func TestRecoverDaemonRejectsUnauthorizedAndMismatchedProofsWithoutMutation(t *t
 }
 
 func TestRecoverDaemonStorageRejectsStaleReplacementAtomically(t *testing.T) {
+	t.Parallel()
 	f := newRecoveryFixture(t)
 	if _, err := f.store.DB.Exec(`UPDATE daemons SET revoked=1 WHERE id=?`, f.replacement.ID); err != nil {
 		t.Fatal(err)

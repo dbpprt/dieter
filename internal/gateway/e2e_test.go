@@ -1,21 +1,19 @@
+//go:build e2e
+
 package gateway_test
 
 import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
-	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net"
-	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -24,74 +22,43 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/daemon"
+	"github.com/dbpprt/dieter/internal/api"
 	"github.com/dbpprt/dieter/internal/gateway"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/harness"
+	"github.com/dbpprt/dieter/internal/link"
+	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/remotedesktop"
-	"github.com/dbpprt/dieter/internal/server"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/testkit"
+	"github.com/dbpprt/dieter/internal/testkit/topology"
+	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 	"github.com/pion/webrtc/v4"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
+// owner is the GitHub account that owns the relay fixture's machines.
+const owner int64 = 7000188
+
 func TestGatewayRejectsOutdatedDaemonAndPublishesUpdatePolicy(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer listener.Close()
-	publicURL, _ := url.Parse("http://" + listener.Addr().String())
-	config := gateway.Config{
-		Root: t.TempDir(), Address: listener.Addr().String(), PublicURL: publicURL,
-		GitHubClientID: "test", GitHubSecret: "test", AllowedUserIDs: map[int64]struct{}{42: {}},
-		AuthSecret: []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour,
-		NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid",
-		DevInsecure: true, MinimumClientVersion: "0.4.308", MinimumDaemonVersion: "0.4.309",
-	}
-	gatewayStore, err := gateway.OpenStore(config.Root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer gatewayStore.Close()
-	gatewayServer, err := gateway.NewServer(config, gatewayStore, logger)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = gatewayServer.Serve(listener) }()
-
-	identity, err := daemon.LoadOrCreateEnrollmentIdentity(t.TempDir(), "outdated", publicURL.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	enrollment, err := daemon.BeginEnrollment(ctx, identity)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := gatewayStore.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), 42, "owner"); err != nil {
-		t.Fatal(err)
-	}
-	credential, err := daemon.CompleteEnrollment(ctx, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
-	if err != nil {
-		t.Fatal(err)
-	}
-	identity.GatewayIssuer = credential.GetGatewayIssuer()
-	if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetDaemonCaPem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
-		t.Fatal(err)
-	}
+	g := topology.StartGateway(t, topology.GatewayOptions{Configure: func(config *gateway.Config) {
+		config.MinimumClientVersion, config.MinimumDaemonVersion = "0.4.308", "0.4.309"
+	}})
+	gatewayServer := g.Server
+	identity := topology.Machine(t, g, "outdated", topology.Account)
 
 	updates := 0
-	client := daemon.GatewayClient{
+	client := link.GatewayClient{
 		Identity: identity, LocalTarget: "127.0.0.1:1", Version: "0.4.308", Log: logger,
 		OnUpdateRequired: func(policy *gatewayv1.CompatibilityPolicy) error {
 			updates++
@@ -101,8 +68,8 @@ func TestGatewayRejectsOutdatedDaemonAndPublishesUpdatePolicy(t *testing.T) {
 			return nil
 		},
 	}
-	err = client.Run(ctx)
-	var updateRequired *daemon.UpdateRequiredError
+	err := client.Run(ctx)
+	var updateRequired *link.UpdateRequiredError
 	if !errors.As(err, &updateRequired) || updates != 1 {
 		t.Fatalf("error=%v updates=%d", err, updates)
 	}
@@ -112,36 +79,10 @@ func TestGatewayRejectsOutdatedDaemonAndPublishesUpdatePolicy(t *testing.T) {
 }
 
 func TestGatewayAllowsMultipleAccountsAndIsolatesDaemons(t *testing.T) {
-	ctx := context.Background()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	gatewayListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer gatewayListener.Close()
-	publicURL, _ := url.Parse("http://" + gatewayListener.Addr().String())
-	config := gateway.Config{
-		Root: t.TempDir(), Address: gatewayListener.Addr().String(), PublicURL: publicURL,
-		GitHubClientID: "test", GitHubSecret: "test", AllowedUserIDs: map[int64]struct{}{7000188: {}, 60854672: {}},
-		AuthSecret: []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour,
-		NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid", DevInsecure: true,
-	}
-	gatewayStore, err := gateway.OpenStore(config.Root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer gatewayStore.Close()
-	gatewayServer, err := gateway.NewServer(config, gatewayStore, logger)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go gatewayServer.Serve(gatewayListener)
-
-	connection, err := grpc.NewClient(gatewayListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer connection.Close()
+	t.Parallel()
+	ctx := t.Context()
+	g := topology.StartGateway(t, topology.GatewayOptions{Accounts: []int64{7000188, 60854672}})
+	connection := topology.Dial(t, g)
 
 	type account struct {
 		githubID int64
@@ -154,33 +95,10 @@ func TestGatewayAllowsMultipleAccountsAndIsolatesDaemons(t *testing.T) {
 		{githubID: 60854672, login: "derzierau", session: "secondary-session"},
 	}
 	for index := range accounts {
-		identity, err := daemon.LoadOrCreateEnrollmentIdentity(t.TempDir(), accounts[index].login+" machine", publicURL.String())
-		if err != nil {
+		accounts[index].daemonID = topology.Machine(t, g, accounts[index].login+" machine", accounts[index].githubID).ID
+		if err := g.AddSession(accounts[index].session, accounts[index].githubID, accounts[index].login); err != nil {
 			t.Fatal(err)
 		}
-		enrollment, err := daemon.BeginEnrollment(ctx, identity)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := gatewayStore.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), accounts[index].githubID, accounts[index].login); err != nil {
-			t.Fatal(err)
-		}
-		credential, err := daemon.CompleteEnrollment(ctx, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
-		if err != nil {
-			t.Fatalf("complete enrollment for @%s: %v", accounts[index].login, err)
-		}
-		accounts[index].daemonID = credential.GetDaemonId()
-	}
-	if err := gatewayStore.UpdateAuthState(func(state *gateway.AuthState) error {
-		for _, account := range accounts {
-			state.Sessions = append(state.Sessions, gateway.Session{
-				TokenHash: sessionDigest(config.AuthSecret, account.session), GitHubID: account.githubID, Login: account.login,
-				CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(time.Hour),
-			})
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
 	}
 
 	client := gatewayv1Client(connection)
@@ -200,73 +118,46 @@ func TestGatewayAllowsMultipleAccountsAndIsolatesDaemons(t *testing.T) {
 	}
 }
 
-func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
-	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
+// relayFixture is one enrolled daemon behind a gateway. The daemon's tunnel
+// reaches the gateway through a pausable proxy; the daemon owns a Git project,
+// a synthetic remote desktop, and a runner that holds turns until released.
+type relayFixture struct {
+	ctx        context.Context
+	gateway    *topology.Gateway
+	daemon     *topology.Daemon
+	proxy      *pauseProxy
+	events     <-chan link.GatewayEvent
+	runner     *tunnelSurvivalRunner
+	desktop    *remotedesktop.Manager
+	project    model.Project
+	repository string
+	connection *grpc.ClientConn
+	client     dieterclient.Client
+	authorized context.Context
+	routed     context.Context
+}
+
+func startRelayFixture(t *testing.T) *relayFixture {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	t.Cleanup(cancel)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-	gatewayListener, err := net.Listen("tcp", "127.0.0.1:0")
+	f := &relayFixture{ctx: ctx, runner: newTunnelSurvivalRunner(), repository: testkit.GitRepo(t)}
+	f.gateway = topology.StartGateway(t, topology.GatewayOptions{Accounts: []int64{owner}, Logger: logger, Configure: func(config *gateway.Config) {
+		config.RTCSTUNURLs = []string{"stun:stun.example:3478"}
+		f.proxy = startPauseProxy(t, config)
+	}})
+	identity := topology.Machine(t, f.gateway, "Test machine", owner)
+	data := store.New(identity.Root)
+	if err := data.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	project, err := data.CreateProject(store.CreateProjectInput{Name: "Relay", Path: f.repository, BaseBranch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	proxyListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	tunnelProxy := newPauseProxy(proxyListener, gatewayListener.Addr().String())
-	go tunnelProxy.Serve()
-	defer tunnelProxy.Close()
-	publicURL, _ := url.Parse("http://" + proxyListener.Addr().String())
-	config := gateway.Config{
-		Root: t.TempDir(), Address: gatewayListener.Addr().String(), PublicURL: publicURL,
-		GitHubClientID: "test", GitHubSecret: "test", AllowedUserIDs: map[int64]struct{}{7000188: {}}, AuthSecret: []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour,
-		NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid", DevInsecure: true,
-		RTCSTUNURLs: []string{"stun:stun.example:3478"}, RTCTTL: 5 * time.Minute,
-	}
-	gatewayStore, err := gateway.OpenStore(config.Root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer gatewayStore.Close()
-	gatewayServer, err := gateway.NewServer(config, gatewayStore, logger)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go gatewayServer.Serve(gatewayListener)
-	defer gatewayListener.Close()
-	defer gatewayServer.APIGRPC.Stop()
-	defer gatewayServer.RelayGRPC.Stop()
-
-	connection, err := grpc.NewClient(gatewayListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer connection.Close()
-
-	identity, err := daemon.LoadOrCreateEnrollmentIdentity(t.TempDir(), "Test machine", publicURL.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	enrollment, err := daemon.BeginEnrollment(ctx, identity)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := gatewayStore.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), int64(7000188), "owner"); err != nil {
-		t.Fatal(err)
-	}
-	credential, err := daemon.CompleteEnrollment(ctx, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetDaemonCaPem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
-		t.Fatal(err)
-	}
-	boardStore := store.New(t.TempDir())
-	if err := boardStore.Ensure(); err != nil {
-		t.Fatal(err)
-	}
-	remoteDesktop := remotedesktop.New(remotedesktop.Options{
+	f.project = project
+	f.desktop = remotedesktop.New(remotedesktop.Options{
 		Identity: remotedesktop.Identity{
 			DaemonID: identity.ID, GatewayURL: identity.GatewayURL, Generation: identity.Generation,
 			PrivateKey: identity.PrivateKey, GatewaySigningPublicKey: identity.GatewaySigningPublicKey,
@@ -274,83 +165,77 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 		Source: remotedesktop.SourceOptions{Kind: "synthetic", FPS: 10},
 		Logger: logger, DetachGrace: 100 * time.Millisecond, MonitorInterval: 10 * time.Millisecond,
 	})
-	repositoryPath := filepath.Join(t.TempDir(), "repo")
-	for _, args := range [][]string{{"init", "-b", "main", repositoryPath}, {"-C", repositoryPath, "config", "user.name", "Dieter Test"}, {"-C", repositoryPath, "config", "user.email", "dieter@example.test"}} {
-		if output, commandErr := exec.Command("git", args...).CombinedOutput(); commandErr != nil {
-			t.Fatalf("git %v: %s: %v", args, output, commandErr)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(repositoryPath, "README.md"), []byte("base\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	for _, args := range [][]string{{"-C", repositoryPath, "add", "README.md"}, {"-C", repositoryPath, "commit", "-m", "base"}} {
-		if output, commandErr := exec.Command("git", args...).CombinedOutput(); commandErr != nil {
-			t.Fatalf("git %v: %s: %v", args, output, commandErr)
-		}
-	}
-	project, err := boardStore.CreateProject(store.CreateProjectInput{
-		Name: "Relay", Path: repositoryPath, BaseBranch: "main",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	boardListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	runner := newTunnelSurvivalRunner()
-	boardHTTP := &http.Server{Handler: server.NewWithRemoteDesktop(boardStore, logger, runner, remoteDesktop).Handler()}
-	go boardHTTP.Serve(boardListener)
-	defer boardHTTP.Close()
-	defer runner.Release()
-
-	tunnel := &daemon.GatewayClient{
-		Identity: identity, LocalTarget: boardListener.Addr().String(), LocalToken: testLocalToken(t, boardStore.Root), Version: "0.4.1-dev", Log: logger,
-		Timing: daemon.GatewayTiming{
+	t.Cleanup(func() { f.desktop.Shutdown(context.Background()) })
+	f.daemon = topology.StartDaemon(t, f.gateway, topology.DaemonOptions{
+		Identity: identity, Store: data, Logger: logger,
+		API: api.Options{Runner: f.runner, RemoteDesktop: f.desktop, Catalog: testkit.MockCatalog()},
+		Tunnel: func(tunnel *link.GatewayClient) {
 			// The broad relay workload uses production liveness deadlines.
 			// Watchdog expiry is exercised separately without Git/WebRTC work
 			// competing against an artificially short heartbeat deadline.
-			ReconnectInitialBackoff: 20 * time.Millisecond, ReconnectMaximumBackoff: 50 * time.Millisecond,
-			ReconnectStableAfter: 200 * time.Millisecond,
+			tunnel.Timing = link.GatewayTiming{
+				ReconnectInitialBackoff: 20 * time.Millisecond, ReconnectMaximumBackoff: 50 * time.Millisecond,
+				ReconnectStableAfter: 200 * time.Millisecond,
+			}
+			tunnel.RemoteDesktopPresence = func() *gatewayv1.RemoteDesktopPresence { return f.desktop.Presence() }
+			f.events = recordGatewayEvents(t, tunnel)
 		},
-		RemoteDesktopPresence: func() *gatewayv1.RemoteDesktopPresence {
-			return remoteDesktop.Presence()
-		},
-	}
-	gatewayEvents, stopTunnel := runTestGatewayTunnel(t, ctx, tunnel)
-	defer stopTunnel()
+	})
+	// Release held turns before the daemon stops.
+	t.Cleanup(f.runner.Release)
+	waitForGatewayEvent(t, f.events, link.GatewayConnected, 2*time.Second)
+	f.connection = topology.Dial(t, f.gateway)
+	f.client = dieterclient.New(f.connection)
+	session := topology.SignIn(t, f.gateway, owner, "owner")
+	f.authorized = topology.Authorized(ctx, session)
+	f.routed = topology.Routed(ctx, session, identity.ID)
+	return f
+}
 
-	session := "native-test-session"
-	digest := sessionDigest(config.AuthSecret, session)
-	if err := gatewayStore.UpdateAuthState(func(state *gateway.AuthState) error {
-		state.Sessions = append(state.Sessions, gateway.Session{TokenHash: digest, GitHubID: int64(7000188), Login: "owner", CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(time.Hour)})
-		return nil
-	}); err != nil {
+// startPauseProxy puts a pausable TCP proxy in front of the gateway and makes
+// it the public origin, so daemon tunnels pass through it.
+func startPauseProxy(t *testing.T, config *gateway.Config) *pauseProxy {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
 		t.Fatal(err)
 	}
-	authorized := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+session, "x-dieter-client-version", "0.4.1-dev")
+	proxy := newPauseProxy(listener, config.Address)
+	go proxy.Serve()
+	t.Cleanup(proxy.Close)
+	config.PublicURL = &url.URL{Scheme: "http", Host: listener.Addr().String()}
+	return proxy
+}
 
-	deadline := time.Now().Add(5 * time.Second)
-	for !gatewayServer.Hub.RelayReady(identity.ID) && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
+// recordGatewayEvents buffers the tunnel's status events for
+// waitForGatewayEvent.
+func recordGatewayEvents(t *testing.T, tunnel *link.GatewayClient) <-chan link.GatewayEvent {
+	events := make(chan link.GatewayEvent, 32)
+	tunnel.OnStatus = func(event link.GatewayEvent) {
+		t.Logf("gateway state=%s error=%q", event.State, event.Error)
+		select {
+		case events <- event:
+		default:
+		}
 	}
-	if !gatewayServer.Hub.Online(identity.ID) {
-		t.Fatal("daemon did not establish its reverse tunnel")
-	}
-	waitForGatewayEvent(t, gatewayEvents, daemon.GatewayConnected, 2*time.Second)
+	return events
+}
 
-	routed := metadata.AppendToOutgoingContext(authorized, "x-dieter-daemon-id", identity.ID)
-	dieterClient := dieterv1.NewDieterServiceClient(connection)
+func TestGatewayRelaysDaemonAPIAndTerminals(t *testing.T) {
+	t.Parallel()
+	f := startRelayFixture(t)
+	dieterClient, routed, boardStore, project, repositoryPath := f.client, f.routed, f.daemon.Store, f.project, f.repository
+
 	health, err := dieterClient.Health(routed, &emptypb.Empty{})
 	if err != nil {
-		t.Fatalf("relay DieterService.Health: %v", err)
+		t.Fatalf("relay MachineService.Health: %v", err)
 	}
 	if health.GetStatus() != "ok" || health.GetStorePath() != boardStore.Root {
 		t.Fatalf("unexpected relayed health: %#v", health)
 	}
 	machineInformation, err := dieterClient.GetMachineInformation(routed, &emptypb.Empty{})
 	if err != nil {
-		t.Fatalf("relay DieterService.GetMachineInformation: %v", err)
+		t.Fatalf("relay MachineService.GetMachineInformation: %v", err)
 	}
 	if machineInformation.GetDaemonBuild().GetReleaseVersion() == "" || machineInformation.GetGpu() == nil {
 		t.Fatalf("relayed machine build/GPU information=%#v", machineInformation)
@@ -396,6 +281,13 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if _, err := dieterClient.CloseTerminal(terminalCtx, &dieterv1.TerminalRef{TerminalId: terminalSession.GetId()}); err != nil {
 		t.Fatalf("close relayed terminal: %v", err)
 	}
+}
+
+func TestGatewayRelaysChangesCommandsAndWorkspaceOperations(t *testing.T) {
+	t.Parallel()
+	f := startRelayFixture(t)
+	dieterClient, routed, connection, boardStore, project, repositoryPath := f.client, f.routed, f.connection, f.daemon.Store, f.project, f.repository
+	tunnelProxy, config := f.proxy, f.gateway.Config
 
 	changeStream, err := dieterClient.WatchChanges(routed, &dieterv1.ChangesRequest{HeartbeatMs: 1_000})
 	if err != nil {
@@ -476,7 +368,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	gitStatus := ""
 	for {
 		frame, receiveErr := gitWatch.Recv()
-		if receiveErr == io.EOF {
+		if errors.Is(receiveErr, io.EOF) {
 			break
 		}
 		if receiveErr != nil {
@@ -547,7 +439,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 		t.Fatal(err)
 	}
 	watchCtx, stopWatch := context.WithCancel(routed)
-	watch, err := dieterv1.NewDieterServiceClient(connection).WatchChanges(watchCtx, &dieterv1.ChangesRequest{})
+	watch, err := dieterclient.New(connection).WatchChanges(watchCtx, &dieterv1.ChangesRequest{})
 	if err != nil {
 		t.Fatalf("open second relayed change stream: %v", err)
 	}
@@ -556,6 +448,13 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if err != nil || first.GetDaemonId() != peer.DaemonID || !first.GetResetRecords() || !first.GetResetLocal() {
 		t.Fatalf("second relayed change stream=%#v err=%v", first, err)
 	}
+}
+
+func TestGatewayPublishesDaemonDirectoryTokensAndRoutes(t *testing.T) {
+	t.Parallel()
+	f := startRelayFixture(t)
+	ctx, dieterClient, routed, authorized, connection := f.ctx, f.client, f.routed, f.authorized, f.connection
+	identity, boardStore, remoteDesktop, publicURL := f.daemon.Identity, f.daemon.Store, f.desktop, f.gateway.URL
 
 	gatewayClient := gatewayv1Client(connection)
 	list, err := gatewayClient.ListDaemons(authorized, &emptypb.Empty{})
@@ -584,7 +483,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	claims, err := gateway.ParseAndVerifyDaemonToken(public, token.GetAccessToken(), publicURL.String(), identity.ID, identity.Generation, time.Now().UTC())
+	claims, err := gateway.ParseAndVerifyDaemonToken(public, token.GetAccessToken(), publicURL, identity.ID, identity.Generation, time.Now().UTC())
 	if err != nil || claims.ClientThumbprint != "client-key" {
 		t.Fatalf("verify daemon token claims=%#v err=%v", claims, err)
 	}
@@ -602,7 +501,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 		t.Fatal(err)
 	}
 	rtcDigest := sha256.Sum256(raw)
-	rtcClaims, err := gateway.ParseAndVerifyRTCConfiguration(public, string(rtc.GetSignedEnvelope()), publicURL.String(), identity.ID, "github:7000188", rtc.GetConfigurationId(), rtcDigest[:], identity.Generation, time.Now().UTC())
+	rtcClaims, err := gateway.ParseAndVerifyRTCConfiguration(public, string(rtc.GetSignedEnvelope()), publicURL, identity.ID, "github:7000188", rtc.GetConfigurationId(), rtcDigest[:], identity.Generation, time.Now().UTC())
 	if err != nil || rtcClaims.ID != rtc.GetConfigurationId() || len(rtc.GetIceServers()) != 1 {
 		t.Fatalf("verify RTC configuration claims=%#v config=%#v err=%v", rtcClaims, rtc, err)
 	}
@@ -611,26 +510,40 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if err != nil || string(route.GetDaemonCaPem()) != string(identity.DaemonCAPEM) || string(route.GetDaemonCertificatePem()) != string(identity.CertificatePEM) {
 		t.Fatalf("resolve route=%#v err=%v", route, err)
 	}
-
 	directListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	direct, err := daemon.NewDirectServer(identity, boardListener.Addr().String(), testLocalToken(t, boardStore.Root))
+	direct, err := link.NewDirectServer(identity, f.daemon.Address, testkit.LocalToken(t, boardStore.Root))
 	if err != nil {
 		t.Fatal(err)
 	}
-	go direct.Serve(directListener)
+	go func() { _ = direct.Serve(directListener) }()
 	defer direct.Stop()
 	defer directListener.Close()
-	directConnection, err := daemon.DialDirect(ctx, directListener.Addr().String(), identity.ID, identity.DaemonCAPEM, token.GetAccessToken())
+	directConnection, err := link.DialDirect(ctx, directListener.Addr().String(), identity.ID, identity.DaemonCAPEM, token.GetAccessToken())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer directConnection.Close()
-	directHealth, err := dieterv1.NewDieterServiceClient(directConnection).Health(ctx, &emptypb.Empty{})
+	directHealth, err := dieterclient.New(directConnection).Health(ctx, &emptypb.Empty{})
 	if err != nil || directHealth.GetStorePath() != boardStore.Root {
 		t.Fatalf("direct authenticated health=%#v err=%v", directHealth, err)
+	}
+}
+
+func TestGatewayTunnelLossKeepsDaemonOwnedTurns(t *testing.T) {
+	t.Parallel()
+	f := startRelayFixture(t)
+	dieterClient, routed, connection, boardStore, runner := f.client, f.routed, f.connection, f.daemon.Store, f.runner
+	gatewayServer, identity, gatewayEvents := f.gateway.Server, f.daemon.Identity, f.events
+	created, err := dieterClient.CreateChat(routed, &dieterv1.CreateConversationRequest{
+		ProjectId: f.project.ID, Title: "Tunnel survival", Prompt: "deliver once",
+		Provider: "mock", Model: "mock", DeferStart: true, WorkspaceMode: "worktree",
+		ClientId: "gateway-e2e-client", CommandId: "gateway-e2e-command",
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	// Start a daemon-owned turn before disconnecting the tunnel. Losing and
@@ -645,7 +558,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	}
 	select {
 	case <-runner.Started:
-	case <-time.After(2 * time.Second):
+	case <-time.After(testkit.Budget(30 * time.Second)):
 		t.Fatal("daemon-owned turn did not start")
 	}
 
@@ -653,7 +566,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	// verifies watchdog/handshake timeouts; this test verifies that losing a
 	// transport never cancels a durable turn or duplicates a queued message.
 	gatewayServer.Hub.CloseDaemon(identity.ID)
-	waitForGatewayEvent(t, gatewayEvents, daemon.GatewayDisconnected, 5*time.Second)
+	waitForGatewayEvent(t, gatewayEvents, link.GatewayDisconnected, 5*time.Second)
 	if running, resolveErr := boardStore.ResolveCard(created.GetId()); resolveErr != nil || running.Runtime != "running" {
 		t.Fatalf("tunnel loss changed daemon-owned turn runtime=%q err=%v", running.Runtime, resolveErr)
 	}
@@ -663,11 +576,11 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	default:
 	}
 
-	waitForGatewayEvent(t, gatewayEvents, daemon.GatewayConnected, 5*time.Second)
+	waitForGatewayEvent(t, gatewayEvents, link.GatewayConnected, 5*time.Second)
 	if !gatewayServer.Hub.Online(identity.ID) {
 		t.Fatal("daemon did not register its reconnected reverse tunnel")
 	}
-	reconnectedHealth, err := dieterv1.NewDieterServiceClient(connection).Health(routed, &emptypb.Empty{})
+	reconnectedHealth, err := dieterclient.New(connection).Health(routed, &emptypb.Empty{})
 	if err != nil || reconnectedHealth.GetStorePath() != boardStore.Root {
 		t.Fatalf("reconnected relay health=%#v err=%v", reconnectedHealth, err)
 	}
@@ -708,7 +621,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	// becomes idle. Under the parallel race suite those two serial refreshes can
 	// legitimately exceed the short event waits used above, so wait within the
 	// lifecycle's own bounds instead of failing during final persistence.
-	deadline = time.Now().Add(35 * time.Second)
+	deadline := time.Now().Add(35 * time.Second)
 	for time.Now().Before(deadline) {
 		resolved, resolveErr := boardStore.ResolveCard(created.GetId())
 		latestConversation, conversationErr := boardStore.Conversation(created.GetId())
@@ -722,6 +635,14 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if resolveErr != nil || conversationErr != nil || resolved.Runtime != "idle" || len(conversation.Queue) != 0 || runner.Completed.Load() < 2 {
 		t.Fatalf("daemon-owned turns did not finish after release: runtime=%q queue=%d completed=%d resolveErr=%v conversationErr=%v", resolved.Runtime, len(conversation.Queue), runner.Completed.Load(), resolveErr, conversationErr)
 	}
+}
+
+func TestGatewayUnenrollsDaemonOnlyWithItsSignature(t *testing.T) {
+	t.Parallel()
+	f := startRelayFixture(t)
+	ctx, authorized, identity := f.ctx, f.authorized, f.daemon.Identity
+	gatewayStore, gatewayServer := f.gateway.Store, f.gateway.Server
+	gatewayClient := gatewayv1Client(f.connection)
 
 	if _, err := gatewayClient.UnenrollDaemon(ctx, &gatewayv1.UnenrollDaemonRequest{
 		DaemonId: identity.ID, Nonce: make([]byte, 32), Signature: make([]byte, 64),
@@ -731,15 +652,15 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if record, err := gatewayStore.Daemon(identity.ID); err != nil || record.Revoked {
 		t.Fatalf("invalid unenrollment changed daemon record=%#v err=%v", record, err)
 	}
-	if err := daemon.Unenroll(ctx, identity); err != nil {
+	if err := link.Unenroll(ctx, identity); err != nil {
 		t.Fatal(err)
 	}
 	// A repeated signed request is safe if the gateway committed revocation but
 	// the command did not receive its response or clear the local credential.
-	if err := daemon.Unenroll(ctx, identity); err != nil {
+	if err := link.Unenroll(ctx, identity); err != nil {
 		t.Fatalf("repeat daemon unenrollment: %v", err)
 	}
-	deadline = time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(testkit.Budget(30 * time.Second))
 	for gatewayServer.Hub.Online(identity.ID) && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -747,167 +668,66 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if err != nil || !record.Revoked || gatewayServer.Hub.Online(identity.ID) {
 		t.Fatalf("unenrolled daemon record=%#v online=%v err=%v", record, gatewayServer.Hub.Online(identity.ID), err)
 	}
-	list, err = gatewayClient.ListDaemons(authorized, &emptypb.Empty{})
+	list, err := gatewayClient.ListDaemons(authorized, &emptypb.Empty{})
 	if err != nil || len(list.GetDaemons()) != 0 {
 		t.Fatalf("unenrolled daemon remained discoverable: %#v err=%v", list, err)
 	}
 	// The client reads this identity on reconnect; join it before mutating the
 	// credential so unenrollment cleanup cannot race its next handshake.
-	stopTunnel()
+	f.daemon.StopTunnel()
 	if err := identity.ClearCredential(); err != nil {
 		t.Fatal(err)
 	}
-	reloaded, err := daemon.LoadIdentity(identity.Root)
+	reloaded, err := link.LoadIdentity(identity.Root)
 	if err != nil || reloaded.Enrolled() || len(reloaded.PrivateKey) == 0 {
 		t.Fatalf("cleared local enrollment=%#v err=%v", reloaded, err)
 	}
 }
 
 func TestGatewayDetectsBlackholedTunnelAndReconnects(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	gatewayListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer gatewayListener.Close()
-	proxyListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	tunnelProxy := newPauseProxy(proxyListener, gatewayListener.Addr().String())
-	go tunnelProxy.Serve()
-	defer tunnelProxy.Close()
-	publicURL, _ := url.Parse("http://" + proxyListener.Addr().String())
-	config := gateway.Config{
-		Root: t.TempDir(), Address: gatewayListener.Addr().String(), PublicURL: publicURL,
-		GitHubClientID: "test", GitHubSecret: "test", AllowedUserIDs: map[int64]struct{}{7000188: {}}, AuthSecret: []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour,
-		NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid", DevInsecure: true,
-	}
-	gatewayStore, err := gateway.OpenStore(config.Root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer gatewayStore.Close()
-	gatewayServer, err := gateway.NewServer(config, gatewayStore, logger)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go gatewayServer.Serve(gatewayListener)
-	defer gatewayServer.APIGRPC.Stop()
-	defer gatewayServer.RelayGRPC.Stop()
-	identity, err := daemon.LoadOrCreateEnrollmentIdentity(t.TempDir(), "Blackhole test machine", publicURL.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	enrollment, err := daemon.BeginEnrollment(ctx, identity)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := gatewayStore.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), int64(7000188), "owner"); err != nil {
-		t.Fatal(err)
-	}
-	credential, err := daemon.CompleteEnrollment(ctx, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetDaemonCaPem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
-		t.Fatal(err)
-	}
-	boardStore := store.New(t.TempDir())
-	if err := boardStore.Ensure(); err != nil {
-		t.Fatal(err)
-	}
-	boardListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	boardHTTP := &http.Server{Handler: server.New(boardStore, logger).Handler()}
-	go boardHTTP.Serve(boardListener)
-	defer boardHTTP.Close()
-	connection, err := grpc.NewClient(gatewayListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer connection.Close()
-	const session = "blackhole-test-session"
-	if err := gatewayStore.UpdateAuthState(func(state *gateway.AuthState) error {
-		state.Sessions = append(state.Sessions, gateway.Session{
-			TokenHash: sessionDigest(config.AuthSecret, session), GitHubID: int64(7000188), Login: "owner",
-			CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(time.Hour),
-		})
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	routed := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+session, "x-dieter-daemon-id", identity.ID, "x-dieter-client-version", "0.4.1-dev")
-	client := dieterv1.NewDieterServiceClient(connection)
-
-	// Only transport liveness runs under these accelerated deadlines. Allow
-	// seconds of scheduling/SQLite slack even here, then check exact failures
-	// with bounded event waits instead of retrying a failed relay operation.
-	tunnel := &daemon.GatewayClient{
-		Identity: identity, LocalTarget: boardListener.Addr().String(), LocalToken: testLocalToken(t, boardStore.Root), Version: "0.4.1-dev", Log: logger,
-		Timing: daemon.GatewayTiming{
+	var tunnelProxy *pauseProxy
+	g := topology.StartGateway(t, topology.GatewayOptions{Accounts: []int64{owner}, Configure: func(config *gateway.Config) {
+		tunnelProxy = startPauseProxy(t, config)
+	}})
+	var events <-chan link.GatewayEvent
+	daemon := topology.StartDaemon(t, g, topology.DaemonOptions{Name: "Blackhole test machine", Account: owner, Tunnel: func(tunnel *link.GatewayClient) {
+		// Only transport liveness runs under these accelerated deadlines. Allow
+		// seconds of scheduling/SQLite slack even here, then check exact failures
+		// with bounded event waits instead of retrying a failed relay operation.
+		tunnel.Timing = link.GatewayTiming{
 			HeartbeatActiveInterval: 100 * time.Millisecond, HeartbeatIdleMaxInterval: 100 * time.Millisecond,
 			HeartbeatAckTimeout: 3 * time.Second, HandshakeTimeout: 3 * time.Second,
 			ReconnectInitialBackoff: 20 * time.Millisecond, ReconnectMaximumBackoff: 50 * time.Millisecond,
 			ReconnectStableAfter: 200 * time.Millisecond,
-		},
-	}
-	events, stopTunnel := runTestGatewayTunnel(t, ctx, tunnel)
-	defer stopTunnel()
-	waitForGatewayEvent(t, events, daemon.GatewayConnected, 10*time.Second)
+		}
+		events = recordGatewayEvents(t, tunnel)
+	}})
+	boardStore := daemon.Store
+	client := dieterclient.New(topology.Dial(t, g))
+	routed := topology.Routed(ctx, topology.SignIn(t, g, owner, "owner"), daemon.Identity.ID)
+
+	waitForGatewayEvent(t, events, link.GatewayConnected, 10*time.Second)
 	if health, err := client.Health(routed, &emptypb.Empty{}); err != nil || health.GetStorePath() != boardStore.Root {
 		t.Fatalf("initial relay health=%#v err=%v", health, err)
 	}
 	// Leave both sockets open while withholding bytes in both directions.
 	// This exercises stuck Send/Recv and cannot be replaced by CloseDaemon.
 	tunnelProxy.Pause()
-	disconnected := waitForGatewayEvent(t, events, daemon.GatewayDisconnected, 10*time.Second)
+	disconnected := waitForGatewayEvent(t, events, link.GatewayDisconnected, 10*time.Second)
 	if !strings.Contains(disconnected.Error, "heartbeat acknowledgement timed out") {
 		t.Fatalf("half-open tunnel error=%q", disconnected.Error)
 	}
-	handshakeFailure := waitForGatewayEvent(t, events, daemon.GatewayDisconnected, 10*time.Second)
+	handshakeFailure := waitForGatewayEvent(t, events, link.GatewayDisconnected, 10*time.Second)
 	if !strings.Contains(handshakeFailure.Error, "gateway handshake timed out") {
 		t.Fatalf("blackholed reconnect error=%q", handshakeFailure.Error)
 	}
 	tunnelProxy.Resume()
-	waitForGatewayEvent(t, events, daemon.GatewayConnected, 10*time.Second)
+	waitForGatewayEvent(t, events, link.GatewayConnected, 10*time.Second)
 	if health, err := client.Health(routed, &emptypb.Empty{}); err != nil || health.GetStorePath() != boardStore.Root {
 		t.Fatalf("reconnected relay health=%#v err=%v", health, err)
-	}
-}
-
-func runTestGatewayTunnel(t *testing.T, ctx context.Context, tunnel *daemon.GatewayClient) (<-chan daemon.GatewayEvent, func()) {
-	t.Helper()
-	ctx, cancel := context.WithCancel(ctx)
-	events := make(chan daemon.GatewayEvent, 32)
-	tunnel.OnStatus = func(event daemon.GatewayEvent) {
-		t.Logf("gateway state=%s error=%q", event.State, event.Error)
-		select {
-		case events <- event:
-		default:
-		}
-	}
-	done := make(chan error, 1)
-	go func() { done <- tunnel.Run(ctx) }()
-	var stop sync.Once
-	return events, func() {
-		// Join the Run loop before the fixture's servers/store are closed and
-		// before a later status callback could log against a completed test.
-		stop.Do(func() {
-			cancel()
-			select {
-			case err := <-done:
-				if err != nil {
-					t.Errorf("stop test gateway tunnel: %v", err)
-				}
-			case <-time.After(5 * time.Second):
-				t.Error("test gateway tunnel did not stop")
-			}
-		})
 	}
 }
 
@@ -931,112 +751,19 @@ func receiveRelayedTerminalMarker(t *testing.T, stream interface {
 }
 
 func TestGatewayRoutesMultipleDaemonsAndTracksPresenceIndependently(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-	gatewayListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	publicURL, _ := url.Parse("http://" + gatewayListener.Addr().String())
-	config := gateway.Config{
-		Root: t.TempDir(), Address: gatewayListener.Addr().String(), PublicURL: publicURL,
-		GitHubClientID: "test", GitHubSecret: "test", AllowedUserIDs: map[int64]struct{}{7000188: {}}, AuthSecret: []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour,
-		NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid", DevInsecure: true,
-	}
-	gatewayStore, err := gateway.OpenStore(config.Root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer gatewayStore.Close()
-	gatewayServer, err := gateway.NewServer(config, gatewayStore, logger)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go gatewayServer.Serve(gatewayListener)
-	defer gatewayListener.Close()
-
-	connection, err := grpc.NewClient(gatewayListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer connection.Close()
-
-	session := "multi-daemon-session"
-	if err := gatewayStore.UpdateAuthState(func(state *gateway.AuthState) error {
-		state.Sessions = append(state.Sessions, gateway.Session{
-			TokenHash: sessionDigest(config.AuthSecret, session), GitHubID: int64(7000188), Login: "owner",
-			CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(time.Hour),
-		})
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	authorized := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+session, "x-dieter-client-version", "0.4.1-dev")
-
-	type machine struct {
-		identity *daemon.Identity
-		store    *store.Store
-		stop     context.CancelFunc
-	}
-	machines := make([]machine, 0, 2)
+	t.Parallel()
+	g := topology.StartGateway(t, topology.GatewayOptions{Accounts: []int64{owner}})
+	connection := topology.Dial(t, g)
+	authorized := topology.Authorized(t.Context(), topology.SignIn(t, g, owner, "owner"))
+	var daemons []*topology.Daemon
 	for _, name := range []string{"Studio Mac", "Build server"} {
-		identity, err := daemon.LoadOrCreateEnrollmentIdentity(t.TempDir(), name, publicURL.String())
-		if err != nil {
-			t.Fatal(err)
-		}
-		enrollment, err := daemon.BeginEnrollment(ctx, identity)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := gatewayStore.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), int64(7000188), "owner"); err != nil {
-			t.Fatal(err)
-		}
-		credential, err := daemon.CompleteEnrollment(ctx, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetDaemonCaPem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
-			t.Fatal(err)
-		}
-
-		boardStore := store.New(t.TempDir())
-		if err := boardStore.Ensure(); err != nil {
-			t.Fatal(err)
-		}
-		boardListener, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatal(err)
-		}
-		boardHTTP := &http.Server{Handler: server.New(boardStore, logger).Handler()}
-		go boardHTTP.Serve(boardListener)
-		t.Cleanup(func() {
-			_ = boardHTTP.Close()
-			_ = boardListener.Close()
-		})
-
-		machineCtx, stop := context.WithCancel(ctx)
-		tunnel := &daemon.GatewayClient{Identity: identity, LocalTarget: boardListener.Addr().String(), LocalToken: testLocalToken(t, boardStore.Root), Version: "0.4.1-dev", Log: logger}
-		go func() { _ = tunnel.Run(machineCtx) }()
-		machines = append(machines, machine{identity: identity, store: boardStore, stop: stop})
+		daemons = append(daemons, topology.StartDaemon(t, g, topology.DaemonOptions{Name: name, Account: owner}))
 	}
-
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if gatewayServer.Hub.Online(machines[0].identity.ID) && gatewayServer.Hub.Online(machines[1].identity.ID) {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	for _, machine := range machines {
-		if !gatewayServer.Hub.Online(machine.identity.ID) {
-			t.Fatalf("daemon %q did not establish its reverse tunnel", machine.identity.Name)
-		}
-		routed := metadata.AppendToOutgoingContext(authorized, "x-dieter-daemon-id", machine.identity.ID)
-		health, err := dieterv1.NewDieterServiceClient(connection).Health(routed, &emptypb.Empty{})
-		if err != nil || health.GetStorePath() != machine.store.Root {
-			t.Fatalf("relay %q health=%#v err=%v", machine.identity.Name, health, err)
+	for _, daemon := range daemons {
+		routed := metadata.AppendToOutgoingContext(authorized, "x-dieter-daemon-id", daemon.Identity.ID)
+		health, err := dieterclient.New(connection).Health(routed, &emptypb.Empty{})
+		if err != nil || health.GetStorePath() != daemon.Store.Root {
+			t.Fatalf("relay %q health=%#v err=%v", daemon.Identity.Name, health, err)
 		}
 	}
 
@@ -1053,13 +780,10 @@ func TestGatewayRoutesMultipleDaemonsAndTracksPresenceIndependently(t *testing.T
 		}
 	}
 
-	machines[0].stop()
-	deadline = time.Now().Add(5 * time.Second)
-	for gatewayServer.Hub.Online(machines[0].identity.ID) && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
-	}
-	if gatewayServer.Hub.Online(machines[0].identity.ID) || !gatewayServer.Hub.Online(machines[1].identity.ID) {
-		t.Fatalf("daemon presence was not independent")
+	daemons[0].StopTunnel()
+	testkit.Eventually(t, 5*time.Second, func() bool { return !g.Server.Hub.Online(daemons[0].Identity.ID) }, "%s to go offline", daemons[0].Identity.Name)
+	if !g.Server.Hub.Online(daemons[1].Identity.ID) {
+		t.Fatal("daemon presence was not independent")
 	}
 }
 
@@ -1215,7 +939,7 @@ func (r *tunnelSurvivalRunner) Release() {
 	r.finish.Do(func() { close(r.release) })
 }
 
-func waitForGatewayEvent(t *testing.T, events <-chan daemon.GatewayEvent, state string, timeout time.Duration) daemon.GatewayEvent {
+func waitForGatewayEvent(t *testing.T, events <-chan link.GatewayEvent, state string, timeout time.Duration) link.GatewayEvent {
 	t.Helper()
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
@@ -1227,12 +951,12 @@ func waitForGatewayEvent(t *testing.T, events <-chan daemon.GatewayEvent, state 
 			}
 		case <-timer.C:
 			t.Fatalf("gateway did not report state %q within %s", state, timeout)
-			return daemon.GatewayEvent{}
+			return link.GatewayEvent{}
 		}
 	}
 }
 
-func testRemoteDesktopThroughGateway(t *testing.T, routed context.Context, client dieterv1.DieterServiceClient, rtc *gatewayv1.RTCConfiguration, identity *daemon.Identity, manager *remotedesktop.Manager) {
+func testRemoteDesktopThroughGateway(t *testing.T, routed context.Context, client dieterclient.Client, rtc *gatewayv1.RTCConfiguration, identity *link.Identity, manager *remotedesktop.Manager) {
 	t.Helper()
 	settings := webrtc.SettingEngine{}
 	settings.SetIncludeLoopbackCandidate(true)
@@ -1276,7 +1000,7 @@ func testRemoteDesktopThroughGateway(t *testing.T, routed context.Context, clien
 	}
 	select {
 	case <-gatheringComplete:
-	case <-time.After(5 * time.Second):
+	case <-time.After(testkit.Budget(30 * time.Second)):
 		t.Fatal("viewer ICE gathering timed out")
 	}
 	offer = *viewer.LocalDescription()
@@ -1326,7 +1050,7 @@ func testRemoteDesktopThroughGateway(t *testing.T, routed context.Context, clien
 			// stream must cancel the relayed local RPC, detach its subscription,
 			// and stop the host capture without relying on CloseRemoteDesktop.
 			cancelStream()
-			deadline := time.Now().Add(2 * time.Second)
+			deadline := time.Now().Add(testkit.Budget(30 * time.Second))
 			for manager.Capabilities().GetActiveSession() && time.Now().Before(deadline) {
 				time.Sleep(10 * time.Millisecond)
 			}
@@ -1385,12 +1109,6 @@ func e2eCandidateInit(candidate *dieterv1.RemoteDesktopICECandidate) webrtc.ICEC
 	index := uint16(max(0, int(candidate.GetSdpMlineIndex())))
 	username := candidate.GetUsernameFragment()
 	return webrtc.ICECandidateInit{Candidate: candidate.GetCandidate(), SDPMid: &mid, SDPMLineIndex: &index, UsernameFragment: &username}
-}
-
-func sessionDigest(secret []byte, token string) string {
-	mac := hmac.New(sha256.New, secret)
-	_, _ = mac.Write([]byte(token))
-	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
 // Keep all generated gateway references in one place so the test exercises

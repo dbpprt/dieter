@@ -2,7 +2,6 @@ package store
 
 import (
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -19,6 +18,7 @@ func scheduleFixtureInput(projectID, boardID, name string) ScheduleInput {
 }
 
 func TestScheduleAndOccurrencePagesUseStableKeysetTokens(t *testing.T) {
+	t.Parallel()
 	data, project, board := setup(t, model.WorkflowReview)
 	var selected model.Schedule
 	for index := range 123 {
@@ -93,6 +93,7 @@ func TestScheduleAndOccurrencePagesUseStableKeysetTokens(t *testing.T) {
 }
 
 func TestDeletedScheduleHistoryRemainsPageable(t *testing.T) {
+	t.Parallel()
 	data, project, board := setup(t, model.WorkflowReview)
 	schedule, err := data.CreateSchedule(scheduleFixtureInput(project.ID, board.ID, "Disposable"))
 	if err != nil {
@@ -112,6 +113,7 @@ func TestDeletedScheduleHistoryRemainsPageable(t *testing.T) {
 }
 
 func TestOccurrencePagesOrderMixedTimestampPrecisionChronologically(t *testing.T) {
+	t.Parallel()
 	data, project, board := setup(t, model.WorkflowReview)
 	schedule, err := data.CreateSchedule(scheduleFixtureInput(project.ID, board.ID, "Precision"))
 	if err != nil {
@@ -148,6 +150,7 @@ func TestOccurrencePagesOrderMixedTimestampPrecisionChronologically(t *testing.T
 }
 
 func TestRunnableBatchIsBoundedAndDoesNotReplayInterruptedRuns(t *testing.T) {
+	t.Parallel()
 	data, project, board := setup(t, model.WorkflowReview)
 	schedule, err := data.CreateSchedule(scheduleFixtureInput(project.ID, board.ID, "Fair queue"))
 	if err != nil {
@@ -185,8 +188,4 @@ func TestRunnableBatchIsBoundedAndDoesNotReplayInterruptedRuns(t *testing.T) {
 	if len(runs) != 60 || counts[model.ScheduleRunPending] != 60 || counts[model.ScheduleRunInterrupted] != 0 {
 		t.Fatalf("runnable batch=%d statuses=%v", len(runs), counts)
 	}
-}
-
-func osMkdirAll(path string) error {
-	return os.MkdirAll(path, 0o755)
 }

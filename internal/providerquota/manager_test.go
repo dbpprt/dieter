@@ -15,6 +15,7 @@ import (
 )
 
 func TestConfiguredCodexProfilesSupportsSeveralExplicitAccounts(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	first, second := filepath.Join(root, "first"), filepath.Join(root, "second")
 	if err := os.Mkdir(first, 0o700); err != nil {
@@ -23,9 +24,8 @@ func TestConfiguredCodexProfilesSupportsSeveralExplicitAccounts(t *testing.T) {
 	if err := os.Mkdir(second, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("DIETER_CODEX_ACCOUNT_HOMES", first+string(os.PathListSeparator)+second+string(os.PathListSeparator)+first)
-	t.Setenv("CODEX_HOME", first)
-	profiles, err := configuredCodexProfiles()
+	accounts := Accounts{CodexHome: first, CodexAccountHomes: first + string(os.PathListSeparator) + second + string(os.PathListSeparator) + first}
+	profiles, err := accounts.codexProfiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,15 +35,13 @@ func TestConfiguredCodexProfilesSupportsSeveralExplicitAccounts(t *testing.T) {
 }
 
 func TestClaudeDiscoveryAndRefreshShareFiveMinutePollingAndTenMinuteRecovery(t *testing.T) {
-	t.Setenv("CLAUDE_CONFIG_DIR", "")
-	t.Setenv("DIETER_CLAUDE_ACCOUNT_HOMES", "")
-	t.Setenv("CODEX_HOME", t.TempDir())
-	t.Setenv("DIETER_CODEX_ACCOUNT_HOMES", "")
+	t.Parallel()
+	accounts := Accounts{CodexHome: t.TempDir()}
 	provider := gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE
 	key := make([]byte, 32)
 	start := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
 	now := start
-	manager := New(t.TempDir(), nil)
+	manager := New(t.TempDir(), nil, accounts)
 	manager.now = func() time.Time { return now }
 	var calls int
 	fail := false
@@ -119,7 +117,8 @@ func TestClaudeDiscoveryAndRefreshShareFiveMinutePollingAndTenMinuteRecovery(t *
 }
 
 func TestClaudeColdDiscoveryFailureWaitsTenMinutesAndConcurrentReadsCoalesce(t *testing.T) {
-	manager := New(t.TempDir(), nil)
+	t.Parallel()
+	manager := New(t.TempDir(), nil, Accounts{CodexHome: t.TempDir()})
 	provider := gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE
 	start := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
 	now := start
@@ -162,9 +161,9 @@ func TestClaudeColdDiscoveryFailureWaitsTenMinutesAndConcurrentReadsCoalesce(t *
 }
 
 func TestActiveAccountKeyUsesTheHarnessCodexProfile(t *testing.T) {
+	t.Parallel()
 	active, other := t.TempDir(), t.TempDir()
-	t.Setenv("CODEX_HOME", active)
-	manager := New(t.TempDir(), nil)
+	manager := New(t.TempDir(), nil, Accounts{CodexHome: active})
 	manager.handles["active-account-key"] = accountHandle{
 		provider: gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX, profileRoot: active,
 	}
@@ -184,10 +183,9 @@ func TestActiveAccountKeyUsesTheHarnessCodexProfile(t *testing.T) {
 }
 
 func TestConfiguredClaudeProfilesPreservesTheUnsetDefaultProfile(t *testing.T) {
-	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	t.Parallel()
 	other := t.TempDir()
-	t.Setenv("DIETER_CLAUDE_ACCOUNT_HOMES", other)
-	profiles, err := configuredClaudeProfiles()
+	profiles, err := Accounts{ClaudeAccountHomes: other}.claudeProfiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,6 +195,7 @@ func TestConfiguredClaudeProfilesPreservesTheUnsetDefaultProfile(t *testing.T) {
 }
 
 func TestCorrelateAccountIsStableProviderScopedAndOpaque(t *testing.T) {
+	t.Parallel()
 	key := make([]byte, 32)
 	for index := range key {
 		key[index] = byte(index + 1)
@@ -213,6 +212,7 @@ func TestCorrelateAccountIsStableProviderScopedAndOpaque(t *testing.T) {
 }
 
 func TestNormalizeSnapshotPreservesMultipleWindows(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
 	result := probeResult{
 		StableAccountID: "account-1", DisplayEmail: "person@example.com", AccountKind: "subscription", Plan: "plus", Availability: "available",
@@ -240,6 +240,7 @@ func TestNormalizeSnapshotPreservesMultipleWindows(t *testing.T) {
 }
 
 func TestResetIdempotencyKeyValidation(t *testing.T) {
+	t.Parallel()
 	if !validIdempotencyKey("123e4567-e89b-42d3-a456-426614174000") {
 		t.Fatal("valid reset UUID was rejected")
 	}
@@ -251,6 +252,7 @@ func TestResetIdempotencyKeyValidation(t *testing.T) {
 }
 
 func TestRefreshDoesNotExtendDiscoveryCacheWithoutAProbe(t *testing.T) {
+	t.Parallel()
 	key := make([]byte, 32)
 	for index := range key {
 		key[index] = byte(index + 1)
@@ -261,7 +263,7 @@ func TestRefreshDoesNotExtendDiscoveryCacheWithoutAProbe(t *testing.T) {
 		gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX,
 		"account-1",
 	)
-	manager := New(t.TempDir(), nil)
+	manager := New(t.TempDir(), nil, Accounts{CodexHome: t.TempDir()})
 	manager.now = func() time.Time { return discoveredAt.Add(30 * time.Second) }
 	manager.handles[accountKey] = accountHandle{
 		provider:        gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX,

@@ -1,13 +1,13 @@
 package prompt
 
 import (
-	"errors"
 	"fmt"
 	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/platform/fault"
 )
 
 const (
@@ -96,7 +96,7 @@ func ValidateContextTemplate(value string) error {
 	counts := placeholderCounts(value)
 	for _, required := range []string{"project.instructions_block", "labels.instructions_block"} {
 		if counts[required] != 1 {
-			return fmt.Errorf("template must contain {{%s}} exactly once", required)
+			return fault.Invalidf("template must contain {{%s}} exactly once", required)
 		}
 	}
 	return nil
@@ -106,19 +106,19 @@ func ValidateSkillTemplate(value string) error { return validateTemplate(value) 
 
 func validateTemplate(value string) error {
 	if strings.TrimSpace(value) == "" {
-		return errors.New("template is required")
+		return fault.New(fault.Invalid, "template is required")
 	}
 	if len(value) > MaxTemplateBytes {
-		return fmt.Errorf("template exceeds %d KiB", MaxTemplateBytes>>10)
+		return fault.Invalidf("template exceeds %d KiB", MaxTemplateBytes>>10)
 	}
 	for _, match := range placeholderPattern.FindAllStringSubmatch(value, -1) {
 		if !allowedVariables[match[1]] {
-			return fmt.Errorf("unknown template variable {{%s}}", match[1])
+			return fault.Invalidf("unknown template variable {{%s}}", match[1])
 		}
 	}
 	stripped := placeholderPattern.ReplaceAllString(value, "")
 	if strings.Contains(stripped, "{{") || strings.Contains(stripped, "}}") {
-		return errors.New("template contains a malformed variable")
+		return fault.New(fault.Invalid, "template contains a malformed variable")
 	}
 	return nil
 }
@@ -228,7 +228,7 @@ func ResolveForWorkspace(settings model.Settings, detail model.CardDetail, label
 	}
 	instructions := BindWorkspace(joinSections(context, skill, vault), detail.Project.Path, workspace)
 	if len(instructions) > MaxRenderedBytes {
-		return Resolution{}, fmt.Errorf("rendered instructions exceed %d KiB", MaxRenderedBytes>>10)
+		return Resolution{}, fault.Invalidf("rendered instructions exceed %d KiB", MaxRenderedBytes>>10)
 	}
 	return Resolution{Source: source, Template: template, Context: context, Skill: skill, Instructions: instructions, AppliedLabels: labels}, nil
 }

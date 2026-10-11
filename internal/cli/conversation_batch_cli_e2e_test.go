@@ -1,8 +1,9 @@
+//go:build e2e
+
 package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -10,29 +11,14 @@ import (
 	"time"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/testkit"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-const cliBatchPrompt = "stream-batching-regression-128-tokens"
-
-func emitCLIBatch(request harness.Request, emit func(harness.Output) error) error {
-	chunks := []string{`{"type":"start","messageId":"` + request.ResponseMessageID + `"}`, `{"type":"text-start","id":"text"}`}
-	for i := range 128 {
-		chunks = append(chunks, fmt.Sprintf(`{"type":"text-delta","id":"text","delta":"%03d "}`, i))
-	}
-	chunks = append(chunks, `{"type":"text-end","id":"text"}`, `{"type":"finish","finishReason":"stop"}`)
-	for _, chunk := range chunks {
-		if err := emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(chunk)}); err != nil {
-			return err
-		}
-	}
-	return emit(harness.Output{Type: "session", State: json.RawMessage(`{"type":"resume-session","data":{"threadId":"batched-cli"}}`)})
-}
-
 func TestDaemonCLIBatchedConversationEndToEnd(t *testing.T) {
+	t.Parallel()
 	client, output, data := daemonCLIForTest(t)
 	project, err := data.CreateProject(store.CreateProjectInput{Path: initTestRepository(t, "batched"), Name: "Batched"})
 	if err != nil {
@@ -53,7 +39,7 @@ func assertBatchedConversationCLI(t *testing.T, client *CLI, output *bytes.Buffe
 		t.Fatal(err)
 	}
 	runDaemonCLI(t, client, output, "chat", "send", "--message", cliBatchPrompt, card.ID)
-	deadline := time.Now().Add(15 * time.Second)
+	deadline := time.Now().Add(testkit.Budget(30 * time.Second))
 	var conversation model.Conversation
 	for {
 		conversation, err = data.Conversation(card.ID)

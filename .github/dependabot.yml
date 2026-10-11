@@ -1,0 +1,31 @@
+# Weekly, grouped version updates for every ecosystem the repository pins.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories: ["/", "/.github/actions/setup"]
+    schedule: { interval: weekly }
+    groups: { actions: { patterns: ["*"] } }
+  - package-ecosystem: gomod
+    directory: /
+    schedule: { interval: weekly }
+    groups: { go: { patterns: ["*"] } }
+  - package-ecosystem: gradle
+    directory: /apps/kotlin
+    schedule: { interval: weekly }
+    groups: { gradle: { patterns: ["*"] } }
+  - package-ecosystem: npm
+    directories: ["/internal/harness/runtime", "/apps/apple/mac/MarkdownPreview"]
+    schedule: { interval: weekly }
+    groups: { npm: { patterns: ["*"] } }
+  - package-ecosystem: bundler
+    directory: /
+    schedule: { interval: weekly }
+    groups: { bundler: { patterns: ["*"] } }
+  - package-ecosystem: swift
+    directories:
+      ["/apps/apple/DieterKit", "/apps/apple/mac", "/apps/apple/ios/Host", "/native/macos"]
+    schedule: { interval: weekly }
+    groups: { swift: { patterns: ["*"] } }
+  - package-ecosystem: docker
+    directory: /deploy/gateway
+    schedule: { interval: weekly }

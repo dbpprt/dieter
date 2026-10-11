@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
 )
 
 // Pending enrollments are small rows that expire after ten minutes; each client
@@ -99,8 +99,9 @@ type DaemonRecord struct {
 	RemoteDesktopJSON []byte
 }
 
-func DefaultRoot() string {
-	if value := strings.TrimSpace(os.Getenv("DIETER_GATEWAY_HOME")); value != "" {
+// DefaultRoot is DIETER_GATEWAY_HOME from environment, or ~/.dieter-gateway.
+func DefaultRoot(environment map[string]string) string {
+	if value := strings.TrimSpace(environment["DIETER_GATEWAY_HOME"]); value != "" {
 		return value
 	}
 	home, err := os.UserHomeDir()
@@ -112,7 +113,7 @@ func DefaultRoot() string {
 
 func OpenStore(root string) (*Store, error) {
 	if strings.TrimSpace(root) == "" {
-		root = DefaultRoot()
+		return nil, errors.New("gateway state directory is required")
 	}
 	absolute, err := filepath.Abs(root)
 	if err != nil {
@@ -128,10 +129,12 @@ func OpenStore(root string) (*Store, error) {
 	// Reserve the SQLite writer before any read-modify-write operation. The
 	// database lock protects sessions across processes, including sign-out.
 	databaseURL.RawQuery = url.Values{"_txlock": {"immediate"}, "_busy_timeout": {"5000"}}.Encode()
-	db, err := sql.Open("sqlite", databaseURL.String())
+	// Open through the driver directly, not the process-wide driver registry.
+	connector, err := sqlite.NewConnector(databaseURL.String())
 	if err != nil {
 		return nil, err
 	}
+	db := sql.OpenDB(connector)
 	db.SetMaxOpenConns(1)
 	store := &Store{Root: absolute, DB: db}
 	if err := store.initializeSchema(); err != nil {

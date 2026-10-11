@@ -7,7 +7,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/dbpprt/dieter/internal/peerstore"
+	"github.com/dbpprt/dieter/internal/platform/fault"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
+	"github.com/dbpprt/dieter/internal/replication/schema"
 )
 
 type kvReceipt struct {
@@ -25,17 +27,17 @@ type KVMove struct{ Parent, After, Before string }
 
 // MutateKV acknowledges durable local state. Its receipt is committed in the
 // same transaction, and is only valid on this admitting daemon/account.
-func (s *Store) MutateKV(identity PeerIdentity, m KVMutation) (peerstore.Record, error) {
-	var zero peerstore.Record
-	kind, err := peerstore.KVKind(m.Namespace)
+func (s *Store) MutateKV(identity PeerIdentity, m KVMutation) (crdt.Record, error) {
+	var zero crdt.Record
+	kind, err := schema.KVKind(m.Namespace)
 	if err != nil {
 		return zero, err
 	}
-	if !peerstore.ValidID(m.Key) || !peerstore.ValidID(m.OperationID) || m.DaemonID != identity.DaemonID {
-		return zero, errors.New("valid key, operation ID and accepting daemon ID required")
+	if !crdt.ValidID(m.Key) || !crdt.ValidID(m.OperationID) || m.DaemonID != identity.DaemonID {
+		return zero, fault.New(fault.Invalid, "valid key, operation ID and accepting daemon ID required")
 	}
-	if len(m.Value) > peerstore.MaxValueBytes {
-		return zero, peerstore.ErrCapacity
+	if len(m.Value) > crdt.MaxValueBytes {
+		return zero, crdt.ErrCapacity
 	}
 	release, err := s.beginWrite()
 	if err != nil {
@@ -49,13 +51,13 @@ func (s *Store) MutateKV(identity PeerIdentity, m KVMutation) (peerstore.Record,
 	if err != nil {
 		return zero, err
 	}
-	fingerprint := peerstore.Revision(m)
+	fingerprint := crdt.Revision(m)
 	var previous string
 	var raw []byte
 	err = db.QueryRow("SELECT fingerprint,value FROM kv_receipts WHERE id=?", m.OperationID).Scan(&previous, &raw)
 	if err == nil {
 		if previous != fingerprint {
-			return zero, errors.New("operation ID reused with different input")
+			return zero, fault.New(fault.Invalid, "operation ID reused with different input")
 		}
 		err = json.Unmarshal(raw, &zero)
 		return zero, err
@@ -68,25 +70,25 @@ func (s *Store) MutateKV(identity PeerIdentity, m KVMutation) (peerstore.Record,
 		return zero, err
 	}
 	data.State = clonePeerState(data.State)
-	key := peerstore.Key(kind, m.Key)
+	key := crdt.Key(kind, m.Key)
 	old := data.record(key)
 	if old.Revision() != m.Revision {
-		return zero, peerstore.ErrConflict
+		return zero, crdt.ErrConflict
 	}
 	if m.Move != nil {
-		var position peerstore.KVPosition
+		var position schema.KVPosition
 		position.Parent = m.Move.Parent
 		anchor := func(id string) (string, error) {
 			if id == "" {
 				return "", nil
 			}
 			if id == m.Key {
-				return "", errors.New("cannot move relative to itself")
+				return "", fault.New(fault.Invalid, "cannot move relative to itself")
 			}
-			v := peerstore.SelectedKV(data.record(peerstore.Key(kind, id)))
-			var p peerstore.KVPosition
-			if v.Deleted || json.Unmarshal(v.Value, &p) != nil || p.Parent != position.Parent || !peerstore.ValidPosition(p) {
-				return "", peerstore.ErrConflict
+			v := schema.SelectedKV(data.record(crdt.Key(kind, id)))
+			var p schema.KVPosition
+			if v.Deleted || json.Unmarshal(v.Value, &p) != nil || p.Parent != position.Parent || !schema.ValidPosition(p) {
+				return "", crdt.ErrConflict
 			}
 			return p.Rank, nil
 		}
@@ -105,13 +107,13 @@ func (s *Store) MutateKV(identity PeerIdentity, m KVMutation) (peerstore.Record,
 			if index := strings.IndexByte(m.Key, '.'); index >= 0 {
 				prefix = m.Key[:index+1]
 			}
-			err = data.each(kind+"/"+prefix, func(r peerstore.Record) error {
+			err = data.each(kind+"/"+prefix, func(r crdt.Record) error {
 				if r.Kind != kind || r.ID == m.Key || !strings.HasPrefix(r.ID, prefix) {
 					return nil
 				}
-				v := peerstore.SelectedKV(r)
-				var p peerstore.KVPosition
-				if !v.Deleted && json.Unmarshal(v.Value, &p) == nil && p.Parent == position.Parent && peerstore.ValidPosition(p) && p.Rank > left {
+				v := schema.SelectedKV(r)
+				var p schema.KVPosition
+				if !v.Deleted && json.Unmarshal(v.Value, &p) == nil && p.Parent == position.Parent && schema.ValidPosition(p) && p.Rank > left {
 					left = p.Rank
 				}
 				return nil
@@ -121,22 +123,22 @@ func (s *Store) MutateKV(identity PeerIdentity, m KVMutation) (peerstore.Record,
 			}
 		}
 		if right != "" && left >= right {
-			return zero, peerstore.ErrConflict
+			return zero, crdt.ErrConflict
 		}
 		position.Rank, err = orderBetween(left, right)
 		if err != nil {
 			return zero, err
 		}
-		if !peerstore.ValidPosition(position) {
-			return zero, errors.New("invalid ordered position")
+		if !schema.ValidPosition(position) {
+			return zero, fault.New(fault.Invalid, "invalid ordered position")
 		}
 		m.Value, _ = json.Marshal(position)
 	}
-	record, err := peerstore.Put(old, kind, m.Key, identity.Actor, m.Revision, m.Value, m.Delete)
+	record, err := crdt.Put(old, kind, m.Key, identity.Actor, m.Revision, m.Value, m.Delete)
 	if err != nil {
 		return zero, err
 	}
-	if err = peerstore.ValidateSettings(record); err != nil {
+	if err = schema.Validate(record); err != nil {
 		return zero, err
 	}
 	data.Records[key], data.Dirty[key] = record, true

@@ -15,6 +15,7 @@ import (
 )
 
 func TestOrphanScanIgnoresReplicatedRemoteTurns(t *testing.T) {
+	t.Parallel()
 	local, remote := peerFixture(t, "local"), peerFixture(t, "remote")
 	for _, replica := range []*Store{local, remote} {
 		project, err := replica.CreateProject(CreateProjectInput{Name: "Orphan fixture", Path: sharedRepo(t)})
@@ -42,6 +43,7 @@ func TestOrphanScanIgnoresReplicatedRemoteTurns(t *testing.T) {
 // Its periodic orphan scan must not cycle those histories through that cache
 // while message admission waits for the same central writer lock.
 func TestOrphanScanDoesNotReloadHistoriesBeyondTranscriptCacheCapacity(t *testing.T) {
+	t.Parallel()
 	s, project, _ := setup(t, model.WorkflowReview)
 	for i := range 80 {
 		card, err := s.CreateChat(CreateCardInput{Project: project.ID, Title: fmt.Sprint(i)})
@@ -82,6 +84,7 @@ func TestOrphanScanDoesNotReloadHistoriesBeyondTranscriptCacheCapacity(t *testin
 }
 
 func TestColdOrphanDirectoryReadDoesNotHoldWriterAdmission(t *testing.T) {
+	t.Parallel()
 	s, project, _ := setup(t, model.WorkflowReview)
 	card, err := s.CreateChat(CreateCardInput{Project: project.ID, Title: "blocked history"})
 	if err != nil {
@@ -147,6 +150,7 @@ func TestColdOrphanDirectoryReadDoesNotHoldWriterAdmission(t *testing.T) {
 }
 
 func TestConversationStatusSummaryCacheIsBounded(t *testing.T) {
+	t.Parallel()
 	s := New(t.TempDir())
 	for i := range maxConversationStatuses + 1 {
 		s.rememberConversationStatus(fmt.Sprint(i), "idle", nil, nil)

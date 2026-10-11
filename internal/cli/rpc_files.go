@@ -11,6 +11,7 @@ import (
 	"text/tabwriter"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 )
 
 const fileHelp = `Usage: dieter file <action>
@@ -74,7 +75,7 @@ func addFileScopeFlags(set *flag.FlagSet) (*string, *string, *string) {
 	return set.String("project", "", "project ID or unique name"), set.String("card", "", "card/chat ID; operates in its selected workspace"), set.String("checkout", "", "explicit local checkout ID for project scope")
 }
 
-func (c *CLI) resolveFileScope(ctx context.Context, client dieterv1.DieterServiceClient, rpcCtx context.Context, projectRef, cardID string) (string, string, error) {
+func (c *CLI) resolveFileScope(ctx context.Context, client dieterclient.Client, rpcCtx context.Context, projectRef, cardID string) (string, string, error) {
 	projectRef, cardID = strings.TrimSpace(projectRef), strings.TrimSpace(cardID)
 	if (projectRef == "") == (cardID == "") {
 		return "", "", errors.New("exactly one of --project or --card is required")

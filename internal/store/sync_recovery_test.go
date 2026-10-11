@@ -12,9 +12,11 @@ import (
 	"time"
 
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/platform/fsx"
 )
 
 func TestGlobalStateNeverCachesPreparedDomainMutation(t *testing.T) {
+	t.Parallel()
 	s, p, b := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{Project: p.ID, Board: b.ID, Title: "before"})
 	if err != nil {
@@ -47,6 +49,7 @@ func TestGlobalStateNeverCachesPreparedDomainMutation(t *testing.T) {
 }
 
 func TestQueuedWriterAdmissionCancelsWithoutTakingOrLeakingTheLock(t *testing.T) {
+	t.Parallel()
 	var gate contextMutex
 	if err := gate.LockContext(context.Background()); err != nil {
 		t.Fatal(err)
@@ -74,6 +77,7 @@ func TestQueuedWriterAdmissionCancelsWithoutTakingOrLeakingTheLock(t *testing.T)
 }
 
 func TestPendingMutationRecoveredByReader(t *testing.T) {
+	t.Parallel()
 	s, p, b := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{Project: p.ID, Board: b.ID, Title: "before"})
 	if err != nil {
@@ -111,6 +115,7 @@ func TestPendingMutationRecoveredByReader(t *testing.T) {
 }
 
 func TestWriterLockDoesNotExpireWhileOwnerAlive(t *testing.T) {
+	t.Parallel()
 	s := New(t.TempDir())
 	if err := s.Ensure(); err != nil {
 		t.Fatal(err)
@@ -131,6 +136,7 @@ func TestWriterLockDoesNotExpireWhileOwnerAlive(t *testing.T) {
 }
 
 func TestConversationCacheReplaysOnlyAppendedTailAndInvalidatesAcrossStores(t *testing.T) {
+	t.Parallel()
 	s, p, b := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{Project: p.ID, Board: b.ID, Title: "cache"})
 	if err != nil {
@@ -159,7 +165,7 @@ func TestConversationCacheReplaysOnlyAppendedTailAndInvalidatesAcrossStores(t *t
 	eventPath := filepath.Join(s.conversationPath(card.ID), "events.ndjson")
 	raw, _ := os.ReadFile(eventPath)
 	raw = []byte(strings.Replace(string(raw), `"delta":"two"`, `"delta":"six"`, 1))
-	if err := atomicWrite(eventPath, raw); err != nil {
+	if err := fsx.WriteFile(eventPath, raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	got, err = s.Conversation(card.ID)
@@ -169,6 +175,7 @@ func TestConversationCacheReplaysOnlyAppendedTailAndInvalidatesAcrossStores(t *t
 }
 
 func TestTextDeltaDoesNotRewriteCheckpoint(t *testing.T) {
+	t.Parallel()
 	s, p, b := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{Project: p.ID, Board: b.ID, Title: "checkpoint"})
 	if err != nil {
@@ -195,6 +202,7 @@ func TestTextDeltaDoesNotRewriteCheckpoint(t *testing.T) {
 }
 
 func TestTornConversationJournalDoesNotSwallowNextAcknowledgedEvent(t *testing.T) {
+	t.Parallel()
 	s, p, b := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{Project: p.ID, Board: b.ID, Title: "torn"})
 	if err != nil {
@@ -223,6 +231,7 @@ func TestTornConversationJournalDoesNotSwallowNextAcknowledgedEvent(t *testing.T
 }
 
 func TestRuntimeStatusReplaysEventsNewerThanDelayedCheckpoint(t *testing.T) {
+	t.Parallel()
 	s, p, b := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{Project: p.ID, Board: b.ID, Title: "delayed checkpoint"})
 	if err != nil {
@@ -244,7 +253,7 @@ func TestRuntimeStatusReplaysEventsNewerThanDelayedCheckpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Model a checkpoint captured before finish whose rename completes later.
-	if err := atomicWrite(path, older); err != nil {
+	if err := fsx.WriteFile(path, older, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	for name, view := range map[string]*Store{"cached reader": reader, "cold reader": New(s.Root)} {
@@ -256,6 +265,7 @@ func TestRuntimeStatusReplaysEventsNewerThanDelayedCheckpoint(t *testing.T) {
 }
 
 func TestCompleteJSONWithoutJournalTerminatorIsNotCommitted(t *testing.T) {
+	t.Parallel()
 	s, p, b := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{Project: p.ID, Board: b.ID, Title: "unterminated record"})
 	if err != nil {
@@ -287,6 +297,7 @@ func TestCompleteJSONWithoutJournalTerminatorIsNotCommitted(t *testing.T) {
 }
 
 func TestKilledWriterRecovery(t *testing.T) {
+	t.Parallel()
 	if root := os.Getenv("DIETER_TEST_CRASH_STORE"); root != "" {
 		data := New(root)
 		_, err := data.beginWrite()

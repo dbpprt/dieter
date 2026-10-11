@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package dieter.v1;
+
+option go_package = "github.com/dbpprt/dieter/internal/gen/dieter/v1;dieterv1";
+option java_multiple_files = true;
+option java_package = "com.getdieter.api.v1";
+
+import "dieter/v1/common.proto";
+
+// Workspace state snapshots and the change stream.
+service StateService {
+  rpc GetState(GetStateRequest) returns (State);
+  // WatchChanges streams this machine's view to native clients: its replica of
+  // the account's shared records in the peer store's own order, plus the
+  // owner-only details and live activity of the conversations it runs. A
+  // client holds one stream per online machine and merges the shared records
+  // causally; no machine is attached or preferred.
+  rpc WatchChanges(ChangesRequest) returns (stream ChangesFrame);
+}
+
+message GetStateRequest {
+  string project_id = 1;
+  string board_id = 2;
+  string lane = 3;
+  string runtime = 4;
+  string query = 5;
+  string label_id = 6;
+  int32 limit = 7;
+  // all_projects returns this machine's whole active metadata directory in
+  // one bounded read instead of one project at a time.
+  bool all_projects = 8;
+}
+
+// A position in one machine's change stream. Records follow the machine's
+// peer-store log for the account. Local data follows this daemon process's
+// index of the conversations it runs; its epoch changes when the process
+// restarts. Each half resets independently.
+message ChangesCursor {
+  string records_epoch = 1;
+  uint64 records_sequence = 2;
+  string local_epoch = 3;
+  uint64 local_sequence = 4;
+}
+
+message ChangesRequest {
+  // Empty starts both halves from the beginning.
+  ChangesCursor after = 1;
+  // Heartbeats repeat the current cursor; 15 s by default, at least 1 s.
+  int32 heartbeat_ms = 2;
+}
+
+// One step of a machine's change stream. reset_records (reset_local) means:
+// drop everything held from this machine for that half, then apply the frame.
+// The cursor covers everything up to and including this frame.
+message ChangesFrame {
+  // This machine's peer identity: the owner its records and owned cards name.
+  string daemon_id = 1;
+  // The peer account its records belong to; KV mutations name it.
+  string account = 13;
+  ChangesCursor cursor = 2;
+  bool reset_records = 3;
+  bool reset_local = 4;
+  // Nothing this machine held when the frame was built remains unsent.
+  bool caught_up = 5;
+  // A heartbeat carries no data; it proves the stream is current.
+  bool heartbeat = 6;
+  // Shared registers of this machine's replica with every causal sibling.
+  // Versions carry their presentation rank; proofs stay with the daemons.
+  repeated PeerRecord records = 7;
+  // Owner-only details of the live cards and chats this machine runs: prompt,
+  // workspace, pull request, token usage and agent options. Shared fields come
+  // from records.
+  repeated Card owned_cards = 8;
+  repeated string removed_owned_card_ids = 9;
+  // This machine's attached checkouts with their paths and validation
+  // commands, which only it knows. Registrations come from records.
+  repeated Checkout owned_checkouts = 14;
+  repeated string removed_owned_checkout_ids = 15;
+  // The latest turn of each active or recently active conversation this
+  // machine runs, without payload bodies: enough for live activity, result
+  // previews and delivery confirmation. Full transcripts come from
+  // WatchConversation.
+  repeated Conversation activities = 10;
+  repeated string removed_activity_ids = 11;
+  // Present when this machine's peer replication diagnostics changed.
+  PeerSyncStatus peer_sync = 12;
+  // Present on initial/reset and whenever this owner's privacy state changes.
+  MachinePrivacy privacy = 16;
+}
+
+message PeerSyncStatus { repeated PeerSyncDiagnostic issues = 1; }

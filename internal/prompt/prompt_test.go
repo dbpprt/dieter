@@ -19,6 +19,7 @@ func promptDetail() model.CardDetail {
 }
 
 func TestResolveUsesBoardProjectGlobalPrecedenceAndBoardLabelOrder(t *testing.T) {
+	t.Parallel()
 	detail := promptDetail()
 	detail.Project.PromptTemplate = "Project\n{{project.instructions_block}}\n{{labels.instructions_block}}"
 	detail.Board.PromptTemplate = "Board\n{{project.instructions_block}}\n{{labels.instructions_block}}"
@@ -40,6 +41,7 @@ func TestResolveUsesBoardProjectGlobalPrecedenceAndBoardLabelOrder(t *testing.T)
 }
 
 func TestContextTemplateRequiresInjectionAnchors(t *testing.T) {
+	t.Parallel()
 	for _, value := range []string{
 		"{{project.instructions_block}}",
 		"{{labels.instructions_block}}",
@@ -52,6 +54,7 @@ func TestContextTemplateRequiresInjectionAnchors(t *testing.T) {
 }
 
 func TestStandaloneChatUsesProjectOverrideWithoutBoardLabels(t *testing.T) {
+	t.Parallel()
 	detail := promptDetail()
 	detail.Card.Scope, detail.Card.BoardID = model.ConversationScopeChat, ""
 	detail.Project.PromptTemplate = "Chat context\n{{project.instructions_block}}\n{{labels.instructions_block}}"
@@ -65,6 +68,7 @@ func TestStandaloneChatUsesProjectOverrideWithoutBoardLabels(t *testing.T) {
 }
 
 func TestResolveForWorkspaceMakesAssignedWorktreeAuthoritative(t *testing.T) {
+	t.Parallel()
 	detail := promptDetail()
 	detail.Project.PromptTemplate = "Working tree: {{project.path}}\nRegistered: {{project.registered_path}}\n{{project.instructions_block}}\n{{labels.instructions_block}}"
 	workspace := model.Workspace{
@@ -92,6 +96,7 @@ func TestResolveForWorkspaceMakesAssignedWorktreeAuthoritative(t *testing.T) {
 }
 
 func TestBindWorkspaceUpgradesPersistedInstructionsOnce(t *testing.T) {
+	t.Parallel()
 	workspace := model.Workspace{Mode: model.WorkspaceModeWorktree, Path: "/worktree", Branch: "topic"}
 	bound := BindWorkspace("Working tree: /main", "/main", workspace)
 	boundAgain := BindWorkspace(bound, "/main", workspace)

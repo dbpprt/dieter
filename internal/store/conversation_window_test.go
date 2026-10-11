@@ -10,6 +10,7 @@ import (
 )
 
 func TestConversationWindowsPreserveHistoryAndOwnMutablePayloads(t *testing.T) {
+	t.Parallel()
 	s, p, b := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{Project: p.ID, Board: b.ID, Title: "window"})
 	if err != nil {
@@ -82,6 +83,7 @@ func TestConversationWindowsPreserveHistoryAndOwnMutablePayloads(t *testing.T) {
 }
 
 func TestConversationWindowSeesCrossProcessAppendWithoutTruncatingCache(t *testing.T) {
+	t.Parallel()
 	s, p, b := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{Project: p.ID, Board: b.ID, Title: "window replay"})
 	if err != nil {

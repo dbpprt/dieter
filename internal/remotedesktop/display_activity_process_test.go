@@ -9,6 +9,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -17,9 +20,12 @@ import (
 
 func TestNativeDisplayActivityHoldsUntilChildExit(t *testing.T) {
 	directory := t.TempDir()
-	started, exited := filepath.Join(directory, "started"), filepath.Join(directory, "exited")
+	started := filepath.Join(directory, "started")
+	var child atomic.Int64
 	helper := filepath.Join(directory, "capture")
-	script := fmt.Sprintf("#!/bin/sh\ntrap 'exit 0' TERM\ntrap 'printf stopped > \"%s\"' EXIT\nprintf started > \"%s\"\nprintf DTH2\nwhile read -r line; do :; done\n", exited, started)
+	// The child records its PID: under load it may be killed after the TERM
+	// grace period, before an EXIT trap could run.
+	script := fmt.Sprintf("#!/bin/sh\ntrap 'exit 0' TERM\nprintf %%s \"$$\" > \"%s.tmp\" && mv \"%s.tmp\" \"%s\"\nprintf DTH2\nwhile read -r line; do :; done\n", started, started, started)
 	if err := os.WriteFile(helper, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -28,8 +34,8 @@ func TestNativeDisplayActivityHoldsUntilChildExit(t *testing.T) {
 		return holdDisplayActivity(ctx, displayPowerDriver{
 			create: func() (uint32, error) { return 1, nil }, wake: func() error { return nil },
 			release: func(uint32) error {
-				if _, err := os.Stat(exited); err != nil {
-					t.Error("power assertion released before child teardown", err)
+				if pid := child.Load(); pid <= 0 || syscall.Kill(int(pid), 0) == nil {
+					t.Errorf("power assertion released before child %d was torn down", pid)
 				}
 				close(released)
 				return nil
@@ -41,7 +47,12 @@ func TestNativeDisplayActivityHoldsUntilChildExit(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- s.Stream(ctx, func(media.Sample) error { return nil }) }()
 	for {
-		if _, err := os.Stat(started); err == nil {
+		if raw, err := os.ReadFile(started); err == nil {
+			pid, parseErr := strconv.Atoi(string(raw))
+			if parseErr != nil {
+				t.Fatal(parseErr)
+			}
+			child.Store(int64(pid))
 			break
 		}
 		select {

@@ -1,0 +1,24 @@
+# Dieter's schemas. `just generate` runs buf with the templates next to this
+# file; CI fails when committed generated code drifts.
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+  except:
+    # The API shares request/response messages between RPCs (e.g. Card,
+    # ProjectRef) and uses unprefixed enum values by design. Renaming them would
+    # touch every client without changing the wire format.
+    - RPC_REQUEST_STANDARD_NAME
+    - RPC_RESPONSE_STANDARD_NAME
+    - RPC_REQUEST_RESPONSE_UNIQUE
+    - ENUM_ZERO_VALUE_SUFFIX
+    - ENUM_VALUE_PREFIX
+breaking:
+  use:
+    - WIRE_JSON
+  ignore:
+    # In-process contracts that ship inside each client build.
+    - dieter/client
+    - dieter/core

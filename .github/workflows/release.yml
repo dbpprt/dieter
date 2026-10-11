@@ -1,166 +1,273 @@
-name: Development release
+name: Release
+
+# The only workflow that signs Dieter releases. Its identity,
+#   https://github.com/<repository>/.github/workflows/release.yml@refs/heads/main
+# is a public contract: installers and updaters verify SHA256SUMS, the gateway
+# image and the deployment bundle against exactly this signer (Sigstore keyless).
+#
+# dev: nightly.yml calls it after full qualification (or dispatch on main): reserve
+#   the next version, build per signing domain, publish a prerelease, TestFlight.
+# stable: dispatch with the tested dev tag; promotes those exact bytes.
+#
+# Signing material lives only in GitHub environments (apple-signing,
+# android-signing, stable-release) restricted to main; the builder jobs
+# reference their environment, so no secret is passed or inherited.
 on:
   workflow_call:
     inputs:
       channel:
         type: string
         default: dev
+      qualified_by:
+        description: URL of the qualifying run
+        type: string
+        default: ""
   workflow_dispatch:
     inputs:
       channel:
-        description: Main build visibility (dev publishes a prerelease)
+        description: dev builds and publishes a prerelease of main; stable promotes `tag`
         type: choice
+        options: [dev, stable]
         default: dev
-        options: [dev, draft]
+      tag:
+        description: "stable only: the tested dev release to promote (vX.Y.Z)"
+        type: string
+        default: ""
+
 permissions:
   contents: read
-# Different main revisions never share a pending concurrency slot.
+
 concurrency:
-  group: release-${{ github.sha }}
+  group: release-${{ inputs.channel }}-${{ inputs.tag || github.sha }}
   cancel-in-progress: false
+
+env:
+  FASTLANE_DISABLE_COLORS: "1"
+  FASTLANE_HIDE_TIMESTAMP: "true"
+  FASTLANE_OPT_OUT_USAGE: "true"
+  FASTLANE_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+  LANG: en_US.UTF-8
+  LC_ALL: en_US.UTF-8
+
 jobs:
-  manual-qualification:
-    name: Qualify manual release
-    if: github.event_name == 'workflow_dispatch'
-    uses: ./.github/workflows/qualification.yml
-    with:
-      full: true
-  reserve:
-    name: Reserve immutable development identity
-    needs: manual-qualification
-    if: always() && github.ref == 'refs/heads/main' && (needs.manual-qualification.result == 'success' || (github.event_name == 'push' && needs.manual-qualification.result == 'skipped'))
+  version:
+    if: inputs.channel != 'stable' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
+    # One reservation at a time keeps the counter monotonic without claim tags.
+    concurrency:
+      group: release-version
+      cancel-in-progress: false
     outputs:
+      exists: ${{ steps.reserve.outputs.exists }}
+      version: ${{ steps.reserve.outputs.version }}
+      build: ${{ steps.reserve.outputs.build }}
       tag: ${{ steps.reserve.outputs.tag }}
-      identity_artifact: release-identity-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: ./.github/actions/pipeline-setup
+          persist-credentials: true # pushes the version tag
+      - name: Only the identity's repository releases
+        run: |
+          upstream=$(jq -r .repository config/identity.json)
+          [[ "$GITHUB_REPOSITORY" == "$upstream" ]] || { echo "::error::Releases run only in $upstream (config/identity.json)"; exit 1; }
+      - uses: ./.github/actions/setup
         with:
-          component: distribution
-      - name: Reserve tag, counters and draft before candidate work
+          tools: ruby gem:bundler
+          bundle: "true"
+      - name: Reserve the next version
         id: reserve
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: just pipeline release action:reserve output:tmp/release-identity
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: release-identity-${{ github.run_attempt }}
-          path: tmp/release-identity/identity.json
-          retention-days: 90
-          if-no-files-found: error
-  candidates:
-    name: ${{ matrix.name }}
-    needs: reserve
-    if: always() && needs.reserve.result == 'success'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: daemon-linux-amd64
-            component: daemon
-            runner: ubuntu-latest
-          - name: daemon-linux-arm64
-            component: daemon
-            runner: ubuntu-24.04-arm
-          - name: daemon-darwin-arm64
-            component: daemon
-            runner: macos-26
-          - name: gateway-linux-amd64
-            component: gateway
-            runner: ubuntu-latest
-          - name: gateway-linux-arm64
-            component: gateway
-            runner: ubuntu-24.04-arm
-          - name: gateway-oci
-            component: gateway-oci
-            runner: ubuntu-latest
-          - name: android
-            component: android
-            runner: ubuntu-latest
-          - name: mac
-            component: mac
-            runner: macos-26
-          - name: ios
-            component: ios
-            runner: macos-26
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          bundle exec fastlane version
+
+  server:
+    needs: version
+    if: needs.version.outputs.exists == 'false'
     permissions:
-      actions: read
-      contents: write
-      packages: write
-      id-token: write
-    uses: ./.github/workflows/component-candidate.yml
+      contents: read
+    uses: ./.github/workflows/_build-server.yml
     with:
-      component: ${{ matrix.component }}
-      source: ${{ github.sha }}
-      runner: ${{ matrix.runner }}
-      identity_artifact: ${{ needs.reserve.outputs.identity_artifact }}
-    secrets:
-      ANDROID_KEYSTORE_BASE64: ${{ matrix.component == 'android' && secrets.ANDROID_KEYSTORE_BASE64 || '' }}
-      ANDROID_KEYSTORE_PASSWORD: ${{ matrix.component == 'android' && secrets.ANDROID_KEYSTORE_PASSWORD || '' }}
-      ANDROID_KEY_ALIAS: ${{ matrix.component == 'android' && secrets.ANDROID_KEY_ALIAS || '' }}
-      ANDROID_KEY_PASSWORD: ${{ matrix.component == 'android' && secrets.ANDROID_KEY_PASSWORD || '' }}
-      IOS_APP_STORE_CONNECT_ISSUER_ID: ${{ matrix.component == 'ios' && secrets.IOS_APP_STORE_CONNECT_ISSUER_ID || '' }}
-      IOS_APP_STORE_CONNECT_KEY_BASE64: ${{ matrix.component == 'ios' && secrets.IOS_APP_STORE_CONNECT_KEY_BASE64 || '' }}
-      IOS_APP_STORE_CONNECT_KEY_ID: ${{ matrix.component == 'ios' && secrets.IOS_APP_STORE_CONNECT_KEY_ID || '' }}
-      IOS_BUNDLE_ID: ${{ matrix.component == 'ios' && secrets.IOS_BUNDLE_ID || '' }}
-      IOS_DISTRIBUTION_CERTIFICATE_BASE64: ${{ matrix.component == 'ios' && secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 || '' }}
-      IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ matrix.component == 'ios' && secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD || '' }}
-      IOS_PROVISIONING_PROFILE_BASE64: ${{ matrix.component == 'ios' && secrets.IOS_PROVISIONING_PROFILE_BASE64 || '' }}
-      IOS_SHARE_PROVISIONING_PROFILE_BASE64: ${{ matrix.component == 'ios' && secrets.IOS_SHARE_PROVISIONING_PROFILE_BASE64 || '' }}
-      IOS_TEAM_ID: ${{ matrix.component == 'ios' && secrets.IOS_TEAM_ID || '' }}
-      MACOS_DEVELOPER_ID_CERTIFICATE_BASE64: ${{ (matrix.component == 'mac' || (matrix.component == 'daemon' && matrix.runner == 'macos-26')) && secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 || '' }}
-      MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ (matrix.component == 'mac' || (matrix.component == 'daemon' && matrix.runner == 'macos-26')) && secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD || '' }}
-      MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_BASE64: ${{ (matrix.component == 'daemon' && matrix.runner == 'macos-26') && secrets.MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_BASE64 || '' }}
-      MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_PASSWORD: ${{ (matrix.component == 'daemon' && matrix.runner == 'macos-26') && secrets.MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_PASSWORD || '' }}
-      MACOS_NOTARY_ISSUER_ID: ${{ (matrix.component == 'mac' || (matrix.component == 'daemon' && matrix.runner == 'macos-26')) && secrets.MACOS_NOTARY_ISSUER_ID || '' }}
-      MACOS_NOTARY_KEY_BASE64: ${{ (matrix.component == 'mac' || (matrix.component == 'daemon' && matrix.runner == 'macos-26')) && secrets.MACOS_NOTARY_KEY_BASE64 || '' }}
-      MACOS_NOTARY_KEY_ID: ${{ (matrix.component == 'mac' || (matrix.component == 'daemon' && matrix.runner == 'macos-26')) && secrets.MACOS_NOTARY_KEY_ID || '' }}
-  coordinate:
-    needs: [reserve, candidates]
-    if: always() && needs.reserve.result == 'success' && needs.candidates.result == 'success'
+      version: ${{ needs.version.outputs.version }}
+      build: ${{ needs.version.outputs.build }}
+
+  apple:
+    needs: version
+    if: needs.version.outputs.exists == 'false'
     permissions:
-      actions: read
-      contents: write
-      packages: write
-      id-token: write
-    uses: ./.github/workflows/release-coordinate.yml
+      contents: read
+    uses: ./.github/workflows/_build-apple.yml
     with:
-      channel: ${{ inputs.channel || 'dev' }}
-      identity_artifact: ${{ needs.reserve.outputs.identity_artifact }}
-  distribute:
-    needs: [reserve, coordinate]
-    if: always() && needs.reserve.result == 'success' && needs.coordinate.result == 'success' && (github.event_name == 'push' || inputs.channel == 'dev')
+      version: ${{ needs.version.outputs.version }}
+      build: ${{ needs.version.outputs.build }}
+
+  android:
+    needs: version
+    if: needs.version.outputs.exists == 'false'
     permissions:
-      actions: read
-      contents: write
-    uses: ./.github/workflows/release-distribute.yml
+      contents: read
+    uses: ./.github/workflows/_build-android.yml
     with:
-      tag: ${{ needs.reserve.outputs.tag }}
-    secrets:
-      IOS_APP_STORE_CONNECT_KEY_BASE64: ${{ secrets.IOS_APP_STORE_CONNECT_KEY_BASE64 }}
-      IOS_APP_STORE_CONNECT_KEY_ID: ${{ secrets.IOS_APP_STORE_CONNECT_KEY_ID }}
-      IOS_APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.IOS_APP_STORE_CONNECT_ISSUER_ID }}
-      IOS_BUNDLE_ID: ${{ secrets.IOS_BUNDLE_ID }}
-  required:
-    name: Required release stages
-    needs: [reserve, candidates, coordinate, distribute]
-    if: always()
+      version: ${{ needs.version.outputs.version }}
+      build: ${{ needs.version.outputs.build }}
+
+  publish:
+    needs: [version, server, apple, android]
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write # the GitHub release
+      packages: write # the gateway image and deployment bundle
+      id-token: write # Sigstore keyless signing and attestations
+      attestations: write
+    env:
+      DIETER_RELEASE_VERSION: ${{ needs.version.outputs.version }}
+      DIETER_RELEASE_BUILD: ${{ needs.version.outputs.build }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/pipeline-setup
+      - name: Identity
+        id: identity
+        run: |
+          [[ "$GITHUB_REPOSITORY" == "$(jq -r .repository config/identity.json)" ]]
+          echo "image=$(jq -r .container_registry config/identity.json)/dieter-gateway" >> "$GITHUB_OUTPUT"
+          echo "built_at=$(git show -s --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/setup
         with:
-          component: report
-      - name: Require candidates, publication and requested delivery
+          tools: ruby gem:bundler python cosign oras
+          bundle: "true"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-*
+          path: dist/built
+          merge-multiple: true
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Gateway image
+        id: image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: deploy/gateway/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: mode=max
+          sbom: true
+          tags: ${{ steps.identity.outputs.image }}:${{ env.DIETER_RELEASE_VERSION }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+          build-args: |
+            RELEASE_VERSION=${{ env.DIETER_RELEASE_VERSION }}
+            SOURCE_REVISION=${{ github.sha }}
+            BUILT_AT=${{ steps.identity.outputs.built_at }}
+      - name: Sign the image
         env:
-          PIPELINE_JOB_RESULTS: ${{ toJSON(needs) }}
-          PIPELINE_CHANNEL: ${{ github.event_name == 'push' && 'dev' || inputs.channel || 'dev' }}
-        run: just pipeline ci action:release_gate component:report channel:"$PIPELINE_CHANNEL"
+          IMAGE: ${{ steps.identity.outputs.image }}@${{ steps.image.outputs.digest }}
+        run: cosign sign --yes -a "sourceRevision=$GITHUB_SHA" "$IMAGE"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.identity.outputs.image }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+      - name: Signed gateway deployment bundle
+        env:
+          IMAGE: ${{ steps.identity.outputs.image }}@${{ steps.image.outputs.digest }}
+          BUILT_AT: ${{ steps.identity.outputs.built_at }}
+        run: |
+          probes=(); for probe in dist/built/gateway-turn-probe-*; do probes+=(--probe "$probe"); done
+          python3 deploy/gateway/scripts/bundle.py pack --output dist/gateway --revision "$GITHUB_SHA" \
+            --version "$DIETER_RELEASE_VERSION" --image "$IMAGE" --built-at "$BUILT_AT" "${probes[@]}"
+          cosign sign-blob --yes --bundle dist/gateway/gateway-manifest.sigstore.json dist/gateway/gateway-manifest.json
+          python3 deploy/gateway/scripts/bundle.py push dist/gateway --revision "$GITHUB_SHA" --version "$DIETER_RELEASE_VERSION"
+      - name: Assets, SHA256SUMS and its signature
+        run: |
+          mkdir -p dist/release
+          cp dist/built/*.tar.gz dist/built/*.pkg dist/built/*.zip dist/built/*.ipa dist/built/*.apk dist/release/
+          cp deploy/install/install.sh dist/release/
+          cp dist/gateway/dieter-gateway-deploy.tar.gz dist/gateway/gateway-manifest.json \
+            dist/gateway/gateway-manifest.sigstore.json dist/gateway/gateway-release.lock.json dist/release/
+          (cd dist/release && sha256sum -- * > SHA256SUMS)
+          cosign sign-blob --yes --bundle dist/release/SHA256SUMS.sigstore.json dist/release/SHA256SUMS
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: dist/release/SHA256SUMS
+      - name: GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          QUALIFIED_BY: ${{ inputs.qualified_by }}
+        run: bundle exec fastlane publish dist:dist/release channel:dev ${QUALIFIED_BY:+qualified_by:"$QUALIFIED_BY"}
+      - name: Release summary
+        env:
+          IMAGE: ${{ steps.identity.outputs.image }}@${{ steps.image.outputs.digest }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          {
+            echo "### Dieter $DIETER_RELEASE_VERSION (build $DIETER_RELEASE_BUILD) from \`$GITHUB_SHA\`"
+            echo "Release: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG · image \`$IMAGE\` · attestations: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/attestations"
+            echo "| Asset | Bytes | SHA-256 |"
+            echo "|---|---:|---|"
+            while read -r sum name; do echo "| $name | $(stat -c %s "dist/release/$name") | \`$sum\` |"; done < dist/release/SHA256SUMS
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  testflight:
+    needs: [version, publish]
+    runs-on: macos-26
+    timeout-minutes: 60
+    environment: apple-signing
+    permissions:
+      contents: read
+    env:
+      DIETER_RELEASE_VERSION: ${{ needs.version.outputs.version }}
+      DIETER_RELEASE_BUILD: ${{ needs.version.outputs.build }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: '[[ "$GITHUB_REPOSITORY" == "$(jq -r .repository config/identity.json)" ]]'
+      - uses: ./.github/actions/setup
+        with:
+          tools: ruby gem:bundler
+          bundle: "true"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-ios
+          path: dist/ios
+      - name: Upload and deliver to internal testers
+        env:
+          IOS_APP_STORE_CONNECT_KEY_BASE64: ${{ secrets.IOS_APP_STORE_CONNECT_KEY_BASE64 }}
+          IOS_APP_STORE_CONNECT_KEY_ID: ${{ secrets.IOS_APP_STORE_CONNECT_KEY_ID }}
+          IOS_APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.IOS_APP_STORE_CONNECT_ISSUER_ID }}
+        run: bundle exec fastlane ios beta ipa:dist/ios/Dieter-iOS.ipa
+
+  promote:
+    if: inputs.channel == 'stable' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: stable-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: '[[ "$GITHUB_REPOSITORY" == "$(jq -r .repository config/identity.json)" ]]'
+      - uses: ./.github/actions/setup
+        with:
+          tools: ruby gem:bundler cosign
+          bundle: "true"
+      - name: Verify and promote the tested bytes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: bundle exec fastlane promote tag:"$TAG"

@@ -1,0 +1,416 @@
+package com.getdieter.core.board
+
+import com.getdieter.api.v1.ArchiveCardRequest
+import com.getdieter.api.v1.BoardRef
+import com.getdieter.api.v1.Card
+import com.getdieter.api.v1.DraftAgentSettings
+import com.getdieter.api.v1.ForkChatRequest
+import com.getdieter.api.v1.GetCardRequest
+import com.getdieter.api.v1.MarkConversationReadRequest
+import com.getdieter.api.v1.MergeCardRequest
+import com.getdieter.api.v1.MoveCardRequest
+import com.getdieter.api.v1.PinChatRequest
+import com.getdieter.api.v1.RenameCardRequest
+import com.getdieter.api.v1.SetCardLabelsRequest
+import com.getdieter.api.v1.UpdateCardRequest
+import com.getdieter.core.api.DaemonApi
+import com.getdieter.core.machines.MachineChoice
+import com.getdieter.core.runtime.CoreException
+import com.getdieter.core.runtime.FailureKind
+import com.getdieter.core.runtime.Failures
+import com.getdieter.core.session.MachineSessions
+import com.getdieter.core.store.CardOverlay
+import com.getdieter.core.store.WorkspaceStore
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration.Companion.seconds
+import kotlin.uuid.Uuid
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.withTimeoutOrNull
+
+/** Card operations in flight and their last failures, for badges and inline errors. */
+data class BoardOperationsView(
+    val operations: Map<String, CardOperation> = emptyMap(),
+    val errors: Map<String, String> = emptyMap(),
+    /** Moves sync has not confirmed yet; lane ordering applies them. */
+    val moves: Map<String, PendingMove> = emptyMap(),
+)
+
+/**
+ * Direct card and chat mutations. Each shows its effect immediately as an overlay until the account
+ * view reflects it, and rolls back on failure. One operation per card at a time: a second one fails
+ * as transient while the first runs. A mutation returns false when there is nothing to change.
+ * Confined to the core dispatcher.
+ */
+class BoardOperations(
+    private val sessions: MachineSessions,
+    private val store: WorkspaceStore,
+    private val choice: MachineChoice,
+) {
+    private val mutableView = MutableStateFlow(BoardOperationsView())
+    val view: StateFlow<BoardOperationsView> = mutableView.asStateFlow()
+
+    /** Moves [cardId] to [lane], optionally between two cards of that lane. */
+    suspend fun move(cardId: String, lane: String, anchors: DropAnchors = DropAnchors()): Boolean {
+        val card = card(cardId)
+        if (Cards.isChat(card))
+            throw CoreException(
+                FailureKind.PERMANENT,
+                "Chat conversations do not belong to board lanes.",
+            )
+        // Moving an unstarted card into running starts it, which only its owner can do.
+        val starts =
+            lane.equals(Lanes.RUNNING, ignoreCase = true) && card.initial_prompt_sent_at.isEmpty()
+        val daemon = if (starts) owner(card) else placementWriter(card)
+        val request =
+            MoveCardRequest(
+                card_id = cardId,
+                lane = lane,
+                after_card_id = anchors.afterCardId,
+                before_card_id = anchors.beforeCardId,
+                expected_revision = card.placement_revision,
+            )
+        val move = PendingMove(lane, anchors.afterCardId, anchors.beforeCardId)
+        // The next move of this card checks the placement this one wrote, so it ends once the
+        // account view shows it.
+        return mutate(
+            cardId,
+            CardOperation.MOVING,
+            daemon,
+            overlay =
+                FieldOverlay(
+                    cardId,
+                    apply = { it.copy(lane = lane) },
+                    satisfied = { it.placement_revision != card.placement_revision },
+                ),
+            settle = true,
+            onStart = { mutableView.update { it.copy(moves = it.moves + (cardId to move)) } },
+            onEnd = { mutableView.update { it.copy(moves = it.moves - cardId) } },
+        ) {
+            it.MoveCard().execute(request)
+        }
+    }
+
+    /** Moves a card to its board's done lane. */
+    suspend fun finish(cardId: String): Boolean {
+        val card = card(cardId)
+        val done =
+            Lanes.done(store.directoryProjection.board(card.board_id))
+                ?: throw CoreException(FailureKind.PERMANENT, "This board has no done lane.")
+        return move(cardId, done.id)
+    }
+
+    /** Replaces the card's labels, keeping their order and dropping duplicates. */
+    suspend fun setLabels(cardId: String, labelIds: List<String>): Boolean {
+        val card = card(cardId)
+        val ids = labelIds.filter { it.isNotBlank() }.distinct()
+        if (ids == card.label_ids) return false
+        return mutate(
+            cardId,
+            CardOperation.LABELING,
+            sharedWriter(card),
+            FieldOverlay(cardId, { it.copy(label_ids = ids) }, { it.label_ids == ids }),
+        ) {
+            it.SetCardLabels().execute(SetCardLabelsRequest(card_id = cardId, label_ids = ids))
+        }
+    }
+
+    suspend fun addLabel(cardId: String, labelId: String): Boolean {
+        val card = card(cardId)
+        if (labelId.isBlank() || labelId in card.label_ids) return false
+        return setLabels(cardId, card.label_ids + labelId)
+    }
+
+    suspend fun setPinned(cardId: String, pinned: Boolean): Boolean {
+        val card = card(cardId)
+        if (card.pinned == pinned) return false
+        return mutate(
+            cardId,
+            CardOperation.PINNING,
+            sharedWriter(card),
+            FieldOverlay(cardId, { it.copy(pinned = pinned) }, { it.pinned == pinned }),
+        ) {
+            it.PinChat().execute(PinChatRequest(card_id = cardId, pinned = pinned))
+        }
+    }
+
+    suspend fun rename(cardId: String, title: String): Boolean {
+        val card = card(cardId)
+        val trimmed = title.trim()
+        if (trimmed.isEmpty() || trimmed == card.title) return false
+        return mutate(
+            cardId,
+            CardOperation.RENAMING,
+            sharedWriter(card),
+            FieldOverlay(cardId, { it.copy(title = trimmed) }, { it.title == trimmed }),
+        ) {
+            it.RenameCard().execute(RenameCardRequest(card_id = cardId, title = trimmed))
+        }
+    }
+
+    /** Edits a never-started todo card's title, task, and agent. */
+    suspend fun updateDraft(
+        cardId: String,
+        title: String,
+        prompt: String,
+        agent: DraftAgentSettings? = null,
+    ): Boolean {
+        val card = card(cardId)
+        if (!CardPolicy.canEditDraft(card))
+            throw CoreException(
+                FailureKind.PERMANENT,
+                "Only a todo card whose task was never sent can be edited.",
+            )
+        val request =
+            UpdateCardRequest(
+                card_id = cardId,
+                title = title.trim(),
+                initial_prompt = prompt,
+                agent_settings = agent,
+            )
+        return mutate(
+            cardId,
+            CardOperation.UPDATING,
+            owner(card),
+            FieldOverlay(
+                cardId,
+                { it.copy(title = request.title.ifEmpty { it.title }, initial_prompt = prompt) },
+                { it.initial_prompt == prompt },
+            ),
+        ) {
+            it.UpdateCard().execute(request)
+        }
+    }
+
+    /**
+     * Saves the edit card form under [CardPolicy.draftProblem]: a never-started draft takes the new
+     * title, task, and agent; a card whose task was sent only takes a new title.
+     */
+    suspend fun edit(
+        cardId: String,
+        title: String,
+        prompt: String,
+        agent: DraftAgentSettings? = null,
+    ): Boolean {
+        val card = card(cardId)
+        CardPolicy.draftProblem(card, title, prompt, agent)?.let {
+            throw CoreException(FailureKind.PERMANENT, it)
+        }
+        if (CardPolicy.canEditDraft(card)) return updateDraft(cardId, title, prompt, agent)
+        return rename(cardId, title)
+    }
+
+    /** Archives a card or chat; it leaves every live view. */
+    suspend fun archive(cardId: String): Boolean {
+        val card = card(cardId)
+        if (card.archived) return false
+        return mutate(
+            cardId,
+            CardOperation.ARCHIVING,
+            sharedWriter(card),
+            FieldOverlay(cardId, { it.copy(archived = true) }, { it.archived }),
+        ) {
+            it.ArchiveCard().execute(ArchiveCardRequest(card_id = cardId, archived = true))
+        }
+    }
+
+    /** Restores [card], as listed by [archivedCards] or the chat archive, to the live views. */
+    suspend fun restore(card: Card): Boolean {
+        if (!card.archived) return false
+        return mutate(card.id, CardOperation.ARCHIVING, sharedWriter(card), overlay = null) {
+            it.ArchiveCard().execute(ArchiveCardRequest(card_id = card.id, archived = false))
+        }
+    }
+
+    /** Stops the running turn; the card shows "cancelling" until its runtime settles. */
+    suspend fun cancel(cardId: String): Boolean {
+        val card = card(cardId)
+        return mutate(
+            cardId,
+            CardOperation.CANCELLING,
+            owner(card),
+            FieldOverlay(
+                cardId,
+                { if (Runtimes.isActive(it.runtime)) it.copy(runtime = "cancelling") else it },
+                { !Runtimes.isActive(it.runtime) },
+            ),
+        ) { client ->
+            client.CancelCard().execute(GetCardRequest(card_id = cardId))
+        }
+    }
+
+    /** Folds an idle card's queue-free conversation into [targetId]; the source moves to done. */
+    suspend fun merge(sourceId: String, targetId: String): Boolean {
+        val source = card(sourceId)
+        val target = card(targetId)
+        if (!CardPolicy.canMerge(source, target))
+            throw CoreException(FailureKind.PERMANENT, "These cards cannot be merged.")
+        return mutate(sourceId, CardOperation.MERGING, owner(source), overlay = null) {
+            it.MergeCard().execute(MergeCardRequest(card_id = sourceId, target_card_id = targetId))
+        }
+    }
+
+    /** Branches a chat at [messageId] (the whole conversation when blank); returns the fork. */
+    suspend fun fork(cardId: String, messageId: String = ""): Card {
+        val card = card(cardId)
+        var fork: Card? = null
+        mutate(cardId, CardOperation.FORKING, owner(card), overlay = null) { client ->
+            client
+                .ForkChat()
+                .execute(ForkChatRequest(source_card_id = cardId, message_id = messageId))
+                .also { fork = it }
+        }
+        return fork ?: throw CoreException(FailureKind.TRANSIENT, "The fork was not created.")
+    }
+
+    /**
+     * Records that the reply up to [responseSeq] was seen. The daemon ignores stale receipts and
+     * the causal merge keeps newer replies unread.
+     */
+    suspend fun markRead(cardId: String, responseSeq: Long): Boolean {
+        val card = card(cardId)
+        if (responseSeq <= card.seen_response_seq || responseSeq != card.response_seq) return false
+        if (view.value.operations.containsKey(cardId)) return false
+        val read =
+            FieldOverlay(
+                cardId,
+                { it.copy(seen_response_seq = maxOf(it.seen_response_seq, responseSeq)) },
+                { it.seen_response_seq >= responseSeq },
+            )
+        return mutate(cardId, CardOperation.READING, owner(card), read, reportErrors = false) {
+            it.MarkConversationRead()
+                .execute(MarkConversationReadRequest(card_id = cardId, response_seq = responseSeq))
+        }
+    }
+
+    /** Archived cards of one board, read on demand from a machine that holds its project. */
+    suspend fun archivedCards(boardId: String): List<Card> {
+        val board =
+            store.directoryProjection.board(boardId)
+                ?: throw CoreException(FailureKind.PERMANENT, "The board is no longer available.")
+        val daemon =
+            choice.project(board.project_id)
+                ?: throw CoreException(
+                    FailureKind.TRANSIENT,
+                    "No machine with this project is reachable.",
+                )
+        return sessions
+            .call(daemon) { it.ListArchivedCards().execute(BoardRef(board_id = boardId)) }
+            .cards
+    }
+
+    private suspend fun mutate(
+        cardId: String,
+        operation: CardOperation,
+        daemonId: String,
+        overlay: FieldOverlay?,
+        settle: Boolean = false,
+        reportErrors: Boolean = true,
+        onStart: () -> Unit = {},
+        onEnd: () -> Unit = {},
+        call: suspend (DaemonApi) -> Unit,
+    ): Boolean {
+        // Repeating the change in flight (a double tap) is a no-op; a different change is refused.
+        view.value.operations[cardId]?.let { running ->
+            if (running == operation) return false
+            throw CoreException(
+                FailureKind.TRANSIENT,
+                "Another change to this card is still in progress.",
+            )
+        }
+        mutableView.update {
+            it.copy(operations = it.operations + (cardId to operation), errors = it.errors - cardId)
+        }
+        onStart()
+        overlay?.let(store::addOverlay)
+        try {
+            sessions.call(daemonId, call)
+            overlay?.let { store.confirmOverlay(it.operationId) }
+            if (settle && overlay != null)
+                withTimeoutOrNull(SETTLE) { store.overlayIds.first { overlay.operationId !in it } }
+            return true
+        } catch (error: Throwable) {
+            overlay?.let { store.rollbackOverlay(it.operationId) }
+            if (error is CancellationException) throw error
+            if (reportErrors)
+                mutableView.update {
+                    it.copy(
+                        errors =
+                            (it.errors - cardId + (cardId to Failures.message(error)))
+                                .toList()
+                                .takeLast(MAX_ERRORS)
+                                .toMap()
+                    )
+                }
+            throw error
+        } finally {
+            onEnd()
+            mutableView.update { it.copy(operations = it.operations - cardId) }
+        }
+    }
+
+    /** Drops the errors of cards that left every live view. */
+    fun retainErrors(present: (String) -> Boolean) {
+        if (view.value.errors.keys.all(present)) return
+        mutableView.update { state -> state.copy(errors = state.errors.filterKeys(present)) }
+    }
+
+    /** Account or gateway changed: the errors belong to the previous one. */
+    fun reset() = mutableView.update { it.copy(errors = emptyMap()) }
+
+    private fun card(id: String): Card =
+        store.shownItem(id)
+            ?: throw CoreException(FailureKind.PERMANENT, "The card is no longer available.")
+
+    /**
+     * Shared fields can be written on any reachable machine that holds the card, its owner first.
+     */
+    private fun sharedWriter(card: Card): String =
+        choice.holder("item/${card.id}.identity", choice.owner(card))
+            ?: throw CoreException(
+                FailureKind.TRANSIENT,
+                "No machine that holds this card is reachable.",
+            )
+
+    /**
+     * A move checks the placement this client shows, so it goes where every version of it was
+     * observed; until then the machines are still merging.
+     */
+    private fun placementWriter(card: Card): String =
+        choice.observer("item/${card.id}.placement", choice.owner(card))
+            ?: throw CoreException(
+                FailureKind.TRANSIENT,
+                "This card's machines are still merging its place; try again in a moment.",
+            )
+
+    /** Turns, reads, and edits of the task run on the machine that executes the conversation. */
+    private fun owner(card: Card): String =
+        choice.owner(card)
+            ?: throw CoreException(
+                FailureKind.TRANSIENT,
+                "The conversation's machine is unavailable.",
+            )
+
+    private companion object {
+        /** Inline errors kept at once; the oldest goes first. */
+        const val MAX_ERRORS = 64
+
+        /** How long a change that must settle waits for the account view to show it. */
+        val SETTLE = 10.seconds
+    }
+
+    private class FieldOverlay(
+        override val cardId: String,
+        private val apply: (Card) -> Card,
+        private val satisfied: (Card) -> Boolean,
+    ) : CardOverlay {
+        override val operationId: String = Uuid.random().toString()
+
+        override fun apply(card: Card): Card = apply.invoke(card)
+
+        override fun satisfiedBy(card: Card): Boolean = satisfied(card)
+    }
+}

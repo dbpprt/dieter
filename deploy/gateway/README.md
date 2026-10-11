@@ -8,11 +8,17 @@ projects, conversations, provider credentials and harness execution stay on daem
 
 ## Get a verified release
 
-Main release candidates build the gateway with the same reserved commit and
-version as daemon and apps. Main publishes a dev release without activating it. The publisher runs Go vulnerability checks, deployment tests and real
-UDP/TCP/TLS TURN payload tests before publishing. It signs the manifest and image
-using GitHub OIDC and includes BuildKit provenance and an SBOM. The verifier
-accepts only the exact main-branch distribution/release workflow identities.
+Every release builds the gateway from the same commit and version as the daemon
+and apps. `.github/workflows/release.yml` pushes the multi-platform image
+(`deploy/gateway/Dockerfile`, build context: the repository root) with BuildKit
+provenance and an SBOM, signs it with cosign, packs this directory into the
+deployment bundle (`scripts/bundle.py pack`), signs its manifest, and pushes the
+bundle as an OCI artifact (`scripts/bundle.py push`). Both signatures are
+Sigstore keyless; the verifier accepts only the release workflow identity
+`https://github.com/<repository>/.github/workflows/release.yml@refs/heads/main`
+(`scripts/identity.py`, generated from `config/identity.json`). Deployment tests
+and the Docker TURN transport tests (`tests/integration.py`) run in CI when this
+directory changes.
 
 Use the release's `gateway-release.lock.json`:
 
@@ -21,19 +27,21 @@ python3 deploy/gateway/scripts/bundle.py fetch gateway-release.lock.json /tmp/ga
 python3 deploy/gateway/scripts/bundle.py verify /tmp/gateway-release
 ```
 
-The lock pins `ghcr.io/dbpprt/dieter-gateway-deploy@sha256:…`. Permanent
-`digest-…` tags preserve both artifacts and images independently of the bounded dev-release
-retention policy. These tags have no automated deletion policy; deployments
-also archive runnable image bytes in encrypted off-host backups. Retain active,
+The lock pins the deployment artifact (`<registry>/dieter-gateway-deploy@sha256:…`)
+and the image digest. Dev-release retention deletes old GitHub prereleases only;
+OCI artifacts and images are never deleted by automation. Deployments also
+archive runnable image bytes in encrypted off-host backups. Retain active,
 previous and recovery releases for at least 90 days.
 
-The protected `gateway-deploy.yml` workflow prepares an exact promoted stable
-release. It verifies the signed release and stable-promotion receipt, checks
-retained bundle/image digests, pins retention, and writes a deployment plan.
-Admit those verified bytes through the existing restricted host controller;
-readiness, backup and rollback remain required. No main job activates production.
-Gateway render/fetch/controller tools remain independently supported operational
-commands; Fastlane owns build, qualification and release composition.
+The protected `gateway-deploy.yml` workflow (environment `gateway-production`)
+takes an exact promoted stable release, verifies its cosign-signed `SHA256SUMS`,
+the bundle and image signatures and digests, and retains the verified bytes with
+a deployment plan. Admit them through the restricted host controller; readiness,
+backup and rollback remain required. No workflow activates production.
+
+`gateway.env.example` documents a manual gateway's `.env`. The official native
+OAuth callbacks are `dieter-mac://`, `dieter-ios://` and `dieter-android://`
+`oauth/callback` (`NATIVE_REDIRECT_URIS` in `scripts/identity.py`).
 
 ## Render configuration
 
@@ -141,7 +149,7 @@ report is allocation lifecycle evidence, not native screen or throughput
 qualification; the qualification gate still requires those separate workloads.
 
 Native fixtures can explicitly require TURN for both API traffic and screens.
-See the [screen transport guide](../../landingpage/content/docs/screens.md#transport-and-admission).
+See the [screen transport guide](../../site/content/docs/screens.md#transport-and-admission).
 The debug-only policy and protected fixture credentials preserve the real signed
 RTC configuration path; release clients retain their normal ICE policy.
 
@@ -239,12 +247,12 @@ fixture is not a measured bare-host provisioning or production RTO guarantee.
 ## Validation
 
 ```sh
-just pipeline check component:gateway operation:deployment_test
-just pipeline check component:gateway operation:deployment_integration
-just pipeline ci action:check component:gateway
+python3 -m unittest discover -s deploy/gateway/tests -p 'test_*.py'   # tooling unit tests
+python3 deploy/gateway/tests/integration.py                           # needs Docker with Buildx
 ```
 
-The integration test builds the actual gateway image, creates named disposable
+Run both for changes under `deploy/gateway`, the gateway image or the TURN
+probe. The integration test builds the actual gateway image, creates named disposable
 volumes and a private Docker network, and tests TLS/HTTP2, rejected unauthenticated
 RPCs, all three TURN client transports, invalid credentials and certificate reload.
 It uses no operator daemon, OAuth session, data directory or container. Test

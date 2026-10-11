@@ -6,10 +6,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/dbpprt/dieter/internal/peerstore"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
 )
 
 func TestPeerPersistenceAtomicConflictAndAccountIsolation(t *testing.T) {
+	t.Parallel()
 	s := New(t.TempDir())
 	a, e := s.BindPeerAccount("account-a", "github:1", "daemon-a", "https://gateway.test")
 	if e != nil {
@@ -62,19 +63,20 @@ func TestPeerPersistenceAtomicConflictAndAccountIsolation(t *testing.T) {
 	}
 }
 func TestPeerMergePageIsAtomic(t *testing.T) {
+	t.Parallel()
 	s := New(t.TempDir())
 	identity, e := s.BindPeerAccount("account", "github:1", "daemon", "https://gateway.test")
 	if e != nil {
 		t.Fatal(e)
 	}
-	good, e := peerstore.Put(peerstore.Record{}, "project-settings", "ok", "a", "", []byte(`{}`), false)
+	good, e := crdt.Put(crdt.Record{}, "project-settings", "ok", "a", "", []byte(`{}`), false)
 	if e != nil {
 		t.Fatal(e)
 	}
 	bad := good
 	bad.ID = "bad"
 	bad.Versions = nil
-	if e = s.MergePeerRecords(identity, []peerstore.Record{good, bad}); e == nil {
+	if e = s.MergePeerRecords(identity, []crdt.Record{good, bad}); e == nil {
 		t.Fatal("bad page accepted")
 	}
 	data, e := s.PeerData(identity.Account)
@@ -84,6 +86,7 @@ func TestPeerMergePageIsAtomic(t *testing.T) {
 }
 
 func TestPeerProgressDoesNotRewriteReplica(t *testing.T) {
+	t.Parallel()
 	s := New(t.TempDir())
 	identity, err := s.BindPeerAccount("a", "github:1", "d", "https://gateway.test")
 	if err != nil {

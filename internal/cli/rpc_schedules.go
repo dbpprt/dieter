@@ -9,6 +9,7 @@ import (
 	"text/tabwriter"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 )
 
 const scheduleHelp = `Usage: dieter schedule <action>
@@ -55,23 +56,7 @@ func (c *CLI) rpcSchedule(args []string) error {
 	}
 }
 
-func resolveProtoSchedule(items []*dieterv1.Schedule, reference string) (*dieterv1.Schedule, error) {
-	var matches []*dieterv1.Schedule
-	for _, item := range items {
-		if item.GetId() == reference || strings.EqualFold(item.GetName(), reference) {
-			matches = append(matches, item)
-		}
-	}
-	if len(matches) == 0 {
-		return nil, fmt.Errorf("schedule %q was not found on the target daemon", reference)
-	}
-	if len(matches) > 1 {
-		return nil, fmt.Errorf("schedule name %q is ambiguous; use its exact ID", reference)
-	}
-	return matches[0], nil
-}
-
-func (c *CLI) resolveSchedule(rpcCtx context.Context, client dieterv1.DieterServiceClient, reference string) (*dieterv1.Schedule, error) {
+func (c *CLI) resolveSchedule(rpcCtx context.Context, client dieterclient.Client, reference string) (*dieterv1.Schedule, error) {
 	pageToken := ""
 	var matches []*dieterv1.Schedule
 	for {

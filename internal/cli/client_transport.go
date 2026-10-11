@@ -13,12 +13,12 @@ import (
 	"strings"
 	"time"
 
-	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
-	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/linkauth"
-	"github.com/dbpprt/dieter/internal/localauth"
-	"github.com/dbpprt/dieter/internal/trust"
+	"github.com/dbpprt/dieter/internal/link"
+	"github.com/dbpprt/dieter/internal/security/linkauth"
+	"github.com/dbpprt/dieter/internal/security/localauth"
+	"github.com/dbpprt/dieter/internal/security/trust"
+	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -34,7 +34,7 @@ type gatewayTransport struct {
 
 type dieterTransport struct {
 	conn     *grpc.ClientConn
-	client   dieterv1.DieterServiceClient
+	client   dieterclient.Client
 	route    string
 	daemonID string
 	relay    bool
@@ -75,7 +75,7 @@ func (value *dieterTransport) context(ctx context.Context) context.Context {
 // installed daemon without creating or persisting a second gateway session.
 // A fresh, short-lived proof is generated for every RPC and stream.
 type daemonGatewayCredential struct {
-	identity *dieterdaemon.Identity
+	identity *link.Identity
 	secure   bool
 }
 
@@ -115,8 +115,8 @@ func normalizeGatewayURL(value string) (string, error) {
 	return trust.GatewayOrigin(value)
 }
 
-func (c *CLI) gatewayIdentity() (*dieterdaemon.Identity, string, error) {
-	identity, err := dieterdaemon.LoadIdentity(c.Store.Root)
+func (c *CLI) gatewayIdentity() (*link.Identity, string, error) {
+	identity, err := link.LoadIdentity(c.Root)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, "", errors.New("the local Dieter daemon is not enrolled; run `dieter setup`")
 	}
@@ -132,7 +132,7 @@ func (c *CLI) gatewayIdentity() (*dieterdaemon.Identity, string, error) {
 	}
 	requested := strings.TrimSpace(c.GatewayURL)
 	if requested == "" {
-		requested = strings.TrimSpace(os.Getenv("DIETER_GATEWAY"))
+		requested = c.env.Gateway
 	}
 	if requested != "" {
 		requested, err = normalizeGatewayURL(requested)
@@ -225,26 +225,26 @@ func (c *CLI) dialDieter(ctx context.Context) (*dieterTransport, error) {
 	defer cancelConnection()
 	ctx = connectCtx
 	if strings.TrimSpace(c.Machine) == "" {
-		statusValue, err := dieterdaemon.LoadRuntimeStatus(c.Store.Root)
+		statusValue, err := link.LoadRuntimeStatus(c.Root)
 		if err != nil {
 			if os.IsNotExist(err) {
 				return nil, errors.New("the local Dieter daemon is not running; start it with `dieter daemon start`")
 			}
 			return nil, fmt.Errorf("read local Dieter daemon status: %w", err)
 		}
-		if !dieterdaemon.RuntimeStatusCurrent(statusValue, time.Now().UTC()) || strings.TrimSpace(statusValue.ListenAddress) == "" {
+		if !link.RuntimeStatusCurrent(statusValue, time.Now().UTC()) || strings.TrimSpace(statusValue.ListenAddress) == "" {
 			return nil, errors.New("the local Dieter daemon is not running; start it with `dieter daemon start`")
 		}
 		connection, err := grpc.NewClient(
 			statusValue.ListenAddress,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithPerRPCCredentials(localauth.FileCredentials{Root: c.Store.Root}),
+			grpc.WithPerRPCCredentials(localauth.FileCredentials{Root: c.Root}),
 			grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(16<<20), grpc.MaxCallSendMsgSize(16<<20)),
 		)
 		if err != nil {
 			return nil, err
 		}
-		result := &dieterTransport{conn: connection, client: dieterv1.NewDieterServiceClient(readResumingConn{dieterMetadataConn{ClientConnInterface: connection, turnToken: strings.TrimSpace(os.Getenv("DIETER_TURN_TOKEN"))}}), route: "local"}
+		result := &dieterTransport{conn: connection, client: dieterclient.New(readResumingConn{dieterMetadataConn{ClientConnInterface: connection, turnToken: c.env.TurnToken}}), route: "local"}
 		if _, err := result.client.Health(ctx, &emptypb.Empty{}); err != nil {
 			_ = connection.Close()
 			return nil, fmt.Errorf("connect to local Dieter daemon at %s: %w", statusValue.ListenAddress, err)
@@ -287,9 +287,9 @@ func (c *CLI) dialDieter(ctx context.Context) (*dieterTransport, error) {
 		for _, candidate := range candidates {
 			address := net.JoinHostPort(candidate.GetHost(), strconv.Itoa(int(candidate.GetPort())))
 			probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-			connection, dialErr := dieterdaemon.DialDirectWithCredentials(probeCtx, address, machine.GetId(), route.GetDaemonCaPem(), credential)
+			connection, dialErr := link.DialDirectWithCredentials(probeCtx, address, machine.GetId(), route.GetDaemonCaPem(), credential)
 			if dialErr == nil {
-				client := dieterv1.NewDieterServiceClient(readResumingConn{dieterMetadataConn{ClientConnInterface: connection}})
+				client := dieterclient.New(readResumingConn{dieterMetadataConn{ClientConnInterface: connection}})
 				_, dialErr = client.Health(probeCtx, &emptypb.Empty{})
 				if dialErr == nil {
 					cancel()
@@ -325,14 +325,14 @@ func (c *CLI) dialDieter(ctx context.Context) (*dieterTransport, error) {
 		return nil, fmt.Errorf("Dieter machine %s has no reachable direct route and its relay is unavailable", machine.GetName())
 	}
 	result := &dieterTransport{
-		conn: gateway.conn, client: dieterv1.NewDieterServiceClient(readResumingConn{dieterMetadataConn{ClientConnInterface: gateway.conn, daemonID: machine.GetId()}}),
+		conn: gateway.conn, client: dieterclient.New(readResumingConn{dieterMetadataConn{ClientConnInterface: gateway.conn, daemonID: machine.GetId()}}),
 		route: "relay", daemonID: machine.GetId(), relay: true,
 	}
 	c.transport = result
 	return result, nil
 }
 
-func (c *CLI) rpc(ctx context.Context) (dieterv1.DieterServiceClient, context.Context, error) {
+func (c *CLI) rpc(ctx context.Context) (dieterclient.Client, context.Context, error) {
 	transport, err := c.dialDieter(ctx)
 	if err != nil {
 		return nil, ctx, err

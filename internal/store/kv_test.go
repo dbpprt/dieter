@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/dbpprt/dieter/internal/peerstore"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
+	"github.com/dbpprt/dieter/internal/replication/schema"
 )
 
 func TestKVReplicationReceiptsAndDeletion(t *testing.T) {
+	t.Parallel()
 	stores := []*Store{New(t.TempDir()), New(t.TempDir()), New(t.TempDir())}
 	ids := make([]PeerIdentity, 3)
 	for i, s := range stores {
@@ -19,7 +21,7 @@ func TestKVReplicationReceiptsAndDeletion(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write := func(i int, key, revision, value, op string, deleted bool) peerstore.Record {
+	write := func(i int, key, revision, value, op string, deleted bool) crdt.Record {
 		t.Helper()
 		r, e := stores[i].MutateKV(ids[i], KVMutation{Namespace: "navigation", Key: key, Revision: revision, Value: json.RawMessage(value), OperationID: op, DaemonID: ids[i].DaemonID, Delete: deleted})
 		if e != nil {
@@ -54,10 +56,10 @@ func TestKVReplicationReceiptsAndDeletion(t *testing.T) {
 			t.Fatal(e)
 		}
 		r := data.Records["kv.navigation/projects-folder.f.name"]
-		if len(r.Versions) != 2 || !peerstore.SelectedKV(r).Deleted {
+		if len(r.Versions) != 2 || !schema.SelectedKV(r).Deleted {
 			t.Fatal(r)
 		}
-		next := peerstore.Revision(data.State)
+		next := crdt.Revision(data.State)
 		if hash != "" && hash != next {
 			t.Fatal("replicas diverged")
 		}
@@ -75,7 +77,7 @@ func TestKVReplicationReceiptsAndDeletion(t *testing.T) {
 		t.Fatal("reused receipt accepted different input")
 	}
 	_, e = restart.MutateKV(ids[0], KVMutation{Namespace: "navigation", Key: "projects-folder.f.name", Value: json.RawMessage(`"Stale"`), OperationID: "stale", DaemonID: ids[0].DaemonID})
-	if !errors.Is(e, peerstore.ErrConflict) {
+	if !errors.Is(e, crdt.ErrConflict) {
 		t.Fatal(e)
 	}
 	_, e = restart.MutateKV(ids[0], KVMutation{Namespace: "navigation", Key: "projects-folder.g.name", Value: json.RawMessage(`"Wrong daemon"`), OperationID: "wrong", DaemonID: ids[1].DaemonID})
@@ -85,12 +87,13 @@ func TestKVReplicationReceiptsAndDeletion(t *testing.T) {
 }
 
 func TestKVOrderedMovesRetainNeighborsAndAtomicParent(t *testing.T) {
+	t.Parallel()
 	s := New(t.TempDir())
 	identity, e := s.KVIdentity()
 	if e != nil {
 		t.Fatal(e)
 	}
-	move := func(key, rev, parent, after, before, op string) peerstore.Record {
+	move := func(key, rev, parent, after, before, op string) crdt.Record {
 		t.Helper()
 		r, e := s.MutateKV(identity, KVMutation{Namespace: "navigation", Key: key, Revision: rev, OperationID: op, DaemonID: identity.DaemonID, Move: &KVMove{parent, after, before}})
 		if e != nil {
@@ -101,9 +104,9 @@ func TestKVOrderedMovesRetainNeighborsAndAtomicParent(t *testing.T) {
 	a := move("projects-item.a.position", "", "folder", "", "", "a")
 	b := move("projects-item.b.position", "", "folder", "", "", "b")
 	c := move("projects-item.c.position", "", "folder", a.ID, b.ID, "c")
-	rank := func(r peerstore.Record) peerstore.KVPosition {
-		var p peerstore.KVPosition
-		if e := json.Unmarshal(peerstore.SelectedKV(r).Value, &p); e != nil {
+	rank := func(r crdt.Record) schema.KVPosition {
+		var p schema.KVPosition
+		if e := json.Unmarshal(schema.SelectedKV(r).Value, &p); e != nil {
 			t.Fatal(e)
 		}
 		return p
@@ -119,7 +122,7 @@ func TestKVOrderedMovesRetainNeighborsAndAtomicParent(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if data.Records[peerstore.Key(a.Kind, a.ID)].Revision() != a.Revision() || data.Records[peerstore.Key(b.Kind, b.ID)].Revision() != b.Revision() {
+	if data.Records[crdt.Key(a.Kind, a.ID)].Revision() != a.Revision() || data.Records[crdt.Key(b.Kind, b.ID)].Revision() != b.Revision() {
 		t.Fatal("move rewrote neighbors")
 	}
 }

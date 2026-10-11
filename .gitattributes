@@ -1,7 +1,12 @@
-# Generated bundles contain upstream template strings and verbatim licenses.
-# Verify them with `just mac markdown-check`, without rewriting their contents.
-apps/mac/Sources/DieterMac/Resources/MarkdownPreview/** linguist-generated=true -whitespace
+# Generated code: collapsed in diffs and excluded from language statistics.
+# Regenerate with `just generate`; CI fails when these drift from their sources.
+internal/gen/** linguist-generated=true
+apps/apple/DieterKit/Sources/DieterAPI/Generated/** linguist-generated=true
+apps/apple/DieterKit/Sources/DieterAPIGRPC/*.grpc.swift linguist-generated=true
+internal/platform/buildinfo/identity.go linguist-generated=true
+site/content/docs/reference/cli.md linguist-generated=true
 
-# Preserve the imported package's formatting; local changes are documented in
-# its DIETER-PATCHES.md and covered by the native Markdown integration tests.
-apps/mac/Vendor/swift-markdown-engine/** linguist-vendored=true -whitespace
+# Preserve the imported packages' formatting; local changes are documented in
+# each package's PATCHES.md.
+third_party/** linguist-vendored=true
+third_party/swift-markdown-engine/** -whitespace

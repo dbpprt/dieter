@@ -9,13 +9,14 @@ import (
 	"time"
 
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/peerstore"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
 )
 
 // Run explicitly with DIETER_PEER_SCALE=1. This qualifies the complete persisted
 // directory and incremental replication, without provisioning 10,000 Git trees
 // or starting provider sessions.
 func TestSharedScaleTenThousandItemsThreeReplicas(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("DIETER_PEER_SCALE") != "1" {
 		t.Skip("set DIETER_PEER_SCALE=1 for the 10,000-item qualification")
 	}
@@ -96,7 +97,7 @@ func TestSharedScaleTenThousandItemsThreeReplicas(t *testing.T) {
 		}
 		t.Logf("replica %s caught up; maximum page write=%s, elapsed=%s", targetIdentity.DaemonID, maximum, time.Since(started))
 	}
-	expected := peerstore.Revision(data.State)
+	expected := crdt.Revision(data.State)
 	for _, replica := range []*Store{a, b, c} {
 		restarted := New(replica.Root)
 		identity, _ := restarted.PeerIdentity()
@@ -106,7 +107,7 @@ func TestSharedScaleTenThousandItemsThreeReplicas(t *testing.T) {
 			t.Fatalf("items=%d: %v", len(items), e)
 		}
 		recovered, e := restarted.PeerData(identity.Account)
-		if e != nil || peerstore.Revision(recovered.State) != expected {
+		if e != nil || crdt.Revision(recovered.State) != expected {
 			t.Fatalf("recovery mismatch: %v", e)
 		}
 		var disk int64

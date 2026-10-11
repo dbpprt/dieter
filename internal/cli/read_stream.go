@@ -22,11 +22,11 @@ type readResumingConn struct{ grpc.ClientConnInterface }
 
 func (c readResumingConn) NewStream(ctx context.Context, desc *grpc.StreamDesc, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
 	switch method {
-	case dieterv1.DieterService_WatchKV_FullMethodName, dieterv1.DieterService_WatchChanges_FullMethodName,
-		dieterv1.DieterService_WatchConversation_FullMethodName,
-		dieterv1.DieterService_WatchTerminal_FullMethodName,
-		dieterv1.DieterService_WatchExecution_FullMethodName,
-		dieterv1.DieterService_WatchGitOperation_FullMethodName:
+	case dieterv1.KVService_WatchKV_FullMethodName, dieterv1.StateService_WatchChanges_FullMethodName,
+		dieterv1.ConversationService_WatchConversation_FullMethodName,
+		dieterv1.TerminalService_WatchTerminal_FullMethodName,
+		dieterv1.ExecutionService_WatchExecution_FullMethodName,
+		dieterv1.GitService_WatchGitOperation_FullMethodName:
 		return &resumingReadStream{ctx: ctx, open: func(ctx context.Context) (grpc.ClientStream, error) {
 			return c.ClientConnInterface.NewStream(ctx, desc, method, opts...)
 		}}, nil

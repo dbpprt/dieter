@@ -8,6 +8,7 @@ import (
 )
 
 func TestUnsupportedDevelopmentStoreIsNotConverted(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	projects := filepath.Join(root, "projects")
 	if err := os.Mkdir(projects, 0700); err != nil {

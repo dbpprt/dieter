@@ -1,9 +1,6 @@
+# Fastlane runs the native build, device-test and release lanes (fastlane/).
 source "https://rubygems.org"
 
-ruby "3.3.11"
+ruby file: ".ruby-version"
 gem "fastlane", "2.240.1"
-gem "json-schema", "~> 5.2"
-
-group :test do
-  gem "minitest", "~> 5.25"
-end
+gem "minitest", "~> 5.25"

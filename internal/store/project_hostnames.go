@@ -1,11 +1,12 @@
 package store
 
 import (
-	"fmt"
 	"net"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/dbpprt/dieter/internal/platform/fault"
 )
 
 // Bare hosts match every port. A host:port mapping is more specific; IPv6
@@ -13,7 +14,7 @@ import (
 // but clients must not choose between equally specific destinations blindly.
 func normalizeProjectHostnames(values []string) ([]string, error) {
 	if len(values) > 64 {
-		return nil, fmt.Errorf("at most 64 project hostnames are allowed")
+		return nil, fault.Invalidf("at most 64 project hostnames are allowed")
 	}
 	result := []string{}
 	seen := map[string]bool{}
@@ -33,7 +34,7 @@ func normalizeProjectHostnames(values []string) ([]string, error) {
 
 func normalizeProjectHostname(value string) (string, error) {
 	invalid := func() (string, error) {
-		return "", fmt.Errorf("invalid project hostname %q: use host or host:port (1-65535), with IPv6 ports written as [::1]:4018; no URL, path, or wildcard", value)
+		return "", fault.Invalidf("invalid project hostname %q: use host or host:port (1-65535), with IPv6 ports written as [::1]:4018; no URL, path, or wildcard", value)
 	}
 	host := strings.ToLower(strings.TrimSpace(value))
 	port := ""

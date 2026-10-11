@@ -4,13 +4,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/peerstore"
-	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/platform/fault"
+	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
 )
 
 // Public mutations retain the central Store write lock and journal transaction.
@@ -32,7 +34,7 @@ func (s *Store) CreateProject(input CreateProjectInput) (model.Project, error) {
 		input.ID = newID("p_")
 	}
 	if !validFileID(input.ID) {
-		return model.Project{}, errors.New("project ID is invalid")
+		return model.Project{}, fault.New(fault.Invalid, "project ID is invalid")
 	}
 	path, err := normalizePath(input.Path)
 	if err != nil {
@@ -56,17 +58,17 @@ func (s *Store) CreateProject(input CreateProjectInput) (model.Project, error) {
 	}
 	request := input
 	request.ID, request.Path = "", path
-	fingerprint := peerstore.Revision(request)
+	fingerprint := crdt.Revision(request)
 	receiptPath := ""
 	if input.OperationID != "" {
-		if !peerstore.ValidID(input.OperationID) {
-			return model.Project{}, errors.New("invalid operation ID")
+		if !crdt.ValidID(input.OperationID) {
+			return model.Project{}, fault.New(fault.Invalid, "invalid operation ID")
 		}
-		receiptPath = "receipts/project-" + peerstore.Revision([]string{identity.Account, input.OperationID}) + ".json"
+		receiptPath = "receipts/project-" + crdt.Revision([]string{identity.Account, input.OperationID}) + ".json"
 		var receipt projectReceipt
 		if err := readJSON(filepath.Join(s.Root, receiptPath), &receipt); err == nil {
 			if receipt.Fingerprint != fingerprint {
-				return model.Project{}, errors.New("operation ID reused with a different project request")
+				return model.Project{}, fault.New(fault.Invalid, "operation ID reused with a different project request")
 			}
 			return s.ResolveProjectIncludingArchived(receipt.ProjectID)
 		} else if !errors.Is(err, os.ErrNotExist) && !errors.Is(err, ErrNotFound) {
@@ -83,11 +85,11 @@ func (s *Store) CreateProject(input CreateProjectInput) (model.Project, error) {
 				if candidate.Archived {
 					return s.restoreProjectForCreation(candidate, input, receiptPath, fingerprint)
 				}
-				return model.Project{}, fmt.Errorf("path is already attached to project %s", candidate.ID)
+				return model.Project{}, fault.Invalidf("path is already attached to project %s", candidate.ID)
 			}
 		}
 		if candidate.ID == input.ID {
-			return model.Project{}, fmt.Errorf("project already registered as %s", candidate.ID)
+			return model.Project{}, fault.Invalidf("project already registered as %s", candidate.ID)
 		}
 	}
 	now := timestamp()
@@ -308,7 +310,7 @@ func resolveProject(projects []model.Project, ref string) (model.Project, error)
 		if len(projects) == 1 {
 			return projects[0], nil
 		}
-		return model.Project{}, errors.New("project is required; pass --project or run inside a registered project")
+		return model.Project{}, fault.New(fault.Invalid, "project is required; pass --project or run inside a registered project")
 	}
 	for _, project := range projects {
 		if matchRef(ref, project.ID, project.Name) || project.Path == ref {
@@ -382,7 +384,7 @@ func (s *Store) UpdateProjectWithHostnames(ref string, name, summary, prompt, pa
 		}
 		for _, candidate := range projects {
 			if candidate.ID != project.ID && candidate.Path == path {
-				return model.Project{}, fmt.Errorf("project path is already registered as %s", candidate.ID)
+				return model.Project{}, fault.Invalidf("project path is already registered as %s", candidate.ID)
 			}
 		}
 		checkout, err := s.localCheckout(project.ID, "")
@@ -468,28 +470,28 @@ func normalizeValidationCommands(values []model.ValidationCommand) ([]model.Vali
 		value.Executable = strings.TrimSpace(value.Executable)
 		value.WorkingDirectory = strings.TrimSpace(value.WorkingDirectory)
 		if value.Executable == "" || strings.ContainsRune(value.Executable, '\x00') {
-			return nil, fmt.Errorf("validation command %d requires a valid executable", index+1)
+			return nil, fault.Invalidf("validation command %d requires a valid executable", index+1)
 		}
 		if value.TimeoutSeconds < 0 || value.TimeoutSeconds > 3600 {
-			return nil, fmt.Errorf("validation command %d timeout must be between 0 and 3600 seconds", index+1)
+			return nil, fault.Invalidf("validation command %d timeout must be between 0 and 3600 seconds", index+1)
 		}
 		if value.WorkingDirectory != "" {
 			clean := filepath.Clean(value.WorkingDirectory)
 			if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-				return nil, fmt.Errorf("validation command %d working directory must stay inside the workspace", index+1)
+				return nil, fault.Invalidf("validation command %d working directory must stay inside the workspace", index+1)
 			}
 			value.WorkingDirectory = clean
 		}
 		value.Arguments = append([]string(nil), value.Arguments...)
 		for _, argument := range value.Arguments {
 			if strings.ContainsRune(argument, '\x00') {
-				return nil, fmt.Errorf("validation command %d has an invalid argument", index+1)
+				return nil, fault.Invalidf("validation command %d has an invalid argument", index+1)
 			}
 		}
 		environment := make(map[string]string, len(value.Environment))
 		for key, item := range value.Environment {
 			if key == "" || strings.ContainsAny(key, "=\x00") || strings.ContainsRune(item, '\x00') {
-				return nil, fmt.Errorf("validation command %d has an invalid environment entry", index+1)
+				return nil, fault.Invalidf("validation command %d has an invalid environment entry", index+1)
 			}
 			environment[key] = item
 		}

@@ -9,10 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/controlrtc"
-	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/link"
+	"github.com/dbpprt/dieter/internal/transport/controlrtc"
+	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -26,7 +27,7 @@ func (c *CLI) dialControl(ctx context.Context, gateway *gatewayTransport, route 
 	}}
 	var mu sync.Mutex
 	var sessionID string
-	bootstrap := dieterv1.NewDieterServiceClient(gateway.conn)
+	bootstrap := dieterclient.New(gateway.conn)
 	dialer := func(ctx context.Context, _ string) (net.Conn, error) {
 		ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
 		defer cancel()
@@ -44,11 +45,11 @@ func (c *CLI) dialControl(ctx context.Context, gateway *gatewayTransport, route 
 		}
 		return stream, err
 	}
-	connection, err := dieterdaemon.DialDirectWithCredentials(ctx, "passthrough:///webrtc-control", id, route.GetDaemonCaPem(), credential, grpc.WithContextDialer(dialer))
+	connection, err := link.DialDirectWithCredentials(ctx, "passthrough:///webrtc-control", id, route.GetDaemonCaPem(), credential, grpc.WithContextDialer(dialer))
 	if err != nil {
 		return nil, err
 	}
-	client := dieterv1.NewDieterServiceClient(readResumingConn{connection})
+	client := dieterclient.New(readResumingConn{connection})
 	if _, err = client.Health(ctx, &emptypb.Empty{}); err != nil {
 		connection.Close()
 		return nil, err

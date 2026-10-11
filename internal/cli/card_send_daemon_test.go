@@ -6,18 +6,18 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
+	"github.com/dbpprt/dieter/internal/api"
 	"github.com/dbpprt/dieter/internal/harness"
+	"github.com/dbpprt/dieter/internal/link"
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/server"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/testkit"
 )
 
 type daemonOwnedRunner struct {
@@ -28,8 +28,9 @@ type daemonOwnedRunner struct {
 }
 
 func TestOperationalCLIWithoutDaemonDoesNotInitializeStore(t *testing.T) {
+	t.Parallel()
 	root := filepath.Join(t.TempDir(), "missing")
-	client := New(store.New(root))
+	client := New(root)
 	client.Out, client.Err = io.Discard, io.Discard
 	defer client.Close()
 	if err := client.Run([]string{"storage"}); err == nil {
@@ -66,7 +67,7 @@ func (runner *daemonOwnedRunner) Run(ctx context.Context, request harness.Reques
 }
 
 func TestCardSendUsesRunningDaemonAndOutlivesClient(t *testing.T) {
-	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
+	t.Parallel()
 	root := t.TempDir()
 	data := store.New(root)
 	repository := filepath.Join(t.TempDir(), "repo")
@@ -92,22 +93,22 @@ func TestCardSendUsesRunningDaemonAndOutlivesClient(t *testing.T) {
 		started: make(chan struct{}), release: make(chan struct{}), finished: make(chan struct{}),
 		requests: make(chan harness.Request, 1),
 	}
-	application := server.NewWithRunner(data, slog.New(slog.NewTextHandler(io.Discard, nil)), runner)
-	host := httptest.NewServer(application.Handler())
+	application := api.NewWithOptions(data, slog.New(slog.NewTextHandler(io.Discard, nil)), api.Options{Runner: runner, Catalog: testkit.MockCatalog()})
+	host := testkit.HTTPServer(application.Handler())
 	t.Cleanup(host.Close)
 	address := strings.TrimPrefix(host.URL, "http://")
-	if _, err := dieterdaemon.NewStatusWriter(root, dieterdaemon.RuntimeStatus{
+	if _, err := link.NewStatusWriter(root, link.RuntimeStatus{
 		PID: os.Getpid(), State: "running", ListenAddress: address,
-		GatewayState: dieterdaemon.GatewayNotEnrolled,
+		GatewayState: link.GatewayNotEnrolled,
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	directRunner := &fakeRunner{}
+	directRunner := newFakeRunner()
 	var output bytes.Buffer
-	client := New(data)
+	client := New(data.Root)
 	t.Cleanup(client.Close)
-	client.Out, client.Err, client.Runner = &output, &output, directRunner
+	client.Out, client.Err = &output, &output
 	attachment := filepath.Join(t.TempDir(), "resume.txt")
 	if err := os.WriteFile(attachment, []byte("daemon attachment"), 0o600); err != nil {
 		t.Fatal(err)
@@ -121,15 +122,15 @@ func TestCardSendUsesRunningDaemonAndOutlivesClient(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(testkit.Budget(30 * time.Second)):
 		t.Fatal("daemon admission waited for the agent turn instead of returning to the client")
 	}
-	if strings.TrimSpace(output.String()) != "sent" || len(directRunner.requests) != 0 {
-		t.Fatalf("output=%q direct requests=%d", output.String(), len(directRunner.requests))
+	if strings.TrimSpace(output.String()) != "sent" || directRunner.Count() != 0 {
+		t.Fatalf("output=%q direct requests=%d", output.String(), directRunner.Count())
 	}
 	select {
 	case <-runner.started:
-	case <-time.After(10 * time.Second):
+	case <-time.After(testkit.Budget(30 * time.Second)):
 		t.Fatal("daemon-owned runner did not start")
 	}
 	request := <-runner.requests
@@ -146,10 +147,10 @@ func TestCardSendUsesRunningDaemonAndOutlivesClient(t *testing.T) {
 	close(runner.release)
 	select {
 	case <-runner.finished:
-	case <-time.After(10 * time.Second):
+	case <-time.After(testkit.Budget(30 * time.Second)):
 		t.Fatal("daemon-owned runner did not finish")
 	}
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(testkit.Budget(30 * time.Second))
 	for time.Now().Before(deadline) {
 		stored, resolveErr := data.ResolveCard(card.ID)
 		leased, leaseErr := data.CardHasRuntimeLease(card.ID)
@@ -168,23 +169,23 @@ func TestCardSendUsesRunningDaemonAndOutlivesClient(t *testing.T) {
 }
 
 func TestCardSendDoesNotFallbackAfterCurrentDaemonFailure(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	data := store.New(root)
-	if _, err := dieterdaemon.NewStatusWriter(root, dieterdaemon.RuntimeStatus{
+	if _, err := link.NewStatusWriter(root, link.RuntimeStatus{
 		PID: os.Getpid(), State: "running", ListenAddress: "127.0.0.1:1",
-		GatewayState: dieterdaemon.GatewayNotEnrolled,
+		GatewayState: link.GatewayNotEnrolled,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	directRunner := &fakeRunner{}
-	client := New(data)
+	directRunner := newFakeRunner()
+	client := New(data.Root)
 	t.Cleanup(client.Close)
-	client.Runner = directRunner
 	err := client.Run([]string{"card", "send", "c_missing", "--message", "Do not duplicate"})
 	if err == nil || !strings.Contains(err.Error(), "connect to local Dieter daemon") {
 		t.Fatalf("error=%v", err)
 	}
-	if len(directRunner.requests) != 0 {
-		t.Fatalf("direct fallback started %d turns", len(directRunner.requests))
+	if directRunner.Count() != 0 {
+		t.Fatalf("direct fallback started %d turns", directRunner.Count())
 	}
 }

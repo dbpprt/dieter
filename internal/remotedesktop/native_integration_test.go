@@ -50,15 +50,14 @@ func TestNativeNegotiatedOverlapAndSingleCredit(t *testing.T) {
 	if path == "" {
 		t.Skip("native helper not configured")
 	}
-	for _, enabled := range []string{"0", "1"} {
-		t.Run(enabled, func(t *testing.T) {
-			t.Setenv("DIETER_SCREEN_OVERLAP", enabled)
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprint(enabled), func(t *testing.T) {
 			// Retain a send credit across the next 60 Hz capture, with bounded
 			// fixture delay. Metadata proves a real hardware encode overlapped.
 			t.Setenv("DIETER_TEST_CAPTURE_CREDIT_DELAY_MS", "24")
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			source, err := NewFrameSource(SourceOptions{Kind: "native-synthetic", HelperPath: path, Profile: "high", FPS: 60, MaxWidth: 1280, MaxHeight: 720, Bitrate: 12000})
+			source, err := NewFrameSource(SourceOptions{Kind: "native-synthetic", HelperPath: path, Profile: "high", FPS: 60, MaxWidth: 1280, MaxHeight: 720, Bitrate: 12000, FrameOverlap: enabled})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -83,8 +82,8 @@ func TestNativeNegotiatedOverlapAndSingleCredit(t *testing.T) {
 			if !errors.Is(err, complete) {
 				t.Fatalf("overlap capture failed: %v", err)
 			}
-			if (overlapped > 0) != (enabled == "1") {
-				t.Fatalf("enabled=%s, overlapped=%d", enabled, overlapped)
+			if (overlapped > 0) != enabled {
+				t.Fatalf("enabled=%v, overlapped=%d", enabled, overlapped)
 			}
 		})
 	}

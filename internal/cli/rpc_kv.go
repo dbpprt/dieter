@@ -12,7 +12,7 @@ import (
 	"syscall"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/peerstore"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
 )
 
 const kvHelp = `Usage: dieter kv <get|list|put|delete|move|watch> [options]
@@ -86,12 +86,12 @@ func (c *CLI) rpcKV(args []string) error {
 			return err
 		}
 		defer f.Close()
-		raw, err = io.ReadAll(io.LimitReader(f, peerstore.MaxValueBytes+1))
+		raw, err = io.ReadAll(io.LimitReader(f, crdt.MaxValueBytes+1))
 		if err != nil {
 			return err
 		}
-		if len(raw) > peerstore.MaxValueBytes {
-			return peerstore.ErrCapacity
+		if len(raw) > crdt.MaxValueBytes {
+			return crdt.ErrCapacity
 		}
 	}
 	ctx, cancel := c.commandContext()

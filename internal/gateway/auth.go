@@ -20,10 +20,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/buildinfo"
-	"github.com/dbpprt/dieter/internal/compatibility"
-	"github.com/dbpprt/dieter/internal/linkauth"
-	"github.com/dbpprt/dieter/internal/relaypolicy"
+	"github.com/dbpprt/dieter/internal/platform/buildinfo"
+	"github.com/dbpprt/dieter/internal/platform/version"
+	"github.com/dbpprt/dieter/internal/security/linkauth"
+	"github.com/dbpprt/dieter/internal/transport/relay"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -74,14 +74,14 @@ type streamBudget struct {
 }
 
 func (b *streamBudget) acquire(account int64) bool {
-	return b.acquireLane(account, relaypolicy.Command)
+	return b.acquireLane(account, relay.Command)
 }
-func (b *streamBudget) release(account int64) { b.releaseLane(account, relaypolicy.Command) }
-func (b *streamBudget) acquireLane(account int64, lane relaypolicy.Lane) bool {
+func (b *streamBudget) release(account int64) { b.releaseLane(account, relay.Command) }
+func (b *streamBudget) acquireLane(account int64, lane relay.Lane) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	accountLimit, globalLimit := maxAccountStreams, maxGatewayStreams
-	if lane == relaypolicy.Control || lane == relaypolicy.Replication {
+	if lane == relay.Control || lane == relay.Replication {
 		accountLimit, globalLimit = 64, 512
 	}
 	if b.laneTotals[lane] >= globalLimit || b.laneAccounts[lane][account] >= accountLimit {
@@ -92,7 +92,7 @@ func (b *streamBudget) acquireLane(account int64, lane relaypolicy.Lane) bool {
 	}
 	b.laneTotals[lane]++
 	b.laneAccounts[lane][account]++
-	if lane == relaypolicy.Command {
+	if lane == relay.Command {
 		b.total++
 		if b.accounts == nil {
 			b.accounts = map[int64]int{}
@@ -101,7 +101,7 @@ func (b *streamBudget) acquireLane(account int64, lane relaypolicy.Lane) bool {
 	}
 	return true
 }
-func (b *streamBudget) releaseLane(account int64, lane relaypolicy.Lane) {
+func (b *streamBudget) releaseLane(account int64, lane relay.Lane) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.laneTotals[lane]--
@@ -109,7 +109,7 @@ func (b *streamBudget) releaseLane(account int64, lane relaypolicy.Lane) {
 	if b.laneAccounts[lane][account] == 0 {
 		delete(b.laneAccounts[lane], account)
 	}
-	if lane == relaypolicy.Command {
+	if lane == relay.Command {
 		b.total--
 		b.accounts[account]--
 		if b.accounts[account] == 0 {
@@ -164,7 +164,7 @@ func (a *Auth) StreamInterceptor(service any, stream grpc.ServerStream, info *gr
 	if len(headers.Get("authorization")) != 1 {
 		return status.Error(codes.Unauthenticated, "authentication required")
 	}
-	ctx, cancel, err := a.authenticateLane(stream.Context(), headers.Get("authorization")[0], relaypolicy.Subscription)
+	ctx, cancel, err := a.authenticateLane(stream.Context(), headers.Get("authorization")[0], relay.Subscription)
 	if err != nil {
 		return err
 	}
@@ -186,8 +186,8 @@ func (a *Auth) requireCompatibleClient(ctx context.Context) error {
 	if err != nil {
 		return status.Error(codes.Internal, "gateway compatibility policy is invalid")
 	}
-	state, current := compatibility.Evaluate(release, policy.MinimumClientVersion)
-	if state == compatibility.StatusCompatible {
+	state, current := version.Evaluate(release, policy.MinimumClientVersion)
+	if state == version.StatusCompatible {
 		return nil
 	}
 	if current == "" {
@@ -224,9 +224,9 @@ func consistentMetadataValue(values []string) string {
 // AuthenticateSession ties a streaming transport to its current session. Polling
 // also closes idle transports after sign-out; canceling it never stops an agent.
 func (a *Auth) AuthenticateSession(ctx context.Context, authorization string) (context.Context, context.CancelFunc, error) {
-	return a.authenticateLane(ctx, authorization, relaypolicy.Command)
+	return a.authenticateLane(ctx, authorization, relay.Command)
 }
-func (a *Auth) authenticateLane(ctx context.Context, authorization string, lane relaypolicy.Lane) (context.Context, context.CancelFunc, error) {
+func (a *Auth) authenticateLane(ctx context.Context, authorization string, lane relay.Lane) (context.Context, context.CancelFunc, error) {
 	principal, ok := a.AuthenticateBearer(authorization)
 	if !ok {
 		return nil, nil, status.Error(codes.Unauthenticated, "authentication required")
@@ -459,7 +459,7 @@ func (a *Auth) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, err := a.githubUser(r.Context(), githubToken)
-	githubToken = ""
+	githubToken = "" //nolint:ineffassign // drop the provider token from memory as soon as it is used
 	if err != nil || !a.config.AllowsGitHubUser(user.ID) {
 		a.completion(w, false, "This GitHub account is not allowed.")
 		return
@@ -646,7 +646,7 @@ func (a *Auth) exchange(ctx context.Context, code, verifier string) (string, err
 	}
 	decodeErr := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&payload)
 	if response.StatusCode != http.StatusOK || decodeErr != nil || payload.AccessToken == "" || payload.Error != "" {
-		return "", fmt.Errorf("GitHub token exchange rejected (status=%d code=%q decode=%v)", response.StatusCode, payload.Error, decodeErr)
+		return "", fmt.Errorf("GitHub token exchange rejected (status=%d code=%q decode=%v)", response.StatusCode, payload.Error, decodeErr) //nolint:errorlint // decodeErr is often nil; the rejection is reported as text, not wrapped
 	}
 	return payload.AccessToken, nil
 }

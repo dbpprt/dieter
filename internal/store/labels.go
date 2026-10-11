@@ -1,11 +1,12 @@
 package store
 
 import (
-	"errors"
 	"fmt"
-	"github.com/dbpprt/dieter/internal/model"
-	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
 	"strings"
+
+	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/platform/fault"
+	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
 )
 
 // Public mutations retain the central Store write lock and change-count transaction.
@@ -35,7 +36,7 @@ func validateCardLabels(board model.Board, requested []string) ([]string, error)
 			}
 		}
 		if matched == "" {
-			return nil, fmt.Errorf("label %q is not defined on board %s", ref, board.Name)
+			return nil, fault.Invalidf("label %q is not defined on board %s", ref, board.Name)
 		}
 		if !containsString(result, matched) {
 			result = append(result, matched)
@@ -47,13 +48,13 @@ func validateCardLabels(board model.Board, requested []string) ([]string, error)
 func (s *Store) CreateBoardLabel(boardRef, name, color string, instructions ...string) (model.Board, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return model.Board{}, errors.New("label name is required")
+		return model.Board{}, fault.New(fault.Invalid, "label name is required")
 	}
 	if color == "" {
 		color = "#6558df"
 	}
 	if len(color) != 7 || color[0] != '#' {
-		return model.Board{}, errors.New("label color must be a hex color such as #6558df")
+		return model.Board{}, fault.New(fault.Invalid, "label color must be a hex color such as #6558df")
 	}
 	release, err := s.beginWrite()
 	if err != nil {
@@ -66,7 +67,7 @@ func (s *Store) CreateBoardLabel(boardRef, name, color string, instructions ...s
 	}
 	for _, label := range board.Labels {
 		if strings.EqualFold(label.Name, name) {
-			return model.Board{}, fmt.Errorf("label %q already exists", name)
+			return model.Board{}, fault.Invalidf("label %q already exists", name)
 		}
 	}
 	prompt := ""
@@ -74,7 +75,7 @@ func (s *Store) CreateBoardLabel(boardRef, name, color string, instructions ...s
 		prompt = strings.TrimSpace(instructions[0])
 	}
 	if len(prompt) > dieterprompt.MaxTemplateBytes {
-		return model.Board{}, errors.New("label instructions exceed 32 KiB")
+		return model.Board{}, fault.New(fault.Invalid, "label instructions exceed 32 KiB")
 	}
 	board.Labels = append(board.Labels, model.Label{ID: newID("label_"), Name: name, Color: color, Instructions: prompt})
 	board.UpdatedAt = timestamp()
@@ -85,13 +86,13 @@ func (s *Store) CreateBoardLabel(boardRef, name, color string, instructions ...s
 func (s *Store) UpdateBoardLabel(boardRef, labelID, name, color, instructions string) (model.Board, error) {
 	name, color, instructions = strings.TrimSpace(name), strings.TrimSpace(color), strings.TrimSpace(instructions)
 	if name == "" {
-		return model.Board{}, errors.New("label name is required")
+		return model.Board{}, fault.New(fault.Invalid, "label name is required")
 	}
 	if len(color) != 7 || color[0] != '#' {
-		return model.Board{}, errors.New("label color must be a hex color such as #6558df")
+		return model.Board{}, fault.New(fault.Invalid, "label color must be a hex color such as #6558df")
 	}
 	if len(instructions) > dieterprompt.MaxTemplateBytes {
-		return model.Board{}, errors.New("label instructions exceed 32 KiB")
+		return model.Board{}, fault.New(fault.Invalid, "label instructions exceed 32 KiB")
 	}
 	release, err := s.beginWrite()
 	if err != nil {
@@ -110,7 +111,7 @@ func (s *Store) UpdateBoardLabel(boardRef, labelID, name, color, instructions st
 			continue
 		}
 		if strings.EqualFold(board.Labels[index].Name, name) {
-			return model.Board{}, fmt.Errorf("label %q already exists", name)
+			return model.Board{}, fault.Invalidf("label %q already exists", name)
 		}
 	}
 	if !found {
@@ -176,7 +177,7 @@ func (s *Store) SetCardLabels(cardRef string, requested []string) (model.Card, e
 		return model.Card{}, err
 	}
 	if card.Scope != model.ConversationScopeBoard {
-		return model.Card{}, errors.New("labels are only available for board cards")
+		return model.Card{}, fault.New(fault.Invalid, "labels are only available for board cards")
 	}
 	board, err := s.ResolveBoard(card.ProjectID, card.BoardID)
 	if err != nil {

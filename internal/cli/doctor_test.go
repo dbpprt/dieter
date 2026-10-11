@@ -3,6 +3,7 @@ package cli
 import "testing"
 
 func TestNodeVersionSupported(t *testing.T) {
+	t.Parallel()
 	for _, value := range []string{"v22.19.0", "22.20.1", "v23.0.0"} {
 		if err := nodeVersionSupported(value); err != nil {
 			t.Errorf("nodeVersionSupported(%q): %v", value, err)

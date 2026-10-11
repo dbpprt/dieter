@@ -11,13 +11,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dbpprt/dieter/internal/platform/fsx"
 	"golang.org/x/sys/cpu"
 )
 
 const managedBunVersion = "1.3.14"
 
-func ompHarnessEnvironment(runtimePaths ...string) []string {
-	environment := harnessEnvironment(runtimePaths...)
+func (e Environment) ompHarnessEnvironment(runtimePaths ...string) []string {
+	environment := e.harnessEnvironment(runtimePaths...)
 	if runtime.GOARCH != "amd64" {
 		return environment
 	}
@@ -49,7 +50,7 @@ func ensureManagedBun(ctx context.Context, dieterHome string) (string, error) {
 	if err := os.Chmod(root, 0o700); err != nil {
 		return "", err
 	}
-	lock, err := acquireRuntimeInstallLock(ctx, filepath.Join(root, ".install-"+managedBunVersion+".lock"))
+	lock, err := fsx.LockContext(ctx, filepath.Join(root, ".install-"+managedBunVersion+".lock"), 50*time.Millisecond)
 	if err != nil {
 		return "", fmt.Errorf("lock managed Bun %s installation: %w", managedBunVersion, err)
 	}
@@ -97,13 +98,13 @@ func ensureManagedBun(ctx context.Context, dieterHome string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("validate managed Bun %s installation: %w", managedBunVersion, err)
 	}
-	if err := syncRuntimeDirectory(stageDir); err != nil {
+	if err := fsx.SyncDir(stageDir); err != nil {
 		return "", err
 	}
 	if err := os.Rename(stageDir, finalDir); err != nil {
 		return "", fmt.Errorf("publish managed Bun %s installation: %w", managedBunVersion, err)
 	}
-	if err := syncRuntimeDirectory(root); err != nil {
+	if err := fsx.SyncDir(root); err != nil {
 		return "", err
 	}
 	relativeBin, err := filepath.Rel(stageDir, binDir)

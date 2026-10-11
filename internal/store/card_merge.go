@@ -1,12 +1,12 @@
 package store
 
 import (
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/platform/fault"
 )
 
 // MergeCard transfers only the initial request, preserving both conversations.
@@ -33,10 +33,10 @@ func (s *Store) MergeCard(sourceRef, targetRef string) (model.Card, error) {
 		return model.Card{}, err
 	}
 	if source.ID == target.ID || source.BoardID == "" || source.BoardID != target.BoardID || source.ProjectID != target.ProjectID {
-		return model.Card{}, errors.New("merge requires two different cards in the same board")
+		return model.Card{}, fault.New(fault.Invalid, "merge requires two different cards in the same board")
 	}
 	if source.MergedIntoCardID != "" && source.MergedIntoCardID != target.ID {
-		return model.Card{}, errors.New("card is already merged into another target")
+		return model.Card{}, fault.New(fault.Invalid, "card is already merged into another target")
 	}
 	if source.MergedIntoCardID == target.ID && !source.MergePending {
 		return source, nil
@@ -47,10 +47,10 @@ func (s *Store) MergeCard(sourceRef, targetRef string) (model.Card, error) {
 	}
 	if !source.MergePending {
 		if source.Archived || target.Archived || target.MergedIntoCardID != "" {
-			return model.Card{}, errors.New("archived or merged cards cannot be merged")
+			return model.Card{}, fault.New(fault.Invalid, "archived or merged cards cannot be merged")
 		}
 		if target.InitialPromptSentAt == "" {
-			return model.Card{}, errors.New("start the target task before merging into it")
+			return model.Card{}, fault.New(fault.Invalid, "start the target task before merging into it")
 		}
 		active, err := s.CardHasRuntimeLease(source.ID)
 		if err != nil {
@@ -67,14 +67,14 @@ func (s *Store) MergeCard(sourceRef, targetRef string) (model.Card, error) {
 			}
 		}
 		if active || origin.Status == "running" || origin.Status == "starting" || origin.ActiveTurn != nil || len(origin.Queue) != 0 {
-			return model.Card{}, errors.New("finish or cancel the source task and clear its queue before merging")
+			return model.Card{}, fault.New(fault.Invalid, "finish or cancel the source task and clear its queue before merging")
 		}
 		board, err := s.ResolveBoard(source.ProjectID, source.BoardID)
 		if err != nil {
 			return model.Card{}, err
 		}
 		if !validLane(board, "done") {
-			return model.Card{}, errors.New("board has no Done lane")
+			return model.Card{}, fault.New(fault.Invalid, "board has no Done lane")
 		}
 		parts := []model.UIMessagePart{{Type: "text", Text: fmt.Sprintf("Additional request merged from task %q (%s):\n\n%s", source.Title, source.ID, source.InitialPrompt)}}
 		attachments := origin.DraftAttachments

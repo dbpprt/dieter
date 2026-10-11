@@ -8,7 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/peerstore"
+	"github.com/dbpprt/dieter/internal/platform/fault"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
 )
 
 // PeerRecordError exposes only bounded identity and an error category, never a
@@ -22,15 +23,15 @@ func (e *PeerRecordError) Error() string {
 	return fmt.Sprintf("peer record rejected: kind=%s id=%s field=%s code=%s", e.Kind, e.ID, e.Field, e.Code)
 }
 func (e *PeerRecordError) Unwrap() error { return e.cause }
-func peerRecordFailure(record peerstore.Record, code string, err error) error {
-	_, field := peerstore.SplitField(record.ID)
+func peerRecordFailure(record crdt.Record, code string, err error) error {
+	_, field := crdt.SplitField(record.ID)
 	for _, prefix := range []string{"unknown shared object field: ", "null shared object field: "} {
 		if strings.HasPrefix(err.Error(), prefix) {
 			field = strings.TrimPrefix(err.Error(), prefix)
 		}
 	}
 	safe := func(value string) string {
-		if peerstore.ValidID(value) {
+		if crdt.ValidID(value) {
 			return value
 		}
 		return "invalid"
@@ -119,8 +120,8 @@ func (s *Store) PeerSyncDiagnostics(account string) ([]PeerSyncDiagnostic, error
 
 // Diagnostics do not publish domain commits or wake anti-entropy themselves.
 func (s *Store) RecordPeerSync(identity PeerIdentity, value PeerSyncDiagnostic) error {
-	if !peerstore.ValidID(value.PeerID) {
-		return errors.New("invalid peer ID")
+	if !crdt.ValidID(value.PeerID) {
+		return fault.New(fault.Invalid, "invalid peer ID")
 	}
 	release, err := s.beginWriteLock()
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 )
 
 func TestProjectHostnamesAreValidatedAndPersistedAtomically(t *testing.T) {
+	t.Parallel()
 	s, project, _ := setup(t, model.WorkflowDirect)
 	values := []string{" APP.Example.com. ", "localhost:04018", "app.example.com", "APP.Example.com.:443", "[0:0:0:0:0:0:0:1]:4018"}
 	updated, err := s.UpdateProjectWithHostnames(project.ID, nil, nil, nil, nil, &values)
@@ -51,6 +52,7 @@ func TestProjectHostnamesAreValidatedAndPersistedAtomically(t *testing.T) {
 }
 
 func TestBoardHostnamesAppendAndClear(t *testing.T) {
+	t.Parallel()
 	s, _, board := setup(t, model.WorkflowDirect)
 	_, err := s.UpdateBoardHostnames(board.ID, []string{"ONE.example", "localhost:4018"}, false)
 	if err != nil {
@@ -76,6 +78,7 @@ func TestBoardHostnamesAppendAndClear(t *testing.T) {
 }
 
 func TestProjectHostnameMappingsPreservePortsAndCanonicalizeAddresses(t *testing.T) {
+	t.Parallel()
 	values := []string{
 		" EXAMPLE.COM. ", "example.com", "EXAMPLE.COM.:00080", "example.com:80", "example.com:443",
 		"localhost:1", "localhost:65535", "127.0.0.1", "127.0.0.1:04018",

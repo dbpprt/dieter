@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/platform/fault"
+	"github.com/dbpprt/dieter/internal/platform/fsx"
 )
 
 const maxGitOperationLogBytes = 8 << 20
@@ -30,7 +32,7 @@ func normalizeWorkspaceMode(value string) (string, error) {
 	}
 	value, ok := model.CanonicalWorkspaceMode(value)
 	if !ok || !validWorkspaceMode(value) {
-		return "", errors.New("workspace mode must be project or worktree")
+		return "", fault.New(fault.Invalid, "workspace mode must be project or worktree")
 	}
 	return value, nil
 }
@@ -40,7 +42,7 @@ func writeJSON(path string, value any) error {
 	if err != nil {
 		return err
 	}
-	return atomicWrite(path, append(raw, '\n'))
+	return fsx.WriteFile(path, append(raw, '\n'), 0o600)
 }
 
 func readJSON(path string, value any) error {
@@ -82,7 +84,7 @@ func (s *Store) Workspace(cardRef string) (model.Workspace, error) {
 
 func (s *Store) WorkspaceByCardID(cardID string) (model.Workspace, error) {
 	if !validFileID(cardID) {
-		return model.Workspace{}, errors.New("card ID is invalid")
+		return model.Workspace{}, fault.New(fault.Invalid, "card ID is invalid")
 	}
 	var value model.Workspace
 	err := readJSON(filepath.Join(s.workspaceDir(), cardID+".json"), &value)
@@ -95,7 +97,7 @@ func (s *Store) WorkspaceByCardID(cardID string) (model.Workspace, error) {
 
 func (s *Store) SaveWorkspace(value model.Workspace) (model.Workspace, error) {
 	if !validFileID(value.CardID) || !validFileID(value.ProjectID) {
-		return model.Workspace{}, errors.New("workspace card and project IDs are required")
+		return model.Workspace{}, fault.New(fault.Invalid, "workspace card and project IDs are required")
 	}
 	mode, err := normalizeWorkspaceMode(value.Mode)
 	if err != nil {
@@ -134,7 +136,7 @@ func (s *Store) SaveWorkspace(value model.Workspace) (model.Workspace, error) {
 // such as cleanup_pending and its integration metadata.
 func (s *Store) UpdateWorkspaceChangesetStats(cardID string, changedFiles, additions, deletions int) (model.Workspace, error) {
 	if !validFileID(cardID) {
-		return model.Workspace{}, errors.New("workspace card ID is invalid")
+		return model.Workspace{}, fault.New(fault.Invalid, "workspace card ID is invalid")
 	}
 	release, err := s.beginWrite()
 	if err != nil {
@@ -160,7 +162,7 @@ func (s *Store) UpdateWorkspaceChangesetStats(cardID string, changedFiles, addit
 // began.
 func (s *Store) UpdateWorkspaceGitState(observed model.Workspace, includeSize bool) (model.Workspace, error) {
 	if !validFileID(observed.CardID) {
-		return model.Workspace{}, errors.New("workspace card ID is invalid")
+		return model.Workspace{}, fault.New(fault.Invalid, "workspace card ID is invalid")
 	}
 	release, err := s.beginWrite()
 	if err != nil {
@@ -233,7 +235,7 @@ func (s *Store) ListWorkspaces(projectRef string) ([]model.Workspace, error) {
 
 func (s *Store) DeleteWorkspace(cardID string) error {
 	if !validFileID(cardID) {
-		return errors.New("card ID is invalid")
+		return fault.New(fault.Invalid, "card ID is invalid")
 	}
 	release, err := s.beginWrite()
 	if err != nil {
@@ -257,14 +259,14 @@ func (s *Store) TransferWorkspace(fromCardRef, toCardRef string) (model.Workspac
 		return model.Workspace{}, err
 	}
 	if from.ProjectID != to.ProjectID {
-		return model.Workspace{}, errors.New("workspace adoption requires cards in the same project")
+		return model.Workspace{}, fault.New(fault.Invalid, "workspace adoption requires cards in the same project")
 	}
 	value, err := s.WorkspaceByCardID(from.ID)
 	if err != nil {
 		return model.Workspace{}, err
 	}
 	if _, err := s.WorkspaceByCardID(to.ID); err == nil {
-		return model.Workspace{}, errors.New("target conversation already has a workspace")
+		return model.Workspace{}, fault.New(fault.Invalid, "target conversation already has a workspace")
 	} else if !errors.Is(err, ErrNotFound) {
 		return model.Workspace{}, err
 	}
@@ -309,14 +311,14 @@ func (s *Store) createGitOperation(cardID, projectID, kind, expectedRevision str
 		CreatedAt: now, UpdatedAt: now,
 	}
 	if value.Kind == "" {
-		return model.GitOperation{}, errors.New("Git operation kind is required")
+		return model.GitOperation{}, fault.New(fault.Invalid, "Git operation kind is required")
 	}
 	return s.SaveGitOperation(value)
 }
 
 func (s *Store) SaveGitOperation(value model.GitOperation) (model.GitOperation, error) {
 	if !validFileID(value.ID) || !validFileID(value.ProjectID) || (value.CardID != "" && !validFileID(value.CardID)) {
-		return model.GitOperation{}, errors.New("Git operation ID, project ID, and optional card ID are invalid")
+		return model.GitOperation{}, fault.New(fault.Invalid, "Git operation ID, project ID, and optional card ID are invalid")
 	}
 	value.UpdatedAt = timestamp()
 	release, err := s.beginWrite()
@@ -347,7 +349,7 @@ func (s *Store) ActiveProjectGitOperation(projectRef string, checkoutIDs ...stri
 
 func (s *Store) GitOperation(id string) (model.GitOperation, error) {
 	if !validFileID(id) {
-		return model.GitOperation{}, errors.New("Git operation ID is invalid")
+		return model.GitOperation{}, fault.New(fault.Invalid, "Git operation ID is invalid")
 	}
 	var value model.GitOperation
 	err := readJSON(filepath.Join(s.gitOperationDir(), id+".json"), &value)
@@ -383,7 +385,7 @@ func (s *Store) ListGitOperations(cardRef string) ([]model.GitOperation, error) 
 
 func (s *Store) AppendGitOperationLog(id, message string) (uint64, error) {
 	if !validFileID(id) {
-		return 0, errors.New("Git operation ID is invalid")
+		return 0, fault.New(fault.Invalid, "Git operation ID is invalid")
 	}
 	message = strings.TrimSpace(message)
 	if message == "" {
@@ -407,7 +409,7 @@ func (s *Store) AppendGitOperationLog(id, message string) (uint64, error) {
 	}{operation.Sequence, message, timestamp()})
 	path := filepath.Join(s.gitOperationDir(), id+".log")
 	if info, statErr := os.Stat(path); statErr == nil && info.Size()+int64(len(line)+1) > maxGitOperationLogBytes {
-		return operation.Sequence - 1, errors.New("Git operation log limit reached")
+		return operation.Sequence - 1, fault.New(fault.Invalid, "Git operation log limit reached")
 	}
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -439,7 +441,7 @@ type GitOperationLogEntry struct {
 
 func (s *Store) GitOperationLog(id string, after uint64, limit int) ([]GitOperationLogEntry, error) {
 	if !validFileID(id) {
-		return nil, errors.New("Git operation ID is invalid")
+		return nil, fault.New(fault.Invalid, "Git operation ID is invalid")
 	}
 	if limit <= 0 || limit > 500 {
 		limit = 500
@@ -498,7 +500,7 @@ func (s *Store) PullRequest(cardRef string) (model.PullRequest, error) {
 
 func (s *Store) SavePullRequest(value model.PullRequest) (model.PullRequest, error) {
 	if !validFileID(value.CardID) {
-		return model.PullRequest{}, errors.New("pull request card ID is required")
+		return model.PullRequest{}, fault.New(fault.Invalid, "pull request card ID is required")
 	}
 	release, err := s.beginWrite()
 	if err != nil {
@@ -519,13 +521,13 @@ func (s *Store) AddChangeComment(value model.ChangeComment) (model.ChangeComment
 	value.CardID = card.ID
 	value.Body, value.Path = strings.TrimSpace(value.Body), strings.TrimSpace(value.Path)
 	if value.Body == "" || value.Path == "" || strings.TrimSpace(value.ChangesetRevision) == "" {
-		return model.ChangeComment{}, errors.New("changeset revision, path, and body are required")
+		return model.ChangeComment{}, fault.New(fault.Invalid, "changeset revision, path, and body are required")
 	}
 	if value.ID == "" {
 		value.ID = newID("change_comment_")
 	}
 	if !validFileID(value.ID) {
-		return model.ChangeComment{}, errors.New("change comment ID is invalid")
+		return model.ChangeComment{}, fault.New(fault.Invalid, "change comment ID is invalid")
 	}
 	if value.Author.Kind == "" {
 		value.Author.Kind = "human"

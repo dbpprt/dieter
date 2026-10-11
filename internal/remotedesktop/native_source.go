@@ -155,6 +155,7 @@ type nativeHelperSource struct {
 	synthetic, embeddedCursor, inputAllowed bool
 	multiplex                               bool
 	referenceRecovery                       bool
+	frameOverlap                            bool
 	ready                                   chan struct{}
 	displayActivity                         displayActivityFactory
 
@@ -614,7 +615,7 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 			sample.Metadata = meta
 		}
 		metadata := sample.Metadata.(FrameMetadata)
-		if !s.multiplex && s.overlapSupported.Load() && os.Getenv("DIETER_SCREEN_OVERLAP") == "1" {
+		if !s.multiplex && s.overlapSupported.Load() && s.frameOverlap {
 			s.mu.Lock()
 			config = s.currentConfigurationLocked()
 			s.mu.Unlock()

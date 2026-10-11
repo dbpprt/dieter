@@ -10,11 +10,14 @@ import (
 	"syscall"
 
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/peerstore"
+	"github.com/dbpprt/dieter/internal/platform/fault"
+	"github.com/dbpprt/dieter/internal/platform/fsx"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
+	"github.com/dbpprt/dieter/internal/replication/schema"
 )
 
 var (
-	ErrCardActive = errors.New("conversation has an active agent turn")
+	ErrCardActive = fault.New(fault.FailedPrecondition, "conversation has an active agent turn")
 )
 
 type RuntimeLease struct {
@@ -130,12 +133,12 @@ func (s *Store) AcquireRuntimeLeaseFor(projectID, boardID, cardID, agent string)
 			return RuntimeLease{}, err
 		}
 		if card.MergedIntoCardID != "" {
-			return RuntimeLease{}, errors.New("card has been merged into another conversation")
+			return RuntimeLease{}, fault.New(fault.Invalid, "card has been merged into another conversation")
 		}
 		if len(card.ConflictKeys) > 0 {
 			for _, key := range card.ConflictKeys {
 				if strings.Contains(key, "identity") {
-					return RuntimeLease{}, errors.New("conversation identity conflict")
+					return RuntimeLease{}, fault.New(fault.Invalid, "conversation identity conflict")
 				}
 			}
 		}
@@ -143,7 +146,7 @@ func (s *Store) AcquireRuntimeLeaseFor(projectID, boardID, cardID, agent string)
 	if project, err := s.ResolveProject(projectID); err == nil {
 		for _, key := range project.ConflictKeys {
 			if strings.HasSuffix(key, ".prompt") || strings.HasSuffix(key, ".promptTemplate") || strings.HasSuffix(key, ".archived") || strings.HasSuffix(key, ".consolidatedInto") {
-				return RuntimeLease{}, fmt.Errorf("unresolved execution settings: %s", key)
+				return RuntimeLease{}, fault.Invalidf("unresolved execution settings: %s", key)
 			}
 		}
 	}
@@ -151,7 +154,7 @@ func (s *Store) AcquireRuntimeLeaseFor(projectID, boardID, cardID, agent string)
 		if board, err := s.ResolveBoard(projectID, boardID); err == nil {
 			for _, key := range board.ConflictKeys {
 				if !strings.HasSuffix(key, ".name") && !strings.HasSuffix(key, ".color") && !strings.HasSuffix(key, ".description") {
-					return RuntimeLease{}, fmt.Errorf("unresolved execution settings: %s", key)
+					return RuntimeLease{}, fault.Invalidf("unresolved execution settings: %s", key)
 				}
 			}
 		}
@@ -189,15 +192,15 @@ func (s *Store) AcquireRuntimeLeaseFor(projectID, boardID, cardID, agent string)
 		}
 		lease.SettingsRevisions = map[string]string{}
 		for _, domain := range []struct{ kind, id string }{{"project", detail.Project.ID}, {"board", detail.Board.ID}, {"item", cardID}} {
-			for field := range peerstore.DomainFields[domain.kind] {
-				key := peerstore.Key(domain.kind, domain.id+"."+field)
+			for field := range schema.DomainFields[domain.kind] {
+				key := crdt.Key(domain.kind, domain.id+"."+field)
 				if record := data.record(key); len(record.Versions) > 0 {
 					lease.SettingsRevisions[key] = record.Revision()
 				}
 			}
 		}
 		for _, label := range detail.Card.LabelIDs {
-			key := peerstore.Key("label", label+".instructions")
+			key := crdt.Key("label", label+".instructions")
 			lease.SettingsRevisions[key] = data.record(key).Revision()
 		}
 		if err := data.Err(); err != nil {
@@ -205,7 +208,7 @@ func (s *Store) AcquireRuntimeLeaseFor(projectID, boardID, cardID, agent string)
 		}
 	}
 	raw, _ := json.MarshalIndent(lease, "", "  ")
-	if err := atomicWrite(path, append(raw, '\n')); err != nil {
+	if err := fsx.WriteFile(path, append(raw, '\n'), 0o600); err != nil {
 		return RuntimeLease{}, err
 	}
 	return lease, nil
@@ -252,7 +255,7 @@ func countLeases(items []RuntimeLease, match func(RuntimeLease) bool) int {
 func runtimeLeasePath(dir, cardID string) (string, error) {
 	cardID = strings.TrimSpace(cardID)
 	if cardID == "" || filepath.Base(cardID) != cardID || strings.ContainsAny(cardID, `/\\`) {
-		return "", errors.New("invalid conversation ID for runtime lease")
+		return "", fault.New(fault.Invalid, "invalid conversation ID for runtime lease")
 	}
 	return filepath.Join(dir, cardID+".json"), nil
 }

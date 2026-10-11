@@ -4,12 +4,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"google.golang.org/protobuf/encoding/protojson"
 	"io"
 	"os"
 	"strings"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 

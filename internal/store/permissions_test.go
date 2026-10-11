@@ -7,6 +7,7 @@ import (
 )
 
 func TestPrivateMetadataCreationPreservesWorktreePermissions(t *testing.T) {
+	t.Parallel()
 	s, project, board := setup(t, "review")
 	card, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, Title: "Private"})
 	if err != nil {
@@ -32,6 +33,7 @@ func TestPrivateMetadataCreationPreservesWorktreePermissions(t *testing.T) {
 }
 
 func TestEnsureRehardensSensitiveRootFiles(t *testing.T) {
+	t.Parallel()
 	root := filepath.Join(t.TempDir(), "dieter")
 	s := New(root)
 	if err := s.Ensure(); err != nil {

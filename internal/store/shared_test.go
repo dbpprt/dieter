@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/peerstore"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
 )
 
 func peerFixture(t *testing.T, id string) *Store {
@@ -39,7 +39,7 @@ func joinStores(t *testing.T, from, to *Store) {
 	}
 	records := source.Sorted()
 	for len(records) > 0 {
-		n := min(len(records), peerstore.PageSize)
+		n := min(len(records), crdt.PageSize)
 		if err = to.MergePeerRecords(identity, records[:n]); err != nil {
 			t.Fatal(err)
 		}
@@ -48,6 +48,7 @@ func joinStores(t *testing.T, from, to *Store) {
 }
 
 func TestDetachedCheckoutRemainsInSharedProjection(t *testing.T) {
+	t.Parallel()
 	a, b := peerFixture(t, "machine_a"), peerFixture(t, "machine_b")
 	path := sharedRepo(t)
 	project, err := a.CreateProject(CreateProjectInput{Name: "Repo", Path: path})
@@ -77,6 +78,7 @@ func TestDetachedCheckoutRemainsInSharedProjection(t *testing.T) {
 	}
 }
 func TestSharedProjectThreeMachinesOfflineEditsAndOwnerIsolation(t *testing.T) {
+	t.Parallel()
 	a, b, c := peerFixture(t, "machine_a"), peerFixture(t, "machine_b"), peerFixture(t, "machine_c")
 	p, err := a.CreateProject(CreateProjectInput{Name: "Repo", Path: sharedRepo(t), Prompt: "original"})
 	if err != nil {
@@ -160,7 +162,7 @@ func TestSharedProjectThreeMachinesOfflineEditsAndOwnerIsolation(t *testing.T) {
 		t.Fatalf("conflict=%v err=%v", got.ConflictKeys, err)
 	}
 	thirdPrompt := "a new resolution requires a revision"
-	if _, err = c.UpdateProject(p.ID, nil, nil, &thirdPrompt); !errors.Is(err, peerstore.ErrConflict) {
+	if _, err = c.UpdateProject(p.ID, nil, nil, &thirdPrompt); !errors.Is(err, crdt.ErrConflict) {
 		t.Fatalf("silent conflict resolution: %v", err)
 	}
 	identity, _ := c.PeerIdentity()
@@ -176,6 +178,7 @@ func TestSharedProjectThreeMachinesOfflineEditsAndOwnerIsolation(t *testing.T) {
 	}
 }
 func TestSharedOrderingConcurrentInsertionsRemainAddressable(t *testing.T) {
+	t.Parallel()
 	first, err := orderBetween("", "")
 	if err != nil {
 		t.Fatal(err)
@@ -203,6 +206,7 @@ func TestSharedOrderingConcurrentInsertionsRemainAddressable(t *testing.T) {
 	}
 }
 func TestFirstEnrollmentAdoptsLocalCheckoutAndConversation(t *testing.T) {
+	t.Parallel()
 	s := New(t.TempDir())
 	p, err := s.CreateProject(CreateProjectInput{Name: "Repo", Path: sharedRepo(t)})
 	if err != nil {
@@ -222,6 +226,7 @@ func TestFirstEnrollmentAdoptsLocalCheckoutAndConversation(t *testing.T) {
 }
 
 func TestSharedProjectCreationReceiptAndAtomicBoard(t *testing.T) {
+	t.Parallel()
 	s := peerFixture(t, "machine_a")
 	input := CreateProjectInput{OperationID: "create-retry", Name: "Repo", Path: sharedRepo(t), InitialBoardName: "Main"}
 	p, err := s.CreateProject(input)
@@ -246,6 +251,7 @@ func TestSharedProjectCreationReceiptAndAtomicBoard(t *testing.T) {
 }
 
 func TestCreateProjectRestoresArchivedPathAndAddsMissingInitialBoard(t *testing.T) {
+	t.Parallel()
 	s := peerFixture(t, "machine_a")
 	path := sharedRepo(t)
 	original, err := s.CreateProject(CreateProjectInput{Name: "Repo", Path: path})
@@ -285,6 +291,7 @@ func TestCreateProjectRestoresArchivedPathAndAddsMissingInitialBoard(t *testing.
 }
 
 func TestCreateProjectRestoresArchivedPathWithoutDuplicatingExistingBoard(t *testing.T) {
+	t.Parallel()
 	s := peerFixture(t, "machine_a")
 	path := sharedRepo(t)
 	original, err := s.CreateProject(CreateProjectInput{Name: "Repo", Path: path})
@@ -308,6 +315,7 @@ func TestCreateProjectRestoresArchivedPathWithoutDuplicatingExistingBoard(t *tes
 }
 
 func TestSharedEffectsRecoveryDoesNotReplayOldMetadata(t *testing.T) {
+	t.Parallel()
 	s := peerFixture(t, "machine_a")
 	p, err := s.CreateProject(CreateProjectInput{Name: "Repo", Path: sharedRepo(t)})
 	if err != nil {
@@ -344,6 +352,7 @@ func TestSharedEffectsRecoveryDoesNotReplayOldMetadata(t *testing.T) {
 }
 
 func TestSharedAccountSwitchHidesConversationAndLocalFiles(t *testing.T) {
+	t.Parallel()
 	s := peerFixture(t, "machine_a")
 	p, err := s.CreateProject(CreateProjectInput{Name: "Private", Path: sharedRepo(t)})
 	if err != nil {
@@ -368,6 +377,7 @@ func TestSharedAccountSwitchHidesConversationAndLocalFiles(t *testing.T) {
 }
 
 func TestSharedOrderingTenThousandEndInsertions(t *testing.T) {
+	t.Parallel()
 	left := ""
 	for i := 0; i < 10000; i++ {
 		next, err := orderBetween(left, "")
@@ -379,6 +389,7 @@ func TestSharedOrderingTenThousandEndInsertions(t *testing.T) {
 }
 
 func TestSharedConsolidationRetainsBoardsOwnersAndOfflineEdits(t *testing.T) {
+	t.Parallel()
 	a, b := peerFixture(t, "machine_a"), peerFixture(t, "machine_b")
 	source, err := a.CreateProject(CreateProjectInput{Name: "Duplicate", Path: sharedRepo(t), InitialBoardName: "Source board"})
 	if err != nil {
@@ -430,6 +441,7 @@ func TestSharedConsolidationRetainsBoardsOwnersAndOfflineEdits(t *testing.T) {
 }
 
 func TestSharedMoveUsesStableNeighborsAndRejectsStaleRevision(t *testing.T) {
+	t.Parallel()
 	s := peerFixture(t, "machine_a")
 	p, err := s.CreateProject(CreateProjectInput{Name: "Repo", Path: sharedRepo(t), InitialBoardName: "Main"})
 	if err != nil {
@@ -458,7 +470,7 @@ func TestSharedMoveUsesStableNeighborsAndRejectsStaleRevision(t *testing.T) {
 	if next.OrderKey <= cards[0].OrderKey || next.OrderKey >= cards[2].OrderKey {
 		t.Fatal("move escaped visible neighbors")
 	}
-	if _, err = s.MoveCardBetween(moved.ID, "done", "", "", moved.PlacementRevision); !errors.Is(err, peerstore.ErrConflict) {
+	if _, err = s.MoveCardBetween(moved.ID, "done", "", "", moved.PlacementRevision); !errors.Is(err, crdt.ErrConflict) {
 		t.Fatalf("stale move: %v", err)
 	}
 	hidden, err := s.ResolveCard(cards[1].ID)
@@ -468,6 +480,7 @@ func TestSharedMoveUsesStableNeighborsAndRejectsStaleRevision(t *testing.T) {
 }
 
 func TestScheduleHistoryCannotCrossAccountSwitch(t *testing.T) {
+	t.Parallel()
 	s := peerFixture(t, "machine_a")
 	p, err := s.CreateProject(CreateProjectInput{Name: "Repo", Path: sharedRepo(t), InitialBoardName: "Main"})
 	if err != nil {
@@ -494,6 +507,7 @@ func TestScheduleHistoryCannotCrossAccountSwitch(t *testing.T) {
 }
 
 func TestSharedWorkspaceDefaultsDoNotReplicateCheckoutCommands(t *testing.T) {
+	t.Parallel()
 	a, b := peerFixture(t, "a"), peerFixture(t, "b")
 	commands := []model.ValidationCommand{{Name: "Test", Executable: "just", Arguments: []string{"test"}, Environment: map[string]string{"LOCAL_ONLY": "secret"}}}
 	project, err := a.CreateProject(CreateProjectInput{Name: "Repo", Path: sharedRepo(t), ValidationCommands: commands})
@@ -537,6 +551,7 @@ func TestSharedWorkspaceDefaultsDoNotReplicateCheckoutCommands(t *testing.T) {
 }
 
 func TestReplicaArchivesRemainExplicitWithOwnerOffline(t *testing.T) {
+	t.Parallel()
 	a, b := peerFixture(t, "a"), peerFixture(t, "b")
 	project, err := a.CreateProject(CreateProjectInput{Name: "Repo", Path: sharedRepo(t)})
 	if err != nil {
@@ -574,6 +589,7 @@ func TestReplicaArchivesRemainExplicitWithOwnerOffline(t *testing.T) {
 }
 
 func TestPeerWakeCoalescesCommittedChangesOnly(t *testing.T) {
+	t.Parallel()
 	s := peerFixture(t, "a")
 	wake := s.PeerChangesAvailable()
 	project, err := s.CreateProject(CreateProjectInput{Name: "Repo", Path: sharedRepo(t)})

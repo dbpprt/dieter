@@ -20,6 +20,7 @@ func changeCounters(t *testing.T, s *Store) (changes, metadata uint64) {
 }
 
 func TestChangeCounterIsDurableAndMonotonic(t *testing.T) {
+	t.Parallel()
 	data := New(t.TempDir())
 	if err := data.Ensure(); err != nil {
 		t.Fatal(err)
@@ -60,6 +61,7 @@ func TestChangeCounterIsDurableAndMonotonic(t *testing.T) {
 }
 
 func TestChangeCounterAdvancesOnlyAfterCommit(t *testing.T) {
+	t.Parallel()
 	data := New(t.TempDir())
 	if err := data.Ensure(); err != nil {
 		t.Fatal(err)
@@ -79,6 +81,7 @@ func TestChangeCounterAdvancesOnlyAfterCommit(t *testing.T) {
 }
 
 func TestConversationTextAdvancesOnlyTheChangeCounter(t *testing.T) {
+	t.Parallel()
 	data := New(t.TempDir())
 	if err := data.Ensure(); err != nil {
 		t.Fatal(err)
@@ -94,6 +97,7 @@ func TestConversationTextAdvancesOnlyTheChangeCounter(t *testing.T) {
 }
 
 func TestRecoveredWriteCountsAsMetadataChange(t *testing.T) {
+	t.Parallel()
 	data := New(t.TempDir())
 	if err := data.Ensure(); err != nil {
 		t.Fatal(err)

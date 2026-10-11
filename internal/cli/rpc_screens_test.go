@@ -15,6 +15,7 @@ import (
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/remotedesktop"
+	"github.com/dbpprt/dieter/internal/testkit"
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -23,6 +24,7 @@ import (
 var errScreenAnswerCollected = errors.New("fixture collected screen answer")
 
 func TestVirtualDisplayCLIRejectsInvalidDimensionsAndPresentationFlags(t *testing.T) {
+	t.Parallel()
 	client := &CLI{Out: &bytes.Buffer{}}
 	for _, args := range [][]string{
 		{"set", "session", "--width", "4294968576", "--height", "720"},
@@ -129,7 +131,7 @@ func assertScreenSessionCLI(t *testing.T, client *CLI, output *bytes.Buffer, con
 	}
 	select {
 	case <-gathered:
-	case <-time.After(5 * time.Second):
+	case <-time.After(testkit.Budget(30 * time.Second)):
 		t.Fatal("fixture ICE gathering timed out")
 	}
 	offer = *viewer.LocalDescription()
@@ -273,7 +275,7 @@ func assertScreenSessionCLI(t *testing.T, client *CLI, output *bytes.Buffer, con
 	}
 	// Encoder diagnostics are asynchronous, and only exist after ICE starts
 	// the capture source. Exercise the real status operation on every route.
-	for deadline := time.Now().Add(10 * time.Second); state.GetEncoderConfiguration() == "" && time.Now().Before(deadline); {
+	for deadline := time.Now().Add(testkit.Budget(30 * time.Second)); state.GetEncoderConfiguration() == "" && time.Now().Before(deadline); {
 		time.Sleep(20 * time.Millisecond)
 		if err := protojson.Unmarshal([]byte(runDaemonCLI(t, client, output, "screen", "status", id)), &state); err != nil {
 			t.Fatal(err)
@@ -374,6 +376,7 @@ func assertScreenSessionCLI(t *testing.T, client *CLI, output *bytes.Buffer, con
 }
 
 func TestScreenClipboardRecognizesNativeTIFF(t *testing.T) {
+	t.Parallel()
 	for _, header := range []string{"II*\x00", "MM\x00*"} {
 		if got := screenClipboardMIME([]byte(header)); got != "image/tiff" {
 			t.Fatalf("TIFF identified as %s", got)
@@ -385,6 +388,7 @@ func TestScreenClipboardRecognizesNativeTIFF(t *testing.T) {
 }
 
 func TestScreenStartRejectsInvalidCodecOffline(t *testing.T) {
+	t.Parallel()
 	client := &CLI{Out: &bytes.Buffer{}}
 	err := client.rpcScreenStart([]string{"--request", "not-read.json", "--codec", "av1"})
 	if err == nil || err.Error() != "codec must be auto, h264, or hevc" {

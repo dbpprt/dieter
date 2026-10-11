@@ -12,22 +12,23 @@ tests/maestro/
 ```
 
 Every flow file has a header (`name`, `tags`), then `---` and its commands.
-`tags: [smoke]` flows run on every push and pull request; `tags: [full]` flows
-run only in scheduled and manual CI and with `tags:full` locally.
+`tags: [smoke]` flows run in CI when a change affects the app; `tags: [full]`
+flows run nightly and with `tags:full` locally.
 
 ## Run
 
 ```sh
-mise exec -- just pipeline android e2e profile:android-emulator
-mise exec -- just pipeline ios e2e
-mise exec -- just pipeline mac e2e
-mise exec -- just pipeline ios e2e tags:full profile:ios-ipad
-mise exec -- just pipeline android e2e profile:android-emulator flows:task
+mise exec -- just e2e android profile:android-emulator
+mise exec -- just e2e ios
+mise exec -- just e2e mac
+mise exec -- just e2e ios tags:full profile:ios-ipad
+mise exec -- just e2e android profile:android-emulator flows:task
 ```
 
 Each run builds the app it tests, starts one isolated gateway fixture
 (`tools/fixtures/gateway -e2e-fixture`), installs the separate E2E
-application, and runs the selected flows. Evidence, `results.json`,
+application (`com.getdieter.android.e2e`, `com.getdieter.ios.e2e`), and runs
+the selected flows. Evidence, `results.json`,
 Maestro's `junit.xml` and its screenshots are in
 `tmp/app-pipelines/<run>/`. The fixture token is redacted from Maestro's
 evidence.
@@ -42,9 +43,8 @@ evidence.
   plan and the debug app (`DIETER_E2E`) runs it with
   `--e2e-flow PLAN --e2e-output DIR`.
 
-Fastlane installs the pinned Maestro CLI (`fastlane/lib/dieter/maestro.rb`,
-checksum-verified) into `tmp/tools/maestro/`. Use that binary for
-`maestro studio` or `maestro hierarchy` while writing a flow.
+The run installs the pinned, checksum-verified Maestro CLI. Use that same
+binary for `maestro studio` or `maestro hierarchy` while writing a flow.
 
 ## Write fast flows
 

@@ -52,6 +52,7 @@ class RenderTests(unittest.TestCase):
             env["DIETER_NATIVE_REDIRECT_URIS"].split(","),
             [
                 "dieter-mac://oauth/callback",
+                "dieter-ios://oauth/callback",
                 "dieter-android://oauth/callback",
             ],
         )

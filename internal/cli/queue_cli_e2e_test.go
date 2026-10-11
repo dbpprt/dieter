@@ -1,3 +1,5 @@
+//go:build e2e
+
 package cli
 
 import (
@@ -11,6 +13,7 @@ import (
 )
 
 func TestDaemonCLIQueuedMessageRemoval(t *testing.T) {
+	t.Parallel()
 	client, output, data := daemonCLIForTest(t)
 	project, err := data.CreateProject(store.CreateProjectInput{Path: initTestRepository(t, "queue"), Name: "Queue"})
 	if err != nil {

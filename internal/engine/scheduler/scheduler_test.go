@@ -1,0 +1,299 @@
+package scheduler
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/dbpprt/dieter/internal/engine"
+	"github.com/dbpprt/dieter/internal/harness"
+	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/testkit"
+)
+
+type testRunner struct{}
+
+func (testRunner) Run(_ context.Context, request harness.Request, emit func(harness.Output) error) error {
+	for _, chunk := range []string{
+		`{"type":"start","messageId":"` + request.ResponseMessageID + `"}`,
+		`{"type":"text-start","id":"answer"}`,
+		`{"type":"text-delta","id":"answer","delta":"scheduled response"}`,
+		`{"type":"text-end","id":"answer"}`,
+		`{"type":"finish","finishReason":"stop"}`,
+	} {
+		if err := emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(chunk)}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func setup(t *testing.T) (*Manager, *store.Store, model.Project, model.Board) {
+	t.Helper()
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data := testkit.Store(t)
+	project, err := data.CreateProject(store.CreateProjectInput{Name: "Atlas", Path: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	board, err := data.CreateBoard(store.CreateBoardInput{Project: project.ID, Name: "Delivery", Workflow: model.WorkflowReview})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := engine.NewWithOptions(data, engine.Options{Runner: testRunner{}, Catalog: testkit.MockCatalog()})
+	return New(data, service), data, project, board
+}
+
+func TestRunNowCreatesOneTemplatedDraftWithOrigin(t *testing.T) {
+	t.Parallel()
+	manager, data, project, board := setup(t)
+	fixed := time.Date(2026, 8, 13, 7, 30, 0, 0, time.UTC)
+	manager.now = func() time.Time { return fixed }
+	schedule, err := manager.Create(store.ScheduleInput{
+		Project: project.ID, Board: board.ID, Name: "Daily work", Cron: "0 9 * * 1-5", Timezone: "Europe/Berlin", Enabled: true,
+		Action: model.ScheduleActionDraft, TitleTemplate: "Daily · {{date}}", PromptTemplate: "Work in {{project}} on {{scheduled_at}}", Provider: "mock", Model: "mock",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := manager.RunNow(schedule.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Status != model.ScheduleRunCompleted {
+		t.Fatalf("run=%#v", run)
+	}
+	card, err := data.ResolveCard(run.CardID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if card.Title != "Daily · 2026-08-13" || card.Lane != model.LaneTodo || card.Origin == nil || card.Origin.ScheduleRunID != run.ID || card.InitialPrompt != "Work in Atlas on 2026-08-13T07:30:00Z" {
+		t.Fatalf("card=%#v", card)
+	}
+	second, err := data.ClaimScheduleRun(schedule.ID, run.ScheduledFor, "", true)
+	if err != nil || second.ID != run.ID {
+		t.Fatalf("duplicate claim=%#v err=%v", second, err)
+	}
+	cards, _ := data.ListCards(store.CardFilter{})
+	if len(cards) != 1 {
+		t.Fatalf("cards=%#v", cards)
+	}
+}
+
+func TestAdvertisedTemplateVariablesRenderInTitleAndPrompt(t *testing.T) {
+	t.Parallel()
+	variables := map[string]string{
+		"date": "2026-08-25", "scheduled_at": "2026-08-25T07:00:00Z",
+		"project": "Dieter", "board": "Main", "schedule": "Morning",
+	}
+	if title := render("{{schedule}} · {{date}}", variables); title != "Morning · 2026-08-25" {
+		t.Fatalf("title=%q", title)
+	}
+	if prompt := render("Work in {{project}} / {{board}} at {{scheduled_at}}", variables); prompt != "Work in Dieter / Main at 2026-08-25T07:00:00Z" {
+		t.Fatalf("prompt=%q", prompt)
+	}
+}
+
+func TestSchedulePersistsValidatedEffortOnCreatedCard(t *testing.T) {
+	t.Parallel()
+	manager, data, project, board := setup(t)
+	schedule, err := manager.Create(store.ScheduleInput{
+		Project: project.ID, Board: board.ID, Name: "Careful work", Cron: "0 9 * * *", Timezone: "UTC",
+		Action: model.ScheduleActionDraft, TitleTemplate: "Careful", PromptTemplate: "Think", Provider: "codex", Model: "gpt-6-astra", Effort: "ultra",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := manager.RunNow(schedule.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	card, err := data.ResolveCard(run.CardID)
+	if err != nil || card.Model != "gpt-6-astra" || card.Effort != "ultra" {
+		t.Fatalf("card=%#v err=%v", card, err)
+	}
+	_, err = manager.Create(store.ScheduleInput{
+		Project: project.ID, Board: board.ID, Name: "Unsupported", Cron: "0 10 * * *", Timezone: "UTC",
+		Action: model.ScheduleActionDraft, TitleTemplate: "Bad", PromptTemplate: "Think", Provider: "codex", Model: "gpt-5.6-luna", Effort: "ultra",
+	})
+	if err == nil || !strings.Contains(err.Error(), "not supported") {
+		t.Fatalf("unsupported schedule effort err=%v", err)
+	}
+}
+
+func TestSchedulePreconfiguresCodexFastModeOnCreatedTask(t *testing.T) {
+	t.Parallel()
+	manager, data, project, board := setup(t)
+	schedule, err := manager.Create(store.ScheduleInput{
+		Project: project.ID, Board: board.ID, Name: "Fast work", Cron: "0 9 * * *", Timezone: "UTC",
+		Action: model.ScheduleActionDraft, TitleTemplate: "Fast", PromptTemplate: "Move quickly", Provider: "codex",
+		ProviderOptions: map[string]string{"fast_mode": "true"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := manager.RunNow(schedule.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	card, err := data.ResolveCard(run.CardID)
+	if err != nil || card.ProviderOptions["fast_mode"] != "true" {
+		t.Fatalf("scheduled card=%#v err=%v", card, err)
+	}
+}
+
+func TestScheduleRejectsCodexFastModeForUnsupportedModel(t *testing.T) {
+	t.Parallel()
+	manager, _, project, board := setup(t)
+	_, err := manager.Create(store.ScheduleInput{
+		Project: project.ID, Board: board.ID, Name: "Fast Spark work", Cron: "0 9 * * *", Timezone: "UTC",
+		Action: model.ScheduleActionDraft, TitleTemplate: "Fast", PromptTemplate: "Move quickly", Provider: "codex",
+		Model: "gpt-5.3-codex-spark", ProviderOptions: map[string]string{"fast_mode": "true"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "not supported for model") {
+		t.Fatalf("Spark Fast mode schedule err=%v", err)
+	}
+}
+
+func TestTickArchivesDoneCardsUsingBoardPolicy(t *testing.T) {
+	t.Parallel()
+	manager, data, project, board := setup(t)
+	if _, err := data.UpdateBoardDoneArchivePolicy(board.ID, model.DoneArchiveImmediately); err != nil {
+		t.Fatal(err)
+	}
+	card, err := data.CreateCard(store.CreateCardInput{Project: project.ID, Board: board.ID, Title: "Completed"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := data.MoveCard(card.ID, model.LaneDone, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// Freeze after fixture writes; they can take over a second under -race.
+	fixed := time.Now().UTC().Add(time.Second)
+	manager.now = func() time.Time { return fixed }
+	manager.Tick()
+	card, err = data.ResolveCard(card.ID)
+	if err != nil || !card.Archived {
+		t.Fatalf("archived card=%#v err=%v", card, err)
+	}
+}
+
+func TestIdleTicksDoNotRecordChanges(t *testing.T) {
+	t.Parallel()
+	manager, data, _, _ := setup(t)
+	before, err := data.ChangeCount()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 4 {
+		manager.Tick()
+	}
+	if after, err := data.ChangeCount(); err != nil || after != before {
+		t.Fatalf("idle ticks recorded changes: before=%d after=%d err=%v", before, after, err)
+	}
+}
+
+func TestDueRunUsesLatestMisfireAndAdvancesCursor(t *testing.T) {
+	t.Parallel()
+	manager, data, project, board := setup(t)
+	clock := time.Date(2026, 8, 13, 7, 29, 0, 0, time.UTC)
+	manager.now = func() time.Time { return clock }
+	schedule, err := manager.Create(store.ScheduleInput{Project: project.ID, Board: board.ID, Name: "Minute", Cron: "* * * * *", Timezone: "UTC", Enabled: true, Action: "draft", TitleTemplate: "Tick {{scheduled_at}}", PromptTemplate: "Tick", Provider: "mock", Model: "mock"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock = clock.Add(4*time.Minute + 20*time.Second)
+	manager.Tick()
+	runs, _ := data.ListScheduleRuns(schedule.ID, 0)
+	if len(runs) != 1 || runs[0].ScheduledFor != "2026-08-13T07:33:00Z" || runs[0].Status != model.ScheduleRunCompleted {
+		t.Fatalf("runs=%#v", runs)
+	}
+	updated, _ := data.ResolveSchedule(schedule.ID)
+	if updated.NextRunAt != "2026-08-13T07:34:00Z" {
+		t.Fatalf("next=%s", updated.NextRunAt)
+	}
+}
+
+func TestAutoRunStartsAlongsideOtherConversations(t *testing.T) {
+	t.Parallel()
+	manager, data, project, board := setup(t)
+	hold, err := data.AcquireRuntimeLeaseFor("another-project", "another-board", "hold", "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	schedule, err := manager.Create(store.ScheduleInput{Project: project.ID, Board: board.ID, Name: "Agent", Cron: "0 9 * * *", Timezone: "UTC", Enabled: true, Action: "run", TitleTemplate: "Run", PromptTemplate: "Do it", Provider: "mock", Model: "mock", OpenCardPolicy: "always"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	settled := settledRuns(manager)
+	run, err := manager.RunNow(schedule.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = data.ReleaseRuntimeLease(hold) }()
+	completed := waitSettled(t, settled, run.ID)
+	if completed.Status != model.ScheduleRunCompleted {
+		t.Fatalf("run=%#v", completed)
+	}
+	card, _ := data.ResolveCard(completed.CardID)
+	if card.InitialPromptSentAt == "" || card.Lane != model.LaneRunning {
+		t.Fatalf("started card=%#v", card)
+	}
+}
+
+func TestSkipIfOpenRecordsOccurrenceWithoutBrokenCardLink(t *testing.T) {
+	t.Parallel()
+	manager, data, project, board := setup(t)
+	schedule, err := manager.Create(store.ScheduleInput{Project: project.ID, Board: board.ID, Name: "Guarded", Cron: "0 9 * * *", Timezone: "UTC", Enabled: true, Action: "draft", TitleTemplate: "Guarded", PromptTemplate: "Do it", Provider: "mock", Model: "mock", OpenCardPolicy: "skip_if_open"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := manager.RunNow(schedule.ID)
+	if err != nil || first.Status != model.ScheduleRunCompleted {
+		t.Fatalf("first=%#v err=%v", first, err)
+	}
+	second, err := manager.RunNow(schedule.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Status != model.ScheduleRunSkipped || second.CardID != "" || second.Message == "" {
+		t.Fatalf("second=%#v", second)
+	}
+	cards, _ := data.ListCards(store.CardFilter{})
+	if len(cards) != 1 {
+		t.Fatalf("cards=%#v", cards)
+	}
+}
+
+// settledRuns delivers every agent run the manager settles.
+func settledRuns(manager *Manager) <-chan model.ScheduleRun {
+	runs := make(chan model.ScheduleRun, 8)
+	manager.OnRunSettled = func(run model.ScheduleRun) { runs <- run }
+	return runs
+}
+
+// waitSettled returns the settled run id. It waits on the manager's
+// notification, not on a wall-clock poll of storage.
+func waitSettled(t *testing.T, runs <-chan model.ScheduleRun, id string) model.ScheduleRun {
+	t.Helper()
+	timeout := time.After(testkit.Budget(30 * time.Second))
+	for {
+		select {
+		case run := <-runs:
+			if run.ID == id {
+				return run
+			}
+		case <-timeout:
+			t.Fatalf("run %s did not settle", id)
+		}
+	}
+}

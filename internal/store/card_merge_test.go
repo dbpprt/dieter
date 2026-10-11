@@ -37,6 +37,7 @@ func mergeFixture(t *testing.T) (*Store, model.Card, model.Card) {
 }
 
 func TestMergeCardPreservesRequestAttachmentsAndReceipt(t *testing.T) {
+	t.Parallel()
 	s, a, b := mergeFixture(t)
 	file := model.UIMessagePart{Type: "file", Filename: "screen.png", MediaType: "image/png", URL: "data:image/png;base64,YQ=="}
 	if _, err := s.SetConversationDraftAttachments(a.ID, []model.UIMessagePart{file}); err != nil {
@@ -92,6 +93,7 @@ func TestMergeCardPreservesRequestAttachmentsAndReceipt(t *testing.T) {
 }
 
 func TestMergeCardRejectsUnsafeSourceAndDraftTarget(t *testing.T) {
+	t.Parallel()
 	s, a, b := mergeFixture(t)
 	if _, err := s.MergeCard(a.ID, a.ID); err == nil {
 		t.Fatal("self merge accepted")
@@ -122,6 +124,7 @@ func TestMergeCardRejectsUnsafeSourceAndDraftTarget(t *testing.T) {
 }
 
 func TestDraftAgentSettingsAreSavedAndLockedAfterStart(t *testing.T) {
+	t.Parallel()
 	s, a, _ := mergeFixture(t)
 	config := DraftAgentSettings{Provider: "codex", Model: "model", Effort: "high", ProviderOptions: map[string]string{"fast_mode": "true"}}
 	got, err := s.UpdateCard(a.ID, a.Title, a.InitialPrompt, config)
@@ -140,6 +143,7 @@ func TestDraftAgentSettingsAreSavedAndLockedAfterStart(t *testing.T) {
 }
 
 func TestMergeRecoversAcceptedIntentBeforeDelivery(t *testing.T) {
+	t.Parallel()
 	s, source, target := mergeFixture(t)
 	source.MergedIntoCardID, source.MergePending = target.ID, true
 	source.MergeParts = []model.UIMessagePart{{Type: "text", Text: source.InitialPrompt}}

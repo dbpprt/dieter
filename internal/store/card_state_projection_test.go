@@ -6,10 +6,11 @@ import (
 	"testing"
 
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/peerstore"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
 )
 
 func TestCardStateFrontiersFollowIndependentCommitsAndReplicaJoin(t *testing.T) {
+	t.Parallel()
 	owner, peer := peerFixture(t, "owner"), peerFixture(t, "peer")
 	project, err := owner.CreateProject(CreateProjectInput{Name: "Test", Path: sharedRepo(t)})
 	if err != nil {
@@ -81,6 +82,7 @@ func TestCardStateFrontiersFollowIndependentCommitsAndReplicaJoin(t *testing.T) 
 }
 
 func TestConcurrentPlacementProjectionHasCanonicalFrontierAndUsableReceipt(t *testing.T) {
+	t.Parallel()
 	owner, peer := peerFixture(t, "owner"), peerFixture(t, "peer")
 	project, err := owner.CreateProject(CreateProjectInput{Name: "Test", Path: sharedRepo(t)})
 	if err != nil {
@@ -109,14 +111,14 @@ func TestConcurrentPlacementProjectionHasCanonicalFrontierAndUsableReceipt(t *te
 		if err != nil {
 			t.Fatal(err)
 		}
-		key := peerstore.Key("item", card.ID+".placement")
+		key := crdt.Key("item", card.ID+".placement")
 		record := data.Records[key]
 		if len(record.Versions) != 2 {
 			t.Fatalf("expected concurrent moves, got %d versions", len(record.Versions))
 		}
 		// Authentication proof hashes need not sort in presentation order.
 		sort.Slice(record.Versions, func(i, j int) bool {
-			return peerstore.PresentationRank(record.Versions[i]) > peerstore.PresentationRank(record.Versions[j])
+			return crdt.PresentationRank(record.Versions[i]) > crdt.PresentationRank(record.Versions[j])
 		})
 		data.Records[key] = record
 		projected, ok, err := sharedCard(data, card.ID, card)

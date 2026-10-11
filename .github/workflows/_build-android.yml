@@ -1,0 +1,57 @@
+name: Build Android
+
+# The Android signing domain: the signed release APK. The job references the
+# `android-signing` environment, which alone holds the keystore secrets.
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+      build:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  FASTLANE_DISABLE_COLORS: "1"
+  FASTLANE_HIDE_TIMESTAMP: "true"
+  FASTLANE_OPT_OUT_USAGE: "true"
+  FASTLANE_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+  LANG: en_US.UTF-8
+  LC_ALL: en_US.UTF-8
+  DIETER_RELEASE_VERSION: ${{ inputs.version }}
+  DIETER_RELEASE_BUILD: ${{ inputs.build }}
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: android-signing
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          tools: java ruby gem:bundler
+          bundle: "true"
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          packages: platforms;android-37.1 build-tools;37.0.0
+      - name: Signed release APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          DIETER_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          DIETER_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          DIETER_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: bundle exec fastlane android release
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-android
+          path: dist/android/Dieter-Android.apk
+          retention-days: 30
+          if-no-files-found: error

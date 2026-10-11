@@ -11,11 +11,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/buildinfo"
-	"github.com/dbpprt/dieter/internal/compatibility"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
-	"github.com/dbpprt/dieter/internal/linkauth"
-	"github.com/dbpprt/dieter/internal/relaypolicy"
+	"github.com/dbpprt/dieter/internal/platform/buildinfo"
+	"github.com/dbpprt/dieter/internal/platform/version"
+	"github.com/dbpprt/dieter/internal/security/linkauth"
+	"github.com/dbpprt/dieter/internal/transport/relay"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -29,7 +29,7 @@ const (
 	remoteDesktopRelayFrameBuffer = 128
 	// WatchExecution can replay all 4096 events retained by remoteexec before
 	// its receiver runs, plus the transport header and trailer. Keep this in
-	// sync with maxRetainedEventFrames in internal/remoteexec/manager_unix.go.
+	// sync with maxRetainedEventFrames in internal/host/remoteexec/manager_unix.go.
 	executionRelayFrameBuffer = 4096 + 2
 	maxRelayBufferedBytes     = 64 << 20
 )
@@ -48,12 +48,12 @@ const (
 	// One machine opens a link per lane, so a few machines behind one address
 	// can reconnect together without one source taking the whole pool.
 	maxDaemonHandshakesPerClient = 16
-	maxDaemonRelayStreams        = relaypolicy.CommandCalls
+	maxDaemonRelayStreams        = relay.CommandCalls
 	// Every client holds a change stream to every online machine and may
 	// watch conversations, KV and executions there. These long-lived reads
 	// have their own bound, so they cannot starve requests or each other's
 	// clients of the ordinary streams.
-	maxDaemonWatchStreams = relaypolicy.SubscriptionCalls
+	maxDaemonWatchStreams = relay.SubscriptionCalls
 )
 
 type Hub struct {
@@ -68,11 +68,11 @@ type Hub struct {
 
 	mu            sync.RWMutex
 	links         map[string]*daemonLink
-	relayLinks    map[string]map[relaypolicy.Lane]*daemonLink
+	relayLinks    map[string]map[relay.Lane]*daemonLink
 	sessions      map[string]string
 	retired       map[string]map[string]time.Time
-	laneMemory    [4]*relaypolicy.Budget
-	accountMemory map[int64][4]*relaypolicy.Budget
+	laneMemory    [4]*relay.Budget
+	accountMemory map[int64][4]*relay.Budget
 	nextID        atomic.Uint64
 	revision      atomic.Uint64
 	changed       chan struct{}
@@ -80,10 +80,10 @@ type Hub struct {
 }
 
 type daemonLink struct {
-	lane          relaypolicy.Lane
+	lane          relay.Lane
 	sessionID     string
-	outbound      *relaypolicy.Queue
-	budget        *relaypolicy.Budget
+	outbound      *relay.Queue
+	budget        *relay.Budget
 	rejected      atomic.Uint64
 	lastResponse  atomic.Int64
 	sendingAt     atomic.Int64
@@ -119,8 +119,8 @@ type queuedRelayFrame struct {
 type relayFrameQueue struct {
 	frames chan queuedRelayFrame
 	bytes  atomic.Int64
-	lane   relaypolicy.Lane
-	budget *relaypolicy.Budget
+	lane   relay.Lane
+	budget *relay.Budget
 }
 
 func (q *relayFrameQueue) push(frame *gatewayv1.DaemonLinkFrame) bool {
@@ -148,7 +148,7 @@ func (q *relayFrameQueue) push(frame *gatewayv1.DaemonLinkFrame) bool {
 }
 
 func NewHub(store *Store, config Config) *Hub {
-	return &Hub{store: store, config: config, writeTimeout: relaypolicy.WriteTimeout, leaseCheck: daemonHeartbeatLeaseCheck, links: map[string]*daemonLink{}, relayLinks: map[string]map[relaypolicy.Lane]*daemonLink{}, sessions: map[string]string{}, retired: map[string]map[string]time.Time{}, accountMemory: map[int64][4]*relaypolicy.Budget{}, changed: make(chan struct{}, 1), handshakes: make(chan struct{}, maxDaemonHandshakes), handshakeClients: newClientSlots(maxDaemonHandshakesPerClient)}
+	return &Hub{store: store, config: config, writeTimeout: relay.WriteTimeout, leaseCheck: daemonHeartbeatLeaseCheck, links: map[string]*daemonLink{}, relayLinks: map[string]map[relay.Lane]*daemonLink{}, sessions: map[string]string{}, retired: map[string]map[string]time.Time{}, accountMemory: map[int64][4]*relay.Budget{}, changed: make(chan struct{}, 1), handshakes: make(chan struct{}, maxDaemonHandshakes), handshakeClients: newClientSlots(maxDaemonHandshakesPerClient)}
 }
 
 func (h *Hub) SetQuotaManager(manager *QuotaManager) { h.quota = manager }
@@ -250,11 +250,11 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 	if err != nil {
 		return status.Error(codes.Internal, "gateway compatibility policy is invalid")
 	}
-	compatibilityValue, normalizedRelease := compatibility.Evaluate(hello.GetReleaseVersion(), policy.MinimumDaemonVersion)
+	compatibilityValue, normalizedRelease := version.Evaluate(hello.GetReleaseVersion(), policy.MinimumDaemonVersion)
 	if normalizedRelease == "" {
 		normalizedRelease = hello.GetReleaseVersion()
 	}
-	if compatibilityValue != compatibility.StatusCompatible {
+	if compatibilityValue != version.StatusCompatible {
 		if err := h.store.MarkDaemonSeen(identity, normalizedRelease, []byte("[]"), []byte("{}")); err != nil {
 			return status.Error(codes.Unauthenticated, "daemon is revoked")
 		}
@@ -266,7 +266,7 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 		})
 		return status.Errorf(codes.FailedPrecondition, "daemon update required: installed %q, minimum %s", normalizedRelease, policy.MinimumDaemonVersion)
 	}
-	if !relaypolicy.Valid(hello.Lane) || len(hello.SessionId) != 64 {
+	if !relay.Valid(hello.Lane) || len(hello.SessionId) != 64 {
 		return status.Error(codes.InvalidArgument, "valid relay lane and process session are required")
 	}
 
@@ -290,7 +290,7 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 	for _, capability := range hello.GetCapabilities() {
 		link.capabilities[capability] = true
 	}
-	link.outbound = relaypolicy.NewQueue(link.budget)
+	link.outbound = relay.NewQueue(link.budget)
 	link.markSeen(time.Now())
 	if err := h.register(link); err != nil {
 		link.close()
@@ -305,7 +305,7 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 	if e != nil || current.Revoked || current.Generation != record.Generation {
 		return status.Error(codes.Unauthenticated, "daemon enrollment was revoked or replaced")
 	}
-	if link.lane == relaypolicy.Control {
+	if link.lane == relay.Control {
 		if err := h.store.MarkDaemonSeen(identity, normalizedRelease, routes, remoteDesktop); err != nil {
 			return status.Error(codes.Unauthenticated, "daemon is revoked")
 		}
@@ -371,7 +371,7 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 		CompatibilityPolicy: protoCompatibilityPolicy(policy),
 		Compatibility:       gatewayv1.CompatibilityStatus_COMPATIBILITY_STATUS_COMPATIBLE,
 	}
-	if link.lane == relaypolicy.Control && h.quota != nil && link.capabilities[providerQuotaCapability] {
+	if link.lane == relay.Control && h.quota != nil && link.capabilities[providerQuotaCapability] {
 		correlationKey, err := h.store.ProviderCorrelationKey(record.GitHubID)
 		if err != nil {
 			return status.Error(codes.Internal, "load provider account correlation key")
@@ -382,11 +382,11 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 			ack.Capabilities = append(ack.Capabilities, providerQuotaResetCapability)
 		}
 	}
-	link.sendControlFrame(ack)
+	_ = link.sendControlFrame(ack)
 
 	recvErr := make(chan error, 1)
 	go func() {
-		assembler := relaypolicy.NewAssembler(link.budget, relaypolicy.Limit(link.lane))
+		assembler := relay.NewAssembler(link.budget, relay.Limit(link.lane))
 		defer assembler.Close()
 		for {
 			frame, err := stream.Recv()
@@ -394,7 +394,7 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 				recvErr <- err
 				return
 			}
-			if len(frame.GetPayload()) > relaypolicy.ChunkBytes || proto.Size(frame) > 2*relaypolicy.ChunkBytes {
+			if len(frame.GetPayload()) > relay.ChunkBytes || proto.Size(frame) > 2*relay.ChunkBytes {
 				recvErr <- errors.New("daemon relay fragment exceeds 64 KiB")
 				return
 			}
@@ -408,12 +408,12 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 					recvErr <- status.Error(codes.ResourceExhausted, "daemon presence exceeds 64 KiB")
 					return
 				}
-				if link.lane == relaypolicy.Control {
+				if link.lane == relay.Control {
 					routes, _ := json.Marshal(frame.GetDirectCandidates())
 					remoteDesktop, _ := json.Marshal(frame.GetRemoteDesktop())
 					currentPolicy, policyErr := compatibilityPolicy(h.config)
-					value, release := compatibility.Evaluate(frame.GetReleaseVersion(), currentPolicy.MinimumDaemonVersion)
-					if policyErr != nil || value != compatibility.StatusCompatible {
+					value, release := version.Evaluate(frame.GetReleaseVersion(), currentPolicy.MinimumDaemonVersion)
+					if policyErr != nil || value != version.StatusCompatible {
 						recvErr <- status.Error(codes.FailedPrecondition, "daemon update required by current gateway policy")
 						return
 					}
@@ -517,25 +517,25 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 
 // Each lane has reserved account/global byte capacity. Subscriptions cannot
 // exhaust the budget that admits health or replication traffic.
-func (h *Hub) relayBudget(account int64, lane relaypolicy.Lane) *relaypolicy.Budget {
+func (h *Hub) relayBudget(account int64, lane relay.Lane) *relay.Budget {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.laneMemory[lane] == nil {
-		h.laneMemory[lane] = relaypolicy.NewBudget(256<<20, nil)
+		h.laneMemory[lane] = relay.NewBudget(256<<20, nil)
 	}
 	budgets := h.accountMemory[account]
 	if budgets[lane] == nil {
-		budgets[lane] = relaypolicy.NewBudget(128<<20, h.laneMemory[lane])
+		budgets[lane] = relay.NewBudget(128<<20, h.laneMemory[lane])
 		h.accountMemory[account] = budgets
 	}
-	return relaypolicy.NewBudget(relaypolicy.BufferedBytes, budgets[lane])
+	return relay.NewBudget(relay.BufferedBytes, budgets[lane])
 }
 
 func (h *Hub) register(link *daemonLink) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	session := h.sessions[link.id]
-	if link.lane == relaypolicy.Control {
+	if link.lane == relay.Control {
 		for id, at := range h.retired[link.id] {
 			if time.Since(at) > 2*time.Minute {
 				delete(h.retired[link.id], id)
@@ -567,7 +567,7 @@ func (h *Hub) register(link *daemonLink) error {
 	}
 	lanes := h.relayLinks[link.id]
 	if lanes == nil {
-		lanes = map[relaypolicy.Lane]*daemonLink{}
+		lanes = map[relay.Lane]*daemonLink{}
 		h.relayLinks[link.id] = lanes
 	}
 	if previous := lanes[link.lane]; previous != nil {
@@ -601,8 +601,8 @@ func (h *Hub) RelayLanes(id string) []*gatewayv1.RelayLaneStatus {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	result := make([]*gatewayv1.RelayLaneStatus, 0, 4)
-	for _, lane := range relaypolicy.Lanes {
-		value := &gatewayv1.RelayLaneStatus{Lane: lane, CallLimit: uint32(relaypolicy.Limit(lane))}
+	for _, lane := range relay.Lanes {
+		value := &gatewayv1.RelayLaneStatus{Lane: lane, CallLimit: uint32(relay.Limit(lane))}
 		if link := h.relayLinks[id][lane]; link != nil {
 			value.Connected = link.isAlive(time.Now())
 			link.mu.RLock()
@@ -718,7 +718,7 @@ func (h *Hub) Open(ctx context.Context, daemonID string, frame *gatewayv1.Daemon
 		return nil, status.FromContextError(err).Err()
 	}
 	h.mu.RLock()
-	lane := relaypolicy.Method(frame.Method)
+	lane := relay.Method(frame.Method)
 	link := h.relayLinks[daemonID][lane]
 	h.mu.RUnlock()
 	if link == nil || !link.isAlive(time.Now()) {
@@ -735,7 +735,7 @@ func (h *Hub) Open(ctx context.Context, daemonID string, frame *gatewayv1.Daemon
 		return nil, status.Error(14, "daemon disconnected")
 	default:
 	}
-	streams, limit := 0, relaypolicy.Limit(lane)
+	streams, limit := 0, relay.Limit(lane)
 	for _, existing := range link.streams {
 		if existing.lane == lane {
 			streams++

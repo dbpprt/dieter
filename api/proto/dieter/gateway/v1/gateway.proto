@@ -5,7 +5,7 @@ package dieter.gateway.v1;
 option go_package = "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1;gatewayv1";
 option java_multiple_files = true;
 option java_outer_classname = "DieterGatewayProto";
-option java_package = "com.dbpprt.dieter.gateway.v1";
+option java_package = "com.getdieter.api.gateway.v1";
 
 import "google/protobuf/empty.proto";
 

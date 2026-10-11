@@ -11,8 +11,7 @@ import (
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
-	"github.com/dbpprt/dieter/internal/relaypolicy"
-	"github.com/dbpprt/dieter/internal/rpcraw"
+	"github.com/dbpprt/dieter/internal/transport/relay"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -32,7 +31,7 @@ type relayHandler struct {
 func newRelayServer(store *Store, auth *Auth, keys *Keys, hub *Hub, config Config) *grpc.Server {
 	handler := &relayHandler{store: store, auth: auth, keys: keys, hub: hub, config: config}
 	return grpc.NewServer(
-		grpc.ForceServerCodec(rpcraw.Codec{}),
+		grpc.ForceServerCodec(relay.RawCodec{}),
 		grpc.UnknownServiceHandler(handler.handle),
 		grpc.MaxRecvMsgSize(maxRelayPayload), grpc.MaxSendMsgSize(maxRelayPayload),
 	)
@@ -41,8 +40,8 @@ func newRelayServer(store *Store, auth *Auth, keys *Keys, hub *Hub, config Confi
 func (r *relayHandler) handle(_ any, stream grpc.ServerStream) error {
 	ctx := stream.Context()
 	method, ok := grpc.Method(ctx)
-	if !ok || !strings.HasPrefix(method, "/dieter.v1.DieterService/") {
-		return status.Error(codes.Unimplemented, "only DieterService can be relayed")
+	if !ok || !relay.DaemonMethod(method) {
+		return status.Error(codes.Unimplemented, "only the Dieter daemon API can be relayed")
 	}
 	if err := r.auth.requireCompatibleClient(ctx); err != nil {
 		return err
@@ -53,7 +52,7 @@ func (r *relayHandler) handle(_ any, stream grpc.ServerStream) error {
 	if len(authorization) != 1 || len(daemonIDs) != 1 {
 		return status.Error(codes.Unauthenticated, "gateway session and daemon ID are required")
 	}
-	ctx, cancel, err := r.auth.authenticateLane(ctx, authorization[0], relaypolicy.Method(method))
+	ctx, cancel, err := r.auth.authenticateLane(ctx, authorization[0], relay.Method(method))
 	if err != nil {
 		return err
 	}
@@ -77,7 +76,7 @@ func (r *relayHandler) relayAuthenticated(stream grpc.ServerStream, method, daem
 	if err != nil || record.Revoked || record.GitHubID != principal.GitHubID {
 		return status.Error(codes.NotFound, "daemon not found")
 	}
-	var request rpcraw.Message
+	var request relay.RawMessage
 	if err := stream.RecvMsg(&request); err != nil {
 		return err
 	}
@@ -112,7 +111,7 @@ func (r *relayHandler) relayAuthenticated(stream grpc.ServerStream, method, daem
 	if err != nil {
 		return status.Error(codes.Internal, "create relay assertion")
 	}
-	relay, err := r.hub.Open(ctx, record.ID, &gatewayv1.DaemonLinkFrame{
+	link, err := r.hub.Open(ctx, record.ID, &gatewayv1.DaemonLinkFrame{
 		Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_OPEN_RPC, RequestId: requestID, Method: method,
 		Payload: request.Data, PayloadSha256: digest[:], DelegationAssertion: assertion, DeadlineUnixMillis: deadlineUnixMillis, Generation: record.Generation,
 		Metadata: map[string]string{"x-dieter-client-version": clientVersion},
@@ -120,9 +119,9 @@ func (r *relayHandler) relayAuthenticated(stream grpc.ServerStream, method, daem
 	if err != nil {
 		return err
 	}
-	defer relay.Close()
+	defer link.Close()
 	for {
-		frame, err := relay.Recv()
+		frame, err := link.Recv()
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
@@ -140,7 +139,7 @@ func (r *relayHandler) relayAuthenticated(stream grpc.ServerStream, method, daem
 			if len(frame.GetPayload()) > maxRelayPayload {
 				return status.Error(codes.ResourceExhausted, "response exceeds 16 MiB")
 			}
-			if err := stream.SendMsg(&rpcraw.Message{Data: frame.GetPayload()}); err != nil {
+			if err := stream.SendMsg(&relay.RawMessage{Data: frame.GetPayload()}); err != nil {
 				return err
 			}
 		case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_END, gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RPC_ERROR:
@@ -185,7 +184,7 @@ func relayFrameStatus(frame *gatewayv1.DaemonLinkFrame, trailers metadata.MD) er
 	if code == int32(codes.OK) {
 		return nil
 	}
-	if values := trailers.Get("grpc-status-details-bin"); len(values) == 1 && len(values[0]) <= relaypolicy.ChunkBytes/2 {
+	if values := trailers.Get("grpc-status-details-bin"); len(values) == 1 && len(values[0]) <= relay.ChunkBytes/2 {
 		value := &statuspb.Status{}
 		if proto.Unmarshal([]byte(values[0]), value) == nil && value.Code == code && value.Message == message {
 			return status.FromProto(value).Err()

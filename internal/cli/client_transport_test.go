@@ -6,25 +6,25 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/daemon"
-	"github.com/dbpprt/dieter/internal/linkauth"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/link"
+	"github.com/dbpprt/dieter/internal/security/linkauth"
 )
 
-func enrolledCLIIdentity(t *testing.T, gateway string) (*CLI, *daemon.Identity) {
+func enrolledCLIIdentity(t *testing.T, gateway string) (*CLI, *link.Identity) {
 	t.Helper()
 	root := t.TempDir()
-	identity, err := daemon.LoadOrCreateEnrollmentIdentity(root, "CLI", gateway)
+	identity, err := link.LoadOrCreateEnrollmentIdentity(root, "CLI", gateway)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := identity.SaveCredential("d_cli", "CLI", []byte("certificate"), nil, nil, time.Now().Add(time.Hour).Format(time.RFC3339Nano), 3); err != nil {
 		t.Fatal(err)
 	}
-	return New(store.New(root)), identity
+	return New(root), identity
 }
 
 func TestCLIGatewayAuthenticationUsesDaemonEnrollment(t *testing.T) {
+	t.Parallel()
 	client, identity := enrolledCLIIdentity(t, "https://gateway.example")
 	loaded, origin, err := client.gatewayIdentity()
 	if err != nil {
@@ -45,7 +45,8 @@ func TestCLIGatewayAuthenticationUsesDaemonEnrollment(t *testing.T) {
 }
 
 func TestCLIGatewayAuthenticationRequiresMatchingEnrollment(t *testing.T) {
-	client := New(store.New(t.TempDir()))
+	t.Parallel()
+	client := New(t.TempDir())
 	if _, _, err := client.gatewayIdentity(); err == nil || !strings.Contains(err.Error(), "dieter setup") {
 		t.Fatalf("missing enrollment error=%v", err)
 	}
@@ -58,6 +59,7 @@ func TestCLIGatewayAuthenticationRequiresMatchingEnrollment(t *testing.T) {
 }
 
 func TestClientGatewayURLRequiresEncryptedRemoteTransport(t *testing.T) {
+	t.Parallel()
 	for _, origin := range []string{"http://gateway.example", "http://192.168.1.2:8080", "http://localhost:8080", "https://user:password@gateway.example"} {
 		if _, err := normalizeGatewayURL(origin); err == nil {
 			t.Errorf("unsafe gateway URL %q was accepted", origin)

@@ -1,3 +1,5 @@
+//go:build e2e
+
 package cli
 
 import (
@@ -11,6 +13,7 @@ import (
 )
 
 func TestDaemonCLIConversationRead(t *testing.T) {
+	t.Parallel()
 	client, output, data := daemonCLIForTest(t)
 	project, err := data.CreateProject(store.CreateProjectInput{Path: initTestRepository(t, "read"), Name: "Read"})
 	if err != nil {

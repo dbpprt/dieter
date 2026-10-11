@@ -2,11 +2,11 @@ package store
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/peerstore"
+	"github.com/dbpprt/dieter/internal/platform/fault"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
 )
 
 // A consolidation is a durable redirect. Boards, labels, conversation identities
@@ -16,7 +16,7 @@ func canonicalProjectID(data PeerData, id string) string {
 	original := id
 	seen := map[string]int{}
 	var path []string
-	for len(path) < peerstore.MaxRecords {
+	for len(path) < crdt.MaxRecords {
 		if at, ok := seen[id]; ok {
 			root := id
 			for _, candidate := range path[at:] {
@@ -28,11 +28,11 @@ func canonicalProjectID(data PeerData, id string) string {
 		}
 		seen[id] = len(path)
 		path = append(path, id)
-		record := data.record(peerstore.Key("project", id+".consolidatedInto"))
+		record := data.record(crdt.Key("project", id+".consolidatedInto"))
 		if len(record.Versions) != 1 {
 			return id
 		}
-		raw, ok := peerstore.Selected(record)
+		raw, ok := crdt.Selected(record)
 		if !ok {
 			return id
 		}
@@ -40,7 +40,7 @@ func canonicalProjectID(data PeerData, id string) string {
 		if json.Unmarshal(raw, &next) != nil || next == "" {
 			return id
 		}
-		if _, ok = peerstore.Selected(data.record(peerstore.Key("project", next+".identity"))); !ok {
+		if _, ok = crdt.Selected(data.record(crdt.Key("project", next+".identity"))); !ok {
 			return original
 		}
 		id = next
@@ -74,7 +74,7 @@ func (s *Store) ConsolidateProject(sourceRef, destinationRef string) (model.Proj
 		return destination, nil
 	}
 	if len(source.ConflictKeys) > 0 || len(destination.ConflictKeys) > 0 {
-		return model.Project{}, fmt.Errorf("%w: resolve project settings before consolidation", peerstore.ErrConflict)
+		return model.Project{}, fmt.Errorf("%w: resolve project settings before consolidation", crdt.ErrConflict)
 	}
 	identity, data, err := s.sharedData()
 	defer data.Close()
@@ -82,9 +82,9 @@ func (s *Store) ConsolidateProject(sourceRef, destinationRef string) (model.Proj
 		return model.Project{}, err
 	}
 	data.State = clonePeerState(data.State)
-	key := peerstore.Key("project", source.ID+".consolidatedInto")
+	key := crdt.Key("project", source.ID+".consolidatedInto")
 	if len(data.record(key).Versions) > 0 {
-		return model.Project{}, errors.New("source already has a consolidation destination")
+		return model.Project{}, fault.New(fault.Invalid, "source already has a consolidation destination")
 	}
 	if err = applyFields(&data, identity, "project", source.ID, nil, map[string]json.RawMessage{"consolidatedInto": rawValue(destination.ID)}); err != nil {
 		return model.Project{}, err

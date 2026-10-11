@@ -3,18 +3,20 @@ package store
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/dbpprt/dieter/internal/platform/fault"
+	"github.com/dbpprt/dieter/internal/platform/fsx"
 )
 
 const storageSchema = 2
 
-var ErrUnsupportedStore = errors.New("unsupported Dieter store; use a fresh DIETER_HOME for this pre-release baseline")
+var ErrUnsupportedStore = fault.New(fault.FailedPrecondition, "unsupported Dieter store; use a fresh DIETER_HOME for this pre-release baseline")
 
 func (s *Store) checkStorageSchema() error {
 	if _, err := os.Stat(filepath.Join(s.Root, "import-state.json")); err == nil {
-		return errors.New("unsupported incomplete store import; use a fresh DIETER_HOME")
+		return fault.New(fault.Invalid, "unsupported incomplete store import; use a fresh DIETER_HOME")
 	}
 	raw, err := os.ReadFile(filepath.Join(s.Root, "storage-schema.json"))
 	if err == nil {
@@ -22,7 +24,7 @@ func (s *Store) checkStorageSchema() error {
 			Version int `json:"version"`
 		}
 		if json.Unmarshal(raw, &schema) != nil || schema.Version != storageSchema {
-			return fmt.Errorf("unsupported Dieter storage schema; expected %d", storageSchema)
+			return fault.Invalidf("unsupported Dieter storage schema; expected %d", storageSchema)
 		}
 		return nil
 	}
@@ -48,5 +50,5 @@ func (s *Store) establishStorageSchema() error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	return atomicWrite(path, []byte(`{"version":2}`))
+	return fsx.WriteFile(path, []byte(`{"version":2}`), 0o600)
 }

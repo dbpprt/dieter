@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/platform/fault"
 )
 
 const conversationProjectionVersion = 6
@@ -54,7 +55,7 @@ func (s *Store) ConversationByID(cardID string) (model.Conversation, error) {
 // payloads identify one provider session and cannot safely back two chats.
 func (s *Store) InitializeForkConversation(targetRef string, messages []model.UIMessage) (model.Conversation, error) {
 	if len(messages) == 0 {
-		return model.Conversation{}, errors.New("fork requires at least one message")
+		return model.Conversation{}, fault.New(fault.Invalid, "fork requires at least one message")
 	}
 	cloned := append([]model.UIMessage(nil), messages...)
 	_, conversation, err := s.AppendConversationEvent(targetRef, "fork", "", "", cloned)
@@ -73,7 +74,7 @@ func (s *Store) ForkChat(sourceRef, messageID, title string) (model.Card, error)
 		return model.Card{}, err
 	}
 	if conversation.Status == "running" || conversation.Status == "starting" || conversation.ActiveTurn != nil {
-		return model.Card{}, errors.New("cannot fork a conversation with an active turn")
+		return model.Card{}, fault.New(fault.Invalid, "cannot fork a conversation with an active turn")
 	}
 	end := len(conversation.Messages)
 	if strings.TrimSpace(messageID) != "" {
@@ -85,11 +86,11 @@ func (s *Store) ForkChat(sourceRef, messageID, title string) (model.Card, error)
 			}
 		}
 		if end == 0 {
-			return model.Card{}, fmt.Errorf("message %q is not in the source conversation", messageID)
+			return model.Card{}, fault.Invalidf("message %q is not in the source conversation", messageID)
 		}
 	}
 	if end == 0 {
-		return model.Card{}, errors.New("cannot fork an empty conversation")
+		return model.Card{}, fault.New(fault.Invalid, "cannot fork an empty conversation")
 	}
 	if strings.TrimSpace(title) == "" {
 		title = "Fork of " + source.Card.Title
@@ -356,7 +357,7 @@ func (s *Store) appendConversationEvents(card model.Card, conversation model.Con
 			return nil, model.Conversation{}, err
 		}
 		if len(line)+1 >= maxConversationEventBytes {
-			return nil, model.Conversation{}, fmt.Errorf("conversation event exceeds %d bytes", maxConversationEventBytes)
+			return nil, model.Conversation{}, fault.Invalidf("conversation event exceeds %d bytes", maxConversationEventBytes)
 		}
 		records.Write(line)
 		records.WriteByte('\n')
@@ -519,7 +520,7 @@ func (s *Store) QueueConversationMessageWithSelection(cardRef, messageID string,
 	}
 	text = strings.TrimSpace(text)
 	if text == "" && len(parts) == 0 {
-		return model.QueuedMessage{}, model.Conversation{}, errors.New("message is required")
+		return model.QueuedMessage{}, model.Conversation{}, fault.New(fault.Invalid, "message is required")
 	}
 	if strings.TrimSpace(messageID) == "" {
 		messageID = newID("queued_")
@@ -547,7 +548,7 @@ func (s *Store) QueueConversationMessageWithSelection(cardRef, messageID string,
 func (s *Store) RemoveQueuedConversationMessage(cardRef, messageID string) (model.QueuedMessage, model.Conversation, error) {
 	messageID = strings.TrimSpace(messageID)
 	if messageID == "" {
-		return model.QueuedMessage{}, model.Conversation{}, errors.New("queued message id is required")
+		return model.QueuedMessage{}, model.Conversation{}, fault.New(fault.Invalid, "queued message id is required")
 	}
 	release, err := s.beginWriteKind(metadataChange)
 	if err != nil {
@@ -985,7 +986,7 @@ func (s *Store) MarkConversationRead(ref string, responseSeq int64) (model.Card,
 		return model.Card{}, err
 	}
 	if responseSeq <= 0 || responseSeq > card.ResponseSeq {
-		return model.Card{}, errors.New("response sequence is invalid")
+		return model.Card{}, fault.New(fault.Invalid, "response sequence is invalid")
 	}
 	// An already acknowledged or superseded reply records no change.
 	if responseSeq != card.ResponseSeq || responseSeq <= card.SeenResponseSeq {

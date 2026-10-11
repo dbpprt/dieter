@@ -2,7 +2,6 @@ package remotedesktop
 
 import (
 	"math"
-	"os"
 	"time"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
@@ -74,7 +73,7 @@ type qualityController struct {
 }
 
 func newQualityController(now time.Time) *qualityController {
-	return &qualityController{started: now, lastFPS: now, lastSize: now, lastBitrate: now, contentEnabled: os.Getenv("DIETER_SCREEN_CONTENT_ADAPTATION") == "1"}
+	return &qualityController{started: now, lastFPS: now, lastSize: now, lastBitrate: now}
 }
 
 func smooth(previous, value, weight float64) float64 {

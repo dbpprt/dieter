@@ -11,6 +11,7 @@ import (
 )
 
 func TestDaemonCLIBoardRetirement(t *testing.T) {
+	t.Parallel()
 	client, output, data := daemonCLIForTest(t)
 	project, err := data.CreateProject(store.CreateProjectInput{Name: "Repo", Path: initTestRepository(t, "repo"), InitialBoardName: "Main"})
 	if err != nil {

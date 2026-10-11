@@ -4,7 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/compatibility"
+	envconfig "github.com/dbpprt/dieter/internal/platform/config"
+	"github.com/dbpprt/dieter/internal/platform/version"
 )
 
 func TestProxyModeRequiresLoopbackAndHTTPSPublicOrigin(t *testing.T) {
@@ -12,7 +13,7 @@ func TestProxyModeRequiresLoopbackAndHTTPSPublicOrigin(t *testing.T) {
 	t.Setenv("DIETER_GATEWAY_PROXY_MODE", "1")
 	t.Setenv("DIETER_GATEWAY_ADDR", "127.0.0.1:4243")
 	t.Setenv("DIETER_PUBLIC_URL", "https://dieter.example.com")
-	config, err := ConfigFromEnv(t.TempDir())
+	config, err := ConfigFromEnv(envconfig.Environ(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -21,12 +22,12 @@ func TestProxyModeRequiresLoopbackAndHTTPSPublicOrigin(t *testing.T) {
 	}
 
 	t.Setenv("DIETER_GATEWAY_ADDR", "0.0.0.0:4243")
-	if _, err := ConfigFromEnv(t.TempDir()); err == nil {
+	if _, err := ConfigFromEnv(envconfig.Environ(), t.TempDir()); err == nil {
 		t.Fatal("proxy mode accepted a non-loopback listener")
 	}
 	t.Setenv("DIETER_GATEWAY_ADDR", "127.0.0.1:4243")
 	t.Setenv("DIETER_PUBLIC_URL", "http://dieter.example.com")
-	if _, err := ConfigFromEnv(t.TempDir()); err == nil {
+	if _, err := ConfigFromEnv(envconfig.Environ(), t.TempDir()); err == nil {
 		t.Fatal("proxy mode accepted a plaintext public origin")
 	}
 }
@@ -41,7 +42,7 @@ func TestPlaintextModesRequireLoopbackEvenWithTLSFiles(t *testing.T) {
 			t.Setenv("DIETER_GATEWAY_ADDR", "0.0.0.0:4243")
 			t.Setenv("DIETER_GATEWAY_TLS_CERT", "certificate.pem")
 			t.Setenv("DIETER_GATEWAY_TLS_KEY", "private.pem")
-			if _, err := ConfigFromEnv(t.TempDir()); err == nil {
+			if _, err := ConfigFromEnv(envconfig.Environ(), t.TempDir()); err == nil {
 				t.Fatal("TLS file configuration bypassed the plaintext loopback restriction")
 			}
 		})
@@ -70,12 +71,12 @@ func TestCompatibilityFloorsAreRequiredOutsideDisposableDevelopment(t *testing.T
 	t.Setenv("DIETER_GATEWAY_PROXY_MODE", "1")
 	t.Setenv("DIETER_PUBLIC_URL", "https://dieter.example.com")
 	t.Setenv("DIETER_MINIMUM_CLIENT_VERSION", "")
-	if _, err := ConfigFromEnv(t.TempDir()); err == nil {
+	if _, err := ConfigFromEnv(envconfig.Environ(), t.TempDir()); err == nil {
 		t.Fatal("production gateway accepted a missing client floor")
 	}
 	t.Setenv("DIETER_MINIMUM_CLIENT_VERSION", "0.4.1")
 	t.Setenv("DIETER_MINIMUM_DAEMON_VERSION", "")
-	if _, err := ConfigFromEnv(t.TempDir()); err == nil {
+	if _, err := ConfigFromEnv(envconfig.Environ(), t.TempDir()); err == nil {
 		t.Fatal("production gateway accepted a missing daemon floor")
 	}
 
@@ -84,11 +85,11 @@ func TestCompatibilityFloorsAreRequiredOutsideDisposableDevelopment(t *testing.T
 	t.Setenv("DIETER_PUBLIC_URL", "http://127.0.0.1:4243")
 	t.Setenv("DIETER_MINIMUM_CLIENT_VERSION", "")
 	t.Setenv("DIETER_MINIMUM_DAEMON_VERSION", "")
-	config, err := ConfigFromEnv(t.TempDir())
+	config, err := ConfigFromEnv(envconfig.Environ(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.MinimumClientVersion != compatibility.DevelopmentMinimum || config.MinimumDaemonVersion != compatibility.DevelopmentMinimum {
+	if config.MinimumClientVersion != version.DevelopmentMinimum || config.MinimumDaemonVersion != version.DevelopmentMinimum {
 		t.Fatalf("development floors = %q/%q", config.MinimumClientVersion, config.MinimumDaemonVersion)
 	}
 }
@@ -101,7 +102,7 @@ func TestGitHubEndpointsRequireTLSOrDevelopmentLoopback(t *testing.T) {
 				t.Setenv("DIETER_GATEWAY_DEV_INSECURE", "1")
 				t.Setenv("DIETER_PUBLIC_URL", "http://127.0.0.1:4243")
 				t.Setenv(name, endpoint)
-				if _, err := ConfigFromEnv(t.TempDir()); err == nil {
+				if _, err := ConfigFromEnv(envconfig.Environ(), t.TempDir()); err == nil {
 					t.Fatal("unsafe OAuth provider endpoint accepted")
 				}
 			})
@@ -112,7 +113,7 @@ func TestGitHubEndpointsRequireTLSOrDevelopmentLoopback(t *testing.T) {
 	t.Setenv("DIETER_PUBLIC_URL", "http://127.0.0.1:4243")
 	t.Setenv("DIETER_GITHUB_BASE_URL", "http://127.0.0.1:9000")
 	t.Setenv("DIETER_GITHUB_API_URL", "http://127.0.0.1:9001")
-	if _, err := ConfigFromEnv(t.TempDir()); err != nil {
+	if _, err := ConfigFromEnv(envconfig.Environ(), t.TempDir()); err != nil {
 		t.Fatalf("development loopback provider rejected: %v", err)
 	}
 }
@@ -121,7 +122,7 @@ func TestPublicOriginRejectsEmbeddedCredentials(t *testing.T) {
 	setMinimumGatewayEnvironment(t)
 	t.Setenv("DIETER_GATEWAY_PROXY_MODE", "1")
 	t.Setenv("DIETER_PUBLIC_URL", "https://user:password@dieter.example.com")
-	if _, err := ConfigFromEnv(t.TempDir()); err == nil {
+	if _, err := ConfigFromEnv(envconfig.Environ(), t.TempDir()); err == nil {
 		t.Fatal("public origin accepted embedded credentials")
 	}
 }
@@ -132,7 +133,7 @@ func TestGitHubAllowlistSupportsMultipleUserIDs(t *testing.T) {
 	t.Setenv("DIETER_PUBLIC_URL", "http://127.0.0.1:4243")
 	t.Setenv("DIETER_GITHUB_ALLOWED_USER_IDS", "60854672, 42,60854672")
 
-	config, err := ConfigFromEnv(t.TempDir())
+	config, err := ConfigFromEnv(envconfig.Environ(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +153,7 @@ func TestGitHubAllowlistAcceptsMultipleAccounts(t *testing.T) {
 	t.Setenv("DIETER_PUBLIC_URL", "http://127.0.0.1:4243")
 	t.Setenv("DIETER_GITHUB_ALLOWED_USER_IDS", "7000188,60854672")
 
-	config, err := ConfigFromEnv(t.TempDir())
+	config, err := ConfigFromEnv(envconfig.Environ(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +169,7 @@ func TestGitHubAllowlistRejectsMissingOrMalformedIDs(t *testing.T) {
 			t.Setenv("DIETER_GATEWAY_DEV_INSECURE", "1")
 			t.Setenv("DIETER_PUBLIC_URL", "http://127.0.0.1:4243")
 			t.Setenv("DIETER_GITHUB_ALLOWED_USER_IDS", value)
-			if _, err := ConfigFromEnv(t.TempDir()); err == nil {
+			if _, err := ConfigFromEnv(envconfig.Environ(), t.TempDir()); err == nil {
 				t.Fatalf("accepted malformed allowlist %q", value)
 			}
 		})
@@ -181,11 +182,11 @@ func TestRTCConfigurationRequiresBoundedTURNSettings(t *testing.T) {
 	t.Setenv("DIETER_PUBLIC_URL", "http://127.0.0.1:4243")
 	t.Setenv("DIETER_RTC_STUN_URLS", "stun:stun.example.com:3478")
 	t.Setenv("DIETER_RTC_TURN_URLS", "turn:turn.example.com:3478?transport=udp,turns:turn.example.com:443?transport=tcp")
-	if _, err := ConfigFromEnv(t.TempDir()); err == nil {
+	if _, err := ConfigFromEnv(envconfig.Environ(), t.TempDir()); err == nil {
 		t.Fatal("TURN URLs were accepted without a REST secret")
 	}
 	t.Setenv("DIETER_RTC_TURN_SECRET", "3031323334353637383961626364656630313233343536373839616263646566") // gitleaks:allow -- deterministic test-only key
-	config, err := ConfigFromEnv(t.TempDir())
+	config, err := ConfigFromEnv(envconfig.Environ(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +194,7 @@ func TestRTCConfigurationRequiresBoundedTURNSettings(t *testing.T) {
 		t.Fatalf("unexpected RTC config: %#v", config)
 	}
 	t.Setenv("DIETER_RTC_TTL", "30m")
-	if _, err := ConfigFromEnv(t.TempDir()); err == nil {
+	if _, err := ConfigFromEnv(envconfig.Environ(), t.TempDir()); err == nil {
 		t.Fatal("oversized RTC TTL was accepted")
 	}
 }
@@ -203,13 +204,13 @@ func TestGatewayIssuerRemainsIndependentOfPublicEndpoint(t *testing.T) {
 	t.Setenv("DIETER_GATEWAY_PROXY_MODE", "1")
 	t.Setenv("DIETER_PUBLIC_URL", "https://gateway.new.example")
 	t.Setenv("DIETER_GATEWAY_ISSUER", "https://gateway.old.example")
-	config, err := ConfigFromEnv(t.TempDir())
+	config, err := ConfigFromEnv(envconfig.Environ(), t.TempDir())
 	if err != nil || config.IdentityOrigin() != "https://gateway.old.example" || config.PublicURL.Host != "gateway.new.example" {
 		t.Fatalf("issuer/endpoint config: %v", err)
 	}
 	for _, bad := range []string{"http://remote.example", "https://user@old.example", "https://old.example/path", "https://old.example?x=y"} {
 		t.Setenv("DIETER_GATEWAY_ISSUER", bad)
-		if _, err := ConfigFromEnv(t.TempDir()); err == nil {
+		if _, err := ConfigFromEnv(envconfig.Environ(), t.TempDir()); err == nil {
 			t.Fatal("invalid identity origin accepted")
 		}
 	}

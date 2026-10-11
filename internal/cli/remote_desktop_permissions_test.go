@@ -6,44 +6,38 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"net/http/httptest"
 	"os"
 	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
 
-	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
-	"github.com/dbpprt/dieter/internal/localauth"
+	"github.com/dbpprt/dieter/internal/api"
+	"github.com/dbpprt/dieter/internal/link"
 	"github.com/dbpprt/dieter/internal/remotedesktop"
-	"github.com/dbpprt/dieter/internal/server"
+	"github.com/dbpprt/dieter/internal/security/localauth"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/testkit"
 )
 
 func permissionCLI(t *testing.T, options remotedesktop.Options) (*CLI, *bytes.Buffer, *store.Store) {
 	t.Helper()
-	data := store.New(t.TempDir())
-	if err := data.Ensure(); err != nil {
-		t.Fatal(err)
-	}
+	data := testkit.Store(t)
 	manager := remotedesktop.New(options)
 	t.Cleanup(func() { manager.Shutdown(context.Background()) })
-	application := server.NewWithOptions(data, slog.New(slog.NewTextHandler(io.Discard, nil)), server.Options{Runner: &fakeRunner{}, RemoteDesktop: manager})
-	host := httptest.NewServer(application.Handler())
+	application := api.NewWithOptions(data, slog.New(slog.NewTextHandler(io.Discard, nil)), api.Options{Runner: newFakeRunner(), RemoteDesktop: manager})
+	host := testkit.HTTPServer(application.Handler())
 	t.Cleanup(host.Close)
 	// A different caller root catches accidental local-store permission writes.
-	local := store.New(t.TempDir())
-	if err := local.Ensure(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := dieterdaemon.NewStatusWriter(local.Root, dieterdaemon.RuntimeStatus{PID: os.Getpid(), State: "running", ListenAddress: strings.TrimPrefix(host.URL, "http://")}); err != nil {
+	local := testkit.Store(t)
+	if _, err := link.NewStatusWriter(local.Root, link.RuntimeStatus{PID: os.Getpid(), State: "running", ListenAddress: strings.TrimPrefix(host.URL, "http://")}); err != nil {
 		t.Fatal(err)
 	}
 	// The caller still needs the daemon's local API token.
-	if err := os.WriteFile(localauth.Path(local.Root), []byte(testLocalToken(t, data.Root)), 0o600); err != nil {
+	if err := os.WriteFile(localauth.Path(local.Root), []byte(testkit.LocalToken(t, data.Root)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	client := New(local)
+	client := New(local.Root)
 
 	output := &bytes.Buffer{}
 	client.Out, client.Err = output, output
@@ -52,6 +46,7 @@ func permissionCLI(t *testing.T, options remotedesktop.Options) (*CLI, *bytes.Bu
 }
 
 func TestRemoteDesktopPermissionGuideVerifiesWithoutSettingsMutation(t *testing.T) {
+	t.Parallel()
 	client, output, data := permissionCLI(t, remotedesktop.Options{Source: remotedesktop.SourceOptions{Kind: "synthetic"}})
 	if err := client.Run([]string{"daemon", "permissions", "--no-open"}); err != nil {
 		t.Fatal(err)
@@ -63,7 +58,7 @@ func TestRemoteDesktopPermissionGuideVerifiesWithoutSettingsMutation(t *testing.
 	if settings.UpdatedAt != "" {
 		t.Fatalf("daemon settings=%#v", settings)
 	}
-	local, _ := client.Store.Settings()
+	local, _ := store.New(client.Root).Settings()
 	if local.UpdatedAt != "" {
 		t.Fatal("onboarding mutated caller's store")
 	}
@@ -73,6 +68,7 @@ func TestRemoteDesktopPermissionGuideVerifiesWithoutSettingsMutation(t *testing.
 }
 
 func TestRemoteDesktopPermissionCheckDoesNotChangeSettings(t *testing.T) {
+	t.Parallel()
 	client, _, data := permissionCLI(t, remotedesktop.Options{Source: remotedesktop.SourceOptions{Kind: "synthetic"}})
 	for _, args := range [][]string{{"daemon", "permissions", "--check"}, {"screen", "permissions"}} {
 		if err := client.Run(args); err != nil {
@@ -108,7 +104,7 @@ func TestRemoteDesktopPermissionCheckUsesDeniedDaemonContext(t *testing.T) {
 
 func TestRemoteDesktopPermissionCheckRequiresRunningDaemon(t *testing.T) {
 	t.Setenv("DIETER_REMOTE_DESKTOP_SOURCE", "synthetic")
-	client := New(store.New(t.TempDir()))
+	client := New(t.TempDir())
 
 	client.Out = io.Discard
 	defer client.Close()
@@ -118,6 +114,7 @@ func TestRemoteDesktopPermissionCheckRequiresRunningDaemon(t *testing.T) {
 }
 
 func TestRemoteDesktopPermissionGuideReportsUnsupportedWithoutPrompting(t *testing.T) {
+	t.Parallel()
 	client, _, _ := permissionCLI(t, remotedesktop.Options{
 		Source: remotedesktop.SourceOptions{Kind: "screen", HelperPath: t.TempDir() + "/missing"},
 		CaptureProbe: func(context.Context, remotedesktop.SourceOptions) error {
@@ -136,6 +133,7 @@ func TestRemoteDesktopPermissionGuideReportsUnsupportedWithoutPrompting(t *testi
 }
 
 func TestRemoteDesktopPermissionGuideVerifiesEachGrantInOrder(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS != "darwin" {
 		t.Skip("macOS permission panes")
 	}

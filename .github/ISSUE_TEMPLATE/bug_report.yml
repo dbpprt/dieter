@@ -3,7 +3,7 @@ description: Report a reproducible problem in Dieter.
 body:
   - type: markdown
     attributes:
-      value: For security issues, follow SECURITY.md. Remove tokens, credentials, and private conversation content from all evidence.
+      value: Report security issues privately (see SECURITY.md), not here. Remove tokens, credentials, and private conversation content from all evidence.
   - type: textarea
     id: problem
     attributes:

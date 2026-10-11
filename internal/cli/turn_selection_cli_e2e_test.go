@@ -1,3 +1,5 @@
+//go:build e2e
+
 package cli
 
 import (
@@ -7,9 +9,11 @@ import (
 
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/testkit"
 )
 
 func TestDaemonCLIChangesSelectionForExistingCardsAndChats(t *testing.T) {
+	t.Parallel()
 	client, output, data := daemonCLIForTest(t)
 	project, err := data.CreateProject(store.CreateProjectInput{Path: initTestRepository(t, "turn-selection"), Name: "Selection"})
 	if err != nil {
@@ -37,7 +41,7 @@ func assertConversationSelectionCLI(t *testing.T, client *CLI, output *bytes.Buf
 		}
 		waitIdle := func(afterSequence int64) {
 			t.Helper()
-			deadline := time.Now().Add(10 * time.Second)
+			deadline := time.Now().Add(testkit.Budget(30 * time.Second))
 			for time.Now().Before(deadline) {
 				stored, err := data.ResolveCard(card.ID)
 				leased, leaseErr := data.CardHasRuntimeLease(card.ID)

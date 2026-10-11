@@ -7,6 +7,7 @@ import (
 )
 
 func TestResponseReadReceiptPersistsAndCannotClearNewReply(t *testing.T) {
+	t.Parallel()
 	s, project, _ := setup(t, model.WorkflowReview)
 	card, err := s.CreateChat(CreateCardInput{Project: project.ID, Title: "Replies"})
 	if err != nil {
@@ -69,6 +70,7 @@ func TestResponseReadReceiptPersistsAndCannotClearNewReply(t *testing.T) {
 }
 
 func TestEmptyOrFailedAssistantDoesNotCreateUnreadReply(t *testing.T) {
+	t.Parallel()
 	for _, end := range []string{"finish", "error", "abort"} {
 		t.Run(end, func(t *testing.T) {
 			s, project, _ := setup(t, model.WorkflowReview)

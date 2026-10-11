@@ -11,6 +11,7 @@ import (
 )
 
 func TestUpdateCardCacheNoopDoesNotPublishMutation(t *testing.T) {
+	t.Parallel()
 	s, project, _ := setup(t, model.WorkflowReview)
 	card, err := s.CreateChat(CreateCardInput{Project: project.ID, Title: "cache"})
 	if err != nil {
@@ -60,7 +61,11 @@ func TestUpdateCardCacheNoopDoesNotPublishMutation(t *testing.T) {
 	}
 }
 
-func TestUpdateCardCacheNoopRecoversPendingMutation(t *testing.T) {
+// A writer that lost its sync publication leaves a pending mutation. A no-op
+// conditional write neither publishes nor duplicates it; the recovery sweep
+// (and the next real write) commits it without an empty transaction.
+func TestRecoverySweepCommitsPendingMutationAfterNoopWrite(t *testing.T) {
+	t.Parallel()
 	s, project, _ := setup(t, model.WorkflowReview)
 	card, err := s.CreateChat(CreateCardInput{Project: project.ID, Title: "before"})
 	if err != nil {
@@ -80,8 +85,11 @@ func TestUpdateCardCacheNoopRecoversPendingMutation(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := s.UpdateCardCache(card.ID, CardCacheInput{Title: card.Title})
-	if err != nil || got.Title != card.Title || s.SyncMutationPending() {
-		t.Fatalf("no-op skipped recovery: %+v %v", got, err)
+	if err != nil || got.Title != card.Title {
+		t.Fatalf("no-op write: %+v %v", got, err)
+	}
+	if err := s.Recover(); err != nil || s.SyncMutationPending() {
+		t.Fatalf("recovery sweep left the pending mutation: %v", err)
 	}
 	if changes, _ := changeCounters(t, s); changes != pending.Sequence {
 		t.Fatalf("recovery added an empty transaction: changes=%d want %d", changes, pending.Sequence)
@@ -89,6 +97,7 @@ func TestUpdateCardCacheNoopRecoversPendingMutation(t *testing.T) {
 }
 
 func TestUpdateCardCacheConcurrentInstancesPreserveIndependentChanges(t *testing.T) {
+	t.Parallel()
 	s, project, _ := setup(t, model.WorkflowReview)
 	card, err := s.CreateChat(CreateCardInput{Project: project.ID, Title: "before"})
 	if err != nil {

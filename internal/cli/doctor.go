@@ -46,15 +46,15 @@ durability dependencies. Doctor is read-only and does not initialize storage.
 	if runtime.GOOS == "darwin" {
 		checks[4] = commandDoctorCheck("open", false, "--help", nil)
 	}
-	rootInfo, statErr := os.Stat(c.Store.Root)
-	storage := doctorCheck{Name: "storage", Required: true, Status: "ok", Detail: c.Store.Root + " is private"}
+	rootInfo, statErr := os.Stat(c.Root)
+	storage := doctorCheck{Name: "storage", Required: true, Status: "ok", Detail: c.Root + " is private"}
 	if statErr != nil {
 		storage.Status, storage.Detail = "failed", statErr.Error()
 	} else if rootInfo.Mode().Perm() != 0o700 {
 		storage.Status, storage.Detail = "failed", fmt.Sprintf("mode is %04o; expected 0700", rootInfo.Mode().Perm())
 	}
 	checks = append(checks, storage)
-	shell := strings.TrimSpace(os.Getenv("SHELL"))
+	shell := c.env.Shell
 	if shell != "" {
 		if resolved, lookErr := exec.LookPath(shell); lookErr == nil {
 			shell = resolved
@@ -75,7 +75,7 @@ durability dependencies. Doctor is read-only and does not initialize storage.
 		shellCheck.Status, shellCheck.Detail = "failed", "no supported zsh, bash, or sh executable found"
 	}
 	checks = append(checks, shellCheck)
-	checks = append(checks, platformDoctorChecks()...)
+	checks = append(checks, platformDoctorChecks(c.env)...)
 	executable, executableErr := os.Executable()
 	pathCheck := doctorCheck{Name: "service-path", Required: true, Status: "ok"}
 	if executableErr != nil {

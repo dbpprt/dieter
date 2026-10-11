@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package dieter.v1;
+
+option go_package = "github.com/dbpprt/dieter/internal/gen/dieter/v1;dieterv1";
+option java_multiple_files = true;
+option java_package = "com.getdieter.api.v1";
+
+import "google/protobuf/empty.proto";
+
+// Project files.
+service FileService {
+  rpc ListFiles(ListFilesRequest) returns (FileList);
+  rpc ReadFile(ReadFileRequest) returns (FileDocument);
+  rpc SaveFile(SaveFileRequest) returns (FileDocument);
+  rpc CreateFile(CreateFileRequest) returns (FileEntry);
+  rpc MoveFile(MoveFileRequest) returns (MoveFileResponse);
+  rpc DeleteFile(DeleteFileRequest) returns (google.protobuf.Empty);
+}
+
+message ListFilesRequest {
+  string checkout_id = 50;
+  string project_id = 1;
+  string path = 2;
+  bool show_hidden = 3;
+  string card_id = 4;
+}
+
+message FileEntry {
+  string name = 1;
+  string path = 2;
+  string kind = 3;
+  int64 size = 4;
+  string modified_at = 5;
+  bool hidden = 6;
+  bool symlink = 7;
+}
+
+message FileList {
+  string path = 1;
+  repeated FileEntry entries = 2;
+}
+
+message ReadFileRequest {
+  string checkout_id = 50;
+  string project_id = 1;
+  string path = 2;
+  string card_id = 3;
+}
+
+message FileDocument {
+  string path = 1;
+  string name = 2;
+  bool binary = 3;
+  int64 size = 4;
+  string modified_at = 5;
+  string revision = 6;
+  string mime_type = 7;
+  string content = 8;
+  bytes data = 9;
+}
+
+message SaveFileRequest {
+  string checkout_id = 50;
+  string project_id = 1;
+  string path = 2;
+  string content = 3;
+  string revision = 4;
+  string card_id = 5;
+}
+
+message CreateFileRequest {
+  string checkout_id = 50;
+  string project_id = 1;
+  string path = 2;
+  string kind = 3;
+  string content = 4;
+  string card_id = 5;
+}
+
+message MoveFileRequest {
+  string checkout_id = 50;
+  string project_id = 1;
+  string source = 2;
+  string destination = 3;
+  string card_id = 4;
+}
+
+message MoveFileResponse {
+  string source = 1;
+  string destination = 2;
+}
+
+message DeleteFileRequest {
+  string checkout_id = 50;
+  string project_id = 1;
+  string path = 2;
+  bool recursive = 3;
+  string card_id = 4;
+}

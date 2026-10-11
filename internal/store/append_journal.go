@@ -7,14 +7,6 @@ import (
 	"os"
 )
 
-// Append one durable newline-terminated record. A killed writer may leave a
-// partial final record; truncate only that uncommitted suffix before appending
-// so the next acknowledged event cannot be swallowed by a corrupt JSON line.
-// The caller owns the central cross-process lock.
-func appendJournalRecord(path string, line []byte) error {
-	return appendJournalRecords(path, append(line, '\n'))
-}
-
 // records contains complete newline-terminated records validated by the caller.
 // One fsync makes the whole successful append durable. A crash during Write may
 // retain a complete prefix; recovery discards only an unterminated final record.

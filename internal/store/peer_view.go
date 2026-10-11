@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/peerstore"
+	"github.com/dbpprt/dieter/internal/platform/fault"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
+	"github.com/dbpprt/dieter/internal/replication/schema"
 )
 
 const peerViewCacheBytes = 4 << 20
@@ -18,7 +20,7 @@ const peerViewCacheRecords = 256
 
 // Bound concurrent read transactions without queueing nested projections behind
 // one another. Admission fails explicitly if the storage budget is exhausted.
-var peerSnapshotSlots = make(chan struct{}, 64)
+const maxPeerSnapshots = 64
 
 // A view reads bounded pages at one replica revision. Domain readers pin a
 // snapshot; writer views check the revision between reads while holding the
@@ -29,7 +31,7 @@ type peerView struct {
 	epoch    string
 	sequence uint64
 	err      error
-	cache    map[string]peerstore.Record
+	cache    map[string]crdt.Record
 	bytes    int
 	snapshot *sql.Tx
 	close    func()
@@ -43,20 +45,20 @@ func (s *Store) openPeerSnapshot(account string) (PeerData, error) {
 		return PeerData{}, err
 	}
 	select {
-	case peerSnapshotSlots <- struct{}{}:
+	case s.peerSnapshotSlots <- struct{}{}:
 	default:
-		return PeerData{}, peerstore.ErrCapacity
+		return PeerData{}, crdt.ErrCapacity
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	v := &peerView{cache: map[string]peerstore.Record{}}
+	v := &peerView{cache: map[string]crdt.Record{}}
 	v.close = func() {
 		if v.snapshot != nil {
 			_ = v.snapshot.Rollback()
 		}
 		cancel()
-		<-peerSnapshotSlots
+		<-s.peerSnapshotSlots
 	}
-	data := PeerData{view: v, State: peerstore.State{Records: map[string]peerstore.Record{}, Dirty: map[string]bool{}}}
+	data := PeerData{view: v, State: crdt.State{Records: map[string]crdt.Record{}, Dirty: map[string]bool{}}}
 	s.peerDBMu.Lock()
 	if s.peerReadDBs == nil {
 		s.peerReadDBs = map[string]*sql.DB{}
@@ -66,7 +68,7 @@ func (s *Store) openPeerSnapshot(account string) (PeerData, error) {
 	if db == nil {
 		query := url.Values{"mode": {"ro"}, "_pragma": {"query_only(1)", "cache_size(-4096)", "busy_timeout(10000)"}}
 		dsn := (&url.URL{Scheme: "file", Path: s.peerPath(account), RawQuery: query.Encode()}).String()
-		db, err = sql.Open("sqlite", dsn)
+		db, err = openSQLite(dsn)
 		if err == nil {
 			db.SetMaxIdleConns(4)
 			s.peerReadDBs[account] = db
@@ -101,11 +103,11 @@ func (s *Store) openPeerView(account string) (PeerData, error) {
 	if err != nil {
 		return PeerData{}, err
 	}
-	v := &peerView{db: db, cache: map[string]peerstore.Record{}}
+	v := &peerView{db: db, cache: map[string]crdt.Record{}}
 	if err = db.QueryRow("SELECT epoch,sequence FROM peer_metadata WHERE id=1").Scan(&v.epoch, &v.sequence); err != nil {
 		return PeerData{}, err
 	}
-	return PeerData{Epoch: v.epoch, Sequence: v.sequence, State: peerstore.State{Records: map[string]peerstore.Record{}, Dirty: map[string]bool{}}, view: v}, nil
+	return PeerData{Epoch: v.epoch, Sequence: v.sequence, State: crdt.State{Records: map[string]crdt.Record{}, Dirty: map[string]bool{}}, view: v}, nil
 }
 
 func (d PeerData) Err() error {
@@ -114,17 +116,17 @@ func (d PeerData) Err() error {
 	}
 	return d.view.err
 }
-func (d PeerData) record(key string) peerstore.Record {
+func (d PeerData) record(key string) crdt.Record {
 	if r, ok := d.Records[key]; ok {
 		return r
 	}
 	if d.view == nil || d.view.err != nil {
-		return peerstore.Record{}
+		return crdt.Record{}
 	}
 	if r, ok := d.view.cache[key]; ok {
 		return r
 	}
-	var r peerstore.Record
+	var r crdt.Record
 	d.view.read(func(tx *sql.Tx) error {
 		var raw []byte
 		err := tx.QueryRow("SELECT value FROM peer_records WHERE key=?", key).Scan(&raw)
@@ -138,7 +140,7 @@ func (d PeerData) record(key string) peerstore.Record {
 		if err = json.Unmarshal(raw, &r); err != nil {
 			return err
 		}
-		if err = peerstore.ValidateRecord(r); err != nil {
+		if err = crdt.ValidateRecord(r); err != nil {
 			return err
 		}
 		d.view.remember(key, r, len(raw))
@@ -146,7 +148,7 @@ func (d PeerData) record(key string) peerstore.Record {
 	})
 	return r
 }
-func (v *peerView) remember(key string, r peerstore.Record, size int) {
+func (v *peerView) remember(key string, r crdt.Record, size int) {
 	if size > peerViewCacheBytes {
 		return
 	}
@@ -176,7 +178,7 @@ func (v *peerView) read(f func(*sql.Tx) error) {
 	var epoch string
 	var sequence uint64
 	if err = tx.QueryRow("SELECT epoch,sequence FROM peer_metadata WHERE id=1").Scan(&epoch, &sequence); err == nil && (epoch != v.epoch || sequence != v.sequence) {
-		err = peerstore.ErrConflict
+		err = crdt.ErrConflict
 	}
 	if err == nil {
 		err = f(tx)
@@ -190,11 +192,11 @@ func (v *peerView) read(f func(*sql.Tx) error) {
 // each scans in key order with a bounded page, overlaying pending local edits.
 // Callbacks may perform point reads; no active SQL rows survive into a callback.
 // A domain snapshot reuses its read transaction for those nested point reads.
-func (d PeerData) each(prefix string, visit func(peerstore.Record) error) error {
+func (d PeerData) each(prefix string, visit func(crdt.Record) error) error {
 	return d.eachMatching(prefix, "", visit)
 }
 
-func (d PeerData) eachMatching(prefix, suffix string, visit func(peerstore.Record) error) error {
+func (d PeerData) eachMatching(prefix, suffix string, visit func(crdt.Record) error) error {
 	keys := make([]string, 0, len(d.Records))
 	for key := range d.Records {
 		if strings.HasPrefix(key, prefix) && strings.HasSuffix(key, suffix) {
@@ -214,18 +216,18 @@ func (d PeerData) eachMatching(prefix, suffix string, visit func(peerstore.Recor
 	if d.view != nil {
 		after := ""
 		for {
-			var page []peerstore.Record
+			var page []crdt.Record
 			var more bool
 			d.view.read(func(tx *sql.Tx) error {
 				var err error
-				page, more, err = readPeerPage(tx, prefix, suffix, after, peerstore.MaxPageBytes, nil)
+				page, more, err = readPeerPage(tx, prefix, suffix, after, crdt.MaxPageBytes, nil)
 				return err
 			})
 			if d.Err() != nil {
 				return d.Err()
 			}
 			for _, r := range page {
-				key := peerstore.Key(r.Kind, r.ID)
+				key := crdt.Key(r.Kind, r.ID)
 				if err := emitBefore(key); err != nil {
 					return err
 				}
@@ -251,7 +253,7 @@ func (d PeerData) eachMatching(prefix, suffix string, visit func(peerstore.Recor
 
 // The lexical range uses only validated ASCII peer keys. Filtering is evaluated
 // before the page bound so an unrelated namespace cannot starve a KV page.
-func readPeerPage(tx *sql.Tx, prefix, suffix, after string, maxBytes int, accept func(peerstore.Record) bool) ([]peerstore.Record, bool, error) {
+func readPeerPage(tx *sql.Tx, prefix, suffix, after string, maxBytes int, accept func(crdt.Record) bool) ([]crdt.Record, bool, error) {
 	query := "SELECT key,value FROM peer_records WHERE key>? AND key>=? AND key<? AND (?='' OR substr(key,-length(?))=?) ORDER BY key"
 	upper := prefix + "\x7f"
 	rows, err := tx.Query(query, after, prefix, upper, suffix, suffix, suffix)
@@ -259,7 +261,7 @@ func readPeerPage(tx *sql.Tx, prefix, suffix, after string, maxBytes int, accept
 		return nil, false, err
 	}
 	defer rows.Close()
-	records := make([]peerstore.Record, 0, peerstore.PageSize)
+	records := make([]crdt.Record, 0, crdt.PageSize)
 	size := 2
 	for rows.Next() {
 		var key string
@@ -267,20 +269,20 @@ func readPeerPage(tx *sql.Tx, prefix, suffix, after string, maxBytes int, accept
 		if err = rows.Scan(&key, &raw); err != nil {
 			return nil, false, err
 		}
-		var r peerstore.Record
+		var r crdt.Record
 		if err = json.Unmarshal(raw, &r); err != nil {
 			return nil, false, err
 		}
-		if key != peerstore.Key(r.Kind, r.ID) {
-			return nil, false, errors.New("invalid peer record key")
+		if key != crdt.Key(r.Kind, r.ID) {
+			return nil, false, fault.New(fault.Invalid, "invalid peer record key")
 		}
-		if err = peerstore.ValidateRecord(r); err != nil {
+		if err = crdt.ValidateRecord(r); err != nil {
 			return nil, false, err
 		}
 		if accept != nil && !accept(r) {
 			continue
 		}
-		if len(records) == peerstore.PageSize || len(records) > 0 && size+len(raw)+1 > maxBytes {
+		if len(records) == crdt.PageSize || len(records) > 0 && size+len(raw)+1 > maxBytes {
 			return records, true, nil
 		}
 		records = append(records, r)
@@ -299,9 +301,9 @@ func (d PeerData) assignmentIDs(id string) []string {
 		return d.Membership[id]
 	}
 	var ids []string
-	err := d.each("assignment/"+id+".", func(r peerstore.Record) error {
-		if _, ok := peerstore.Selected(r); ok {
-			entity, _ := peerstore.SplitField(r.ID)
+	err := d.each("assignment/"+id+".", func(r crdt.Record) error {
+		if _, ok := crdt.Selected(r); ok {
+			entity, _ := crdt.SplitField(r.ID)
 			ids = append(ids, entity)
 		}
 		return nil
@@ -310,12 +312,12 @@ func (d PeerData) assignmentIDs(id string) []string {
 	return ids
 }
 
-func decodePeerRecord(raw []byte) (peerstore.Record, error) {
-	var r peerstore.Record
+func decodePeerRecord(raw []byte) (crdt.Record, error) {
+	var r crdt.Record
 	if err := json.Unmarshal(raw, &r); err != nil {
 		return r, err
 	}
-	return r, peerstore.ValidateRecord(r)
+	return r, crdt.ValidateRecord(r)
 }
 
 // Most domain reads need several fields of one entity. Fetch them with one
@@ -325,8 +327,8 @@ func (d PeerData) primeEntity(kind, id string) {
 		return
 	}
 	complete := true
-	for field := range peerstore.DomainFields[kind] {
-		key := peerstore.Key(kind, id+"."+field)
+	for field := range schema.DomainFields[kind] {
+		key := crdt.Key(kind, id+"."+field)
 		_, cached := d.view.cache[key]
 		_, edited := d.Records[key]
 		complete = complete && (cached || edited)
@@ -334,20 +336,20 @@ func (d PeerData) primeEntity(kind, id string) {
 	if complete {
 		return
 	}
-	found := map[string]peerstore.Record{}
-	err := d.each(kind+"/"+id+".", func(r peerstore.Record) error {
-		entity, field := peerstore.SplitField(r.ID)
+	found := map[string]crdt.Record{}
+	err := d.each(kind+"/"+id+".", func(r crdt.Record) error {
+		entity, field := crdt.SplitField(r.ID)
 		if entity == id {
-			if _, ok := peerstore.DomainFields[kind][field]; ok {
+			if _, ok := schema.DomainFields[kind][field]; ok {
 				found[field] = r
 			}
 		}
 		return nil
 	})
 	d.fail(err)
-	for field := range peerstore.DomainFields[kind] {
+	for field := range schema.DomainFields[kind] {
 		r := found[field]
 		raw, _ := json.Marshal(r)
-		d.view.remember(peerstore.Key(kind, id+"."+field), r, len(raw))
+		d.view.remember(crdt.Key(kind, id+"."+field), r, len(raw))
 	}
 }

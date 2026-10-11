@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -15,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
+	"github.com/dbpprt/dieter/internal/api"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/link"
 	"github.com/dbpprt/dieter/internal/remotedesktop"
-	"github.com/dbpprt/dieter/internal/server"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/testkit"
 )
 
 type onboardingPrivacyFixture struct {
@@ -60,40 +59,38 @@ func (f *onboardingPrivacyFixture) Set(context.Context, bool) (*dieterv1.Machine
 
 func privacyOnboardingCLI(t *testing.T, driver *onboardingPrivacyFixture) (*CLI, *bytes.Buffer) {
 	t.Helper()
-	data := store.New(t.TempDir())
-	if err := data.Ensure(); err != nil {
-		t.Fatal(err)
-	}
-	identity, err := dieterdaemon.LoadOrCreateEnrollmentIdentity(data.Root, "fixture", "https://gateway.example")
+	data := testkit.Store(t)
+	identity, err := link.LoadOrCreateEnrollmentIdentity(data.Root, "fixture", "https://gateway.example")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := identity.SaveCredential("d_fixture", "fixture", []byte("certificate"), nil, nil, time.Now().Add(time.Hour).Format(time.RFC3339Nano), 1); err != nil {
 		t.Fatal(err)
 	}
-	application := server.NewWithOptions(data, slog.New(slog.NewTextHandler(io.Discard, nil)), server.Options{
-		Runner: &fakeRunner{}, PrivacyDriver: driver,
+	application := api.NewWithOptions(data, slog.New(slog.NewTextHandler(io.Discard, nil)), api.Options{
+		Runner: newFakeRunner(), PrivacyDriver: driver,
 		PrivacyBootID: func(context.Context) (string, error) { return "fixture-boot", nil },
 		RemoteDesktop: remotedesktop.New(remotedesktop.Options{Source: remotedesktop.SourceOptions{Kind: "synthetic"}}),
 	})
-	host := httptest.NewServer(application.Handler())
+	host := testkit.HTTPServer(application.Handler())
 	t.Cleanup(host.Close)
-	if _, err := dieterdaemon.NewStatusWriter(data.Root, dieterdaemon.RuntimeStatus{
+	if _, err := link.NewStatusWriter(data.Root, link.RuntimeStatus{
 		PID: os.Getpid(), State: "running", ListenAddress: strings.TrimPrefix(host.URL, "http://"),
 		// Homebrew onboarding talks to the enrolled, connected managed service.
 		ServiceManaged: true, Enrolled: true, DaemonID: "d_fixture", GatewayURL: "https://gateway.example",
-		GatewayState: dieterdaemon.GatewayConnected,
+		GatewayState: link.GatewayConnected,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	output := &bytes.Buffer{}
-	client := New(data)
+	client := New(data.Root)
 	client.Out, client.Err = output, output
 	t.Cleanup(client.Close)
 	return client, output
 }
 
 func TestSetupPrivacyHelperRegistersWithoutEnablingAndPreservesExistingState(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name                       string
 		available, requested, skip bool
@@ -176,7 +173,8 @@ func TestSetupHomebrewOnboardingInstallsPrivacyHelperThroughDaemon(t *testing.T)
 }
 
 func TestSetupRejectsRemoteMachineBeforeOnboarding(t *testing.T) {
-	client := New(store.New(t.TempDir()))
+	t.Parallel()
+	client := New(t.TempDir())
 	defer client.Close()
 	client.Machine = "remote-fixture"
 	if err := client.Run([]string{"setup", "--no-open", "--no-start"}); err == nil || !strings.Contains(err.Error(), "local-only") {

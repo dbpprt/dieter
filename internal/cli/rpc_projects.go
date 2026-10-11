@@ -396,7 +396,7 @@ func (c *CLI) rpcProjectArchive(args []string, archived bool) error {
 	if err != nil {
 		return err
 	}
-	projectID := args[0]
+	var projectID string
 	if archived {
 		project, _, err := c.projectState(ctx, args[0])
 		if err != nil {

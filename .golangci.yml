@@ -1,0 +1,157 @@
+# golangci-lint v2 configuration for the Go module (daemon, CLI, gateway).
+# Run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run ./cmd/... ./internal/... ./tools/...
+version: "2"
+
+run:
+  timeout: 10m
+  tests: true
+  # Lint end-to-end tests too; they only build with the e2e tag.
+  build-tags:
+    - e2e
+
+linters:
+  default: none
+  enable:
+    - depguard
+    - errcheck
+    - errorlint
+    - forbidigo
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+  settings:
+    errcheck:
+      exclude-functions:
+        # Rollback after a successful Commit returns sql.ErrTxDone by design.
+        - (*database/sql.Tx).Rollback
+    staticcheck:
+      # Error strings start with proper nouns (Git, Dieter, WebRTC, GitHub)
+      # and are user-facing; quickfix suggestions are style, not defects.
+      checks:
+        - all
+        - -ST1000
+        - -ST1003
+        - -ST1005
+        - -ST1016
+        - -ST1020
+        - -ST1021
+        - -ST1022
+        - -QF1001
+        - -QF1003
+        - -QF1008
+        - -QF1011
+    depguard:
+      rules:
+        # The CLI is a client of a running daemon API. It never opens central
+        # storage or links daemon internals. Documented exceptions: link
+        # (enrollment identity, runtime status, direct-route credentials),
+        # remotedesktop (doctor's local capture probe and the clipboard size
+        # limit), host/serviceruntime (Linux `daemon service install` stages the
+        # runtime), replication/crdt (KV and peer value size limits).
+        cli:
+          files:
+            - "**/internal/cli/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/dbpprt/dieter/internal/store
+              desc: the CLI reads central storage only through the daemon API
+            - pkg: github.com/dbpprt/dieter/internal/api
+              desc: the CLI is a client of the API, not its implementation
+            - pkg: github.com/dbpprt/dieter/internal/engine
+              desc: turns run inside the daemon
+            - pkg: github.com/dbpprt/dieter/internal/daemon
+              desc: cmd/dieter dispatches daemon entry points
+            - pkg: github.com/dbpprt/dieter/internal/harness
+              desc: harness workers run inside the daemon
+            - pkg: github.com/dbpprt/dieter/internal/git
+              desc: Git operations run inside the daemon
+            - pkg: github.com/dbpprt/dieter/internal/host/machine
+              desc: machine operations run inside the daemon
+            - pkg: github.com/dbpprt/dieter/internal/host/terminal
+              desc: terminals run inside the daemon
+            - pkg: github.com/dbpprt/dieter/internal/host/remoteexec
+              desc: remote executions run inside the daemon
+            - pkg: github.com/dbpprt/dieter/internal/replication/peersync
+              desc: replication runs inside the daemon
+            - pkg: github.com/dbpprt/dieter/internal/replication/schema
+              desc: the daemon validates replicated records
+            - pkg: github.com/dbpprt/dieter/internal/providerquota
+              desc: quota probes run inside the daemon
+        # Storage never depends on the API, the engine, or process wiring.
+        store:
+          files:
+            - "**/internal/store/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/dbpprt/dieter/internal/api
+              desc: handlers call services and stores, never the reverse
+            - pkg: github.com/dbpprt/dieter/internal/engine
+              desc: the engine uses storage, never the reverse
+            - pkg: github.com/dbpprt/dieter/internal/daemon
+              desc: storage receives configuration, not the composition root
+            - pkg: github.com/dbpprt/dieter/internal/cli
+              desc: storage is daemon-side
+        # The gateway stores only account sessions, daemon identities, presence,
+        # route metadata, and quota snapshots; it never links daemon-side code.
+        gateway:
+          files:
+            - "**/internal/gateway/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/dbpprt/dieter/internal/store
+              desc: projects, transcripts, and credentials never reach the gateway
+            - pkg: github.com/dbpprt/dieter/internal/api
+              desc: the gateway relays the daemon API without implementing it
+            - pkg: github.com/dbpprt/dieter/internal/engine
+              desc: daemon-side
+            - pkg: github.com/dbpprt/dieter/internal/daemon
+              desc: daemon-side
+            - pkg: github.com/dbpprt/dieter/internal/harness
+              desc: daemon-side
+            - pkg: github.com/dbpprt/dieter/internal/host
+              desc: daemon-side
+            - pkg: github.com/dbpprt/dieter/internal/git
+              desc: daemon-side
+            - pkg: github.com/dbpprt/dieter/internal/link
+              desc: daemon-side gateway client
+            - pkg: github.com/dbpprt/dieter/internal/replication
+              desc: daemon-side
+            - pkg: github.com/dbpprt/dieter/internal/remotedesktop
+              desc: daemon-side
+            - pkg: github.com/dbpprt/dieter/internal/providerquota
+              desc: provider credentials never reach the gateway
+            - pkg: github.com/dbpprt/dieter/internal/cli
+              desc: client code
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^os\.(Getenv|LookupEnv)$
+          msg: read configuration through internal/platform/config and pass typed values down
+  exclusions:
+    generated: strict
+    presets:
+      - comments
+      - std-error-handling
+      - common-false-positives
+      - legacy
+    rules:
+      - path: _test\.go
+        linters:
+          - forbidigo
+      # The configuration package is the only reader of the environment.
+      - path: internal/platform/config/
+        linters:
+          - forbidigo
+      # Fixture and repository tools are not product configuration.
+      - path: tools/
+        linters:
+          - forbidigo
+    paths:
+      - internal/gen
+      - internal/harness/runtime
+      - tmp
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

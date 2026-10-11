@@ -1,10 +1,34 @@
 # Maestro syntax, run in-app: Maestro has no macOS driver.
-# Seeded board → card → transcript → follow-up → live mock reply.
-appId: com.dbpprt.dieter
-name: Mac conversation
+# Sidebar destinations → seeded board → card → transcript → follow-up → live
+# mock reply. One launch covers navigation and the conversation journey.
+appId: com.getdieter.mac
+name: Mac navigation and conversation
 tags: [smoke]
 ---
 - launchApp
+- tapOn:
+    id: sidebar.inbox
+- assertVisible:
+    id: destination.Inbox
+- tapOn:
+    id: sidebar.all-chats
+- assertVisible:
+    id: destination.All chats
+- tapOn:
+    id: sidebar.screens
+- assertVisible:
+    id: destination.Screens
+- tapOn:
+    id: sidebar.settings
+- assertVisible:
+    id: destination.Settings
+- tapOn:
+    id: sidebar.inbox
+- assertVisible:
+    id: destination.Inbox
+- assertNotVisible:
+    id: destination.Settings
+- takeScreenshot: mac-navigation
 - tapOn: "Expand Isolated E2E"
 - tapOn:
     id: 'sidebar\.board\..+'

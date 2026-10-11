@@ -3,7 +3,6 @@ package remotedesktop
 import (
 	"context"
 	"errors"
-	"os"
 	"runtime"
 	"sync"
 	"time"
@@ -79,7 +78,7 @@ func (m *nativeMultiplexer) process(ctx context.Context, template *nativeHelperS
 	root := &nativeHelperSource{path: template.path, display: template.display, profile: template.profile, codec: template.codec,
 		fps: template.fps, bitrateKbps: template.bitrateKbps, maxWidth: template.maxWidth, maxHeight: template.maxHeight,
 		synthetic: template.synthetic, inputAllowed: template.inputAllowed, logger: template.logger, multiplex: true,
-		portalStatePath: template.portalStatePath, ready: make(chan struct{}), displayActivity: template.displayActivity}
+		portalStatePath: template.portalStatePath, frameOverlap: template.frameOverlap, ready: make(chan struct{}), displayActivity: template.displayActivity}
 	processCtx, cancel := context.WithCancel(context.Background())
 	m.root, m.cancel = root, cancel
 	finished := make(chan struct{})
@@ -252,7 +251,7 @@ func (s *nativeRendition) Stream(ctx context.Context, emit func(media.Sample) er
 			s.mux.mu.Lock()
 			config, root := s.config, s.mux.root
 			s.mux.mu.Unlock()
-			if root != nil && root.overlapSupported.Load() && os.Getenv("DIETER_SCREEN_OVERLAP") == "1" {
+			if root != nil && root.overlapSupported.Load() && root.frameOverlap {
 				if budget := overlapBudget(sample, config, previousSend); budget > 0 {
 					if err := s.command(ctx, nativeCommand{Kind: "frame_sending", FrameID: metadata.ID, Generation: metadata.NativeGeneration, OverlapBudgetMS: budget}, true); err != nil {
 						return err

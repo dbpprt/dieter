@@ -1,0 +1,28 @@
+# Swift module of each schema, so generated code imports the module that owns
+# the types it references (protoc-gen-swift ProtoPathModuleMappings).
+mapping {
+  module_name: "DieterAPI"
+  proto_file_path: "dieter/v1/boards.proto"
+  proto_file_path: "dieter/v1/cards.proto"
+  proto_file_path: "dieter/v1/common.proto"
+  proto_file_path: "dieter/v1/control.proto"
+  proto_file_path: "dieter/v1/conversations.proto"
+  proto_file_path: "dieter/v1/executions.proto"
+  proto_file_path: "dieter/v1/files.proto"
+  proto_file_path: "dieter/v1/git.proto"
+  proto_file_path: "dieter/v1/kv.proto"
+  proto_file_path: "dieter/v1/machine.proto"
+  proto_file_path: "dieter/v1/peer.proto"
+  proto_file_path: "dieter/v1/projects.proto"
+  proto_file_path: "dieter/v1/schedules.proto"
+  proto_file_path: "dieter/v1/screens.proto"
+  proto_file_path: "dieter/v1/settings.proto"
+  proto_file_path: "dieter/v1/state.proto"
+  proto_file_path: "dieter/v1/terminals.proto"
+  proto_file_path: "dieter/v1/vault.proto"
+  proto_file_path: "dieter/gateway/v1/gateway.proto"
+}
+mapping {
+  module_name: "DieterClientAPI"
+  proto_file_path: "dieter/client/v1/client.proto"
+}

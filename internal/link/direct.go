@@ -1,0 +1,213 @@
+package link
+
+import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
+	"io"
+	"net"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	"github.com/dbpprt/dieter/internal/platform/buildinfo"
+	"github.com/dbpprt/dieter/internal/security/localauth"
+	"github.com/dbpprt/dieter/internal/security/trust"
+	"github.com/dbpprt/dieter/internal/transport/relay"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+)
+
+type DirectServer struct {
+	identity *Identity
+	local    *grpc.ClientConn
+	server   *grpc.Server
+	active   atomic.Int32
+}
+
+const maxActiveDirectRPCs = 64
+
+// NewDirectServer forwards verified direct RPCs to the raw local API, which
+// admits them with the daemon's local API token.
+func NewDirectServer(identity *Identity, localTarget, localToken string) (*DirectServer, error) {
+	if identity == nil || !identity.Enrolled() {
+		return nil, errors.New("daemon is not enrolled")
+	}
+	local, err := grpc.NewClient(localTarget, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithPerRPCCredentials(localauth.Credentials{Token: localToken}), grpc.WithDefaultCallOptions(grpc.ForceCodec(relay.RawCodec{}), grpc.MaxCallRecvMsgSize(16<<20), grpc.MaxCallSendMsgSize(16<<20)))
+	if err != nil {
+		return nil, err
+	}
+	direct := &DirectServer{identity: identity, local: local}
+	direct.server = grpc.NewServer(grpc.ConnectionTimeout(10*time.Second), grpc.ForceServerCodec(relay.RawCodec{}), grpc.UnknownServiceHandler(direct.handle), grpc.MaxRecvMsgSize(16<<20), grpc.MaxSendMsgSize(16<<20))
+	return direct, nil
+}
+
+func (s *DirectServer) Serve(listener net.Listener) error {
+	certificate, err := tls.X509KeyPair(s.identity.CertificatePEM, privateKeyPEM(s.identity.PrivateKey))
+	if err != nil {
+		return err
+	}
+	config := &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{certificate}, NextProtos: []string{"h2"}}
+	return s.server.Serve(tls.NewListener(listener, config))
+}
+
+func (s *DirectServer) Stop() {
+	s.server.GracefulStop()
+	s.local.Close()
+}
+
+func (s *DirectServer) handle(_ any, stream grpc.ServerStream) error {
+	ctx := stream.Context()
+	method, ok := grpc.Method(ctx)
+	if !ok || !relay.DaemonMethod(method) {
+		return status.Error(codes.Unimplemented, "only the Dieter daemon API is available")
+	}
+	values, _ := metadata.FromIncomingContext(ctx)
+	authorization := values.Get("authorization")
+	clientVersions := values.Get("x-dieter-client-version")
+	clientVersion := ""
+	if len(clientVersions) > 0 {
+		clientVersion = clientVersions[0]
+		for _, value := range clientVersions[1:] {
+			if value != clientVersion {
+				clientVersion = ""
+				break
+			}
+		}
+	}
+	if len(authorization) != 1 {
+		return status.Error(codes.Unauthenticated, "daemon access token is required")
+	}
+	token := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(authorization[0]), "Bearer "))
+	public, err := trust.PublicKeyFromPEM(s.identity.GatewaySigningPublicKey)
+	if err != nil {
+		return status.Error(codes.Internal, "daemon trust configuration is invalid")
+	}
+	claims, err := trust.ParseAndVerifyDaemonToken(public, token, s.identity.Issuer(), s.identity.ID, s.identity.Generation, time.Now().UTC())
+	if err != nil {
+		return status.Error(codes.Unauthenticated, "daemon access token is invalid")
+	}
+	if s.active.Add(1) > maxActiveDirectRPCs {
+		s.active.Add(-1)
+		return status.Error(codes.ResourceExhausted, "daemon direct concurrency is exhausted")
+	}
+	defer s.active.Add(-1)
+	// A bearer authorizes the entire direct RPC only for its accepted lifetime.
+	// The extra ten seconds matches the verifier's clock-skew allowance. Return
+	// from the handler on expiry even if a peer stalls RecvMsg or SendMsg; gRPC
+	// then cancels the transport and releases the forwarding goroutine.
+	ctx, cancel := context.WithDeadline(ctx, time.Unix(claims.ExpiresAt, 0).Add(10*time.Second))
+	defer cancel()
+	completed := make(chan error, 1)
+	go func() { completed <- s.forward(ctx, stream, method, claims.Subject, clientVersion) }()
+	select {
+	case err := <-completed:
+		return err
+	case <-ctx.Done():
+		return status.FromContextError(ctx.Err()).Err()
+	}
+}
+
+func (s *DirectServer) forward(ctx context.Context, stream grpc.ServerStream, method, operatorSubject, clientVersion string) error {
+	var request relay.RawMessage
+	if err := stream.RecvMsg(&request); err != nil {
+		return err
+	}
+	description := &grpc.StreamDesc{ServerStreams: true, ClientStreams: false}
+	localContext := metadata.NewOutgoingContext(ctx, metadata.Pairs(
+		"x-dieter-operator-subject", operatorSubject,
+		"x-dieter-client-version", clientVersion,
+	))
+	call, err := s.local.NewStream(localContext, description, method, grpc.ForceCodec(relay.RawCodec{}))
+	if err != nil {
+		return err
+	}
+	if err := call.SendMsg(&request); err != nil {
+		return err
+	}
+	if err := call.CloseSend(); err != nil {
+		return err
+	}
+	if headers, err := call.Header(); err == nil {
+		_ = stream.SendHeader(headers)
+	}
+	for {
+		var response relay.RawMessage
+		err := call.RecvMsg(&response)
+		if errors.Is(err, io.EOF) {
+			stream.SetTrailer(call.Trailer())
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := stream.SendMsg(&response); err != nil {
+			return err
+		}
+	}
+}
+
+func DialDirect(ctx context.Context, address, daemonID string, daemonCA []byte, token string) (*grpc.ClientConn, error) {
+	return DialDirectWithCredentials(ctx, address, daemonID, daemonCA, daemonTokenCredential{token: token})
+}
+
+// DialDirectWithCredentials preserves the daemon certificate identity check
+// while allowing long-lived clients to renew their per-RPC bearer credentials.
+func DialDirectWithCredentials(ctx context.Context, address, daemonID string, daemonCA []byte, bearer credentials.PerRPCCredentials, options ...grpc.DialOption) (*grpc.ClientConn, error) {
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(daemonCA) {
+		return nil, errors.New("daemon CA is invalid")
+	}
+	tlsConfig := &tls.Config{
+		MinVersion: tls.VersionTLS13, RootCAs: roots, InsecureSkipVerify: true,
+		VerifyConnection: func(state tls.ConnectionState) error {
+			if len(state.PeerCertificates) == 0 {
+				return errors.New("daemon certificate is missing")
+			}
+			chains, err := state.PeerCertificates[0].Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates(state.PeerCertificates[1:]), KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}})
+			if err != nil || len(chains) == 0 {
+				return errors.New("daemon certificate is not trusted")
+			}
+			for _, identity := range state.PeerCertificates[0].URIs {
+				if identity.String() == "spiffe://board/daemon/"+daemonID {
+					return nil
+				}
+			}
+			return errors.New("daemon certificate identity does not match the route")
+		},
+	}
+	options = append(options, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)), grpc.WithPerRPCCredentials(bearer), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(16<<20), grpc.MaxCallSendMsgSize(16<<20)))
+	connection, err := grpc.NewClient(address, options...)
+	if err != nil {
+		return nil, err
+	}
+	_ = ctx
+	return connection, nil
+}
+
+// TokenCredentials authenticates a direct-route call with a gateway-issued
+// daemon token.
+func TokenCredentials(token string) credentials.PerRPCCredentials {
+	return daemonTokenCredential{token: token}
+}
+
+type daemonTokenCredential struct{ token string }
+
+func (c daemonTokenCredential) GetRequestMetadata(context.Context, ...string) (map[string]string, error) {
+	return map[string]string{"authorization": "Bearer " + c.token, "x-dieter-client-version": buildinfo.ReleaseVersion}, nil
+}
+
+func (daemonTokenCredential) RequireTransportSecurity() bool { return true }
+
+func intermediates(certificates []*x509.Certificate) *x509.CertPool {
+	pool := x509.NewCertPool()
+	for _, certificate := range certificates {
+		pool.AddCert(certificate)
+	}
+	return pool
+}

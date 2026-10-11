@@ -1,0 +1,161 @@
+import AppKit
+import Foundation
+import DieterAPI
+import SwiftUI
+import Testing
+@testable import DieterMacKit
+
+// Regression: the transcript must render with reasoning shown and hidden, and
+// hiding reasoning must not leave hidden parts breaking tool-call grouping.
+
+private func part(_ type: String, text: String = "", tool: String = "", callID: String = "") -> Dieter_V1_MessagePart {
+    var part = Dieter_V1_MessagePart()
+    part.type = type
+    part.text = text
+    part.toolName = tool
+    part.toolCallID = callID
+    part.state = type == "dynamic-tool" ? "output-available" : "done"
+    return part
+}
+
+@Test @MainActor func conversationTimelineRendersWithBothReasoningStates() throws {
+    var assistant = Dieter_V1_UiMessage()
+    assistant.id = "message_1"
+    assistant.role = "assistant"
+    assistant.parts = [
+        part("reasoning", text: "Weighing the options before touching files."),
+        part("dynamic-tool", tool: "Read", callID: "tool_1"),
+        part("reasoning", text: "The config needs one more edit."),
+        part("dynamic-tool", tool: "Edit", callID: "tool_2"),
+        part("dynamic-tool", tool: "Bash", callID: "tool_3"),
+        part("text", text: "All done — the config is updated."),
+    ]
+    var user = Dieter_V1_UiMessage()
+    user.id = "message_0"
+    user.role = "user"
+    user.parts = [part("text", text: "Please update the config.")]
+    let messages = [user, assistant]
+
+    for showReasoning in [true, false] {
+        let store = DieterStore(liveEnvironment: false)
+        store.showReasoning = showReasoning
+        var conversation = Dieter_V1_ConversationSnapshot()
+        conversation.detail.card.id = "c_render"
+        conversation.detail.card.scope = "chat"
+        conversation.conversation.messages = messages
+        store.conversation = conversation
+        store.selectedChatID = conversation.detail.card.id
+
+        let timeline = ConversationTimeline()
+            .frame(width: 700, height: 600)
+            .environment(store).environment(store.conversationContext)
+
+        let renderer = ImageRenderer(content: timeline)
+        renderer.proposedSize = .init(width: 700, height: 600)
+        #expect(renderer.nsImage != nil, "timeline must render with showReasoning=\(showReasoning)")
+    }
+
+}
+
+@Test @MainActor func conversationViewSettlesAfterUnrelatedMachineDirectoryInvalidation() {
+    let store = DieterStore(liveEnvironment: false)
+    var activeProject = Dieter_V1_Project()
+    activeProject.id = "project-active"
+    activeProject.name = "Active"
+    var chat = Dieter_V1_Card()
+    chat.id = "c_render"
+    chat.projectID = activeProject.id
+    chat.scope = "chat"
+    chat.title = "Render regression"
+    var user = Dieter_V1_UiMessage()
+    user.id = "message-user"
+    user.role = "user"
+    user.parts = [part("text", text: "A short message")]
+    var assistant = Dieter_V1_UiMessage()
+    assistant.id = "message-assistant"
+    assistant.role = "assistant"
+    assistant.parts = [part("text", text: "A short response")]
+    var conversation = Dieter_V1_ConversationSnapshot()
+    conversation.detail.project = activeProject
+    conversation.detail.card = chat
+    conversation.conversation.cardID = chat.id
+    conversation.conversation.messages = [user, assistant]
+
+    store.projectDirectory = [activeProject.id: activeProject]
+    store.selectedProjectID = activeProject.id
+    store.state.project = activeProject
+    store.state.chats = [chat]
+    store.chats = [chat]
+    store.selectedChatID = chat.id
+    store.conversation = conversation
+    store.selectedDetail = conversation.detail
+
+    let hostingView = NSHostingView(
+        rootView: ConversationView().environment(store).environment(store.conversationContext))
+    hostingView.frame = NSRect(x: 0, y: 0, width: 760, height: 640)
+    hostingView.layoutSubtreeIfNeeded()
+
+    // A second machine coming online is a legitimate outer-view invalidation.
+    // It must complete without trapping the conversation's text/scroll layout
+    // in a permanent AttributeGraph transaction.
+    for index in 0..<12 {
+        var otherProject = Dieter_V1_Project()
+        otherProject.id = "project-other-\(index)"
+        otherProject.name = "Other \(index)"
+        store.projectDirectory[otherProject.id] = otherProject
+        hostingView.layoutSubtreeIfNeeded()
+    }
+
+    #expect(store.conversation == conversation)
+}
+
+@Test @MainActor func queuedComposerRendersInteractiveActions() throws {
+    DieterTheme.install(palette: .monochrome, colorScheme: .dark)
+    defer { DieterTheme.install(palette: .monochrome, colorScheme: .light) }
+    let store = DieterStore()
+    var project = Dieter_V1_Project()
+    project.id = "project-queue-render"
+    project.name = "Queue render"
+    var chat = Dieter_V1_Card()
+    chat.id = "chat-queue-render"
+    chat.projectID = project.id
+    chat.scope = "chat"
+    chat.title = "Queue controls"
+    chat.runtime = "running"
+    var text = Dieter_V1_MessagePart()
+    text.type = "text"
+    text.text = "Keep this follow-up queued until the current turn finishes."
+    var queued = Dieter_V1_QueuedMessage()
+    queued.id = "queued-render"
+    queued.text = text.text
+    queued.parts = [text]
+    var conversation = Dieter_V1_ConversationSnapshot()
+    conversation.detail.project = project
+    conversation.detail.card = chat
+    conversation.conversation.cardID = chat.id
+    conversation.conversation.status = "running"
+    conversation.conversation.queue = [queued]
+
+    store.projectDirectory = [project.id: project]
+    store.selectedProjectID = project.id
+    store.state.project = project
+    store.state.chats = [chat]
+    store.chats = [chat]
+    store.selectedChatID = chat.id
+    store.conversation = conversation
+    store.selectedDetail = conversation.detail
+
+    let hostingView = NSHostingView(
+        rootView: ConversationView().environment(store).environment(store.conversationContext).preferredColorScheme(
+            .dark))
+    hostingView.frame = NSRect(x: 0, y: 0, width: 760, height: 640)
+    hostingView.layoutSubtreeIfNeeded()
+    let bitmap = try #require(hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds))
+    hostingView.cacheDisplay(in: hostingView.bounds, to: bitmap)
+    let png = try #require(bitmap.representation(using: .png, properties: [:]))
+    #expect(png.count > 10_000)
+
+    if let output = ProcessInfo.processInfo.environment["DIETER_QUEUE_RENDER_OUTPUT"], !output.isEmpty {
+        try png.write(to: URL(fileURLWithPath: output), options: .atomic)
+    }
+}

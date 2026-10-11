@@ -17,11 +17,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/buildinfo"
-	"github.com/dbpprt/dieter/internal/compatibility"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
-	"github.com/dbpprt/dieter/internal/linkauth"
-	"github.com/dbpprt/dieter/internal/trust"
+	"github.com/dbpprt/dieter/internal/platform/buildinfo"
+	"github.com/dbpprt/dieter/internal/platform/version"
+	"github.com/dbpprt/dieter/internal/security/linkauth"
+	"github.com/dbpprt/dieter/internal/security/trust"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -66,7 +66,7 @@ func (s *Service) GetCompatibility(_ context.Context, request *gatewayv1.Compati
 	} else if request.GetComponent() != gatewayv1.CompatibilityComponent_COMPATIBILITY_COMPONENT_CLIENT {
 		return nil, status.Error(codes.InvalidArgument, "compatibility component is required")
 	}
-	value, normalized := compatibility.Evaluate(request.GetReleaseVersion(), minimum)
+	value, normalized := version.Evaluate(request.GetReleaseVersion(), minimum)
 	return &gatewayv1.CompatibilityResponse{
 		Policy: protoCompatibilityPolicy(policy), Status: protoCompatibilityStatus(value),
 		CurrentReleaseVersion: normalized, MinimumReleaseVersion: minimum,
@@ -615,17 +615,17 @@ func (s *Service) ownedDaemon(id string, githubID int64) (DaemonRecord, error) {
 
 func (s *Service) protoDaemon(record DaemonRecord) *gatewayv1.Daemon {
 	policy, _ := compatibilityPolicy(s.config)
-	value, _ := compatibility.Evaluate(record.Version, policy.MinimumDaemonVersion)
+	value, _ := version.Evaluate(record.Version, policy.MinimumDaemonVersion)
 	var routes []*gatewayv1.DirectCandidate
-	if value == compatibility.StatusCompatible {
+	if value == version.StatusCompatible {
 		_ = json.Unmarshal(record.RoutesJSON, &routes)
 	}
 	remoteDesktop := &gatewayv1.RemoteDesktopPresence{}
-	if value == compatibility.StatusCompatible {
+	if value == version.StatusCompatible {
 		_ = json.Unmarshal(record.RemoteDesktopJSON, remoteDesktop)
 	}
 	return &gatewayv1.Daemon{
-		Id: record.ID, Name: record.Name, Online: value == compatibility.StatusCompatible && s.hub.Online(record.ID),
+		Id: record.ID, Name: record.Name, Online: value == version.StatusCompatible && s.hub.Online(record.ID),
 		LastSeenAt: record.LastSeenAt.Format(time.RFC3339Nano), ReleaseVersion: record.Version,
 		Generation: record.Generation, DirectCandidates: routes, RemoteDesktop: remoteDesktop,
 		Compatibility: protoCompatibilityStatus(value), MinimumReleaseVersion: policy.MinimumDaemonVersion,

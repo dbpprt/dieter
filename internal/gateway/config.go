@@ -6,12 +6,11 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/compatibility"
+	"github.com/dbpprt/dieter/internal/platform/version"
 )
 
 type Config struct {
@@ -39,40 +38,49 @@ type Config struct {
 	MinimumDaemonVersion string
 }
 
-func ConfigFromEnv(root string) (Config, error) {
+// ConfigFromEnv parses the gateway configuration from DIETER_* variables in
+// environment (see config.Environ) for the state directory root.
+func ConfigFromEnv(environment map[string]string, root string) (Config, error) {
 	var err error
+	getenv := func(key string) string { return environment[key] }
+	envOr := func(key, fallback string) string {
+		if value := strings.TrimSpace(environment[key]); value != "" {
+			return value
+		}
+		return fallback
+	}
 	config := Config{
 		Root: root, Address: envOr("DIETER_GATEWAY_ADDR", "127.0.0.1:4243"), SessionTTL: 30 * 24 * time.Hour,
 		GitHubBaseURL: envOr("DIETER_GITHUB_BASE_URL", "https://github.com"), GitHubAPIURL: envOr("DIETER_GITHUB_API_URL", "https://api.github.com"),
-		TLSCertFile: strings.TrimSpace(os.Getenv("DIETER_GATEWAY_TLS_CERT")), TLSKeyFile: strings.TrimSpace(os.Getenv("DIETER_GATEWAY_TLS_KEY")),
-		DevInsecure: os.Getenv("DIETER_GATEWAY_DEV_INSECURE") == "1", ProxyMode: os.Getenv("DIETER_GATEWAY_PROXY_MODE") == "1", NativeRedirects: map[string]struct{}{}, RTCTTL: 5 * time.Minute,
-		MinimumClientVersion: strings.TrimSpace(os.Getenv("DIETER_MINIMUM_CLIENT_VERSION")),
-		MinimumDaemonVersion: strings.TrimSpace(os.Getenv("DIETER_MINIMUM_DAEMON_VERSION")),
+		TLSCertFile: strings.TrimSpace(getenv("DIETER_GATEWAY_TLS_CERT")), TLSKeyFile: strings.TrimSpace(getenv("DIETER_GATEWAY_TLS_KEY")),
+		DevInsecure: getenv("DIETER_GATEWAY_DEV_INSECURE") == "1", ProxyMode: getenv("DIETER_GATEWAY_PROXY_MODE") == "1", NativeRedirects: map[string]struct{}{}, RTCTTL: 5 * time.Minute,
+		MinimumClientVersion: strings.TrimSpace(getenv("DIETER_MINIMUM_CLIENT_VERSION")),
+		MinimumDaemonVersion: strings.TrimSpace(getenv("DIETER_MINIMUM_DAEMON_VERSION")),
 	}
 	if config.MinimumClientVersion == "" {
 		if !config.DevInsecure {
 			return config, errors.New("DIETER_MINIMUM_CLIENT_VERSION is required outside disposable development gateways")
 		}
-		config.MinimumClientVersion = compatibility.DevelopmentMinimum
+		config.MinimumClientVersion = version.DevelopmentMinimum
 	}
 	if config.MinimumDaemonVersion == "" {
 		if !config.DevInsecure {
 			return config, errors.New("DIETER_MINIMUM_DAEMON_VERSION is required outside disposable development gateways")
 		}
-		config.MinimumDaemonVersion = compatibility.DevelopmentMinimum
+		config.MinimumDaemonVersion = version.DevelopmentMinimum
 	}
-	if config.MinimumClientVersion, err = compatibility.Normalize(config.MinimumClientVersion); err != nil {
+	if config.MinimumClientVersion, err = version.Normalize(config.MinimumClientVersion); err != nil {
 		return config, errors.New("DIETER_MINIMUM_CLIENT_VERSION must be a semantic version")
 	}
-	if config.MinimumDaemonVersion, err = compatibility.Normalize(config.MinimumDaemonVersion); err != nil {
+	if config.MinimumDaemonVersion, err = version.Normalize(config.MinimumDaemonVersion); err != nil {
 		return config, errors.New("DIETER_MINIMUM_DAEMON_VERSION must be a semantic version")
 	}
-	publicURL, err := url.Parse(strings.TrimSpace(os.Getenv("DIETER_PUBLIC_URL")))
+	publicURL, err := url.Parse(strings.TrimSpace(getenv("DIETER_PUBLIC_URL")))
 	if err != nil || publicURL.Host == "" || publicURL.User != nil || publicURL.Path != "" || publicURL.RawQuery != "" || publicURL.Fragment != "" || (!config.DevInsecure && publicURL.Scheme != "https") || (config.DevInsecure && publicURL.Scheme != "http" && publicURL.Scheme != "https") {
 		return config, errors.New("DIETER_PUBLIC_URL must be an HTTPS origin without a path, query, or fragment")
 	}
 	config.PublicURL = publicURL
-	if raw := strings.TrimSpace(os.Getenv("DIETER_GATEWAY_ISSUER")); raw != "" {
+	if raw := strings.TrimSpace(getenv("DIETER_GATEWAY_ISSUER")); raw != "" {
 		issuer, e := url.Parse(raw)
 		if e != nil || issuer.Host == "" || issuer.User != nil || issuer.Path != "" || issuer.RawQuery != "" || issuer.Fragment != "" || issuer.Scheme != "https" {
 			return config, errors.New("DIETER_GATEWAY_ISSUER must be an HTTPS origin")
@@ -85,13 +93,13 @@ func ConfigFromEnv(root string) (Config, error) {
 			return config, fmt.Errorf("%s must be an HTTPS URL (HTTP is allowed only for development loopback servers)", name)
 		}
 	}
-	config.GitHubClientID = strings.TrimSpace(os.Getenv("DIETER_GITHUB_CLIENT_ID"))
-	config.GitHubSecret = strings.TrimSpace(os.Getenv("DIETER_GITHUB_CLIENT_SECRET"))
+	config.GitHubClientID = strings.TrimSpace(getenv("DIETER_GITHUB_CLIENT_ID"))
+	config.GitHubSecret = strings.TrimSpace(getenv("DIETER_GITHUB_CLIENT_SECRET"))
 	if config.GitHubClientID == "" || config.GitHubSecret == "" {
 		return config, errors.New("DIETER_GITHUB_CLIENT_ID and DIETER_GITHUB_CLIENT_SECRET are required")
 	}
 	config.AllowedUserIDs = map[int64]struct{}{}
-	if allowedUserIDs := strings.TrimSpace(os.Getenv("DIETER_GITHUB_ALLOWED_USER_IDS")); allowedUserIDs != "" {
+	if allowedUserIDs := strings.TrimSpace(getenv("DIETER_GITHUB_ALLOWED_USER_IDS")); allowedUserIDs != "" {
 		for _, value := range strings.Split(allowedUserIDs, ",") {
 			if _, err := addAllowedUserID(config.AllowedUserIDs, strings.TrimSpace(value)); err != nil {
 				return config, errors.New("DIETER_GITHUB_ALLOWED_USER_IDS must be a comma-separated list of positive numeric GitHub IDs")
@@ -101,17 +109,17 @@ func ConfigFromEnv(root string) (Config, error) {
 	if len(config.AllowedUserIDs) == 0 {
 		return config, errors.New("DIETER_GITHUB_ALLOWED_USER_IDS must contain at least one positive numeric GitHub ID")
 	}
-	config.AuthSecret, err = hex.DecodeString(strings.TrimSpace(os.Getenv("DIETER_AUTH_SECRET")))
+	config.AuthSecret, err = hex.DecodeString(strings.TrimSpace(getenv("DIETER_AUTH_SECRET")))
 	if err != nil || len(config.AuthSecret) < 32 {
 		return config, errors.New("DIETER_AUTH_SECRET must contain at least 32 random bytes encoded as hexadecimal")
 	}
-	if raw := strings.TrimSpace(os.Getenv("DIETER_NATIVE_SESSION_TTL")); raw != "" {
+	if raw := strings.TrimSpace(getenv("DIETER_NATIVE_SESSION_TTL")); raw != "" {
 		config.SessionTTL, err = time.ParseDuration(raw)
 		if err != nil || config.SessionTTL < time.Hour || config.SessionTTL > 90*24*time.Hour {
 			return config, errors.New("DIETER_NATIVE_SESSION_TTL must be between 1h and 2160h")
 		}
 	}
-	for _, value := range strings.Split(os.Getenv("DIETER_NATIVE_REDIRECT_URIS"), ",") {
+	for _, value := range strings.Split(getenv("DIETER_NATIVE_REDIRECT_URIS"), ",") {
 		value = strings.TrimSpace(value)
 		if value == "" {
 			continue
@@ -122,21 +130,21 @@ func ConfigFromEnv(root string) (Config, error) {
 		}
 		config.NativeRedirects[value] = struct{}{}
 	}
-	config.RTCSTUNURLs, err = rtcURLs(os.Getenv("DIETER_RTC_STUN_URLS"), "stun:", "stuns:")
+	config.RTCSTUNURLs, err = rtcURLs(getenv("DIETER_RTC_STUN_URLS"), "stun:", "stuns:")
 	if err != nil {
 		return config, err
 	}
-	config.RTCTURNURLs, err = rtcURLs(os.Getenv("DIETER_RTC_TURN_URLS"), "turn:", "turns:")
+	config.RTCTURNURLs, err = rtcURLs(getenv("DIETER_RTC_TURN_URLS"), "turn:", "turns:")
 	if err != nil {
 		return config, err
 	}
-	if raw := strings.TrimSpace(os.Getenv("DIETER_RTC_TTL")); raw != "" {
+	if raw := strings.TrimSpace(getenv("DIETER_RTC_TTL")); raw != "" {
 		config.RTCTTL, err = time.ParseDuration(raw)
 		if err != nil || config.RTCTTL < time.Minute || config.RTCTTL > 10*time.Minute {
 			return config, errors.New("DIETER_RTC_TTL must be between 1m and 10m")
 		}
 	}
-	if raw := strings.TrimSpace(os.Getenv("DIETER_RTC_TURN_SECRET")); raw != "" {
+	if raw := strings.TrimSpace(getenv("DIETER_RTC_TURN_SECRET")); raw != "" {
 		config.RTCTURNSecret, err = hex.DecodeString(raw)
 		if err != nil || len(config.RTCTURNSecret) < 32 {
 			return config, errors.New("DIETER_RTC_TURN_SECRET must contain at least 32 random bytes encoded as hexadecimal")
@@ -201,13 +209,6 @@ func rtcURLs(raw string, prefixes ...string) ([]string, error) {
 		result = append(result, value)
 	}
 	return result, nil
-}
-
-func envOr(key, fallback string) string {
-	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-		return value
-	}
-	return fallback
 }
 
 // IdentityOrigin is the immutable trust/account namespace, never a dial target.

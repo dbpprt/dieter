@@ -81,7 +81,7 @@ func (c *CLI) rpcVault(args []string) error {
 	if !ok {
 		return fmt.Errorf("unknown vault action %q; run `dieter vault --help`", args[0])
 	}
-	if !wantsHelp(args[1:]) && os.Getenv("DIETER_TURN_TOKEN") != "" && strings.TrimSpace(c.Machine) != "" {
+	if !wantsHelp(args[1:]) && c.env.TurnToken != "" && strings.TrimSpace(c.Machine) != "" {
 		return errors.New("agent turns use the vault only through their own machine; omit --machine")
 	}
 	return action(args[1:])

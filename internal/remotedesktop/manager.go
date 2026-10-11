@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"runtime"
 	"strings"
 	"sync"
@@ -19,7 +18,9 @@ import (
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/trust"
+	"github.com/dbpprt/dieter/internal/platform/buildinfo"
+	"github.com/dbpprt/dieter/internal/platform/fault"
+	"github.com/dbpprt/dieter/internal/security/trust"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/cc"
 	"github.com/pion/rtcp"
@@ -40,13 +41,13 @@ const (
 )
 
 var (
-	ErrSessionClosed      = errors.New("remote desktop session admission was canceled")
-	ErrControlUnavailable = errors.New("this session did not request remote control")
-	ErrBusy               = errors.New("another remote desktop session is active")
-	ErrCapacity           = errors.New("screen sharing client limit reached (4)")
-	ErrControlOwner       = errors.New("another client controls the desktop; update both clients to use control handoff")
-	ErrNotFound           = errors.New("remote desktop session not found")
-	ErrInvalidSignal      = errors.New("invalid remote desktop signal")
+	ErrSessionClosed      = fault.New(fault.FailedPrecondition, "remote desktop session admission was canceled")
+	ErrControlUnavailable = fault.New(fault.FailedPrecondition, "this session did not request remote control")
+	ErrBusy               = fault.New(fault.ResourceExhausted, "another remote desktop session is active")
+	ErrCapacity           = fault.New(fault.FailedPrecondition, "screen sharing client limit reached (4)")
+	ErrControlOwner       = fault.New(fault.FailedPrecondition, "another client controls the desktop; update both clients to use control handoff")
+	ErrNotFound           = fault.New(fault.NotFound, "remote desktop session not found")
+	ErrInvalidSignal      = fault.New(fault.Invalid, "invalid remote desktop signal")
 )
 
 type Identity struct {
@@ -74,6 +75,27 @@ type Options struct {
 	Logger                *slog.Logger
 	Now                   func() time.Time
 	CapabilityProbe       func(context.Context, SourceOptions) (*dieterv1.RemoteDesktopCapabilities, error)
+	Tuning                Tuning
+}
+
+// Tuning holds operator switches for media behaviour. The zero value is the
+// release default; the daemon maps DIETER_SCREEN_* variables onto it.
+type Tuning struct {
+	// DisableFEC turns off forward error correction (DIETER_SCREEN_FEC=0).
+	DisableFEC bool
+	// DisableFastBitrate turns off fast bitrate reduction
+	// (DIETER_SCREEN_FAST_BITRATE=0).
+	DisableFastBitrate bool
+	// DisableLongTermReferences turns off acknowledged reference recovery
+	// (DIETER_SCREEN_LTR=0).
+	DisableLongTermReferences bool
+	// ContentAdaptation adapts quality to content class
+	// (DIETER_SCREEN_CONTENT_ADAPTATION=1).
+	ContentAdaptation bool
+	// VirtualDisplay enables macOS virtual displays
+	// (DIETER_SCREEN_VIRTUAL_DISPLAY=1); VirtualDisable additionally allows
+	// disabling physical displays (DIETER_SCREEN_VIRTUAL_DISABLE=1).
+	VirtualDisplay, VirtualDisable bool
 }
 
 type Manager struct {
@@ -154,7 +176,7 @@ func New(options Options) *Manager {
 		options.Now = time.Now
 	}
 	m := &Manager{options: options, sessions: make(map[string]*Session), admissions: make(chan struct{}, maxClients)}
-	m.clipboardName = "com.dbpprt.dieter.fixture." + randomID()
+	m.clipboardName = buildinfo.BundlePrefix + ".fixture." + randomID()
 	if options.Source.Kind == "synthetic" && options.ClipboardFactory == nil {
 		backend := &MemoryClipboard{}
 		m.options.ClipboardFactory = func() ClipboardBackend { return backend }
@@ -579,7 +601,7 @@ func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, o
 	if config.MaxFps > 60 {
 		sourceOptions.MaxWidth, sourceOptions.MaxHeight = int(config.MaxWidth), int(config.MaxHeight)
 	}
-	if request.ReferenceRecovery && os.Getenv("DIETER_SCREEN_LTR") != "0" && offerSupportsReferences(request.GetOffer().GetSdp()) {
+	if request.ReferenceRecovery && !manager.options.Tuning.DisableLongTermReferences && offerSupportsReferences(request.GetOffer().GetSdp()) {
 		sourceOptions.RecoveryID = randomID()
 	}
 	source, err := manager.media.Subscribe(sourceOptions)
@@ -605,7 +627,7 @@ func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, o
 	}
 	settingEngine := webrtc.SettingEngine{}
 	settingEngine.SetIncludeLoopbackCandidate(true)
-	api, pacer, estimator, err := newMediaAPI(settingEngine, source, manager.options.MediaInterceptors...)
+	api, pacer, estimator, err := newMediaAPI(settingEngine, source, !manager.options.Tuning.DisableFEC, manager.options.MediaInterceptors...)
 	if err != nil {
 		return nil, err
 	}
@@ -684,7 +706,7 @@ func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, o
 			}
 			session.mu.Lock()
 			session.peerDetachedAt = time.Time{}
-			session.lastFeedback = time.Now()
+			session.lastFeedback = session.now()
 			session.mu.Unlock()
 			session.emitState("streaming", "")
 			session.startOnce.Do(func() { go session.streamSource(request) })
@@ -953,27 +975,45 @@ func (s *Session) monitor() {
 		case <-s.ctx.Done():
 			return
 		case <-ticker.C:
-			s.expireReceiverInput(time.Now())
-			now := s.manager.options.Now().UTC()
-			s.mu.Lock()
-			leaseExpired := !now.Before(s.leaseExpiresAt)
-			detachedExpired := !s.detachedAt.IsZero() && now.Sub(s.detachedAt) >= s.manager.options.DetachGrace
-			peerDetachedExpired := !s.peerDetachedAt.IsZero() && now.Sub(s.peerDetachedAt) >= s.manager.options.DetachGrace
-			s.mu.Unlock()
-			if leaseExpired {
-				s.close("session lease expired")
-				return
-			}
-			if detachedExpired {
-				s.close("signaling observer did not reconnect")
-				return
-			}
-			if peerDetachedExpired {
-				s.close("WebRTC peer did not reconnect")
+			if s.checkLiveness() {
 				return
 			}
 		}
 	}
+}
+
+// checkLiveness runs one watchdog evaluation against the manager's clock:
+// it pauses input after a missed receiver heartbeat and closes the session
+// when its lease, signaling observer, or WebRTC peer expired. It reports
+// whether the session closed.
+func (s *Session) checkLiveness() bool {
+	s.expireReceiverInput(s.now())
+	now := s.manager.options.Now().UTC()
+	s.mu.Lock()
+	leaseExpired := !now.Before(s.leaseExpiresAt)
+	detachedExpired := !s.detachedAt.IsZero() && now.Sub(s.detachedAt) >= s.manager.options.DetachGrace
+	peerDetachedExpired := !s.peerDetachedAt.IsZero() && now.Sub(s.peerDetachedAt) >= s.manager.options.DetachGrace
+	s.mu.Unlock()
+	switch {
+	case leaseExpired:
+		s.close("session lease expired")
+	case detachedExpired:
+		s.close("signaling observer did not reconnect")
+	case peerDetachedExpired:
+		s.close("WebRTC peer did not reconnect")
+	default:
+		return false
+	}
+	return true
+}
+
+// now is the manager's clock; sessions built without a manager use the
+// wall clock.
+func (s *Session) now() time.Time {
+	if s.manager != nil && s.manager.options.Now != nil {
+		return s.manager.options.Now()
+	}
+	return time.Now()
 }
 
 func (s *Session) close(reason string) {
@@ -984,7 +1024,7 @@ func (s *Session) close(reason string) {
 			s.mu.Unlock()
 			age := int64(-1)
 			if !feedbackAt.IsZero() {
-				age = time.Since(feedbackAt).Milliseconds()
+				age = s.now().Sub(feedbackAt).Milliseconds()
 			}
 			logger.Info("remote desktop session closed", "session", s.id, "reason", reason, "receiverFeedbackAgeMs", age, "peerState", s.pc.ConnectionState().String())
 		}

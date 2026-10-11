@@ -8,6 +8,7 @@ import (
 )
 
 func TestConversationTokenUsageTotalsAndPartialCoverage(t *testing.T) {
+	t.Parallel()
 	msg := func(id, metadata string) model.UIMessage {
 		return model.UIMessage{ID: id, Role: "assistant", Metadata: json.RawMessage(metadata)}
 	}
@@ -34,6 +35,7 @@ func TestConversationTokenUsageTotalsAndPartialCoverage(t *testing.T) {
 }
 
 func TestCardTokenUsageProjectsExistingHistoryAndRefreshesAfterRestart(t *testing.T) {
+	t.Parallel()
 	s, p, b := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{Project: p.ID, Board: b.ID, Title: "Usage", Prompt: "Count"})
 	if err != nil {
@@ -67,6 +69,7 @@ func TestCardTokenUsageProjectsExistingHistoryAndRefreshesAfterRestart(t *testin
 }
 
 func TestTokenUsageMetadataRefreshesDirectorySync(t *testing.T) {
+	t.Parallel()
 	s, p, b := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{Project: p.ID, Board: b.ID, Title: "Usage sync", Prompt: "Count"})
 	if err != nil {

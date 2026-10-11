@@ -1,0 +1,446 @@
+import AppKit
+import CryptoKit
+import DieterAPI
+import DieterCore
+import SwiftUI
+import UniformTypeIdentifiers
+
+// MARK: - ⌘V interception
+
+@MainActor
+protocol AttachmentPasteFirstResponder: AnyObject {
+    func consumesAttachmentPaste(from pasteboard: NSPasteboard) -> Bool
+}
+
+@MainActor
+enum AttachmentPasteRouting {
+    static func consume(
+        firstResponder responder: NSResponder?, from pasteboard: NSPasteboard,
+        fallback: ((NSPasteboard) -> Bool)?
+    ) -> Bool {
+        if (responder as? AttachmentPasteFirstResponder)?.consumesAttachmentPaste(from: pasteboard) == true {
+            return true
+        }
+        return fallback?(pasteboard) == true
+    }
+}
+
+extension View {
+    /// Intercepts ⌘V in this view's window before the focused text view can
+    /// swallow it, so images and files on the pasteboard become attachments.
+    /// The handler returns true when it consumed the pasteboard; plain text
+    /// pastes fall through to the focused control.
+    func attachmentPasteCatcher(_ paste: @escaping (NSPasteboard) -> Bool) -> some View {
+        background(AttachmentPasteMonitor(paste: paste).frame(width: 0, height: 0))
+    }
+
+    /// Accepts Finder files and dragged image data using the same item-provider
+    /// path as paste, while exposing target state for a visible drop affordance.
+    func attachmentDropTarget(
+        isTargeted: Binding<Bool>,
+        perform: @escaping ([NSItemProvider]) -> Void
+    ) -> some View {
+        onDrop(
+            of: [UTType.fileURL.identifier, UTType.image.identifier],
+            isTargeted: isTargeted
+        ) { providers in
+            guard !providers.isEmpty else { return false }
+            perform(providers)
+            return true
+        }
+    }
+
+    /// Reuses one importer/paste pipeline across every composer. Loading,
+    /// normalization, limits, and errors all stay centralized in DieterStore.
+    func attachmentIntake(
+        store: DieterStore,
+        importerPresented: Binding<Bool>,
+        attachments: Binding<[Dieter_V1_MessagePart]>
+    ) -> some View {
+        modifier(
+            AttachmentIntakeModifier(
+                store: store,
+                importerPresented: importerPresented,
+                attachments: attachments
+            ))
+    }
+}
+
+private struct AttachmentIntakeModifier: ViewModifier {
+    let store: DieterStore
+    @Binding var importerPresented: Bool
+    @Binding var attachments: [Dieter_V1_MessagePart]
+
+    func body(content: Content) -> some View {
+        content
+            .fileImporter(
+                isPresented: $importerPresented,
+                allowedContentTypes: [.item],
+                allowsMultipleSelection: true
+            ) { result in
+                Task {
+                    do {
+                        attachments = try await store.attachmentParts(try result.get(), appendingTo: attachments)
+                    } catch { store.show(error) }
+                }
+            }
+            // Keep keyboard paste on the AppKit monitor below. Installing a
+            // SwiftUI paste command here as well can dispatch the same ⌘V to
+            // both handlers and append one clipboard image twice.
+            .attachmentPasteCatcher { pasteboard in
+                guard let input = store.pasteboardAttachmentInput(pasteboard) else { return false }
+                Task {
+                    do { attachments = try await store.attachmentParts(input, appendingTo: attachments) } catch {
+                        store.show(error)
+                    }
+                }
+                return true
+            }
+    }
+}
+
+private struct AttachmentPasteMonitor: NSViewRepresentable {
+    let paste: (NSPasteboard) -> Bool
+
+    func makeNSView(context: Context) -> MonitorView { MonitorView() }
+
+    func updateNSView(_ view: MonitorView, context: Context) {
+        view.paste = paste
+    }
+
+    /// Holds the monitor token so it can be released from a nonisolated deinit.
+    private final class MonitorBox: @unchecked Sendable {
+        var token: Any?
+
+        func remove() {
+            if let token { NSEvent.removeMonitor(token) }
+            token = nil
+        }
+    }
+
+    final class MonitorView: NSView {
+        var paste: ((NSPasteboard) -> Bool)?
+        private let box = MonitorBox()
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window == nil { box.remove() } else { installMonitor() }
+        }
+
+        private func installMonitor() {
+            guard box.token == nil else { return }
+            box.token = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, let window = self.window, event.window === window,
+                    event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command,
+                    event.charactersIgnoringModifiers?.lowercased() == "v"
+                else { return event }
+
+                // A Quick Task can be presented over a conversation in the
+                // same window. Let its focused native editor claim the image
+                // before this conversation-wide fallback appends it to the
+                // chat composer behind the popover.
+                return AttachmentPasteRouting.consume(
+                    firstResponder: window.firstResponder, from: .general, fallback: self.paste)
+                    ? nil : event
+            }
+        }
+
+        deinit { box.remove() }
+    }
+}
+
+// MARK: - Attachment previews
+
+/// Horizontal strip of removable attachment previews shown in composers.
+struct AttachmentPreviewStrip: View {
+    @Binding var attachments: [Dieter_V1_MessagePart]
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Array(attachments.enumerated()), id: \.offset) { index, part in
+                    AttachmentPreviewTile(
+                        part: part,
+                        remove: {
+                            guard attachments.indices.contains(index), attachments[index] == part else { return }
+                            attachments.remove(at: index)
+                        },
+                        update: { edited in
+                            attachments = try AttachmentMarkupReplacement.replacing(
+                                part, at: index, with: edited, in: attachments)
+                        })
+                }
+            }
+            .padding(3)
+        }
+    }
+}
+
+/// One attachment preview: a real thumbnail for images, a labeled file card otherwise.
+struct AttachmentPreviewTile: View {
+    let part: Dieter_V1_MessagePart
+    var remove: (() -> Void)?
+    var update: ((Dieter_V1_MessagePart) throws -> Void)?
+    @State private var hovering = false
+    @State private var previewPresented = false
+
+    private static let tileHeight: CGFloat = 68
+
+    var body: some View {
+        Group {
+            if let thumbnail { imageTile(thumbnail) } else { fileTile }
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .onTapGesture {
+            if thumbnail != nil { previewPresented = true }
+        }
+        .overlay(alignment: .topLeading) {
+            if update != nil, thumbnail != nil {
+                Button {
+                    previewPresented = true
+                } label: {
+                    Image(systemName: "pencil.tip.crop.circle")
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                        .padding(4).background(.black.opacity(0.55), in: Circle())
+                }
+                .buttonStyle(.plain).padding(4).help("Annotate image")
+                .accessibilityLabel("Annotate \(part.filename)")
+                .accessibilityIdentifier("attachment.annotate.\(part.filename)")
+                .e2eTarget("attachment.annotate.\(part.filename)")
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if let remove {
+                Button(action: remove) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 7, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .frame(width: 17, height: 17)
+                        .background(Color.black.opacity(hovering ? 0.72 : 0.5), in: Circle())
+                        .overlay(Circle().stroke(Color.white.opacity(0.25)))
+                }
+                .buttonStyle(.plain)
+                .padding(4)
+                .help("Remove attachment")
+                .accessibilityLabel("Remove \(part.filename)")
+            }
+        }
+        .scaleEffect(hovering ? 1.02 : 1)
+        .animation(.easeOut(duration: 0.14), value: hovering)
+        .onHover { hovering = $0 }
+        .help(
+            thumbnail == nil
+                ? "" : "\(update == nil ? "Preview" : "Annotate") \(part.filename.isEmpty ? "image" : part.filename)"
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(part.filename), \(SharedRules.shared.bytes(count: Int64(part.data.count)))")
+        .accessibilityAddTraits(thumbnail == nil ? [] : .isButton)
+        .accessibilityAction(named: "Preview") {
+            if thumbnail != nil { previewPresented = true }
+        }
+        .sheet(isPresented: $previewPresented) {
+            if let thumbnail {
+                if let update {
+                    VStack(spacing: 0) {
+                        Text(part.filename.isEmpty ? "Annotate image" : part.filename)
+                            .font(.headline).lineLimit(1).padding(14)
+                        Divider()
+                        AttachmentMarkupEditor(
+                            part: part,
+                            apply: { edited in
+                                try update(edited)
+                                previewPresented = false
+                            }, cancel: { previewPresented = false })
+                    }
+                    .frame(minWidth: 620, idealWidth: 820, minHeight: 480, idealHeight: 660)
+                } else {
+                    AttachmentImagePreview(part: part, image: thumbnail)
+                }
+            }
+        }
+    }
+
+    private func imageTile(_ image: NSImage) -> some View {
+        let aspect = image.size.height > 0 ? image.size.width / image.size.height : 1
+        let width = min(150, max(Self.tileHeight, Self.tileHeight * aspect))
+        return ZStack(alignment: .bottomLeading) {
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fill)
+                .frame(width: width, height: Self.tileHeight)
+                .clipped()
+            LinearGradient(
+                colors: [.clear, .clear, Color.black.opacity(0.68)],
+                startPoint: .top, endPoint: .bottom
+            )
+            VStack(alignment: .leading, spacing: 1) {
+                Text(part.filename)
+                    .font(.system(size: 8.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Text(SharedRules.shared.bytes(count: Int64(part.data.count)))
+                    .font(.system(size: 7.5, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.72))
+            }
+            .padding(.horizontal, 7)
+            .padding(.bottom, 5)
+        }
+        .frame(width: width, height: Self.tileHeight)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(hovering ? DieterTheme.shell.opacity(0.55) : Color.white.opacity(0.14))
+        )
+        .shadow(color: Color.black.opacity(0.3), radius: 6, y: 3)
+    }
+
+    private var fileTile: some View {
+        HStack(spacing: 9) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(DieterTheme.shellDeep.opacity(0.18))
+                Image(systemName: "doc.fill")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(DieterTheme.shell)
+            }
+            .frame(width: 32, height: 32)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(part.filename.isEmpty ? "Attachment" : part.filename)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+                Text(
+                    SharedRules.shared.attachmentDetails(
+                        filename: part.filename, mediaType: part.mediaType, bytes: Int64(part.data.count))
+                )
+                .font(.system(size: 9))
+                .foregroundStyle(DieterTheme.tertiary)
+                .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 10)
+        .frame(height: Self.tileHeight - 16)
+        .frame(maxWidth: 200, alignment: .leading)
+        .background(DieterTheme.elevated.opacity(0.85), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(hovering ? DieterTheme.shell.opacity(0.45) : DieterTheme.border)
+        )
+        .shadow(color: Color.black.opacity(0.22), radius: 5, y: 2)
+    }
+
+    private var thumbnail: NSImage? {
+        guard part.mediaType.hasPrefix("image/") || part.type.caseInsensitiveCompare("image") == .orderedSame else {
+            return nil
+        }
+        return AttachmentImagePayload.image(from: part)
+    }
+}
+
+enum AttachmentImagePayload {
+    private final class ImageCache: @unchecked Sendable {
+        let values: NSCache<NSString, NSImage> = {
+            let cache = NSCache<NSString, NSImage>()
+            cache.countLimit = 128
+            cache.totalCostLimit = 64 * 1_024 * 1_024
+            return cache
+        }()
+    }
+
+    private static let cache = ImageCache()
+
+    static func image(from part: Dieter_V1_MessagePart) -> NSImage? {
+        let key = cacheKey(for: part)
+        if let cached = cache.values.object(forKey: key) { return cached }
+        guard let payload = data(from: part), let image = NSImage(data: payload) else { return nil }
+        cache.values.setObject(image, forKey: key, cost: cacheCost(image: image, encodedByteCount: payload.count))
+        return image
+    }
+
+    static func data(from part: Dieter_V1_MessagePart) -> Data? {
+        if !part.data.isEmpty { return part.data }
+        guard part.url.hasPrefix("data:image/"), let marker = part.url.range(of: ";base64,") else { return nil }
+        return Data(base64Encoded: String(part.url[marker.upperBound...]))
+    }
+
+    static func cacheKey(for part: Dieter_V1_MessagePart) -> NSString {
+        let identity: String
+        if !part.payloadRevision.isEmpty {
+            identity = "revision:\(part.payloadRevision)"
+        } else {
+            // Keep the key bounded even for legacy inline data URLs. Embedding the
+            // complete URL here duplicated every base64 payload in NSCache's keys.
+            let payload = part.data.isEmpty ? Data(part.url.utf8) : part.data
+            identity = SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()
+        }
+        return "\(part.filename)|\(part.mediaType)|\(identity)" as NSString
+    }
+
+    static func cacheCost(image: NSImage, encodedByteCount: Int) -> Int {
+        let decodedBytes = image.representations.reduce(0) { largest, representation in
+            let width = max(0, representation.pixelsWide)
+            let height = max(0, representation.pixelsHigh)
+            let pixels = width.multipliedReportingOverflow(by: height)
+            guard !pixels.overflow else { return Int.max }
+            let bytes = pixels.partialValue.multipliedReportingOverflow(by: 4)
+            return bytes.overflow ? Int.max : max(largest, bytes.partialValue)
+        }
+        return max(1, encodedByteCount, decodedBytes)
+    }
+}
+
+enum AttachmentMarkupReplacement {
+    static func replacing(
+        _ original: Dieter_V1_MessagePart, at index: Int, with edited: Dieter_V1_MessagePart,
+        in attachments: [Dieter_V1_MessagePart]
+    ) throws -> [Dieter_V1_MessagePart] {
+        guard attachments.indices.contains(index), attachments[index] == original else {
+            throw AttachmentMarkupError.attachmentChanged
+        }
+        let others = attachments.enumerated().filter { $0.offset != index }.map(\.element)
+        _ = try AttachmentLoader.validate([edited], appendingTo: others)
+        var result = attachments
+        result[index] = edited
+        return result
+    }
+}
+
+struct AttachmentImagePreview: View {
+    @Environment(\.dismiss) private var dismiss
+    let part: Dieter_V1_MessagePart
+    let image: NSImage
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(part.filename.isEmpty ? "Image attachment" : part.filename)
+                        .font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                    Text(
+                        "\(Int(image.size.width)) × \(Int(image.size.height))  ·  \(SharedRules.shared.bytes(count: Int64(part.data.count)))"
+                    )
+                    .font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                }
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark").font(.system(size: 12, weight: .bold))
+                }
+                .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28)).help("Close preview")
+            }
+            .padding(.horizontal, 18).frame(height: 56)
+            Divider().overlay(DieterTheme.border)
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(20)
+                .background(DieterTheme.surface)
+                .accessibilityLabel(part.filename.isEmpty ? "Image preview" : "Preview of \(part.filename)")
+        }
+        .frame(minWidth: 620, idealWidth: 820, minHeight: 480, idealHeight: 660)
+        .background(DieterTheme.background)
+    }
+}

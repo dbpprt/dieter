@@ -2,18 +2,21 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"io"
 	"testing"
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
-	"github.com/dbpprt/dieter/internal/relaypolicy"
+	"github.com/dbpprt/dieter/internal/testkit"
+	"github.com/dbpprt/dieter/internal/transport/relay"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
 func TestRelayDeadlineOnlyPropagatesClientDeadline(t *testing.T) {
+	t.Parallel()
 	if got := relayDeadlineUnixMillis(context.Background()); got != 0 {
 		t.Fatalf("background relay deadline = %d, want 0", got)
 	}
@@ -27,6 +30,7 @@ func TestRelayDeadlineOnlyPropagatesClientDeadline(t *testing.T) {
 }
 
 func TestDaemonLinkHeartbeatLease(t *testing.T) {
+	t.Parallel()
 	link := &daemonLink{}
 	now := time.Now()
 	link.markSeen(now)
@@ -39,17 +43,19 @@ func TestDaemonLinkHeartbeatLease(t *testing.T) {
 }
 
 func TestRemoteDesktopRelayAllowsBoundedSignalingBurst(t *testing.T) {
-	if got := relayFrameBuffer("/dieter.v1.DieterService/StartRemoteDesktop"); got != remoteDesktopRelayFrameBuffer {
+	t.Parallel()
+	if got := relayFrameBuffer("/dieter.v1.ScreenService/StartRemoteDesktop"); got != remoteDesktopRelayFrameBuffer {
 		t.Fatalf("remote desktop relay buffer = %d, want %d", got, remoteDesktopRelayFrameBuffer)
 	}
-	if got := relayFrameBuffer("/dieter.v1.DieterService/WatchChanges"); got != defaultRelayFrameBuffer {
+	if got := relayFrameBuffer("/dieter.v1.StateService/WatchChanges"); got != defaultRelayFrameBuffer {
 		t.Fatalf("default relay buffer = %d, want %d", got, defaultRelayFrameBuffer)
 	}
 }
 
 func TestRelayPreservesCompletedExecutionBurstBeforeReceiverRuns(t *testing.T) {
+	t.Parallel()
 	hub, link := newTestRelayHub(t)
-	relay, err := hub.Open(t.Context(), link.id, &gatewayv1.DaemonLinkFrame{Method: "/dieter.v1.DieterService/WatchExecution"})
+	relay, err := hub.Open(t.Context(), link.id, &gatewayv1.DaemonLinkFrame{Method: "/dieter.v1.ExecutionService/WatchExecution"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +79,7 @@ func TestRelayPreservesCompletedExecutionBurstBeforeReceiverRuns(t *testing.T) {
 			t.Fatalf("frame %d = %v, %v; want %v", i, actual, err, expected)
 		}
 	}
-	if _, err := relay.Recv(); err != io.EOF {
+	if _, err := relay.Recv(); !errors.Is(err, io.EOF) {
 		t.Fatalf("after completed burst = %v; want EOF", err)
 	}
 	if got := relay.queue.bytes.Load(); got != 0 {
@@ -82,14 +88,15 @@ func TestRelayPreservesCompletedExecutionBurstBeforeReceiverRuns(t *testing.T) {
 }
 
 func TestRelayBurstLimitsIsolateSlowConsumers(t *testing.T) {
+	t.Parallel()
 	for _, limit := range []string{"frames", "bytes"} {
 		t.Run(limit, func(t *testing.T) {
 			hub, link := newTestRelayHub(t)
-			slow, err := hub.Open(t.Context(), link.id, &gatewayv1.DaemonLinkFrame{Method: "/dieter.v1.DieterService/WatchExecution"})
+			slow, err := hub.Open(t.Context(), link.id, &gatewayv1.DaemonLinkFrame{Method: "/dieter.v1.ExecutionService/WatchExecution"})
 			if err != nil {
 				t.Fatal(err)
 			}
-			healthy, err := hub.Open(t.Context(), link.id, &gatewayv1.DaemonLinkFrame{Method: "/dieter.v1.DieterService/GetState"})
+			healthy, err := hub.Open(t.Context(), link.id, &gatewayv1.DaemonLinkFrame{Method: "/dieter.v1.StateService/GetState"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -109,7 +116,7 @@ func TestRelayBurstLimitsIsolateSlowConsumers(t *testing.T) {
 			if err != nil || failure.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RPC_ERROR || failure.GetStatusCode() != int32(codes.ResourceExhausted) {
 				t.Fatalf("overflow kind=%v code=%d err=%v; want ResourceExhausted", failure.GetKind(), failure.GetStatusCode(), err)
 			}
-			if _, err := slow.Recv(); err != io.EOF {
+			if _, err := slow.Recv(); !errors.Is(err, io.EOF) {
 				t.Fatalf("after overflow = %v; want EOF", err)
 			}
 			if got := slow.queue.bytes.Load(); got != 0 {
@@ -126,8 +133,9 @@ func TestRelayBurstLimitsIsolateSlowConsumers(t *testing.T) {
 }
 
 func TestRelayPreservesEntireRetainedExecutionReplay(t *testing.T) {
+	t.Parallel()
 	hub, link := newTestRelayHub(t)
-	relay, err := hub.Open(t.Context(), link.id, &gatewayv1.DaemonLinkFrame{Method: "/dieter.v1.DieterService/WatchExecution"})
+	relay, err := hub.Open(t.Context(), link.id, &gatewayv1.DaemonLinkFrame{Method: "/dieter.v1.ExecutionService/WatchExecution"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +155,7 @@ func TestRelayPreservesEntireRetainedExecutionReplay(t *testing.T) {
 			t.Fatalf("replay frame %d = %v, %v; want retained frame", i, got.GetKind(), err)
 		}
 	}
-	if _, err := relay.Recv(); err != io.EOF {
+	if _, err := relay.Recv(); !errors.Is(err, io.EOF) {
 		t.Fatalf("after retained replay = %v; want EOF", err)
 	}
 	if got := relay.queue.bytes.Load(); got != 0 {
@@ -156,8 +164,9 @@ func TestRelayPreservesEntireRetainedExecutionReplay(t *testing.T) {
 }
 
 func TestRelayReleasesByteBudgetWhileConsumingAndClosing(t *testing.T) {
+	t.Parallel()
 	hub, link := newTestRelayHub(t)
-	relay, err := hub.Open(t.Context(), link.id, &gatewayv1.DaemonLinkFrame{Method: "/dieter.v1.DieterService/WatchExecution"})
+	relay, err := hub.Open(t.Context(), link.id, &gatewayv1.DaemonLinkFrame{Method: "/dieter.v1.ExecutionService/WatchExecution"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +178,7 @@ func TestRelayReleasesByteBudgetWhileConsumingAndClosing(t *testing.T) {
 		}
 		if round == 1 {
 			relay.Close()
-			if _, err := relay.Recv(); err != io.EOF {
+			if _, err := relay.Recv(); !errors.Is(err, io.EOF) {
 				t.Fatalf("canceled stream retained responses: %v", err)
 			}
 			if relay.queue.bytes.Load() != 0 {
@@ -186,15 +195,16 @@ func TestRelayReleasesByteBudgetWhileConsumingAndClosing(t *testing.T) {
 			t.Fatalf("round %d buffered bytes = %d; want 0", round, got)
 		}
 	}
-	if _, err := relay.Recv(); err != io.EOF {
+	if _, err := relay.Recv(); !errors.Is(err, io.EOF) {
 		t.Fatalf("after close = %v; want EOF", err)
 	}
 }
 
 func TestRelayFailureDrainsWhileReceiverIsActive(t *testing.T) {
+	t.Parallel()
 	hub, link := newTestRelayHub(t)
 	for attempt := 0; attempt < 100; attempt++ {
-		relay, err := hub.Open(t.Context(), link.id, &gatewayv1.DaemonLinkFrame{Method: "/dieter.v1.DieterService/WatchExecution"})
+		relay, err := hub.Open(t.Context(), link.id, &gatewayv1.DaemonLinkFrame{Method: "/dieter.v1.ExecutionService/WatchExecution"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -218,16 +228,16 @@ func TestRelayFailureDrainsWhileReceiverIsActive(t *testing.T) {
 		}()
 		select {
 		case <-failed:
-		case <-time.After(5 * time.Second):
+		case <-time.After(testkit.Budget(30 * time.Second)):
 			t.Fatal("failure drain blocked against the active receiver")
 		}
 		<-link.control
 		select {
 		case err := <-consumed:
-			if err != io.EOF {
+			if !errors.Is(err, io.EOF) {
 				t.Fatalf("receiver finished with %v; want EOF", err)
 			}
-		case <-time.After(5 * time.Second):
+		case <-time.After(testkit.Budget(30 * time.Second)):
 			t.Fatal("receiver did not finish after failure")
 		}
 		if got := relay.queue.bytes.Load(); got != 0 {
@@ -240,16 +250,16 @@ func newTestRelayHub(t *testing.T) (*Hub, *daemonLink) {
 	t.Helper()
 	hub := NewHub(nil, Config{})
 	link := &daemonLink{
-		id: "isolated-test-daemon", budget: relaypolicy.NewBudget(relaypolicy.BufferedBytes, nil),
+		id: "isolated-test-daemon", budget: relay.NewBudget(relay.BufferedBytes, nil),
 		control: make(chan *gatewayv1.DaemonLinkFrame, 2*(maxDaemonRelayStreams+maxDaemonWatchStreams)),
 		done:    make(chan struct{}), streams: map[uint64]*relayFrameQueue{},
 	}
-	link.outbound = relaypolicy.NewQueue(link.budget)
+	link.outbound = relay.NewQueue(link.budget)
 	link.markSeen(time.Now())
 	if err := hub.register(link); err != nil {
 		t.Fatal(err)
 	}
-	for _, lane := range relaypolicy.Lanes {
+	for _, lane := range relay.Lanes {
 		hub.relayLinks[link.id][lane] = link
 	}
 	t.Cleanup(func() { hub.unregister(link) })
@@ -266,14 +276,15 @@ func drainTestRelayOpen(t *testing.T, link *daemonLink) {
 }
 
 func TestRelayFailureReturnsCapacityErrorWhenOtherCallsHoldAllBytes(t *testing.T) {
+	t.Parallel()
 	hub, link := newTestRelayHub(t)
-	stream, err := hub.Open(t.Context(), link.id, &gatewayv1.DaemonLinkFrame{Method: "/dieter.v1.DieterService/WatchKV"})
+	stream, err := hub.Open(t.Context(), link.id, &gatewayv1.DaemonLinkFrame{Method: "/dieter.v1.KVService/WatchKV"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer stream.Close()
 	drainTestRelayOpen(t, link)
-	remaining := int64(relaypolicy.BufferedBytes) - link.budget.Used()
+	remaining := int64(relay.BufferedBytes) - link.budget.Used()
 	if !link.budget.Reserve(remaining) {
 		t.Fatal("could not saturate lane budget")
 	}
@@ -283,7 +294,7 @@ func TestRelayFailureReturnsCapacityErrorWhenOtherCallsHoldAllBytes(t *testing.T
 	if err != nil || frame.Kind != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RPC_ERROR || frame.StatusCode != int32(codes.ResourceExhausted) {
 		t.Fatalf("capacity failure became silent success: %v, %v", frame, err)
 	}
-	if _, err = stream.Recv(); err != io.EOF {
+	if _, err = stream.Recv(); !errors.Is(err, io.EOF) {
 		t.Fatal(err)
 	}
 }

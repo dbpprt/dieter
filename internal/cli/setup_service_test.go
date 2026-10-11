@@ -3,23 +3,23 @@ package cli
 import (
 	"io"
 	"log/slog"
-	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 
-	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
-	"github.com/dbpprt/dieter/internal/server"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/api"
+	"github.com/dbpprt/dieter/internal/link"
+	"github.com/dbpprt/dieter/internal/testkit"
 )
 
 func TestSetupRejectsConflictingForegroundDaemon(t *testing.T) {
-	data := store.New(t.TempDir())
-	c := New(data)
+	t.Parallel()
+	data := testkit.Store(t)
+	c := New(data.Root)
 	t.Cleanup(c.Close)
-	host := httptest.NewServer(server.New(data, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler())
+	host := testkit.HTTPServer(api.New(data, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler())
 	t.Cleanup(host.Close)
-	writer, err := dieterdaemon.NewStatusWriter(data.Root, dieterdaemon.RuntimeStatus{
+	writer, err := link.NewStatusWriter(data.Root, link.RuntimeStatus{
 		PID: os.Getpid(), State: "running", ListenAddress: strings.TrimPrefix(host.URL, "http://"),
 	})
 	if err != nil {
@@ -29,7 +29,7 @@ func TestSetupRejectsConflictingForegroundDaemon(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "Ctrl-C") || !strings.Contains(err.Error(), "dieter setup") {
 		t.Fatalf("missing actionable foreground conflict: %v", err)
 	}
-	if err := writer.Update(func(status *dieterdaemon.RuntimeStatus) { status.ServiceManaged = true }); err != nil {
+	if err := writer.Update(func(status *link.RuntimeStatus) { status.ServiceManaged = true }); err != nil {
 		t.Fatal(err)
 	}
 	if err := setupServicePreflight(data.Root); err != nil {
@@ -44,8 +44,9 @@ func TestSetupRejectsConflictingForegroundDaemon(t *testing.T) {
 }
 
 func TestSetupWaitRequiresEnrolledManagedDaemon(t *testing.T) {
-	identity := &dieterdaemon.Identity{ID: "d_expected", GatewayURL: "https://gateway.example"}
-	ready := dieterdaemon.RuntimeStatus{ServiceManaged: true, Enrolled: true, DaemonID: identity.ID, GatewayURL: identity.GatewayURL, GatewayState: dieterdaemon.GatewayConnected}
+	t.Parallel()
+	identity := &link.Identity{ID: "d_expected", GatewayURL: "https://gateway.example"}
+	ready := link.RuntimeStatus{ServiceManaged: true, Enrolled: true, DaemonID: identity.ID, GatewayURL: identity.GatewayURL, GatewayState: link.GatewayConnected}
 	if !setupDaemonReady(ready, identity) {
 		t.Fatal("enrolled connected managed daemon not ready")
 	}
@@ -62,7 +63,7 @@ func TestSetupWaitRequiresEnrolledManagedDaemon(t *testing.T) {
 			case "different gateway":
 				status.GatewayURL = "https://old.example"
 			case "connecting":
-				status.GatewayState = dieterdaemon.GatewayConnecting
+				status.GatewayState = link.GatewayConnecting
 			}
 			if setupDaemonReady(status, identity) {
 				t.Fatal("setup accepted stale or unready daemon")

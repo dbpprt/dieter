@@ -8,6 +8,7 @@ import (
 )
 
 func TestProviderStatusDescribesOnlyTheRunningResponse(t *testing.T) {
+	t.Parallel()
 	s, project, board := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, Title: "Flaky provider"})
 	if err != nil {

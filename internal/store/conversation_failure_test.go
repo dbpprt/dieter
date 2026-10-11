@@ -10,6 +10,7 @@ import (
 )
 
 func TestFailedWorkerCapabilitiesReplayFromOldCheckpoint(t *testing.T) {
+	t.Parallel()
 	s, project, board := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, Title: "Failed worker"})
 	if err != nil {

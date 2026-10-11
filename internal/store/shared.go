@@ -11,10 +11,12 @@ import (
 	"strings"
 
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/peerstore"
+	"github.com/dbpprt/dieter/internal/platform/fault"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
+	"github.com/dbpprt/dieter/internal/replication/schema"
 )
 
-var ErrRemoteConversation = errors.New("conversation belongs to another machine; target its owner")
+var ErrRemoteConversation = fault.New(fault.FailedPrecondition, "conversation belongs to another machine; target its owner")
 
 // sharedIdentity is called under the central writer lock on first creation.
 // Unenrolled installations are local replicas. First enrollment adopts these
@@ -36,7 +38,7 @@ func (s *Store) sharedData() (PeerIdentity, PeerData, error) {
 	}
 	identity, err := s.PeerIdentity()
 	if errors.Is(err, os.ErrNotExist) {
-		return identity, PeerData{State: peerstore.State{Records: map[string]peerstore.Record{}}}, nil
+		return identity, PeerData{State: crdt.State{Records: map[string]crdt.Record{}}}, nil
 	}
 	if err != nil {
 		return identity, PeerData{}, err
@@ -54,12 +56,12 @@ func sharedFields(data PeerData, kind, id string) (map[string]json.RawMessage, [
 	data.primeEntity(kind, id)
 	fields := map[string]json.RawMessage{}
 	var conflicts []string
-	for field := range peerstore.DomainFields[kind] {
-		record := data.record(peerstore.Key(kind, id+"."+field))
+	for field := range schema.DomainFields[kind] {
+		record := data.record(crdt.Key(kind, id+"."+field))
 		if len(record.Versions) > 1 && field != "updatedAt" {
-			conflicts = append(conflicts, peerstore.Key(kind, record.ID))
+			conflicts = append(conflicts, crdt.Key(kind, record.ID))
 		}
-		if raw, ok := peerstore.Selected(record); ok {
+		if raw, ok := crdt.Selected(record); ok {
 			fields[field] = raw
 		}
 		if field == "archived" || field == "deleted" {
@@ -98,10 +100,10 @@ func entityIDs(data PeerData, kind, field string) []string {
 		return data.EntityIDs[kind+"/"+field]
 	}
 	var ids []string
-	err := data.eachMatching(kind+"/", "."+field, func(record peerstore.Record) error {
-		entity, suffix := peerstore.SplitField(record.ID)
+	err := data.eachMatching(kind+"/", "."+field, func(record crdt.Record) error {
+		entity, suffix := crdt.SplitField(record.ID)
 		if suffix == field {
-			if _, ok := peerstore.Selected(record); ok {
+			if _, ok := crdt.Selected(record); ok {
 				ids = append(ids, entity)
 			}
 		}
@@ -116,34 +118,34 @@ func applyFields(data *PeerData, identity PeerIdentity, kind, id string, before,
 		if bytes.Equal(before[field], value) {
 			continue
 		}
-		key := peerstore.Key(kind, id+"."+field)
+		key := crdt.Key(kind, id+"."+field)
 		old := data.record(key)
 		// A normal form save cannot discard concurrent siblings. The explicit peer
 		// resolution endpoint requires the current revision and covers all siblings.
 		if len(old.Versions) > 1 && field != "updatedAt" && !(kind == "item" && (field == "placement" || field == "pinned") || kind == "assignment" && field == "membership") {
-			return fmt.Errorf("%w: %s", peerstore.ErrConflict, key)
+			return fmt.Errorf("%w: %s", crdt.ErrConflict, key)
 		}
-		if current, ok := peerstore.Selected(old); ok && bytes.Equal(current, value) {
+		if current, ok := crdt.Selected(old); ok && bytes.Equal(current, value) {
 			continue
 		}
 		if observed, ok := before[field]; ok && len(old.Versions) > 0 {
-			current, _ := peerstore.Selected(old)
+			current, _ := crdt.Selected(old)
 			if !bytes.Equal(current, observed) {
-				return fmt.Errorf("%w: %s changed since read", peerstore.ErrConflict, key)
+				return fmt.Errorf("%w: %s changed since read", crdt.ErrConflict, key)
 			}
 		}
 		if field == "identity" && len(old.Versions) > 0 {
-			current, _ := peerstore.Selected(old)
+			current, _ := crdt.Selected(old)
 			if !bytes.Equal(current, value) {
-				return errors.New("shared identity is immutable")
+				return fault.New(fault.Invalid, "shared identity is immutable")
 			}
 			continue
 		}
-		record, err := peerstore.Put(old, kind, id+"."+field, identity.Actor, old.Revision(), value, false)
+		record, err := crdt.Put(old, kind, id+"."+field, identity.Actor, old.Revision(), value, false)
 		if err != nil {
 			return err
 		}
-		if err = peerstore.ValidateSettings(record); err != nil {
+		if err = schema.Validate(record); err != nil {
 			return err
 		}
 		data.Records[key] = record
@@ -157,7 +159,7 @@ func applyFields(data *PeerData, identity PeerIdentity, kind, id string, before,
 func pickFields(value any, kind string) map[string]json.RawMessage {
 	all := objectFields(value)
 	out := map[string]json.RawMessage{}
-	for field, shape := range peerstore.DomainFields[kind] {
+	for field, shape := range schema.DomainFields[kind] {
 		if field == "deleted" || field == "consolidatedInto" || field == "retired" {
 			continue
 		}
@@ -308,7 +310,7 @@ func (s *Store) sharedBoards() ([]model.Board, error) {
 		if !sharedEntityReady(data, "project", board.ProjectID) || len(fields["name"]) == 0 || len(fields["workflow"]) == 0 {
 			continue
 		}
-		projectBoardRetirement(&board, data.record(peerstore.Key("board", id+".retired")), references[id])
+		projectBoardRetirement(&board, data.record(crdt.Key("board", id+".retired")), references[id])
 		for _, labelID := range labelIDs {
 			labelFields, lc := sharedFields(data, "label", labelID)
 			var label struct {
@@ -405,7 +407,7 @@ func (s *Store) localCheckout(projectID, checkoutID string) (model.Checkout, err
 		}
 	}
 	if len(matches) != 1 {
-		return model.Checkout{}, errors.New("select one registered checkout on this machine")
+		return model.Checkout{}, fault.New(fault.Invalid, "select one registered checkout on this machine")
 	}
 	return matches[0], nil
 }
@@ -427,7 +429,7 @@ func (s *Store) AttachCheckout(projectID, path, name string) (model.Checkout, er
 		return model.Checkout{}, err
 	}
 	if _, err = os.Stat(filepath.Join(path, ".git")); err != nil {
-		return model.Checkout{}, errors.New("checkout must be an existing Git working tree")
+		return model.Checkout{}, fault.New(fault.Invalid, "checkout must be an existing Git working tree")
 	}
 	release, err := s.beginWrite()
 	if err != nil {
@@ -453,7 +455,7 @@ func (s *Store) attachCheckout(projectID, path, name string, validation []model.
 			if c.ProjectID == projectID {
 				return c, nil
 			}
-			return model.Checkout{}, fmt.Errorf("path is already attached to project %s", c.ProjectID)
+			return model.Checkout{}, fault.Invalidf("path is already attached to project %s", c.ProjectID)
 		}
 	}
 	if name == "" {
@@ -472,13 +474,13 @@ func (s *Store) publishCheckout(checkout model.Checkout) error {
 	if err != nil {
 		return err
 	}
-	if raw, ok := peerstore.Selected(data.record(peerstore.Key("checkout", checkout.ID+".registration"))); ok {
+	if raw, ok := crdt.Selected(data.record(crdt.Key("checkout", checkout.ID+".registration"))); ok {
 		var original model.Checkout
 		if err = json.Unmarshal(raw, &original); err != nil {
 			return err
 		}
 		if original.DaemonID != identity.DaemonID {
-			return errors.New("checkout belongs to another machine")
+			return fault.New(fault.Invalid, "checkout belongs to another machine")
 		}
 		checkout.ProjectID, checkout.DaemonID = original.ProjectID, original.DaemonID
 	}
@@ -592,7 +594,7 @@ func sharedCard(data PeerData, id string, local model.Card) (model.Card, bool, e
 		if !ok || cardID != id {
 			continue
 		}
-		record := data.record(peerstore.Key("assignment", assignment+".membership"))
+		record := data.record(crdt.Key("assignment", assignment+".membership"))
 		// An observed removal wins a simultaneous add; new later assignments remain possible.
 		member := false
 		removed := false
@@ -611,12 +613,12 @@ func sharedCard(data PeerData, id string, local model.Card) (model.Card, bool, e
 	sort.Strings(local.LabelIDs)
 	fields["labelIds"] = rawValue(local.LabelIDs)
 	local.SharedBase, local.ConflictKeys = fields, conflicts
-	local.PlacementRevision = data.record(peerstore.Key("item", id+".placement")).ValueRevision()
+	local.PlacementRevision = data.record(crdt.Key("item", id+".placement")).ValueRevision()
 	local.StateFields = nil
 	// These independent registers must never be compared using card timestamps
 	// or the arrival order of snapshots from different replicas.
 	for _, name := range []string{"placement", "summary"} {
-		record := data.record(peerstore.Key("item", id+"."+name))
+		record := data.record(crdt.Key("item", id+"."+name))
 		field := model.CardStateField{Name: name, Revision: record.ValueRevision()}
 		for _, version := range record.Versions {
 			value := model.Card{}
@@ -626,7 +628,7 @@ func sharedCard(data PeerData, id string, local model.Card) (model.Card, bool, e
 				}
 			}
 			field.Versions = append(field.Versions, model.CardStateVersion{
-				Clock: version.Clock, Rank: peerstore.PresentationRank(version), Value: &value, Deleted: version.Deleted,
+				Clock: version.Clock, Rank: crdt.PresentationRank(version), Value: &value, Deleted: version.Deleted,
 			})
 		}
 		// Clients compare the normalized frontier to recognize a daemon CAS
@@ -670,11 +672,11 @@ func (s *Store) adoptLocalReplica(old, next PeerIdentity) error {
 		target, err = s.openPeerView(next.Account)
 		return err
 	}
-	err = source.each("", func(record peerstore.Record) error {
-		key := peerstore.Key(record.Kind, record.ID)
-		entity, field := peerstore.SplitField(record.ID)
+	err = source.each("", func(record crdt.Record) error {
+		key := crdt.Key(record.Kind, record.ID)
+		entity, field := crdt.SplitField(record.ID)
 		if (record.Kind == "item" && field == "identity") || (record.Kind == "checkout" && field == "registration") || record.Kind == "schedule" {
-			raw, ok := peerstore.Selected(record)
+			raw, ok := crdt.Selected(record)
 			if !ok {
 				return nil
 			}
@@ -688,7 +690,7 @@ func (s *Store) adoptLocalReplica(old, next PeerIdentity) error {
 			}
 			if value[ownerKey] == old.DaemonID {
 				value[ownerKey] = next.DaemonID
-				record, err = peerstore.Put(record, record.Kind, record.ID, next.Actor, record.Revision(), rawValue(value), false)
+				record, err = crdt.Put(record, record.Kind, record.ID, next.Actor, record.Revision(), rawValue(value), false)
 				if err != nil {
 					return err
 				}
@@ -705,13 +707,13 @@ func (s *Store) adoptLocalReplica(old, next PeerIdentity) error {
 				}
 			}
 		}
-		merged, e := peerstore.Merge(target.record(key), record)
+		merged, e := crdt.Merge(target.record(key), record)
 		if e != nil {
 			return e
 		}
 		target.Records[key] = merged
 		target.Dirty[key] = true
-		if len(target.Dirty) >= peerstore.PageSize {
+		if len(target.Dirty) >= crdt.PageSize {
 			return flush()
 		}
 		return nil
@@ -766,7 +768,7 @@ func (s *Store) saveProject(project model.Project, effects ...localEffect) (mode
 
 type projectReceipt struct{ ProjectID, Fingerprint string }
 
-func initialBoardID(projectID string) string { return "b_" + peerstore.Revision(projectID)[:24] }
+func initialBoardID(projectID string) string { return "b_" + crdt.Revision(projectID)[:24] }
 func (s *Store) InitialBoard(projectID string) (model.Board, error) {
 	return s.ResolveBoard(projectID, initialBoardID(projectID))
 }
@@ -779,24 +781,24 @@ func checkoutFields(checkout model.Checkout) map[string]json.RawMessage {
 func (s *Store) validateDomainWrite(identity PeerIdentity, data PeerData, kind, id string, value []byte, deleted bool) error {
 	// Only the vault metadata record may be resolved generically, after two
 	// machines initialized a vault concurrently. Members and items are sealed.
-	if peerstore.VaultKind(kind) && kind != "vault" {
-		return errors.New("vault members and items change only through `dieter vault`")
+	if schema.VaultKind(kind) && kind != "vault" {
+		return fault.New(fault.Invalid, "vault members and items change only through `dieter vault`")
 	}
-	if !peerstore.DomainKind(kind) {
+	if !schema.DomainKind(kind) {
 		return nil
 	}
-	entity, field := peerstore.SplitField(id)
-	old := data.record(peerstore.Key(kind, id))
+	entity, field := crdt.SplitField(id)
+	old := data.record(crdt.Key(kind, id))
 	if kind == "project" && field == "consolidatedInto" {
 		var destination string
-		if deleted || json.Unmarshal(value, &destination) != nil || !peerstore.ValidID(destination) || destination == entity {
-			return errors.New("invalid project consolidation destination")
+		if deleted || json.Unmarshal(value, &destination) != nil || !crdt.ValidID(destination) || destination == entity {
+			return fault.New(fault.Invalid, "invalid project consolidation destination")
 		}
 	}
 	if field == "identity" && len(old.Versions) > 0 {
 		for _, version := range old.Versions {
 			if deleted || !bytes.Equal(rawValue(json.RawMessage(value)), version.Value) {
-				return errors.New("shared identity is immutable")
+				return fault.New(fault.Invalid, "shared identity is immutable")
 			}
 		}
 	}
@@ -818,13 +820,13 @@ func (s *Store) validateDomainWrite(identity PeerIdentity, data PeerData, kind, 
 			return err
 		}
 		if deleted || checkout.DaemonID != identity.DaemonID {
-			return errors.New("checkout changes require its machine")
+			return fault.New(fault.Invalid, "checkout changes require its machine")
 		}
 		for _, version := range old.Versions {
 			var previous model.Checkout
 			_ = json.Unmarshal(version.Value, &previous)
 			if previous.ProjectID != checkout.ProjectID || previous.DaemonID != checkout.DaemonID {
-				return errors.New("checkout identity is immutable")
+				return fault.New(fault.Invalid, "checkout identity is immutable")
 			}
 		}
 	}

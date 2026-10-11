@@ -1,10 +1,9 @@
 package store
 
 import (
-	"errors"
-	"fmt"
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/peerstore"
+	"github.com/dbpprt/dieter/internal/platform/fault"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
 )
 
 // Public mutations retain the central Store write lock and journal transaction.
@@ -29,10 +28,10 @@ func (s *Store) moveCard(ref, lane string, position *int64, after, before, expec
 		return model.Card{}, err
 	}
 	if item.Scope != model.ConversationScopeBoard {
-		return model.Card{}, errors.New("chat conversations do not belong to board lanes")
+		return model.Card{}, fault.New(fault.Invalid, "chat conversations do not belong to board lanes")
 	}
 	if expected != "" && item.PlacementRevision != expected {
-		return model.Card{}, peerstore.ErrConflict
+		return model.Card{}, crdt.ErrConflict
 	}
 
 	board, err := s.ResolveBoard(item.ProjectID, item.BoardID)
@@ -40,7 +39,7 @@ func (s *Store) moveCard(ref, lane string, position *int64, after, before, expec
 		return model.Card{}, err
 	}
 	if !validLane(board, lane) {
-		return model.Card{}, fmt.Errorf("lane %q is not part of the %s workflow", lane, board.Workflow)
+		return model.Card{}, fault.Invalidf("lane %q is not part of the %s workflow", lane, board.Workflow)
 	}
 	nextLane := canonicalLane(board, lane)
 	laneChanged := item.Lane != nextLane

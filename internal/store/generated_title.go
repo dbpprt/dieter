@@ -1,10 +1,10 @@
 package store
 
 import (
-	"errors"
 	"strings"
 
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/platform/fault"
 )
 
 // ApplyGeneratedCardTitle updates only the originally saved title. It deliberately
@@ -12,7 +12,7 @@ import (
 func (s *Store) ApplyGeneratedCardTitle(ref, expectedTitle string, expectedRevision uint64, title string) (model.Card, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
-		return model.Card{}, errors.New("title is required")
+		return model.Card{}, fault.New(fault.Invalid, "title is required")
 	}
 	release, err := s.beginWrite()
 	if err != nil {

@@ -1,12 +1,12 @@
 package store
 
 import (
-	"errors"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/platform/fault"
 )
 
 const orderAlphabet = "0123456789abcdefghijklmnopqrstuvwxyz"
@@ -16,7 +16,7 @@ const orderAlphabet = "0123456789abcdefghijklmnopqrstuvwxyz"
 // renumbering is replicated, and future moves can address either new neighbor.
 func orderBetween(left, right string) (string, error) {
 	if right != "" && left >= right {
-		return "", errors.New("invalid ordering anchors")
+		return "", fault.New(fault.Invalid, "invalid ordering anchors")
 	}
 	// Reserve a wide integer prefix for appends/prepends. Repeated end insertion
 	// must not consume one fractional digit per few cards on a large board.
@@ -48,7 +48,7 @@ func orderBetween(left, right string) (string, error) {
 			hi = strings.IndexByte(orderAlphabet, right[i])
 		}
 		if lo < 0 || hi < 0 {
-			return "", errors.New("invalid position key")
+			return "", fault.New(fault.Invalid, "invalid position key")
 		}
 		if hi-lo > 1 {
 			return prefix + string(orderAlphabet[(lo+hi)/2]) + newID("") + "h", nil
@@ -58,7 +58,7 @@ func orderBetween(left, right string) (string, error) {
 			right = ""
 		}
 	}
-	return "", errors.New("position key exhausted; move using wider anchors")
+	return "", fault.New(fault.Invalid, "position key exhausted; move using wider anchors")
 }
 func cardOrderLess(a, b model.Card) bool {
 	if a.Lane != b.Lane {
@@ -106,7 +106,7 @@ func (s *Store) orderKeyBetweenItems(item model.Card, after, before string) (str
 			return "", err
 		}
 		if card.ID == item.ID || card.ProjectID != item.ProjectID || card.BoardID != item.BoardID || card.Lane != item.Lane || card.Archived {
-			return "", errors.New("ordering anchor is no longer in the destination lane")
+			return "", fault.New(fault.Invalid, "ordering anchor is no longer in the destination lane")
 		}
 		return card.OrderKey, nil
 	}

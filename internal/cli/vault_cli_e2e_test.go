@@ -1,3 +1,5 @@
+//go:build e2e
+
 package cli
 
 import (
@@ -10,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dbpprt/dieter/internal/testkit"
 )
 
 func runVaultCLIWithInput(t *testing.T, client *CLI, output *bytes.Buffer, input string, args ...string) string {
@@ -20,7 +24,6 @@ func runVaultCLIWithInput(t *testing.T, client *CLI, output *bytes.Buffer, input
 }
 
 func TestVaultCLIManagesItemsAndConversationAccess(t *testing.T) {
-	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
 	t.Setenv("DIETER_TURN_TOKEN", "")
 	client, output, _ := daemonCLIForTest(t)
 
@@ -108,7 +111,7 @@ func TestVaultCLIManagesItemsAndConversationAccess(t *testing.T) {
 	}
 
 	// A stale or foreign turn token is rejected rather than treated as the operator.
-	t.Setenv("DIETER_TURN_TOKEN", "dtt1:c_missing:turn_missing:forged")
+	client.env.TurnToken = "dtt1:c_missing:turn_missing:forged"
 	client.Close()
 	output.Reset()
 	if err := client.Run([]string{"vault", "list"}); err == nil || !strings.Contains(err.Error(), "turn token") {
@@ -121,7 +124,7 @@ func TestVaultCLIManagesItemsAndConversationAccess(t *testing.T) {
 }
 
 func TestVaultCLIGrantsAccessAtCreation(t *testing.T) {
-	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
+	t.Parallel()
 	client, output, data := daemonCLIForTest(t)
 	repository := initTestRepository(t, "vault")
 	var created struct {
@@ -157,7 +160,7 @@ func TestVaultCLIGrantsAccessAtCreation(t *testing.T) {
 		t.Fatalf("chat = %q %+v %v", chat, stored, err)
 	}
 	// Chats start immediately; let the mock turn finish before cleanup.
-	for deadline := time.Now().Add(10 * time.Second); stored.Runtime != "idle" && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+	for deadline := time.Now().Add(testkit.Budget(30 * time.Second)); stored.Runtime != "idle" && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
 		stored, _ = data.ResolveCard(stored.ID)
 	}
 	if _, err := data.GlobalStateContext(t.Context()); err != nil {

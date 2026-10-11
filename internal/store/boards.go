@@ -1,12 +1,13 @@
 package store
 
 import (
-	"errors"
 	"fmt"
-	"github.com/dbpprt/dieter/internal/model"
-	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
 	"strings"
 	"time"
+
+	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/platform/fault"
+	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
 )
 
 // Public mutations retain the central Store write lock and change-count transaction.
@@ -22,7 +23,7 @@ func normalizeWorkflow(value string) (string, error) {
 		value = model.WorkflowReview
 	}
 	if value != model.WorkflowDirect && value != model.WorkflowReview {
-		return "", errors.New("workflow must be direct or review")
+		return "", fault.New(fault.Invalid, "workflow must be direct or review")
 	}
 	return value, nil
 }
@@ -36,7 +37,7 @@ func normalizeDoneArchivePolicy(value string) (string, error) {
 	case model.DoneArchiveNever, model.DoneArchiveImmediately, model.DoneArchiveAfter1Day, model.DoneArchiveAfter7Days, model.DoneArchiveAfter30Days, model.DoneArchiveAfter90Days:
 		return value, nil
 	default:
-		return "", errors.New("Done archive policy must be never, immediately, after_1_day, after_7_days, after_30_days, or after_90_days")
+		return "", fault.New(fault.Invalid, "Done archive policy must be never, immediately, after_1_day, after_7_days, after_30_days, or after_90_days")
 	}
 }
 
@@ -49,7 +50,7 @@ func normalizeRemotePublishMode(value string) (string, error) {
 	case model.RemotePublishManual, model.RemotePublishPullRequest, model.RemotePublishPushBase:
 		return value, nil
 	default:
-		return "", errors.New("remote publish mode must be manual, pull_request, or push_base")
+		return "", fault.New(fault.Invalid, "remote publish mode must be manual, pull_request, or push_base")
 	}
 }
 
@@ -87,7 +88,7 @@ func (s *Store) CreateBoard(input CreateBoardInput) (model.Board, error) {
 		return model.Board{}, err
 	}
 	if strings.TrimSpace(input.Name) == "" {
-		return model.Board{}, errors.New("board name is required")
+		return model.Board{}, fault.New(fault.Invalid, "board name is required")
 	}
 	archivePolicy, err := normalizeDoneArchivePolicy(input.DoneArchivePolicy)
 	if err != nil {
@@ -119,7 +120,7 @@ func (s *Store) CreateBoard(input CreateBoardInput) (model.Board, error) {
 func (s *Store) RenameBoard(ref, name string) (model.Board, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return model.Board{}, errors.New("board name is required")
+		return model.Board{}, fault.New(fault.Invalid, "board name is required")
 	}
 	release, err := s.beginWrite()
 	if err != nil {

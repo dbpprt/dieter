@@ -15,7 +15,7 @@ import (
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
-	"github.com/dbpprt/dieter/internal/linkauth"
+	"github.com/dbpprt/dieter/internal/security/linkauth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/peer"
@@ -55,6 +55,7 @@ func newSecurityLinkStream(t *testing.T) *securityLinkStream {
 }
 
 func TestDaemonHandshakeBoundsIdleUnauthenticatedConnections(t *testing.T) {
+	t.Parallel()
 	hub := NewHub(nil, Config{})
 	stream := newSecurityLinkStream(t)
 	if err := hub.connect(stream, 20*time.Millisecond); status.Code(err) != codes.DeadlineExceeded {
@@ -72,6 +73,7 @@ func TestDaemonHandshakeBoundsIdleUnauthenticatedConnections(t *testing.T) {
 }
 
 func TestDaemonHandshakeRejectsOversizedPresenceBeforeLoadingIdentity(t *testing.T) {
+	t.Parallel()
 	hub := NewHub(nil, Config{})
 	stream := newSecurityLinkStream(t)
 	stream.recv <- &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO, ReleaseVersion: "0.4.1-dev", DaemonId: "unknown-daemon", Payload: make([]byte, maxDaemonPresenceBytes)}
@@ -81,6 +83,7 @@ func TestDaemonHandshakeRejectsOversizedPresenceBeforeLoadingIdentity(t *testing
 }
 
 func TestDaemonHandshakeRejectsWrongKeyAndReplayedProof(t *testing.T) {
+	t.Parallel()
 	service, private, credential := newEnrolledSecurityService(t)
 	hub := service.hub
 	_, wrongPrivate, err := ed25519.GenerateKey(rand.Reader)
@@ -121,6 +124,7 @@ func TestDaemonHandshakeRejectsWrongKeyAndReplayedProof(t *testing.T) {
 }
 
 func TestDaemonHandshakeRejectsRemovedAccount(t *testing.T) {
+	t.Parallel()
 	service, _, credential := newEnrolledSecurityService(t)
 	service.hub.config.AllowedUserIDs = map[int64]struct{}{1235: {}}
 	stream := newSecurityLinkStream(t)
@@ -143,6 +147,7 @@ func (s *blockedSecurityLinkStream) Send(frame *gatewayv1.DaemonLinkFrame) error
 }
 
 func TestDaemonRevocationClosesTransportEvenWhenSendIsBlocked(t *testing.T) {
+	t.Parallel()
 	service, private, credential := newEnrolledSecurityService(t)
 	stream := &blockedSecurityLinkStream{securityLinkStream: newSecurityLinkStream(t), blocked: make(chan struct{})}
 	stream.sent = make(chan *gatewayv1.DaemonLinkFrame, 1)
@@ -157,7 +162,7 @@ func TestDaemonRevocationClosesTransportEvenWhenSendIsBlocked(t *testing.T) {
 	// Leave the simulated peer's receive window full while the gateway opens
 	// an RPC. Its Send and Recv are now both blocked on the transport.
 	stream.sent <- &gatewayv1.DaemonLinkFrame{}
-	relay, err := service.hub.Open(t.Context(), credential.GetDaemonId(), &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_OPEN_RPC, Method: "/dieter.v1.DieterService/Health"})
+	relay, err := service.hub.Open(t.Context(), credential.GetDaemonId(), &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_OPEN_RPC, Method: "/dieter.v1.MachineService/Health"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,6 +177,7 @@ func TestDaemonRevocationClosesTransportEvenWhenSendIsBlocked(t *testing.T) {
 }
 
 func TestEnrollmentRatePeerStateIsBoundedAndExpires(t *testing.T) {
+	t.Parallel()
 	service := NewService(nil, nil, nil, nil, Config{})
 	for i := range maxEnrollmentRatePeers {
 		service.enrollAttempts[strconv.Itoa(i)] = []time.Time{time.Now()}

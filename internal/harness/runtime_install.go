@@ -13,6 +13,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/dbpprt/dieter/internal/platform/fsx"
 )
 
 type runtimeManifest struct {
@@ -41,7 +43,7 @@ func embeddedRuntimeSourceFiles() []string {
 	}
 	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		if !entry.IsDir() && runtimeSourceFile(entry.Name()) {
 			names = append(names, entry.Name())
 		}
 	}
@@ -127,7 +129,7 @@ func installRuntimeAtomically(ctx context.Context, root, finalDir, digest string
 	if err := os.Chmod(root, 0o700); err != nil {
 		return err
 	}
-	lock, err := acquireRuntimeInstallLock(ctx, filepath.Join(root, ".install-"+digest+".lock"))
+	lock, err := fsx.LockContext(ctx, filepath.Join(root, ".install-"+digest+".lock"), 50*time.Millisecond)
 	if err != nil {
 		return fmt.Errorf("lock AI SDK harness runtime %s: %w", digest, err)
 	}
@@ -173,41 +175,20 @@ func installRuntimeAtomically(ctx context.Context, root, finalDir, digest string
 		return err
 	}
 	manifest = append(manifest, '\n')
-	if err := writeSyncedRuntimeFile(filepath.Join(temporary, ".installed"), manifest); err != nil {
+	if err := fsx.WriteFile(filepath.Join(temporary, ".installed"), manifest, 0o600); err != nil {
 		return err
 	}
 	if err := validateRuntimeDirectory(temporary, digest); err != nil {
 		return fmt.Errorf("validate installed AI SDK harness runtime: %w", err)
 	}
-	if err := syncRuntimeDirectory(temporary); err != nil {
+	if err := fsx.SyncDir(temporary); err != nil {
 		return err
 	}
 	if err := os.Rename(temporary, finalDir); err != nil {
 		return fmt.Errorf("publish AI SDK harness runtime: %w", err)
 	}
-	if err := syncRuntimeDirectory(root); err != nil {
+	if err := fsx.SyncDir(root); err != nil {
 		return err
 	}
 	return nil
-}
-
-func writeSyncedRuntimeFile(path string, data []byte) error {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	if _, err = file.Write(data); err == nil {
-		err = file.Sync()
-	}
-	closeErr := file.Close()
-	return errors.Join(err, closeErr)
-}
-
-func syncRuntimeDirectory(path string) error {
-	directory, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	err = directory.Sync()
-	return errors.Join(err, directory.Close())
 }

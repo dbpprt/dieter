@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/dbpprt/dieter/internal/model"
-	_ "modernc.org/sqlite"
+	"github.com/dbpprt/dieter/internal/platform/fault"
 )
 
 const (
@@ -72,28 +72,28 @@ func normalizeScheduleInput(input ScheduleInput) (ScheduleInput, error) {
 		return input, err
 	}
 	if input.Name == "" || input.Cron == "" || input.Timezone == "" {
-		return input, errors.New("schedule name, cron expression, and timezone are required")
+		return input, fault.New(fault.Invalid, "schedule name, cron expression, and timezone are required")
 	}
 	if input.TitleTemplate == "" || input.PromptTemplate == "" {
-		return input, errors.New("card title and prompt templates are required")
+		return input, fault.New(fault.Invalid, "card title and prompt templates are required")
 	}
 	if input.Action == "" {
 		input.Action = model.ScheduleActionDraft
 	}
 	if input.Action != model.ScheduleActionDraft && input.Action != model.ScheduleActionRun {
-		return input, errors.New("schedule action must be draft or run")
+		return input, fault.New(fault.Invalid, "schedule action must be draft or run")
 	}
 	if input.OpenCardPolicy == "" {
 		input.OpenCardPolicy = "skip_if_open"
 	}
 	if input.OpenCardPolicy != "skip_if_open" && input.OpenCardPolicy != "always" {
-		return input, errors.New("open card policy must be skip_if_open or always")
+		return input, fault.New(fault.Invalid, "open card policy must be skip_if_open or always")
 	}
 	if input.MisfirePolicy == "" {
 		input.MisfirePolicy = "latest"
 	}
 	if input.MisfirePolicy != "latest" {
-		return input, errors.New("only the latest misfire policy is supported")
+		return input, fault.New(fault.Invalid, "only the latest misfire policy is supported")
 	}
 	return input, nil
 }
@@ -119,10 +119,10 @@ func encodeScheduleCursor(value any) (string, error) {
 func decodeScheduleCursor(token string, value any) error {
 	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(token))
 	if err != nil {
-		return errors.New("invalid schedule page token")
+		return fault.New(fault.Invalid, "invalid schedule page token")
 	}
 	if err := json.Unmarshal(raw, value); err != nil {
-		return errors.New("invalid schedule page token")
+		return fault.New(fault.Invalid, "invalid schedule page token")
 	}
 	return nil
 }
@@ -155,7 +155,7 @@ func (s *Store) scheduleDatabase() (*sql.DB, error) {
 	if err = databaseFile.Close(); err != nil {
 		return nil, err
 	}
-	database, err := sql.Open("sqlite", s.scheduleDatabasePath())
+	database, err := openSQLite(s.scheduleDatabasePath())
 	if err != nil {
 		return nil, err
 	}
@@ -477,7 +477,7 @@ func (s *Store) ListSchedulesPage(projectRef string, pageSize int, pageToken str
 	cursor := schedulePageCursor{ProjectID: projectID}
 	if strings.TrimSpace(pageToken) != "" {
 		if err := decodeScheduleCursor(pageToken, &cursor); err != nil || cursor.ProjectID != projectID || cursor.ID == "" {
-			return SchedulePage{}, errors.New("invalid schedule page token")
+			return SchedulePage{}, fault.New(fault.Invalid, "invalid schedule page token")
 		}
 	}
 	database, err := s.scheduleDatabase()
@@ -569,10 +569,10 @@ func (s *Store) UpdateSchedule(ref string, input ScheduleInput) (model.Schedule,
 		return model.Schedule{}, err
 	}
 	if input.CheckoutID != "" && input.CheckoutID != current.CheckoutID {
-		return model.Schedule{}, errors.New("schedule checkout is immutable; create a new schedule on the chosen machine")
+		return model.Schedule{}, fault.New(fault.Invalid, "schedule checkout is immutable; create a new schedule on the chosen machine")
 	}
 	if project.ID != current.ProjectID {
-		return model.Schedule{}, errors.New("a schedule cannot be moved to another project")
+		return model.Schedule{}, fault.New(fault.Invalid, "a schedule cannot be moved to another project")
 	}
 	board, err := s.ResolveBoard(project.ID, input.Board)
 	if err != nil {
@@ -684,7 +684,7 @@ func (s *Store) ClaimScheduleRun(scheduleID, scheduledFor, nextRunAt string, man
 		cursor, cursorErr := time.Parse(time.RFC3339Nano, schedule.NextRunAt)
 		occurrence, occurrenceErr := time.Parse(time.RFC3339Nano, scheduledFor)
 		if !schedule.Enabled || cursorErr != nil || occurrenceErr != nil || cursor.After(occurrence) {
-			return model.ScheduleRun{}, errors.New("schedule occurrence is no longer due")
+			return model.ScheduleRun{}, fault.New(fault.Invalid, "schedule occurrence is no longer due")
 		}
 	}
 	runID, cardID := occurrenceIDs(schedule.ID, scheduledFor)
@@ -802,7 +802,7 @@ func (s *Store) ListScheduleRuns(scheduleRef string, limit int) ([]model.Schedul
 func (s *Store) ListScheduleRunsPage(scheduleID string, pageSize int, pageToken string) (ScheduleRunPage, error) {
 	scheduleID = strings.TrimSpace(scheduleID)
 	if scheduleID == "" {
-		return ScheduleRunPage{}, errors.New("schedule ID is required")
+		return ScheduleRunPage{}, fault.New(fault.Invalid, "schedule ID is required")
 	}
 	if err := s.requireLocalScheduleHistory(scheduleID); err != nil {
 		return ScheduleRunPage{}, err
@@ -811,7 +811,7 @@ func (s *Store) ListScheduleRunsPage(scheduleID string, pageSize int, pageToken 
 	cursor := scheduleRunPageCursor{ScheduleID: scheduleID}
 	if strings.TrimSpace(pageToken) != "" {
 		if err := decodeScheduleCursor(pageToken, &cursor); err != nil || cursor.ScheduleID != scheduleID || cursor.ID == "" || cursor.ScheduledForNano == 0 {
-			return ScheduleRunPage{}, errors.New("invalid schedule run page token")
+			return ScheduleRunPage{}, fault.New(fault.Invalid, "invalid schedule run page token")
 		}
 	}
 	database, err := s.scheduleDatabase()
@@ -994,16 +994,4 @@ func (s *Store) RecoverScheduleRuns() error {
 		_, _ = s.UpdateScheduleRun(run.ID, model.ScheduleRunFailed, "Dieter stopped after this agent turn was dispatched; it was not replayed automatically")
 	}
 	return nil
-}
-
-// sortScheduleRuns orders model
-// values directly. Production queries are ordered by the covering SQLite
-// indexes and never sort the full occurrence history in memory.
-func sortScheduleRuns(items []model.ScheduleRun) {
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].ScheduledFor == items[j].ScheduledFor {
-			return items[i].ID > items[j].ID
-		}
-		return items[i].ScheduledFor > items[j].ScheduledFor
-	})
 }

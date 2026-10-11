@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Issue, validate, atomically publish and reload gateway/TURN certificates."""
+
 import argparse
 import hashlib
 import os
@@ -14,8 +15,19 @@ from host import Host
 def validate(chain, key, hostname):
     # OpenSSL verifies trust and hostname independently of the live service.
     run(["openssl", "x509", "-in", chain, "-noout", "-checkend", "604800"])
-    run(["openssl", "verify", "-purpose", "sslserver", "-verify_hostname", hostname,
-         "-untrusted", chain, chain])
+    run(
+        [
+            "openssl",
+            "verify",
+            "-purpose",
+            "sslserver",
+            "-verify_hostname",
+            hostname,
+            "-untrusted",
+            chain,
+            chain,
+        ]
+    )
     certificate_key = run(["openssl", "x509", "-in", chain, "-pubkey", "-noout"])
     private_key = run(["openssl", "pkey", "-in", key, "-pubout"])
     require(certificate_key == private_key, "certificate key mismatch")
@@ -23,6 +35,7 @@ def validate(chain, key, hostname):
 
 def served_certificate(address, hostname):
     import socket
+
     context = ssl.create_default_context()
     with socket.create_connection(address, timeout=8) as connection:
         with context.wrap_socket(connection, server_hostname=hostname) as secure:
@@ -32,8 +45,19 @@ def served_certificate(address, hostname):
 def reload(host, s, kind):
     release = host.install / "current"
     if kind == "gateway":
-        host.compose(release, "exec", "-T", "caddy", "caddy", "reload", "--force",
-                     "--address", "unix//run/dieter/caddy-admin.sock", "--config", "/etc/caddy/Caddyfile")
+        host.compose(
+            release,
+            "exec",
+            "-T",
+            "caddy",
+            "caddy",
+            "reload",
+            "--force",
+            "--address",
+            "unix//run/dieter/caddy-admin.sock",
+            "--config",
+            "/etc/caddy/Caddyfile",
+        )
     else:
         host.compose(release, "kill", "--signal", "SIGUSR2", "coturn")
 
@@ -64,10 +88,16 @@ def activate(host, s, kind, chain, key, reload_service=True):
         if reload_service:
             reload(host, s, kind)
             if kind == "gateway":
-                address = ("127.0.0.1", 8443) if s["topology"] == "single-ip" else (s["publicIPv4"], 443)
+                address = (
+                    ("127.0.0.1", 8443) if s["topology"] == "single-ip" else (s["publicIPv4"], 443)
+                )
             else:
-                address = ("127.0.0.1", 5349) if s["topology"] == "single-ip" else (s["turnIPv4"], 443)
-            expected = hashlib.sha256(run(["openssl", "x509", "-in", chain, "-outform", "DER"])).hexdigest()
+                address = (
+                    ("127.0.0.1", 5349) if s["topology"] == "single-ip" else (s["turnIPv4"], 443)
+                )
+            expected = hashlib.sha256(
+                run(["openssl", "x509", "-in", chain, "-outform", "DER"])
+            ).hexdigest()
             for attempt in range(10):
                 if served_certificate(address, hostname) == expected:
                     break
@@ -94,12 +124,43 @@ def renew(host, s, dry_run=False, prepare=False):
         config = host.etc / ("acme-staging" if dry_run else "acme")
         config.mkdir(mode=0o700, exist_ok=True)
         # Separate lineages and webroot support the unchanged live HTTP server.
-        command = ["docker", "run", "--rm", "--network", "host", "--cap-drop", "ALL",
-                   "--security-opt", "no-new-privileges:true", "--memory", "192m", "--pids-limit", "64",
-                   "-v", str(config) + ":/etc/letsencrypt", "-v", str(host.etc / "acme-webroot") + ":/webroot",
-                   "--tmpfs", "/var/log/letsencrypt:size=16m", "--tmpfs", "/var/lib/letsencrypt:size=32m",
-                   deps["certbot"], "certonly", "--non-interactive", "--agree-tos", "--email", s["acmeEmail"],
-                   "--webroot", "--webroot-path", "/webroot", "--cert-name", hostname, "-d", hostname, "--keep-until-expiring"]
+        command = [
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            "host",
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges:true",
+            "--memory",
+            "192m",
+            "--pids-limit",
+            "64",
+            "-v",
+            str(config) + ":/etc/letsencrypt",
+            "-v",
+            str(host.etc / "acme-webroot") + ":/webroot",
+            "--tmpfs",
+            "/var/log/letsencrypt:size=16m",
+            "--tmpfs",
+            "/var/lib/letsencrypt:size=32m",
+            deps["certbot"],
+            "certonly",
+            "--non-interactive",
+            "--agree-tos",
+            "--email",
+            s["acmeEmail"],
+            "--webroot",
+            "--webroot-path",
+            "/webroot",
+            "--cert-name",
+            hostname,
+            "-d",
+            hostname,
+            "--keep-until-expiring",
+        ]
         if kind == "gateway":
             for alias in s.get("gatewayAliases", []):
                 command += ["-d", alias]
@@ -110,17 +171,30 @@ def renew(host, s, dry_run=False, prepare=False):
             results.append({"kind": kind, "stagingIssuance": True})
             continue
         live = config / "live" / hostname
-        results.append(activate(host, s, kind, live / "fullchain.pem", live / "privkey.pem", not prepare))
+        results.append(
+            activate(host, s, kind, live / "fullchain.pem", live / "privkey.pem", not prepare)
+        )
     return results
 
 
 def main():
     import json
+
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--policy", default="/etc/dieter-deploy/host-policy.json")
-    p.add_argument("--dry-run", action="store_true", help="Issue into a separate staging CA store; never activate it.")
-    p.add_argument("--prepare", action="store_true", help="Prepare certificates before the first managed TLS activation.")
-    p.add_argument("--settings", help="Candidate settings, required when preparing the first managed release.")
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Issue into a separate staging CA store; never activate it.",
+    )
+    p.add_argument(
+        "--prepare",
+        action="store_true",
+        help="Prepare certificates before the first managed TLS activation.",
+    )
+    p.add_argument(
+        "--settings", help="Candidate settings, required when preparing the first managed release."
+    )
     a = p.parse_args()
     require(os.geteuid() == 0, "certificate operations require root")
     host = Host(a.policy)

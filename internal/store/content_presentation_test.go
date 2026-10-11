@@ -9,6 +9,7 @@ import (
 )
 
 func TestPresentationReplaysLatestWithStableID(t *testing.T) {
+	t.Parallel()
 	data, project, board := setup(t, model.WorkflowReview)
 	card, err := data.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, Title: "Present"})
 	if err != nil {

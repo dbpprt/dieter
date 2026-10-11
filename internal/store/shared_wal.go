@@ -7,8 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	md "github.com/dbpprt/dieter/internal/markdown"
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/platform/fault"
+	"github.com/dbpprt/dieter/internal/platform/fsx"
 )
 
 // Local effects commit in the same SQLite transaction as their directory records.
@@ -27,7 +28,7 @@ func (s *Store) writeCard(item model.Card) error {
 		}
 		return err
 	}
-	raw, err := md.Marshal(item, item.InitialPrompt)
+	raw, err := marshalMarkdown(item, item.InitialPrompt)
 	if err != nil {
 		return err
 	}
@@ -64,7 +65,7 @@ func (s *Store) applyPeerEffects(db *sql.DB) error {
 	for _, effect := range effects {
 		clean := filepath.Clean(effect.Path)
 		if filepath.IsAbs(clean) || clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-			return errors.New("invalid local transaction path")
+			return fault.New(fault.Invalid, "invalid local transaction path")
 		}
 		path := filepath.Join(s.Root, clean)
 		if effect.Remove {
@@ -81,7 +82,7 @@ func (s *Store) applyPeerEffects(db *sql.DB) error {
 				err = nil
 			}
 		} else {
-			err = atomicWrite(path, effect.Value)
+			err = fsx.WriteFile(path, effect.Value, 0o600)
 		}
 		if err != nil {
 			return err

@@ -7,7 +7,7 @@ import (
 	"os"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/peerstore"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
@@ -99,7 +99,7 @@ func (c *CLI) rpcPeer(args []string) error {
 			return err
 		}
 		defer f.Close()
-		limit := int64(peerstore.MaxValueBytes)
+		limit := int64(crdt.MaxValueBytes)
 		if action == "merge" {
 			limit = 8 << 20
 		}
@@ -108,7 +108,7 @@ func (c *CLI) rpcPeer(args []string) error {
 			return err
 		}
 		if int64(len(raw)) > limit {
-			return peerstore.ErrCapacity
+			return crdt.ErrCapacity
 		}
 	}
 	if kind != nil && (*kind == "" || *id == "") {

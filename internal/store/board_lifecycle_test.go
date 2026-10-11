@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/peerstore"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
 )
 
 func lifecycleFixture(t *testing.T, s *Store) (model.Project, model.Board) {
@@ -26,6 +26,7 @@ func lifecycleFixture(t *testing.T, s *Store) (model.Project, model.Board) {
 }
 
 func TestBoardRetirementReceiptPersistenceAndRestore(t *testing.T) {
+	t.Parallel()
 	s := peerFixture(t, "owner")
 	p, original := lifecycleFixture(t, s)
 	duplicate, err := s.CreateBoard(CreateBoardInput{Project: p.ID, Name: "Main"})
@@ -64,7 +65,7 @@ func TestBoardRetirementReceiptPersistenceAndRestore(t *testing.T) {
 		t.Fatal("accepted changed replay input")
 	}
 	input.OperationID = "restore-stale"
-	if _, err := reopened.SetBoardRetired(input); !errors.Is(err, peerstore.ErrConflict) {
+	if _, err := reopened.SetBoardRetired(input); !errors.Is(err, crdt.ErrConflict) {
 		t.Fatalf("stale CAS: %v", err)
 	}
 	input.ExpectedRevision, input.OperationID = retired.RetirementRevision, "restore"
@@ -79,6 +80,7 @@ func TestBoardRetirementReceiptPersistenceAndRestore(t *testing.T) {
 }
 
 func TestBoardRetirementRefusesArchivedAndIncompleteReferences(t *testing.T) {
+	t.Parallel()
 	for _, archived := range []bool{false, true} {
 		s := peerFixture(t, "owner")
 		p, b := lifecycleFixture(t, s)
@@ -107,6 +109,7 @@ func TestBoardRetirementRefusesArchivedAndIncompleteReferences(t *testing.T) {
 }
 
 func TestBoardRetirementConcurrentReferenceAndStaleIntent(t *testing.T) {
+	t.Parallel()
 	a, b, c := peerFixture(t, "a"), peerFixture(t, "b"), peerFixture(t, "c")
 	p, board := lifecycleFixture(t, a)
 	joinStores(t, a, b)
@@ -150,6 +153,7 @@ func TestBoardRetirementConcurrentReferenceAndStaleIntent(t *testing.T) {
 }
 
 func TestBoardMissingParentAndStaleFieldTombstone(t *testing.T) {
+	t.Parallel()
 	a, b := peerFixture(t, "a"), peerFixture(t, "b")
 	p, board := lifecycleFixture(t, a)
 	card, err := a.CreateCard(CreateCardInput{Project: p.ID, Board: board.ID, Title: "Keep", WorkspaceMode: "project"})
@@ -158,13 +162,13 @@ func TestBoardMissingParentAndStaleFieldTombstone(t *testing.T) {
 	}
 	identity, _ := b.PeerIdentity()
 	data, _ := a.PeerData(identity.Account)
-	var parents []peerstore.Record
+	var parents []crdt.Record
 	for _, record := range data.Sorted() {
 		if record.Kind == "board" {
 			parents = append(parents, record)
 			continue
 		}
-		if err := b.MergePeerRecords(identity, []peerstore.Record{record}); err != nil {
+		if err := b.MergePeerRecords(identity, []crdt.Record{record}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -178,7 +182,7 @@ func TestBoardMissingParentAndStaleFieldTombstone(t *testing.T) {
 		t.Fatalf("parent recovery: %+v %v", cards, err)
 	}
 	data, _ = b.PeerData(identity.Account)
-	name := data.Records[peerstore.Key("board", board.ID+".name")]
+	name := data.Records[crdt.Key("board", board.ID+".name")]
 	deleted, err := b.PutPeerRecord(identity, "board", name.ID, name.Revision(), nil, true)
 	if err != nil {
 		t.Fatal(err)
@@ -186,7 +190,7 @@ func TestBoardMissingParentAndStaleFieldTombstone(t *testing.T) {
 	if _, err = b.PutPeerRecord(identity, "board", name.ID, deleted.Revision(), rawValue("Main"), false); err != nil {
 		t.Fatal(err)
 	}
-	if err = b.MergePeerRecords(identity, []peerstore.Record{deleted}); err != nil {
+	if err = b.MergePeerRecords(identity, []crdt.Record{deleted}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = b.ResolveBoard(p.ID, board.ID); err != nil {
@@ -195,6 +199,7 @@ func TestBoardMissingParentAndStaleFieldTombstone(t *testing.T) {
 }
 
 func TestSharedBoardLifecycleFixture(t *testing.T) {
+	t.Parallel()
 	raw, err := os.ReadFile("../../tests/fixtures/board-lifecycle.tsv")
 	if err != nil {
 		t.Fatal(err)
@@ -205,13 +210,13 @@ func TestSharedBoardLifecycleFixture(t *testing.T) {
 		}
 		columns := strings.Split(line, "\t")
 		t.Run(columns[0], func(t *testing.T) {
-			var record peerstore.Record
+			var record crdt.Record
 			for _, observation := range strings.Split(columns[1], ";") {
 				if observation == "-" {
 					continue
 				}
 				pair := strings.Split(observation, "=")
-				clock := peerstore.Clock{}
+				clock := crdt.Clock{}
 				for _, entry := range strings.Split(pair[0], ",") {
 					parts := strings.Split(entry, ":")
 					clock[parts[0]], err = strconv.ParseUint(parts[1], 10, 64)
@@ -219,8 +224,8 @@ func TestSharedBoardLifecycleFixture(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				incoming := peerstore.Record{Kind: "board", ID: "b_fixture.retired", Versions: []peerstore.Version{{Clock: clock, Value: []byte(pair[1])}}}
-				record, err = peerstore.Merge(record, incoming)
+				incoming := crdt.Record{Kind: "board", ID: "b_fixture.retired", Versions: []crdt.Version{{Clock: clock, Value: []byte(pair[1])}}}
+				record, err = crdt.Merge(record, incoming)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -239,6 +244,7 @@ func TestSharedBoardLifecycleFixture(t *testing.T) {
 }
 
 func TestBoardRetirementPausedScheduleAndPagination(t *testing.T) {
+	t.Parallel()
 	s := peerFixture(t, "owner")
 	p, board := lifecycleFixture(t, s)
 	input := scheduleFixtureInput(p.ID, board.ID, "Paused")
@@ -270,7 +276,7 @@ func TestBoardRetirementPausedScheduleAndPagination(t *testing.T) {
 	if _, err := s.SetBoardRetired(BoardRetirementInput{BoardID: b.ID, ExpectedRevision: b.RetirementRevision, OperationID: "restore-page"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.ListRetiredBoards(p.ID, first.NextID, first.Revision, 2); !errors.Is(err, peerstore.ErrConflict) {
+	if _, err := s.ListRetiredBoards(p.ID, first.NextID, first.Revision, 2); !errors.Is(err, crdt.ErrConflict) {
 		t.Fatalf("changed snapshot accepted: %v", err)
 	}
 }

@@ -9,7 +9,7 @@ import (
 )
 
 func TestDaemonCLIBoardsUseRequestedProject(t *testing.T) {
-	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
+	t.Parallel()
 	client, output, data := daemonCLIForTest(t)
 	for _, name := range []string{"afa", "dieter"} {
 		_, err := data.CreateProject(store.CreateProjectInput{Name: name, Path: initTestRepository(t, name), InitialBoardName: "Main", InitialWorkflow: "review"})

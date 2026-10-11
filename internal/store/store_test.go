@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/platform/fsx"
 )
 
 func gitProject(t *testing.T) string {
@@ -23,24 +24,8 @@ func gitProject(t *testing.T) string {
 	return path
 }
 
-func TestDefaultRootUsesDieterHome(t *testing.T) {
-	want := filepath.Join(t.TempDir(), "state")
-	t.Setenv("DIETER_HOME", want)
-	if got := DefaultRoot(); got != want {
-		t.Fatalf("DefaultRoot() = %q, want %q", got, want)
-	}
-}
-
-func TestDefaultRootUsesHome(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("DIETER_HOME", "")
-	if got, want := DefaultRoot(), filepath.Join(home, ".dieter"); got != want {
-		t.Fatalf("DefaultRoot() = %q, want %q", got, want)
-	}
-}
-
 func TestCreateProjectAcceptsLinkedGitWorktree(t *testing.T) {
+	t.Parallel()
 	worktree := filepath.Join(t.TempDir(), "linked-worktree")
 	if err := os.MkdirAll(worktree, 0o755); err != nil {
 		t.Fatal(err)
@@ -63,6 +48,7 @@ func TestCreateProjectAcceptsLinkedGitWorktree(t *testing.T) {
 }
 
 func TestWorkspaceChangesetStatsPreserveNewerLifecycleState(t *testing.T) {
+	t.Parallel()
 	s, project, _ := setup(t, model.WorkflowDirect)
 	card, err := s.CreateChat(CreateCardInput{Project: project.ID, Title: "stats-card"})
 	if err != nil {
@@ -90,6 +76,7 @@ func TestWorkspaceChangesetStatsPreserveNewerLifecycleState(t *testing.T) {
 }
 
 func TestWorkspaceGitStatePreservesNewerLifecycleState(t *testing.T) {
+	t.Parallel()
 	s, project, _ := setup(t, model.WorkflowDirect)
 	card, err := s.CreateChat(CreateCardInput{Project: project.ID, Title: "refresh-card"})
 	if err != nil {
@@ -125,6 +112,7 @@ func TestWorkspaceGitStatePreservesNewerLifecycleState(t *testing.T) {
 }
 
 func TestUpdateProjectRelocatesCanonicalWorkingTree(t *testing.T) {
+	t.Parallel()
 	s, project, _ := setup(t, model.WorkflowDirect)
 	relocated := gitProject(t)
 	updated, err := s.UpdateProject(project.ID, nil, nil, nil, &relocated)
@@ -149,6 +137,7 @@ func TestUpdateProjectRelocatesCanonicalWorkingTree(t *testing.T) {
 }
 
 func TestDraftAttachmentEventsReplayBeyondLegacyScannerLimit(t *testing.T) {
+	t.Parallel()
 	s, project, board := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, Title: "Large attachment", Prompt: "Inspect it"})
 	if err != nil {
@@ -188,6 +177,7 @@ func setup(t *testing.T, workflow string) (*Store, model.Project, model.Board) {
 }
 
 func TestConversationCardLifecycle(t *testing.T) {
+	t.Parallel()
 	s, p, b := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{Project: p.ID, Board: b.ID, ID: "card_1", Title: "Recover sessions", Prompt: "Implement it."})
 	if err != nil || card.ID != "card_1" || card.Lane != model.LaneTodo {
@@ -210,6 +200,7 @@ func TestConversationCardLifecycle(t *testing.T) {
 }
 
 func TestNewCardsSnapshotBoardGitDefaults(t *testing.T) {
+	t.Parallel()
 	s, project, board := setup(t, model.WorkflowReview)
 	if _, err := s.UpdateProjectWorkspaceSettings(project.ID, "origin", "main", nil); err != nil {
 		t.Fatal(err)
@@ -251,6 +242,7 @@ func TestNewCardsSnapshotBoardGitDefaults(t *testing.T) {
 }
 
 func TestConversationEventDoesNotOverwriteConcurrentLaneMove(t *testing.T) {
+	t.Parallel()
 	s, project, board := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{
 		Project: project.ID, Board: board.ID, ID: "card_lane_race", Lane: model.LaneRunning,
@@ -281,8 +273,8 @@ func TestConversationEventDoesNotOverwriteConcurrentLaneMove(t *testing.T) {
 	}()
 
 	deadline := time.Now().Add(2 * time.Second)
-	for writeMu.TryLock() {
-		writeMu.Unlock()
+	for s.writeMu.TryLock() {
+		s.writeMu.Unlock()
 		if time.Now().After(deadline) {
 			t.Fatal("conversation writer did not wait on the storage lock")
 		}
@@ -318,6 +310,7 @@ func TestConversationEventDoesNotOverwriteConcurrentLaneMove(t *testing.T) {
 }
 
 func TestRenameBoardPersistsNameWithoutChangingIdentity(t *testing.T) {
+	t.Parallel()
 	s, _, board := setup(t, model.WorkflowReview)
 	updated, err := s.RenameBoard(board.ID, "  Platform delivery  ")
 	if err != nil {
@@ -336,6 +329,7 @@ func TestRenameBoardPersistsNameWithoutChangingIdentity(t *testing.T) {
 }
 
 func TestUpdateCardEditsOnlyAnUnsentTask(t *testing.T) {
+	t.Parallel()
 	s, project, board := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{
 		Project: project.ID, Board: board.ID, ID: "card_edit", Title: "Original", Prompt: "Original task",
@@ -365,6 +359,7 @@ func TestUpdateCardEditsOnlyAnUnsentTask(t *testing.T) {
 }
 
 func TestUpdateCardCachePersistsAndClearsProviderAccountKey(t *testing.T) {
+	t.Parallel()
 	s, project, board := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{
 		Project: project.ID, Board: board.ID, ID: "card_provider_account", Title: "Account", Prompt: "Work",
@@ -385,6 +380,7 @@ func TestUpdateCardCachePersistsAndClearsProviderAccountKey(t *testing.T) {
 }
 
 func TestInterruptConversationReconcilesOrphanedRuntime(t *testing.T) {
+	t.Parallel()
 	s, project, board := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, ID: "card_orphan", Title: "Recover me", Prompt: "Work"})
 	if err != nil {
@@ -437,6 +433,7 @@ func TestInterruptConversationReconcilesOrphanedRuntime(t *testing.T) {
 }
 
 func TestOrphanedTurnCardsDoesNotRecordAChange(t *testing.T) {
+	t.Parallel()
 	s := New(t.TempDir())
 	if err := s.Ensure(); err != nil {
 		t.Fatal(err)
@@ -451,6 +448,7 @@ func TestOrphanedTurnCardsDoesNotRecordAChange(t *testing.T) {
 }
 
 func TestInterruptConversationPreservesFailedRuntime(t *testing.T) {
+	t.Parallel()
 	s, project, board := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, ID: "card_failed_orphan", Title: "Failed orphan", Prompt: "Work"})
 	if err != nil {
@@ -475,6 +473,7 @@ func TestInterruptConversationPreservesFailedRuntime(t *testing.T) {
 }
 
 func TestProjectRemovalHidesResourcesAndCanBeRestored(t *testing.T) {
+	t.Parallel()
 	s, project, board := setup(t, model.WorkflowReview)
 	marker := filepath.Join(project.Path, "keep-me.txt")
 	if err := os.WriteFile(marker, []byte("untouched"), 0o600); err != nil {
@@ -540,6 +539,7 @@ func TestProjectRemovalHidesResourcesAndCanBeRestored(t *testing.T) {
 }
 
 func TestProjectRemovalRejectsActiveAgentTurn(t *testing.T) {
+	t.Parallel()
 	s, project, _ := setup(t, model.WorkflowReview)
 	lease, err := s.AcquireRuntimeLease(project.ID, "card_running")
 	if err != nil {
@@ -555,6 +555,7 @@ func TestProjectRemovalRejectsActiveAgentTurn(t *testing.T) {
 }
 
 func TestDoneArchivePolicyHidesAndRestoresCompletedCards(t *testing.T) {
+	t.Parallel()
 	s, project, board := setup(t, model.WorkflowReview)
 	now := time.Now().UTC()
 
@@ -646,6 +647,7 @@ func TestDoneArchivePolicyHidesAndRestoresCompletedCards(t *testing.T) {
 }
 
 func TestArchiveDoneCardsNoopDoesNotAdvanceSyncHighwater(t *testing.T) {
+	t.Parallel()
 	s, project, board := setup(t, model.WorkflowReview)
 	now := time.Now().UTC()
 	card, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, Title: "Recent completion"})
@@ -671,6 +673,7 @@ func TestArchiveDoneCardsNoopDoesNotAdvanceSyncHighwater(t *testing.T) {
 }
 
 func TestArchiveDoneCardsActiveCandidateDoesNotPublishNoop(t *testing.T) {
+	t.Parallel()
 	s, project, board := setup(t, model.WorkflowReview)
 	now := time.Now().UTC()
 	if _, err := s.UpdateBoardDoneArchivePolicy(board.ID, model.DoneArchiveAfter7Days); err != nil {
@@ -704,6 +707,7 @@ func TestArchiveDoneCardsActiveCandidateDoesNotPublishNoop(t *testing.T) {
 }
 
 func TestDirectWorkflowRejectsReview(t *testing.T) {
+	t.Parallel()
 	s, p, b := setup(t, model.WorkflowDirect)
 	card, err := s.CreateCard(CreateCardInput{Project: p.ID, Board: b.ID, ID: "card_direct", Title: "Direct"})
 	if err != nil {
@@ -715,6 +719,7 @@ func TestDirectWorkflowRejectsReview(t *testing.T) {
 }
 
 func TestBoardLabelsAssignFilterAndDelete(t *testing.T) {
+	t.Parallel()
 	s, p, board := setup(t, model.WorkflowReview)
 	board, err := s.CreateBoardLabel(board.ID, "Backend", "#3366ff")
 	if err != nil || len(board.Labels) != 1 {
@@ -751,6 +756,7 @@ func TestBoardLabelsAssignFilterAndDelete(t *testing.T) {
 }
 
 func TestCardIDsAreUnique(t *testing.T) {
+	t.Parallel()
 	s, p, b := setup(t, model.WorkflowReview)
 	input := CreateCardInput{Project: p.ID, Board: b.ID, ID: "card_unique", Title: "Unique"}
 	if _, err := s.CreateCard(input); err != nil {
@@ -762,6 +768,7 @@ func TestCardIDsAreUnique(t *testing.T) {
 }
 
 func TestConversationEventsProjectToDurableMessages(t *testing.T) {
+	t.Parallel()
 	s, p, b := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{Project: p.ID, Board: b.ID, Title: "Stream"})
 	if err != nil {
@@ -846,7 +853,7 @@ func TestConversationEventsProjectToDurableMessages(t *testing.T) {
 	_ = json.Unmarshal(legacySnapshot, &legacyObject)
 	delete(legacyObject, "projectionVersion")
 	legacySnapshot, _ = json.Marshal(legacyObject)
-	if err := atomicWrite(filepath.Join(s.conversationPath(card.ID), "snapshot.json"), legacySnapshot); err != nil {
+	if err := fsx.WriteFile(filepath.Join(s.conversationPath(card.ID), "snapshot.json"), legacySnapshot, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	rebuilt, err := s.Conversation(card.ID)
@@ -856,6 +863,7 @@ func TestConversationEventsProjectToDurableMessages(t *testing.T) {
 }
 
 func TestConversationCoalescesAdjacentACPContentBlocks(t *testing.T) {
+	t.Parallel()
 	s, project, board := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, Title: "OMP fragments"})
 	if err != nil {
@@ -905,7 +913,7 @@ func TestConversationCoalescesAdjacentACPContentBlocks(t *testing.T) {
 		model.UIMessagePart{Type: "reasoning", Text: " snapshot", State: "done"},
 	)
 	raw, _ := json.Marshal(conversation)
-	if err := atomicWrite(filepath.Join(s.conversationPath(card.ID), "snapshot.json"), raw); err != nil {
+	if err := fsx.WriteFile(filepath.Join(s.conversationPath(card.ID), "snapshot.json"), raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	normalized, err := s.Conversation(card.ID)
@@ -919,6 +927,7 @@ func TestConversationCoalescesAdjacentACPContentBlocks(t *testing.T) {
 }
 
 func TestRuntimeLeaseAllowsParallelProjectTurnsButSerializesCards(t *testing.T) {
+	t.Parallel()
 	s, project, _ := setup(t, model.WorkflowReview)
 	lease, err := s.AcquireRuntimeLease(project.ID, "card_one")
 	if err != nil {
@@ -940,6 +949,7 @@ func TestRuntimeLeaseAllowsParallelProjectTurnsButSerializesCards(t *testing.T) 
 }
 
 func TestRuntimeLeaseLookupPreservesTokenMatchedRelease(t *testing.T) {
+	t.Parallel()
 	s, project, _ := setup(t, model.WorkflowReview)
 	first, err := s.AcquireRuntimeLease(project.ID, "card_lookup")
 	if err != nil {
@@ -966,6 +976,7 @@ func TestRuntimeLeaseLookupPreservesTokenMatchedRelease(t *testing.T) {
 }
 
 func TestProjectCheckoutRuntimeLeaseIgnoresWorktreeConversations(t *testing.T) {
+	t.Parallel()
 	s, project, _ := setup(t, model.WorkflowReview)
 	worktreeCard, err := s.CreateChat(CreateCardInput{
 		Project: project.ID, Title: "Isolated", WorkspaceMode: model.WorkspaceModeWorktree,
@@ -1001,6 +1012,7 @@ func TestProjectCheckoutRuntimeLeaseIgnoresWorktreeConversations(t *testing.T) {
 }
 
 func TestForkChatCopiesPrefixWithoutSharingSession(t *testing.T) {
+	t.Parallel()
 	s, project, _ := setup(t, model.WorkflowReview)
 	source, err := s.CreateChat(CreateCardInput{Project: project.ID, Title: "Source", Provider: "codex", Model: "gpt-5.6-sol", Effort: "high"})
 	if err != nil {
@@ -1040,6 +1052,7 @@ func TestForkChatCopiesPrefixWithoutSharingSession(t *testing.T) {
 }
 
 func TestArchivedCardsLeaveTheActiveScanAndRemainResolvable(t *testing.T) {
+	t.Parallel()
 	s, project, board := setup(t, model.WorkflowReview)
 	active, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, ID: "active-card", Title: "Active"})
 	if err != nil {
@@ -1084,6 +1097,7 @@ func TestArchivedCardsLeaveTheActiveScanAndRemainResolvable(t *testing.T) {
 }
 
 func TestArchiveSurvivesStoreRestart(t *testing.T) {
+	t.Parallel()
 	s, project, board := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, ID: "archived", Title: "Archived"})
 	if err != nil {
@@ -1106,6 +1120,7 @@ func TestArchiveSurvivesStoreRestart(t *testing.T) {
 }
 
 func TestGlobalStateCacheAdvancesWithMetadataRevision(t *testing.T) {
+	t.Parallel()
 	s, project, board := setup(t, model.WorkflowReview)
 	if _, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, Title: "First"}); err != nil {
 		t.Fatal(err)
@@ -1124,6 +1139,7 @@ func TestGlobalStateCacheAdvancesWithMetadataRevision(t *testing.T) {
 }
 
 func TestRemoveQueuedConversationMessagePreservesContentAndReplay(t *testing.T) {
+	t.Parallel()
 	s, project, board := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{
 		Project: project.ID, Board: board.ID, ID: "card_queue_edit", Title: "Queue editing",

@@ -35,6 +35,7 @@ func tokenBatch(n int, token string) []json.RawMessage {
 }
 
 func TestUIChunkBatchDurabilitySequencesAndCheckpoints(t *testing.T) {
+	t.Parallel()
 	s, card := batchFixture(t)
 	beforeChanges, _ := changeCounters(t, s)
 	metadata, err := os.ReadFile(s.syncMetadataPath())
@@ -86,6 +87,7 @@ func TestUIChunkBatchDurabilitySequencesAndCheckpoints(t *testing.T) {
 }
 
 func TestUIChunkBatchRejectsInvalidInputBeforeAnyAppend(t *testing.T) {
+	t.Parallel()
 	s, card := batchFixture(t)
 	beforeChanges, beforeMetadata := changeCounters(t, s)
 	for _, chunks := range [][]json.RawMessage{
@@ -104,6 +106,7 @@ func TestUIChunkBatchRejectsInvalidInputBeforeAnyAppend(t *testing.T) {
 }
 
 func TestUIChunkBatchCrossProcessAndCrashRecovery(t *testing.T) {
+	t.Parallel()
 	if root := os.Getenv("DIETER_TEST_BATCH_ROOT"); root != "" {
 		s := New(root)
 		id, token := os.Getenv("DIETER_TEST_BATCH_CARD"), os.Getenv("DIETER_TEST_BATCH_TOKEN")

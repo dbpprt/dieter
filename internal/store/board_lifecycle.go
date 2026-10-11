@@ -10,7 +10,8 @@ import (
 	"strings"
 
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/peerstore"
+	"github.com/dbpprt/dieter/internal/platform/fault"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
 )
 
 const absentBoardRetirement = "absent"
@@ -19,8 +20,8 @@ const absentBoardRetirement = "absent"
 // incomplete dependencies. The index is built once, without projecting cards.
 func boardReferenceIndex(data PeerData) map[string][]string {
 	refs := map[string][]string{}
-	visit := func(record peerstore.Record) error {
-		id, field := peerstore.SplitField(record.ID)
+	visit := func(record crdt.Record) error {
+		id, field := crdt.SplitField(record.ID)
 		if !(record.Kind == "item" && field == "placement" || record.Kind == "schedule" && field == "summary") {
 			return nil
 		}
@@ -59,7 +60,7 @@ func boardReferenceIndex(data PeerData) map[string][]string {
 	return refs
 }
 
-func projectBoardRetirement(board *model.Board, record peerstore.Record, references []string) {
+func projectBoardRetirement(board *model.Board, record crdt.Record, references []string) {
 	board.RetirementRevision = record.Revision()
 	if board.RetirementRevision == "" {
 		board.RetirementRevision = absentBoardRetirement
@@ -71,7 +72,7 @@ func projectBoardRetirement(board *model.Board, record peerstore.Record, referen
 		var retired bool
 		_ = json.Unmarshal(v.Value, &retired)
 		requested = requested || !v.Deleted && retired
-		board.RetirementVersions = append(board.RetirementVersions, model.BoardRetirementVersion{Clock: v.Clock, Rank: peerstore.PresentationRank(v), Retired: retired, Deleted: v.Deleted})
+		board.RetirementVersions = append(board.RetirementVersions, model.BoardRetirementVersion{Clock: v.Clock, Rank: crdt.PresentationRank(v), Retired: retired, Deleted: v.Deleted})
 	}
 	// Any unresolved intent or surviving reference keeps the board accessible.
 	board.RetirementBlocked = requested && (len(record.Versions) != 1 || len(references) > 0)
@@ -106,7 +107,7 @@ func (s *Store) ListRetiredBoards(projectID, after, revision string, limit int) 
 		limit = 50
 	}
 	if limit > 100 {
-		return RetiredBoardPage{}, errors.New("page size must not exceed 100")
+		return RetiredBoardPage{}, fault.New(fault.Invalid, "page size must not exceed 100")
 	}
 	boards, err := s.sharedBoards()
 	if err != nil {
@@ -119,12 +120,12 @@ func (s *Store) ListRetiredBoards(projectID, after, revision string, limit int) 
 		}
 	}
 	sort.Slice(values, func(i, j int) bool { return values[i].ID < values[j].ID })
-	page := RetiredBoardPage{Revision: peerstore.Revision(values)}
+	page := RetiredBoardPage{Revision: crdt.Revision(values)}
 	if revision != "" && revision != page.Revision {
-		return page, peerstore.ErrConflict
+		return page, crdt.ErrConflict
 	}
 	if after != "" && revision == "" {
-		return page, errors.New("continuation requires snapshot revision")
+		return page, fault.New(fault.Invalid, "continuation requires snapshot revision")
 	}
 	for _, board := range values {
 		if board.ID <= after {
@@ -148,8 +149,8 @@ type BoardRetirementInput struct {
 // Emptiness is a local admission check, never a claim of global linearizability.
 func (s *Store) SetBoardRetired(input BoardRetirementInput) (model.Board, error) {
 	var zero model.Board
-	if !peerstore.ValidID(input.BoardID) || !peerstore.ValidID(input.OperationID) || strings.TrimSpace(input.ExpectedRevision) == "" {
-		return zero, errors.New("exact board ID, observed lifecycle revision and operation ID required")
+	if !crdt.ValidID(input.BoardID) || !crdt.ValidID(input.OperationID) || strings.TrimSpace(input.ExpectedRevision) == "" {
+		return zero, fault.New(fault.Invalid, "exact board ID, observed lifecycle revision and operation ID required")
 	}
 	release, err := s.beginWrite()
 	if err != nil {
@@ -164,13 +165,13 @@ func (s *Store) SetBoardRetired(input BoardRetirementInput) (model.Board, error)
 	if err != nil {
 		return zero, err
 	}
-	receiptID, fingerprint := "board-retirement/"+input.OperationID, peerstore.Revision(input)
+	receiptID, fingerprint := "board-retirement/"+input.OperationID, crdt.Revision(input)
 	var oldFingerprint string
 	var raw []byte
 	err = db.QueryRow("SELECT fingerprint,value FROM kv_receipts WHERE id=?", receiptID).Scan(&oldFingerprint, &raw)
 	if err == nil {
 		if oldFingerprint != fingerprint {
-			return zero, errors.New("operation ID reused with different input")
+			return zero, fault.New(fault.Invalid, "operation ID reused with different input")
 		}
 		err = json.Unmarshal(raw, &zero)
 		return zero, err
@@ -183,7 +184,7 @@ func (s *Store) SetBoardRetired(input BoardRetirementInput) (model.Board, error)
 		return zero, err
 	}
 	if board.RetirementRevision != input.ExpectedRevision {
-		return zero, peerstore.ErrConflict
+		return zero, crdt.ErrConflict
 	}
 	data, err := s.openPeerView(identity.Account)
 	if err != nil {
@@ -207,7 +208,7 @@ func (s *Store) SetBoardRetired(input BoardRetirementInput) (model.Board, error)
 					return zero, err
 				}
 				if card.BoardID == board.ID {
-					return zero, fmt.Errorf("board has surviving card %s", card.ID)
+					return zero, fault.Invalidf("board has surviving card %s", card.ID)
 				}
 			}
 		}
@@ -218,20 +219,20 @@ func (s *Store) SetBoardRetired(input BoardRetirementInput) (model.Board, error)
 			}
 			for _, schedule := range schedules {
 				if schedule.BoardID == board.ID {
-					return zero, fmt.Errorf("board has surviving schedule %s", schedule.ID)
+					return zero, fault.Invalidf("board has surviving schedule %s", schedule.ID)
 				}
 			}
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return zero, err
 		}
 		if len(refs) > 0 {
-			return zero, fmt.Errorf("board has surviving references: %s", strings.Join(refs, ", "))
+			return zero, fault.Invalidf("board has surviving references: %s", strings.Join(refs, ", "))
 		}
 	}
 	data.State = clonePeerState(data.State)
-	key := peerstore.Key("board", board.ID+".retired")
+	key := crdt.Key("board", board.ID+".retired")
 	old := data.record(key)
-	next, err := peerstore.Put(old, "board", board.ID+".retired", identity.Actor, old.Revision(), rawValue(input.Retired), false)
+	next, err := crdt.Put(old, "board", board.ID+".retired", identity.Actor, old.Revision(), rawValue(input.Retired), false)
 	if err != nil {
 		return zero, err
 	}

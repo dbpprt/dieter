@@ -36,7 +36,7 @@ func TestCleanupTerminatesVerifiedDetachedProviderBridge(t *testing.T) {
 	waitForProviderBridge(t, command.Process.Pid, stateDir)
 	writeProviderBridgeRecord(t, stateDir, command.Process.Pid)
 
-	runner := NewSubprocessRunner(t.TempDir())
+	runner := NewSubprocessRunner(t.TempDir(), Environment{})
 	if err := runner.Cleanup(sessionID, runtimeRoot); err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestCleanupTerminatesBridgeInSandboxHome(t *testing.T) {
 			waitForProviderBridge(t, command.Process.Pid, stateDir)
 			writeProviderBridgeRecord(t, stateDir, command.Process.Pid)
 
-			runner := NewSubprocessRunner(t.TempDir())
+			runner := NewSubprocessRunner(t.TempDir(), Environment{})
 			if err := runner.Cleanup(sessionID, runtimeRoot); err != nil {
 				t.Fatal(err)
 			}
@@ -110,7 +110,7 @@ func TestCleanupDoesNotSignalUnrelatedProcessFromStaleBridgeRecord(t *testing.T)
 	})
 	writeProviderBridgeRecord(t, stateDir, command.Process.Pid)
 
-	runner := NewSubprocessRunner(t.TempDir())
+	runner := NewSubprocessRunner(t.TempDir(), Environment{})
 	if err := runner.Cleanup(sessionID, runtimeRoot); err != nil {
 		t.Fatal(err)
 	}

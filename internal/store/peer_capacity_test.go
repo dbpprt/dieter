@@ -11,7 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dbpprt/dieter/internal/peerstore"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
+	"github.com/dbpprt/dieter/internal/replication/schema"
 )
 
 // Use a real SQLite history exceeding both former replica limits and both
@@ -38,18 +39,18 @@ func seedPeerCapacity(t *testing.T, s *Store, account string) {
 		t.Fatal(err)
 	}
 	payload := rawValue(strings.Repeat("x", 512))
-	for i := 0; i <= peerstore.MaxRecords; i++ {
-		r := peerstore.Record{Kind: "kv.capacity", ID: fmt.Sprintf("r_%06d", i), Versions: []peerstore.Version{{Clock: peerstore.Clock{"retired_actor": 1}, Value: payload}}}
+	for i := 0; i <= crdt.MaxRecords; i++ {
+		r := crdt.Record{Kind: "kv.capacity", ID: fmt.Sprintf("r_%06d", i), Versions: []crdt.Version{{Clock: crdt.Clock{"retired_actor": 1}, Value: payload}}}
 		raw, _ := json.Marshal(r)
 		seq++
-		if _, err = insert.Exec(peerstore.Key(r.Kind, r.ID), r.Revision(), seq, raw); err != nil {
+		if _, err = insert.Exec(crdt.Key(r.Kind, r.ID), r.Revision(), seq, raw); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if _, err = tx.Exec("UPDATE peer_metadata SET sequence=?,record_count=(SELECT count(*) FROM peer_records),record_bytes=(SELECT sum(length(value)) FROM peer_records) WHERE id=1", seq); err != nil {
 		t.Fatal(err)
 	}
-	receipt := peerstore.Record{Kind: "kv.capacity", ID: "receipt", Versions: []peerstore.Version{{Clock: peerstore.Clock{"retired_actor": 1}, Value: rawValue(strings.Repeat("r", 1100))}}}
+	receipt := crdt.Record{Kind: "kv.capacity", ID: "receipt", Versions: []crdt.Version{{Clock: crdt.Clock{"retired_actor": 1}, Value: rawValue(strings.Repeat("r", 1100))}}}
 	raw, _ := json.Marshal(receipt)
 	if _, err = tx.Exec("WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<65536) INSERT INTO kv_receipts SELECT printf('retained_%06d',x),'retained-fingerprint',? FROM n", raw); err != nil {
 		t.Fatal(err)
@@ -61,13 +62,14 @@ func seedPeerCapacity(t *testing.T, s *Store, account string) {
 	if err = db.QueryRow("SELECT record_count,record_bytes,(SELECT count(*) FROM kv_receipts),(SELECT sum(length(value)) FROM kv_receipts) FROM peer_metadata WHERE id=1").Scan(&records, &bytes, &receipts, &receiptBytes); err != nil {
 		t.Fatal(err)
 	}
-	if records <= peerstore.MaxRecords || bytes <= peerstore.MaxStateBytes || receipts <= 65536 || receiptBytes <= 64<<20 {
+	if records <= crdt.MaxRecords || bytes <= crdt.MaxStateBytes || receipts <= 65536 || receiptBytes <= 64<<20 {
 		t.Fatalf("fixture did not cross every old limit: %d/%d records/bytes %d/%d receipts/bytes", records, bytes, receipts, receiptBytes)
 	}
 	t.Logf("retained %d records / %d bytes, %d receipts / %d bytes", records, bytes, receipts, receiptBytes)
 }
 
 func TestPeerCapacityHistoryDoesNotExhaustWrites(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("DIETER_PEER_CAPACITY") != "1" {
 		t.Skip("set DIETER_PEER_CAPACITY=1 for the above-capacity SQLite qualification")
 	}
@@ -99,7 +101,7 @@ func TestPeerCapacityHistoryDoesNotExhaustWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = s.MergePeerRecords(identity, []peerstore.Record{current}); err != nil {
+	if err = s.MergePeerRecords(identity, []crdt.Record{current}); err != nil {
 		t.Fatal(err)
 	}
 	retained, err := s.ReadPeerRecord(t.Context(), identity.Account, current.Kind, current.ID)
@@ -123,15 +125,15 @@ func TestPeerCapacityHistoryDoesNotExhaustWrites(t *testing.T) {
 		t.Fatal("old operation ID reused with new input")
 	}
 	stats, err := s.PeerStoreInfo(t.Context(), identity.Account)
-	if err != nil || stats.Records != peerstore.MaxRecords+3 {
+	if err != nil || stats.Records != crdt.MaxRecords+3 {
 		t.Fatalf("status: %+v %v", stats, err)
 	}
 	page, err := s.ListPeerRecordPage(t.Context(), identity.Account, "kv.capacity", "r_", "", "", nil)
-	if err != nil || len(page.Records) != peerstore.PageSize || page.NextKey == "" {
+	if err != nil || len(page.Records) != crdt.PageSize || page.NextKey == "" {
 		t.Fatalf("bounded snapshot: %+v %v", page, err)
 	}
 	next, err := s.ListPeerRecordPage(t.Context(), identity.Account, "kv.capacity", "r_", page.NextKey, page.Revision, nil)
-	if err != nil || len(next.Records) != peerstore.PageSize || next.Records[0].ID <= page.Records[len(page.Records)-1].ID {
+	if err != nil || len(next.Records) != crdt.PageSize || next.Records[0].ID <= page.Records[len(page.Records)-1].ID {
 		t.Fatalf("continued snapshot: %v", err)
 	}
 	runtime.ReadMemStats(&after)
@@ -141,23 +143,24 @@ func TestPeerCapacityHistoryDoesNotExhaustWrites(t *testing.T) {
 		t.Logf("cold read/write/replay/status/two pages allocated %d bytes", allocated)
 	}
 	// SQLite reuses rows; a new write has one latest change, never a history scan.
-	changes, err := s.PeerChanges(identity.Account, "", uint64(peerstore.MaxRecords+2))
+	changes, err := s.PeerChanges(identity.Account, "", uint64(crdt.MaxRecords+2))
 	if err != nil || len(changes.Records) != 2 {
 		t.Fatalf("incremental updates: %+v %v", changes, err)
 	}
 }
 
 func TestPeerViewBoundsAndRejectsMixedRevisions(t *testing.T) {
+	t.Parallel()
 	s := New(t.TempDir())
 	defer s.Close()
 	identity, err := s.BindPeerAccount("account", "github:1", "daemon", "https://gateway.test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for start := 0; start < 600; start += peerstore.PageSize {
-		var records []peerstore.Record
-		for i := start; i < min(start+peerstore.PageSize, 600); i++ {
-			r, err := peerstore.Put(peerstore.Record{}, "kv.cache", fmt.Sprintf("r_%04d", i), "actor", "", rawValue(strings.Repeat("x", 30000)), false)
+	for start := 0; start < 600; start += crdt.PageSize {
+		var records []crdt.Record
+		for i := start; i < min(start+crdt.PageSize, 600); i++ {
+			r, err := crdt.Put(crdt.Record{}, "kv.cache", fmt.Sprintf("r_%04d", i), "actor", "", rawValue(strings.Repeat("x", 30000)), false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -172,7 +175,7 @@ func TestPeerViewBoundsAndRejectsMixedRevisions(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 0; i < 600; i++ {
-		if r := view.record(peerstore.Key("kv.cache", fmt.Sprintf("r_%04d", i))); r.ID == "" {
+		if r := view.record(crdt.Key("kv.cache", fmt.Sprintf("r_%04d", i))); r.ID == "" {
 			t.Fatal(view.Err())
 		}
 		if len(view.view.cache) > peerViewCacheRecords || view.view.bytes > peerViewCacheBytes {
@@ -183,7 +186,7 @@ func TestPeerViewBoundsAndRejectsMixedRevisions(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = view.record("kv.cache/later")
-	if !errors.Is(view.Err(), peerstore.ErrConflict) {
+	if !errors.Is(view.Err(), crdt.ErrConflict) {
 		t.Fatalf("mixed revisions: %v", view.Err())
 	}
 	// A stale or failed read cannot acknowledge an otherwise empty write.
@@ -193,12 +196,13 @@ func TestPeerViewBoundsAndRejectsMixedRevisions(t *testing.T) {
 	}
 	err = s.savePeerData(identity.Account, view)
 	release()
-	if !errors.Is(err, peerstore.ErrConflict) {
+	if !errors.Is(err, crdt.ErrConflict) {
 		t.Fatalf("failed view committed: %v", err)
 	}
 }
 
 func TestPeerReceiptFailureRollsBackPageAndRecovers(t *testing.T) {
+	t.Parallel()
 	s := New(t.TempDir())
 	defer s.Close()
 	identity, err := s.BindPeerAccount("account", "github:1", "daemon", "https://gateway.test")
@@ -234,6 +238,7 @@ func TestPeerReceiptFailureRollsBackPageAndRecovers(t *testing.T) {
 }
 
 func TestPeerTransactionProcessInterruption(t *testing.T) {
+	t.Parallel()
 	if root := os.Getenv("DIETER_PEER_CRASH_FIXTURE"); root != "" {
 		s := New(root)
 		db, err := s.peerDatabase("account")
@@ -296,6 +301,7 @@ func TestPeerTransactionProcessInterruption(t *testing.T) {
 }
 
 func TestPeerRetentionKeepsConcurrentDeleteAndActorHistory(t *testing.T) {
+	t.Parallel()
 	s := New(t.TempDir())
 	defer s.Close()
 	identity, err := s.BindPeerAccount("account", "github:1", "daemon", "https://gateway.test")
@@ -310,15 +316,15 @@ func TestPeerRetentionKeepsConcurrentDeleteAndActorHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	edited, err := peerstore.Put(old, old.Kind, old.ID, "long_offline_actor", old.Revision(), []byte(`"offline edit"`), false)
+	edited, err := crdt.Put(old, old.Kind, old.ID, "long_offline_actor", old.Revision(), []byte(`"offline edit"`), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = s.MergePeerRecords(identity, []peerstore.Record{edited}); err != nil {
+	if err = s.MergePeerRecords(identity, []crdt.Record{edited}); err != nil {
 		t.Fatal(err)
 	}
 	conflict, err := s.ReadPeerRecord(t.Context(), identity.Account, old.Kind, old.ID)
-	if err != nil || len(conflict.Versions) != 2 || !peerstore.SelectedKV(conflict).Deleted {
+	if err != nil || len(conflict.Versions) != 2 || !schema.SelectedKV(conflict).Deleted {
 		t.Fatalf("conflict lost: %+v %v", conflict, err)
 	}
 	resolved, err := s.PutPeerRecord(identity, old.Kind, old.ID, conflict.Revision(), []byte(`"intentional restore"`), false)
@@ -328,7 +334,7 @@ func TestPeerRetentionKeepsConcurrentDeleteAndActorHistory(t *testing.T) {
 	if len(resolved.Versions) != 1 || resolved.Versions[0].Clock["long_offline_actor"] == 0 {
 		t.Fatal("discarded old actor frontier")
 	}
-	if err = s.MergePeerRecords(identity, []peerstore.Record{edited, old}); err != nil {
+	if err = s.MergePeerRecords(identity, []crdt.Record{edited, old}); err != nil {
 		t.Fatal(err)
 	}
 	after, err := s.ReadPeerRecord(t.Context(), identity.Account, old.Kind, old.ID)
@@ -338,6 +344,7 @@ func TestPeerRetentionKeepsConcurrentDeleteAndActorHistory(t *testing.T) {
 }
 
 func TestPeerPagedAdoptionResumesWithSameActor(t *testing.T) {
+	t.Parallel()
 	s := New(t.TempDir())
 	defer s.Close()
 	p, err := s.CreateProject(CreateProjectInput{Name: "Repo", Path: sharedRepo(t)})
@@ -386,6 +393,7 @@ func TestPeerPagedAdoptionResumesWithSameActor(t *testing.T) {
 }
 
 func TestPeerSnapshotPinsRevisionAcrossConcurrentWritesAndNestedReads(t *testing.T) {
+	t.Parallel()
 	s := New(t.TempDir())
 	defer s.Close()
 	identity, err := s.BindPeerAccount("account", "github:1", "daemon", "https://gateway.test")
@@ -417,9 +425,9 @@ func TestPeerSnapshotPinsRevisionAcrossConcurrentWritesAndNestedReads(t *testing
 	// the original snapshot, even while the writer and nested projections run.
 	clear(view.view.cache)
 	count := 0
-	if err = view.each("kv.snapshot/", func(record peerstore.Record) error {
+	if err = view.each("kv.snapshot/", func(record crdt.Record) error {
 		count++
-		if string(peerstore.SelectedKV(record).Value) != `"old"` {
+		if string(schema.SelectedKV(record).Value) != `"old"` {
 			t.Fatal("snapshot mixed revisions")
 		}
 		nested, err := s.openPeerSnapshot(identity.Account)
@@ -427,14 +435,14 @@ func TestPeerSnapshotPinsRevisionAcrossConcurrentWritesAndNestedReads(t *testing
 			return err
 		}
 		defer nested.Close()
-		if string(peerstore.SelectedKV(nested.record(peerstore.Key(record.Kind, record.ID))).Value) != `"new"` {
+		if string(schema.SelectedKV(nested.record(crdt.Key(record.Kind, record.ID))).Value) != `"new"` {
 			t.Fatal("nested snapshot did not see committed write")
 		}
 		return nested.Err()
 	}); err != nil || count != 2 {
 		t.Fatalf("snapshot page: count=%d err=%v", count, err)
 	}
-	if string(peerstore.SelectedKV(view.record("kv.snapshot/second")).Value) != `"old"` || view.Err() != nil {
+	if string(schema.SelectedKV(view.record("kv.snapshot/second")).Value) != `"old"` || view.Err() != nil {
 		t.Fatalf("snapshot point read: %v", view.Err())
 	}
 	// Pinning a read never permits committing a stale mutation baseline.
@@ -444,7 +452,7 @@ func TestPeerSnapshotPinsRevisionAcrossConcurrentWritesAndNestedReads(t *testing
 	}
 	err = s.savePeerData(identity.Account, view)
 	release()
-	if !errors.Is(err, peerstore.ErrConflict) {
+	if !errors.Is(err, crdt.ErrConflict) {
 		t.Fatalf("stale snapshot committed: %v", err)
 	}
 	view.Close()
@@ -454,6 +462,7 @@ func TestPeerSnapshotPinsRevisionAcrossConcurrentWritesAndNestedReads(t *testing
 }
 
 func TestPeerSnapshotAdmissionReleasesCapacity(t *testing.T) {
+	t.Parallel()
 	s := New(t.TempDir())
 	defer s.Close()
 	identity, err := s.BindPeerAccount("account", "github:1", "daemon", "https://gateway.test")
@@ -466,14 +475,14 @@ func TestPeerSnapshotAdmissionReleasesCapacity(t *testing.T) {
 			view.Close()
 		}
 	}()
-	for range cap(peerSnapshotSlots) {
+	for range cap(s.peerSnapshotSlots) {
 		view, err := s.openPeerSnapshot(identity.Account)
 		if err != nil {
 			t.Fatal(err)
 		}
 		views = append(views, view)
 	}
-	if _, err := s.openPeerSnapshot(identity.Account); !errors.Is(err, peerstore.ErrCapacity) {
+	if _, err := s.openPeerSnapshot(identity.Account); !errors.Is(err, crdt.ErrCapacity) {
 		t.Fatalf("snapshot admission did not enforce its bound: %v", err)
 	}
 	views[0].Close()

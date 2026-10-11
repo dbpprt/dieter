@@ -1,32 +1,539 @@
 name: CI
+
+# Pull requests and main pushes run the components their changes select
+# (.github/filters.yml); nightly.yml calls this with full: true. Branch
+# protection requires the single `ci-ok` check.
 on:
+  pull_request:
   push:
     branches: [main]
-  pull_request:
-  workflow_dispatch:
-  schedule:
-    - cron: "17 4 * * 1"
+  workflow_call:
+    inputs:
+      full:
+        description: Run every component, every Maestro flow and the iPad layout
+        type: boolean
+        default: false
+
 permissions:
   contents: read
+
 concurrency:
-  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.full && 'full' || 'affected' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  FASTLANE_DISABLE_COLORS: "1"
+  FASTLANE_HIDE_TIMESTAMP: "true"
+  FASTLANE_OPT_OUT_USAGE: "true"
+  FASTLANE_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+  TERM: dumb
+  LANG: en_US.UTF-8
+  LC_ALL: en_US.UTF-8
+  # The base of this change: the PR base, the previous main head, or nothing.
+  CHANGE_BASE: ${{ github.event.pull_request.base.sha || (github.event.before != '0000000000000000000000000000000000000000' && github.event.before) || '' }}
+
 jobs:
-  qualification:
-    name: Qualification
-    uses: ./.github/workflows/qualification.yml
-    with:
-      full: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
-  release:
-    name: Development release
-    needs: qualification
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
-      actions: read
-      contents: write
-      packages: write
-      id-token: write
-    uses: ./.github/workflows/release.yml
-    with:
-      channel: dev
-    secrets: inherit
+      contents: read
+      pull-requests: read
+    outputs:
+      full: ${{ steps.mode.outputs.full }}
+      go: ${{ steps.mode.outputs.full == 'true' || steps.filter.outputs.go == 'true' }}
+      go-e2e: ${{ steps.mode.outputs.full == 'true' || steps.filter.outputs.go-e2e == 'true' }}
+      harness-runtime: ${{ steps.mode.outputs.full == 'true' || steps.filter.outputs.harness-runtime == 'true' }}
+      kotlin: ${{ steps.mode.outputs.full == 'true' || steps.filter.outputs.kotlin == 'true' || steps.filter.outputs.go == 'true' }}
+      apple: ${{ steps.mode.outputs.full == 'true' || steps.filter.outputs.apple == 'true' }}
+      ios: ${{ steps.mode.outputs.full == 'true' || steps.filter.outputs.ios == 'true' }}
+      android: ${{ steps.mode.outputs.full == 'true' || steps.filter.outputs.android == 'true' }}
+      site: ${{ steps.mode.outputs.full == 'true' || steps.filter.outputs.site == 'true' }}
+      deploy-gateway: ${{ steps.mode.outputs.full == 'true' || steps.filter.outputs.deploy-gateway == 'true' }}
+      pipeline: ${{ steps.mode.outputs.full == 'true' || steps.filter.outputs.fastlane == 'true' || steps.filter.outputs.maestro == 'true' || steps.filter.outputs.workflows == 'true' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: mode
+        run: echo "full=${{ inputs.full == true }}" >> "$GITHUB_OUTPUT"
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        if: steps.mode.outputs.full != 'true'
+        with:
+          filters: .github/filters.yml
+          list-files: json
+      - name: Summarize the selection
+        env:
+          FULL: ${{ steps.mode.outputs.full }}
+          CHANGES: ${{ steps.filter.outputs.changes || '[]' }}
+          OUTPUTS: ${{ toJSON(steps.filter.outputs) }}
+        run: |
+          {
+            echo "### Selected components"
+            if [[ "$FULL" == true ]]; then echo "Full qualification: every component, every flow."; exit 0; fi
+            echo "| Component | Why (matching paths) |"
+            echo "|---|---|"
+            for name in $(jq -r '.[]' <<<"$CHANGES"); do
+              files=$(jq -r --arg key "${name}_files" '.[$key] // "[]" | fromjson | .[:3] | join(", ")' <<<"$OUTPUTS")
+              count=$(jq -r --arg key "${name}_count" '.[$key] // "0"' <<<"$OUTPUTS")
+              echo "| \`$name\` | $files$([[ $count -gt 3 ]] && echo " … ($count files)") |"
+            done
+            [[ "$CHANGES" == "[]" ]] && echo "| (none) | no component paths changed |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  go:
+    needs: plan
+    if: needs.plan.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          tools: go node just golangci-lint gotestsum go:golang.org/x/vuln/cmd/govulncheck buf protoc-gen-go protoc-gen-go-grpc protoc-gen-connect-go
+          harness: "true"
+      - name: Lint
+        run: |
+          echo "::group::golangci-lint, go mod tidy, identity drift"
+          just lint-go
+          echo "::endgroup::"
+          echo "::group::go vet"
+          go vet ./cmd/... ./internal/... ./tools/...
+          echo "::endgroup::"
+      - name: Schemas and generated code
+        run: |
+          echo "::group::buf lint + generate (Go)"
+          just generate
+          echo "::endgroup::"
+          if ! git diff --exit-code --stat; then
+            echo "::error title=Generated code drift::Run 'just generate' and commit the result."
+            exit 1
+          fi
+          if [[ -n "$CHANGE_BASE" ]]; then
+            git fetch --no-tags --depth=1 origin "$CHANGE_BASE"
+            if ! buf breaking api --against ".git#ref=$CHANGE_BASE,subdir=api"; then
+              # One version ships everywhere: a wire break needs raised floors.
+              if git diff --quiet "$CHANGE_BASE" -- deploy/gateway/compatibility-policy.json; then
+                echo "::error title=Breaking API change::Raise minimumClientVersion/minimumDaemonVersion in deploy/gateway/compatibility-policy.json in the same change."
+                exit 1
+              fi
+              echo "::warning title=Breaking API change::Accepted together with raised compatibility floors."
+            fi
+          fi
+      - name: Vulnerabilities
+        run: govulncheck ./cmd/...
+      - name: Test
+        run: |
+          mkdir -p tmp/junit
+          gotestsum --format github-actions --junitfile tmp/junit/go.xml --jsonfile tmp/go-test.json -- \
+            -timeout 15m -shuffle=on -coverprofile=tmp/coverage.out ./cmd/... ./internal/... ./tools/...
+      - name: Coverage summary
+        if: always() && hashFiles('tmp/go-test.json') != ''
+        run: |
+          {
+            echo "### Go coverage"
+            echo "| Package | Statements covered |"
+            echo "|---|---|"
+            jq -r 'select(.Action == "output" and .Test == null and (.Output | test("^coverage: [0-9.]+%"))) | "| `\(.Package)` | \(.Output | capture("coverage: (?<p>[0-9.]+%)").p) |"' tmp/go-test.json | sort -u
+            [[ -f tmp/coverage.out ]] && go tool cover -func=tmp/coverage.out | awk '$1 == "total:" { print "| **total** | " $3 " |" }'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: mikepenz/action-junit-report@6ef3fdcfcd5f0b5d14df3e659ef19b8c6820f93d # v6.6.1
+        if: always()
+        with:
+          report_paths: tmp/junit/*.xml
+          annotate_only: true
+          detailed_summary: true
+          job_summary: true
+          check_name: go
+
+  go-e2e:
+    needs: plan
+    if: needs.plan.outputs.go-e2e == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          tools: go node gotestsum
+          harness: "true"
+      - name: End-to-end tests
+        run: |
+          mkdir -p tmp/junit
+          packages=$(grep -rl --include='*_test.go' '^//go:build e2e' cmd internal tools | xargs -n1 dirname | sort -u | sed 's|^|./|')
+          gotestsum --format github-actions --junitfile tmp/junit/go-e2e.xml -- -tags e2e -timeout 20m $packages
+      - uses: mikepenz/action-junit-report@6ef3fdcfcd5f0b5d14df3e659ef19b8c6820f93d # v6.6.1
+        if: always()
+        with:
+          report_paths: tmp/junit/*.xml
+          annotate_only: true
+          detailed_summary: true
+          job_summary: true
+          check_name: go-e2e
+
+  harness-runtime:
+    needs: plan
+    if: needs.plan.outputs.harness-runtime == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          tools: node
+          harness: "true"
+      - name: Test
+        working-directory: internal/harness/runtime
+        run: node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=../../../tmp-junit-harness.xml ./*.test.mjs
+      - uses: mikepenz/action-junit-report@6ef3fdcfcd5f0b5d14df3e659ef19b8c6820f93d # v6.6.1
+        if: always()
+        with:
+          report_paths: tmp-junit-harness.xml
+          annotate_only: true
+          detailed_summary: true
+          job_summary: true
+          check_name: harness-runtime
+
+  kotlin:
+    needs: plan
+    if: needs.plan.outputs.kotlin == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          tools: java go node ruby gem:bundler
+          bundle: "true"
+          harness: "true"
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+      - name: Unit and fixture end-to-end tests
+        run: bundle exec fastlane core_test e2e:true
+      - uses: mikepenz/action-junit-report@6ef3fdcfcd5f0b5d14df3e659ef19b8c6820f93d # v6.6.1
+        if: always()
+        with:
+          report_paths: apps/kotlin/**/build/test-results/**/TEST-*.xml
+          annotate_only: true
+          detailed_summary: true
+          job_summary: true
+          check_name: kotlin
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: evidence-kotlin
+          path: apps/kotlin/**/build/reports/tests/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  apple:
+    needs: plan
+    if: needs.plan.outputs.apple == 'true'
+    runs-on: macos-26
+    timeout-minutes: 75
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.5.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          tools: java go node ruby gem:bundler xcbeautify just buf protoc-gen-go protoc-gen-go-grpc protoc-gen-connect-go
+          bundle: "true"
+          harness: "true"
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+      # Compiler state keyed by toolchain and dependency locks only (never the
+      # commit); main saves it, pull requests restore it.
+      - &apple-cache-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: apple-v2-${{ runner.arch }}-xcode26.5-${{ github.job }}-${{ hashFiles('apps/apple/**/Package.resolved', 'native/macos/Package.swift', 'apps/kotlin/gradle/libs.versions.toml') }}
+          restore-keys: apple-v2-${{ runner.arch }}-xcode26.5-${{ github.job }}-
+          path: &apple-cache-paths |
+            ~/.konan
+            apps/apple/DieterKit/.build
+            apps/apple/mac/.build
+            apps/apple/ios/.build/DerivedData/SourcePackages
+            native/macos/.build
+      - name: Swift generated code
+        run: |
+          echo "::group::buf generate (Swift)"
+          just generate
+          echo "::endgroup::"
+          if ! git diff --exit-code --stat -- apps/apple/DieterKit/Sources; then
+            echo "::error title=Generated Swift drift::Run 'just generate' on macOS and commit the result."
+            exit 1
+          fi
+      - name: Kotlin macOS tests
+        run: bundle exec fastlane core_apple_test
+      - name: Swift tests (count-guarded) and privacy helper packaging
+        run: |
+          bundle exec fastlane mac test_unit
+          bundle exec fastlane mac privacy_test
+      - name: Swift formatting of this change
+        if: env.CHANGE_BASE != ''
+        run: |
+          git fetch --no-tags --depth=200 origin "$CHANGE_BASE"
+          ruby fastlane/helpers/format.rb --base "$CHANGE_BASE"
+      - name: Prepare the hosted desktop
+        run: swift fastlane/helpers/mac_ci_desktop.swift
+      - name: Mac flows
+        run: bundle exec fastlane mac e2e tags:${{ needs.plan.outputs.full == 'true' && 'full' || 'smoke' }}
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: github.ref == 'refs/heads/main' && !cancelled()
+        with:
+          key: apple-v2-${{ runner.arch }}-xcode26.5-${{ github.job }}-${{ hashFiles('apps/apple/**/Package.resolved', 'native/macos/Package.swift', 'apps/kotlin/gradle/libs.versions.toml') }}
+          path: *apple-cache-paths
+      - uses: mikepenz/action-junit-report@6ef3fdcfcd5f0b5d14df3e659ef19b8c6820f93d # v6.6.1
+        if: always()
+        with:
+          report_paths: |
+            tmp/pipeline/**/swift-*.xml
+            tmp/pipeline/**/junit.xml
+            apps/kotlin/**/build/test-results/**/TEST-*.xml
+          annotate_only: true
+          detailed_summary: true
+          job_summary: true
+          check_name: apple
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: evidence-apple
+          path: tmp/pipeline/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  ios:
+    needs: plan
+    if: needs.plan.outputs.ios == 'true'
+    runs-on: macos-26
+    timeout-minutes: 75
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.5.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          tools: java go node ruby gem:bundler xcbeautify maestro
+          bundle: "true"
+          harness: "true"
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+      - *apple-cache-restore
+      - name: Simulator runtime of the pinned SDK
+        run: |
+          sdk=$(xcrun --sdk iphonesimulator --show-sdk-version)
+          xcrun simctl list runtimes -j | jq -e --arg v "$sdk" '.runtimes[] | select(.isAvailable and .platform == "iOS" and (.version | startswith($v)))' >/dev/null \
+            || xcodebuild -downloadPlatform iOS -buildVersion "$sdk"
+      - name: iPhone flows
+        run: bundle exec fastlane ios e2e tags:${{ needs.plan.outputs.full == 'true' && 'full' || 'smoke' }} profile:ios-iphone
+      - name: iPad flows
+        if: needs.plan.outputs.full == 'true'
+        run: bundle exec fastlane ios e2e tags:full profile:ios-ipad
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: github.ref == 'refs/heads/main' && !cancelled()
+        with:
+          key: apple-v2-${{ runner.arch }}-xcode26.5-${{ github.job }}-${{ hashFiles('apps/apple/**/Package.resolved', 'native/macos/Package.swift', 'apps/kotlin/gradle/libs.versions.toml') }}
+          path: *apple-cache-paths
+      - uses: mikepenz/action-junit-report@6ef3fdcfcd5f0b5d14df3e659ef19b8c6820f93d # v6.6.1
+        if: always()
+        with:
+          report_paths: tmp/pipeline/**/junit.xml
+          annotate_only: true
+          detailed_summary: true
+          job_summary: true
+          check_name: ios
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: evidence-ios
+          path: tmp/pipeline/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  android:
+    needs: plan
+    if: needs.plan.outputs.android == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          tools: java go node ruby gem:bundler maestro
+          bundle: "true"
+          harness: "true"
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          packages: platforms;android-37.1 build-tools;37.0.0
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+      - name: Lint and unit tests
+        run: bundle exec fastlane android test_unit
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.ANDROID_HOME }}/system-images/android-35
+          key: android-image-35-default-x86_64-v1
+      # The runner boots and closes the emulator; the lane borrows it
+      # (profile android-ci: exact serial and AVD, never a phone).
+      - uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          avd-name: Dieter_CI_API_35
+          force-avd-creation: true
+          disable-animations: true
+          emulator-boot-timeout: 600
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-audio -no-boot-anim
+          script: bundle exec fastlane android e2e tags:${{ needs.plan.outputs.full == 'true' && 'full' || 'smoke' }} profile:android-ci
+      - uses: mikepenz/action-junit-report@6ef3fdcfcd5f0b5d14df3e659ef19b8c6820f93d # v6.6.1
+        if: always()
+        with:
+          report_paths: |
+            tmp/pipeline/**/junit.xml
+            apps/kotlin/**/build/test-results/**/TEST-*.xml
+          annotate_only: true
+          detailed_summary: true
+          job_summary: true
+          check_name: android
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: evidence-android
+          path: |
+            tmp/pipeline/
+            apps/kotlin/android/build/reports/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  site:
+    needs: plan
+    if: needs.plan.outputs.site == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          tools: hugo-extended python just
+      - name: Build and check links
+        run: just site-check
+
+  deploy-gateway:
+    needs: plan
+    if: needs.plan.outputs.deploy-gateway == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          tools: python go
+      - name: Deployment tooling tests
+        run: python3 -m unittest discover -s deploy/gateway/tests -v
+      - name: Gateway image and TURN transports (Docker)
+        run: python3 deploy/gateway/tests/integration.py
+
+  pipeline:
+    needs: plan
+    if: needs.plan.outputs.pipeline == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          tools: ruby gem:bundler just actionlint
+          bundle: "true"
+      - name: Workflows
+        run: just lint-workflows
+      - name: Fastlane helpers, lanes and Maestro flows
+        run: |
+          bundle exec ruby -Ifastlane/test fastlane/test/helpers_test.rb
+          bundle exec fastlane lanes
+          bundle exec fastlane maestro_lint
+
+  format:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
+        with:
+          tools: go java node ruby gem:syntax_tree prettier ruff shfmt http:ktfmt gitleaks just
+      - name: Formatting and file integrity of this change
+        run: ruby fastlane/helpers/format.rb ${CHANGE_BASE:+--base "$CHANGE_BASE"}
+      - name: Mac schema-first API boundary
+        run: |
+          apps/apple/mac/scripts/check-api-boundary-test.sh
+          apps/apple/mac/scripts/check-api-boundary.sh | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Developer Certificate of Origin sign-offs
+        if: github.event_name == 'pull_request'
+        env:
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          missing=$(git log --no-merges --format='%H %(trailers:key=Signed-off-by,valueonly,separator=%x2C)' "$CHANGE_BASE..$HEAD" | awk 'NF < 2 { print $1 }')
+          [[ -z "$missing" ]] || { echo "::error::Commits without Signed-off-by (git commit -s): $missing"; exit 1; }
+      - name: Secrets
+        run: |
+          if [[ -n "$CHANGE_BASE" ]]; then just secrets --base "$CHANGE_BASE"; else just secrets --all; fi
+
+  ci-ok:
+    name: ci-ok
+    needs:
+      - plan
+      - go
+      - go-e2e
+      - harness-runtime
+      - kotlin
+      - apple
+      - ios
+      - android
+      - site
+      - deploy-gateway
+      - pipeline
+      - format
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Every selected job passed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
+      - run: echo "All selected jobs passed or were not affected."

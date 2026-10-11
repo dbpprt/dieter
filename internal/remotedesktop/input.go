@@ -339,7 +339,7 @@ func (s *Session) receiveFeedback(raw []byte) {
 		return
 	}
 	wasActive := s.receiver.GetInputActive()
-	s.lastFeedback = time.Now()
+	s.lastFeedback = s.now()
 	// The authenticated signaling subscription supplies authorization; the
 	// epoch-bound, increasing WebRTC heartbeat supplies receiver liveness.
 	// A delayed unary renewal must not kill a healthy peer. Do not renew after

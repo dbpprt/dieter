@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/dbpprt/dieter/internal/platform/fsx"
 )
 
 // The store's change counter. Every committed mutation advances highwater;
@@ -70,7 +72,7 @@ func (s *Store) ensureSyncEpoch() error {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	return atomicWriteMode(s.syncEpochPath(), []byte(newID("sync_")+"\n"), 0o600)
+	return fsx.WriteFile(s.syncEpochPath(), []byte(newID("sync_")+"\n"), 0o600)
 }
 
 func readCounter(path string) (uint64, error) {
@@ -124,7 +126,7 @@ func (s *Store) prepareSyncMutation(kind string) (*pendingMutation, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := atomicWriteMode(s.syncPendingPath(), raw, 0o600); err != nil {
+	if err := fsx.WriteFile(s.syncPendingPath(), raw, 0o600); err != nil {
 		return nil, err
 	}
 	return pending, nil
@@ -152,12 +154,12 @@ func (s *Store) commitSyncMutation(pending *pendingMutation) error {
 	// Metadata has its own boundary: text chunks cannot continuously
 	// invalidate an otherwise unchanged directory.
 	if pending.Kind != conversationChange {
-		if err := atomicWriteMode(s.syncMetadataPath(), []byte(strconv.FormatUint(pending.Sequence, 10)+"\n"), 0o600); err != nil {
+		if err := fsx.WriteFile(s.syncMetadataPath(), []byte(strconv.FormatUint(pending.Sequence, 10)+"\n"), 0o600); err != nil {
 			return err
 		}
 	}
 	if pending.Sequence > highwater {
-		if err := atomicWriteMode(s.syncHighwaterPath(), []byte(strconv.FormatUint(pending.Sequence, 10)+"\n"), 0o600); err != nil {
+		if err := fsx.WriteFile(s.syncHighwaterPath(), []byte(strconv.FormatUint(pending.Sequence, 10)+"\n"), 0o600); err != nil {
 			return err
 		}
 	}

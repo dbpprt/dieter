@@ -67,6 +67,7 @@ func githubCallback(t *testing.T, auth *Auth, start *httptest.ResponseRecorder) 
 // GitHub may skip its own consent for an app the user authorized before, so
 // the gateway asks before any app receives a session.
 func TestNativeSignInRequiresExplicitBrowserBoundConfirmation(t *testing.T) {
+	t.Parallel()
 	auth := newNativeSignInTestAuth(t)
 	verifier := strings.Repeat("v", 64)
 	start := startNativeSignIn(t, auth, "dieter://auth/callback", verifier)
@@ -123,6 +124,7 @@ func TestNativeSignInRequiresExplicitBrowserBoundConfirmation(t *testing.T) {
 }
 
 func TestNativeSignInConfirmationExpiresAndRechecksAccount(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"expired", "removed account"} {
 		t.Run(mode, func(t *testing.T) {
 			auth := newNativeSignInTestAuth(t)
@@ -153,6 +155,7 @@ func TestNativeSignInConfirmationExpiresAndRechecksAccount(t *testing.T) {
 }
 
 func TestOAuthStartRejectsLoopbackCallbacks(t *testing.T) {
+	t.Parallel()
 	auth := newNativeSignInTestAuth(t)
 	for _, redirect := range []string{"http://127.0.0.1:49152/auth/callback", "http://localhost:49152/auth/callback", "dieter-compose://oauth/callback"} {
 		if response := startNativeSignIn(t, auth, redirect, "verifier"); response.Code != http.StatusBadRequest || cookieNamed(response, oauthCookie) != nil {
@@ -165,6 +168,7 @@ func TestOAuthStartRejectsLoopbackCallbacks(t *testing.T) {
 // GitHub returns, and only an intact, unexpired cookie from this gateway
 // completes the callback, once.
 func TestOAuthAttemptIsSealedSingleUseAndStoresNothing(t *testing.T) {
+	t.Parallel()
 	auth := newNativeSignInTestAuth(t)
 	for range 20 {
 		if response := startNativeSignIn(t, auth, "dieter://auth/callback", "verifier"); response.Code != http.StatusFound {

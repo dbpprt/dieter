@@ -6,6 +6,7 @@ import (
 )
 
 func TestPeerSyncIssuePolicy(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
 	for _, test := range []struct {
 		name    string
@@ -34,6 +35,7 @@ func TestPeerSyncIssuePolicy(t *testing.T) {
 }
 
 func TestPeerAvailabilityPreservesHistoryAndWorkspaceCursor(t *testing.T) {
+	t.Parallel()
 	s := New(t.TempDir())
 	identity, err := s.BindPeerAccount("account", "github:1", "local", "https://gateway.test")
 	if err != nil {

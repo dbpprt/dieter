@@ -32,7 +32,7 @@ func TestScreenTrustFixture(t *testing.T) {
 	message := SessionBindingMessage("session", "nonce", "sha-256 01:23:45", "2100-01-01T00:00:00Z", offer[:], true, "primary", inputProtocolVersion, epoch)
 	encode := base64.StdEncoding.EncodeToString
 	expected := []byte(fmt.Sprintf("certificate=%s\nepoch=%s\nsignature=%s\n", encode(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})), encode(epoch), encode(ed25519.Sign(key, message))))
-	path := filepath.Join("..", "..", "apps", "core", "shared", "src", "jvmTest", "resources", "screen-trust.properties")
+	path := filepath.Join("..", "..", "apps", "kotlin", "core", "runtime", "src", "jvmTest", "resources", "screen-trust.properties")
 	if os.Getenv("DIETER_UPDATE_TRUST_FIXTURE") == "1" {
 		if err := os.WriteFile(path, expected, 0600); err != nil {
 			t.Fatal(err)

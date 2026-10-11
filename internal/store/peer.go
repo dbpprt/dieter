@@ -10,7 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/peerstore"
+	"github.com/dbpprt/dieter/internal/platform/fault"
+	"github.com/dbpprt/dieter/internal/platform/fsx"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
+	"github.com/dbpprt/dieter/internal/replication/schema"
 )
 
 type PeerIdentity struct {
@@ -32,14 +35,14 @@ type PeerData struct {
 	Sequence   uint64              `json:"-"`
 	EntityIDs  map[string][]string `json:"-"`
 	Membership map[string][]string `json:"-"`
-	peerstore.State
+	crdt.State
 	LastSyncAt string `json:"lastSyncAt,omitempty"`
 	LastPeerID string `json:"lastPeerId,omitempty"`
 	LastRoute  string `json:"lastRoute,omitempty"`
 }
 
 func (s *Store) peerPath(account string) string {
-	return filepath.Join(s.Root, "peers", peerstore.Revision(account)+".sqlite")
+	return filepath.Join(s.Root, "peers", crdt.Revision(account)+".sqlite")
 }
 func (s *Store) PeerIdentity() (PeerIdentity, error) {
 	var v PeerIdentity
@@ -72,8 +75,8 @@ func (s *Store) BindPeerAccount(account, subject, daemon, gateway string) (PeerI
 		marker := s.peerPath(account) + ".adoption"
 		var pending PeerIdentity
 		if e := readPeerJSON(marker, &pending); e == nil {
-			if pending.Account != next.Account || pending.Subject != next.Subject || pending.DaemonID != next.DaemonID || pending.Gateway != next.Gateway || !peerstore.ValidID(pending.Actor) {
-				return next, errors.New("unfinished peer adoption belongs to a different enrollment")
+			if pending.Account != next.Account || pending.Subject != next.Subject || pending.DaemonID != next.DaemonID || pending.Gateway != next.Gateway || !crdt.ValidID(pending.Actor) {
+				return next, fault.New(fault.Invalid, "unfinished peer adoption belongs to a different enrollment")
 			}
 			next = pending
 		} else if !errors.Is(e, os.ErrNotExist) {
@@ -89,7 +92,7 @@ func (s *Store) BindPeerAccount(account, subject, daemon, gateway string) (PeerI
 	if err != nil {
 		return next, err
 	}
-	err = atomicWrite(filepath.Join(s.Root, "peers", "identity.json"), raw)
+	err = fsx.WriteFile(filepath.Join(s.Root, "peers", "identity.json"), raw, 0o600)
 	return next, err
 }
 func readPeerJSON(path string, v any) error {
@@ -98,12 +101,12 @@ func readPeerJSON(path string, v any) error {
 		return err
 	}
 	defer f.Close()
-	raw, err := io.ReadAll(io.LimitReader(f, peerstore.MaxStateBytes+1))
+	raw, err := io.ReadAll(io.LimitReader(f, crdt.MaxStateBytes+1))
 	if err != nil {
 		return err
 	}
-	if len(raw) > peerstore.MaxStateBytes {
-		return peerstore.ErrCapacity
+	if len(raw) > crdt.MaxStateBytes {
+		return crdt.ErrCapacity
 	}
 	return json.Unmarshal(raw, v)
 }
@@ -130,56 +133,56 @@ func (s *Store) checkPeerIdentity(expected PeerIdentity) error {
 		return err
 	}
 	if current != expected {
-		return errors.New("peer account changed")
+		return fault.New(fault.Invalid, "peer account changed")
 	}
 	return nil
 }
-func (s *Store) PutPeerRecord(identity PeerIdentity, kind, id, expected string, value []byte, deleted bool) (peerstore.Record, error) {
+func (s *Store) PutPeerRecord(identity PeerIdentity, kind, id, expected string, value []byte, deleted bool) (crdt.Record, error) {
 	release, err := s.beginWrite()
 	if err != nil {
-		return peerstore.Record{}, err
+		return crdt.Record{}, err
 	}
 	defer release()
 	if err = s.checkPeerIdentity(identity); err != nil {
-		return peerstore.Record{}, err
+		return crdt.Record{}, err
 	}
 	data, err := s.openPeerView(identity.Account)
 	data.State = clonePeerState(data.State)
 	if err != nil {
-		return peerstore.Record{}, err
+		return crdt.Record{}, err
 	}
 	if err := s.validateDomainWrite(identity, data, kind, id, value, deleted); err != nil {
-		return peerstore.Record{}, err
+		return crdt.Record{}, err
 	}
-	record, err := peerstore.Put(data.record(peerstore.Key(kind, id)), kind, id, identity.Actor, expected, value, deleted)
+	record, err := crdt.Put(data.record(crdt.Key(kind, id)), kind, id, identity.Actor, expected, value, deleted)
 	if err != nil {
 		return record, err
 	}
-	if err = peerstore.ValidateSettings(record); err != nil {
+	if err = schema.Validate(record); err != nil {
 		return record, err
 	}
-	data.Records[peerstore.Key(kind, id)] = record
-	data.Dirty[peerstore.Key(kind, id)] = true
+	data.Records[crdt.Key(kind, id)] = record
+	data.Dirty[crdt.Key(kind, id)] = true
 	if err = s.savePeerData(identity.Account, data); err != nil {
-		return peerstore.Record{}, err
+		return crdt.Record{}, err
 	}
 	committed, err := s.openPeerView(identity.Account)
 	if err != nil {
-		return peerstore.Record{}, err
+		return crdt.Record{}, err
 	}
-	record = committed.record(peerstore.Key(kind, id))
+	record = committed.record(crdt.Key(kind, id))
 	return record, committed.Err()
 }
-func (s *Store) MergePeerRecords(identity PeerIdentity, records []peerstore.Record) error {
-	if len(records) > peerstore.PageSize {
-		return peerstore.ErrCapacity
+func (s *Store) MergePeerRecords(identity PeerIdentity, records []crdt.Record) error {
+	if len(records) > crdt.PageSize {
+		return crdt.ErrCapacity
 	}
 	page, err := json.Marshal(records)
 	if err != nil {
 		return err
 	}
-	if len(page) > peerstore.MaxPageBytes {
-		return peerstore.ErrCapacity
+	if len(page) > crdt.MaxPageBytes {
+		return crdt.ErrCapacity
 	}
 	write, err := s.beginConditionalWrite()
 	if err != nil {
@@ -196,14 +199,14 @@ func (s *Store) MergePeerRecords(identity PeerIdentity, records []peerstore.Reco
 	}
 	changed := false
 	for _, record := range records {
-		if err = peerstore.ValidateSettings(record); err != nil {
+		if err = schema.Validate(record); err != nil {
 			return peerRecordFailure(record, "invalid_record", err)
 		}
-		key := peerstore.Key(record.Kind, record.ID)
+		key := crdt.Key(record.Kind, record.ID)
 		if err = s.validatePeerDomainMerge(data, data.record(key), record); err != nil {
 			return peerRecordFailure(record, "invalid_provenance", err)
 		}
-		merged, e := peerstore.Merge(data.record(key), record)
+		merged, e := crdt.Merge(data.record(key), record)
 		if e != nil {
 			return peerRecordFailure(record, "causal_conflict", e)
 		}
@@ -238,24 +241,24 @@ func (s *Store) PeerSynced(identity PeerIdentity, peer, route string) error {
 	if err != nil {
 		return err
 	}
-	return atomicWrite(s.peerPath(identity.Account)+".status", raw)
+	return fsx.WriteFile(s.peerPath(identity.Account)+".status", raw, 0o600)
 }
 
 // Cached snapshots are immutable; writers replace only their own map.
-func clonePeerState(source peerstore.State) peerstore.State {
-	records := make(map[string]peerstore.Record, len(source.Records))
+func clonePeerState(source crdt.State) crdt.State {
+	records := make(map[string]crdt.Record, len(source.Records))
 	for key, record := range source.Records {
 		records[key] = record
 	}
-	return peerstore.State{Records: records, Dirty: map[string]bool{}}
+	return crdt.State{Records: records, Dirty: map[string]bool{}}
 }
 
 func indexPeerData(data *PeerData) {
 	data.EntityIDs = map[string][]string{}
 	data.Membership = map[string][]string{}
 	for _, record := range data.Records {
-		entity, field := peerstore.SplitField(record.ID)
-		if _, ok := peerstore.Selected(record); !ok {
+		entity, field := crdt.SplitField(record.ID)
+		if _, ok := crdt.Selected(record); !ok {
 			continue
 		}
 		key := record.Kind + "/" + field

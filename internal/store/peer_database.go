@@ -8,7 +8,9 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/dbpprt/dieter/internal/peerstore"
+	"github.com/dbpprt/dieter/internal/platform/fault"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
+	"github.com/dbpprt/dieter/internal/replication/schema"
 )
 
 // The replica's rows and local change sequence commit in the same SQLite
@@ -31,7 +33,7 @@ func (s *Store) peerDatabase(account string) (*sql.DB, error) {
 		return nil, err
 	}
 	_ = file.Close()
-	db, err := sql.Open("sqlite", path)
+	db, err := openSQLite(path)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +61,7 @@ func (s *Store) peerDatabase(account string) (*sql.DB, error) {
 // fixtures. Operational reads and writes use openPeerView or SQL pages instead.
 func (s *Store) readPeerState(account string) (PeerData, error) {
 	if _, err := os.Stat(s.peerPath(account)); errors.Is(err, os.ErrNotExist) {
-		return PeerData{State: peerstore.State{Records: map[string]peerstore.Record{}}}, nil
+		return PeerData{State: crdt.State{Records: map[string]crdt.Record{}}}, nil
 	} else if err != nil {
 		return PeerData{}, err
 	}
@@ -73,8 +75,8 @@ func (s *Store) readPeerState(account string) (PeerData, error) {
 	if err = db.QueryRow("SELECT epoch,sequence,record_count,record_bytes FROM peer_metadata WHERE id=1").Scan(&epoch, &seq, &count, &size); err != nil {
 		return PeerData{}, err
 	}
-	if count > peerstore.MaxRecords || size > peerstore.MaxStateBytes {
-		return PeerData{}, peerstore.ErrCapacity
+	if count > crdt.MaxRecords || size > crdt.MaxStateBytes {
+		return PeerData{}, crdt.ErrCapacity
 	}
 	s.peerCacheMu.Lock()
 	defer s.peerCacheMu.Unlock()
@@ -89,18 +91,18 @@ func (s *Store) readPeerState(account string) (PeerData, error) {
 	if err = tx.QueryRow("SELECT epoch,sequence,record_count,record_bytes FROM peer_metadata WHERE id=1").Scan(&epoch, &seq, &count, &size); err != nil {
 		return PeerData{}, err
 	}
-	if count > peerstore.MaxRecords || size > peerstore.MaxStateBytes {
-		return PeerData{}, peerstore.ErrCapacity
+	if count > crdt.MaxRecords || size > crdt.MaxStateBytes {
+		return PeerData{}, crdt.ErrCapacity
 	}
 	rows, err := tx.Query("SELECT key,value FROM peer_records ORDER BY key")
 	if err != nil {
 		return PeerData{}, err
 	}
-	data := PeerData{State: peerstore.State{Records: map[string]peerstore.Record{}}, Epoch: epoch, Sequence: seq}
+	data := PeerData{State: crdt.State{Records: map[string]crdt.Record{}}, Epoch: epoch, Sequence: seq}
 	for rows.Next() {
 		var key string
 		var raw []byte
-		var record peerstore.Record
+		var record crdt.Record
 		if err = rows.Scan(&key, &raw); err != nil {
 			break
 		}
@@ -150,13 +152,13 @@ func (s *Store) writePeerStateReceipt(account string, data PeerData, receipt *kv
 		if err != nil {
 			return err
 		}
-		if key != peerstore.Key(record.Kind, record.ID) {
-			return errors.New("invalid peer record key")
+		if key != crdt.Key(record.Kind, record.ID) {
+			return fault.New(fault.Invalid, "invalid peer record key")
 		}
-		if err = peerstore.ValidateRecord(record); err != nil {
+		if err = crdt.ValidateRecord(record); err != nil {
 			return err
 		}
-		if err = peerstore.ValidateSettings(record); err != nil {
+		if err = schema.Validate(record); err != nil {
 			return err
 		}
 		data.Records[key] = record
@@ -164,8 +166,8 @@ func (s *Store) writePeerStateReceipt(account string, data PeerData, receipt *kv
 	if err := data.Err(); err != nil {
 		return err
 	}
-	if receipt != nil && len(receipt.Value) > peerstore.MaxPageBytes {
-		return peerstore.ErrCapacity
+	if receipt != nil && len(receipt.Value) > crdt.MaxPageBytes {
+		return crdt.ErrCapacity
 	}
 	db, err := s.peerDatabase(account)
 	if err != nil {
@@ -184,7 +186,7 @@ func (s *Store) writePeerStateReceipt(account string, data PeerData, receipt *kv
 	}
 	previousSequence := seq
 	if data.Epoch != "" && (data.Epoch != epoch || data.Sequence != seq) {
-		return peerstore.ErrConflict
+		return crdt.ErrConflict
 	}
 	if data.Dirty == nil {
 		rows, err := tx.Query("SELECT key FROM peer_records")
@@ -197,7 +199,7 @@ func (s *Store) writePeerStateReceipt(account string, data PeerData, receipt *kv
 				break
 			}
 			if _, ok := data.Records[key]; !ok {
-				err = errors.New("replica writes cannot remove causal records")
+				err = fault.New(fault.Invalid, "replica writes cannot remove causal records")
 				break
 			}
 		}
@@ -225,7 +227,7 @@ func (s *Store) writePeerStateReceipt(account string, data PeerData, receipt *kv
 			continue
 		}
 		if seq >= 1<<63-1 {
-			return peerstore.ErrCapacity
+			return crdt.ErrCapacity
 		}
 		seq++
 		raw, e := json.Marshal(record)
@@ -267,7 +269,7 @@ type PeerChanges struct {
 	Epoch   string
 	After   uint64
 	More    bool
-	Records []peerstore.Record
+	Records []crdt.Record
 }
 
 func (s *Store) PeerChanges(account, epoch string, after uint64) (PeerChanges, error) {
@@ -286,12 +288,12 @@ func (s *Store) PeerChanges(account, epoch string, after uint64) (PeerChanges, e
 		return result, err
 	}
 	if epoch != "" && epoch != result.Epoch {
-		return result, peerstore.ErrConflict
+		return result, crdt.ErrConflict
 	}
 	if after > high {
-		return result, peerstore.ErrConflict
+		return result, crdt.ErrConflict
 	}
-	rows, err := tx.Query("SELECT sequence,value FROM peer_records WHERE sequence>? ORDER BY sequence LIMIT ?", after, peerstore.PageSize+1)
+	rows, err := tx.Query("SELECT sequence,value FROM peer_records WHERE sequence>? ORDER BY sequence LIMIT ?", after, crdt.PageSize+1)
 	if err != nil {
 		return result, err
 	}
@@ -303,11 +305,11 @@ func (s *Store) PeerChanges(account, epoch string, after uint64) (PeerChanges, e
 		if err = rows.Scan(&seq, &raw); err != nil {
 			break
 		}
-		if len(result.Records) == peerstore.PageSize || (len(result.Records) > 0 && pageBytes+len(raw)+1 > peerstore.MaxPageBytes) {
+		if len(result.Records) == crdt.PageSize || (len(result.Records) > 0 && pageBytes+len(raw)+1 > crdt.MaxPageBytes) {
 			result.More = true
 			break
 		}
-		var record peerstore.Record
+		var record crdt.Record
 		if err = json.Unmarshal(raw, &record); err != nil {
 			break
 		}
@@ -338,7 +340,7 @@ type PeerCheckpoint struct {
 
 func (s *Store) PeerCheckpoint(account, peer, direction string) (PeerCheckpoint, error) {
 	var value PeerCheckpoint
-	err := readJSON(filepath.Join(s.Root, "peers", peerstore.Revision([]string{account, peer, direction})+".cursor"), &value)
+	err := readJSON(filepath.Join(s.Root, "peers", crdt.Revision([]string{account, peer, direction})+".cursor"), &value)
 	if errors.Is(err, os.ErrNotExist) || errors.Is(err, ErrNotFound) {
 		err = nil
 	}
@@ -353,5 +355,5 @@ func (s *Store) SavePeerCheckpoint(identity PeerIdentity, peer, direction string
 	if err = s.checkPeerIdentity(identity); err != nil {
 		return err
 	}
-	return writeJSON(filepath.Join(s.Root, "peers", peerstore.Revision([]string{identity.Account, peer, direction})+".cursor"), value)
+	return writeJSON(filepath.Join(s.Root, "peers", crdt.Revision([]string{identity.Account, peer, direction})+".cursor"), value)
 }

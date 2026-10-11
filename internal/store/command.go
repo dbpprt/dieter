@@ -8,6 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/dbpprt/dieter/internal/platform/fault"
+	"github.com/dbpprt/dieter/internal/platform/fsx"
 )
 
 type CommandResult struct {
@@ -21,7 +24,7 @@ type CommandResult struct {
 func commandKey(clientID, commandID string) (string, error) {
 	clientID, commandID = strings.TrimSpace(clientID), strings.TrimSpace(commandID)
 	if clientID == "" || commandID == "" || len(clientID) > 200 || len(commandID) > 200 {
-		return "", errors.New("client_id and command_id are required and must be at most 200 characters")
+		return "", fault.New(fault.Invalid, "client_id and command_id are required and must be at most 200 characters")
 	}
 	digest := sha256.Sum256([]byte(clientID + "\x00" + commandID))
 	return hex.EncodeToString(digest[:]), nil
@@ -68,5 +71,5 @@ func (s *Store) SaveCommandResult(clientID, commandID string, result CommandResu
 	if err != nil {
 		return err
 	}
-	return atomicWriteMode(filepath.Join(s.syncDir(), "commands", key+".json"), append(raw, '\n'), 0o600)
+	return fsx.WriteFile(filepath.Join(s.syncDir(), "commands", key+".json"), append(raw, '\n'), 0o600)
 }

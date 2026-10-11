@@ -118,7 +118,7 @@ Different keys or accounts require a separate audited recovery process.
 
 `dieter harness list` returns the selected machine's catalog. OMP discovery uses
 the same Dieter-pinned OMP build as new turns, not a separately installed global
-`omp`, and exposes only GPT-6 Luna, Sol, Astra, and the Tailscale GLM route. The
+`omp`, and exposes only GPT-6 Luna, Sol, and Astra. The
 first OMP catalog refresh can install that pinned build and Dieter's pinned Bun;
 later refreshes reuse them. New turns pass the selected model at OMP launch rather
 than relying on OMP's narrower ACP cycling-model option; old durable sessions
@@ -722,10 +722,11 @@ daemon path; follow an OS-requested restart with another service-side check.
 
 ## Command discipline
 
-- Inside the Dieter repository, use `just daemon build`, `just daemon test`,
-  and `just gateway build` for component development. `just daemon run` and
-  `just gateway run` stay in the foreground and never manage an installed
-  service.
+- Inside the Dieter repository, use `just build` and `just test` for daemon,
+  CLI and gateway development (see `docs/building.md`). A development daemon
+  runs in the foreground with a temporary `DIETER_HOME` and a concrete free
+  port (`bin/dieter serve --addr 127.0.0.1:PORT`); it never manages an
+  installed service.
 - Run `dieter help <group> <action>` or append `--help` before unfamiliar
   mutations. Every command provides offline help.
 - Prefer exact IDs and `--format jsonl`, `--format json`, or `--format ids` for
@@ -869,7 +870,8 @@ for a parity group. Protection adds redundancy and cannot repair every loss burs
 
 For disposable-process A/B tests, `DIETER_SCREEN_LTR=0` disables reference recovery
 and `DIETER_SCREEN_FEC=0` disables FEC negotiation. Do not restart an operator daemon
-for these comparisons. `DIETER_TEST_SCREEN_RECOVERY=1 just pipeline check component:mac operation:screens_test`
+for these comparisons. The Mac screen qualification lane with
+`DIETER_TEST_SCREEN_RECOVERY=1` (see `docs/testing.md`, layer L4)
 runs the native H.264/HEVC recovery matrix with authenticated disposable
 fixtures and targeted packet loss, without altering saved credentials or system
 network configuration. The Android and iOS catalogs currently have no screen
@@ -897,8 +899,8 @@ Performance candidates remain isolated-process switches: Mac
 behavior until matched qualification. Never restart the live service to set them.
 The qualified one-credit fallback remains available with older helpers.
 
-`just pipeline screens_qualify manifest:PATH output:PATH` collects reproducible
-Mac measurement evidence; there are no Android or iOS screen cells. Do not
+The Mac screen qualification lane (`just pipeline …`, see `docs/testing.md`)
+collects reproducible measurement evidence; there are no Android or iOS screen cells. Do not
 present a skipped/unavailable matrix cell as a pass.
 
 ### Data-only WebRTC control signaling
@@ -921,7 +923,7 @@ The response contains the gathered answer, session ID, expiry, state and mode.
 Mode is `unknown` before ICE selection and then `direct` or `turn`; candidate
 kinds describe the selected path without exposing addresses. A data-only peer
 must create the reliable ordered `dieter-control-tls-v1` channel and speak the
-bounded byte framing in `internal/controlrtc/stream.go`. It carries the
+bounded byte framing in `internal/transport/controlrtc/stream.go`. It carries the
 ordinary authenticated TLS/gRPC connection, not unencrypted protobuf RPCs.
 A close is transport-only. Existing agent turns, terminals and remote executions
 continue; callers resume eligible watches using their existing cursors.
@@ -1040,7 +1042,7 @@ credential discovery and RTC bootstrap may require the gateway. Paths, secrets,
 transcripts, queues, and executable validation stay on the owner. There are no
 parallel-agent caps; one conversation still has one active turn. Transport and
 storage bounds remain. Never edit DIETER_HOME directly. See the architecture guide in
-`landingpage/content/docs/architecture.md`.
+`site/content/docs/architecture.md`.
 
 Gateway, daemon/CLI, and native clients report one canonical SemVer release. The
 gateway publishes minimum client and daemon releases and rejects software below
@@ -1057,7 +1059,7 @@ account-scoped portable JSON. All use the daemon API and global `--machine`.
 Folders, membership, project ordering, pinned-project membership/order,
 pinned-chat ordering, disclosure, and lane sort direction share the `navigation`
 namespace across native clients. See
-`apps/core/shared/src/commonMain/kotlin/com/dbpprt/dieter/core/navigation/SharedKv.kt`
+`apps/kotlin/core/runtime/src/commonMain/kotlin/com/getdieter/core/navigation/SharedKv.kt`
 for keys and projection rules.
 
 `kv put --namespace NS --key KEY --file value.json --revision REV` replaces the

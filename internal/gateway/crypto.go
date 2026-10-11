@@ -16,7 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/trust"
+	"github.com/dbpprt/dieter/internal/platform/fsx"
+	"github.com/dbpprt/dieter/internal/security/trust"
 )
 
 type Keys struct {
@@ -232,40 +233,8 @@ func randomID(prefix string) string {
 	return prefix + base64.RawURLEncoding.EncodeToString(raw)
 }
 
+// writePrivate publishes a key without ever replacing one another process
+// just created.
 func writePrivate(path string, raw []byte, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	temporary, err := os.CreateTemp(filepath.Dir(path), ".dieter-key-*")
-	if err != nil {
-		return err
-	}
-	name := temporary.Name()
-	defer os.Remove(name)
-	if err := temporary.Chmod(mode); err != nil {
-		temporary.Close()
-		return err
-	}
-	if _, err := temporary.Write(raw); err != nil {
-		temporary.Close()
-		return err
-	}
-	if err := temporary.Sync(); err != nil {
-		temporary.Close()
-		return err
-	}
-	if err := temporary.Close(); err != nil {
-		return err
-	}
-	// Publishing a key must never replace one another process just created.
-	// Linking the fully written temporary file is atomic and fails on EEXIST.
-	if err := os.Link(name, path); err != nil {
-		return err
-	}
-	directory, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return err
-	}
-	defer directory.Close()
-	return directory.Sync()
+	return fsx.CreateFile(path, raw, mode)
 }
