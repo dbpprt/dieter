@@ -27,10 +27,11 @@ tags: [smoke]
 - tapOn:
     id: chrome-start-working
     waitToSettleTimeoutMs: 500
-# A hosted runner's first harness turn starts cold and has taken over 70 s.
+# Each mock turn starts a Node worker that loads the full harness module graph;
+# on a loaded hosted macOS runner that has taken up to 172 s (2026-10-12).
 - extendedWaitUntil:
     visible: "Mock harness received: First turn.*"
-    timeout: 180000
+    timeout: 300000
 - tapOn:
     id: message-input
     waitToSettleTimeoutMs: 500
@@ -40,7 +41,7 @@ tags: [smoke]
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: "Mock harness received: Second turn.*"
-    timeout: 180000
+    timeout: 300000
 # Review becomes available once the turn has settled, which trails its reply.
 - extendedWaitUntil:
     visible:

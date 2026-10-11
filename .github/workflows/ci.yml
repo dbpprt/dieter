@@ -324,7 +324,7 @@ jobs:
     needs: plan
     if: needs.plan.outputs.ios == 'true'
     runs-on: macos-26
-    timeout-minutes: 75
+    timeout-minutes: 100
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.5.app/Contents/Developer
     steps:
