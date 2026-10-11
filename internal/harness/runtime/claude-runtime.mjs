@@ -1,4 +1,29 @@
 import { createClaudeCode } from '@ai-sdk/harness-claude-code';
+import { tool } from 'ai';
+import { z } from 'zod';
+
+// Claude Code adds a native ClaudeDesign tool once the host has signed in to
+// Claude Design. The adapter predates it, so declare it here: Dieter can then
+// display its calls and deny it together with DesignSync when access is off.
+const claudeDesignTool = {
+  ...tool({
+    description: 'Create, edit, import or export Claude Design projects (claude.ai/design)',
+    inputSchema: z.looseObject({ operation: z.string().optional() }),
+  }),
+  toolUseKind: 'edit',
+};
+
+// Claude Code's artifact tools (Claude Design's home since it moved into
+// Claude) are declared for the same reason.
+const claudeArtifactTools = Object.fromEntries(
+  ['Artifact', 'ArtifactComments', 'ArtifactData', 'ArtifactCheck'].map(name => [name, {
+    ...tool({
+      description: `Claude artifact operation (${name})`,
+      inputSchema: z.looseObject({}),
+    }),
+    toolUseKind: name === 'Artifact' ? 'edit' : 'readonly',
+  }]),
+);
 
 function nativeClaudePackage() {
   const platform = process.platform;
@@ -24,6 +49,7 @@ export function createLocalClaudeCode(settings = {}) {
   });
   return {
     ...harness,
+    builtinTools: { ClaudeDesign: claudeDesignTool, ...claudeArtifactTools, ...harness.builtinTools },
     async getBootstrap(options) {
       const recipe = await harness.getBootstrap(options);
       const manifestPath = `${recipe.bootstrapDir}/package.json`;

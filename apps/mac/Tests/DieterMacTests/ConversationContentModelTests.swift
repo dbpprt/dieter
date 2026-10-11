@@ -483,6 +483,51 @@ private actor ConversationContentTerminalFixture: TerminalsRPC {
         #expect(content.tabs.isEmpty)
     }
 
+    @Test func claudeArtifactsOpenInASignedInClaudeTab() async throws {
+        let content = ConversationContentModel()
+        let artifact = try url("https://claude.ai/artifact/Y1obmAX2rujH3HrxmxXrBx")
+        var opened: [URL] = []
+        content.shouldOpenWebURLExternally = { _ in true }
+        content.usesClaudeSession = { $0 == artifact }
+        content.openWebURLExternally = { opened.append($0) }
+
+        // An automatic presentation shows the artifact in the workspace.
+        #expect(await content.present(artifact, conversationID: "card-A"))
+        #expect(opened.isEmpty, "An automatic presentation never launches another app")
+        #expect(content.tabs.count == 1)
+        #expect(content.tabs.first?.kind == .browser)
+        #expect(content.tabs.first?.browser.session == .claude)
+
+        // A click reuses that tab instead of leaving Dieter.
+        #expect(await content.open(artifact, conversationID: "card-A"))
+        #expect(opened.isEmpty)
+        #expect(content.tabs.count == 1)
+    }
+
+    @Test func claudePagesUseTheClaudeSessionUnlessTheUsersRulesSendThemOut() throws {
+        let artifact = try url("https://claude.ai/artifact/Y1obmAX2rujH3HrxmxXrBx")
+        let code = try url("https://claude.ai/code/artifact/0b7c4f2e-1d2a-4c55-9a51-4b8c7a0d1e2f")
+        let design = try url("https://claude.ai/design/p/0b7c")
+        for page in [artifact, code, design] {
+            #expect(ExternalBrowserRules.usesClaudeSession(page, entries: []))
+            #expect(!ExternalBrowserRules.usesClaudeSession(page, entries: ["claude.ai"]))
+            // A private tab never has the user's claude.ai session.
+            #expect(ExternalBrowserRules.matches(page, entries: []))
+            #expect(ExternalBrowserRules.systemBrowserNotice(page) != nil)
+        }
+        #expect(!ExternalBrowserRules.usesClaudeSession(try url("https://claude.ai/new"), entries: []))
+        #expect(ExternalBrowserRules.systemBrowserNotice(try url("https://claude.ai/new")) == nil)
+        #expect(!ExternalBrowserRules.matches(try url("https://example.com/design"), entries: []))
+
+        // A claude.ai tab may sign in and browse claude.ai, and nothing else.
+        let login = try url("https://claude.ai/login"), outside = try url("https://example.com")
+        #expect(!ExternalBrowserRules.opensExternally(login, session: .claude, entries: []))
+        #expect(!ExternalBrowserRules.opensExternally(artifact, session: .claude, entries: []))
+        #expect(ExternalBrowserRules.opensExternally(outside, session: .claude, entries: []))
+        #expect(ExternalBrowserRules.opensExternally(artifact, session: .claude, entries: ["claude.ai"]))
+        #expect(ExternalBrowserRules.opensExternally(artifact, session: .ephemeral, entries: []))
+    }
+
     @Test func automaticPresentationNeverPromptsToReplaceAnotherConversationsDirtyEditor() async throws {
         let client = ConversationContentFilesFixture(), content = model(client)
         #expect(await content.open(try url("draft.md"), conversationID: "card-A"))

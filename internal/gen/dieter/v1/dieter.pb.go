@@ -662,7 +662,7 @@ func (x RemoteDesktopPointerButton_Button) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use RemoteDesktopPointerButton_Button.Descriptor instead.
 func (RemoteDesktopPointerButton_Button) EnumDescriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{185, 0}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{190, 0}
 }
 
 type RemoteDesktopClipboardRequest_Action int32
@@ -720,7 +720,7 @@ func (x RemoteDesktopClipboardRequest_Action) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use RemoteDesktopClipboardRequest_Action.Descriptor instead.
 func (RemoteDesktopClipboardRequest_Action) EnumDescriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{219, 0}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{224, 0}
 }
 
 type RemoteDesktopClipboardItem_Kind int32
@@ -766,7 +766,7 @@ func (x RemoteDesktopClipboardItem_Kind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use RemoteDesktopClipboardItem_Kind.Descriptor instead.
 func (RemoteDesktopClipboardItem_Kind) EnumDescriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{220, 0}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{225, 0}
 }
 
 type HealthResponse struct {
@@ -6483,6 +6483,380 @@ func (x *Settings) GetUpdatedAt() string {
 	return ""
 }
 
+// Claude Design on one daemon host. Never replicated: the Claude login, the
+// design credential and the account's agent-access grant belong to the host.
+type ClaudeDesignStatus struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Claude Design is enabled for the host's Claude account and Claude Code build.
+	Available bool `protobuf:"varint,1,opt,name=available,proto3" json:"available,omitempty"`
+	// Claude Design sign-in stored a design credential on the host.
+	SignedIn bool `protobuf:"varint,2,opt,name=signed_in,json=signedIn,proto3" json:"signed_in,omitempty"`
+	// This host can run the Claude Design sign-in.
+	CanSignIn bool `protobuf:"varint,3,opt,name=can_sign_in,json=canSignIn,proto3" json:"can_sign_in,omitempty"`
+	// Claude Code turns on this machine may use the Claude Design tools.
+	AccessEnabled   bool   `protobuf:"varint,4,opt,name=access_enabled,json=accessEnabled,proto3" json:"access_enabled,omitempty"`
+	AccessUpdatedAt string `protobuf:"bytes,5,opt,name=access_updated_at,json=accessUpdatedAt,proto3" json:"access_updated_at,omitempty"`
+	// Why Claude Design is unavailable or cannot sign in, when Claude Code says.
+	Reason string `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
+	// The pinned Claude Code release Dieter uses on this machine.
+	ClaudeCodeVersion string `protobuf:"bytes,7,opt,name=claude_code_version,json=claudeCodeVersion,proto3" json:"claude_code_version,omitempty"`
+	// False until the first sign-in or Claude Code turn installs that release.
+	RuntimeReady  bool `protobuf:"varint,8,opt,name=runtime_ready,json=runtimeReady,proto3" json:"runtime_ready,omitempty"`
+	SignInActive  bool `protobuf:"varint,9,opt,name=sign_in_active,json=signInActive,proto3" json:"sign_in_active,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClaudeDesignStatus) Reset() {
+	*x = ClaudeDesignStatus{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[63]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClaudeDesignStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClaudeDesignStatus) ProtoMessage() {}
+
+func (x *ClaudeDesignStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[63]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClaudeDesignStatus.ProtoReflect.Descriptor instead.
+func (*ClaudeDesignStatus) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{63}
+}
+
+func (x *ClaudeDesignStatus) GetAvailable() bool {
+	if x != nil {
+		return x.Available
+	}
+	return false
+}
+
+func (x *ClaudeDesignStatus) GetSignedIn() bool {
+	if x != nil {
+		return x.SignedIn
+	}
+	return false
+}
+
+func (x *ClaudeDesignStatus) GetCanSignIn() bool {
+	if x != nil {
+		return x.CanSignIn
+	}
+	return false
+}
+
+func (x *ClaudeDesignStatus) GetAccessEnabled() bool {
+	if x != nil {
+		return x.AccessEnabled
+	}
+	return false
+}
+
+func (x *ClaudeDesignStatus) GetAccessUpdatedAt() string {
+	if x != nil {
+		return x.AccessUpdatedAt
+	}
+	return ""
+}
+
+func (x *ClaudeDesignStatus) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *ClaudeDesignStatus) GetClaudeCodeVersion() string {
+	if x != nil {
+		return x.ClaudeCodeVersion
+	}
+	return ""
+}
+
+func (x *ClaudeDesignStatus) GetRuntimeReady() bool {
+	if x != nil {
+		return x.RuntimeReady
+	}
+	return false
+}
+
+func (x *ClaudeDesignStatus) GetSignInActive() bool {
+	if x != nil {
+		return x.SignInActive
+	}
+	return false
+}
+
+type SignInClaudeDesignRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SignInClaudeDesignRequest) Reset() {
+	*x = SignInClaudeDesignRequest{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[64]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SignInClaudeDesignRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SignInClaudeDesignRequest) ProtoMessage() {}
+
+func (x *SignInClaudeDesignRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[64]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SignInClaudeDesignRequest.ProtoReflect.Descriptor instead.
+func (*SignInClaudeDesignRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{64}
+}
+
+// The first event carries only sign_in_id. A preparing event reports that the
+// pinned Claude Code release is being installed. A pages event carries url,
+// which completes in a browser on the daemon host, and manual_url, whose page
+// shows an authorization code to submit with SubmitClaudeDesignSignInCode from
+// any client. The last event has done set and the refreshed status.
+type ClaudeDesignSignInEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SignInId      string                 `protobuf:"bytes,1,opt,name=sign_in_id,json=signInId,proto3" json:"sign_in_id,omitempty"`
+	Preparing     bool                   `protobuf:"varint,2,opt,name=preparing,proto3" json:"preparing,omitempty"`
+	Url           string                 `protobuf:"bytes,3,opt,name=url,proto3" json:"url,omitempty"`
+	ManualUrl     string                 `protobuf:"bytes,4,opt,name=manual_url,json=manualUrl,proto3" json:"manual_url,omitempty"`
+	ManualFirst   bool                   `protobuf:"varint,5,opt,name=manual_first,json=manualFirst,proto3" json:"manual_first,omitempty"`
+	Done          bool                   `protobuf:"varint,6,opt,name=done,proto3" json:"done,omitempty"`
+	Ok            bool                   `protobuf:"varint,7,opt,name=ok,proto3" json:"ok,omitempty"`
+	Message       string                 `protobuf:"bytes,8,opt,name=message,proto3" json:"message,omitempty"`
+	Status        *ClaudeDesignStatus    `protobuf:"bytes,9,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClaudeDesignSignInEvent) Reset() {
+	*x = ClaudeDesignSignInEvent{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[65]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClaudeDesignSignInEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClaudeDesignSignInEvent) ProtoMessage() {}
+
+func (x *ClaudeDesignSignInEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[65]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClaudeDesignSignInEvent.ProtoReflect.Descriptor instead.
+func (*ClaudeDesignSignInEvent) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{65}
+}
+
+func (x *ClaudeDesignSignInEvent) GetSignInId() string {
+	if x != nil {
+		return x.SignInId
+	}
+	return ""
+}
+
+func (x *ClaudeDesignSignInEvent) GetPreparing() bool {
+	if x != nil {
+		return x.Preparing
+	}
+	return false
+}
+
+func (x *ClaudeDesignSignInEvent) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *ClaudeDesignSignInEvent) GetManualUrl() string {
+	if x != nil {
+		return x.ManualUrl
+	}
+	return ""
+}
+
+func (x *ClaudeDesignSignInEvent) GetManualFirst() bool {
+	if x != nil {
+		return x.ManualFirst
+	}
+	return false
+}
+
+func (x *ClaudeDesignSignInEvent) GetDone() bool {
+	if x != nil {
+		return x.Done
+	}
+	return false
+}
+
+func (x *ClaudeDesignSignInEvent) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *ClaudeDesignSignInEvent) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *ClaudeDesignSignInEvent) GetStatus() *ClaudeDesignStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+type SubmitClaudeDesignSignInCodeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SignInId      string                 `protobuf:"bytes,1,opt,name=sign_in_id,json=signInId,proto3" json:"sign_in_id,omitempty"`
+	Code          string                 `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubmitClaudeDesignSignInCodeRequest) Reset() {
+	*x = SubmitClaudeDesignSignInCodeRequest{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[66]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitClaudeDesignSignInCodeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitClaudeDesignSignInCodeRequest) ProtoMessage() {}
+
+func (x *SubmitClaudeDesignSignInCodeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[66]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitClaudeDesignSignInCodeRequest.ProtoReflect.Descriptor instead.
+func (*SubmitClaudeDesignSignInCodeRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{66}
+}
+
+func (x *SubmitClaudeDesignSignInCodeRequest) GetSignInId() string {
+	if x != nil {
+		return x.SignInId
+	}
+	return ""
+}
+
+func (x *SubmitClaudeDesignSignInCodeRequest) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+type SetClaudeDesignAccessRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Enabling also grants the Claude account's agent access to Design projects,
+	// which headless Claude Code turns cannot confirm interactively.
+	Enabled bool `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	// With enabled false, also revoke that account-wide grant. This affects every
+	// Claude Code session of the account, not only Dieter.
+	RevokeGrant   bool `protobuf:"varint,2,opt,name=revoke_grant,json=revokeGrant,proto3" json:"revoke_grant,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetClaudeDesignAccessRequest) Reset() {
+	*x = SetClaudeDesignAccessRequest{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[67]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetClaudeDesignAccessRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetClaudeDesignAccessRequest) ProtoMessage() {}
+
+func (x *SetClaudeDesignAccessRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[67]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetClaudeDesignAccessRequest.ProtoReflect.Descriptor instead.
+func (*SetClaudeDesignAccessRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{67}
+}
+
+func (x *SetClaudeDesignAccessRequest) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+func (x *SetClaudeDesignAccessRequest) GetRevokeGrant() bool {
+	if x != nil {
+		return x.RevokeGrant
+	}
+	return false
+}
+
 type SettingsOptions struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Projects      []*Project             `protobuf:"bytes,1,rep,name=projects,proto3" json:"projects,omitempty"`
@@ -6494,7 +6868,7 @@ type SettingsOptions struct {
 
 func (x *SettingsOptions) Reset() {
 	*x = SettingsOptions{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[63]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6506,7 +6880,7 @@ func (x *SettingsOptions) String() string {
 func (*SettingsOptions) ProtoMessage() {}
 
 func (x *SettingsOptions) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[63]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6519,7 +6893,7 @@ func (x *SettingsOptions) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SettingsOptions.ProtoReflect.Descriptor instead.
 func (*SettingsOptions) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{63}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *SettingsOptions) GetProjects() []*Project {
@@ -6552,7 +6926,7 @@ type UpdateSettingsRequest struct {
 
 func (x *UpdateSettingsRequest) Reset() {
 	*x = UpdateSettingsRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[64]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6564,7 +6938,7 @@ func (x *UpdateSettingsRequest) String() string {
 func (*UpdateSettingsRequest) ProtoMessage() {}
 
 func (x *UpdateSettingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[64]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6577,7 +6951,7 @@ func (x *UpdateSettingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateSettingsRequest.ProtoReflect.Descriptor instead.
 func (*UpdateSettingsRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{64}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *UpdateSettingsRequest) GetSettings() *Settings {
@@ -6599,7 +6973,7 @@ type PromptSettings struct {
 
 func (x *PromptSettings) Reset() {
 	*x = PromptSettings{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[65]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6611,7 +6985,7 @@ func (x *PromptSettings) String() string {
 func (*PromptSettings) ProtoMessage() {}
 
 func (x *PromptSettings) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[65]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6624,7 +6998,7 @@ func (x *PromptSettings) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PromptSettings.ProtoReflect.Descriptor instead.
 func (*PromptSettings) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{65}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *PromptSettings) GetPromptTemplate() string {
@@ -6666,7 +7040,7 @@ type UpdatePromptSettingsRequest struct {
 
 func (x *UpdatePromptSettingsRequest) Reset() {
 	*x = UpdatePromptSettingsRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[66]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6678,7 +7052,7 @@ func (x *UpdatePromptSettingsRequest) String() string {
 func (*UpdatePromptSettingsRequest) ProtoMessage() {}
 
 func (x *UpdatePromptSettingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[66]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6691,7 +7065,7 @@ func (x *UpdatePromptSettingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdatePromptSettingsRequest.ProtoReflect.Descriptor instead.
 func (*UpdatePromptSettingsRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{66}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *UpdatePromptSettingsRequest) GetPromptTemplate() string {
@@ -6726,7 +7100,7 @@ type SetScopedPromptTemplateRequest struct {
 
 func (x *SetScopedPromptTemplateRequest) Reset() {
 	*x = SetScopedPromptTemplateRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[67]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6738,7 +7112,7 @@ func (x *SetScopedPromptTemplateRequest) String() string {
 func (*SetScopedPromptTemplateRequest) ProtoMessage() {}
 
 func (x *SetScopedPromptTemplateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[67]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6751,7 +7125,7 @@ func (x *SetScopedPromptTemplateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetScopedPromptTemplateRequest.ProtoReflect.Descriptor instead.
 func (*SetScopedPromptTemplateRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{67}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *SetScopedPromptTemplateRequest) GetScopeId() string {
@@ -6788,7 +7162,7 @@ type PreviewPromptRequest struct {
 
 func (x *PreviewPromptRequest) Reset() {
 	*x = PreviewPromptRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[68]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6800,7 +7174,7 @@ func (x *PreviewPromptRequest) String() string {
 func (*PreviewPromptRequest) ProtoMessage() {}
 
 func (x *PreviewPromptRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[68]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6813,7 +7187,7 @@ func (x *PreviewPromptRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PreviewPromptRequest.ProtoReflect.Descriptor instead.
 func (*PreviewPromptRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{68}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *PreviewPromptRequest) GetProjectId() string {
@@ -6867,7 +7241,7 @@ type PromptPreview struct {
 
 func (x *PromptPreview) Reset() {
 	*x = PromptPreview{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[69]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6879,7 +7253,7 @@ func (x *PromptPreview) String() string {
 func (*PromptPreview) ProtoMessage() {}
 
 func (x *PromptPreview) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[69]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6892,7 +7266,7 @@ func (x *PromptPreview) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PromptPreview.ProtoReflect.Descriptor instead.
 func (*PromptPreview) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{69}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *PromptPreview) GetSource() string {
@@ -6960,7 +7334,7 @@ type ListDirectoriesRequest struct {
 
 func (x *ListDirectoriesRequest) Reset() {
 	*x = ListDirectoriesRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[70]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6972,7 +7346,7 @@ func (x *ListDirectoriesRequest) String() string {
 func (*ListDirectoriesRequest) ProtoMessage() {}
 
 func (x *ListDirectoriesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[70]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6985,7 +7359,7 @@ func (x *ListDirectoriesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDirectoriesRequest.ProtoReflect.Descriptor instead.
 func (*ListDirectoriesRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{70}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *ListDirectoriesRequest) GetPath() string {
@@ -7007,7 +7381,7 @@ type DirectoryEntry struct {
 
 func (x *DirectoryEntry) Reset() {
 	*x = DirectoryEntry{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[71]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7019,7 +7393,7 @@ func (x *DirectoryEntry) String() string {
 func (*DirectoryEntry) ProtoMessage() {}
 
 func (x *DirectoryEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[71]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7032,7 +7406,7 @@ func (x *DirectoryEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DirectoryEntry.ProtoReflect.Descriptor instead.
 func (*DirectoryEntry) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{71}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *DirectoryEntry) GetName() string {
@@ -7074,7 +7448,7 @@ type DirectoryLocation struct {
 
 func (x *DirectoryLocation) Reset() {
 	*x = DirectoryLocation{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[72]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7086,7 +7460,7 @@ func (x *DirectoryLocation) String() string {
 func (*DirectoryLocation) ProtoMessage() {}
 
 func (x *DirectoryLocation) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[72]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7099,7 +7473,7 @@ func (x *DirectoryLocation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DirectoryLocation.ProtoReflect.Descriptor instead.
 func (*DirectoryLocation) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{72}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *DirectoryLocation) GetName() string {
@@ -7138,7 +7512,7 @@ type DirectoryListing struct {
 
 func (x *DirectoryListing) Reset() {
 	*x = DirectoryListing{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[73]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7150,7 +7524,7 @@ func (x *DirectoryListing) String() string {
 func (*DirectoryListing) ProtoMessage() {}
 
 func (x *DirectoryListing) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[73]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7163,7 +7537,7 @@ func (x *DirectoryListing) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DirectoryListing.ProtoReflect.Descriptor instead.
 func (*DirectoryListing) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{73}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *DirectoryListing) GetPath() string {
@@ -7234,7 +7608,7 @@ type CreateProjectRequest struct {
 
 func (x *CreateProjectRequest) Reset() {
 	*x = CreateProjectRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[74]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7246,7 +7620,7 @@ func (x *CreateProjectRequest) String() string {
 func (*CreateProjectRequest) ProtoMessage() {}
 
 func (x *CreateProjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[74]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7259,7 +7633,7 @@ func (x *CreateProjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateProjectRequest.ProtoReflect.Descriptor instead.
 func (*CreateProjectRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{74}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *CreateProjectRequest) GetOperationId() string {
@@ -7349,7 +7723,7 @@ type CreateProjectResponse struct {
 
 func (x *CreateProjectResponse) Reset() {
 	*x = CreateProjectResponse{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[75]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7361,7 +7735,7 @@ func (x *CreateProjectResponse) String() string {
 func (*CreateProjectResponse) ProtoMessage() {}
 
 func (x *CreateProjectResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[75]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7374,7 +7748,7 @@ func (x *CreateProjectResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateProjectResponse.ProtoReflect.Descriptor instead.
 func (*CreateProjectResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{75}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *CreateProjectResponse) GetProject() *Project {
@@ -7405,7 +7779,7 @@ type UpdateProjectRequest struct {
 
 func (x *UpdateProjectRequest) Reset() {
 	*x = UpdateProjectRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[76]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7417,7 +7791,7 @@ func (x *UpdateProjectRequest) String() string {
 func (*UpdateProjectRequest) ProtoMessage() {}
 
 func (x *UpdateProjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[76]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7430,7 +7804,7 @@ func (x *UpdateProjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateProjectRequest.ProtoReflect.Descriptor instead.
 func (*UpdateProjectRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{76}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *UpdateProjectRequest) GetProjectId() string {
@@ -7484,7 +7858,7 @@ type ProjectHostnames struct {
 
 func (x *ProjectHostnames) Reset() {
 	*x = ProjectHostnames{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[77]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7496,7 +7870,7 @@ func (x *ProjectHostnames) String() string {
 func (*ProjectHostnames) ProtoMessage() {}
 
 func (x *ProjectHostnames) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[77]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7509,7 +7883,7 @@ func (x *ProjectHostnames) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectHostnames.ProtoReflect.Descriptor instead.
 func (*ProjectHostnames) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{77}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *ProjectHostnames) GetValues() []string {
@@ -7533,7 +7907,7 @@ type ValidationCommand struct {
 
 func (x *ValidationCommand) Reset() {
 	*x = ValidationCommand{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[78]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7545,7 +7919,7 @@ func (x *ValidationCommand) String() string {
 func (*ValidationCommand) ProtoMessage() {}
 
 func (x *ValidationCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[78]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7558,7 +7932,7 @@ func (x *ValidationCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidationCommand.ProtoReflect.Descriptor instead.
 func (*ValidationCommand) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{78}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *ValidationCommand) GetName() string {
@@ -7616,7 +7990,7 @@ type UpdateProjectWorkspaceSettingsRequest struct {
 
 func (x *UpdateProjectWorkspaceSettingsRequest) Reset() {
 	*x = UpdateProjectWorkspaceSettingsRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[79]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7628,7 +8002,7 @@ func (x *UpdateProjectWorkspaceSettingsRequest) String() string {
 func (*UpdateProjectWorkspaceSettingsRequest) ProtoMessage() {}
 
 func (x *UpdateProjectWorkspaceSettingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[79]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7641,7 +8015,7 @@ func (x *UpdateProjectWorkspaceSettingsRequest) ProtoReflect() protoreflect.Mess
 
 // Deprecated: Use UpdateProjectWorkspaceSettingsRequest.ProtoReflect.Descriptor instead.
 func (*UpdateProjectWorkspaceSettingsRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{79}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *UpdateProjectWorkspaceSettingsRequest) GetCheckoutId() string {
@@ -7689,7 +8063,7 @@ type ArchiveProjectRequest struct {
 
 func (x *ArchiveProjectRequest) Reset() {
 	*x = ArchiveProjectRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[80]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7701,7 +8075,7 @@ func (x *ArchiveProjectRequest) String() string {
 func (*ArchiveProjectRequest) ProtoMessage() {}
 
 func (x *ArchiveProjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[80]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7714,7 +8088,7 @@ func (x *ArchiveProjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArchiveProjectRequest.ProtoReflect.Descriptor instead.
 func (*ArchiveProjectRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{80}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *ArchiveProjectRequest) GetProjectId() string {
@@ -7746,7 +8120,7 @@ type CreateBoardRequest struct {
 
 func (x *CreateBoardRequest) Reset() {
 	*x = CreateBoardRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[81]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7758,7 +8132,7 @@ func (x *CreateBoardRequest) String() string {
 func (*CreateBoardRequest) ProtoMessage() {}
 
 func (x *CreateBoardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[81]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7771,7 +8145,7 @@ func (x *CreateBoardRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateBoardRequest.ProtoReflect.Descriptor instead.
 func (*CreateBoardRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{81}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *CreateBoardRequest) GetProjectId() string {
@@ -7833,7 +8207,7 @@ type RenameBoardRequest struct {
 
 func (x *RenameBoardRequest) Reset() {
 	*x = RenameBoardRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[82]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7845,7 +8219,7 @@ func (x *RenameBoardRequest) String() string {
 func (*RenameBoardRequest) ProtoMessage() {}
 
 func (x *RenameBoardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[82]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7858,7 +8232,7 @@ func (x *RenameBoardRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenameBoardRequest.ProtoReflect.Descriptor instead.
 func (*RenameBoardRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{82}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *RenameBoardRequest) GetBoardId() string {
@@ -7884,7 +8258,7 @@ type BoardRef struct {
 
 func (x *BoardRef) Reset() {
 	*x = BoardRef{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[83]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7896,7 +8270,7 @@ func (x *BoardRef) String() string {
 func (*BoardRef) ProtoMessage() {}
 
 func (x *BoardRef) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[83]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7909,7 +8283,7 @@ func (x *BoardRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardRef.ProtoReflect.Descriptor instead.
 func (*BoardRef) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{83}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *BoardRef) GetBoardId() string {
@@ -7929,7 +8303,7 @@ type SetBoardArchivePolicyRequest struct {
 
 func (x *SetBoardArchivePolicyRequest) Reset() {
 	*x = SetBoardArchivePolicyRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[84]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7941,7 +8315,7 @@ func (x *SetBoardArchivePolicyRequest) String() string {
 func (*SetBoardArchivePolicyRequest) ProtoMessage() {}
 
 func (x *SetBoardArchivePolicyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[84]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7954,7 +8328,7 @@ func (x *SetBoardArchivePolicyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetBoardArchivePolicyRequest.ProtoReflect.Descriptor instead.
 func (*SetBoardArchivePolicyRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{84}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *SetBoardArchivePolicyRequest) GetBoardId() string {
@@ -7983,7 +8357,7 @@ type CreateBoardLabelRequest struct {
 
 func (x *CreateBoardLabelRequest) Reset() {
 	*x = CreateBoardLabelRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[85]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7995,7 +8369,7 @@ func (x *CreateBoardLabelRequest) String() string {
 func (*CreateBoardLabelRequest) ProtoMessage() {}
 
 func (x *CreateBoardLabelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[85]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8008,7 +8382,7 @@ func (x *CreateBoardLabelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateBoardLabelRequest.ProtoReflect.Descriptor instead.
 func (*CreateBoardLabelRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{85}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *CreateBoardLabelRequest) GetBoardId() string {
@@ -8052,7 +8426,7 @@ type UpdateBoardLabelRequest struct {
 
 func (x *UpdateBoardLabelRequest) Reset() {
 	*x = UpdateBoardLabelRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[86]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8064,7 +8438,7 @@ func (x *UpdateBoardLabelRequest) String() string {
 func (*UpdateBoardLabelRequest) ProtoMessage() {}
 
 func (x *UpdateBoardLabelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[86]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8077,7 +8451,7 @@ func (x *UpdateBoardLabelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateBoardLabelRequest.ProtoReflect.Descriptor instead.
 func (*UpdateBoardLabelRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{86}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *UpdateBoardLabelRequest) GetBoardId() string {
@@ -8125,7 +8499,7 @@ type DeleteBoardLabelRequest struct {
 
 func (x *DeleteBoardLabelRequest) Reset() {
 	*x = DeleteBoardLabelRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[87]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8137,7 +8511,7 @@ func (x *DeleteBoardLabelRequest) String() string {
 func (*DeleteBoardLabelRequest) ProtoMessage() {}
 
 func (x *DeleteBoardLabelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[87]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8150,7 +8524,7 @@ func (x *DeleteBoardLabelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteBoardLabelRequest.ProtoReflect.Descriptor instead.
 func (*DeleteBoardLabelRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{87}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *DeleteBoardLabelRequest) GetBoardId() string {
@@ -8177,7 +8551,7 @@ type EffortOption struct {
 
 func (x *EffortOption) Reset() {
 	*x = EffortOption{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[88]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8189,7 +8563,7 @@ func (x *EffortOption) String() string {
 func (*EffortOption) ProtoMessage() {}
 
 func (x *EffortOption) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[88]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8202,7 +8576,7 @@ func (x *EffortOption) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EffortOption.ProtoReflect.Descriptor instead.
 func (*EffortOption) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{88}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *EffortOption) GetId() string {
@@ -8252,7 +8626,7 @@ type CreateConversationRequest struct {
 
 func (x *CreateConversationRequest) Reset() {
 	*x = CreateConversationRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[89]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8264,7 +8638,7 @@ func (x *CreateConversationRequest) String() string {
 func (*CreateConversationRequest) ProtoMessage() {}
 
 func (x *CreateConversationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[89]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8277,7 +8651,7 @@ func (x *CreateConversationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateConversationRequest.ProtoReflect.Descriptor instead.
 func (*CreateConversationRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{89}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{94}
 }
 
 func (x *CreateConversationRequest) GetCheckoutId() string {
@@ -8443,7 +8817,7 @@ type ListChatsRequest struct {
 
 func (x *ListChatsRequest) Reset() {
 	*x = ListChatsRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[90]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[95]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8455,7 +8829,7 @@ func (x *ListChatsRequest) String() string {
 func (*ListChatsRequest) ProtoMessage() {}
 
 func (x *ListChatsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[90]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[95]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8468,7 +8842,7 @@ func (x *ListChatsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListChatsRequest.ProtoReflect.Descriptor instead.
 func (*ListChatsRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{90}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{95}
 }
 
 func (x *ListChatsRequest) GetIncludeArchived() bool {
@@ -8489,7 +8863,7 @@ type ForkChatRequest struct {
 
 func (x *ForkChatRequest) Reset() {
 	*x = ForkChatRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[91]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[96]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8501,7 +8875,7 @@ func (x *ForkChatRequest) String() string {
 func (*ForkChatRequest) ProtoMessage() {}
 
 func (x *ForkChatRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[91]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[96]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8514,7 +8888,7 @@ func (x *ForkChatRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ForkChatRequest.ProtoReflect.Descriptor instead.
 func (*ForkChatRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{91}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{96}
 }
 
 func (x *ForkChatRequest) GetSourceCardId() string {
@@ -8548,7 +8922,7 @@ type ChatsResponse struct {
 
 func (x *ChatsResponse) Reset() {
 	*x = ChatsResponse{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[92]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8560,7 +8934,7 @@ func (x *ChatsResponse) String() string {
 func (*ChatsResponse) ProtoMessage() {}
 
 func (x *ChatsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[92]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8573,7 +8947,7 @@ func (x *ChatsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatsResponse.ProtoReflect.Descriptor instead.
 func (*ChatsResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{92}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *ChatsResponse) GetProjects() []*Project {
@@ -8599,7 +8973,7 @@ type GetCardRequest struct {
 
 func (x *GetCardRequest) Reset() {
 	*x = GetCardRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[93]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[98]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8611,7 +8985,7 @@ func (x *GetCardRequest) String() string {
 func (*GetCardRequest) ProtoMessage() {}
 
 func (x *GetCardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[93]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[98]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8624,7 +8998,7 @@ func (x *GetCardRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCardRequest.ProtoReflect.Descriptor instead.
 func (*GetCardRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{93}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{98}
 }
 
 func (x *GetCardRequest) GetCardId() string {
@@ -8645,7 +9019,7 @@ type GetConversationRequest struct {
 
 func (x *GetConversationRequest) Reset() {
 	*x = GetConversationRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[94]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[99]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8657,7 +9031,7 @@ func (x *GetConversationRequest) String() string {
 func (*GetConversationRequest) ProtoMessage() {}
 
 func (x *GetConversationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[94]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[99]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8670,7 +9044,7 @@ func (x *GetConversationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetConversationRequest.ProtoReflect.Descriptor instead.
 func (*GetConversationRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{94}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{99}
 }
 
 func (x *GetConversationRequest) GetCardId() string {
@@ -8706,7 +9080,7 @@ type WatchConversationRequest struct {
 
 func (x *WatchConversationRequest) Reset() {
 	*x = WatchConversationRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[95]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[100]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8718,7 +9092,7 @@ func (x *WatchConversationRequest) String() string {
 func (*WatchConversationRequest) ProtoMessage() {}
 
 func (x *WatchConversationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[95]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[100]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8731,7 +9105,7 @@ func (x *WatchConversationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchConversationRequest.ProtoReflect.Descriptor instead.
 func (*WatchConversationRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{95}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{100}
 }
 
 func (x *WatchConversationRequest) GetCardId() string {
@@ -8776,7 +9150,7 @@ type PollConversationRequest struct {
 
 func (x *PollConversationRequest) Reset() {
 	*x = PollConversationRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[96]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[101]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8788,7 +9162,7 @@ func (x *PollConversationRequest) String() string {
 func (*PollConversationRequest) ProtoMessage() {}
 
 func (x *PollConversationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[96]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[101]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8801,7 +9175,7 @@ func (x *PollConversationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PollConversationRequest.ProtoReflect.Descriptor instead.
 func (*PollConversationRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{96}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{101}
 }
 
 func (x *PollConversationRequest) GetCardId() string {
@@ -8851,7 +9225,7 @@ type ConversationUpdate struct {
 
 func (x *ConversationUpdate) Reset() {
 	*x = ConversationUpdate{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[97]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[102]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8863,7 +9237,7 @@ func (x *ConversationUpdate) String() string {
 func (*ConversationUpdate) ProtoMessage() {}
 
 func (x *ConversationUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[97]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[102]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8876,7 +9250,7 @@ func (x *ConversationUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConversationUpdate.ProtoReflect.Descriptor instead.
 func (*ConversationUpdate) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{97}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{102}
 }
 
 func (x *ConversationUpdate) GetSnapshot() *ConversationSnapshot {
@@ -8996,7 +9370,7 @@ type GetToolOutputRequest struct {
 
 func (x *GetToolOutputRequest) Reset() {
 	*x = GetToolOutputRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[98]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[103]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9008,7 +9382,7 @@ func (x *GetToolOutputRequest) String() string {
 func (*GetToolOutputRequest) ProtoMessage() {}
 
 func (x *GetToolOutputRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[98]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[103]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9021,7 +9395,7 @@ func (x *GetToolOutputRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetToolOutputRequest.ProtoReflect.Descriptor instead.
 func (*GetToolOutputRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{98}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{103}
 }
 
 func (x *GetToolOutputRequest) GetCardId() string {
@@ -9071,7 +9445,7 @@ type ToolOutput struct {
 
 func (x *ToolOutput) Reset() {
 	*x = ToolOutput{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[99]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[104]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9083,7 +9457,7 @@ func (x *ToolOutput) String() string {
 func (*ToolOutput) ProtoMessage() {}
 
 func (x *ToolOutput) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[99]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[104]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9096,7 +9470,7 @@ func (x *ToolOutput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ToolOutput.ProtoReflect.Descriptor instead.
 func (*ToolOutput) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{99}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{104}
 }
 
 func (x *ToolOutput) GetCardId() string {
@@ -9179,7 +9553,7 @@ type SendMessageRequest struct {
 
 func (x *SendMessageRequest) Reset() {
 	*x = SendMessageRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[100]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[105]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9191,7 +9565,7 @@ func (x *SendMessageRequest) String() string {
 func (*SendMessageRequest) ProtoMessage() {}
 
 func (x *SendMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[100]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[105]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9204,7 +9578,7 @@ func (x *SendMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendMessageRequest.ProtoReflect.Descriptor instead.
 func (*SendMessageRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{100}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{105}
 }
 
 func (x *SendMessageRequest) GetCardId() string {
@@ -9281,7 +9655,7 @@ type SendMessageResponse struct {
 
 func (x *SendMessageResponse) Reset() {
 	*x = SendMessageResponse{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[101]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[106]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9293,7 +9667,7 @@ func (x *SendMessageResponse) String() string {
 func (*SendMessageResponse) ProtoMessage() {}
 
 func (x *SendMessageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[101]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[106]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9306,7 +9680,7 @@ func (x *SendMessageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendMessageResponse.ProtoReflect.Descriptor instead.
 func (*SendMessageResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{101}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{106}
 }
 
 func (x *SendMessageResponse) GetSent() bool {
@@ -9343,7 +9717,7 @@ type MoveCardRequest struct {
 
 func (x *MoveCardRequest) Reset() {
 	*x = MoveCardRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[102]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[107]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9355,7 +9729,7 @@ func (x *MoveCardRequest) String() string {
 func (*MoveCardRequest) ProtoMessage() {}
 
 func (x *MoveCardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[102]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[107]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9368,7 +9742,7 @@ func (x *MoveCardRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MoveCardRequest.ProtoReflect.Descriptor instead.
 func (*MoveCardRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{102}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{107}
 }
 
 func (x *MoveCardRequest) GetCardId() string {
@@ -9417,7 +9791,7 @@ type StartCardRequest struct {
 
 func (x *StartCardRequest) Reset() {
 	*x = StartCardRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[103]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[108]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9429,7 +9803,7 @@ func (x *StartCardRequest) String() string {
 func (*StartCardRequest) ProtoMessage() {}
 
 func (x *StartCardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[103]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[108]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9442,7 +9816,7 @@ func (x *StartCardRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartCardRequest.ProtoReflect.Descriptor instead.
 func (*StartCardRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{103}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{108}
 }
 
 func (x *StartCardRequest) GetCardId() string {
@@ -9479,7 +9853,7 @@ type StartCardResponse struct {
 
 func (x *StartCardResponse) Reset() {
 	*x = StartCardResponse{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[104]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[109]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9491,7 +9865,7 @@ func (x *StartCardResponse) String() string {
 func (*StartCardResponse) ProtoMessage() {}
 
 func (x *StartCardResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[104]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[109]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9504,7 +9878,7 @@ func (x *StartCardResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartCardResponse.ProtoReflect.Descriptor instead.
 func (*StartCardResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{104}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{109}
 }
 
 func (x *StartCardResponse) GetCard() *Card {
@@ -9552,7 +9926,7 @@ type SetCardLabelsRequest struct {
 
 func (x *SetCardLabelsRequest) Reset() {
 	*x = SetCardLabelsRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[105]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[110]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9564,7 +9938,7 @@ func (x *SetCardLabelsRequest) String() string {
 func (*SetCardLabelsRequest) ProtoMessage() {}
 
 func (x *SetCardLabelsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[105]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[110]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9577,7 +9951,7 @@ func (x *SetCardLabelsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetCardLabelsRequest.ProtoReflect.Descriptor instead.
 func (*SetCardLabelsRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{105}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{110}
 }
 
 func (x *SetCardLabelsRequest) GetCardId() string {
@@ -9604,7 +9978,7 @@ type RenameCardRequest struct {
 
 func (x *RenameCardRequest) Reset() {
 	*x = RenameCardRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[106]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[111]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9616,7 +9990,7 @@ func (x *RenameCardRequest) String() string {
 func (*RenameCardRequest) ProtoMessage() {}
 
 func (x *RenameCardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[106]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[111]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9629,7 +10003,7 @@ func (x *RenameCardRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenameCardRequest.ProtoReflect.Descriptor instead.
 func (*RenameCardRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{106}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{111}
 }
 
 func (x *RenameCardRequest) GetCardId() string {
@@ -9656,7 +10030,7 @@ type MergeCardRequest struct {
 
 func (x *MergeCardRequest) Reset() {
 	*x = MergeCardRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[107]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[112]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9668,7 +10042,7 @@ func (x *MergeCardRequest) String() string {
 func (*MergeCardRequest) ProtoMessage() {}
 
 func (x *MergeCardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[107]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[112]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9681,7 +10055,7 @@ func (x *MergeCardRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MergeCardRequest.ProtoReflect.Descriptor instead.
 func (*MergeCardRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{107}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{112}
 }
 
 func (x *MergeCardRequest) GetCardId() string {
@@ -9710,7 +10084,7 @@ type DraftAgentSettings struct {
 
 func (x *DraftAgentSettings) Reset() {
 	*x = DraftAgentSettings{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[108]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[113]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9722,7 +10096,7 @@ func (x *DraftAgentSettings) String() string {
 func (*DraftAgentSettings) ProtoMessage() {}
 
 func (x *DraftAgentSettings) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[108]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[113]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9735,7 +10109,7 @@ func (x *DraftAgentSettings) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DraftAgentSettings.ProtoReflect.Descriptor instead.
 func (*DraftAgentSettings) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{108}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{113}
 }
 
 func (x *DraftAgentSettings) GetProvider() string {
@@ -9778,7 +10152,7 @@ type UpdateCardRequest struct {
 
 func (x *UpdateCardRequest) Reset() {
 	*x = UpdateCardRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[109]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[114]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9790,7 +10164,7 @@ func (x *UpdateCardRequest) String() string {
 func (*UpdateCardRequest) ProtoMessage() {}
 
 func (x *UpdateCardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[109]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[114]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9803,7 +10177,7 @@ func (x *UpdateCardRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateCardRequest.ProtoReflect.Descriptor instead.
 func (*UpdateCardRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{109}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{114}
 }
 
 func (x *UpdateCardRequest) GetCardId() string {
@@ -9844,7 +10218,7 @@ type ArchiveCardRequest struct {
 
 func (x *ArchiveCardRequest) Reset() {
 	*x = ArchiveCardRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[110]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[115]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9856,7 +10230,7 @@ func (x *ArchiveCardRequest) String() string {
 func (*ArchiveCardRequest) ProtoMessage() {}
 
 func (x *ArchiveCardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[110]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[115]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9869,7 +10243,7 @@ func (x *ArchiveCardRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArchiveCardRequest.ProtoReflect.Descriptor instead.
 func (*ArchiveCardRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{110}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{115}
 }
 
 func (x *ArchiveCardRequest) GetCardId() string {
@@ -9896,7 +10270,7 @@ type PinChatRequest struct {
 
 func (x *PinChatRequest) Reset() {
 	*x = PinChatRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[111]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[116]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9908,7 +10282,7 @@ func (x *PinChatRequest) String() string {
 func (*PinChatRequest) ProtoMessage() {}
 
 func (x *PinChatRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[111]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[116]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9921,7 +10295,7 @@ func (x *PinChatRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PinChatRequest.ProtoReflect.Descriptor instead.
 func (*PinChatRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{111}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{116}
 }
 
 func (x *PinChatRequest) GetCardId() string {
@@ -9948,7 +10322,7 @@ type ProjectRef struct {
 
 func (x *ProjectRef) Reset() {
 	*x = ProjectRef{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[112]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[117]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9960,7 +10334,7 @@ func (x *ProjectRef) String() string {
 func (*ProjectRef) ProtoMessage() {}
 
 func (x *ProjectRef) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[112]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[117]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9973,7 +10347,7 @@ func (x *ProjectRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectRef.ProtoReflect.Descriptor instead.
 func (*ProjectRef) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{112}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{117}
 }
 
 func (x *ProjectRef) GetCheckoutId() string {
@@ -9999,7 +10373,7 @@ type ConversationRef struct {
 
 func (x *ConversationRef) Reset() {
 	*x = ConversationRef{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[113]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[118]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10011,7 +10385,7 @@ func (x *ConversationRef) String() string {
 func (*ConversationRef) ProtoMessage() {}
 
 func (x *ConversationRef) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[113]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[118]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10024,7 +10398,7 @@ func (x *ConversationRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConversationRef.ProtoReflect.Descriptor instead.
 func (*ConversationRef) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{113}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{118}
 }
 
 func (x *ConversationRef) GetCardId() string {
@@ -10048,7 +10422,7 @@ type UpdateConversationWorkspaceRequest struct {
 
 func (x *UpdateConversationWorkspaceRequest) Reset() {
 	*x = UpdateConversationWorkspaceRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[114]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[119]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10060,7 +10434,7 @@ func (x *UpdateConversationWorkspaceRequest) String() string {
 func (*UpdateConversationWorkspaceRequest) ProtoMessage() {}
 
 func (x *UpdateConversationWorkspaceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[114]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[119]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10073,7 +10447,7 @@ func (x *UpdateConversationWorkspaceRequest) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use UpdateConversationWorkspaceRequest.ProtoReflect.Descriptor instead.
 func (*UpdateConversationWorkspaceRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{114}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{119}
 }
 
 func (x *UpdateConversationWorkspaceRequest) GetCardId() string {
@@ -10139,7 +10513,7 @@ type WorkspaceSummary struct {
 
 func (x *WorkspaceSummary) Reset() {
 	*x = WorkspaceSummary{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[115]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[120]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10151,7 +10525,7 @@ func (x *WorkspaceSummary) String() string {
 func (*WorkspaceSummary) ProtoMessage() {}
 
 func (x *WorkspaceSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[115]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[120]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10164,7 +10538,7 @@ func (x *WorkspaceSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkspaceSummary.ProtoReflect.Descriptor instead.
 func (*WorkspaceSummary) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{115}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{120}
 }
 
 func (x *WorkspaceSummary) GetMode() string {
@@ -10296,7 +10670,7 @@ type Workspace struct {
 
 func (x *Workspace) Reset() {
 	*x = Workspace{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[116]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[121]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10308,7 +10682,7 @@ func (x *Workspace) String() string {
 func (*Workspace) ProtoMessage() {}
 
 func (x *Workspace) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[116]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[121]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10321,7 +10695,7 @@ func (x *Workspace) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Workspace.ProtoReflect.Descriptor instead.
 func (*Workspace) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{116}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{121}
 }
 
 func (x *Workspace) GetCardId() string {
@@ -10543,7 +10917,7 @@ type WorkspacesResponse struct {
 
 func (x *WorkspacesResponse) Reset() {
 	*x = WorkspacesResponse{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[117]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[122]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10555,7 +10929,7 @@ func (x *WorkspacesResponse) String() string {
 func (*WorkspacesResponse) ProtoMessage() {}
 
 func (x *WorkspacesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[117]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[122]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10568,7 +10942,7 @@ func (x *WorkspacesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkspacesResponse.ProtoReflect.Descriptor instead.
 func (*WorkspacesResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{117}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{122}
 }
 
 func (x *WorkspacesResponse) GetWorkspaces() []*Workspace {
@@ -10602,7 +10976,7 @@ type ChangedFile struct {
 
 func (x *ChangedFile) Reset() {
 	*x = ChangedFile{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[118]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[123]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10614,7 +10988,7 @@ func (x *ChangedFile) String() string {
 func (*ChangedFile) ProtoMessage() {}
 
 func (x *ChangedFile) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[118]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[123]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10627,7 +11001,7 @@ func (x *ChangedFile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChangedFile.ProtoReflect.Descriptor instead.
 func (*ChangedFile) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{118}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{123}
 }
 
 func (x *ChangedFile) GetPath() string {
@@ -10759,7 +11133,7 @@ type WorkspaceCommit struct {
 
 func (x *WorkspaceCommit) Reset() {
 	*x = WorkspaceCommit{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[119]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[124]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10771,7 +11145,7 @@ func (x *WorkspaceCommit) String() string {
 func (*WorkspaceCommit) ProtoMessage() {}
 
 func (x *WorkspaceCommit) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[119]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[124]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10784,7 +11158,7 @@ func (x *WorkspaceCommit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkspaceCommit.ProtoReflect.Descriptor instead.
 func (*WorkspaceCommit) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{119}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{124}
 }
 
 func (x *WorkspaceCommit) GetSha() string {
@@ -10877,7 +11251,7 @@ type Changeset struct {
 
 func (x *Changeset) Reset() {
 	*x = Changeset{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[120]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[125]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10889,7 +11263,7 @@ func (x *Changeset) String() string {
 func (*Changeset) ProtoMessage() {}
 
 func (x *Changeset) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[120]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[125]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10902,7 +11276,7 @@ func (x *Changeset) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Changeset.ProtoReflect.Descriptor instead.
 func (*Changeset) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{120}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{125}
 }
 
 func (x *Changeset) GetCardId() string {
@@ -11049,7 +11423,7 @@ type GetChangesetRequest struct {
 
 func (x *GetChangesetRequest) Reset() {
 	*x = GetChangesetRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[121]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[126]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11061,7 +11435,7 @@ func (x *GetChangesetRequest) String() string {
 func (*GetChangesetRequest) ProtoMessage() {}
 
 func (x *GetChangesetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[121]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[126]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11074,7 +11448,7 @@ func (x *GetChangesetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetChangesetRequest.ProtoReflect.Descriptor instead.
 func (*GetChangesetRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{121}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{126}
 }
 
 func (x *GetChangesetRequest) GetCheckoutId() string {
@@ -11117,7 +11491,7 @@ type GetDiffRequest struct {
 
 func (x *GetDiffRequest) Reset() {
 	*x = GetDiffRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[122]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[127]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11129,7 +11503,7 @@ func (x *GetDiffRequest) String() string {
 func (*GetDiffRequest) ProtoMessage() {}
 
 func (x *GetDiffRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[122]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[127]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11142,7 +11516,7 @@ func (x *GetDiffRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDiffRequest.ProtoReflect.Descriptor instead.
 func (*GetDiffRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{122}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{127}
 }
 
 func (x *GetDiffRequest) GetCheckoutId() string {
@@ -11227,7 +11601,7 @@ type FileDiff struct {
 
 func (x *FileDiff) Reset() {
 	*x = FileDiff{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[123]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[128]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11239,7 +11613,7 @@ func (x *FileDiff) String() string {
 func (*FileDiff) ProtoMessage() {}
 
 func (x *FileDiff) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[123]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[128]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11252,7 +11626,7 @@ func (x *FileDiff) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileDiff.ProtoReflect.Descriptor instead.
 func (*FileDiff) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{123}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{128}
 }
 
 func (x *FileDiff) GetCardId() string {
@@ -11351,7 +11725,7 @@ type ChangeComment struct {
 
 func (x *ChangeComment) Reset() {
 	*x = ChangeComment{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[124]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[129]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11363,7 +11737,7 @@ func (x *ChangeComment) String() string {
 func (*ChangeComment) ProtoMessage() {}
 
 func (x *ChangeComment) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[124]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[129]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11376,7 +11750,7 @@ func (x *ChangeComment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChangeComment.ProtoReflect.Descriptor instead.
 func (*ChangeComment) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{124}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{129}
 }
 
 func (x *ChangeComment) GetId() string {
@@ -11472,7 +11846,7 @@ type AddChangeCommentRequest struct {
 
 func (x *AddChangeCommentRequest) Reset() {
 	*x = AddChangeCommentRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[125]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[130]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11484,7 +11858,7 @@ func (x *AddChangeCommentRequest) String() string {
 func (*AddChangeCommentRequest) ProtoMessage() {}
 
 func (x *AddChangeCommentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[125]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[130]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11497,7 +11871,7 @@ func (x *AddChangeCommentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddChangeCommentRequest.ProtoReflect.Descriptor instead.
 func (*AddChangeCommentRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{125}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{130}
 }
 
 func (x *AddChangeCommentRequest) GetCardId() string {
@@ -11566,7 +11940,7 @@ type ListChangeCommentsRequest struct {
 
 func (x *ListChangeCommentsRequest) Reset() {
 	*x = ListChangeCommentsRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[126]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[131]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11578,7 +11952,7 @@ func (x *ListChangeCommentsRequest) String() string {
 func (*ListChangeCommentsRequest) ProtoMessage() {}
 
 func (x *ListChangeCommentsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[126]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[131]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11591,7 +11965,7 @@ func (x *ListChangeCommentsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListChangeCommentsRequest.ProtoReflect.Descriptor instead.
 func (*ListChangeCommentsRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{126}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{131}
 }
 
 func (x *ListChangeCommentsRequest) GetCardId() string {
@@ -11617,7 +11991,7 @@ type ChangeCommentsResponse struct {
 
 func (x *ChangeCommentsResponse) Reset() {
 	*x = ChangeCommentsResponse{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[127]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[132]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11629,7 +12003,7 @@ func (x *ChangeCommentsResponse) String() string {
 func (*ChangeCommentsResponse) ProtoMessage() {}
 
 func (x *ChangeCommentsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[127]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[132]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11642,7 +12016,7 @@ func (x *ChangeCommentsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChangeCommentsResponse.ProtoReflect.Descriptor instead.
 func (*ChangeCommentsResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{127}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{132}
 }
 
 func (x *ChangeCommentsResponse) GetComments() []*ChangeComment {
@@ -11670,7 +12044,7 @@ type SCMCapabilities struct {
 
 func (x *SCMCapabilities) Reset() {
 	*x = SCMCapabilities{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[128]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[133]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11682,7 +12056,7 @@ func (x *SCMCapabilities) String() string {
 func (*SCMCapabilities) ProtoMessage() {}
 
 func (x *SCMCapabilities) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[128]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[133]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11695,7 +12069,7 @@ func (x *SCMCapabilities) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SCMCapabilities.ProtoReflect.Descriptor instead.
 func (*SCMCapabilities) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{128}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{133}
 }
 
 func (x *SCMCapabilities) GetProvider() string {
@@ -11787,7 +12161,7 @@ type PullRequestSummary struct {
 
 func (x *PullRequestSummary) Reset() {
 	*x = PullRequestSummary{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[129]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[134]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11799,7 +12173,7 @@ func (x *PullRequestSummary) String() string {
 func (*PullRequestSummary) ProtoMessage() {}
 
 func (x *PullRequestSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[129]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[134]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11812,7 +12186,7 @@ func (x *PullRequestSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PullRequestSummary.ProtoReflect.Descriptor instead.
 func (*PullRequestSummary) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{129}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{134}
 }
 
 func (x *PullRequestSummary) GetProvider() string {
@@ -11902,7 +12276,7 @@ type GitConflict struct {
 
 func (x *GitConflict) Reset() {
 	*x = GitConflict{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[130]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[135]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11914,7 +12288,7 @@ func (x *GitConflict) String() string {
 func (*GitConflict) ProtoMessage() {}
 
 func (x *GitConflict) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[130]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[135]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11927,7 +12301,7 @@ func (x *GitConflict) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GitConflict.ProtoReflect.Descriptor instead.
 func (*GitConflict) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{130}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{135}
 }
 
 func (x *GitConflict) GetPath() string {
@@ -11957,7 +12331,7 @@ type ValidationResult struct {
 
 func (x *ValidationResult) Reset() {
 	*x = ValidationResult{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[131]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[136]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11969,7 +12343,7 @@ func (x *ValidationResult) String() string {
 func (*ValidationResult) ProtoMessage() {}
 
 func (x *ValidationResult) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[131]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[136]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11982,7 +12356,7 @@ func (x *ValidationResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidationResult.ProtoReflect.Descriptor instead.
 func (*ValidationResult) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{131}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{136}
 }
 
 func (x *ValidationResult) GetName() string {
@@ -12047,7 +12421,7 @@ type GitOperation struct {
 
 func (x *GitOperation) Reset() {
 	*x = GitOperation{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[132]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[137]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12059,7 +12433,7 @@ func (x *GitOperation) String() string {
 func (*GitOperation) ProtoMessage() {}
 
 func (x *GitOperation) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[132]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[137]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12072,7 +12446,7 @@ func (x *GitOperation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GitOperation.ProtoReflect.Descriptor instead.
 func (*GitOperation) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{132}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{137}
 }
 
 func (x *GitOperation) GetId() string {
@@ -12222,7 +12596,7 @@ type StartGitOperationRequest struct {
 
 func (x *StartGitOperationRequest) Reset() {
 	*x = StartGitOperationRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[133]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[138]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12234,7 +12608,7 @@ func (x *StartGitOperationRequest) String() string {
 func (*StartGitOperationRequest) ProtoMessage() {}
 
 func (x *StartGitOperationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[133]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[138]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12247,7 +12621,7 @@ func (x *StartGitOperationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartGitOperationRequest.ProtoReflect.Descriptor instead.
 func (*StartGitOperationRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{133}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{138}
 }
 
 func (x *StartGitOperationRequest) GetCheckoutId() string {
@@ -12301,7 +12675,7 @@ type GitOperationRef struct {
 
 func (x *GitOperationRef) Reset() {
 	*x = GitOperationRef{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[134]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[139]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12313,7 +12687,7 @@ func (x *GitOperationRef) String() string {
 func (*GitOperationRef) ProtoMessage() {}
 
 func (x *GitOperationRef) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[134]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[139]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12326,7 +12700,7 @@ func (x *GitOperationRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GitOperationRef.ProtoReflect.Descriptor instead.
 func (*GitOperationRef) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{134}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{139}
 }
 
 func (x *GitOperationRef) GetOperationId() string {
@@ -12347,7 +12721,7 @@ type WatchGitOperationRequest struct {
 
 func (x *WatchGitOperationRequest) Reset() {
 	*x = WatchGitOperationRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[135]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[140]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12359,7 +12733,7 @@ func (x *WatchGitOperationRequest) String() string {
 func (*WatchGitOperationRequest) ProtoMessage() {}
 
 func (x *WatchGitOperationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[135]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[140]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12372,7 +12746,7 @@ func (x *WatchGitOperationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchGitOperationRequest.ProtoReflect.Descriptor instead.
 func (*WatchGitOperationRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{135}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{140}
 }
 
 func (x *WatchGitOperationRequest) GetOperationId() string {
@@ -12407,7 +12781,7 @@ type GitOperationLogEntry struct {
 
 func (x *GitOperationLogEntry) Reset() {
 	*x = GitOperationLogEntry{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[136]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[141]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12419,7 +12793,7 @@ func (x *GitOperationLogEntry) String() string {
 func (*GitOperationLogEntry) ProtoMessage() {}
 
 func (x *GitOperationLogEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[136]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[141]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12432,7 +12806,7 @@ func (x *GitOperationLogEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GitOperationLogEntry.ProtoReflect.Descriptor instead.
 func (*GitOperationLogEntry) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{136}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{141}
 }
 
 func (x *GitOperationLogEntry) GetSequence() uint64 {
@@ -12467,7 +12841,7 @@ type GitOperationFrame struct {
 
 func (x *GitOperationFrame) Reset() {
 	*x = GitOperationFrame{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[137]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[142]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12479,7 +12853,7 @@ func (x *GitOperationFrame) String() string {
 func (*GitOperationFrame) ProtoMessage() {}
 
 func (x *GitOperationFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[137]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[142]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12492,7 +12866,7 @@ func (x *GitOperationFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GitOperationFrame.ProtoReflect.Descriptor instead.
 func (*GitOperationFrame) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{137}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{142}
 }
 
 func (x *GitOperationFrame) GetOperation() *GitOperation {
@@ -12529,7 +12903,7 @@ type ListFilesRequest struct {
 
 func (x *ListFilesRequest) Reset() {
 	*x = ListFilesRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[138]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[143]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12541,7 +12915,7 @@ func (x *ListFilesRequest) String() string {
 func (*ListFilesRequest) ProtoMessage() {}
 
 func (x *ListFilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[138]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[143]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12554,7 +12928,7 @@ func (x *ListFilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFilesRequest.ProtoReflect.Descriptor instead.
 func (*ListFilesRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{138}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{143}
 }
 
 func (x *ListFilesRequest) GetCheckoutId() string {
@@ -12607,7 +12981,7 @@ type FileEntry struct {
 
 func (x *FileEntry) Reset() {
 	*x = FileEntry{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[139]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[144]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12619,7 +12993,7 @@ func (x *FileEntry) String() string {
 func (*FileEntry) ProtoMessage() {}
 
 func (x *FileEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[139]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[144]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12632,7 +13006,7 @@ func (x *FileEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileEntry.ProtoReflect.Descriptor instead.
 func (*FileEntry) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{139}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{144}
 }
 
 func (x *FileEntry) GetName() string {
@@ -12694,7 +13068,7 @@ type FileList struct {
 
 func (x *FileList) Reset() {
 	*x = FileList{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[140]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[145]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12706,7 +13080,7 @@ func (x *FileList) String() string {
 func (*FileList) ProtoMessage() {}
 
 func (x *FileList) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[140]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[145]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12719,7 +13093,7 @@ func (x *FileList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileList.ProtoReflect.Descriptor instead.
 func (*FileList) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{140}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{145}
 }
 
 func (x *FileList) GetPath() string {
@@ -12748,7 +13122,7 @@ type ReadFileRequest struct {
 
 func (x *ReadFileRequest) Reset() {
 	*x = ReadFileRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[141]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[146]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12760,7 +13134,7 @@ func (x *ReadFileRequest) String() string {
 func (*ReadFileRequest) ProtoMessage() {}
 
 func (x *ReadFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[141]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[146]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12773,7 +13147,7 @@ func (x *ReadFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadFileRequest.ProtoReflect.Descriptor instead.
 func (*ReadFileRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{141}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{146}
 }
 
 func (x *ReadFileRequest) GetCheckoutId() string {
@@ -12821,7 +13195,7 @@ type FileDocument struct {
 
 func (x *FileDocument) Reset() {
 	*x = FileDocument{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[142]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[147]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12833,7 +13207,7 @@ func (x *FileDocument) String() string {
 func (*FileDocument) ProtoMessage() {}
 
 func (x *FileDocument) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[142]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[147]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12846,7 +13220,7 @@ func (x *FileDocument) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileDocument.ProtoReflect.Descriptor instead.
 func (*FileDocument) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{142}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{147}
 }
 
 func (x *FileDocument) GetPath() string {
@@ -12934,7 +13308,7 @@ type Terminal struct {
 
 func (x *Terminal) Reset() {
 	*x = Terminal{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[143]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[148]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12946,7 +13320,7 @@ func (x *Terminal) String() string {
 func (*Terminal) ProtoMessage() {}
 
 func (x *Terminal) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[143]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[148]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12959,7 +13333,7 @@ func (x *Terminal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Terminal.ProtoReflect.Descriptor instead.
 func (*Terminal) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{143}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{148}
 }
 
 func (x *Terminal) GetId() string {
@@ -13069,7 +13443,7 @@ type TerminalRef struct {
 
 func (x *TerminalRef) Reset() {
 	*x = TerminalRef{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[144]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[149]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13081,7 +13455,7 @@ func (x *TerminalRef) String() string {
 func (*TerminalRef) ProtoMessage() {}
 
 func (x *TerminalRef) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[144]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[149]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13094,7 +13468,7 @@ func (x *TerminalRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalRef.ProtoReflect.Descriptor instead.
 func (*TerminalRef) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{144}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{149}
 }
 
 func (x *TerminalRef) GetTerminalId() string {
@@ -13115,7 +13489,7 @@ type ListTerminalsRequest struct {
 
 func (x *ListTerminalsRequest) Reset() {
 	*x = ListTerminalsRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[145]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[150]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13127,7 +13501,7 @@ func (x *ListTerminalsRequest) String() string {
 func (*ListTerminalsRequest) ProtoMessage() {}
 
 func (x *ListTerminalsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[145]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[150]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13140,7 +13514,7 @@ func (x *ListTerminalsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTerminalsRequest.ProtoReflect.Descriptor instead.
 func (*ListTerminalsRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{145}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{150}
 }
 
 func (x *ListTerminalsRequest) GetCheckoutId() string {
@@ -13173,7 +13547,7 @@ type TerminalsResponse struct {
 
 func (x *TerminalsResponse) Reset() {
 	*x = TerminalsResponse{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[146]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[151]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13185,7 +13559,7 @@ func (x *TerminalsResponse) String() string {
 func (*TerminalsResponse) ProtoMessage() {}
 
 func (x *TerminalsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[146]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[151]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13198,7 +13572,7 @@ func (x *TerminalsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalsResponse.ProtoReflect.Descriptor instead.
 func (*TerminalsResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{146}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{151}
 }
 
 func (x *TerminalsResponse) GetTerminals() []*Terminal {
@@ -13227,7 +13601,7 @@ type CreateTerminalRequest struct {
 
 func (x *CreateTerminalRequest) Reset() {
 	*x = CreateTerminalRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[147]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[152]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13239,7 +13613,7 @@ func (x *CreateTerminalRequest) String() string {
 func (*CreateTerminalRequest) ProtoMessage() {}
 
 func (x *CreateTerminalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[147]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[152]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13252,7 +13626,7 @@ func (x *CreateTerminalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTerminalRequest.ProtoReflect.Descriptor instead.
 func (*CreateTerminalRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{147}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{152}
 }
 
 func (x *CreateTerminalRequest) GetCheckoutId() string {
@@ -13329,7 +13703,7 @@ type WatchTerminalRequest struct {
 
 func (x *WatchTerminalRequest) Reset() {
 	*x = WatchTerminalRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[148]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[153]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13341,7 +13715,7 @@ func (x *WatchTerminalRequest) String() string {
 func (*WatchTerminalRequest) ProtoMessage() {}
 
 func (x *WatchTerminalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[148]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[153]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13354,7 +13728,7 @@ func (x *WatchTerminalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchTerminalRequest.ProtoReflect.Descriptor instead.
 func (*WatchTerminalRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{148}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{153}
 }
 
 func (x *WatchTerminalRequest) GetTerminalId() string {
@@ -13393,7 +13767,7 @@ type TerminalFrame struct {
 
 func (x *TerminalFrame) Reset() {
 	*x = TerminalFrame{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[149]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[154]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13405,7 +13779,7 @@ func (x *TerminalFrame) String() string {
 func (*TerminalFrame) ProtoMessage() {}
 
 func (x *TerminalFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[149]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[154]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13418,7 +13792,7 @@ func (x *TerminalFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalFrame.ProtoReflect.Descriptor instead.
 func (*TerminalFrame) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{149}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{154}
 }
 
 func (x *TerminalFrame) GetTerminal() *Terminal {
@@ -13466,7 +13840,7 @@ type TerminalInputRequest struct {
 
 func (x *TerminalInputRequest) Reset() {
 	*x = TerminalInputRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[150]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[155]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13478,7 +13852,7 @@ func (x *TerminalInputRequest) String() string {
 func (*TerminalInputRequest) ProtoMessage() {}
 
 func (x *TerminalInputRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[150]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[155]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13491,7 +13865,7 @@ func (x *TerminalInputRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalInputRequest.ProtoReflect.Descriptor instead.
 func (*TerminalInputRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{150}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{155}
 }
 
 func (x *TerminalInputRequest) GetTerminalId() string {
@@ -13519,7 +13893,7 @@ type ResizeTerminalRequest struct {
 
 func (x *ResizeTerminalRequest) Reset() {
 	*x = ResizeTerminalRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[151]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[156]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13531,7 +13905,7 @@ func (x *ResizeTerminalRequest) String() string {
 func (*ResizeTerminalRequest) ProtoMessage() {}
 
 func (x *ResizeTerminalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[151]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[156]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13544,7 +13918,7 @@ func (x *ResizeTerminalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResizeTerminalRequest.ProtoReflect.Descriptor instead.
 func (*ResizeTerminalRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{151}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{156}
 }
 
 func (x *ResizeTerminalRequest) GetTerminalId() string {
@@ -13578,7 +13952,7 @@ type RenameTerminalRequest struct {
 
 func (x *RenameTerminalRequest) Reset() {
 	*x = RenameTerminalRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[152]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[157]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13590,7 +13964,7 @@ func (x *RenameTerminalRequest) String() string {
 func (*RenameTerminalRequest) ProtoMessage() {}
 
 func (x *RenameTerminalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[152]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[157]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13603,7 +13977,7 @@ func (x *RenameTerminalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenameTerminalRequest.ProtoReflect.Descriptor instead.
 func (*RenameTerminalRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{152}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{157}
 }
 
 func (x *RenameTerminalRequest) GetTerminalId() string {
@@ -13653,7 +14027,7 @@ type Execution struct {
 
 func (x *Execution) Reset() {
 	*x = Execution{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[153]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[158]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13665,7 +14039,7 @@ func (x *Execution) String() string {
 func (*Execution) ProtoMessage() {}
 
 func (x *Execution) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[153]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[158]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13678,7 +14052,7 @@ func (x *Execution) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Execution.ProtoReflect.Descriptor instead.
 func (*Execution) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{153}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{158}
 }
 
 func (x *Execution) GetId() string {
@@ -13865,7 +14239,7 @@ type ExecutionRef struct {
 
 func (x *ExecutionRef) Reset() {
 	*x = ExecutionRef{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[154]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[159]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13877,7 +14251,7 @@ func (x *ExecutionRef) String() string {
 func (*ExecutionRef) ProtoMessage() {}
 
 func (x *ExecutionRef) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[154]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[159]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13890,7 +14264,7 @@ func (x *ExecutionRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecutionRef.ProtoReflect.Descriptor instead.
 func (*ExecutionRef) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{154}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{159}
 }
 
 func (x *ExecutionRef) GetExecutionId() string {
@@ -13912,7 +14286,7 @@ type ListExecutionsRequest struct {
 
 func (x *ListExecutionsRequest) Reset() {
 	*x = ListExecutionsRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[155]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[160]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13924,7 +14298,7 @@ func (x *ListExecutionsRequest) String() string {
 func (*ListExecutionsRequest) ProtoMessage() {}
 
 func (x *ListExecutionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[155]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[160]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13937,7 +14311,7 @@ func (x *ListExecutionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListExecutionsRequest.ProtoReflect.Descriptor instead.
 func (*ListExecutionsRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{155}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{160}
 }
 
 func (x *ListExecutionsRequest) GetCheckoutId() string {
@@ -13977,7 +14351,7 @@ type ExecutionsResponse struct {
 
 func (x *ExecutionsResponse) Reset() {
 	*x = ExecutionsResponse{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[156]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[161]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13989,7 +14363,7 @@ func (x *ExecutionsResponse) String() string {
 func (*ExecutionsResponse) ProtoMessage() {}
 
 func (x *ExecutionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[156]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[161]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14002,7 +14376,7 @@ func (x *ExecutionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecutionsResponse.ProtoReflect.Descriptor instead.
 func (*ExecutionsResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{156}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{161}
 }
 
 func (x *ExecutionsResponse) GetExecutions() []*Execution {
@@ -14035,7 +14409,7 @@ type StartExecutionRequest struct {
 
 func (x *StartExecutionRequest) Reset() {
 	*x = StartExecutionRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[157]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[162]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14047,7 +14421,7 @@ func (x *StartExecutionRequest) String() string {
 func (*StartExecutionRequest) ProtoMessage() {}
 
 func (x *StartExecutionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[157]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[162]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14060,7 +14434,7 @@ func (x *StartExecutionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartExecutionRequest.ProtoReflect.Descriptor instead.
 func (*StartExecutionRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{157}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{162}
 }
 
 func (x *StartExecutionRequest) GetCheckoutId() string {
@@ -14179,7 +14553,7 @@ type WatchExecutionRequest struct {
 
 func (x *WatchExecutionRequest) Reset() {
 	*x = WatchExecutionRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[158]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[163]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14191,7 +14565,7 @@ func (x *WatchExecutionRequest) String() string {
 func (*WatchExecutionRequest) ProtoMessage() {}
 
 func (x *WatchExecutionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[158]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[163]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14204,7 +14578,7 @@ func (x *WatchExecutionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchExecutionRequest.ProtoReflect.Descriptor instead.
 func (*WatchExecutionRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{158}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{163}
 }
 
 func (x *WatchExecutionRequest) GetExecutionId() string {
@@ -14243,7 +14617,7 @@ type ExecutionEvent struct {
 
 func (x *ExecutionEvent) Reset() {
 	*x = ExecutionEvent{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[159]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[164]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14255,7 +14629,7 @@ func (x *ExecutionEvent) String() string {
 func (*ExecutionEvent) ProtoMessage() {}
 
 func (x *ExecutionEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[159]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[164]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14268,7 +14642,7 @@ func (x *ExecutionEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecutionEvent.ProtoReflect.Descriptor instead.
 func (*ExecutionEvent) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{159}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{164}
 }
 
 func (x *ExecutionEvent) GetExecution() *Execution {
@@ -14331,7 +14705,7 @@ type ExecutionInputRequest struct {
 
 func (x *ExecutionInputRequest) Reset() {
 	*x = ExecutionInputRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[160]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[165]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14343,7 +14717,7 @@ func (x *ExecutionInputRequest) String() string {
 func (*ExecutionInputRequest) ProtoMessage() {}
 
 func (x *ExecutionInputRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[160]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[165]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14356,7 +14730,7 @@ func (x *ExecutionInputRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecutionInputRequest.ProtoReflect.Descriptor instead.
 func (*ExecutionInputRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{160}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{165}
 }
 
 func (x *ExecutionInputRequest) GetExecutionId() string {
@@ -14390,7 +14764,7 @@ type SignalExecutionRequest struct {
 
 func (x *SignalExecutionRequest) Reset() {
 	*x = SignalExecutionRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[161]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[166]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14402,7 +14776,7 @@ func (x *SignalExecutionRequest) String() string {
 func (*SignalExecutionRequest) ProtoMessage() {}
 
 func (x *SignalExecutionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[161]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[166]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14415,7 +14789,7 @@ func (x *SignalExecutionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignalExecutionRequest.ProtoReflect.Descriptor instead.
 func (*SignalExecutionRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{161}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{166}
 }
 
 func (x *SignalExecutionRequest) GetExecutionId() string {
@@ -14443,7 +14817,7 @@ type ResizeExecutionRequest struct {
 
 func (x *ResizeExecutionRequest) Reset() {
 	*x = ResizeExecutionRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[162]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[167]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14455,7 +14829,7 @@ func (x *ResizeExecutionRequest) String() string {
 func (*ResizeExecutionRequest) ProtoMessage() {}
 
 func (x *ResizeExecutionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[162]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[167]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14468,7 +14842,7 @@ func (x *ResizeExecutionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResizeExecutionRequest.ProtoReflect.Descriptor instead.
 func (*ResizeExecutionRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{162}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{167}
 }
 
 func (x *ResizeExecutionRequest) GetExecutionId() string {
@@ -14533,7 +14907,7 @@ type RemoteDesktopCapabilities struct {
 
 func (x *RemoteDesktopCapabilities) Reset() {
 	*x = RemoteDesktopCapabilities{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[163]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[168]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14545,7 +14919,7 @@ func (x *RemoteDesktopCapabilities) String() string {
 func (*RemoteDesktopCapabilities) ProtoMessage() {}
 
 func (x *RemoteDesktopCapabilities) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[163]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[168]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14558,7 +14932,7 @@ func (x *RemoteDesktopCapabilities) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopCapabilities.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopCapabilities) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{163}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{168}
 }
 
 func (x *RemoteDesktopCapabilities) GetPlatform() string {
@@ -14786,7 +15160,7 @@ type RemoteDesktopDisplayMode struct {
 
 func (x *RemoteDesktopDisplayMode) Reset() {
 	*x = RemoteDesktopDisplayMode{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[164]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[169]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14798,7 +15172,7 @@ func (x *RemoteDesktopDisplayMode) String() string {
 func (*RemoteDesktopDisplayMode) ProtoMessage() {}
 
 func (x *RemoteDesktopDisplayMode) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[164]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[169]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14811,7 +15185,7 @@ func (x *RemoteDesktopDisplayMode) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopDisplayMode.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopDisplayMode) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{164}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{169}
 }
 
 func (x *RemoteDesktopDisplayMode) GetId() string {
@@ -14871,7 +15245,7 @@ type RemoteDesktopDisplayModes struct {
 
 func (x *RemoteDesktopDisplayModes) Reset() {
 	*x = RemoteDesktopDisplayModes{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[165]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[170]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14883,7 +15257,7 @@ func (x *RemoteDesktopDisplayModes) String() string {
 func (*RemoteDesktopDisplayModes) ProtoMessage() {}
 
 func (x *RemoteDesktopDisplayModes) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[165]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[170]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14896,7 +15270,7 @@ func (x *RemoteDesktopDisplayModes) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopDisplayModes.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopDisplayModes) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{165}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{170}
 }
 
 func (x *RemoteDesktopDisplayModes) GetDisplayId() string {
@@ -14954,7 +15328,7 @@ type SetRemoteDesktopDisplayModeRequest struct {
 
 func (x *SetRemoteDesktopDisplayModeRequest) Reset() {
 	*x = SetRemoteDesktopDisplayModeRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[166]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[171]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14966,7 +15340,7 @@ func (x *SetRemoteDesktopDisplayModeRequest) String() string {
 func (*SetRemoteDesktopDisplayModeRequest) ProtoMessage() {}
 
 func (x *SetRemoteDesktopDisplayModeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[166]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[171]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14979,7 +15353,7 @@ func (x *SetRemoteDesktopDisplayModeRequest) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use SetRemoteDesktopDisplayModeRequest.ProtoReflect.Descriptor instead.
 func (*SetRemoteDesktopDisplayModeRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{166}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{171}
 }
 
 func (x *SetRemoteDesktopDisplayModeRequest) GetSessionId() string {
@@ -15027,7 +15401,7 @@ type RemoteDesktopVirtualDisplay struct {
 
 func (x *RemoteDesktopVirtualDisplay) Reset() {
 	*x = RemoteDesktopVirtualDisplay{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[167]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[172]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15039,7 +15413,7 @@ func (x *RemoteDesktopVirtualDisplay) String() string {
 func (*RemoteDesktopVirtualDisplay) ProtoMessage() {}
 
 func (x *RemoteDesktopVirtualDisplay) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[167]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[172]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15052,7 +15426,7 @@ func (x *RemoteDesktopVirtualDisplay) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopVirtualDisplay.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopVirtualDisplay) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{167}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{172}
 }
 
 func (x *RemoteDesktopVirtualDisplay) GetActive() bool {
@@ -15124,7 +15498,7 @@ type SetRemoteDesktopVirtualDisplayRequest struct {
 
 func (x *SetRemoteDesktopVirtualDisplayRequest) Reset() {
 	*x = SetRemoteDesktopVirtualDisplayRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[168]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[173]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15136,7 +15510,7 @@ func (x *SetRemoteDesktopVirtualDisplayRequest) String() string {
 func (*SetRemoteDesktopVirtualDisplayRequest) ProtoMessage() {}
 
 func (x *SetRemoteDesktopVirtualDisplayRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[168]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[173]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15149,7 +15523,7 @@ func (x *SetRemoteDesktopVirtualDisplayRequest) ProtoReflect() protoreflect.Mess
 
 // Deprecated: Use SetRemoteDesktopVirtualDisplayRequest.ProtoReflect.Descriptor instead.
 func (*SetRemoteDesktopVirtualDisplayRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{168}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{173}
 }
 
 func (x *SetRemoteDesktopVirtualDisplayRequest) GetSessionId() string {
@@ -15199,7 +15573,7 @@ type ConfirmRemoteDesktopVirtualDisplayRequest struct {
 
 func (x *ConfirmRemoteDesktopVirtualDisplayRequest) Reset() {
 	*x = ConfirmRemoteDesktopVirtualDisplayRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[169]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[174]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15211,7 +15585,7 @@ func (x *ConfirmRemoteDesktopVirtualDisplayRequest) String() string {
 func (*ConfirmRemoteDesktopVirtualDisplayRequest) ProtoMessage() {}
 
 func (x *ConfirmRemoteDesktopVirtualDisplayRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[169]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[174]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15224,7 +15598,7 @@ func (x *ConfirmRemoteDesktopVirtualDisplayRequest) ProtoReflect() protoreflect.
 
 // Deprecated: Use ConfirmRemoteDesktopVirtualDisplayRequest.ProtoReflect.Descriptor instead.
 func (*ConfirmRemoteDesktopVirtualDisplayRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{169}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{174}
 }
 
 func (x *ConfirmRemoteDesktopVirtualDisplayRequest) GetSessionId() string {
@@ -15261,7 +15635,7 @@ type RemoteDesktopCodecMode struct {
 
 func (x *RemoteDesktopCodecMode) Reset() {
 	*x = RemoteDesktopCodecMode{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[170]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[175]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15273,7 +15647,7 @@ func (x *RemoteDesktopCodecMode) String() string {
 func (*RemoteDesktopCodecMode) ProtoMessage() {}
 
 func (x *RemoteDesktopCodecMode) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[170]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[175]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15286,7 +15660,7 @@ func (x *RemoteDesktopCodecMode) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopCodecMode.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopCodecMode) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{170}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{175}
 }
 
 func (x *RemoteDesktopCodecMode) GetCodec() string {
@@ -15334,7 +15708,7 @@ type ProbeRemoteDesktopPermissionsRequest struct {
 
 func (x *ProbeRemoteDesktopPermissionsRequest) Reset() {
 	*x = ProbeRemoteDesktopPermissionsRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[171]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[176]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15346,7 +15720,7 @@ func (x *ProbeRemoteDesktopPermissionsRequest) String() string {
 func (*ProbeRemoteDesktopPermissionsRequest) ProtoMessage() {}
 
 func (x *ProbeRemoteDesktopPermissionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[171]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[176]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15359,7 +15733,7 @@ func (x *ProbeRemoteDesktopPermissionsRequest) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use ProbeRemoteDesktopPermissionsRequest.ProtoReflect.Descriptor instead.
 func (*ProbeRemoteDesktopPermissionsRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{171}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{176}
 }
 
 func (x *ProbeRemoteDesktopPermissionsRequest) GetRequestControl() bool {
@@ -15384,7 +15758,7 @@ type RemoteDesktopPermissionProbe struct {
 
 func (x *RemoteDesktopPermissionProbe) Reset() {
 	*x = RemoteDesktopPermissionProbe{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[172]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[177]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15396,7 +15770,7 @@ func (x *RemoteDesktopPermissionProbe) String() string {
 func (*RemoteDesktopPermissionProbe) ProtoMessage() {}
 
 func (x *RemoteDesktopPermissionProbe) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[172]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[177]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15409,7 +15783,7 @@ func (x *RemoteDesktopPermissionProbe) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopPermissionProbe.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopPermissionProbe) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{172}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{177}
 }
 
 func (x *RemoteDesktopPermissionProbe) GetPlatform() string {
@@ -15481,7 +15855,7 @@ type RemoteDesktopDisplay struct {
 
 func (x *RemoteDesktopDisplay) Reset() {
 	*x = RemoteDesktopDisplay{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[173]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[178]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15493,7 +15867,7 @@ func (x *RemoteDesktopDisplay) String() string {
 func (*RemoteDesktopDisplay) ProtoMessage() {}
 
 func (x *RemoteDesktopDisplay) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[173]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[178]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15506,7 +15880,7 @@ func (x *RemoteDesktopDisplay) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopDisplay.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopDisplay) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{173}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{178}
 }
 
 func (x *RemoteDesktopDisplay) GetId() string {
@@ -15603,7 +15977,7 @@ type RemoteDesktopSessionDescription struct {
 
 func (x *RemoteDesktopSessionDescription) Reset() {
 	*x = RemoteDesktopSessionDescription{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[174]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[179]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15615,7 +15989,7 @@ func (x *RemoteDesktopSessionDescription) String() string {
 func (*RemoteDesktopSessionDescription) ProtoMessage() {}
 
 func (x *RemoteDesktopSessionDescription) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[174]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[179]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15628,7 +16002,7 @@ func (x *RemoteDesktopSessionDescription) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopSessionDescription.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopSessionDescription) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{174}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{179}
 }
 
 func (x *RemoteDesktopSessionDescription) GetType() string {
@@ -15657,7 +16031,7 @@ type RemoteDesktopICECandidate struct {
 
 func (x *RemoteDesktopICECandidate) Reset() {
 	*x = RemoteDesktopICECandidate{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[175]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[180]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15669,7 +16043,7 @@ func (x *RemoteDesktopICECandidate) String() string {
 func (*RemoteDesktopICECandidate) ProtoMessage() {}
 
 func (x *RemoteDesktopICECandidate) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[175]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[180]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15682,7 +16056,7 @@ func (x *RemoteDesktopICECandidate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopICECandidate.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopICECandidate) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{175}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{180}
 }
 
 func (x *RemoteDesktopICECandidate) GetCandidate() string {
@@ -15740,7 +16114,7 @@ type StartRemoteDesktopRequest struct {
 
 func (x *StartRemoteDesktopRequest) Reset() {
 	*x = StartRemoteDesktopRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[176]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[181]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15752,7 +16126,7 @@ func (x *StartRemoteDesktopRequest) String() string {
 func (*StartRemoteDesktopRequest) ProtoMessage() {}
 
 func (x *StartRemoteDesktopRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[176]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[181]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15765,7 +16139,7 @@ func (x *StartRemoteDesktopRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartRemoteDesktopRequest.ProtoReflect.Descriptor instead.
 func (*StartRemoteDesktopRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{176}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{181}
 }
 
 func (x *StartRemoteDesktopRequest) GetClientNonce() string {
@@ -15899,7 +16273,7 @@ type RemoteDesktopSessions struct {
 
 func (x *RemoteDesktopSessions) Reset() {
 	*x = RemoteDesktopSessions{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[177]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[182]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15911,7 +16285,7 @@ func (x *RemoteDesktopSessions) String() string {
 func (*RemoteDesktopSessions) ProtoMessage() {}
 
 func (x *RemoteDesktopSessions) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[177]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[182]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15924,7 +16298,7 @@ func (x *RemoteDesktopSessions) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopSessions.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopSessions) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{177}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{182}
 }
 
 func (x *RemoteDesktopSessions) GetSessions() []*RemoteDesktopSessionInfo {
@@ -15969,7 +16343,7 @@ type RemoteDesktopSessionInfo struct {
 
 func (x *RemoteDesktopSessionInfo) Reset() {
 	*x = RemoteDesktopSessionInfo{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[178]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[183]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15981,7 +16355,7 @@ func (x *RemoteDesktopSessionInfo) String() string {
 func (*RemoteDesktopSessionInfo) ProtoMessage() {}
 
 func (x *RemoteDesktopSessionInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[178]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[183]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15994,7 +16368,7 @@ func (x *RemoteDesktopSessionInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopSessionInfo.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopSessionInfo) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{178}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{183}
 }
 
 func (x *RemoteDesktopSessionInfo) GetSessionId() string {
@@ -16049,7 +16423,7 @@ type RemoteDesktopControlRequest struct {
 
 func (x *RemoteDesktopControlRequest) Reset() {
 	*x = RemoteDesktopControlRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[179]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[184]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16061,7 +16435,7 @@ func (x *RemoteDesktopControlRequest) String() string {
 func (*RemoteDesktopControlRequest) ProtoMessage() {}
 
 func (x *RemoteDesktopControlRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[179]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[184]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16074,7 +16448,7 @@ func (x *RemoteDesktopControlRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopControlRequest.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopControlRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{179}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{184}
 }
 
 func (x *RemoteDesktopControlRequest) GetSessionId() string {
@@ -16106,7 +16480,7 @@ type RemoteDesktopStreamConfiguration struct {
 
 func (x *RemoteDesktopStreamConfiguration) Reset() {
 	*x = RemoteDesktopStreamConfiguration{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[180]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[185]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16118,7 +16492,7 @@ func (x *RemoteDesktopStreamConfiguration) String() string {
 func (*RemoteDesktopStreamConfiguration) ProtoMessage() {}
 
 func (x *RemoteDesktopStreamConfiguration) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[180]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[185]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16131,7 +16505,7 @@ func (x *RemoteDesktopStreamConfiguration) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopStreamConfiguration.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopStreamConfiguration) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{180}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{185}
 }
 
 func (x *RemoteDesktopStreamConfiguration) GetDisplayId() string {
@@ -16194,7 +16568,7 @@ type UpdateRemoteDesktopSessionRequest struct {
 
 func (x *UpdateRemoteDesktopSessionRequest) Reset() {
 	*x = UpdateRemoteDesktopSessionRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[181]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[186]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16206,7 +16580,7 @@ func (x *UpdateRemoteDesktopSessionRequest) String() string {
 func (*UpdateRemoteDesktopSessionRequest) ProtoMessage() {}
 
 func (x *UpdateRemoteDesktopSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[181]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[186]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16219,7 +16593,7 @@ func (x *UpdateRemoteDesktopSessionRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use UpdateRemoteDesktopSessionRequest.ProtoReflect.Descriptor instead.
 func (*UpdateRemoteDesktopSessionRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{181}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{186}
 }
 
 func (x *UpdateRemoteDesktopSessionRequest) GetSessionId() string {
@@ -16252,7 +16626,7 @@ type RemoteDesktopRef struct {
 
 func (x *RemoteDesktopRef) Reset() {
 	*x = RemoteDesktopRef{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[182]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[187]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16264,7 +16638,7 @@ func (x *RemoteDesktopRef) String() string {
 func (*RemoteDesktopRef) ProtoMessage() {}
 
 func (x *RemoteDesktopRef) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[182]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[187]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16277,7 +16651,7 @@ func (x *RemoteDesktopRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopRef.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopRef) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{182}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{187}
 }
 
 func (x *RemoteDesktopRef) GetSessionId() string {
@@ -16304,7 +16678,7 @@ type RemoteDesktopSessionBinding struct {
 
 func (x *RemoteDesktopSessionBinding) Reset() {
 	*x = RemoteDesktopSessionBinding{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[183]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[188]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16316,7 +16690,7 @@ func (x *RemoteDesktopSessionBinding) String() string {
 func (*RemoteDesktopSessionBinding) ProtoMessage() {}
 
 func (x *RemoteDesktopSessionBinding) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[183]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[188]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16329,7 +16703,7 @@ func (x *RemoteDesktopSessionBinding) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopSessionBinding.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopSessionBinding) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{183}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{188}
 }
 
 func (x *RemoteDesktopSessionBinding) GetClientNonce() string {
@@ -16405,7 +16779,7 @@ type RemoteDesktopPointerMove struct {
 
 func (x *RemoteDesktopPointerMove) Reset() {
 	*x = RemoteDesktopPointerMove{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[184]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[189]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16417,7 +16791,7 @@ func (x *RemoteDesktopPointerMove) String() string {
 func (*RemoteDesktopPointerMove) ProtoMessage() {}
 
 func (x *RemoteDesktopPointerMove) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[184]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[189]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16430,7 +16804,7 @@ func (x *RemoteDesktopPointerMove) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopPointerMove.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopPointerMove) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{184}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{189}
 }
 
 func (x *RemoteDesktopPointerMove) GetNormalizedX() int32 {
@@ -16461,7 +16835,7 @@ type RemoteDesktopPointerButton struct {
 
 func (x *RemoteDesktopPointerButton) Reset() {
 	*x = RemoteDesktopPointerButton{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[185]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[190]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16473,7 +16847,7 @@ func (x *RemoteDesktopPointerButton) String() string {
 func (*RemoteDesktopPointerButton) ProtoMessage() {}
 
 func (x *RemoteDesktopPointerButton) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[185]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[190]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16486,7 +16860,7 @@ func (x *RemoteDesktopPointerButton) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopPointerButton.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopPointerButton) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{185}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{190}
 }
 
 func (x *RemoteDesktopPointerButton) GetButton() RemoteDesktopPointerButton_Button {
@@ -16547,7 +16921,7 @@ type RemoteDesktopScroll struct {
 
 func (x *RemoteDesktopScroll) Reset() {
 	*x = RemoteDesktopScroll{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[186]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[191]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16559,7 +16933,7 @@ func (x *RemoteDesktopScroll) String() string {
 func (*RemoteDesktopScroll) ProtoMessage() {}
 
 func (x *RemoteDesktopScroll) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[186]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[191]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16572,7 +16946,7 @@ func (x *RemoteDesktopScroll) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopScroll.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopScroll) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{186}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{191}
 }
 
 func (x *RemoteDesktopScroll) GetDeltaX() int32 {
@@ -16644,7 +17018,7 @@ type RemoteDesktopKey struct {
 
 func (x *RemoteDesktopKey) Reset() {
 	*x = RemoteDesktopKey{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[187]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[192]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16656,7 +17030,7 @@ func (x *RemoteDesktopKey) String() string {
 func (*RemoteDesktopKey) ProtoMessage() {}
 
 func (x *RemoteDesktopKey) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[187]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[192]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16669,7 +17043,7 @@ func (x *RemoteDesktopKey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopKey.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopKey) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{187}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{192}
 }
 
 func (x *RemoteDesktopKey) GetDown() bool {
@@ -16709,7 +17083,7 @@ type RemoteDesktopText struct {
 
 func (x *RemoteDesktopText) Reset() {
 	*x = RemoteDesktopText{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[188]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[193]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16721,7 +17095,7 @@ func (x *RemoteDesktopText) String() string {
 func (*RemoteDesktopText) ProtoMessage() {}
 
 func (x *RemoteDesktopText) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[188]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[193]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16734,7 +17108,7 @@ func (x *RemoteDesktopText) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopText.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopText) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{188}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{193}
 }
 
 func (x *RemoteDesktopText) GetText() string {
@@ -16752,7 +17126,7 @@ type RemoteDesktopReleaseAll struct {
 
 func (x *RemoteDesktopReleaseAll) Reset() {
 	*x = RemoteDesktopReleaseAll{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[189]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[194]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16764,7 +17138,7 @@ func (x *RemoteDesktopReleaseAll) String() string {
 func (*RemoteDesktopReleaseAll) ProtoMessage() {}
 
 func (x *RemoteDesktopReleaseAll) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[189]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[194]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16777,7 +17151,7 @@ func (x *RemoteDesktopReleaseAll) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopReleaseAll.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopReleaseAll) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{189}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{194}
 }
 
 type RemoteDesktopInput struct {
@@ -16805,7 +17179,7 @@ type RemoteDesktopInput struct {
 
 func (x *RemoteDesktopInput) Reset() {
 	*x = RemoteDesktopInput{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[190]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[195]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16817,7 +17191,7 @@ func (x *RemoteDesktopInput) String() string {
 func (*RemoteDesktopInput) ProtoMessage() {}
 
 func (x *RemoteDesktopInput) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[190]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[195]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16830,7 +17204,7 @@ func (x *RemoteDesktopInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopInput.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopInput) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{190}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{195}
 }
 
 func (x *RemoteDesktopInput) GetProtocolVersion() uint32 {
@@ -17053,7 +17427,7 @@ type RemoteDesktopSessionState struct {
 
 func (x *RemoteDesktopSessionState) Reset() {
 	*x = RemoteDesktopSessionState{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[191]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[196]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17065,7 +17439,7 @@ func (x *RemoteDesktopSessionState) String() string {
 func (*RemoteDesktopSessionState) ProtoMessage() {}
 
 func (x *RemoteDesktopSessionState) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[191]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[196]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17078,7 +17452,7 @@ func (x *RemoteDesktopSessionState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopSessionState.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopSessionState) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{191}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{196}
 }
 
 func (x *RemoteDesktopSessionState) GetPhase() string {
@@ -17503,7 +17877,7 @@ type RemoteDesktopRecoveryDiagnostics struct {
 
 func (x *RemoteDesktopRecoveryDiagnostics) Reset() {
 	*x = RemoteDesktopRecoveryDiagnostics{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[192]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[197]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17515,7 +17889,7 @@ func (x *RemoteDesktopRecoveryDiagnostics) String() string {
 func (*RemoteDesktopRecoveryDiagnostics) ProtoMessage() {}
 
 func (x *RemoteDesktopRecoveryDiagnostics) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[192]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[197]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17528,7 +17902,7 @@ func (x *RemoteDesktopRecoveryDiagnostics) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopRecoveryDiagnostics.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopRecoveryDiagnostics) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{192}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{197}
 }
 
 func (x *RemoteDesktopRecoveryDiagnostics) GetHistoryHits() uint64 {
@@ -17615,7 +17989,7 @@ type RemoteDesktopReceiverFeedback struct {
 
 func (x *RemoteDesktopReceiverFeedback) Reset() {
 	*x = RemoteDesktopReceiverFeedback{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[193]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[198]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17627,7 +18001,7 @@ func (x *RemoteDesktopReceiverFeedback) String() string {
 func (*RemoteDesktopReceiverFeedback) ProtoMessage() {}
 
 func (x *RemoteDesktopReceiverFeedback) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[193]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[198]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17640,7 +18014,7 @@ func (x *RemoteDesktopReceiverFeedback) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopReceiverFeedback.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopReceiverFeedback) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{193}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{198}
 }
 
 func (x *RemoteDesktopReceiverFeedback) GetProtocolVersion() uint32 {
@@ -17802,7 +18176,7 @@ type RemoteDesktopCursor struct {
 
 func (x *RemoteDesktopCursor) Reset() {
 	*x = RemoteDesktopCursor{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[194]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[199]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17814,7 +18188,7 @@ func (x *RemoteDesktopCursor) String() string {
 func (*RemoteDesktopCursor) ProtoMessage() {}
 
 func (x *RemoteDesktopCursor) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[194]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[199]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17827,7 +18201,7 @@ func (x *RemoteDesktopCursor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopCursor.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopCursor) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{194}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{199}
 }
 
 func (x *RemoteDesktopCursor) GetShapeId() string {
@@ -17918,7 +18292,7 @@ type RemoteDesktopReference struct {
 
 func (x *RemoteDesktopReference) Reset() {
 	*x = RemoteDesktopReference{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[195]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[200]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17930,7 +18304,7 @@ func (x *RemoteDesktopReference) String() string {
 func (*RemoteDesktopReference) ProtoMessage() {}
 
 func (x *RemoteDesktopReference) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[195]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[200]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17943,7 +18317,7 @@ func (x *RemoteDesktopReference) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopReference.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopReference) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{195}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{200}
 }
 
 func (x *RemoteDesktopReference) GetGeneration() uint64 {
@@ -17982,7 +18356,7 @@ type RemoteDesktopHostEvent struct {
 
 func (x *RemoteDesktopHostEvent) Reset() {
 	*x = RemoteDesktopHostEvent{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[196]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[201]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17994,7 +18368,7 @@ func (x *RemoteDesktopHostEvent) String() string {
 func (*RemoteDesktopHostEvent) ProtoMessage() {}
 
 func (x *RemoteDesktopHostEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[196]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[201]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -18007,7 +18381,7 @@ func (x *RemoteDesktopHostEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopHostEvent.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopHostEvent) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{196}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{201}
 }
 
 func (x *RemoteDesktopHostEvent) GetPayload() isRemoteDesktopHostEvent_Payload {
@@ -18092,7 +18466,7 @@ type RemoteDesktopSessionError struct {
 
 func (x *RemoteDesktopSessionError) Reset() {
 	*x = RemoteDesktopSessionError{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[197]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[202]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -18104,7 +18478,7 @@ func (x *RemoteDesktopSessionError) String() string {
 func (*RemoteDesktopSessionError) ProtoMessage() {}
 
 func (x *RemoteDesktopSessionError) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[197]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[202]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -18117,7 +18491,7 @@ func (x *RemoteDesktopSessionError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopSessionError.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopSessionError) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{197}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{202}
 }
 
 func (x *RemoteDesktopSessionError) GetCode() string {
@@ -18160,7 +18534,7 @@ type RemoteDesktopSignal struct {
 
 func (x *RemoteDesktopSignal) Reset() {
 	*x = RemoteDesktopSignal{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[198]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[203]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -18172,7 +18546,7 @@ func (x *RemoteDesktopSignal) String() string {
 func (*RemoteDesktopSignal) ProtoMessage() {}
 
 func (x *RemoteDesktopSignal) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[198]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[203]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -18185,7 +18559,7 @@ func (x *RemoteDesktopSignal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopSignal.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopSignal) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{198}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{203}
 }
 
 func (x *RemoteDesktopSignal) GetSessionId() string {
@@ -18317,7 +18691,7 @@ type SaveFileRequest struct {
 
 func (x *SaveFileRequest) Reset() {
 	*x = SaveFileRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[199]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[204]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -18329,7 +18703,7 @@ func (x *SaveFileRequest) String() string {
 func (*SaveFileRequest) ProtoMessage() {}
 
 func (x *SaveFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[199]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[204]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -18342,7 +18716,7 @@ func (x *SaveFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveFileRequest.ProtoReflect.Descriptor instead.
 func (*SaveFileRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{199}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{204}
 }
 
 func (x *SaveFileRequest) GetCheckoutId() string {
@@ -18401,7 +18775,7 @@ type CreateFileRequest struct {
 
 func (x *CreateFileRequest) Reset() {
 	*x = CreateFileRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[200]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[205]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -18413,7 +18787,7 @@ func (x *CreateFileRequest) String() string {
 func (*CreateFileRequest) ProtoMessage() {}
 
 func (x *CreateFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[200]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[205]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -18426,7 +18800,7 @@ func (x *CreateFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateFileRequest.ProtoReflect.Descriptor instead.
 func (*CreateFileRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{200}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{205}
 }
 
 func (x *CreateFileRequest) GetCheckoutId() string {
@@ -18484,7 +18858,7 @@ type MoveFileRequest struct {
 
 func (x *MoveFileRequest) Reset() {
 	*x = MoveFileRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[201]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[206]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -18496,7 +18870,7 @@ func (x *MoveFileRequest) String() string {
 func (*MoveFileRequest) ProtoMessage() {}
 
 func (x *MoveFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[201]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[206]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -18509,7 +18883,7 @@ func (x *MoveFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MoveFileRequest.ProtoReflect.Descriptor instead.
 func (*MoveFileRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{201}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{206}
 }
 
 func (x *MoveFileRequest) GetCheckoutId() string {
@@ -18557,7 +18931,7 @@ type MoveFileResponse struct {
 
 func (x *MoveFileResponse) Reset() {
 	*x = MoveFileResponse{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[202]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[207]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -18569,7 +18943,7 @@ func (x *MoveFileResponse) String() string {
 func (*MoveFileResponse) ProtoMessage() {}
 
 func (x *MoveFileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[202]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[207]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -18582,7 +18956,7 @@ func (x *MoveFileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MoveFileResponse.ProtoReflect.Descriptor instead.
 func (*MoveFileResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{202}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{207}
 }
 
 func (x *MoveFileResponse) GetSource() string {
@@ -18612,7 +18986,7 @@ type DeleteFileRequest struct {
 
 func (x *DeleteFileRequest) Reset() {
 	*x = DeleteFileRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[203]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[208]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -18624,7 +18998,7 @@ func (x *DeleteFileRequest) String() string {
 func (*DeleteFileRequest) ProtoMessage() {}
 
 func (x *DeleteFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[203]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[208]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -18637,7 +19011,7 @@ func (x *DeleteFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteFileRequest.ProtoReflect.Descriptor instead.
 func (*DeleteFileRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{203}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{208}
 }
 
 func (x *DeleteFileRequest) GetCheckoutId() string {
@@ -18686,7 +19060,7 @@ type ListSchedulesRequest struct {
 
 func (x *ListSchedulesRequest) Reset() {
 	*x = ListSchedulesRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[204]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[209]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -18698,7 +19072,7 @@ func (x *ListSchedulesRequest) String() string {
 func (*ListSchedulesRequest) ProtoMessage() {}
 
 func (x *ListSchedulesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[204]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[209]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -18711,7 +19085,7 @@ func (x *ListSchedulesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSchedulesRequest.ProtoReflect.Descriptor instead.
 func (*ListSchedulesRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{204}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{209}
 }
 
 func (x *ListSchedulesRequest) GetProjectId() string {
@@ -18746,7 +19120,7 @@ type SchedulesResponse struct {
 
 func (x *SchedulesResponse) Reset() {
 	*x = SchedulesResponse{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[205]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[210]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -18758,7 +19132,7 @@ func (x *SchedulesResponse) String() string {
 func (*SchedulesResponse) ProtoMessage() {}
 
 func (x *SchedulesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[205]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[210]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -18771,7 +19145,7 @@ func (x *SchedulesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchedulesResponse.ProtoReflect.Descriptor instead.
 func (*SchedulesResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{205}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{210}
 }
 
 func (x *SchedulesResponse) GetSchedules() []*Schedule {
@@ -18831,7 +19205,7 @@ type Schedule struct {
 
 func (x *Schedule) Reset() {
 	*x = Schedule{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[206]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[211]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -18843,7 +19217,7 @@ func (x *Schedule) String() string {
 func (*Schedule) ProtoMessage() {}
 
 func (x *Schedule) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[206]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[211]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -18856,7 +19230,7 @@ func (x *Schedule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Schedule.ProtoReflect.Descriptor instead.
 func (*Schedule) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{206}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{211}
 }
 
 func (x *Schedule) GetOwnerDaemonId() string {
@@ -19076,7 +19450,7 @@ type ScheduleDraft struct {
 
 func (x *ScheduleDraft) Reset() {
 	*x = ScheduleDraft{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[207]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[212]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -19088,7 +19462,7 @@ func (x *ScheduleDraft) String() string {
 func (*ScheduleDraft) ProtoMessage() {}
 
 func (x *ScheduleDraft) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[207]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[212]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -19101,7 +19475,7 @@ func (x *ScheduleDraft) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScheduleDraft.ProtoReflect.Descriptor instead.
 func (*ScheduleDraft) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{207}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{212}
 }
 
 func (x *ScheduleDraft) GetCheckoutId() string {
@@ -19254,7 +19628,7 @@ type SaveScheduleRequest struct {
 
 func (x *SaveScheduleRequest) Reset() {
 	*x = SaveScheduleRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[208]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[213]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -19266,7 +19640,7 @@ func (x *SaveScheduleRequest) String() string {
 func (*SaveScheduleRequest) ProtoMessage() {}
 
 func (x *SaveScheduleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[208]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[213]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -19279,7 +19653,7 @@ func (x *SaveScheduleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveScheduleRequest.ProtoReflect.Descriptor instead.
 func (*SaveScheduleRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{208}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{213}
 }
 
 func (x *SaveScheduleRequest) GetScheduleId() string {
@@ -19307,7 +19681,7 @@ type PreviewScheduleRequest struct {
 
 func (x *PreviewScheduleRequest) Reset() {
 	*x = PreviewScheduleRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[209]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[214]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -19319,7 +19693,7 @@ func (x *PreviewScheduleRequest) String() string {
 func (*PreviewScheduleRequest) ProtoMessage() {}
 
 func (x *PreviewScheduleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[209]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[214]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -19332,7 +19706,7 @@ func (x *PreviewScheduleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PreviewScheduleRequest.ProtoReflect.Descriptor instead.
 func (*PreviewScheduleRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{209}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{214}
 }
 
 func (x *PreviewScheduleRequest) GetCron() string {
@@ -19365,7 +19739,7 @@ type SchedulePreview struct {
 
 func (x *SchedulePreview) Reset() {
 	*x = SchedulePreview{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[210]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[215]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -19377,7 +19751,7 @@ func (x *SchedulePreview) String() string {
 func (*SchedulePreview) ProtoMessage() {}
 
 func (x *SchedulePreview) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[210]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[215]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -19390,7 +19764,7 @@ func (x *SchedulePreview) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchedulePreview.ProtoReflect.Descriptor instead.
 func (*SchedulePreview) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{210}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{215}
 }
 
 func (x *SchedulePreview) GetTimes() []string {
@@ -19409,7 +19783,7 @@ type ScheduleRef struct {
 
 func (x *ScheduleRef) Reset() {
 	*x = ScheduleRef{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[211]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[216]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -19421,7 +19795,7 @@ func (x *ScheduleRef) String() string {
 func (*ScheduleRef) ProtoMessage() {}
 
 func (x *ScheduleRef) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[211]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[216]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -19434,7 +19808,7 @@ func (x *ScheduleRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScheduleRef.ProtoReflect.Descriptor instead.
 func (*ScheduleRef) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{211}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{216}
 }
 
 func (x *ScheduleRef) GetScheduleId() string {
@@ -19454,7 +19828,7 @@ type SetScheduleEnabledRequest struct {
 
 func (x *SetScheduleEnabledRequest) Reset() {
 	*x = SetScheduleEnabledRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[212]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[217]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -19466,7 +19840,7 @@ func (x *SetScheduleEnabledRequest) String() string {
 func (*SetScheduleEnabledRequest) ProtoMessage() {}
 
 func (x *SetScheduleEnabledRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[212]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[217]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -19479,7 +19853,7 @@ func (x *SetScheduleEnabledRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetScheduleEnabledRequest.ProtoReflect.Descriptor instead.
 func (*SetScheduleEnabledRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{212}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{217}
 }
 
 func (x *SetScheduleEnabledRequest) GetScheduleId() string {
@@ -19507,7 +19881,7 @@ type ListScheduleRunsRequest struct {
 
 func (x *ListScheduleRunsRequest) Reset() {
 	*x = ListScheduleRunsRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[213]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[218]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -19519,7 +19893,7 @@ func (x *ListScheduleRunsRequest) String() string {
 func (*ListScheduleRunsRequest) ProtoMessage() {}
 
 func (x *ListScheduleRunsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[213]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[218]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -19532,7 +19906,7 @@ func (x *ListScheduleRunsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListScheduleRunsRequest.ProtoReflect.Descriptor instead.
 func (*ListScheduleRunsRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{213}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{218}
 }
 
 func (x *ListScheduleRunsRequest) GetScheduleId() string {
@@ -19579,7 +19953,7 @@ type ScheduleRun struct {
 
 func (x *ScheduleRun) Reset() {
 	*x = ScheduleRun{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[214]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[219]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -19591,7 +19965,7 @@ func (x *ScheduleRun) String() string {
 func (*ScheduleRun) ProtoMessage() {}
 
 func (x *ScheduleRun) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[214]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[219]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -19604,7 +19978,7 @@ func (x *ScheduleRun) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScheduleRun.ProtoReflect.Descriptor instead.
 func (*ScheduleRun) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{214}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{219}
 }
 
 func (x *ScheduleRun) GetId() string {
@@ -19722,7 +20096,7 @@ type ScheduleRunsResponse struct {
 
 func (x *ScheduleRunsResponse) Reset() {
 	*x = ScheduleRunsResponse{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[215]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[220]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -19734,7 +20108,7 @@ func (x *ScheduleRunsResponse) String() string {
 func (*ScheduleRunsResponse) ProtoMessage() {}
 
 func (x *ScheduleRunsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[215]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[220]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -19747,7 +20121,7 @@ func (x *ScheduleRunsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScheduleRunsResponse.ProtoReflect.Descriptor instead.
 func (*ScheduleRunsResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{215}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{220}
 }
 
 func (x *ScheduleRunsResponse) GetRuns() []*ScheduleRun {
@@ -19775,7 +20149,7 @@ type UpdateBoardGitSettingsRequest struct {
 
 func (x *UpdateBoardGitSettingsRequest) Reset() {
 	*x = UpdateBoardGitSettingsRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[216]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[221]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -19787,7 +20161,7 @@ func (x *UpdateBoardGitSettingsRequest) String() string {
 func (*UpdateBoardGitSettingsRequest) ProtoMessage() {}
 
 func (x *UpdateBoardGitSettingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[216]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[221]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -19800,7 +20174,7 @@ func (x *UpdateBoardGitSettingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateBoardGitSettingsRequest.ProtoReflect.Descriptor instead.
 func (*UpdateBoardGitSettingsRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{216}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{221}
 }
 
 func (x *UpdateBoardGitSettingsRequest) GetBoardId() string {
@@ -19834,7 +20208,7 @@ type RemoveQueuedMessageRequest struct {
 
 func (x *RemoveQueuedMessageRequest) Reset() {
 	*x = RemoveQueuedMessageRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[217]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[222]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -19846,7 +20220,7 @@ func (x *RemoveQueuedMessageRequest) String() string {
 func (*RemoveQueuedMessageRequest) ProtoMessage() {}
 
 func (x *RemoveQueuedMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[217]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[222]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -19859,7 +20233,7 @@ func (x *RemoveQueuedMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveQueuedMessageRequest.ProtoReflect.Descriptor instead.
 func (*RemoveQueuedMessageRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{217}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{222}
 }
 
 func (x *RemoveQueuedMessageRequest) GetCardId() string {
@@ -19887,7 +20261,7 @@ type UpdateBoardHostnamesRequest struct {
 
 func (x *UpdateBoardHostnamesRequest) Reset() {
 	*x = UpdateBoardHostnamesRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[218]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[223]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -19899,7 +20273,7 @@ func (x *UpdateBoardHostnamesRequest) String() string {
 func (*UpdateBoardHostnamesRequest) ProtoMessage() {}
 
 func (x *UpdateBoardHostnamesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[218]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[223]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -19912,7 +20286,7 @@ func (x *UpdateBoardHostnamesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateBoardHostnamesRequest.ProtoReflect.Descriptor instead.
 func (*UpdateBoardHostnamesRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{218}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{223}
 }
 
 func (x *UpdateBoardHostnamesRequest) GetBoardId() string {
@@ -19960,7 +20334,7 @@ type RemoteDesktopClipboardRequest struct {
 
 func (x *RemoteDesktopClipboardRequest) Reset() {
 	*x = RemoteDesktopClipboardRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[219]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[224]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -19972,7 +20346,7 @@ func (x *RemoteDesktopClipboardRequest) String() string {
 func (*RemoteDesktopClipboardRequest) ProtoMessage() {}
 
 func (x *RemoteDesktopClipboardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[219]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[224]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -19985,7 +20359,7 @@ func (x *RemoteDesktopClipboardRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopClipboardRequest.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopClipboardRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{219}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{224}
 }
 
 func (x *RemoteDesktopClipboardRequest) GetSessionId() string {
@@ -20077,7 +20451,7 @@ type RemoteDesktopClipboardItem struct {
 
 func (x *RemoteDesktopClipboardItem) Reset() {
 	*x = RemoteDesktopClipboardItem{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[220]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[225]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -20089,7 +20463,7 @@ func (x *RemoteDesktopClipboardItem) String() string {
 func (*RemoteDesktopClipboardItem) ProtoMessage() {}
 
 func (x *RemoteDesktopClipboardItem) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[220]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[225]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -20102,7 +20476,7 @@ func (x *RemoteDesktopClipboardItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopClipboardItem.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopClipboardItem) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{220}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{225}
 }
 
 func (x *RemoteDesktopClipboardItem) GetKind() RemoteDesktopClipboardItem_Kind {
@@ -20149,7 +20523,7 @@ type RemoteDesktopClipboardResponse struct {
 
 func (x *RemoteDesktopClipboardResponse) Reset() {
 	*x = RemoteDesktopClipboardResponse{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[221]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[226]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -20161,7 +20535,7 @@ func (x *RemoteDesktopClipboardResponse) String() string {
 func (*RemoteDesktopClipboardResponse) ProtoMessage() {}
 
 func (x *RemoteDesktopClipboardResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[221]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[226]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -20174,7 +20548,7 @@ func (x *RemoteDesktopClipboardResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopClipboardResponse.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopClipboardResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{221}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{226}
 }
 
 func (x *RemoteDesktopClipboardResponse) GetOperationId() string {
@@ -20247,7 +20621,7 @@ type RemoteDesktopClipboardFrame struct {
 
 func (x *RemoteDesktopClipboardFrame) Reset() {
 	*x = RemoteDesktopClipboardFrame{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[222]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[227]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -20259,7 +20633,7 @@ func (x *RemoteDesktopClipboardFrame) String() string {
 func (*RemoteDesktopClipboardFrame) ProtoMessage() {}
 
 func (x *RemoteDesktopClipboardFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[222]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[227]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -20272,7 +20646,7 @@ func (x *RemoteDesktopClipboardFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoteDesktopClipboardFrame.ProtoReflect.Descriptor instead.
 func (*RemoteDesktopClipboardFrame) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{222}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{227}
 }
 
 func (x *RemoteDesktopClipboardFrame) GetOperationId() string {
@@ -20306,7 +20680,7 @@ type StartControlConnectionRequest struct {
 
 func (x *StartControlConnectionRequest) Reset() {
 	*x = StartControlConnectionRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[223]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[228]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -20318,7 +20692,7 @@ func (x *StartControlConnectionRequest) String() string {
 func (*StartControlConnectionRequest) ProtoMessage() {}
 
 func (x *StartControlConnectionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[223]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[228]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -20331,7 +20705,7 @@ func (x *StartControlConnectionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartControlConnectionRequest.ProtoReflect.Descriptor instead.
 func (*StartControlConnectionRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{223}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{228}
 }
 
 func (x *StartControlConnectionRequest) GetRtcConfiguration() *v1.RTCConfiguration {
@@ -20357,7 +20731,7 @@ type ControlConnectionRef struct {
 
 func (x *ControlConnectionRef) Reset() {
 	*x = ControlConnectionRef{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[224]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[229]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -20369,7 +20743,7 @@ func (x *ControlConnectionRef) String() string {
 func (*ControlConnectionRef) ProtoMessage() {}
 
 func (x *ControlConnectionRef) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[224]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[229]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -20382,7 +20756,7 @@ func (x *ControlConnectionRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ControlConnectionRef.ProtoReflect.Descriptor instead.
 func (*ControlConnectionRef) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{224}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{229}
 }
 
 func (x *ControlConnectionRef) GetSessionId() string {
@@ -20408,7 +20782,7 @@ type ControlConnection struct {
 
 func (x *ControlConnection) Reset() {
 	*x = ControlConnection{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[225]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[230]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -20420,7 +20794,7 @@ func (x *ControlConnection) String() string {
 func (*ControlConnection) ProtoMessage() {}
 
 func (x *ControlConnection) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[225]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[230]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -20433,7 +20807,7 @@ func (x *ControlConnection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ControlConnection.ProtoReflect.Descriptor instead.
 func (*ControlConnection) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{225}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{230}
 }
 
 func (x *ControlConnection) GetSessionId() string {
@@ -20501,7 +20875,7 @@ type PeerVersion struct {
 
 func (x *PeerVersion) Reset() {
 	*x = PeerVersion{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[226]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[231]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -20513,7 +20887,7 @@ func (x *PeerVersion) String() string {
 func (*PeerVersion) ProtoMessage() {}
 
 func (x *PeerVersion) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[226]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[231]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -20526,7 +20900,7 @@ func (x *PeerVersion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PeerVersion.ProtoReflect.Descriptor instead.
 func (*PeerVersion) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{226}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{231}
 }
 
 func (x *PeerVersion) GetClock() map[string]uint64 {
@@ -20579,7 +20953,7 @@ type PeerRecord struct {
 
 func (x *PeerRecord) Reset() {
 	*x = PeerRecord{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[227]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[232]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -20591,7 +20965,7 @@ func (x *PeerRecord) String() string {
 func (*PeerRecord) ProtoMessage() {}
 
 func (x *PeerRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[227]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[232]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -20604,7 +20978,7 @@ func (x *PeerRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PeerRecord.ProtoReflect.Descriptor instead.
 func (*PeerRecord) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{227}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{232}
 }
 
 func (x *PeerRecord) GetKind() string {
@@ -20658,7 +21032,7 @@ type PeerStoreStatus struct {
 
 func (x *PeerStoreStatus) Reset() {
 	*x = PeerStoreStatus{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[228]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[233]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -20670,7 +21044,7 @@ func (x *PeerStoreStatus) String() string {
 func (*PeerStoreStatus) ProtoMessage() {}
 
 func (x *PeerStoreStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[228]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[233]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -20683,7 +21057,7 @@ func (x *PeerStoreStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PeerStoreStatus.ProtoReflect.Descriptor instead.
 func (*PeerStoreStatus) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{228}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{233}
 }
 
 func (x *PeerStoreStatus) GetAccount() string {
@@ -20764,7 +21138,7 @@ type PeerSyncDiagnostic struct {
 
 func (x *PeerSyncDiagnostic) Reset() {
 	*x = PeerSyncDiagnostic{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[229]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[234]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -20776,7 +21150,7 @@ func (x *PeerSyncDiagnostic) String() string {
 func (*PeerSyncDiagnostic) ProtoMessage() {}
 
 func (x *PeerSyncDiagnostic) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[229]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[234]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -20789,7 +21163,7 @@ func (x *PeerSyncDiagnostic) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PeerSyncDiagnostic.ProtoReflect.Descriptor instead.
 func (*PeerSyncDiagnostic) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{229}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{234}
 }
 
 func (x *PeerSyncDiagnostic) GetPeerId() string {
@@ -20901,7 +21275,7 @@ type PeerSnapshotRequest struct {
 
 func (x *PeerSnapshotRequest) Reset() {
 	*x = PeerSnapshotRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[230]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[235]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -20913,7 +21287,7 @@ func (x *PeerSnapshotRequest) String() string {
 func (*PeerSnapshotRequest) ProtoMessage() {}
 
 func (x *PeerSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[230]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[235]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -20926,7 +21300,7 @@ func (x *PeerSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PeerSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*PeerSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{230}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{235}
 }
 
 func (x *PeerSnapshotRequest) GetAccount() string {
@@ -20962,7 +21336,7 @@ type PeerSnapshot struct {
 
 func (x *PeerSnapshot) Reset() {
 	*x = PeerSnapshot{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[231]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[236]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -20974,7 +21348,7 @@ func (x *PeerSnapshot) String() string {
 func (*PeerSnapshot) ProtoMessage() {}
 
 func (x *PeerSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[231]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[236]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -20987,7 +21361,7 @@ func (x *PeerSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PeerSnapshot.ProtoReflect.Descriptor instead.
 func (*PeerSnapshot) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{231}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{236}
 }
 
 func (x *PeerSnapshot) GetAccount() string {
@@ -21032,7 +21406,7 @@ type PutPeerRecordRequest struct {
 
 func (x *PutPeerRecordRequest) Reset() {
 	*x = PutPeerRecordRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[232]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[237]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -21044,7 +21418,7 @@ func (x *PutPeerRecordRequest) String() string {
 func (*PutPeerRecordRequest) ProtoMessage() {}
 
 func (x *PutPeerRecordRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[232]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[237]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -21057,7 +21431,7 @@ func (x *PutPeerRecordRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutPeerRecordRequest.ProtoReflect.Descriptor instead.
 func (*PutPeerRecordRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{232}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{237}
 }
 
 func (x *PutPeerRecordRequest) GetKind() string {
@@ -21105,7 +21479,7 @@ type MergePeerRecordsRequest struct {
 
 func (x *MergePeerRecordsRequest) Reset() {
 	*x = MergePeerRecordsRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[233]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[238]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -21117,7 +21491,7 @@ func (x *MergePeerRecordsRequest) String() string {
 func (*MergePeerRecordsRequest) ProtoMessage() {}
 
 func (x *MergePeerRecordsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[233]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[238]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -21130,7 +21504,7 @@ func (x *MergePeerRecordsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MergePeerRecordsRequest.ProtoReflect.Descriptor instead.
 func (*MergePeerRecordsRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{233}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{238}
 }
 
 func (x *MergePeerRecordsRequest) GetAccount() string {
@@ -21157,7 +21531,7 @@ type PeerRecordRef struct {
 
 func (x *PeerRecordRef) Reset() {
 	*x = PeerRecordRef{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[234]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[239]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -21169,7 +21543,7 @@ func (x *PeerRecordRef) String() string {
 func (*PeerRecordRef) ProtoMessage() {}
 
 func (x *PeerRecordRef) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[234]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[239]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -21182,7 +21556,7 @@ func (x *PeerRecordRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PeerRecordRef.ProtoReflect.Descriptor instead.
 func (*PeerRecordRef) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{234}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{239}
 }
 
 func (x *PeerRecordRef) GetKind() string {
@@ -21210,7 +21584,7 @@ type PeerChangesRequest struct {
 
 func (x *PeerChangesRequest) Reset() {
 	*x = PeerChangesRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[235]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[240]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -21222,7 +21596,7 @@ func (x *PeerChangesRequest) String() string {
 func (*PeerChangesRequest) ProtoMessage() {}
 
 func (x *PeerChangesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[235]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[240]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -21235,7 +21609,7 @@ func (x *PeerChangesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PeerChangesRequest.ProtoReflect.Descriptor instead.
 func (*PeerChangesRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{235}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{240}
 }
 
 func (x *PeerChangesRequest) GetAccount() string {
@@ -21271,7 +21645,7 @@ type PeerChangesResponse struct {
 
 func (x *PeerChangesResponse) Reset() {
 	*x = PeerChangesResponse{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[236]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[241]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -21283,7 +21657,7 @@ func (x *PeerChangesResponse) String() string {
 func (*PeerChangesResponse) ProtoMessage() {}
 
 func (x *PeerChangesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[236]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[241]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -21296,7 +21670,7 @@ func (x *PeerChangesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PeerChangesResponse.ProtoReflect.Descriptor instead.
 func (*PeerChangesResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{236}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{241}
 }
 
 func (x *PeerChangesResponse) GetEpoch() string {
@@ -21341,7 +21715,7 @@ type KVRef struct {
 
 func (x *KVRef) Reset() {
 	*x = KVRef{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[237]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[242]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -21353,7 +21727,7 @@ func (x *KVRef) String() string {
 func (*KVRef) ProtoMessage() {}
 
 func (x *KVRef) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[237]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[242]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -21366,7 +21740,7 @@ func (x *KVRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KVRef.ProtoReflect.Descriptor instead.
 func (*KVRef) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{237}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{242}
 }
 
 func (x *KVRef) GetNamespace() string {
@@ -21404,7 +21778,7 @@ type KVEntry struct {
 
 func (x *KVEntry) Reset() {
 	*x = KVEntry{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[238]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[243]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -21416,7 +21790,7 @@ func (x *KVEntry) String() string {
 func (*KVEntry) ProtoMessage() {}
 
 func (x *KVEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[238]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[243]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -21429,7 +21803,7 @@ func (x *KVEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KVEntry.ProtoReflect.Descriptor instead.
 func (*KVEntry) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{238}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{243}
 }
 
 func (x *KVEntry) GetNamespace() string {
@@ -21484,7 +21858,7 @@ type KVCursor struct {
 
 func (x *KVCursor) Reset() {
 	*x = KVCursor{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[239]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[244]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -21496,7 +21870,7 @@ func (x *KVCursor) String() string {
 func (*KVCursor) ProtoMessage() {}
 
 func (x *KVCursor) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[239]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[244]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -21509,7 +21883,7 @@ func (x *KVCursor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KVCursor.ProtoReflect.Descriptor instead.
 func (*KVCursor) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{239}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{244}
 }
 
 func (x *KVCursor) GetEpoch() string {
@@ -21539,7 +21913,7 @@ type KVListRequest struct {
 
 func (x *KVListRequest) Reset() {
 	*x = KVListRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[240]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[245]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -21551,7 +21925,7 @@ func (x *KVListRequest) String() string {
 func (*KVListRequest) ProtoMessage() {}
 
 func (x *KVListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[240]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[245]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -21564,7 +21938,7 @@ func (x *KVListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KVListRequest.ProtoReflect.Descriptor instead.
 func (*KVListRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{240}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{245}
 }
 
 func (x *KVListRequest) GetNamespace() string {
@@ -21615,7 +21989,7 @@ type KVPage struct {
 
 func (x *KVPage) Reset() {
 	*x = KVPage{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[241]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[246]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -21627,7 +22001,7 @@ func (x *KVPage) String() string {
 func (*KVPage) ProtoMessage() {}
 
 func (x *KVPage) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[241]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[246]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -21640,7 +22014,7 @@ func (x *KVPage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KVPage.ProtoReflect.Descriptor instead.
 func (*KVPage) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{241}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{246}
 }
 
 func (x *KVPage) GetAccount() string {
@@ -21693,7 +22067,7 @@ type KVPutRequest struct {
 
 func (x *KVPutRequest) Reset() {
 	*x = KVPutRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[242]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[247]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -21705,7 +22079,7 @@ func (x *KVPutRequest) String() string {
 func (*KVPutRequest) ProtoMessage() {}
 
 func (x *KVPutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[242]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[247]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -21718,7 +22092,7 @@ func (x *KVPutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KVPutRequest.ProtoReflect.Descriptor instead.
 func (*KVPutRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{242}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{247}
 }
 
 func (x *KVPutRequest) GetRef() *KVRef {
@@ -21768,7 +22142,7 @@ type KVDeleteRequest struct {
 
 func (x *KVDeleteRequest) Reset() {
 	*x = KVDeleteRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[243]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[248]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -21780,7 +22154,7 @@ func (x *KVDeleteRequest) String() string {
 func (*KVDeleteRequest) ProtoMessage() {}
 
 func (x *KVDeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[243]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[248]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -21793,7 +22167,7 @@ func (x *KVDeleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KVDeleteRequest.ProtoReflect.Descriptor instead.
 func (*KVDeleteRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{243}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{248}
 }
 
 func (x *KVDeleteRequest) GetRef() *KVRef {
@@ -21842,7 +22216,7 @@ type KVMoveRequest struct {
 
 func (x *KVMoveRequest) Reset() {
 	*x = KVMoveRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[244]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[249]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -21854,7 +22228,7 @@ func (x *KVMoveRequest) String() string {
 func (*KVMoveRequest) ProtoMessage() {}
 
 func (x *KVMoveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[244]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[249]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -21867,7 +22241,7 @@ func (x *KVMoveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KVMoveRequest.ProtoReflect.Descriptor instead.
 func (*KVMoveRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{244}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{249}
 }
 
 func (x *KVMoveRequest) GetRef() *KVRef {
@@ -21931,7 +22305,7 @@ type KVWatchRequest struct {
 
 func (x *KVWatchRequest) Reset() {
 	*x = KVWatchRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[245]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[250]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -21943,7 +22317,7 @@ func (x *KVWatchRequest) String() string {
 func (*KVWatchRequest) ProtoMessage() {}
 
 func (x *KVWatchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[245]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[250]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -21956,7 +22330,7 @@ func (x *KVWatchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KVWatchRequest.ProtoReflect.Descriptor instead.
 func (*KVWatchRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{245}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{250}
 }
 
 func (x *KVWatchRequest) GetNamespace() string {
@@ -22003,7 +22377,7 @@ type KVFrame struct {
 
 func (x *KVFrame) Reset() {
 	*x = KVFrame{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[246]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[251]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -22015,7 +22389,7 @@ func (x *KVFrame) String() string {
 func (*KVFrame) ProtoMessage() {}
 
 func (x *KVFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[246]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[251]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -22028,7 +22402,7 @@ func (x *KVFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KVFrame.ProtoReflect.Descriptor instead.
 func (*KVFrame) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{246}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{251}
 }
 
 func (x *KVFrame) GetAccount() string {
@@ -22083,7 +22457,7 @@ type MarkConversationReadRequest struct {
 
 func (x *MarkConversationReadRequest) Reset() {
 	*x = MarkConversationReadRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[247]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[252]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -22095,7 +22469,7 @@ func (x *MarkConversationReadRequest) String() string {
 func (*MarkConversationReadRequest) ProtoMessage() {}
 
 func (x *MarkConversationReadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[247]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[252]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -22108,7 +22482,7 @@ func (x *MarkConversationReadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MarkConversationReadRequest.ProtoReflect.Descriptor instead.
 func (*MarkConversationReadRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{247}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{252}
 }
 
 func (x *MarkConversationReadRequest) GetCardId() string {
@@ -22141,7 +22515,7 @@ type VaultCaller struct {
 
 func (x *VaultCaller) Reset() {
 	*x = VaultCaller{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[248]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[253]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -22153,7 +22527,7 @@ func (x *VaultCaller) String() string {
 func (*VaultCaller) ProtoMessage() {}
 
 func (x *VaultCaller) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[248]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[253]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -22166,7 +22540,7 @@ func (x *VaultCaller) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VaultCaller.ProtoReflect.Descriptor instead.
 func (*VaultCaller) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{248}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{253}
 }
 
 func (x *VaultCaller) GetKind() string {
@@ -22217,7 +22591,7 @@ type VaultMember struct {
 
 func (x *VaultMember) Reset() {
 	*x = VaultMember{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[249]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[254]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -22229,7 +22603,7 @@ func (x *VaultMember) String() string {
 func (*VaultMember) ProtoMessage() {}
 
 func (x *VaultMember) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[249]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[254]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -22242,7 +22616,7 @@ func (x *VaultMember) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VaultMember.ProtoReflect.Descriptor instead.
 func (*VaultMember) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{249}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{254}
 }
 
 func (x *VaultMember) GetId() string {
@@ -22334,7 +22708,7 @@ type VaultStatus struct {
 
 func (x *VaultStatus) Reset() {
 	*x = VaultStatus{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[250]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[255]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -22346,7 +22720,7 @@ func (x *VaultStatus) String() string {
 func (*VaultStatus) ProtoMessage() {}
 
 func (x *VaultStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[250]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[255]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -22359,7 +22733,7 @@ func (x *VaultStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VaultStatus.ProtoReflect.Descriptor instead.
 func (*VaultStatus) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{250}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{255}
 }
 
 func (x *VaultStatus) GetState() string {
@@ -22441,7 +22815,7 @@ type InitVaultRequest struct {
 
 func (x *InitVaultRequest) Reset() {
 	*x = InitVaultRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[251]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[256]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -22453,7 +22827,7 @@ func (x *InitVaultRequest) String() string {
 func (*InitVaultRequest) ProtoMessage() {}
 
 func (x *InitVaultRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[251]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[256]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -22466,7 +22840,7 @@ func (x *InitVaultRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InitVaultRequest.ProtoReflect.Descriptor instead.
 func (*InitVaultRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{251}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{256}
 }
 
 func (x *InitVaultRequest) GetName() string {
@@ -22487,7 +22861,7 @@ type InitVaultResponse struct {
 
 func (x *InitVaultResponse) Reset() {
 	*x = InitVaultResponse{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[252]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[257]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -22499,7 +22873,7 @@ func (x *InitVaultResponse) String() string {
 func (*InitVaultResponse) ProtoMessage() {}
 
 func (x *InitVaultResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[252]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[257]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -22512,7 +22886,7 @@ func (x *InitVaultResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InitVaultResponse.ProtoReflect.Descriptor instead.
 func (*InitVaultResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{252}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{257}
 }
 
 func (x *InitVaultResponse) GetStatus() *VaultStatus {
@@ -22540,7 +22914,7 @@ type JoinVaultRequest struct {
 
 func (x *JoinVaultRequest) Reset() {
 	*x = JoinVaultRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[253]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[258]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -22552,7 +22926,7 @@ func (x *JoinVaultRequest) String() string {
 func (*JoinVaultRequest) ProtoMessage() {}
 
 func (x *JoinVaultRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[253]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[258]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -22565,7 +22939,7 @@ func (x *JoinVaultRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JoinVaultRequest.ProtoReflect.Descriptor instead.
 func (*JoinVaultRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{253}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{258}
 }
 
 func (x *JoinVaultRequest) GetName() string {
@@ -22592,7 +22966,7 @@ type JoinVaultResponse struct {
 
 func (x *JoinVaultResponse) Reset() {
 	*x = JoinVaultResponse{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[254]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[259]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -22604,7 +22978,7 @@ func (x *JoinVaultResponse) String() string {
 func (*JoinVaultResponse) ProtoMessage() {}
 
 func (x *JoinVaultResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[254]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[259]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -22617,7 +22991,7 @@ func (x *JoinVaultResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JoinVaultResponse.ProtoReflect.Descriptor instead.
 func (*JoinVaultResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{254}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{259}
 }
 
 func (x *JoinVaultResponse) GetStatus() *VaultStatus {
@@ -22644,7 +23018,7 @@ type ApproveVaultMemberRequest struct {
 
 func (x *ApproveVaultMemberRequest) Reset() {
 	*x = ApproveVaultMemberRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[255]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[260]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -22656,7 +23030,7 @@ func (x *ApproveVaultMemberRequest) String() string {
 func (*ApproveVaultMemberRequest) ProtoMessage() {}
 
 func (x *ApproveVaultMemberRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[255]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[260]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -22669,7 +23043,7 @@ func (x *ApproveVaultMemberRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApproveVaultMemberRequest.ProtoReflect.Descriptor instead.
 func (*ApproveVaultMemberRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{255}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{260}
 }
 
 func (x *ApproveVaultMemberRequest) GetMemberId() string {
@@ -22695,7 +23069,7 @@ type VaultMemberRef struct {
 
 func (x *VaultMemberRef) Reset() {
 	*x = VaultMemberRef{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[256]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[261]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -22707,7 +23081,7 @@ func (x *VaultMemberRef) String() string {
 func (*VaultMemberRef) ProtoMessage() {}
 
 func (x *VaultMemberRef) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[256]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[261]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -22720,7 +23094,7 @@ func (x *VaultMemberRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VaultMemberRef.ProtoReflect.Descriptor instead.
 func (*VaultMemberRef) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{256}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{261}
 }
 
 func (x *VaultMemberRef) GetMemberId() string {
@@ -22739,7 +23113,7 @@ type RotateVaultRequest struct {
 
 func (x *RotateVaultRequest) Reset() {
 	*x = RotateVaultRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[257]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[262]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -22751,7 +23125,7 @@ func (x *RotateVaultRequest) String() string {
 func (*RotateVaultRequest) ProtoMessage() {}
 
 func (x *RotateVaultRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[257]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[262]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -22764,7 +23138,7 @@ func (x *RotateVaultRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RotateVaultRequest.ProtoReflect.Descriptor instead.
 func (*RotateVaultRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{257}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{262}
 }
 
 func (x *RotateVaultRequest) GetNewRecoveryKey() bool {
@@ -22784,7 +23158,7 @@ type RotateVaultResponse struct {
 
 func (x *RotateVaultResponse) Reset() {
 	*x = RotateVaultResponse{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[258]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[263]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -22796,7 +23170,7 @@ func (x *RotateVaultResponse) String() string {
 func (*RotateVaultResponse) ProtoMessage() {}
 
 func (x *RotateVaultResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[258]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[263]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -22809,7 +23183,7 @@ func (x *RotateVaultResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RotateVaultResponse.ProtoReflect.Descriptor instead.
 func (*RotateVaultResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{258}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{263}
 }
 
 func (x *RotateVaultResponse) GetStatus() *VaultStatus {
@@ -22848,7 +23222,7 @@ type VaultItem struct {
 
 func (x *VaultItem) Reset() {
 	*x = VaultItem{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[259]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[264]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -22860,7 +23234,7 @@ func (x *VaultItem) String() string {
 func (*VaultItem) ProtoMessage() {}
 
 func (x *VaultItem) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[259]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[264]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -22873,7 +23247,7 @@ func (x *VaultItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VaultItem.ProtoReflect.Descriptor instead.
 func (*VaultItem) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{259}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{264}
 }
 
 func (x *VaultItem) GetId() string {
@@ -22972,7 +23346,7 @@ type ListVaultItemsRequest struct {
 
 func (x *ListVaultItemsRequest) Reset() {
 	*x = ListVaultItemsRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[260]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[265]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -22984,7 +23358,7 @@ func (x *ListVaultItemsRequest) String() string {
 func (*ListVaultItemsRequest) ProtoMessage() {}
 
 func (x *ListVaultItemsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[260]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[265]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -22997,7 +23371,7 @@ func (x *ListVaultItemsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListVaultItemsRequest.ProtoReflect.Descriptor instead.
 func (*ListVaultItemsRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{260}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{265}
 }
 
 func (x *ListVaultItemsRequest) GetQuery() string {
@@ -23023,7 +23397,7 @@ type VaultItemsResponse struct {
 
 func (x *VaultItemsResponse) Reset() {
 	*x = VaultItemsResponse{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[261]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[266]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -23035,7 +23409,7 @@ func (x *VaultItemsResponse) String() string {
 func (*VaultItemsResponse) ProtoMessage() {}
 
 func (x *VaultItemsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[261]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[266]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -23048,7 +23422,7 @@ func (x *VaultItemsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VaultItemsResponse.ProtoReflect.Descriptor instead.
 func (*VaultItemsResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{261}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{266}
 }
 
 func (x *VaultItemsResponse) GetItems() []*VaultItem {
@@ -23068,7 +23442,7 @@ type VaultItemRef struct {
 
 func (x *VaultItemRef) Reset() {
 	*x = VaultItemRef{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[262]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[267]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -23080,7 +23454,7 @@ func (x *VaultItemRef) String() string {
 func (*VaultItemRef) ProtoMessage() {}
 
 func (x *VaultItemRef) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[262]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[267]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -23093,7 +23467,7 @@ func (x *VaultItemRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VaultItemRef.ProtoReflect.Descriptor instead.
 func (*VaultItemRef) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{262}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{267}
 }
 
 func (x *VaultItemRef) GetItem() string {
@@ -23116,7 +23490,7 @@ type RevealVaultItemRequest struct {
 
 func (x *RevealVaultItemRequest) Reset() {
 	*x = RevealVaultItemRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[263]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[268]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -23128,7 +23502,7 @@ func (x *RevealVaultItemRequest) String() string {
 func (*RevealVaultItemRequest) ProtoMessage() {}
 
 func (x *RevealVaultItemRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[263]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[268]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -23141,7 +23515,7 @@ func (x *RevealVaultItemRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevealVaultItemRequest.ProtoReflect.Descriptor instead.
 func (*RevealVaultItemRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{263}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{268}
 }
 
 func (x *RevealVaultItemRequest) GetItem() string {
@@ -23177,7 +23551,7 @@ type RevealVaultItemResponse struct {
 
 func (x *RevealVaultItemResponse) Reset() {
 	*x = RevealVaultItemResponse{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[264]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[269]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -23189,7 +23563,7 @@ func (x *RevealVaultItemResponse) String() string {
 func (*RevealVaultItemResponse) ProtoMessage() {}
 
 func (x *RevealVaultItemResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[264]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[269]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -23202,7 +23576,7 @@ func (x *RevealVaultItemResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevealVaultItemResponse.ProtoReflect.Descriptor instead.
 func (*RevealVaultItemResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{264}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{269}
 }
 
 func (x *RevealVaultItemResponse) GetItem() *VaultItem {
@@ -23245,7 +23619,7 @@ type CreateVaultItemRequest struct {
 
 func (x *CreateVaultItemRequest) Reset() {
 	*x = CreateVaultItemRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[265]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[270]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -23257,7 +23631,7 @@ func (x *CreateVaultItemRequest) String() string {
 func (*CreateVaultItemRequest) ProtoMessage() {}
 
 func (x *CreateVaultItemRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[265]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[270]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -23270,7 +23644,7 @@ func (x *CreateVaultItemRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateVaultItemRequest.ProtoReflect.Descriptor instead.
 func (*CreateVaultItemRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{265}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{270}
 }
 
 func (x *CreateVaultItemRequest) GetName() string {
@@ -23355,7 +23729,7 @@ type UpdateVaultItemRequest struct {
 
 func (x *UpdateVaultItemRequest) Reset() {
 	*x = UpdateVaultItemRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[266]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[271]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -23367,7 +23741,7 @@ func (x *UpdateVaultItemRequest) String() string {
 func (*UpdateVaultItemRequest) ProtoMessage() {}
 
 func (x *UpdateVaultItemRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[266]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[271]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -23380,7 +23754,7 @@ func (x *UpdateVaultItemRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateVaultItemRequest.ProtoReflect.Descriptor instead.
 func (*UpdateVaultItemRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{266}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{271}
 }
 
 func (x *UpdateVaultItemRequest) GetItem() string {
@@ -23471,7 +23845,7 @@ type ListVaultAuditRequest struct {
 
 func (x *ListVaultAuditRequest) Reset() {
 	*x = ListVaultAuditRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[267]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[272]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -23483,7 +23857,7 @@ func (x *ListVaultAuditRequest) String() string {
 func (*ListVaultAuditRequest) ProtoMessage() {}
 
 func (x *ListVaultAuditRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[267]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[272]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -23496,7 +23870,7 @@ func (x *ListVaultAuditRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListVaultAuditRequest.ProtoReflect.Descriptor instead.
 func (*ListVaultAuditRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{267}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{272}
 }
 
 func (x *ListVaultAuditRequest) GetLimit() int32 {
@@ -23538,7 +23912,7 @@ type VaultAuditEntry struct {
 
 func (x *VaultAuditEntry) Reset() {
 	*x = VaultAuditEntry{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[268]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[273]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -23550,7 +23924,7 @@ func (x *VaultAuditEntry) String() string {
 func (*VaultAuditEntry) ProtoMessage() {}
 
 func (x *VaultAuditEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[268]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[273]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -23563,7 +23937,7 @@ func (x *VaultAuditEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VaultAuditEntry.ProtoReflect.Descriptor instead.
 func (*VaultAuditEntry) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{268}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{273}
 }
 
 func (x *VaultAuditEntry) GetTime() string {
@@ -23645,7 +24019,7 @@ type VaultAuditResponse struct {
 
 func (x *VaultAuditResponse) Reset() {
 	*x = VaultAuditResponse{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[269]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[274]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -23657,7 +24031,7 @@ func (x *VaultAuditResponse) String() string {
 func (*VaultAuditResponse) ProtoMessage() {}
 
 func (x *VaultAuditResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[269]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[274]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -23670,7 +24044,7 @@ func (x *VaultAuditResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VaultAuditResponse.ProtoReflect.Descriptor instead.
 func (*VaultAuditResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{269}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{274}
 }
 
 func (x *VaultAuditResponse) GetEntries() []*VaultAuditEntry {
@@ -24275,7 +24649,37 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x14board_skill_template\x18\x06 \x01(\tR\x12boardSkillTemplate\x12.\n" +
 	"\x13chat_skill_template\x18\a \x01(\tR\x11chatSkillTemplate\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\x04 \x01(\tR\tupdatedAt\"\x9e\x01\n" +
+	"updated_at\x18\x04 \x01(\tR\tupdatedAt\"\xd5\x02\n" +
+	"\x12ClaudeDesignStatus\x12\x1c\n" +
+	"\tavailable\x18\x01 \x01(\bR\tavailable\x12\x1b\n" +
+	"\tsigned_in\x18\x02 \x01(\bR\bsignedIn\x12\x1e\n" +
+	"\vcan_sign_in\x18\x03 \x01(\bR\tcanSignIn\x12%\n" +
+	"\x0eaccess_enabled\x18\x04 \x01(\bR\raccessEnabled\x12*\n" +
+	"\x11access_updated_at\x18\x05 \x01(\tR\x0faccessUpdatedAt\x12\x16\n" +
+	"\x06reason\x18\x06 \x01(\tR\x06reason\x12.\n" +
+	"\x13claude_code_version\x18\a \x01(\tR\x11claudeCodeVersion\x12#\n" +
+	"\rruntime_ready\x18\b \x01(\bR\fruntimeReady\x12$\n" +
+	"\x0esign_in_active\x18\t \x01(\bR\fsignInActive\"\x1b\n" +
+	"\x19SignInClaudeDesignRequest\"\x9e\x02\n" +
+	"\x17ClaudeDesignSignInEvent\x12\x1c\n" +
+	"\n" +
+	"sign_in_id\x18\x01 \x01(\tR\bsignInId\x12\x1c\n" +
+	"\tpreparing\x18\x02 \x01(\bR\tpreparing\x12\x10\n" +
+	"\x03url\x18\x03 \x01(\tR\x03url\x12\x1d\n" +
+	"\n" +
+	"manual_url\x18\x04 \x01(\tR\tmanualUrl\x12!\n" +
+	"\fmanual_first\x18\x05 \x01(\bR\vmanualFirst\x12\x12\n" +
+	"\x04done\x18\x06 \x01(\bR\x04done\x12\x0e\n" +
+	"\x02ok\x18\a \x01(\bR\x02ok\x12\x18\n" +
+	"\amessage\x18\b \x01(\tR\amessage\x125\n" +
+	"\x06status\x18\t \x01(\v2\x1d.dieter.v1.ClaudeDesignStatusR\x06status\"W\n" +
+	"#SubmitClaudeDesignSignInCodeRequest\x12\x1c\n" +
+	"\n" +
+	"sign_in_id\x18\x01 \x01(\tR\bsignInId\x12\x12\n" +
+	"\x04code\x18\x02 \x01(\tR\x04code\"[\n" +
+	"\x1cSetClaudeDesignAccessRequest\x12\x18\n" +
+	"\aenabled\x18\x01 \x01(\bR\aenabled\x12!\n" +
+	"\frevoke_grant\x18\x02 \x01(\bR\vrevokeGrant\"\x9e\x01\n" +
 	"\x0fSettingsOptions\x12.\n" +
 	"\bprojects\x18\x01 \x03(\v2\x12.dieter.v1.ProjectR\bprojects\x12(\n" +
 	"\x06boards\x18\x02 \x03(\v2\x10.dieter.v1.BoardR\x06boards\x121\n" +
@@ -26045,7 +26449,7 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"-REMOTE_DESKTOP_RENDER_MEASUREMENT_UNSPECIFIED\x10\x00\x125\n" +
 	"1REMOTE_DESKTOP_RENDER_MEASUREMENT_METAL_PRESENTED\x10\x01\x123\n" +
 	"/REMOTE_DESKTOP_RENDER_MEASUREMENT_EGL_SUBMITTED\x10\x02\x12<\n" +
-	"8REMOTE_DESKTOP_RENDER_MEASUREMENT_ANDROID_FRAME_RENDERED\x10\x032\xb4Y\n" +
+	"8REMOTE_DESKTOP_RENDER_MEASUREMENT_ANDROID_FRAME_RENDERED\x10\x032\xaf\\\n" +
 	"\rDieterService\x12-\n" +
 	"\x05GetKV\x12\x10.dieter.v1.KVRef\x1a\x12.dieter.v1.KVEntry\x125\n" +
 	"\x06ListKV\x12\x18.dieter.v1.KVListRequest\x1a\x11.dieter.v1.KVPage\x124\n" +
@@ -26076,7 +26480,11 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x14UpdatePromptSettings\x12&.dieter.v1.UpdatePromptSettingsRequest\x1a\x19.dieter.v1.PromptSettings\x12Y\n" +
 	"\x18SetProjectPromptTemplate\x12).dieter.v1.SetScopedPromptTemplateRequest\x1a\x12.dieter.v1.Project\x12U\n" +
 	"\x16SetBoardPromptTemplate\x12).dieter.v1.SetScopedPromptTemplateRequest\x1a\x10.dieter.v1.Board\x12J\n" +
-	"\rPreviewPrompt\x12\x1f.dieter.v1.PreviewPromptRequest\x1a\x18.dieter.v1.PromptPreview\x12Q\n" +
+	"\rPreviewPrompt\x12\x1f.dieter.v1.PreviewPromptRequest\x1a\x18.dieter.v1.PromptPreview\x12N\n" +
+	"\x15GetClaudeDesignStatus\x12\x16.google.protobuf.Empty\x1a\x1d.dieter.v1.ClaudeDesignStatus\x12`\n" +
+	"\x12SignInClaudeDesign\x12$.dieter.v1.SignInClaudeDesignRequest\x1a\".dieter.v1.ClaudeDesignSignInEvent0\x01\x12f\n" +
+	"\x1cSubmitClaudeDesignSignInCode\x12..dieter.v1.SubmitClaudeDesignSignInCodeRequest\x1a\x16.google.protobuf.Empty\x12_\n" +
+	"\x15SetClaudeDesignAccess\x12'.dieter.v1.SetClaudeDesignAccessRequest\x1a\x1d.dieter.v1.ClaudeDesignStatus\x12Q\n" +
 	"\x0fListDirectories\x12!.dieter.v1.ListDirectoriesRequest\x1a\x1b.dieter.v1.DirectoryListing\x12N\n" +
 	"\x12ConsolidateProject\x12$.dieter.v1.ConsolidateProjectRequest\x1a\x12.dieter.v1.Project\x12G\n" +
 	"\x0eAttachCheckout\x12 .dieter.v1.AttachCheckoutRequest\x1a\x13.dieter.v1.Checkout\x12@\n" +
@@ -26217,7 +26625,7 @@ func file_dieter_v1_dieter_proto_rawDescGZIP() []byte {
 }
 
 var file_dieter_v1_dieter_proto_enumTypes = make([]protoimpl.EnumInfo, 14)
-var file_dieter_v1_dieter_proto_msgTypes = make([]protoimpl.MessageInfo, 285)
+var file_dieter_v1_dieter_proto_msgTypes = make([]protoimpl.MessageInfo, 290)
 var file_dieter_v1_dieter_proto_goTypes = []any{
 	(GPUTelemetryState)(0),                            // 0: dieter.v1.GPUTelemetryState
 	(GPUVendor)(0),                                    // 1: dieter.v1.GPUVendor
@@ -26296,234 +26704,239 @@ var file_dieter_v1_dieter_proto_goTypes = []any{
 	(*HarnessModel)(nil),                              // 74: dieter.v1.HarnessModel
 	(*EffortConfig)(nil),                              // 75: dieter.v1.EffortConfig
 	(*Settings)(nil),                                  // 76: dieter.v1.Settings
-	(*SettingsOptions)(nil),                           // 77: dieter.v1.SettingsOptions
-	(*UpdateSettingsRequest)(nil),                     // 78: dieter.v1.UpdateSettingsRequest
-	(*PromptSettings)(nil),                            // 79: dieter.v1.PromptSettings
-	(*UpdatePromptSettingsRequest)(nil),               // 80: dieter.v1.UpdatePromptSettingsRequest
-	(*SetScopedPromptTemplateRequest)(nil),            // 81: dieter.v1.SetScopedPromptTemplateRequest
-	(*PreviewPromptRequest)(nil),                      // 82: dieter.v1.PreviewPromptRequest
-	(*PromptPreview)(nil),                             // 83: dieter.v1.PromptPreview
-	(*ListDirectoriesRequest)(nil),                    // 84: dieter.v1.ListDirectoriesRequest
-	(*DirectoryEntry)(nil),                            // 85: dieter.v1.DirectoryEntry
-	(*DirectoryLocation)(nil),                         // 86: dieter.v1.DirectoryLocation
-	(*DirectoryListing)(nil),                          // 87: dieter.v1.DirectoryListing
-	(*CreateProjectRequest)(nil),                      // 88: dieter.v1.CreateProjectRequest
-	(*CreateProjectResponse)(nil),                     // 89: dieter.v1.CreateProjectResponse
-	(*UpdateProjectRequest)(nil),                      // 90: dieter.v1.UpdateProjectRequest
-	(*ProjectHostnames)(nil),                          // 91: dieter.v1.ProjectHostnames
-	(*ValidationCommand)(nil),                         // 92: dieter.v1.ValidationCommand
-	(*UpdateProjectWorkspaceSettingsRequest)(nil),     // 93: dieter.v1.UpdateProjectWorkspaceSettingsRequest
-	(*ArchiveProjectRequest)(nil),                     // 94: dieter.v1.ArchiveProjectRequest
-	(*CreateBoardRequest)(nil),                        // 95: dieter.v1.CreateBoardRequest
-	(*RenameBoardRequest)(nil),                        // 96: dieter.v1.RenameBoardRequest
-	(*BoardRef)(nil),                                  // 97: dieter.v1.BoardRef
-	(*SetBoardArchivePolicyRequest)(nil),              // 98: dieter.v1.SetBoardArchivePolicyRequest
-	(*CreateBoardLabelRequest)(nil),                   // 99: dieter.v1.CreateBoardLabelRequest
-	(*UpdateBoardLabelRequest)(nil),                   // 100: dieter.v1.UpdateBoardLabelRequest
-	(*DeleteBoardLabelRequest)(nil),                   // 101: dieter.v1.DeleteBoardLabelRequest
-	(*EffortOption)(nil),                              // 102: dieter.v1.EffortOption
-	(*CreateConversationRequest)(nil),                 // 103: dieter.v1.CreateConversationRequest
-	(*ListChatsRequest)(nil),                          // 104: dieter.v1.ListChatsRequest
-	(*ForkChatRequest)(nil),                           // 105: dieter.v1.ForkChatRequest
-	(*ChatsResponse)(nil),                             // 106: dieter.v1.ChatsResponse
-	(*GetCardRequest)(nil),                            // 107: dieter.v1.GetCardRequest
-	(*GetConversationRequest)(nil),                    // 108: dieter.v1.GetConversationRequest
-	(*WatchConversationRequest)(nil),                  // 109: dieter.v1.WatchConversationRequest
-	(*PollConversationRequest)(nil),                   // 110: dieter.v1.PollConversationRequest
-	(*ConversationUpdate)(nil),                        // 111: dieter.v1.ConversationUpdate
-	(*GetToolOutputRequest)(nil),                      // 112: dieter.v1.GetToolOutputRequest
-	(*ToolOutput)(nil),                                // 113: dieter.v1.ToolOutput
-	(*SendMessageRequest)(nil),                        // 114: dieter.v1.SendMessageRequest
-	(*SendMessageResponse)(nil),                       // 115: dieter.v1.SendMessageResponse
-	(*MoveCardRequest)(nil),                           // 116: dieter.v1.MoveCardRequest
-	(*StartCardRequest)(nil),                          // 117: dieter.v1.StartCardRequest
-	(*StartCardResponse)(nil),                         // 118: dieter.v1.StartCardResponse
-	(*SetCardLabelsRequest)(nil),                      // 119: dieter.v1.SetCardLabelsRequest
-	(*RenameCardRequest)(nil),                         // 120: dieter.v1.RenameCardRequest
-	(*MergeCardRequest)(nil),                          // 121: dieter.v1.MergeCardRequest
-	(*DraftAgentSettings)(nil),                        // 122: dieter.v1.DraftAgentSettings
-	(*UpdateCardRequest)(nil),                         // 123: dieter.v1.UpdateCardRequest
-	(*ArchiveCardRequest)(nil),                        // 124: dieter.v1.ArchiveCardRequest
-	(*PinChatRequest)(nil),                            // 125: dieter.v1.PinChatRequest
-	(*ProjectRef)(nil),                                // 126: dieter.v1.ProjectRef
-	(*ConversationRef)(nil),                           // 127: dieter.v1.ConversationRef
-	(*UpdateConversationWorkspaceRequest)(nil),        // 128: dieter.v1.UpdateConversationWorkspaceRequest
-	(*WorkspaceSummary)(nil),                          // 129: dieter.v1.WorkspaceSummary
-	(*Workspace)(nil),                                 // 130: dieter.v1.Workspace
-	(*WorkspacesResponse)(nil),                        // 131: dieter.v1.WorkspacesResponse
-	(*ChangedFile)(nil),                               // 132: dieter.v1.ChangedFile
-	(*WorkspaceCommit)(nil),                           // 133: dieter.v1.WorkspaceCommit
-	(*Changeset)(nil),                                 // 134: dieter.v1.Changeset
-	(*GetChangesetRequest)(nil),                       // 135: dieter.v1.GetChangesetRequest
-	(*GetDiffRequest)(nil),                            // 136: dieter.v1.GetDiffRequest
-	(*FileDiff)(nil),                                  // 137: dieter.v1.FileDiff
-	(*ChangeComment)(nil),                             // 138: dieter.v1.ChangeComment
-	(*AddChangeCommentRequest)(nil),                   // 139: dieter.v1.AddChangeCommentRequest
-	(*ListChangeCommentsRequest)(nil),                 // 140: dieter.v1.ListChangeCommentsRequest
-	(*ChangeCommentsResponse)(nil),                    // 141: dieter.v1.ChangeCommentsResponse
-	(*SCMCapabilities)(nil),                           // 142: dieter.v1.SCMCapabilities
-	(*PullRequestSummary)(nil),                        // 143: dieter.v1.PullRequestSummary
-	(*GitConflict)(nil),                               // 144: dieter.v1.GitConflict
-	(*ValidationResult)(nil),                          // 145: dieter.v1.ValidationResult
-	(*GitOperation)(nil),                              // 146: dieter.v1.GitOperation
-	(*StartGitOperationRequest)(nil),                  // 147: dieter.v1.StartGitOperationRequest
-	(*GitOperationRef)(nil),                           // 148: dieter.v1.GitOperationRef
-	(*WatchGitOperationRequest)(nil),                  // 149: dieter.v1.WatchGitOperationRequest
-	(*GitOperationLogEntry)(nil),                      // 150: dieter.v1.GitOperationLogEntry
-	(*GitOperationFrame)(nil),                         // 151: dieter.v1.GitOperationFrame
-	(*ListFilesRequest)(nil),                          // 152: dieter.v1.ListFilesRequest
-	(*FileEntry)(nil),                                 // 153: dieter.v1.FileEntry
-	(*FileList)(nil),                                  // 154: dieter.v1.FileList
-	(*ReadFileRequest)(nil),                           // 155: dieter.v1.ReadFileRequest
-	(*FileDocument)(nil),                              // 156: dieter.v1.FileDocument
-	(*Terminal)(nil),                                  // 157: dieter.v1.Terminal
-	(*TerminalRef)(nil),                               // 158: dieter.v1.TerminalRef
-	(*ListTerminalsRequest)(nil),                      // 159: dieter.v1.ListTerminalsRequest
-	(*TerminalsResponse)(nil),                         // 160: dieter.v1.TerminalsResponse
-	(*CreateTerminalRequest)(nil),                     // 161: dieter.v1.CreateTerminalRequest
-	(*WatchTerminalRequest)(nil),                      // 162: dieter.v1.WatchTerminalRequest
-	(*TerminalFrame)(nil),                             // 163: dieter.v1.TerminalFrame
-	(*TerminalInputRequest)(nil),                      // 164: dieter.v1.TerminalInputRequest
-	(*ResizeTerminalRequest)(nil),                     // 165: dieter.v1.ResizeTerminalRequest
-	(*RenameTerminalRequest)(nil),                     // 166: dieter.v1.RenameTerminalRequest
-	(*Execution)(nil),                                 // 167: dieter.v1.Execution
-	(*ExecutionRef)(nil),                              // 168: dieter.v1.ExecutionRef
-	(*ListExecutionsRequest)(nil),                     // 169: dieter.v1.ListExecutionsRequest
-	(*ExecutionsResponse)(nil),                        // 170: dieter.v1.ExecutionsResponse
-	(*StartExecutionRequest)(nil),                     // 171: dieter.v1.StartExecutionRequest
-	(*WatchExecutionRequest)(nil),                     // 172: dieter.v1.WatchExecutionRequest
-	(*ExecutionEvent)(nil),                            // 173: dieter.v1.ExecutionEvent
-	(*ExecutionInputRequest)(nil),                     // 174: dieter.v1.ExecutionInputRequest
-	(*SignalExecutionRequest)(nil),                    // 175: dieter.v1.SignalExecutionRequest
-	(*ResizeExecutionRequest)(nil),                    // 176: dieter.v1.ResizeExecutionRequest
-	(*RemoteDesktopCapabilities)(nil),                 // 177: dieter.v1.RemoteDesktopCapabilities
-	(*RemoteDesktopDisplayMode)(nil),                  // 178: dieter.v1.RemoteDesktopDisplayMode
-	(*RemoteDesktopDisplayModes)(nil),                 // 179: dieter.v1.RemoteDesktopDisplayModes
-	(*SetRemoteDesktopDisplayModeRequest)(nil),        // 180: dieter.v1.SetRemoteDesktopDisplayModeRequest
-	(*RemoteDesktopVirtualDisplay)(nil),               // 181: dieter.v1.RemoteDesktopVirtualDisplay
-	(*SetRemoteDesktopVirtualDisplayRequest)(nil),     // 182: dieter.v1.SetRemoteDesktopVirtualDisplayRequest
-	(*ConfirmRemoteDesktopVirtualDisplayRequest)(nil), // 183: dieter.v1.ConfirmRemoteDesktopVirtualDisplayRequest
-	(*RemoteDesktopCodecMode)(nil),                    // 184: dieter.v1.RemoteDesktopCodecMode
-	(*ProbeRemoteDesktopPermissionsRequest)(nil),      // 185: dieter.v1.ProbeRemoteDesktopPermissionsRequest
-	(*RemoteDesktopPermissionProbe)(nil),              // 186: dieter.v1.RemoteDesktopPermissionProbe
-	(*RemoteDesktopDisplay)(nil),                      // 187: dieter.v1.RemoteDesktopDisplay
-	(*RemoteDesktopSessionDescription)(nil),           // 188: dieter.v1.RemoteDesktopSessionDescription
-	(*RemoteDesktopICECandidate)(nil),                 // 189: dieter.v1.RemoteDesktopICECandidate
-	(*StartRemoteDesktopRequest)(nil),                 // 190: dieter.v1.StartRemoteDesktopRequest
-	(*RemoteDesktopSessions)(nil),                     // 191: dieter.v1.RemoteDesktopSessions
-	(*RemoteDesktopSessionInfo)(nil),                  // 192: dieter.v1.RemoteDesktopSessionInfo
-	(*RemoteDesktopControlRequest)(nil),               // 193: dieter.v1.RemoteDesktopControlRequest
-	(*RemoteDesktopStreamConfiguration)(nil),          // 194: dieter.v1.RemoteDesktopStreamConfiguration
-	(*UpdateRemoteDesktopSessionRequest)(nil),         // 195: dieter.v1.UpdateRemoteDesktopSessionRequest
-	(*RemoteDesktopRef)(nil),                          // 196: dieter.v1.RemoteDesktopRef
-	(*RemoteDesktopSessionBinding)(nil),               // 197: dieter.v1.RemoteDesktopSessionBinding
-	(*RemoteDesktopPointerMove)(nil),                  // 198: dieter.v1.RemoteDesktopPointerMove
-	(*RemoteDesktopPointerButton)(nil),                // 199: dieter.v1.RemoteDesktopPointerButton
-	(*RemoteDesktopScroll)(nil),                       // 200: dieter.v1.RemoteDesktopScroll
-	(*RemoteDesktopKey)(nil),                          // 201: dieter.v1.RemoteDesktopKey
-	(*RemoteDesktopText)(nil),                         // 202: dieter.v1.RemoteDesktopText
-	(*RemoteDesktopReleaseAll)(nil),                   // 203: dieter.v1.RemoteDesktopReleaseAll
-	(*RemoteDesktopInput)(nil),                        // 204: dieter.v1.RemoteDesktopInput
-	(*RemoteDesktopSessionState)(nil),                 // 205: dieter.v1.RemoteDesktopSessionState
-	(*RemoteDesktopRecoveryDiagnostics)(nil),          // 206: dieter.v1.RemoteDesktopRecoveryDiagnostics
-	(*RemoteDesktopReceiverFeedback)(nil),             // 207: dieter.v1.RemoteDesktopReceiverFeedback
-	(*RemoteDesktopCursor)(nil),                       // 208: dieter.v1.RemoteDesktopCursor
-	(*RemoteDesktopReference)(nil),                    // 209: dieter.v1.RemoteDesktopReference
-	(*RemoteDesktopHostEvent)(nil),                    // 210: dieter.v1.RemoteDesktopHostEvent
-	(*RemoteDesktopSessionError)(nil),                 // 211: dieter.v1.RemoteDesktopSessionError
-	(*RemoteDesktopSignal)(nil),                       // 212: dieter.v1.RemoteDesktopSignal
-	(*SaveFileRequest)(nil),                           // 213: dieter.v1.SaveFileRequest
-	(*CreateFileRequest)(nil),                         // 214: dieter.v1.CreateFileRequest
-	(*MoveFileRequest)(nil),                           // 215: dieter.v1.MoveFileRequest
-	(*MoveFileResponse)(nil),                          // 216: dieter.v1.MoveFileResponse
-	(*DeleteFileRequest)(nil),                         // 217: dieter.v1.DeleteFileRequest
-	(*ListSchedulesRequest)(nil),                      // 218: dieter.v1.ListSchedulesRequest
-	(*SchedulesResponse)(nil),                         // 219: dieter.v1.SchedulesResponse
-	(*Schedule)(nil),                                  // 220: dieter.v1.Schedule
-	(*ScheduleDraft)(nil),                             // 221: dieter.v1.ScheduleDraft
-	(*SaveScheduleRequest)(nil),                       // 222: dieter.v1.SaveScheduleRequest
-	(*PreviewScheduleRequest)(nil),                    // 223: dieter.v1.PreviewScheduleRequest
-	(*SchedulePreview)(nil),                           // 224: dieter.v1.SchedulePreview
-	(*ScheduleRef)(nil),                               // 225: dieter.v1.ScheduleRef
-	(*SetScheduleEnabledRequest)(nil),                 // 226: dieter.v1.SetScheduleEnabledRequest
-	(*ListScheduleRunsRequest)(nil),                   // 227: dieter.v1.ListScheduleRunsRequest
-	(*ScheduleRun)(nil),                               // 228: dieter.v1.ScheduleRun
-	(*ScheduleRunsResponse)(nil),                      // 229: dieter.v1.ScheduleRunsResponse
-	(*UpdateBoardGitSettingsRequest)(nil),             // 230: dieter.v1.UpdateBoardGitSettingsRequest
-	(*RemoveQueuedMessageRequest)(nil),                // 231: dieter.v1.RemoveQueuedMessageRequest
-	(*UpdateBoardHostnamesRequest)(nil),               // 232: dieter.v1.UpdateBoardHostnamesRequest
-	(*RemoteDesktopClipboardRequest)(nil),             // 233: dieter.v1.RemoteDesktopClipboardRequest
-	(*RemoteDesktopClipboardItem)(nil),                // 234: dieter.v1.RemoteDesktopClipboardItem
-	(*RemoteDesktopClipboardResponse)(nil),            // 235: dieter.v1.RemoteDesktopClipboardResponse
-	(*RemoteDesktopClipboardFrame)(nil),               // 236: dieter.v1.RemoteDesktopClipboardFrame
-	(*StartControlConnectionRequest)(nil),             // 237: dieter.v1.StartControlConnectionRequest
-	(*ControlConnectionRef)(nil),                      // 238: dieter.v1.ControlConnectionRef
-	(*ControlConnection)(nil),                         // 239: dieter.v1.ControlConnection
-	(*PeerVersion)(nil),                               // 240: dieter.v1.PeerVersion
-	(*PeerRecord)(nil),                                // 241: dieter.v1.PeerRecord
-	(*PeerStoreStatus)(nil),                           // 242: dieter.v1.PeerStoreStatus
-	(*PeerSyncDiagnostic)(nil),                        // 243: dieter.v1.PeerSyncDiagnostic
-	(*PeerSnapshotRequest)(nil),                       // 244: dieter.v1.PeerSnapshotRequest
-	(*PeerSnapshot)(nil),                              // 245: dieter.v1.PeerSnapshot
-	(*PutPeerRecordRequest)(nil),                      // 246: dieter.v1.PutPeerRecordRequest
-	(*MergePeerRecordsRequest)(nil),                   // 247: dieter.v1.MergePeerRecordsRequest
-	(*PeerRecordRef)(nil),                             // 248: dieter.v1.PeerRecordRef
-	(*PeerChangesRequest)(nil),                        // 249: dieter.v1.PeerChangesRequest
-	(*PeerChangesResponse)(nil),                       // 250: dieter.v1.PeerChangesResponse
-	(*KVRef)(nil),                                     // 251: dieter.v1.KVRef
-	(*KVEntry)(nil),                                   // 252: dieter.v1.KVEntry
-	(*KVCursor)(nil),                                  // 253: dieter.v1.KVCursor
-	(*KVListRequest)(nil),                             // 254: dieter.v1.KVListRequest
-	(*KVPage)(nil),                                    // 255: dieter.v1.KVPage
-	(*KVPutRequest)(nil),                              // 256: dieter.v1.KVPutRequest
-	(*KVDeleteRequest)(nil),                           // 257: dieter.v1.KVDeleteRequest
-	(*KVMoveRequest)(nil),                             // 258: dieter.v1.KVMoveRequest
-	(*KVWatchRequest)(nil),                            // 259: dieter.v1.KVWatchRequest
-	(*KVFrame)(nil),                                   // 260: dieter.v1.KVFrame
-	(*MarkConversationReadRequest)(nil),               // 261: dieter.v1.MarkConversationReadRequest
-	(*VaultCaller)(nil),                               // 262: dieter.v1.VaultCaller
-	(*VaultMember)(nil),                               // 263: dieter.v1.VaultMember
-	(*VaultStatus)(nil),                               // 264: dieter.v1.VaultStatus
-	(*InitVaultRequest)(nil),                          // 265: dieter.v1.InitVaultRequest
-	(*InitVaultResponse)(nil),                         // 266: dieter.v1.InitVaultResponse
-	(*JoinVaultRequest)(nil),                          // 267: dieter.v1.JoinVaultRequest
-	(*JoinVaultResponse)(nil),                         // 268: dieter.v1.JoinVaultResponse
-	(*ApproveVaultMemberRequest)(nil),                 // 269: dieter.v1.ApproveVaultMemberRequest
-	(*VaultMemberRef)(nil),                            // 270: dieter.v1.VaultMemberRef
-	(*RotateVaultRequest)(nil),                        // 271: dieter.v1.RotateVaultRequest
-	(*RotateVaultResponse)(nil),                       // 272: dieter.v1.RotateVaultResponse
-	(*VaultItem)(nil),                                 // 273: dieter.v1.VaultItem
-	(*ListVaultItemsRequest)(nil),                     // 274: dieter.v1.ListVaultItemsRequest
-	(*VaultItemsResponse)(nil),                        // 275: dieter.v1.VaultItemsResponse
-	(*VaultItemRef)(nil),                              // 276: dieter.v1.VaultItemRef
-	(*RevealVaultItemRequest)(nil),                    // 277: dieter.v1.RevealVaultItemRequest
-	(*RevealVaultItemResponse)(nil),                   // 278: dieter.v1.RevealVaultItemResponse
-	(*CreateVaultItemRequest)(nil),                    // 279: dieter.v1.CreateVaultItemRequest
-	(*UpdateVaultItemRequest)(nil),                    // 280: dieter.v1.UpdateVaultItemRequest
-	(*ListVaultAuditRequest)(nil),                     // 281: dieter.v1.ListVaultAuditRequest
-	(*VaultAuditEntry)(nil),                           // 282: dieter.v1.VaultAuditEntry
-	(*VaultAuditResponse)(nil),                        // 283: dieter.v1.VaultAuditResponse
-	nil,                                               // 284: dieter.v1.BoardRetirementVersion.ClockEntry
-	nil,                                               // 285: dieter.v1.CardStateVersion.ClockEntry
-	nil,                                               // 286: dieter.v1.Card.ProviderOptionsEntry
-	nil,                                               // 287: dieter.v1.HarnessSelection.ProviderOptionsEntry
-	nil,                                               // 288: dieter.v1.ValidationCommand.EnvironmentEntry
-	nil,                                               // 289: dieter.v1.CreateConversationRequest.ProviderOptionsEntry
-	nil,                                               // 290: dieter.v1.SendMessageRequest.ProviderOptionsEntry
-	nil,                                               // 291: dieter.v1.DraftAgentSettings.ProviderOptionsEntry
-	nil,                                               // 292: dieter.v1.GitOperation.ParametersEntry
-	nil,                                               // 293: dieter.v1.StartGitOperationRequest.ParametersEntry
-	nil,                                               // 294: dieter.v1.StartExecutionRequest.EnvironmentEntry
-	nil,                                               // 295: dieter.v1.Schedule.ProviderOptionsEntry
-	nil,                                               // 296: dieter.v1.ScheduleDraft.ProviderOptionsEntry
-	nil,                                               // 297: dieter.v1.PeerVersion.ClockEntry
-	nil,                                               // 298: dieter.v1.RevealVaultItemResponse.ValuesEntry
-	(*v1.CompatibilityPolicy)(nil),                    // 299: dieter.gateway.v1.CompatibilityPolicy
-	(*v1.RTCConfiguration)(nil),                       // 300: dieter.gateway.v1.RTCConfiguration
-	(*emptypb.Empty)(nil),                             // 301: google.protobuf.Empty
+	(*ClaudeDesignStatus)(nil),                        // 77: dieter.v1.ClaudeDesignStatus
+	(*SignInClaudeDesignRequest)(nil),                 // 78: dieter.v1.SignInClaudeDesignRequest
+	(*ClaudeDesignSignInEvent)(nil),                   // 79: dieter.v1.ClaudeDesignSignInEvent
+	(*SubmitClaudeDesignSignInCodeRequest)(nil),       // 80: dieter.v1.SubmitClaudeDesignSignInCodeRequest
+	(*SetClaudeDesignAccessRequest)(nil),              // 81: dieter.v1.SetClaudeDesignAccessRequest
+	(*SettingsOptions)(nil),                           // 82: dieter.v1.SettingsOptions
+	(*UpdateSettingsRequest)(nil),                     // 83: dieter.v1.UpdateSettingsRequest
+	(*PromptSettings)(nil),                            // 84: dieter.v1.PromptSettings
+	(*UpdatePromptSettingsRequest)(nil),               // 85: dieter.v1.UpdatePromptSettingsRequest
+	(*SetScopedPromptTemplateRequest)(nil),            // 86: dieter.v1.SetScopedPromptTemplateRequest
+	(*PreviewPromptRequest)(nil),                      // 87: dieter.v1.PreviewPromptRequest
+	(*PromptPreview)(nil),                             // 88: dieter.v1.PromptPreview
+	(*ListDirectoriesRequest)(nil),                    // 89: dieter.v1.ListDirectoriesRequest
+	(*DirectoryEntry)(nil),                            // 90: dieter.v1.DirectoryEntry
+	(*DirectoryLocation)(nil),                         // 91: dieter.v1.DirectoryLocation
+	(*DirectoryListing)(nil),                          // 92: dieter.v1.DirectoryListing
+	(*CreateProjectRequest)(nil),                      // 93: dieter.v1.CreateProjectRequest
+	(*CreateProjectResponse)(nil),                     // 94: dieter.v1.CreateProjectResponse
+	(*UpdateProjectRequest)(nil),                      // 95: dieter.v1.UpdateProjectRequest
+	(*ProjectHostnames)(nil),                          // 96: dieter.v1.ProjectHostnames
+	(*ValidationCommand)(nil),                         // 97: dieter.v1.ValidationCommand
+	(*UpdateProjectWorkspaceSettingsRequest)(nil),     // 98: dieter.v1.UpdateProjectWorkspaceSettingsRequest
+	(*ArchiveProjectRequest)(nil),                     // 99: dieter.v1.ArchiveProjectRequest
+	(*CreateBoardRequest)(nil),                        // 100: dieter.v1.CreateBoardRequest
+	(*RenameBoardRequest)(nil),                        // 101: dieter.v1.RenameBoardRequest
+	(*BoardRef)(nil),                                  // 102: dieter.v1.BoardRef
+	(*SetBoardArchivePolicyRequest)(nil),              // 103: dieter.v1.SetBoardArchivePolicyRequest
+	(*CreateBoardLabelRequest)(nil),                   // 104: dieter.v1.CreateBoardLabelRequest
+	(*UpdateBoardLabelRequest)(nil),                   // 105: dieter.v1.UpdateBoardLabelRequest
+	(*DeleteBoardLabelRequest)(nil),                   // 106: dieter.v1.DeleteBoardLabelRequest
+	(*EffortOption)(nil),                              // 107: dieter.v1.EffortOption
+	(*CreateConversationRequest)(nil),                 // 108: dieter.v1.CreateConversationRequest
+	(*ListChatsRequest)(nil),                          // 109: dieter.v1.ListChatsRequest
+	(*ForkChatRequest)(nil),                           // 110: dieter.v1.ForkChatRequest
+	(*ChatsResponse)(nil),                             // 111: dieter.v1.ChatsResponse
+	(*GetCardRequest)(nil),                            // 112: dieter.v1.GetCardRequest
+	(*GetConversationRequest)(nil),                    // 113: dieter.v1.GetConversationRequest
+	(*WatchConversationRequest)(nil),                  // 114: dieter.v1.WatchConversationRequest
+	(*PollConversationRequest)(nil),                   // 115: dieter.v1.PollConversationRequest
+	(*ConversationUpdate)(nil),                        // 116: dieter.v1.ConversationUpdate
+	(*GetToolOutputRequest)(nil),                      // 117: dieter.v1.GetToolOutputRequest
+	(*ToolOutput)(nil),                                // 118: dieter.v1.ToolOutput
+	(*SendMessageRequest)(nil),                        // 119: dieter.v1.SendMessageRequest
+	(*SendMessageResponse)(nil),                       // 120: dieter.v1.SendMessageResponse
+	(*MoveCardRequest)(nil),                           // 121: dieter.v1.MoveCardRequest
+	(*StartCardRequest)(nil),                          // 122: dieter.v1.StartCardRequest
+	(*StartCardResponse)(nil),                         // 123: dieter.v1.StartCardResponse
+	(*SetCardLabelsRequest)(nil),                      // 124: dieter.v1.SetCardLabelsRequest
+	(*RenameCardRequest)(nil),                         // 125: dieter.v1.RenameCardRequest
+	(*MergeCardRequest)(nil),                          // 126: dieter.v1.MergeCardRequest
+	(*DraftAgentSettings)(nil),                        // 127: dieter.v1.DraftAgentSettings
+	(*UpdateCardRequest)(nil),                         // 128: dieter.v1.UpdateCardRequest
+	(*ArchiveCardRequest)(nil),                        // 129: dieter.v1.ArchiveCardRequest
+	(*PinChatRequest)(nil),                            // 130: dieter.v1.PinChatRequest
+	(*ProjectRef)(nil),                                // 131: dieter.v1.ProjectRef
+	(*ConversationRef)(nil),                           // 132: dieter.v1.ConversationRef
+	(*UpdateConversationWorkspaceRequest)(nil),        // 133: dieter.v1.UpdateConversationWorkspaceRequest
+	(*WorkspaceSummary)(nil),                          // 134: dieter.v1.WorkspaceSummary
+	(*Workspace)(nil),                                 // 135: dieter.v1.Workspace
+	(*WorkspacesResponse)(nil),                        // 136: dieter.v1.WorkspacesResponse
+	(*ChangedFile)(nil),                               // 137: dieter.v1.ChangedFile
+	(*WorkspaceCommit)(nil),                           // 138: dieter.v1.WorkspaceCommit
+	(*Changeset)(nil),                                 // 139: dieter.v1.Changeset
+	(*GetChangesetRequest)(nil),                       // 140: dieter.v1.GetChangesetRequest
+	(*GetDiffRequest)(nil),                            // 141: dieter.v1.GetDiffRequest
+	(*FileDiff)(nil),                                  // 142: dieter.v1.FileDiff
+	(*ChangeComment)(nil),                             // 143: dieter.v1.ChangeComment
+	(*AddChangeCommentRequest)(nil),                   // 144: dieter.v1.AddChangeCommentRequest
+	(*ListChangeCommentsRequest)(nil),                 // 145: dieter.v1.ListChangeCommentsRequest
+	(*ChangeCommentsResponse)(nil),                    // 146: dieter.v1.ChangeCommentsResponse
+	(*SCMCapabilities)(nil),                           // 147: dieter.v1.SCMCapabilities
+	(*PullRequestSummary)(nil),                        // 148: dieter.v1.PullRequestSummary
+	(*GitConflict)(nil),                               // 149: dieter.v1.GitConflict
+	(*ValidationResult)(nil),                          // 150: dieter.v1.ValidationResult
+	(*GitOperation)(nil),                              // 151: dieter.v1.GitOperation
+	(*StartGitOperationRequest)(nil),                  // 152: dieter.v1.StartGitOperationRequest
+	(*GitOperationRef)(nil),                           // 153: dieter.v1.GitOperationRef
+	(*WatchGitOperationRequest)(nil),                  // 154: dieter.v1.WatchGitOperationRequest
+	(*GitOperationLogEntry)(nil),                      // 155: dieter.v1.GitOperationLogEntry
+	(*GitOperationFrame)(nil),                         // 156: dieter.v1.GitOperationFrame
+	(*ListFilesRequest)(nil),                          // 157: dieter.v1.ListFilesRequest
+	(*FileEntry)(nil),                                 // 158: dieter.v1.FileEntry
+	(*FileList)(nil),                                  // 159: dieter.v1.FileList
+	(*ReadFileRequest)(nil),                           // 160: dieter.v1.ReadFileRequest
+	(*FileDocument)(nil),                              // 161: dieter.v1.FileDocument
+	(*Terminal)(nil),                                  // 162: dieter.v1.Terminal
+	(*TerminalRef)(nil),                               // 163: dieter.v1.TerminalRef
+	(*ListTerminalsRequest)(nil),                      // 164: dieter.v1.ListTerminalsRequest
+	(*TerminalsResponse)(nil),                         // 165: dieter.v1.TerminalsResponse
+	(*CreateTerminalRequest)(nil),                     // 166: dieter.v1.CreateTerminalRequest
+	(*WatchTerminalRequest)(nil),                      // 167: dieter.v1.WatchTerminalRequest
+	(*TerminalFrame)(nil),                             // 168: dieter.v1.TerminalFrame
+	(*TerminalInputRequest)(nil),                      // 169: dieter.v1.TerminalInputRequest
+	(*ResizeTerminalRequest)(nil),                     // 170: dieter.v1.ResizeTerminalRequest
+	(*RenameTerminalRequest)(nil),                     // 171: dieter.v1.RenameTerminalRequest
+	(*Execution)(nil),                                 // 172: dieter.v1.Execution
+	(*ExecutionRef)(nil),                              // 173: dieter.v1.ExecutionRef
+	(*ListExecutionsRequest)(nil),                     // 174: dieter.v1.ListExecutionsRequest
+	(*ExecutionsResponse)(nil),                        // 175: dieter.v1.ExecutionsResponse
+	(*StartExecutionRequest)(nil),                     // 176: dieter.v1.StartExecutionRequest
+	(*WatchExecutionRequest)(nil),                     // 177: dieter.v1.WatchExecutionRequest
+	(*ExecutionEvent)(nil),                            // 178: dieter.v1.ExecutionEvent
+	(*ExecutionInputRequest)(nil),                     // 179: dieter.v1.ExecutionInputRequest
+	(*SignalExecutionRequest)(nil),                    // 180: dieter.v1.SignalExecutionRequest
+	(*ResizeExecutionRequest)(nil),                    // 181: dieter.v1.ResizeExecutionRequest
+	(*RemoteDesktopCapabilities)(nil),                 // 182: dieter.v1.RemoteDesktopCapabilities
+	(*RemoteDesktopDisplayMode)(nil),                  // 183: dieter.v1.RemoteDesktopDisplayMode
+	(*RemoteDesktopDisplayModes)(nil),                 // 184: dieter.v1.RemoteDesktopDisplayModes
+	(*SetRemoteDesktopDisplayModeRequest)(nil),        // 185: dieter.v1.SetRemoteDesktopDisplayModeRequest
+	(*RemoteDesktopVirtualDisplay)(nil),               // 186: dieter.v1.RemoteDesktopVirtualDisplay
+	(*SetRemoteDesktopVirtualDisplayRequest)(nil),     // 187: dieter.v1.SetRemoteDesktopVirtualDisplayRequest
+	(*ConfirmRemoteDesktopVirtualDisplayRequest)(nil), // 188: dieter.v1.ConfirmRemoteDesktopVirtualDisplayRequest
+	(*RemoteDesktopCodecMode)(nil),                    // 189: dieter.v1.RemoteDesktopCodecMode
+	(*ProbeRemoteDesktopPermissionsRequest)(nil),      // 190: dieter.v1.ProbeRemoteDesktopPermissionsRequest
+	(*RemoteDesktopPermissionProbe)(nil),              // 191: dieter.v1.RemoteDesktopPermissionProbe
+	(*RemoteDesktopDisplay)(nil),                      // 192: dieter.v1.RemoteDesktopDisplay
+	(*RemoteDesktopSessionDescription)(nil),           // 193: dieter.v1.RemoteDesktopSessionDescription
+	(*RemoteDesktopICECandidate)(nil),                 // 194: dieter.v1.RemoteDesktopICECandidate
+	(*StartRemoteDesktopRequest)(nil),                 // 195: dieter.v1.StartRemoteDesktopRequest
+	(*RemoteDesktopSessions)(nil),                     // 196: dieter.v1.RemoteDesktopSessions
+	(*RemoteDesktopSessionInfo)(nil),                  // 197: dieter.v1.RemoteDesktopSessionInfo
+	(*RemoteDesktopControlRequest)(nil),               // 198: dieter.v1.RemoteDesktopControlRequest
+	(*RemoteDesktopStreamConfiguration)(nil),          // 199: dieter.v1.RemoteDesktopStreamConfiguration
+	(*UpdateRemoteDesktopSessionRequest)(nil),         // 200: dieter.v1.UpdateRemoteDesktopSessionRequest
+	(*RemoteDesktopRef)(nil),                          // 201: dieter.v1.RemoteDesktopRef
+	(*RemoteDesktopSessionBinding)(nil),               // 202: dieter.v1.RemoteDesktopSessionBinding
+	(*RemoteDesktopPointerMove)(nil),                  // 203: dieter.v1.RemoteDesktopPointerMove
+	(*RemoteDesktopPointerButton)(nil),                // 204: dieter.v1.RemoteDesktopPointerButton
+	(*RemoteDesktopScroll)(nil),                       // 205: dieter.v1.RemoteDesktopScroll
+	(*RemoteDesktopKey)(nil),                          // 206: dieter.v1.RemoteDesktopKey
+	(*RemoteDesktopText)(nil),                         // 207: dieter.v1.RemoteDesktopText
+	(*RemoteDesktopReleaseAll)(nil),                   // 208: dieter.v1.RemoteDesktopReleaseAll
+	(*RemoteDesktopInput)(nil),                        // 209: dieter.v1.RemoteDesktopInput
+	(*RemoteDesktopSessionState)(nil),                 // 210: dieter.v1.RemoteDesktopSessionState
+	(*RemoteDesktopRecoveryDiagnostics)(nil),          // 211: dieter.v1.RemoteDesktopRecoveryDiagnostics
+	(*RemoteDesktopReceiverFeedback)(nil),             // 212: dieter.v1.RemoteDesktopReceiverFeedback
+	(*RemoteDesktopCursor)(nil),                       // 213: dieter.v1.RemoteDesktopCursor
+	(*RemoteDesktopReference)(nil),                    // 214: dieter.v1.RemoteDesktopReference
+	(*RemoteDesktopHostEvent)(nil),                    // 215: dieter.v1.RemoteDesktopHostEvent
+	(*RemoteDesktopSessionError)(nil),                 // 216: dieter.v1.RemoteDesktopSessionError
+	(*RemoteDesktopSignal)(nil),                       // 217: dieter.v1.RemoteDesktopSignal
+	(*SaveFileRequest)(nil),                           // 218: dieter.v1.SaveFileRequest
+	(*CreateFileRequest)(nil),                         // 219: dieter.v1.CreateFileRequest
+	(*MoveFileRequest)(nil),                           // 220: dieter.v1.MoveFileRequest
+	(*MoveFileResponse)(nil),                          // 221: dieter.v1.MoveFileResponse
+	(*DeleteFileRequest)(nil),                         // 222: dieter.v1.DeleteFileRequest
+	(*ListSchedulesRequest)(nil),                      // 223: dieter.v1.ListSchedulesRequest
+	(*SchedulesResponse)(nil),                         // 224: dieter.v1.SchedulesResponse
+	(*Schedule)(nil),                                  // 225: dieter.v1.Schedule
+	(*ScheduleDraft)(nil),                             // 226: dieter.v1.ScheduleDraft
+	(*SaveScheduleRequest)(nil),                       // 227: dieter.v1.SaveScheduleRequest
+	(*PreviewScheduleRequest)(nil),                    // 228: dieter.v1.PreviewScheduleRequest
+	(*SchedulePreview)(nil),                           // 229: dieter.v1.SchedulePreview
+	(*ScheduleRef)(nil),                               // 230: dieter.v1.ScheduleRef
+	(*SetScheduleEnabledRequest)(nil),                 // 231: dieter.v1.SetScheduleEnabledRequest
+	(*ListScheduleRunsRequest)(nil),                   // 232: dieter.v1.ListScheduleRunsRequest
+	(*ScheduleRun)(nil),                               // 233: dieter.v1.ScheduleRun
+	(*ScheduleRunsResponse)(nil),                      // 234: dieter.v1.ScheduleRunsResponse
+	(*UpdateBoardGitSettingsRequest)(nil),             // 235: dieter.v1.UpdateBoardGitSettingsRequest
+	(*RemoveQueuedMessageRequest)(nil),                // 236: dieter.v1.RemoveQueuedMessageRequest
+	(*UpdateBoardHostnamesRequest)(nil),               // 237: dieter.v1.UpdateBoardHostnamesRequest
+	(*RemoteDesktopClipboardRequest)(nil),             // 238: dieter.v1.RemoteDesktopClipboardRequest
+	(*RemoteDesktopClipboardItem)(nil),                // 239: dieter.v1.RemoteDesktopClipboardItem
+	(*RemoteDesktopClipboardResponse)(nil),            // 240: dieter.v1.RemoteDesktopClipboardResponse
+	(*RemoteDesktopClipboardFrame)(nil),               // 241: dieter.v1.RemoteDesktopClipboardFrame
+	(*StartControlConnectionRequest)(nil),             // 242: dieter.v1.StartControlConnectionRequest
+	(*ControlConnectionRef)(nil),                      // 243: dieter.v1.ControlConnectionRef
+	(*ControlConnection)(nil),                         // 244: dieter.v1.ControlConnection
+	(*PeerVersion)(nil),                               // 245: dieter.v1.PeerVersion
+	(*PeerRecord)(nil),                                // 246: dieter.v1.PeerRecord
+	(*PeerStoreStatus)(nil),                           // 247: dieter.v1.PeerStoreStatus
+	(*PeerSyncDiagnostic)(nil),                        // 248: dieter.v1.PeerSyncDiagnostic
+	(*PeerSnapshotRequest)(nil),                       // 249: dieter.v1.PeerSnapshotRequest
+	(*PeerSnapshot)(nil),                              // 250: dieter.v1.PeerSnapshot
+	(*PutPeerRecordRequest)(nil),                      // 251: dieter.v1.PutPeerRecordRequest
+	(*MergePeerRecordsRequest)(nil),                   // 252: dieter.v1.MergePeerRecordsRequest
+	(*PeerRecordRef)(nil),                             // 253: dieter.v1.PeerRecordRef
+	(*PeerChangesRequest)(nil),                        // 254: dieter.v1.PeerChangesRequest
+	(*PeerChangesResponse)(nil),                       // 255: dieter.v1.PeerChangesResponse
+	(*KVRef)(nil),                                     // 256: dieter.v1.KVRef
+	(*KVEntry)(nil),                                   // 257: dieter.v1.KVEntry
+	(*KVCursor)(nil),                                  // 258: dieter.v1.KVCursor
+	(*KVListRequest)(nil),                             // 259: dieter.v1.KVListRequest
+	(*KVPage)(nil),                                    // 260: dieter.v1.KVPage
+	(*KVPutRequest)(nil),                              // 261: dieter.v1.KVPutRequest
+	(*KVDeleteRequest)(nil),                           // 262: dieter.v1.KVDeleteRequest
+	(*KVMoveRequest)(nil),                             // 263: dieter.v1.KVMoveRequest
+	(*KVWatchRequest)(nil),                            // 264: dieter.v1.KVWatchRequest
+	(*KVFrame)(nil),                                   // 265: dieter.v1.KVFrame
+	(*MarkConversationReadRequest)(nil),               // 266: dieter.v1.MarkConversationReadRequest
+	(*VaultCaller)(nil),                               // 267: dieter.v1.VaultCaller
+	(*VaultMember)(nil),                               // 268: dieter.v1.VaultMember
+	(*VaultStatus)(nil),                               // 269: dieter.v1.VaultStatus
+	(*InitVaultRequest)(nil),                          // 270: dieter.v1.InitVaultRequest
+	(*InitVaultResponse)(nil),                         // 271: dieter.v1.InitVaultResponse
+	(*JoinVaultRequest)(nil),                          // 272: dieter.v1.JoinVaultRequest
+	(*JoinVaultResponse)(nil),                         // 273: dieter.v1.JoinVaultResponse
+	(*ApproveVaultMemberRequest)(nil),                 // 274: dieter.v1.ApproveVaultMemberRequest
+	(*VaultMemberRef)(nil),                            // 275: dieter.v1.VaultMemberRef
+	(*RotateVaultRequest)(nil),                        // 276: dieter.v1.RotateVaultRequest
+	(*RotateVaultResponse)(nil),                       // 277: dieter.v1.RotateVaultResponse
+	(*VaultItem)(nil),                                 // 278: dieter.v1.VaultItem
+	(*ListVaultItemsRequest)(nil),                     // 279: dieter.v1.ListVaultItemsRequest
+	(*VaultItemsResponse)(nil),                        // 280: dieter.v1.VaultItemsResponse
+	(*VaultItemRef)(nil),                              // 281: dieter.v1.VaultItemRef
+	(*RevealVaultItemRequest)(nil),                    // 282: dieter.v1.RevealVaultItemRequest
+	(*RevealVaultItemResponse)(nil),                   // 283: dieter.v1.RevealVaultItemResponse
+	(*CreateVaultItemRequest)(nil),                    // 284: dieter.v1.CreateVaultItemRequest
+	(*UpdateVaultItemRequest)(nil),                    // 285: dieter.v1.UpdateVaultItemRequest
+	(*ListVaultAuditRequest)(nil),                     // 286: dieter.v1.ListVaultAuditRequest
+	(*VaultAuditEntry)(nil),                           // 287: dieter.v1.VaultAuditEntry
+	(*VaultAuditResponse)(nil),                        // 288: dieter.v1.VaultAuditResponse
+	nil,                                               // 289: dieter.v1.BoardRetirementVersion.ClockEntry
+	nil,                                               // 290: dieter.v1.CardStateVersion.ClockEntry
+	nil,                                               // 291: dieter.v1.Card.ProviderOptionsEntry
+	nil,                                               // 292: dieter.v1.HarnessSelection.ProviderOptionsEntry
+	nil,                                               // 293: dieter.v1.ValidationCommand.EnvironmentEntry
+	nil,                                               // 294: dieter.v1.CreateConversationRequest.ProviderOptionsEntry
+	nil,                                               // 295: dieter.v1.SendMessageRequest.ProviderOptionsEntry
+	nil,                                               // 296: dieter.v1.DraftAgentSettings.ProviderOptionsEntry
+	nil,                                               // 297: dieter.v1.GitOperation.ParametersEntry
+	nil,                                               // 298: dieter.v1.StartGitOperationRequest.ParametersEntry
+	nil,                                               // 299: dieter.v1.StartExecutionRequest.EnvironmentEntry
+	nil,                                               // 300: dieter.v1.Schedule.ProviderOptionsEntry
+	nil,                                               // 301: dieter.v1.ScheduleDraft.ProviderOptionsEntry
+	nil,                                               // 302: dieter.v1.PeerVersion.ClockEntry
+	nil,                                               // 303: dieter.v1.RevealVaultItemResponse.ValuesEntry
+	(*v1.CompatibilityPolicy)(nil),                    // 304: dieter.gateway.v1.CompatibilityPolicy
+	(*v1.RTCConfiguration)(nil),                       // 305: dieter.gateway.v1.RTCConfiguration
+	(*emptypb.Empty)(nil),                             // 306: google.protobuf.Empty
 }
 var file_dieter_v1_dieter_proto_depIdxs = []int32{
-	299, // 0: dieter.v1.HealthResponse.compatibility_policy:type_name -> dieter.gateway.v1.CompatibilityPolicy
+	304, // 0: dieter.v1.HealthResponse.compatibility_policy:type_name -> dieter.gateway.v1.CompatibilityPolicy
 	20,  // 1: dieter.v1.MachineInformation.processes:type_name -> dieter.v1.MachineProcess
 	17,  // 2: dieter.v1.MachineInformation.daemon_build:type_name -> dieter.v1.BuildInformation
 	18,  // 3: dieter.v1.MachineInformation.gpu:type_name -> dieter.v1.GPUTelemetry
@@ -26544,33 +26957,33 @@ var file_dieter_v1_dieter_proto_depIdxs = []int32{
 	50,  // 18: dieter.v1.State.chats:type_name -> dieter.v1.Card
 	28,  // 19: dieter.v1.ChangesRequest.after:type_name -> dieter.v1.ChangesCursor
 	28,  // 20: dieter.v1.ChangesFrame.cursor:type_name -> dieter.v1.ChangesCursor
-	241, // 21: dieter.v1.ChangesFrame.records:type_name -> dieter.v1.PeerRecord
+	246, // 21: dieter.v1.ChangesFrame.records:type_name -> dieter.v1.PeerRecord
 	50,  // 22: dieter.v1.ChangesFrame.owned_cards:type_name -> dieter.v1.Card
 	34,  // 23: dieter.v1.ChangesFrame.owned_checkouts:type_name -> dieter.v1.Checkout
 	54,  // 24: dieter.v1.ChangesFrame.activities:type_name -> dieter.v1.Conversation
 	31,  // 25: dieter.v1.ChangesFrame.peer_sync:type_name -> dieter.v1.PeerSyncStatus
 	22,  // 26: dieter.v1.ChangesFrame.privacy:type_name -> dieter.v1.MachinePrivacy
-	243, // 27: dieter.v1.PeerSyncStatus.issues:type_name -> dieter.v1.PeerSyncDiagnostic
+	248, // 27: dieter.v1.PeerSyncStatus.issues:type_name -> dieter.v1.PeerSyncDiagnostic
 	39,  // 28: dieter.v1.ProjectsResponse.projects:type_name -> dieter.v1.Project
 	50,  // 29: dieter.v1.CardsResponse.cards:type_name -> dieter.v1.Card
-	92,  // 30: dieter.v1.Checkout.validation_commands:type_name -> dieter.v1.ValidationCommand
+	97,  // 30: dieter.v1.Checkout.validation_commands:type_name -> dieter.v1.ValidationCommand
 	34,  // 31: dieter.v1.CheckoutsResponse.checkouts:type_name -> dieter.v1.Checkout
 	34,  // 32: dieter.v1.Project.checkouts:type_name -> dieter.v1.Checkout
-	92,  // 33: dieter.v1.Project.validation_commands:type_name -> dieter.v1.ValidationCommand
+	97,  // 33: dieter.v1.Project.validation_commands:type_name -> dieter.v1.ValidationCommand
 	45,  // 34: dieter.v1.Board.labels:type_name -> dieter.v1.Label
 	46,  // 35: dieter.v1.Board.lanes:type_name -> dieter.v1.Lane
 	41,  // 36: dieter.v1.Board.retirement_versions:type_name -> dieter.v1.BoardRetirementVersion
-	284, // 37: dieter.v1.BoardRetirementVersion.clock:type_name -> dieter.v1.BoardRetirementVersion.ClockEntry
+	289, // 37: dieter.v1.BoardRetirementVersion.clock:type_name -> dieter.v1.BoardRetirementVersion.ClockEntry
 	40,  // 38: dieter.v1.ListRetiredBoardsResponse.boards:type_name -> dieter.v1.Board
-	285, // 39: dieter.v1.CardStateVersion.clock:type_name -> dieter.v1.CardStateVersion.ClockEntry
+	290, // 39: dieter.v1.CardStateVersion.clock:type_name -> dieter.v1.CardStateVersion.ClockEntry
 	50,  // 40: dieter.v1.CardStateVersion.value:type_name -> dieter.v1.Card
 	48,  // 41: dieter.v1.CardStateField.versions:type_name -> dieter.v1.CardStateVersion
 	49,  // 42: dieter.v1.Card.state_fields:type_name -> dieter.v1.CardStateField
 	51,  // 43: dieter.v1.Card.origin:type_name -> dieter.v1.CardOrigin
 	58,  // 44: dieter.v1.Card.active_subagents:type_name -> dieter.v1.Subagent
-	286, // 45: dieter.v1.Card.provider_options:type_name -> dieter.v1.Card.ProviderOptionsEntry
-	129, // 46: dieter.v1.Card.workspace:type_name -> dieter.v1.WorkspaceSummary
-	143, // 47: dieter.v1.Card.pull_request:type_name -> dieter.v1.PullRequestSummary
+	291, // 45: dieter.v1.Card.provider_options:type_name -> dieter.v1.Card.ProviderOptionsEntry
+	134, // 46: dieter.v1.Card.workspace:type_name -> dieter.v1.WorkspaceSummary
+	148, // 47: dieter.v1.Card.pull_request:type_name -> dieter.v1.PullRequestSummary
 	47,  // 48: dieter.v1.Card.token_usage:type_name -> dieter.v1.TokenUsage
 	50,  // 49: dieter.v1.CardDetail.card:type_name -> dieter.v1.Card
 	39,  // 50: dieter.v1.CardDetail.project:type_name -> dieter.v1.Project
@@ -26588,7 +27001,7 @@ var file_dieter_v1_dieter_proto_depIdxs = []int32{
 	63,  // 62: dieter.v1.UiMessage.parts:type_name -> dieter.v1.MessagePart
 	63,  // 63: dieter.v1.QueuedMessage.parts:type_name -> dieter.v1.MessagePart
 	66,  // 64: dieter.v1.QueuedMessage.selection:type_name -> dieter.v1.HarnessSelection
-	287, // 65: dieter.v1.HarnessSelection.provider_options:type_name -> dieter.v1.HarnessSelection.ProviderOptionsEntry
+	292, // 65: dieter.v1.HarnessSelection.provider_options:type_name -> dieter.v1.HarnessSelection.ProviderOptionsEntry
 	52,  // 66: dieter.v1.ConversationSnapshot.detail:type_name -> dieter.v1.CardDetail
 	54,  // 67: dieter.v1.ConversationSnapshot.conversation:type_name -> dieter.v1.Conversation
 	67,  // 68: dieter.v1.ConversationSnapshot.page:type_name -> dieter.v1.ConversationPage
@@ -26598,428 +27011,437 @@ var file_dieter_v1_dieter_proto_depIdxs = []int32{
 	73,  // 72: dieter.v1.Harness.capabilities:type_name -> dieter.v1.HarnessCapability
 	71,  // 73: dieter.v1.Harness.options:type_name -> dieter.v1.ProviderOption
 	72,  // 74: dieter.v1.ProviderOption.choices:type_name -> dieter.v1.ProviderOptionChoice
-	102, // 75: dieter.v1.EffortConfig.options:type_name -> dieter.v1.EffortOption
-	39,  // 76: dieter.v1.SettingsOptions.projects:type_name -> dieter.v1.Project
-	40,  // 77: dieter.v1.SettingsOptions.boards:type_name -> dieter.v1.Board
-	69,  // 78: dieter.v1.SettingsOptions.agents:type_name -> dieter.v1.HarnessCatalog
-	76,  // 79: dieter.v1.UpdateSettingsRequest.settings:type_name -> dieter.v1.Settings
-	45,  // 80: dieter.v1.PromptPreview.applied_labels:type_name -> dieter.v1.Label
-	85,  // 81: dieter.v1.DirectoryListing.entries:type_name -> dieter.v1.DirectoryEntry
-	86,  // 82: dieter.v1.DirectoryListing.locations:type_name -> dieter.v1.DirectoryLocation
-	92,  // 83: dieter.v1.CreateProjectRequest.validation_commands:type_name -> dieter.v1.ValidationCommand
-	39,  // 84: dieter.v1.CreateProjectResponse.project:type_name -> dieter.v1.Project
-	40,  // 85: dieter.v1.CreateProjectResponse.board:type_name -> dieter.v1.Board
-	91,  // 86: dieter.v1.UpdateProjectRequest.hostnames:type_name -> dieter.v1.ProjectHostnames
-	288, // 87: dieter.v1.ValidationCommand.environment:type_name -> dieter.v1.ValidationCommand.EnvironmentEntry
-	92,  // 88: dieter.v1.UpdateProjectWorkspaceSettingsRequest.validation_commands:type_name -> dieter.v1.ValidationCommand
-	289, // 89: dieter.v1.CreateConversationRequest.provider_options:type_name -> dieter.v1.CreateConversationRequest.ProviderOptionsEntry
-	63,  // 90: dieter.v1.CreateConversationRequest.attachments:type_name -> dieter.v1.MessagePart
-	39,  // 91: dieter.v1.ChatsResponse.projects:type_name -> dieter.v1.Project
-	50,  // 92: dieter.v1.ChatsResponse.chats:type_name -> dieter.v1.Card
-	68,  // 93: dieter.v1.ConversationUpdate.snapshot:type_name -> dieter.v1.ConversationSnapshot
-	62,  // 94: dieter.v1.ConversationUpdate.changed_messages:type_name -> dieter.v1.UiMessage
-	64,  // 95: dieter.v1.ConversationUpdate.pending_tools:type_name -> dieter.v1.PendingTool
-	65,  // 96: dieter.v1.ConversationUpdate.queue:type_name -> dieter.v1.QueuedMessage
-	52,  // 97: dieter.v1.ConversationUpdate.detail:type_name -> dieter.v1.CardDetail
-	67,  // 98: dieter.v1.ConversationUpdate.page:type_name -> dieter.v1.ConversationPage
-	58,  // 99: dieter.v1.ConversationUpdate.subagents:type_name -> dieter.v1.Subagent
-	59,  // 100: dieter.v1.ConversationUpdate.task_plans:type_name -> dieter.v1.TaskPlan
-	63,  // 101: dieter.v1.ConversationUpdate.draft_attachments:type_name -> dieter.v1.MessagePart
-	56,  // 102: dieter.v1.ConversationUpdate.presented_content:type_name -> dieter.v1.ContentPresentation
-	55,  // 103: dieter.v1.ConversationUpdate.provider_status:type_name -> dieter.v1.ProviderStatus
-	63,  // 104: dieter.v1.SendMessageRequest.parts:type_name -> dieter.v1.MessagePart
-	290, // 105: dieter.v1.SendMessageRequest.provider_options:type_name -> dieter.v1.SendMessageRequest.ProviderOptionsEntry
-	50,  // 106: dieter.v1.StartCardResponse.card:type_name -> dieter.v1.Card
-	291, // 107: dieter.v1.DraftAgentSettings.provider_options:type_name -> dieter.v1.DraftAgentSettings.ProviderOptionsEntry
-	122, // 108: dieter.v1.UpdateCardRequest.agent_settings:type_name -> dieter.v1.DraftAgentSettings
-	130, // 109: dieter.v1.WorkspacesResponse.workspaces:type_name -> dieter.v1.Workspace
-	132, // 110: dieter.v1.Changeset.files:type_name -> dieter.v1.ChangedFile
-	133, // 111: dieter.v1.Changeset.commits:type_name -> dieter.v1.WorkspaceCommit
-	138, // 112: dieter.v1.ChangeCommentsResponse.comments:type_name -> dieter.v1.ChangeComment
-	292, // 113: dieter.v1.GitOperation.parameters:type_name -> dieter.v1.GitOperation.ParametersEntry
-	145, // 114: dieter.v1.GitOperation.validation_results:type_name -> dieter.v1.ValidationResult
-	144, // 115: dieter.v1.GitOperation.conflicts:type_name -> dieter.v1.GitConflict
-	293, // 116: dieter.v1.StartGitOperationRequest.parameters:type_name -> dieter.v1.StartGitOperationRequest.ParametersEntry
-	146, // 117: dieter.v1.GitOperationFrame.operation:type_name -> dieter.v1.GitOperation
-	150, // 118: dieter.v1.GitOperationFrame.logs:type_name -> dieter.v1.GitOperationLogEntry
-	153, // 119: dieter.v1.FileList.entries:type_name -> dieter.v1.FileEntry
-	157, // 120: dieter.v1.TerminalsResponse.terminals:type_name -> dieter.v1.Terminal
-	157, // 121: dieter.v1.TerminalFrame.terminal:type_name -> dieter.v1.Terminal
-	167, // 122: dieter.v1.ExecutionsResponse.executions:type_name -> dieter.v1.Execution
-	294, // 123: dieter.v1.StartExecutionRequest.environment:type_name -> dieter.v1.StartExecutionRequest.EnvironmentEntry
-	167, // 124: dieter.v1.ExecutionEvent.execution:type_name -> dieter.v1.Execution
-	4,   // 125: dieter.v1.ExecutionEvent.stream:type_name -> dieter.v1.ExecutionStream
-	5,   // 126: dieter.v1.SignalExecutionRequest.signal:type_name -> dieter.v1.ExecutionSignal
-	187, // 127: dieter.v1.RemoteDesktopCapabilities.displays:type_name -> dieter.v1.RemoteDesktopDisplay
-	184, // 128: dieter.v1.RemoteDesktopCapabilities.codec_modes:type_name -> dieter.v1.RemoteDesktopCodecMode
-	6,   // 129: dieter.v1.RemoteDesktopCapabilities.availability:type_name -> dieter.v1.RemoteDesktopAvailability
-	178, // 130: dieter.v1.RemoteDesktopDisplayModes.modes:type_name -> dieter.v1.RemoteDesktopDisplayMode
-	300, // 131: dieter.v1.StartRemoteDesktopRequest.rtc_configuration:type_name -> dieter.gateway.v1.RTCConfiguration
-	188, // 132: dieter.v1.StartRemoteDesktopRequest.offer:type_name -> dieter.v1.RemoteDesktopSessionDescription
-	189, // 133: dieter.v1.StartRemoteDesktopRequest.initial_candidates:type_name -> dieter.v1.RemoteDesktopICECandidate
-	8,   // 134: dieter.v1.StartRemoteDesktopRequest.quality:type_name -> dieter.v1.RemoteDesktopQuality
-	7,   // 135: dieter.v1.StartRemoteDesktopRequest.codec_preference:type_name -> dieter.v1.RemoteDesktopCodecPreference
-	192, // 136: dieter.v1.RemoteDesktopSessions.sessions:type_name -> dieter.v1.RemoteDesktopSessionInfo
-	8,   // 137: dieter.v1.RemoteDesktopStreamConfiguration.quality:type_name -> dieter.v1.RemoteDesktopQuality
-	194, // 138: dieter.v1.UpdateRemoteDesktopSessionRequest.configuration:type_name -> dieter.v1.RemoteDesktopStreamConfiguration
-	11,  // 139: dieter.v1.RemoteDesktopPointerButton.button:type_name -> dieter.v1.RemoteDesktopPointerButton.Button
-	198, // 140: dieter.v1.RemoteDesktopInput.pointer_move:type_name -> dieter.v1.RemoteDesktopPointerMove
-	199, // 141: dieter.v1.RemoteDesktopInput.pointer_button:type_name -> dieter.v1.RemoteDesktopPointerButton
-	200, // 142: dieter.v1.RemoteDesktopInput.scroll:type_name -> dieter.v1.RemoteDesktopScroll
-	201, // 143: dieter.v1.RemoteDesktopInput.key:type_name -> dieter.v1.RemoteDesktopKey
-	203, // 144: dieter.v1.RemoteDesktopInput.release_all:type_name -> dieter.v1.RemoteDesktopReleaseAll
-	202, // 145: dieter.v1.RemoteDesktopInput.text:type_name -> dieter.v1.RemoteDesktopText
-	194, // 146: dieter.v1.RemoteDesktopSessionState.configuration:type_name -> dieter.v1.RemoteDesktopStreamConfiguration
-	9,   // 147: dieter.v1.RemoteDesktopSessionState.render_measurement:type_name -> dieter.v1.RemoteDesktopRenderMeasurement
-	206, // 148: dieter.v1.RemoteDesktopSessionState.recovery_diagnostics:type_name -> dieter.v1.RemoteDesktopRecoveryDiagnostics
-	181, // 149: dieter.v1.RemoteDesktopSessionState.virtual_display:type_name -> dieter.v1.RemoteDesktopVirtualDisplay
-	209, // 150: dieter.v1.RemoteDesktopReceiverFeedback.decoded_references:type_name -> dieter.v1.RemoteDesktopReference
-	9,   // 151: dieter.v1.RemoteDesktopReceiverFeedback.render_measurement:type_name -> dieter.v1.RemoteDesktopRenderMeasurement
-	208, // 152: dieter.v1.RemoteDesktopHostEvent.cursor:type_name -> dieter.v1.RemoteDesktopCursor
-	205, // 153: dieter.v1.RemoteDesktopHostEvent.state:type_name -> dieter.v1.RemoteDesktopSessionState
-	209, // 154: dieter.v1.RemoteDesktopHostEvent.reference:type_name -> dieter.v1.RemoteDesktopReference
-	197, // 155: dieter.v1.RemoteDesktopSignal.binding:type_name -> dieter.v1.RemoteDesktopSessionBinding
-	188, // 156: dieter.v1.RemoteDesktopSignal.description:type_name -> dieter.v1.RemoteDesktopSessionDescription
-	189, // 157: dieter.v1.RemoteDesktopSignal.candidate:type_name -> dieter.v1.RemoteDesktopICECandidate
-	205, // 158: dieter.v1.RemoteDesktopSignal.state:type_name -> dieter.v1.RemoteDesktopSessionState
-	211, // 159: dieter.v1.RemoteDesktopSignal.error:type_name -> dieter.v1.RemoteDesktopSessionError
-	301, // 160: dieter.v1.RemoteDesktopSignal.lease_heartbeat:type_name -> google.protobuf.Empty
-	220, // 161: dieter.v1.SchedulesResponse.schedules:type_name -> dieter.v1.Schedule
-	295, // 162: dieter.v1.Schedule.provider_options:type_name -> dieter.v1.Schedule.ProviderOptionsEntry
-	296, // 163: dieter.v1.ScheduleDraft.provider_options:type_name -> dieter.v1.ScheduleDraft.ProviderOptionsEntry
-	221, // 164: dieter.v1.SaveScheduleRequest.schedule:type_name -> dieter.v1.ScheduleDraft
-	228, // 165: dieter.v1.ScheduleRunsResponse.runs:type_name -> dieter.v1.ScheduleRun
-	12,  // 166: dieter.v1.RemoteDesktopClipboardRequest.action:type_name -> dieter.v1.RemoteDesktopClipboardRequest.Action
-	234, // 167: dieter.v1.RemoteDesktopClipboardRequest.items:type_name -> dieter.v1.RemoteDesktopClipboardItem
-	13,  // 168: dieter.v1.RemoteDesktopClipboardItem.kind:type_name -> dieter.v1.RemoteDesktopClipboardItem.Kind
-	234, // 169: dieter.v1.RemoteDesktopClipboardResponse.items:type_name -> dieter.v1.RemoteDesktopClipboardItem
-	300, // 170: dieter.v1.StartControlConnectionRequest.rtc_configuration:type_name -> dieter.gateway.v1.RTCConfiguration
-	297, // 171: dieter.v1.PeerVersion.clock:type_name -> dieter.v1.PeerVersion.ClockEntry
-	240, // 172: dieter.v1.PeerRecord.versions:type_name -> dieter.v1.PeerVersion
-	243, // 173: dieter.v1.PeerStoreStatus.peers:type_name -> dieter.v1.PeerSyncDiagnostic
-	241, // 174: dieter.v1.PeerSnapshot.records:type_name -> dieter.v1.PeerRecord
-	241, // 175: dieter.v1.MergePeerRecordsRequest.records:type_name -> dieter.v1.PeerRecord
-	241, // 176: dieter.v1.PeerChangesResponse.records:type_name -> dieter.v1.PeerRecord
-	240, // 177: dieter.v1.KVEntry.versions:type_name -> dieter.v1.PeerVersion
-	253, // 178: dieter.v1.KVListRequest.snapshot:type_name -> dieter.v1.KVCursor
-	253, // 179: dieter.v1.KVPage.cursor:type_name -> dieter.v1.KVCursor
-	252, // 180: dieter.v1.KVPage.entries:type_name -> dieter.v1.KVEntry
-	251, // 181: dieter.v1.KVPutRequest.ref:type_name -> dieter.v1.KVRef
-	251, // 182: dieter.v1.KVDeleteRequest.ref:type_name -> dieter.v1.KVRef
-	251, // 183: dieter.v1.KVMoveRequest.ref:type_name -> dieter.v1.KVRef
-	253, // 184: dieter.v1.KVWatchRequest.after:type_name -> dieter.v1.KVCursor
-	253, // 185: dieter.v1.KVFrame.cursor:type_name -> dieter.v1.KVCursor
-	252, // 186: dieter.v1.KVFrame.entries:type_name -> dieter.v1.KVEntry
-	263, // 187: dieter.v1.VaultStatus.members:type_name -> dieter.v1.VaultMember
-	262, // 188: dieter.v1.VaultStatus.caller:type_name -> dieter.v1.VaultCaller
-	264, // 189: dieter.v1.InitVaultResponse.status:type_name -> dieter.v1.VaultStatus
-	264, // 190: dieter.v1.JoinVaultResponse.status:type_name -> dieter.v1.VaultStatus
-	264, // 191: dieter.v1.RotateVaultResponse.status:type_name -> dieter.v1.VaultStatus
-	273, // 192: dieter.v1.VaultItemsResponse.items:type_name -> dieter.v1.VaultItem
-	273, // 193: dieter.v1.RevealVaultItemResponse.item:type_name -> dieter.v1.VaultItem
-	298, // 194: dieter.v1.RevealVaultItemResponse.values:type_name -> dieter.v1.RevealVaultItemResponse.ValuesEntry
-	282, // 195: dieter.v1.VaultAuditResponse.entries:type_name -> dieter.v1.VaultAuditEntry
-	251, // 196: dieter.v1.DieterService.GetKV:input_type -> dieter.v1.KVRef
-	254, // 197: dieter.v1.DieterService.ListKV:input_type -> dieter.v1.KVListRequest
-	256, // 198: dieter.v1.DieterService.PutKV:input_type -> dieter.v1.KVPutRequest
-	257, // 199: dieter.v1.DieterService.DeleteKV:input_type -> dieter.v1.KVDeleteRequest
-	258, // 200: dieter.v1.DieterService.MoveKV:input_type -> dieter.v1.KVMoveRequest
-	259, // 201: dieter.v1.DieterService.WatchKV:input_type -> dieter.v1.KVWatchRequest
-	249, // 202: dieter.v1.DieterService.GetPeerChanges:input_type -> dieter.v1.PeerChangesRequest
-	248, // 203: dieter.v1.DieterService.GetPeerRecord:input_type -> dieter.v1.PeerRecordRef
-	301, // 204: dieter.v1.DieterService.GetPeerStoreStatus:input_type -> google.protobuf.Empty
-	244, // 205: dieter.v1.DieterService.ListPeerRecords:input_type -> dieter.v1.PeerSnapshotRequest
-	246, // 206: dieter.v1.DieterService.PutPeerRecord:input_type -> dieter.v1.PutPeerRecordRequest
-	247, // 207: dieter.v1.DieterService.MergePeerRecords:input_type -> dieter.v1.MergePeerRecordsRequest
-	301, // 208: dieter.v1.DieterService.Health:input_type -> google.protobuf.Empty
-	301, // 209: dieter.v1.DieterService.GetRuntimeStatus:input_type -> google.protobuf.Empty
-	237, // 210: dieter.v1.DieterService.StartControlConnection:input_type -> dieter.v1.StartControlConnectionRequest
-	238, // 211: dieter.v1.DieterService.GetControlConnection:input_type -> dieter.v1.ControlConnectionRef
-	238, // 212: dieter.v1.DieterService.CloseControlConnection:input_type -> dieter.v1.ControlConnectionRef
-	301, // 213: dieter.v1.DieterService.GetMachineInformation:input_type -> google.protobuf.Empty
-	23,  // 214: dieter.v1.DieterService.PerformMachineOperation:input_type -> dieter.v1.MachineOperationRequest
-	26,  // 215: dieter.v1.DieterService.GetState:input_type -> dieter.v1.GetStateRequest
-	29,  // 216: dieter.v1.DieterService.WatchChanges:input_type -> dieter.v1.ChangesRequest
-	301, // 217: dieter.v1.DieterService.GetHarnesses:input_type -> google.protobuf.Empty
-	301, // 218: dieter.v1.DieterService.GetSettings:input_type -> google.protobuf.Empty
-	301, // 219: dieter.v1.DieterService.GetSettingsOptions:input_type -> google.protobuf.Empty
-	78,  // 220: dieter.v1.DieterService.UpdateSettings:input_type -> dieter.v1.UpdateSettingsRequest
-	301, // 221: dieter.v1.DieterService.GetPromptSettings:input_type -> google.protobuf.Empty
-	80,  // 222: dieter.v1.DieterService.UpdatePromptSettings:input_type -> dieter.v1.UpdatePromptSettingsRequest
-	81,  // 223: dieter.v1.DieterService.SetProjectPromptTemplate:input_type -> dieter.v1.SetScopedPromptTemplateRequest
-	81,  // 224: dieter.v1.DieterService.SetBoardPromptTemplate:input_type -> dieter.v1.SetScopedPromptTemplateRequest
-	82,  // 225: dieter.v1.DieterService.PreviewPrompt:input_type -> dieter.v1.PreviewPromptRequest
-	84,  // 226: dieter.v1.DieterService.ListDirectories:input_type -> dieter.v1.ListDirectoriesRequest
-	35,  // 227: dieter.v1.DieterService.ConsolidateProject:input_type -> dieter.v1.ConsolidateProjectRequest
-	36,  // 228: dieter.v1.DieterService.AttachCheckout:input_type -> dieter.v1.AttachCheckoutRequest
-	37,  // 229: dieter.v1.DieterService.DetachCheckout:input_type -> dieter.v1.CheckoutRef
-	126, // 230: dieter.v1.DieterService.ListCheckouts:input_type -> dieter.v1.ProjectRef
-	88,  // 231: dieter.v1.DieterService.CreateProject:input_type -> dieter.v1.CreateProjectRequest
-	90,  // 232: dieter.v1.DieterService.UpdateProject:input_type -> dieter.v1.UpdateProjectRequest
-	93,  // 233: dieter.v1.DieterService.UpdateProjectWorkspaceSettings:input_type -> dieter.v1.UpdateProjectWorkspaceSettingsRequest
-	94,  // 234: dieter.v1.DieterService.ArchiveProject:input_type -> dieter.v1.ArchiveProjectRequest
-	301, // 235: dieter.v1.DieterService.ListArchivedProjects:input_type -> google.protobuf.Empty
-	95,  // 236: dieter.v1.DieterService.CreateBoard:input_type -> dieter.v1.CreateBoardRequest
-	97,  // 237: dieter.v1.DieterService.GetBoard:input_type -> dieter.v1.BoardRef
-	42,  // 238: dieter.v1.DieterService.ListRetiredBoards:input_type -> dieter.v1.ListRetiredBoardsRequest
-	44,  // 239: dieter.v1.DieterService.SetBoardRetired:input_type -> dieter.v1.SetBoardRetiredRequest
-	96,  // 240: dieter.v1.DieterService.RenameBoard:input_type -> dieter.v1.RenameBoardRequest
-	98,  // 241: dieter.v1.DieterService.SetBoardArchivePolicy:input_type -> dieter.v1.SetBoardArchivePolicyRequest
-	232, // 242: dieter.v1.DieterService.UpdateBoardHostnames:input_type -> dieter.v1.UpdateBoardHostnamesRequest
-	230, // 243: dieter.v1.DieterService.UpdateBoardGitSettings:input_type -> dieter.v1.UpdateBoardGitSettingsRequest
-	97,  // 244: dieter.v1.DieterService.ListArchivedCards:input_type -> dieter.v1.BoardRef
-	99,  // 245: dieter.v1.DieterService.CreateBoardLabel:input_type -> dieter.v1.CreateBoardLabelRequest
-	100, // 246: dieter.v1.DieterService.UpdateBoardLabel:input_type -> dieter.v1.UpdateBoardLabelRequest
-	101, // 247: dieter.v1.DieterService.DeleteBoardLabel:input_type -> dieter.v1.DeleteBoardLabelRequest
-	103, // 248: dieter.v1.DieterService.CreateCard:input_type -> dieter.v1.CreateConversationRequest
-	103, // 249: dieter.v1.DieterService.CreateChat:input_type -> dieter.v1.CreateConversationRequest
-	105, // 250: dieter.v1.DieterService.ForkChat:input_type -> dieter.v1.ForkChatRequest
-	104, // 251: dieter.v1.DieterService.ListChats:input_type -> dieter.v1.ListChatsRequest
-	107, // 252: dieter.v1.DieterService.GetCard:input_type -> dieter.v1.GetCardRequest
-	108, // 253: dieter.v1.DieterService.GetConversation:input_type -> dieter.v1.GetConversationRequest
-	110, // 254: dieter.v1.DieterService.PollConversation:input_type -> dieter.v1.PollConversationRequest
-	109, // 255: dieter.v1.DieterService.WatchConversation:input_type -> dieter.v1.WatchConversationRequest
-	112, // 256: dieter.v1.DieterService.GetToolOutput:input_type -> dieter.v1.GetToolOutputRequest
-	57,  // 257: dieter.v1.DieterService.PresentConversationContent:input_type -> dieter.v1.PresentConversationContentRequest
-	114, // 258: dieter.v1.DieterService.SendMessage:input_type -> dieter.v1.SendMessageRequest
-	231, // 259: dieter.v1.DieterService.RemoveQueuedMessage:input_type -> dieter.v1.RemoveQueuedMessageRequest
-	261, // 260: dieter.v1.DieterService.MarkConversationRead:input_type -> dieter.v1.MarkConversationReadRequest
-	116, // 261: dieter.v1.DieterService.MoveCard:input_type -> dieter.v1.MoveCardRequest
-	121, // 262: dieter.v1.DieterService.MergeCard:input_type -> dieter.v1.MergeCardRequest
-	117, // 263: dieter.v1.DieterService.StartCard:input_type -> dieter.v1.StartCardRequest
-	119, // 264: dieter.v1.DieterService.SetCardLabels:input_type -> dieter.v1.SetCardLabelsRequest
-	107, // 265: dieter.v1.DieterService.CancelCard:input_type -> dieter.v1.GetCardRequest
-	120, // 266: dieter.v1.DieterService.RenameCard:input_type -> dieter.v1.RenameCardRequest
-	123, // 267: dieter.v1.DieterService.UpdateCard:input_type -> dieter.v1.UpdateCardRequest
-	124, // 268: dieter.v1.DieterService.ArchiveCard:input_type -> dieter.v1.ArchiveCardRequest
-	125, // 269: dieter.v1.DieterService.PinChat:input_type -> dieter.v1.PinChatRequest
-	128, // 270: dieter.v1.DieterService.UpdateConversationWorkspace:input_type -> dieter.v1.UpdateConversationWorkspaceRequest
-	127, // 271: dieter.v1.DieterService.GetWorkspace:input_type -> dieter.v1.ConversationRef
-	126, // 272: dieter.v1.DieterService.ListProjectWorkspaces:input_type -> dieter.v1.ProjectRef
-	135, // 273: dieter.v1.DieterService.GetChangeset:input_type -> dieter.v1.GetChangesetRequest
-	136, // 274: dieter.v1.DieterService.GetFileDiff:input_type -> dieter.v1.GetDiffRequest
-	136, // 275: dieter.v1.DieterService.GetCommitDiff:input_type -> dieter.v1.GetDiffRequest
-	139, // 276: dieter.v1.DieterService.AddChangeComment:input_type -> dieter.v1.AddChangeCommentRequest
-	140, // 277: dieter.v1.DieterService.ListChangeComments:input_type -> dieter.v1.ListChangeCommentsRequest
-	127, // 278: dieter.v1.DieterService.GetSCMCapabilities:input_type -> dieter.v1.ConversationRef
-	147, // 279: dieter.v1.DieterService.StartGitOperation:input_type -> dieter.v1.StartGitOperationRequest
-	148, // 280: dieter.v1.DieterService.GetGitOperation:input_type -> dieter.v1.GitOperationRef
-	149, // 281: dieter.v1.DieterService.WatchGitOperation:input_type -> dieter.v1.WatchGitOperationRequest
-	148, // 282: dieter.v1.DieterService.CancelGitOperation:input_type -> dieter.v1.GitOperationRef
-	152, // 283: dieter.v1.DieterService.ListFiles:input_type -> dieter.v1.ListFilesRequest
-	155, // 284: dieter.v1.DieterService.ReadFile:input_type -> dieter.v1.ReadFileRequest
-	213, // 285: dieter.v1.DieterService.SaveFile:input_type -> dieter.v1.SaveFileRequest
-	214, // 286: dieter.v1.DieterService.CreateFile:input_type -> dieter.v1.CreateFileRequest
-	215, // 287: dieter.v1.DieterService.MoveFile:input_type -> dieter.v1.MoveFileRequest
-	217, // 288: dieter.v1.DieterService.DeleteFile:input_type -> dieter.v1.DeleteFileRequest
-	159, // 289: dieter.v1.DieterService.ListTerminals:input_type -> dieter.v1.ListTerminalsRequest
-	161, // 290: dieter.v1.DieterService.CreateTerminal:input_type -> dieter.v1.CreateTerminalRequest
-	162, // 291: dieter.v1.DieterService.WatchTerminal:input_type -> dieter.v1.WatchTerminalRequest
-	164, // 292: dieter.v1.DieterService.WriteTerminal:input_type -> dieter.v1.TerminalInputRequest
-	165, // 293: dieter.v1.DieterService.ResizeTerminal:input_type -> dieter.v1.ResizeTerminalRequest
-	166, // 294: dieter.v1.DieterService.RenameTerminal:input_type -> dieter.v1.RenameTerminalRequest
-	158, // 295: dieter.v1.DieterService.CloseTerminal:input_type -> dieter.v1.TerminalRef
-	169, // 296: dieter.v1.DieterService.ListExecutions:input_type -> dieter.v1.ListExecutionsRequest
-	171, // 297: dieter.v1.DieterService.StartExecution:input_type -> dieter.v1.StartExecutionRequest
-	168, // 298: dieter.v1.DieterService.GetExecution:input_type -> dieter.v1.ExecutionRef
-	172, // 299: dieter.v1.DieterService.WatchExecution:input_type -> dieter.v1.WatchExecutionRequest
-	174, // 300: dieter.v1.DieterService.WriteExecutionInput:input_type -> dieter.v1.ExecutionInputRequest
-	175, // 301: dieter.v1.DieterService.SignalExecution:input_type -> dieter.v1.SignalExecutionRequest
-	176, // 302: dieter.v1.DieterService.ResizeExecution:input_type -> dieter.v1.ResizeExecutionRequest
-	168, // 303: dieter.v1.DieterService.CancelExecution:input_type -> dieter.v1.ExecutionRef
-	168, // 304: dieter.v1.DieterService.CloseExecution:input_type -> dieter.v1.ExecutionRef
-	301, // 305: dieter.v1.DieterService.GetRemoteDesktopCapabilities:input_type -> google.protobuf.Empty
-	196, // 306: dieter.v1.DieterService.ListRemoteDesktopDisplayModes:input_type -> dieter.v1.RemoteDesktopRef
-	180, // 307: dieter.v1.DieterService.SetRemoteDesktopDisplayMode:input_type -> dieter.v1.SetRemoteDesktopDisplayModeRequest
-	196, // 308: dieter.v1.DieterService.RestoreRemoteDesktopDisplayMode:input_type -> dieter.v1.RemoteDesktopRef
-	196, // 309: dieter.v1.DieterService.GetRemoteDesktopVirtualDisplay:input_type -> dieter.v1.RemoteDesktopRef
-	182, // 310: dieter.v1.DieterService.SetRemoteDesktopVirtualDisplay:input_type -> dieter.v1.SetRemoteDesktopVirtualDisplayRequest
-	183, // 311: dieter.v1.DieterService.ConfirmRemoteDesktopVirtualDisplay:input_type -> dieter.v1.ConfirmRemoteDesktopVirtualDisplayRequest
-	196, // 312: dieter.v1.DieterService.RestoreRemoteDesktopVirtualDisplay:input_type -> dieter.v1.RemoteDesktopRef
-	185, // 313: dieter.v1.DieterService.ProbeRemoteDesktopPermissions:input_type -> dieter.v1.ProbeRemoteDesktopPermissionsRequest
-	190, // 314: dieter.v1.DieterService.StartRemoteDesktop:input_type -> dieter.v1.StartRemoteDesktopRequest
-	212, // 315: dieter.v1.DieterService.SendRemoteDesktopSignal:input_type -> dieter.v1.RemoteDesktopSignal
-	196, // 316: dieter.v1.DieterService.GetRemoteDesktopSession:input_type -> dieter.v1.RemoteDesktopRef
-	301, // 317: dieter.v1.DieterService.ListRemoteDesktopSessions:input_type -> google.protobuf.Empty
-	193, // 318: dieter.v1.DieterService.SetRemoteDesktopControl:input_type -> dieter.v1.RemoteDesktopControlRequest
-	195, // 319: dieter.v1.DieterService.UpdateRemoteDesktopSession:input_type -> dieter.v1.UpdateRemoteDesktopSessionRequest
-	233, // 320: dieter.v1.DieterService.ExchangeRemoteDesktopClipboard:input_type -> dieter.v1.RemoteDesktopClipboardRequest
-	196, // 321: dieter.v1.DieterService.CloseRemoteDesktop:input_type -> dieter.v1.RemoteDesktopRef
-	218, // 322: dieter.v1.DieterService.ListSchedules:input_type -> dieter.v1.ListSchedulesRequest
-	225, // 323: dieter.v1.DieterService.GetSchedule:input_type -> dieter.v1.ScheduleRef
-	223, // 324: dieter.v1.DieterService.PreviewSchedule:input_type -> dieter.v1.PreviewScheduleRequest
-	222, // 325: dieter.v1.DieterService.CreateSchedule:input_type -> dieter.v1.SaveScheduleRequest
-	222, // 326: dieter.v1.DieterService.UpdateSchedule:input_type -> dieter.v1.SaveScheduleRequest
-	225, // 327: dieter.v1.DieterService.DeleteSchedule:input_type -> dieter.v1.ScheduleRef
-	225, // 328: dieter.v1.DieterService.RunSchedule:input_type -> dieter.v1.ScheduleRef
-	226, // 329: dieter.v1.DieterService.SetScheduleEnabled:input_type -> dieter.v1.SetScheduleEnabledRequest
-	227, // 330: dieter.v1.DieterService.ListScheduleRuns:input_type -> dieter.v1.ListScheduleRunsRequest
-	301, // 331: dieter.v1.DieterService.GetVaultStatus:input_type -> google.protobuf.Empty
-	265, // 332: dieter.v1.DieterService.InitVault:input_type -> dieter.v1.InitVaultRequest
-	267, // 333: dieter.v1.DieterService.JoinVault:input_type -> dieter.v1.JoinVaultRequest
-	269, // 334: dieter.v1.DieterService.ApproveVaultMember:input_type -> dieter.v1.ApproveVaultMemberRequest
-	270, // 335: dieter.v1.DieterService.RemoveVaultMember:input_type -> dieter.v1.VaultMemberRef
-	271, // 336: dieter.v1.DieterService.RotateVault:input_type -> dieter.v1.RotateVaultRequest
-	274, // 337: dieter.v1.DieterService.ListVaultItems:input_type -> dieter.v1.ListVaultItemsRequest
-	276, // 338: dieter.v1.DieterService.GetVaultItem:input_type -> dieter.v1.VaultItemRef
-	277, // 339: dieter.v1.DieterService.RevealVaultItem:input_type -> dieter.v1.RevealVaultItemRequest
-	279, // 340: dieter.v1.DieterService.CreateVaultItem:input_type -> dieter.v1.CreateVaultItemRequest
-	280, // 341: dieter.v1.DieterService.UpdateVaultItem:input_type -> dieter.v1.UpdateVaultItemRequest
-	276, // 342: dieter.v1.DieterService.DeleteVaultItem:input_type -> dieter.v1.VaultItemRef
-	281, // 343: dieter.v1.DieterService.ListVaultAudit:input_type -> dieter.v1.ListVaultAuditRequest
-	252, // 344: dieter.v1.DieterService.GetKV:output_type -> dieter.v1.KVEntry
-	255, // 345: dieter.v1.DieterService.ListKV:output_type -> dieter.v1.KVPage
-	252, // 346: dieter.v1.DieterService.PutKV:output_type -> dieter.v1.KVEntry
-	252, // 347: dieter.v1.DieterService.DeleteKV:output_type -> dieter.v1.KVEntry
-	252, // 348: dieter.v1.DieterService.MoveKV:output_type -> dieter.v1.KVEntry
-	260, // 349: dieter.v1.DieterService.WatchKV:output_type -> dieter.v1.KVFrame
-	250, // 350: dieter.v1.DieterService.GetPeerChanges:output_type -> dieter.v1.PeerChangesResponse
-	241, // 351: dieter.v1.DieterService.GetPeerRecord:output_type -> dieter.v1.PeerRecord
-	242, // 352: dieter.v1.DieterService.GetPeerStoreStatus:output_type -> dieter.v1.PeerStoreStatus
-	245, // 353: dieter.v1.DieterService.ListPeerRecords:output_type -> dieter.v1.PeerSnapshot
-	241, // 354: dieter.v1.DieterService.PutPeerRecord:output_type -> dieter.v1.PeerRecord
-	301, // 355: dieter.v1.DieterService.MergePeerRecords:output_type -> google.protobuf.Empty
-	14,  // 356: dieter.v1.DieterService.Health:output_type -> dieter.v1.HealthResponse
-	15,  // 357: dieter.v1.DieterService.GetRuntimeStatus:output_type -> dieter.v1.RuntimeStatus
-	239, // 358: dieter.v1.DieterService.StartControlConnection:output_type -> dieter.v1.ControlConnection
-	239, // 359: dieter.v1.DieterService.GetControlConnection:output_type -> dieter.v1.ControlConnection
-	301, // 360: dieter.v1.DieterService.CloseControlConnection:output_type -> google.protobuf.Empty
-	16,  // 361: dieter.v1.DieterService.GetMachineInformation:output_type -> dieter.v1.MachineInformation
-	24,  // 362: dieter.v1.DieterService.PerformMachineOperation:output_type -> dieter.v1.MachineOperationResponse
-	27,  // 363: dieter.v1.DieterService.GetState:output_type -> dieter.v1.State
-	30,  // 364: dieter.v1.DieterService.WatchChanges:output_type -> dieter.v1.ChangesFrame
-	69,  // 365: dieter.v1.DieterService.GetHarnesses:output_type -> dieter.v1.HarnessCatalog
-	76,  // 366: dieter.v1.DieterService.GetSettings:output_type -> dieter.v1.Settings
-	77,  // 367: dieter.v1.DieterService.GetSettingsOptions:output_type -> dieter.v1.SettingsOptions
-	76,  // 368: dieter.v1.DieterService.UpdateSettings:output_type -> dieter.v1.Settings
-	79,  // 369: dieter.v1.DieterService.GetPromptSettings:output_type -> dieter.v1.PromptSettings
-	79,  // 370: dieter.v1.DieterService.UpdatePromptSettings:output_type -> dieter.v1.PromptSettings
-	39,  // 371: dieter.v1.DieterService.SetProjectPromptTemplate:output_type -> dieter.v1.Project
-	40,  // 372: dieter.v1.DieterService.SetBoardPromptTemplate:output_type -> dieter.v1.Board
-	83,  // 373: dieter.v1.DieterService.PreviewPrompt:output_type -> dieter.v1.PromptPreview
-	87,  // 374: dieter.v1.DieterService.ListDirectories:output_type -> dieter.v1.DirectoryListing
-	39,  // 375: dieter.v1.DieterService.ConsolidateProject:output_type -> dieter.v1.Project
-	34,  // 376: dieter.v1.DieterService.AttachCheckout:output_type -> dieter.v1.Checkout
-	301, // 377: dieter.v1.DieterService.DetachCheckout:output_type -> google.protobuf.Empty
-	38,  // 378: dieter.v1.DieterService.ListCheckouts:output_type -> dieter.v1.CheckoutsResponse
-	89,  // 379: dieter.v1.DieterService.CreateProject:output_type -> dieter.v1.CreateProjectResponse
-	39,  // 380: dieter.v1.DieterService.UpdateProject:output_type -> dieter.v1.Project
-	39,  // 381: dieter.v1.DieterService.UpdateProjectWorkspaceSettings:output_type -> dieter.v1.Project
-	39,  // 382: dieter.v1.DieterService.ArchiveProject:output_type -> dieter.v1.Project
-	32,  // 383: dieter.v1.DieterService.ListArchivedProjects:output_type -> dieter.v1.ProjectsResponse
-	40,  // 384: dieter.v1.DieterService.CreateBoard:output_type -> dieter.v1.Board
-	40,  // 385: dieter.v1.DieterService.GetBoard:output_type -> dieter.v1.Board
-	43,  // 386: dieter.v1.DieterService.ListRetiredBoards:output_type -> dieter.v1.ListRetiredBoardsResponse
-	40,  // 387: dieter.v1.DieterService.SetBoardRetired:output_type -> dieter.v1.Board
-	40,  // 388: dieter.v1.DieterService.RenameBoard:output_type -> dieter.v1.Board
-	40,  // 389: dieter.v1.DieterService.SetBoardArchivePolicy:output_type -> dieter.v1.Board
-	40,  // 390: dieter.v1.DieterService.UpdateBoardHostnames:output_type -> dieter.v1.Board
-	40,  // 391: dieter.v1.DieterService.UpdateBoardGitSettings:output_type -> dieter.v1.Board
-	33,  // 392: dieter.v1.DieterService.ListArchivedCards:output_type -> dieter.v1.CardsResponse
-	40,  // 393: dieter.v1.DieterService.CreateBoardLabel:output_type -> dieter.v1.Board
-	40,  // 394: dieter.v1.DieterService.UpdateBoardLabel:output_type -> dieter.v1.Board
-	40,  // 395: dieter.v1.DieterService.DeleteBoardLabel:output_type -> dieter.v1.Board
-	50,  // 396: dieter.v1.DieterService.CreateCard:output_type -> dieter.v1.Card
-	50,  // 397: dieter.v1.DieterService.CreateChat:output_type -> dieter.v1.Card
-	50,  // 398: dieter.v1.DieterService.ForkChat:output_type -> dieter.v1.Card
-	106, // 399: dieter.v1.DieterService.ListChats:output_type -> dieter.v1.ChatsResponse
-	52,  // 400: dieter.v1.DieterService.GetCard:output_type -> dieter.v1.CardDetail
-	68,  // 401: dieter.v1.DieterService.GetConversation:output_type -> dieter.v1.ConversationSnapshot
-	111, // 402: dieter.v1.DieterService.PollConversation:output_type -> dieter.v1.ConversationUpdate
-	111, // 403: dieter.v1.DieterService.WatchConversation:output_type -> dieter.v1.ConversationUpdate
-	113, // 404: dieter.v1.DieterService.GetToolOutput:output_type -> dieter.v1.ToolOutput
-	56,  // 405: dieter.v1.DieterService.PresentConversationContent:output_type -> dieter.v1.ContentPresentation
-	115, // 406: dieter.v1.DieterService.SendMessage:output_type -> dieter.v1.SendMessageResponse
-	65,  // 407: dieter.v1.DieterService.RemoveQueuedMessage:output_type -> dieter.v1.QueuedMessage
-	50,  // 408: dieter.v1.DieterService.MarkConversationRead:output_type -> dieter.v1.Card
-	50,  // 409: dieter.v1.DieterService.MoveCard:output_type -> dieter.v1.Card
-	50,  // 410: dieter.v1.DieterService.MergeCard:output_type -> dieter.v1.Card
-	118, // 411: dieter.v1.DieterService.StartCard:output_type -> dieter.v1.StartCardResponse
-	50,  // 412: dieter.v1.DieterService.SetCardLabels:output_type -> dieter.v1.Card
-	301, // 413: dieter.v1.DieterService.CancelCard:output_type -> google.protobuf.Empty
-	50,  // 414: dieter.v1.DieterService.RenameCard:output_type -> dieter.v1.Card
-	50,  // 415: dieter.v1.DieterService.UpdateCard:output_type -> dieter.v1.Card
-	50,  // 416: dieter.v1.DieterService.ArchiveCard:output_type -> dieter.v1.Card
-	50,  // 417: dieter.v1.DieterService.PinChat:output_type -> dieter.v1.Card
-	50,  // 418: dieter.v1.DieterService.UpdateConversationWorkspace:output_type -> dieter.v1.Card
-	130, // 419: dieter.v1.DieterService.GetWorkspace:output_type -> dieter.v1.Workspace
-	131, // 420: dieter.v1.DieterService.ListProjectWorkspaces:output_type -> dieter.v1.WorkspacesResponse
-	134, // 421: dieter.v1.DieterService.GetChangeset:output_type -> dieter.v1.Changeset
-	137, // 422: dieter.v1.DieterService.GetFileDiff:output_type -> dieter.v1.FileDiff
-	137, // 423: dieter.v1.DieterService.GetCommitDiff:output_type -> dieter.v1.FileDiff
-	138, // 424: dieter.v1.DieterService.AddChangeComment:output_type -> dieter.v1.ChangeComment
-	141, // 425: dieter.v1.DieterService.ListChangeComments:output_type -> dieter.v1.ChangeCommentsResponse
-	142, // 426: dieter.v1.DieterService.GetSCMCapabilities:output_type -> dieter.v1.SCMCapabilities
-	146, // 427: dieter.v1.DieterService.StartGitOperation:output_type -> dieter.v1.GitOperation
-	146, // 428: dieter.v1.DieterService.GetGitOperation:output_type -> dieter.v1.GitOperation
-	151, // 429: dieter.v1.DieterService.WatchGitOperation:output_type -> dieter.v1.GitOperationFrame
-	146, // 430: dieter.v1.DieterService.CancelGitOperation:output_type -> dieter.v1.GitOperation
-	154, // 431: dieter.v1.DieterService.ListFiles:output_type -> dieter.v1.FileList
-	156, // 432: dieter.v1.DieterService.ReadFile:output_type -> dieter.v1.FileDocument
-	156, // 433: dieter.v1.DieterService.SaveFile:output_type -> dieter.v1.FileDocument
-	153, // 434: dieter.v1.DieterService.CreateFile:output_type -> dieter.v1.FileEntry
-	216, // 435: dieter.v1.DieterService.MoveFile:output_type -> dieter.v1.MoveFileResponse
-	301, // 436: dieter.v1.DieterService.DeleteFile:output_type -> google.protobuf.Empty
-	160, // 437: dieter.v1.DieterService.ListTerminals:output_type -> dieter.v1.TerminalsResponse
-	157, // 438: dieter.v1.DieterService.CreateTerminal:output_type -> dieter.v1.Terminal
-	163, // 439: dieter.v1.DieterService.WatchTerminal:output_type -> dieter.v1.TerminalFrame
-	157, // 440: dieter.v1.DieterService.WriteTerminal:output_type -> dieter.v1.Terminal
-	157, // 441: dieter.v1.DieterService.ResizeTerminal:output_type -> dieter.v1.Terminal
-	157, // 442: dieter.v1.DieterService.RenameTerminal:output_type -> dieter.v1.Terminal
-	301, // 443: dieter.v1.DieterService.CloseTerminal:output_type -> google.protobuf.Empty
-	170, // 444: dieter.v1.DieterService.ListExecutions:output_type -> dieter.v1.ExecutionsResponse
-	167, // 445: dieter.v1.DieterService.StartExecution:output_type -> dieter.v1.Execution
-	167, // 446: dieter.v1.DieterService.GetExecution:output_type -> dieter.v1.Execution
-	173, // 447: dieter.v1.DieterService.WatchExecution:output_type -> dieter.v1.ExecutionEvent
-	167, // 448: dieter.v1.DieterService.WriteExecutionInput:output_type -> dieter.v1.Execution
-	167, // 449: dieter.v1.DieterService.SignalExecution:output_type -> dieter.v1.Execution
-	167, // 450: dieter.v1.DieterService.ResizeExecution:output_type -> dieter.v1.Execution
-	167, // 451: dieter.v1.DieterService.CancelExecution:output_type -> dieter.v1.Execution
-	301, // 452: dieter.v1.DieterService.CloseExecution:output_type -> google.protobuf.Empty
-	177, // 453: dieter.v1.DieterService.GetRemoteDesktopCapabilities:output_type -> dieter.v1.RemoteDesktopCapabilities
-	179, // 454: dieter.v1.DieterService.ListRemoteDesktopDisplayModes:output_type -> dieter.v1.RemoteDesktopDisplayModes
-	179, // 455: dieter.v1.DieterService.SetRemoteDesktopDisplayMode:output_type -> dieter.v1.RemoteDesktopDisplayModes
-	179, // 456: dieter.v1.DieterService.RestoreRemoteDesktopDisplayMode:output_type -> dieter.v1.RemoteDesktopDisplayModes
-	181, // 457: dieter.v1.DieterService.GetRemoteDesktopVirtualDisplay:output_type -> dieter.v1.RemoteDesktopVirtualDisplay
-	181, // 458: dieter.v1.DieterService.SetRemoteDesktopVirtualDisplay:output_type -> dieter.v1.RemoteDesktopVirtualDisplay
-	181, // 459: dieter.v1.DieterService.ConfirmRemoteDesktopVirtualDisplay:output_type -> dieter.v1.RemoteDesktopVirtualDisplay
-	181, // 460: dieter.v1.DieterService.RestoreRemoteDesktopVirtualDisplay:output_type -> dieter.v1.RemoteDesktopVirtualDisplay
-	186, // 461: dieter.v1.DieterService.ProbeRemoteDesktopPermissions:output_type -> dieter.v1.RemoteDesktopPermissionProbe
-	212, // 462: dieter.v1.DieterService.StartRemoteDesktop:output_type -> dieter.v1.RemoteDesktopSignal
-	301, // 463: dieter.v1.DieterService.SendRemoteDesktopSignal:output_type -> google.protobuf.Empty
-	205, // 464: dieter.v1.DieterService.GetRemoteDesktopSession:output_type -> dieter.v1.RemoteDesktopSessionState
-	191, // 465: dieter.v1.DieterService.ListRemoteDesktopSessions:output_type -> dieter.v1.RemoteDesktopSessions
-	205, // 466: dieter.v1.DieterService.SetRemoteDesktopControl:output_type -> dieter.v1.RemoteDesktopSessionState
-	205, // 467: dieter.v1.DieterService.UpdateRemoteDesktopSession:output_type -> dieter.v1.RemoteDesktopSessionState
-	235, // 468: dieter.v1.DieterService.ExchangeRemoteDesktopClipboard:output_type -> dieter.v1.RemoteDesktopClipboardResponse
-	301, // 469: dieter.v1.DieterService.CloseRemoteDesktop:output_type -> google.protobuf.Empty
-	219, // 470: dieter.v1.DieterService.ListSchedules:output_type -> dieter.v1.SchedulesResponse
-	220, // 471: dieter.v1.DieterService.GetSchedule:output_type -> dieter.v1.Schedule
-	224, // 472: dieter.v1.DieterService.PreviewSchedule:output_type -> dieter.v1.SchedulePreview
-	220, // 473: dieter.v1.DieterService.CreateSchedule:output_type -> dieter.v1.Schedule
-	220, // 474: dieter.v1.DieterService.UpdateSchedule:output_type -> dieter.v1.Schedule
-	301, // 475: dieter.v1.DieterService.DeleteSchedule:output_type -> google.protobuf.Empty
-	228, // 476: dieter.v1.DieterService.RunSchedule:output_type -> dieter.v1.ScheduleRun
-	220, // 477: dieter.v1.DieterService.SetScheduleEnabled:output_type -> dieter.v1.Schedule
-	229, // 478: dieter.v1.DieterService.ListScheduleRuns:output_type -> dieter.v1.ScheduleRunsResponse
-	264, // 479: dieter.v1.DieterService.GetVaultStatus:output_type -> dieter.v1.VaultStatus
-	266, // 480: dieter.v1.DieterService.InitVault:output_type -> dieter.v1.InitVaultResponse
-	268, // 481: dieter.v1.DieterService.JoinVault:output_type -> dieter.v1.JoinVaultResponse
-	264, // 482: dieter.v1.DieterService.ApproveVaultMember:output_type -> dieter.v1.VaultStatus
-	264, // 483: dieter.v1.DieterService.RemoveVaultMember:output_type -> dieter.v1.VaultStatus
-	272, // 484: dieter.v1.DieterService.RotateVault:output_type -> dieter.v1.RotateVaultResponse
-	275, // 485: dieter.v1.DieterService.ListVaultItems:output_type -> dieter.v1.VaultItemsResponse
-	273, // 486: dieter.v1.DieterService.GetVaultItem:output_type -> dieter.v1.VaultItem
-	278, // 487: dieter.v1.DieterService.RevealVaultItem:output_type -> dieter.v1.RevealVaultItemResponse
-	273, // 488: dieter.v1.DieterService.CreateVaultItem:output_type -> dieter.v1.VaultItem
-	273, // 489: dieter.v1.DieterService.UpdateVaultItem:output_type -> dieter.v1.VaultItem
-	273, // 490: dieter.v1.DieterService.DeleteVaultItem:output_type -> dieter.v1.VaultItem
-	283, // 491: dieter.v1.DieterService.ListVaultAudit:output_type -> dieter.v1.VaultAuditResponse
-	344, // [344:492] is the sub-list for method output_type
-	196, // [196:344] is the sub-list for method input_type
-	196, // [196:196] is the sub-list for extension type_name
-	196, // [196:196] is the sub-list for extension extendee
-	0,   // [0:196] is the sub-list for field type_name
+	107, // 75: dieter.v1.EffortConfig.options:type_name -> dieter.v1.EffortOption
+	77,  // 76: dieter.v1.ClaudeDesignSignInEvent.status:type_name -> dieter.v1.ClaudeDesignStatus
+	39,  // 77: dieter.v1.SettingsOptions.projects:type_name -> dieter.v1.Project
+	40,  // 78: dieter.v1.SettingsOptions.boards:type_name -> dieter.v1.Board
+	69,  // 79: dieter.v1.SettingsOptions.agents:type_name -> dieter.v1.HarnessCatalog
+	76,  // 80: dieter.v1.UpdateSettingsRequest.settings:type_name -> dieter.v1.Settings
+	45,  // 81: dieter.v1.PromptPreview.applied_labels:type_name -> dieter.v1.Label
+	90,  // 82: dieter.v1.DirectoryListing.entries:type_name -> dieter.v1.DirectoryEntry
+	91,  // 83: dieter.v1.DirectoryListing.locations:type_name -> dieter.v1.DirectoryLocation
+	97,  // 84: dieter.v1.CreateProjectRequest.validation_commands:type_name -> dieter.v1.ValidationCommand
+	39,  // 85: dieter.v1.CreateProjectResponse.project:type_name -> dieter.v1.Project
+	40,  // 86: dieter.v1.CreateProjectResponse.board:type_name -> dieter.v1.Board
+	96,  // 87: dieter.v1.UpdateProjectRequest.hostnames:type_name -> dieter.v1.ProjectHostnames
+	293, // 88: dieter.v1.ValidationCommand.environment:type_name -> dieter.v1.ValidationCommand.EnvironmentEntry
+	97,  // 89: dieter.v1.UpdateProjectWorkspaceSettingsRequest.validation_commands:type_name -> dieter.v1.ValidationCommand
+	294, // 90: dieter.v1.CreateConversationRequest.provider_options:type_name -> dieter.v1.CreateConversationRequest.ProviderOptionsEntry
+	63,  // 91: dieter.v1.CreateConversationRequest.attachments:type_name -> dieter.v1.MessagePart
+	39,  // 92: dieter.v1.ChatsResponse.projects:type_name -> dieter.v1.Project
+	50,  // 93: dieter.v1.ChatsResponse.chats:type_name -> dieter.v1.Card
+	68,  // 94: dieter.v1.ConversationUpdate.snapshot:type_name -> dieter.v1.ConversationSnapshot
+	62,  // 95: dieter.v1.ConversationUpdate.changed_messages:type_name -> dieter.v1.UiMessage
+	64,  // 96: dieter.v1.ConversationUpdate.pending_tools:type_name -> dieter.v1.PendingTool
+	65,  // 97: dieter.v1.ConversationUpdate.queue:type_name -> dieter.v1.QueuedMessage
+	52,  // 98: dieter.v1.ConversationUpdate.detail:type_name -> dieter.v1.CardDetail
+	67,  // 99: dieter.v1.ConversationUpdate.page:type_name -> dieter.v1.ConversationPage
+	58,  // 100: dieter.v1.ConversationUpdate.subagents:type_name -> dieter.v1.Subagent
+	59,  // 101: dieter.v1.ConversationUpdate.task_plans:type_name -> dieter.v1.TaskPlan
+	63,  // 102: dieter.v1.ConversationUpdate.draft_attachments:type_name -> dieter.v1.MessagePart
+	56,  // 103: dieter.v1.ConversationUpdate.presented_content:type_name -> dieter.v1.ContentPresentation
+	55,  // 104: dieter.v1.ConversationUpdate.provider_status:type_name -> dieter.v1.ProviderStatus
+	63,  // 105: dieter.v1.SendMessageRequest.parts:type_name -> dieter.v1.MessagePart
+	295, // 106: dieter.v1.SendMessageRequest.provider_options:type_name -> dieter.v1.SendMessageRequest.ProviderOptionsEntry
+	50,  // 107: dieter.v1.StartCardResponse.card:type_name -> dieter.v1.Card
+	296, // 108: dieter.v1.DraftAgentSettings.provider_options:type_name -> dieter.v1.DraftAgentSettings.ProviderOptionsEntry
+	127, // 109: dieter.v1.UpdateCardRequest.agent_settings:type_name -> dieter.v1.DraftAgentSettings
+	135, // 110: dieter.v1.WorkspacesResponse.workspaces:type_name -> dieter.v1.Workspace
+	137, // 111: dieter.v1.Changeset.files:type_name -> dieter.v1.ChangedFile
+	138, // 112: dieter.v1.Changeset.commits:type_name -> dieter.v1.WorkspaceCommit
+	143, // 113: dieter.v1.ChangeCommentsResponse.comments:type_name -> dieter.v1.ChangeComment
+	297, // 114: dieter.v1.GitOperation.parameters:type_name -> dieter.v1.GitOperation.ParametersEntry
+	150, // 115: dieter.v1.GitOperation.validation_results:type_name -> dieter.v1.ValidationResult
+	149, // 116: dieter.v1.GitOperation.conflicts:type_name -> dieter.v1.GitConflict
+	298, // 117: dieter.v1.StartGitOperationRequest.parameters:type_name -> dieter.v1.StartGitOperationRequest.ParametersEntry
+	151, // 118: dieter.v1.GitOperationFrame.operation:type_name -> dieter.v1.GitOperation
+	155, // 119: dieter.v1.GitOperationFrame.logs:type_name -> dieter.v1.GitOperationLogEntry
+	158, // 120: dieter.v1.FileList.entries:type_name -> dieter.v1.FileEntry
+	162, // 121: dieter.v1.TerminalsResponse.terminals:type_name -> dieter.v1.Terminal
+	162, // 122: dieter.v1.TerminalFrame.terminal:type_name -> dieter.v1.Terminal
+	172, // 123: dieter.v1.ExecutionsResponse.executions:type_name -> dieter.v1.Execution
+	299, // 124: dieter.v1.StartExecutionRequest.environment:type_name -> dieter.v1.StartExecutionRequest.EnvironmentEntry
+	172, // 125: dieter.v1.ExecutionEvent.execution:type_name -> dieter.v1.Execution
+	4,   // 126: dieter.v1.ExecutionEvent.stream:type_name -> dieter.v1.ExecutionStream
+	5,   // 127: dieter.v1.SignalExecutionRequest.signal:type_name -> dieter.v1.ExecutionSignal
+	192, // 128: dieter.v1.RemoteDesktopCapabilities.displays:type_name -> dieter.v1.RemoteDesktopDisplay
+	189, // 129: dieter.v1.RemoteDesktopCapabilities.codec_modes:type_name -> dieter.v1.RemoteDesktopCodecMode
+	6,   // 130: dieter.v1.RemoteDesktopCapabilities.availability:type_name -> dieter.v1.RemoteDesktopAvailability
+	183, // 131: dieter.v1.RemoteDesktopDisplayModes.modes:type_name -> dieter.v1.RemoteDesktopDisplayMode
+	305, // 132: dieter.v1.StartRemoteDesktopRequest.rtc_configuration:type_name -> dieter.gateway.v1.RTCConfiguration
+	193, // 133: dieter.v1.StartRemoteDesktopRequest.offer:type_name -> dieter.v1.RemoteDesktopSessionDescription
+	194, // 134: dieter.v1.StartRemoteDesktopRequest.initial_candidates:type_name -> dieter.v1.RemoteDesktopICECandidate
+	8,   // 135: dieter.v1.StartRemoteDesktopRequest.quality:type_name -> dieter.v1.RemoteDesktopQuality
+	7,   // 136: dieter.v1.StartRemoteDesktopRequest.codec_preference:type_name -> dieter.v1.RemoteDesktopCodecPreference
+	197, // 137: dieter.v1.RemoteDesktopSessions.sessions:type_name -> dieter.v1.RemoteDesktopSessionInfo
+	8,   // 138: dieter.v1.RemoteDesktopStreamConfiguration.quality:type_name -> dieter.v1.RemoteDesktopQuality
+	199, // 139: dieter.v1.UpdateRemoteDesktopSessionRequest.configuration:type_name -> dieter.v1.RemoteDesktopStreamConfiguration
+	11,  // 140: dieter.v1.RemoteDesktopPointerButton.button:type_name -> dieter.v1.RemoteDesktopPointerButton.Button
+	203, // 141: dieter.v1.RemoteDesktopInput.pointer_move:type_name -> dieter.v1.RemoteDesktopPointerMove
+	204, // 142: dieter.v1.RemoteDesktopInput.pointer_button:type_name -> dieter.v1.RemoteDesktopPointerButton
+	205, // 143: dieter.v1.RemoteDesktopInput.scroll:type_name -> dieter.v1.RemoteDesktopScroll
+	206, // 144: dieter.v1.RemoteDesktopInput.key:type_name -> dieter.v1.RemoteDesktopKey
+	208, // 145: dieter.v1.RemoteDesktopInput.release_all:type_name -> dieter.v1.RemoteDesktopReleaseAll
+	207, // 146: dieter.v1.RemoteDesktopInput.text:type_name -> dieter.v1.RemoteDesktopText
+	199, // 147: dieter.v1.RemoteDesktopSessionState.configuration:type_name -> dieter.v1.RemoteDesktopStreamConfiguration
+	9,   // 148: dieter.v1.RemoteDesktopSessionState.render_measurement:type_name -> dieter.v1.RemoteDesktopRenderMeasurement
+	211, // 149: dieter.v1.RemoteDesktopSessionState.recovery_diagnostics:type_name -> dieter.v1.RemoteDesktopRecoveryDiagnostics
+	186, // 150: dieter.v1.RemoteDesktopSessionState.virtual_display:type_name -> dieter.v1.RemoteDesktopVirtualDisplay
+	214, // 151: dieter.v1.RemoteDesktopReceiverFeedback.decoded_references:type_name -> dieter.v1.RemoteDesktopReference
+	9,   // 152: dieter.v1.RemoteDesktopReceiverFeedback.render_measurement:type_name -> dieter.v1.RemoteDesktopRenderMeasurement
+	213, // 153: dieter.v1.RemoteDesktopHostEvent.cursor:type_name -> dieter.v1.RemoteDesktopCursor
+	210, // 154: dieter.v1.RemoteDesktopHostEvent.state:type_name -> dieter.v1.RemoteDesktopSessionState
+	214, // 155: dieter.v1.RemoteDesktopHostEvent.reference:type_name -> dieter.v1.RemoteDesktopReference
+	202, // 156: dieter.v1.RemoteDesktopSignal.binding:type_name -> dieter.v1.RemoteDesktopSessionBinding
+	193, // 157: dieter.v1.RemoteDesktopSignal.description:type_name -> dieter.v1.RemoteDesktopSessionDescription
+	194, // 158: dieter.v1.RemoteDesktopSignal.candidate:type_name -> dieter.v1.RemoteDesktopICECandidate
+	210, // 159: dieter.v1.RemoteDesktopSignal.state:type_name -> dieter.v1.RemoteDesktopSessionState
+	216, // 160: dieter.v1.RemoteDesktopSignal.error:type_name -> dieter.v1.RemoteDesktopSessionError
+	306, // 161: dieter.v1.RemoteDesktopSignal.lease_heartbeat:type_name -> google.protobuf.Empty
+	225, // 162: dieter.v1.SchedulesResponse.schedules:type_name -> dieter.v1.Schedule
+	300, // 163: dieter.v1.Schedule.provider_options:type_name -> dieter.v1.Schedule.ProviderOptionsEntry
+	301, // 164: dieter.v1.ScheduleDraft.provider_options:type_name -> dieter.v1.ScheduleDraft.ProviderOptionsEntry
+	226, // 165: dieter.v1.SaveScheduleRequest.schedule:type_name -> dieter.v1.ScheduleDraft
+	233, // 166: dieter.v1.ScheduleRunsResponse.runs:type_name -> dieter.v1.ScheduleRun
+	12,  // 167: dieter.v1.RemoteDesktopClipboardRequest.action:type_name -> dieter.v1.RemoteDesktopClipboardRequest.Action
+	239, // 168: dieter.v1.RemoteDesktopClipboardRequest.items:type_name -> dieter.v1.RemoteDesktopClipboardItem
+	13,  // 169: dieter.v1.RemoteDesktopClipboardItem.kind:type_name -> dieter.v1.RemoteDesktopClipboardItem.Kind
+	239, // 170: dieter.v1.RemoteDesktopClipboardResponse.items:type_name -> dieter.v1.RemoteDesktopClipboardItem
+	305, // 171: dieter.v1.StartControlConnectionRequest.rtc_configuration:type_name -> dieter.gateway.v1.RTCConfiguration
+	302, // 172: dieter.v1.PeerVersion.clock:type_name -> dieter.v1.PeerVersion.ClockEntry
+	245, // 173: dieter.v1.PeerRecord.versions:type_name -> dieter.v1.PeerVersion
+	248, // 174: dieter.v1.PeerStoreStatus.peers:type_name -> dieter.v1.PeerSyncDiagnostic
+	246, // 175: dieter.v1.PeerSnapshot.records:type_name -> dieter.v1.PeerRecord
+	246, // 176: dieter.v1.MergePeerRecordsRequest.records:type_name -> dieter.v1.PeerRecord
+	246, // 177: dieter.v1.PeerChangesResponse.records:type_name -> dieter.v1.PeerRecord
+	245, // 178: dieter.v1.KVEntry.versions:type_name -> dieter.v1.PeerVersion
+	258, // 179: dieter.v1.KVListRequest.snapshot:type_name -> dieter.v1.KVCursor
+	258, // 180: dieter.v1.KVPage.cursor:type_name -> dieter.v1.KVCursor
+	257, // 181: dieter.v1.KVPage.entries:type_name -> dieter.v1.KVEntry
+	256, // 182: dieter.v1.KVPutRequest.ref:type_name -> dieter.v1.KVRef
+	256, // 183: dieter.v1.KVDeleteRequest.ref:type_name -> dieter.v1.KVRef
+	256, // 184: dieter.v1.KVMoveRequest.ref:type_name -> dieter.v1.KVRef
+	258, // 185: dieter.v1.KVWatchRequest.after:type_name -> dieter.v1.KVCursor
+	258, // 186: dieter.v1.KVFrame.cursor:type_name -> dieter.v1.KVCursor
+	257, // 187: dieter.v1.KVFrame.entries:type_name -> dieter.v1.KVEntry
+	268, // 188: dieter.v1.VaultStatus.members:type_name -> dieter.v1.VaultMember
+	267, // 189: dieter.v1.VaultStatus.caller:type_name -> dieter.v1.VaultCaller
+	269, // 190: dieter.v1.InitVaultResponse.status:type_name -> dieter.v1.VaultStatus
+	269, // 191: dieter.v1.JoinVaultResponse.status:type_name -> dieter.v1.VaultStatus
+	269, // 192: dieter.v1.RotateVaultResponse.status:type_name -> dieter.v1.VaultStatus
+	278, // 193: dieter.v1.VaultItemsResponse.items:type_name -> dieter.v1.VaultItem
+	278, // 194: dieter.v1.RevealVaultItemResponse.item:type_name -> dieter.v1.VaultItem
+	303, // 195: dieter.v1.RevealVaultItemResponse.values:type_name -> dieter.v1.RevealVaultItemResponse.ValuesEntry
+	287, // 196: dieter.v1.VaultAuditResponse.entries:type_name -> dieter.v1.VaultAuditEntry
+	256, // 197: dieter.v1.DieterService.GetKV:input_type -> dieter.v1.KVRef
+	259, // 198: dieter.v1.DieterService.ListKV:input_type -> dieter.v1.KVListRequest
+	261, // 199: dieter.v1.DieterService.PutKV:input_type -> dieter.v1.KVPutRequest
+	262, // 200: dieter.v1.DieterService.DeleteKV:input_type -> dieter.v1.KVDeleteRequest
+	263, // 201: dieter.v1.DieterService.MoveKV:input_type -> dieter.v1.KVMoveRequest
+	264, // 202: dieter.v1.DieterService.WatchKV:input_type -> dieter.v1.KVWatchRequest
+	254, // 203: dieter.v1.DieterService.GetPeerChanges:input_type -> dieter.v1.PeerChangesRequest
+	253, // 204: dieter.v1.DieterService.GetPeerRecord:input_type -> dieter.v1.PeerRecordRef
+	306, // 205: dieter.v1.DieterService.GetPeerStoreStatus:input_type -> google.protobuf.Empty
+	249, // 206: dieter.v1.DieterService.ListPeerRecords:input_type -> dieter.v1.PeerSnapshotRequest
+	251, // 207: dieter.v1.DieterService.PutPeerRecord:input_type -> dieter.v1.PutPeerRecordRequest
+	252, // 208: dieter.v1.DieterService.MergePeerRecords:input_type -> dieter.v1.MergePeerRecordsRequest
+	306, // 209: dieter.v1.DieterService.Health:input_type -> google.protobuf.Empty
+	306, // 210: dieter.v1.DieterService.GetRuntimeStatus:input_type -> google.protobuf.Empty
+	242, // 211: dieter.v1.DieterService.StartControlConnection:input_type -> dieter.v1.StartControlConnectionRequest
+	243, // 212: dieter.v1.DieterService.GetControlConnection:input_type -> dieter.v1.ControlConnectionRef
+	243, // 213: dieter.v1.DieterService.CloseControlConnection:input_type -> dieter.v1.ControlConnectionRef
+	306, // 214: dieter.v1.DieterService.GetMachineInformation:input_type -> google.protobuf.Empty
+	23,  // 215: dieter.v1.DieterService.PerformMachineOperation:input_type -> dieter.v1.MachineOperationRequest
+	26,  // 216: dieter.v1.DieterService.GetState:input_type -> dieter.v1.GetStateRequest
+	29,  // 217: dieter.v1.DieterService.WatchChanges:input_type -> dieter.v1.ChangesRequest
+	306, // 218: dieter.v1.DieterService.GetHarnesses:input_type -> google.protobuf.Empty
+	306, // 219: dieter.v1.DieterService.GetSettings:input_type -> google.protobuf.Empty
+	306, // 220: dieter.v1.DieterService.GetSettingsOptions:input_type -> google.protobuf.Empty
+	83,  // 221: dieter.v1.DieterService.UpdateSettings:input_type -> dieter.v1.UpdateSettingsRequest
+	306, // 222: dieter.v1.DieterService.GetPromptSettings:input_type -> google.protobuf.Empty
+	85,  // 223: dieter.v1.DieterService.UpdatePromptSettings:input_type -> dieter.v1.UpdatePromptSettingsRequest
+	86,  // 224: dieter.v1.DieterService.SetProjectPromptTemplate:input_type -> dieter.v1.SetScopedPromptTemplateRequest
+	86,  // 225: dieter.v1.DieterService.SetBoardPromptTemplate:input_type -> dieter.v1.SetScopedPromptTemplateRequest
+	87,  // 226: dieter.v1.DieterService.PreviewPrompt:input_type -> dieter.v1.PreviewPromptRequest
+	306, // 227: dieter.v1.DieterService.GetClaudeDesignStatus:input_type -> google.protobuf.Empty
+	78,  // 228: dieter.v1.DieterService.SignInClaudeDesign:input_type -> dieter.v1.SignInClaudeDesignRequest
+	80,  // 229: dieter.v1.DieterService.SubmitClaudeDesignSignInCode:input_type -> dieter.v1.SubmitClaudeDesignSignInCodeRequest
+	81,  // 230: dieter.v1.DieterService.SetClaudeDesignAccess:input_type -> dieter.v1.SetClaudeDesignAccessRequest
+	89,  // 231: dieter.v1.DieterService.ListDirectories:input_type -> dieter.v1.ListDirectoriesRequest
+	35,  // 232: dieter.v1.DieterService.ConsolidateProject:input_type -> dieter.v1.ConsolidateProjectRequest
+	36,  // 233: dieter.v1.DieterService.AttachCheckout:input_type -> dieter.v1.AttachCheckoutRequest
+	37,  // 234: dieter.v1.DieterService.DetachCheckout:input_type -> dieter.v1.CheckoutRef
+	131, // 235: dieter.v1.DieterService.ListCheckouts:input_type -> dieter.v1.ProjectRef
+	93,  // 236: dieter.v1.DieterService.CreateProject:input_type -> dieter.v1.CreateProjectRequest
+	95,  // 237: dieter.v1.DieterService.UpdateProject:input_type -> dieter.v1.UpdateProjectRequest
+	98,  // 238: dieter.v1.DieterService.UpdateProjectWorkspaceSettings:input_type -> dieter.v1.UpdateProjectWorkspaceSettingsRequest
+	99,  // 239: dieter.v1.DieterService.ArchiveProject:input_type -> dieter.v1.ArchiveProjectRequest
+	306, // 240: dieter.v1.DieterService.ListArchivedProjects:input_type -> google.protobuf.Empty
+	100, // 241: dieter.v1.DieterService.CreateBoard:input_type -> dieter.v1.CreateBoardRequest
+	102, // 242: dieter.v1.DieterService.GetBoard:input_type -> dieter.v1.BoardRef
+	42,  // 243: dieter.v1.DieterService.ListRetiredBoards:input_type -> dieter.v1.ListRetiredBoardsRequest
+	44,  // 244: dieter.v1.DieterService.SetBoardRetired:input_type -> dieter.v1.SetBoardRetiredRequest
+	101, // 245: dieter.v1.DieterService.RenameBoard:input_type -> dieter.v1.RenameBoardRequest
+	103, // 246: dieter.v1.DieterService.SetBoardArchivePolicy:input_type -> dieter.v1.SetBoardArchivePolicyRequest
+	237, // 247: dieter.v1.DieterService.UpdateBoardHostnames:input_type -> dieter.v1.UpdateBoardHostnamesRequest
+	235, // 248: dieter.v1.DieterService.UpdateBoardGitSettings:input_type -> dieter.v1.UpdateBoardGitSettingsRequest
+	102, // 249: dieter.v1.DieterService.ListArchivedCards:input_type -> dieter.v1.BoardRef
+	104, // 250: dieter.v1.DieterService.CreateBoardLabel:input_type -> dieter.v1.CreateBoardLabelRequest
+	105, // 251: dieter.v1.DieterService.UpdateBoardLabel:input_type -> dieter.v1.UpdateBoardLabelRequest
+	106, // 252: dieter.v1.DieterService.DeleteBoardLabel:input_type -> dieter.v1.DeleteBoardLabelRequest
+	108, // 253: dieter.v1.DieterService.CreateCard:input_type -> dieter.v1.CreateConversationRequest
+	108, // 254: dieter.v1.DieterService.CreateChat:input_type -> dieter.v1.CreateConversationRequest
+	110, // 255: dieter.v1.DieterService.ForkChat:input_type -> dieter.v1.ForkChatRequest
+	109, // 256: dieter.v1.DieterService.ListChats:input_type -> dieter.v1.ListChatsRequest
+	112, // 257: dieter.v1.DieterService.GetCard:input_type -> dieter.v1.GetCardRequest
+	113, // 258: dieter.v1.DieterService.GetConversation:input_type -> dieter.v1.GetConversationRequest
+	115, // 259: dieter.v1.DieterService.PollConversation:input_type -> dieter.v1.PollConversationRequest
+	114, // 260: dieter.v1.DieterService.WatchConversation:input_type -> dieter.v1.WatchConversationRequest
+	117, // 261: dieter.v1.DieterService.GetToolOutput:input_type -> dieter.v1.GetToolOutputRequest
+	57,  // 262: dieter.v1.DieterService.PresentConversationContent:input_type -> dieter.v1.PresentConversationContentRequest
+	119, // 263: dieter.v1.DieterService.SendMessage:input_type -> dieter.v1.SendMessageRequest
+	236, // 264: dieter.v1.DieterService.RemoveQueuedMessage:input_type -> dieter.v1.RemoveQueuedMessageRequest
+	266, // 265: dieter.v1.DieterService.MarkConversationRead:input_type -> dieter.v1.MarkConversationReadRequest
+	121, // 266: dieter.v1.DieterService.MoveCard:input_type -> dieter.v1.MoveCardRequest
+	126, // 267: dieter.v1.DieterService.MergeCard:input_type -> dieter.v1.MergeCardRequest
+	122, // 268: dieter.v1.DieterService.StartCard:input_type -> dieter.v1.StartCardRequest
+	124, // 269: dieter.v1.DieterService.SetCardLabels:input_type -> dieter.v1.SetCardLabelsRequest
+	112, // 270: dieter.v1.DieterService.CancelCard:input_type -> dieter.v1.GetCardRequest
+	125, // 271: dieter.v1.DieterService.RenameCard:input_type -> dieter.v1.RenameCardRequest
+	128, // 272: dieter.v1.DieterService.UpdateCard:input_type -> dieter.v1.UpdateCardRequest
+	129, // 273: dieter.v1.DieterService.ArchiveCard:input_type -> dieter.v1.ArchiveCardRequest
+	130, // 274: dieter.v1.DieterService.PinChat:input_type -> dieter.v1.PinChatRequest
+	133, // 275: dieter.v1.DieterService.UpdateConversationWorkspace:input_type -> dieter.v1.UpdateConversationWorkspaceRequest
+	132, // 276: dieter.v1.DieterService.GetWorkspace:input_type -> dieter.v1.ConversationRef
+	131, // 277: dieter.v1.DieterService.ListProjectWorkspaces:input_type -> dieter.v1.ProjectRef
+	140, // 278: dieter.v1.DieterService.GetChangeset:input_type -> dieter.v1.GetChangesetRequest
+	141, // 279: dieter.v1.DieterService.GetFileDiff:input_type -> dieter.v1.GetDiffRequest
+	141, // 280: dieter.v1.DieterService.GetCommitDiff:input_type -> dieter.v1.GetDiffRequest
+	144, // 281: dieter.v1.DieterService.AddChangeComment:input_type -> dieter.v1.AddChangeCommentRequest
+	145, // 282: dieter.v1.DieterService.ListChangeComments:input_type -> dieter.v1.ListChangeCommentsRequest
+	132, // 283: dieter.v1.DieterService.GetSCMCapabilities:input_type -> dieter.v1.ConversationRef
+	152, // 284: dieter.v1.DieterService.StartGitOperation:input_type -> dieter.v1.StartGitOperationRequest
+	153, // 285: dieter.v1.DieterService.GetGitOperation:input_type -> dieter.v1.GitOperationRef
+	154, // 286: dieter.v1.DieterService.WatchGitOperation:input_type -> dieter.v1.WatchGitOperationRequest
+	153, // 287: dieter.v1.DieterService.CancelGitOperation:input_type -> dieter.v1.GitOperationRef
+	157, // 288: dieter.v1.DieterService.ListFiles:input_type -> dieter.v1.ListFilesRequest
+	160, // 289: dieter.v1.DieterService.ReadFile:input_type -> dieter.v1.ReadFileRequest
+	218, // 290: dieter.v1.DieterService.SaveFile:input_type -> dieter.v1.SaveFileRequest
+	219, // 291: dieter.v1.DieterService.CreateFile:input_type -> dieter.v1.CreateFileRequest
+	220, // 292: dieter.v1.DieterService.MoveFile:input_type -> dieter.v1.MoveFileRequest
+	222, // 293: dieter.v1.DieterService.DeleteFile:input_type -> dieter.v1.DeleteFileRequest
+	164, // 294: dieter.v1.DieterService.ListTerminals:input_type -> dieter.v1.ListTerminalsRequest
+	166, // 295: dieter.v1.DieterService.CreateTerminal:input_type -> dieter.v1.CreateTerminalRequest
+	167, // 296: dieter.v1.DieterService.WatchTerminal:input_type -> dieter.v1.WatchTerminalRequest
+	169, // 297: dieter.v1.DieterService.WriteTerminal:input_type -> dieter.v1.TerminalInputRequest
+	170, // 298: dieter.v1.DieterService.ResizeTerminal:input_type -> dieter.v1.ResizeTerminalRequest
+	171, // 299: dieter.v1.DieterService.RenameTerminal:input_type -> dieter.v1.RenameTerminalRequest
+	163, // 300: dieter.v1.DieterService.CloseTerminal:input_type -> dieter.v1.TerminalRef
+	174, // 301: dieter.v1.DieterService.ListExecutions:input_type -> dieter.v1.ListExecutionsRequest
+	176, // 302: dieter.v1.DieterService.StartExecution:input_type -> dieter.v1.StartExecutionRequest
+	173, // 303: dieter.v1.DieterService.GetExecution:input_type -> dieter.v1.ExecutionRef
+	177, // 304: dieter.v1.DieterService.WatchExecution:input_type -> dieter.v1.WatchExecutionRequest
+	179, // 305: dieter.v1.DieterService.WriteExecutionInput:input_type -> dieter.v1.ExecutionInputRequest
+	180, // 306: dieter.v1.DieterService.SignalExecution:input_type -> dieter.v1.SignalExecutionRequest
+	181, // 307: dieter.v1.DieterService.ResizeExecution:input_type -> dieter.v1.ResizeExecutionRequest
+	173, // 308: dieter.v1.DieterService.CancelExecution:input_type -> dieter.v1.ExecutionRef
+	173, // 309: dieter.v1.DieterService.CloseExecution:input_type -> dieter.v1.ExecutionRef
+	306, // 310: dieter.v1.DieterService.GetRemoteDesktopCapabilities:input_type -> google.protobuf.Empty
+	201, // 311: dieter.v1.DieterService.ListRemoteDesktopDisplayModes:input_type -> dieter.v1.RemoteDesktopRef
+	185, // 312: dieter.v1.DieterService.SetRemoteDesktopDisplayMode:input_type -> dieter.v1.SetRemoteDesktopDisplayModeRequest
+	201, // 313: dieter.v1.DieterService.RestoreRemoteDesktopDisplayMode:input_type -> dieter.v1.RemoteDesktopRef
+	201, // 314: dieter.v1.DieterService.GetRemoteDesktopVirtualDisplay:input_type -> dieter.v1.RemoteDesktopRef
+	187, // 315: dieter.v1.DieterService.SetRemoteDesktopVirtualDisplay:input_type -> dieter.v1.SetRemoteDesktopVirtualDisplayRequest
+	188, // 316: dieter.v1.DieterService.ConfirmRemoteDesktopVirtualDisplay:input_type -> dieter.v1.ConfirmRemoteDesktopVirtualDisplayRequest
+	201, // 317: dieter.v1.DieterService.RestoreRemoteDesktopVirtualDisplay:input_type -> dieter.v1.RemoteDesktopRef
+	190, // 318: dieter.v1.DieterService.ProbeRemoteDesktopPermissions:input_type -> dieter.v1.ProbeRemoteDesktopPermissionsRequest
+	195, // 319: dieter.v1.DieterService.StartRemoteDesktop:input_type -> dieter.v1.StartRemoteDesktopRequest
+	217, // 320: dieter.v1.DieterService.SendRemoteDesktopSignal:input_type -> dieter.v1.RemoteDesktopSignal
+	201, // 321: dieter.v1.DieterService.GetRemoteDesktopSession:input_type -> dieter.v1.RemoteDesktopRef
+	306, // 322: dieter.v1.DieterService.ListRemoteDesktopSessions:input_type -> google.protobuf.Empty
+	198, // 323: dieter.v1.DieterService.SetRemoteDesktopControl:input_type -> dieter.v1.RemoteDesktopControlRequest
+	200, // 324: dieter.v1.DieterService.UpdateRemoteDesktopSession:input_type -> dieter.v1.UpdateRemoteDesktopSessionRequest
+	238, // 325: dieter.v1.DieterService.ExchangeRemoteDesktopClipboard:input_type -> dieter.v1.RemoteDesktopClipboardRequest
+	201, // 326: dieter.v1.DieterService.CloseRemoteDesktop:input_type -> dieter.v1.RemoteDesktopRef
+	223, // 327: dieter.v1.DieterService.ListSchedules:input_type -> dieter.v1.ListSchedulesRequest
+	230, // 328: dieter.v1.DieterService.GetSchedule:input_type -> dieter.v1.ScheduleRef
+	228, // 329: dieter.v1.DieterService.PreviewSchedule:input_type -> dieter.v1.PreviewScheduleRequest
+	227, // 330: dieter.v1.DieterService.CreateSchedule:input_type -> dieter.v1.SaveScheduleRequest
+	227, // 331: dieter.v1.DieterService.UpdateSchedule:input_type -> dieter.v1.SaveScheduleRequest
+	230, // 332: dieter.v1.DieterService.DeleteSchedule:input_type -> dieter.v1.ScheduleRef
+	230, // 333: dieter.v1.DieterService.RunSchedule:input_type -> dieter.v1.ScheduleRef
+	231, // 334: dieter.v1.DieterService.SetScheduleEnabled:input_type -> dieter.v1.SetScheduleEnabledRequest
+	232, // 335: dieter.v1.DieterService.ListScheduleRuns:input_type -> dieter.v1.ListScheduleRunsRequest
+	306, // 336: dieter.v1.DieterService.GetVaultStatus:input_type -> google.protobuf.Empty
+	270, // 337: dieter.v1.DieterService.InitVault:input_type -> dieter.v1.InitVaultRequest
+	272, // 338: dieter.v1.DieterService.JoinVault:input_type -> dieter.v1.JoinVaultRequest
+	274, // 339: dieter.v1.DieterService.ApproveVaultMember:input_type -> dieter.v1.ApproveVaultMemberRequest
+	275, // 340: dieter.v1.DieterService.RemoveVaultMember:input_type -> dieter.v1.VaultMemberRef
+	276, // 341: dieter.v1.DieterService.RotateVault:input_type -> dieter.v1.RotateVaultRequest
+	279, // 342: dieter.v1.DieterService.ListVaultItems:input_type -> dieter.v1.ListVaultItemsRequest
+	281, // 343: dieter.v1.DieterService.GetVaultItem:input_type -> dieter.v1.VaultItemRef
+	282, // 344: dieter.v1.DieterService.RevealVaultItem:input_type -> dieter.v1.RevealVaultItemRequest
+	284, // 345: dieter.v1.DieterService.CreateVaultItem:input_type -> dieter.v1.CreateVaultItemRequest
+	285, // 346: dieter.v1.DieterService.UpdateVaultItem:input_type -> dieter.v1.UpdateVaultItemRequest
+	281, // 347: dieter.v1.DieterService.DeleteVaultItem:input_type -> dieter.v1.VaultItemRef
+	286, // 348: dieter.v1.DieterService.ListVaultAudit:input_type -> dieter.v1.ListVaultAuditRequest
+	257, // 349: dieter.v1.DieterService.GetKV:output_type -> dieter.v1.KVEntry
+	260, // 350: dieter.v1.DieterService.ListKV:output_type -> dieter.v1.KVPage
+	257, // 351: dieter.v1.DieterService.PutKV:output_type -> dieter.v1.KVEntry
+	257, // 352: dieter.v1.DieterService.DeleteKV:output_type -> dieter.v1.KVEntry
+	257, // 353: dieter.v1.DieterService.MoveKV:output_type -> dieter.v1.KVEntry
+	265, // 354: dieter.v1.DieterService.WatchKV:output_type -> dieter.v1.KVFrame
+	255, // 355: dieter.v1.DieterService.GetPeerChanges:output_type -> dieter.v1.PeerChangesResponse
+	246, // 356: dieter.v1.DieterService.GetPeerRecord:output_type -> dieter.v1.PeerRecord
+	247, // 357: dieter.v1.DieterService.GetPeerStoreStatus:output_type -> dieter.v1.PeerStoreStatus
+	250, // 358: dieter.v1.DieterService.ListPeerRecords:output_type -> dieter.v1.PeerSnapshot
+	246, // 359: dieter.v1.DieterService.PutPeerRecord:output_type -> dieter.v1.PeerRecord
+	306, // 360: dieter.v1.DieterService.MergePeerRecords:output_type -> google.protobuf.Empty
+	14,  // 361: dieter.v1.DieterService.Health:output_type -> dieter.v1.HealthResponse
+	15,  // 362: dieter.v1.DieterService.GetRuntimeStatus:output_type -> dieter.v1.RuntimeStatus
+	244, // 363: dieter.v1.DieterService.StartControlConnection:output_type -> dieter.v1.ControlConnection
+	244, // 364: dieter.v1.DieterService.GetControlConnection:output_type -> dieter.v1.ControlConnection
+	306, // 365: dieter.v1.DieterService.CloseControlConnection:output_type -> google.protobuf.Empty
+	16,  // 366: dieter.v1.DieterService.GetMachineInformation:output_type -> dieter.v1.MachineInformation
+	24,  // 367: dieter.v1.DieterService.PerformMachineOperation:output_type -> dieter.v1.MachineOperationResponse
+	27,  // 368: dieter.v1.DieterService.GetState:output_type -> dieter.v1.State
+	30,  // 369: dieter.v1.DieterService.WatchChanges:output_type -> dieter.v1.ChangesFrame
+	69,  // 370: dieter.v1.DieterService.GetHarnesses:output_type -> dieter.v1.HarnessCatalog
+	76,  // 371: dieter.v1.DieterService.GetSettings:output_type -> dieter.v1.Settings
+	82,  // 372: dieter.v1.DieterService.GetSettingsOptions:output_type -> dieter.v1.SettingsOptions
+	76,  // 373: dieter.v1.DieterService.UpdateSettings:output_type -> dieter.v1.Settings
+	84,  // 374: dieter.v1.DieterService.GetPromptSettings:output_type -> dieter.v1.PromptSettings
+	84,  // 375: dieter.v1.DieterService.UpdatePromptSettings:output_type -> dieter.v1.PromptSettings
+	39,  // 376: dieter.v1.DieterService.SetProjectPromptTemplate:output_type -> dieter.v1.Project
+	40,  // 377: dieter.v1.DieterService.SetBoardPromptTemplate:output_type -> dieter.v1.Board
+	88,  // 378: dieter.v1.DieterService.PreviewPrompt:output_type -> dieter.v1.PromptPreview
+	77,  // 379: dieter.v1.DieterService.GetClaudeDesignStatus:output_type -> dieter.v1.ClaudeDesignStatus
+	79,  // 380: dieter.v1.DieterService.SignInClaudeDesign:output_type -> dieter.v1.ClaudeDesignSignInEvent
+	306, // 381: dieter.v1.DieterService.SubmitClaudeDesignSignInCode:output_type -> google.protobuf.Empty
+	77,  // 382: dieter.v1.DieterService.SetClaudeDesignAccess:output_type -> dieter.v1.ClaudeDesignStatus
+	92,  // 383: dieter.v1.DieterService.ListDirectories:output_type -> dieter.v1.DirectoryListing
+	39,  // 384: dieter.v1.DieterService.ConsolidateProject:output_type -> dieter.v1.Project
+	34,  // 385: dieter.v1.DieterService.AttachCheckout:output_type -> dieter.v1.Checkout
+	306, // 386: dieter.v1.DieterService.DetachCheckout:output_type -> google.protobuf.Empty
+	38,  // 387: dieter.v1.DieterService.ListCheckouts:output_type -> dieter.v1.CheckoutsResponse
+	94,  // 388: dieter.v1.DieterService.CreateProject:output_type -> dieter.v1.CreateProjectResponse
+	39,  // 389: dieter.v1.DieterService.UpdateProject:output_type -> dieter.v1.Project
+	39,  // 390: dieter.v1.DieterService.UpdateProjectWorkspaceSettings:output_type -> dieter.v1.Project
+	39,  // 391: dieter.v1.DieterService.ArchiveProject:output_type -> dieter.v1.Project
+	32,  // 392: dieter.v1.DieterService.ListArchivedProjects:output_type -> dieter.v1.ProjectsResponse
+	40,  // 393: dieter.v1.DieterService.CreateBoard:output_type -> dieter.v1.Board
+	40,  // 394: dieter.v1.DieterService.GetBoard:output_type -> dieter.v1.Board
+	43,  // 395: dieter.v1.DieterService.ListRetiredBoards:output_type -> dieter.v1.ListRetiredBoardsResponse
+	40,  // 396: dieter.v1.DieterService.SetBoardRetired:output_type -> dieter.v1.Board
+	40,  // 397: dieter.v1.DieterService.RenameBoard:output_type -> dieter.v1.Board
+	40,  // 398: dieter.v1.DieterService.SetBoardArchivePolicy:output_type -> dieter.v1.Board
+	40,  // 399: dieter.v1.DieterService.UpdateBoardHostnames:output_type -> dieter.v1.Board
+	40,  // 400: dieter.v1.DieterService.UpdateBoardGitSettings:output_type -> dieter.v1.Board
+	33,  // 401: dieter.v1.DieterService.ListArchivedCards:output_type -> dieter.v1.CardsResponse
+	40,  // 402: dieter.v1.DieterService.CreateBoardLabel:output_type -> dieter.v1.Board
+	40,  // 403: dieter.v1.DieterService.UpdateBoardLabel:output_type -> dieter.v1.Board
+	40,  // 404: dieter.v1.DieterService.DeleteBoardLabel:output_type -> dieter.v1.Board
+	50,  // 405: dieter.v1.DieterService.CreateCard:output_type -> dieter.v1.Card
+	50,  // 406: dieter.v1.DieterService.CreateChat:output_type -> dieter.v1.Card
+	50,  // 407: dieter.v1.DieterService.ForkChat:output_type -> dieter.v1.Card
+	111, // 408: dieter.v1.DieterService.ListChats:output_type -> dieter.v1.ChatsResponse
+	52,  // 409: dieter.v1.DieterService.GetCard:output_type -> dieter.v1.CardDetail
+	68,  // 410: dieter.v1.DieterService.GetConversation:output_type -> dieter.v1.ConversationSnapshot
+	116, // 411: dieter.v1.DieterService.PollConversation:output_type -> dieter.v1.ConversationUpdate
+	116, // 412: dieter.v1.DieterService.WatchConversation:output_type -> dieter.v1.ConversationUpdate
+	118, // 413: dieter.v1.DieterService.GetToolOutput:output_type -> dieter.v1.ToolOutput
+	56,  // 414: dieter.v1.DieterService.PresentConversationContent:output_type -> dieter.v1.ContentPresentation
+	120, // 415: dieter.v1.DieterService.SendMessage:output_type -> dieter.v1.SendMessageResponse
+	65,  // 416: dieter.v1.DieterService.RemoveQueuedMessage:output_type -> dieter.v1.QueuedMessage
+	50,  // 417: dieter.v1.DieterService.MarkConversationRead:output_type -> dieter.v1.Card
+	50,  // 418: dieter.v1.DieterService.MoveCard:output_type -> dieter.v1.Card
+	50,  // 419: dieter.v1.DieterService.MergeCard:output_type -> dieter.v1.Card
+	123, // 420: dieter.v1.DieterService.StartCard:output_type -> dieter.v1.StartCardResponse
+	50,  // 421: dieter.v1.DieterService.SetCardLabels:output_type -> dieter.v1.Card
+	306, // 422: dieter.v1.DieterService.CancelCard:output_type -> google.protobuf.Empty
+	50,  // 423: dieter.v1.DieterService.RenameCard:output_type -> dieter.v1.Card
+	50,  // 424: dieter.v1.DieterService.UpdateCard:output_type -> dieter.v1.Card
+	50,  // 425: dieter.v1.DieterService.ArchiveCard:output_type -> dieter.v1.Card
+	50,  // 426: dieter.v1.DieterService.PinChat:output_type -> dieter.v1.Card
+	50,  // 427: dieter.v1.DieterService.UpdateConversationWorkspace:output_type -> dieter.v1.Card
+	135, // 428: dieter.v1.DieterService.GetWorkspace:output_type -> dieter.v1.Workspace
+	136, // 429: dieter.v1.DieterService.ListProjectWorkspaces:output_type -> dieter.v1.WorkspacesResponse
+	139, // 430: dieter.v1.DieterService.GetChangeset:output_type -> dieter.v1.Changeset
+	142, // 431: dieter.v1.DieterService.GetFileDiff:output_type -> dieter.v1.FileDiff
+	142, // 432: dieter.v1.DieterService.GetCommitDiff:output_type -> dieter.v1.FileDiff
+	143, // 433: dieter.v1.DieterService.AddChangeComment:output_type -> dieter.v1.ChangeComment
+	146, // 434: dieter.v1.DieterService.ListChangeComments:output_type -> dieter.v1.ChangeCommentsResponse
+	147, // 435: dieter.v1.DieterService.GetSCMCapabilities:output_type -> dieter.v1.SCMCapabilities
+	151, // 436: dieter.v1.DieterService.StartGitOperation:output_type -> dieter.v1.GitOperation
+	151, // 437: dieter.v1.DieterService.GetGitOperation:output_type -> dieter.v1.GitOperation
+	156, // 438: dieter.v1.DieterService.WatchGitOperation:output_type -> dieter.v1.GitOperationFrame
+	151, // 439: dieter.v1.DieterService.CancelGitOperation:output_type -> dieter.v1.GitOperation
+	159, // 440: dieter.v1.DieterService.ListFiles:output_type -> dieter.v1.FileList
+	161, // 441: dieter.v1.DieterService.ReadFile:output_type -> dieter.v1.FileDocument
+	161, // 442: dieter.v1.DieterService.SaveFile:output_type -> dieter.v1.FileDocument
+	158, // 443: dieter.v1.DieterService.CreateFile:output_type -> dieter.v1.FileEntry
+	221, // 444: dieter.v1.DieterService.MoveFile:output_type -> dieter.v1.MoveFileResponse
+	306, // 445: dieter.v1.DieterService.DeleteFile:output_type -> google.protobuf.Empty
+	165, // 446: dieter.v1.DieterService.ListTerminals:output_type -> dieter.v1.TerminalsResponse
+	162, // 447: dieter.v1.DieterService.CreateTerminal:output_type -> dieter.v1.Terminal
+	168, // 448: dieter.v1.DieterService.WatchTerminal:output_type -> dieter.v1.TerminalFrame
+	162, // 449: dieter.v1.DieterService.WriteTerminal:output_type -> dieter.v1.Terminal
+	162, // 450: dieter.v1.DieterService.ResizeTerminal:output_type -> dieter.v1.Terminal
+	162, // 451: dieter.v1.DieterService.RenameTerminal:output_type -> dieter.v1.Terminal
+	306, // 452: dieter.v1.DieterService.CloseTerminal:output_type -> google.protobuf.Empty
+	175, // 453: dieter.v1.DieterService.ListExecutions:output_type -> dieter.v1.ExecutionsResponse
+	172, // 454: dieter.v1.DieterService.StartExecution:output_type -> dieter.v1.Execution
+	172, // 455: dieter.v1.DieterService.GetExecution:output_type -> dieter.v1.Execution
+	178, // 456: dieter.v1.DieterService.WatchExecution:output_type -> dieter.v1.ExecutionEvent
+	172, // 457: dieter.v1.DieterService.WriteExecutionInput:output_type -> dieter.v1.Execution
+	172, // 458: dieter.v1.DieterService.SignalExecution:output_type -> dieter.v1.Execution
+	172, // 459: dieter.v1.DieterService.ResizeExecution:output_type -> dieter.v1.Execution
+	172, // 460: dieter.v1.DieterService.CancelExecution:output_type -> dieter.v1.Execution
+	306, // 461: dieter.v1.DieterService.CloseExecution:output_type -> google.protobuf.Empty
+	182, // 462: dieter.v1.DieterService.GetRemoteDesktopCapabilities:output_type -> dieter.v1.RemoteDesktopCapabilities
+	184, // 463: dieter.v1.DieterService.ListRemoteDesktopDisplayModes:output_type -> dieter.v1.RemoteDesktopDisplayModes
+	184, // 464: dieter.v1.DieterService.SetRemoteDesktopDisplayMode:output_type -> dieter.v1.RemoteDesktopDisplayModes
+	184, // 465: dieter.v1.DieterService.RestoreRemoteDesktopDisplayMode:output_type -> dieter.v1.RemoteDesktopDisplayModes
+	186, // 466: dieter.v1.DieterService.GetRemoteDesktopVirtualDisplay:output_type -> dieter.v1.RemoteDesktopVirtualDisplay
+	186, // 467: dieter.v1.DieterService.SetRemoteDesktopVirtualDisplay:output_type -> dieter.v1.RemoteDesktopVirtualDisplay
+	186, // 468: dieter.v1.DieterService.ConfirmRemoteDesktopVirtualDisplay:output_type -> dieter.v1.RemoteDesktopVirtualDisplay
+	186, // 469: dieter.v1.DieterService.RestoreRemoteDesktopVirtualDisplay:output_type -> dieter.v1.RemoteDesktopVirtualDisplay
+	191, // 470: dieter.v1.DieterService.ProbeRemoteDesktopPermissions:output_type -> dieter.v1.RemoteDesktopPermissionProbe
+	217, // 471: dieter.v1.DieterService.StartRemoteDesktop:output_type -> dieter.v1.RemoteDesktopSignal
+	306, // 472: dieter.v1.DieterService.SendRemoteDesktopSignal:output_type -> google.protobuf.Empty
+	210, // 473: dieter.v1.DieterService.GetRemoteDesktopSession:output_type -> dieter.v1.RemoteDesktopSessionState
+	196, // 474: dieter.v1.DieterService.ListRemoteDesktopSessions:output_type -> dieter.v1.RemoteDesktopSessions
+	210, // 475: dieter.v1.DieterService.SetRemoteDesktopControl:output_type -> dieter.v1.RemoteDesktopSessionState
+	210, // 476: dieter.v1.DieterService.UpdateRemoteDesktopSession:output_type -> dieter.v1.RemoteDesktopSessionState
+	240, // 477: dieter.v1.DieterService.ExchangeRemoteDesktopClipboard:output_type -> dieter.v1.RemoteDesktopClipboardResponse
+	306, // 478: dieter.v1.DieterService.CloseRemoteDesktop:output_type -> google.protobuf.Empty
+	224, // 479: dieter.v1.DieterService.ListSchedules:output_type -> dieter.v1.SchedulesResponse
+	225, // 480: dieter.v1.DieterService.GetSchedule:output_type -> dieter.v1.Schedule
+	229, // 481: dieter.v1.DieterService.PreviewSchedule:output_type -> dieter.v1.SchedulePreview
+	225, // 482: dieter.v1.DieterService.CreateSchedule:output_type -> dieter.v1.Schedule
+	225, // 483: dieter.v1.DieterService.UpdateSchedule:output_type -> dieter.v1.Schedule
+	306, // 484: dieter.v1.DieterService.DeleteSchedule:output_type -> google.protobuf.Empty
+	233, // 485: dieter.v1.DieterService.RunSchedule:output_type -> dieter.v1.ScheduleRun
+	225, // 486: dieter.v1.DieterService.SetScheduleEnabled:output_type -> dieter.v1.Schedule
+	234, // 487: dieter.v1.DieterService.ListScheduleRuns:output_type -> dieter.v1.ScheduleRunsResponse
+	269, // 488: dieter.v1.DieterService.GetVaultStatus:output_type -> dieter.v1.VaultStatus
+	271, // 489: dieter.v1.DieterService.InitVault:output_type -> dieter.v1.InitVaultResponse
+	273, // 490: dieter.v1.DieterService.JoinVault:output_type -> dieter.v1.JoinVaultResponse
+	269, // 491: dieter.v1.DieterService.ApproveVaultMember:output_type -> dieter.v1.VaultStatus
+	269, // 492: dieter.v1.DieterService.RemoveVaultMember:output_type -> dieter.v1.VaultStatus
+	277, // 493: dieter.v1.DieterService.RotateVault:output_type -> dieter.v1.RotateVaultResponse
+	280, // 494: dieter.v1.DieterService.ListVaultItems:output_type -> dieter.v1.VaultItemsResponse
+	278, // 495: dieter.v1.DieterService.GetVaultItem:output_type -> dieter.v1.VaultItem
+	283, // 496: dieter.v1.DieterService.RevealVaultItem:output_type -> dieter.v1.RevealVaultItemResponse
+	278, // 497: dieter.v1.DieterService.CreateVaultItem:output_type -> dieter.v1.VaultItem
+	278, // 498: dieter.v1.DieterService.UpdateVaultItem:output_type -> dieter.v1.VaultItem
+	278, // 499: dieter.v1.DieterService.DeleteVaultItem:output_type -> dieter.v1.VaultItem
+	288, // 500: dieter.v1.DieterService.ListVaultAudit:output_type -> dieter.v1.VaultAuditResponse
+	349, // [349:501] is the sub-list for method output_type
+	197, // [197:349] is the sub-list for method input_type
+	197, // [197:197] is the sub-list for extension type_name
+	197, // [197:197] is the sub-list for extension extendee
+	0,   // [0:197] is the sub-list for field type_name
 }
 
 func init() { file_dieter_v1_dieter_proto_init() }
@@ -27029,12 +27451,12 @@ func file_dieter_v1_dieter_proto_init() {
 	}
 	file_dieter_v1_dieter_proto_msgTypes[5].OneofWrappers = []any{}
 	file_dieter_v1_dieter_proto_msgTypes[7].OneofWrappers = []any{}
-	file_dieter_v1_dieter_proto_msgTypes[76].OneofWrappers = []any{}
-	file_dieter_v1_dieter_proto_msgTypes[94].OneofWrappers = []any{}
-	file_dieter_v1_dieter_proto_msgTypes[96].OneofWrappers = []any{}
-	file_dieter_v1_dieter_proto_msgTypes[143].OneofWrappers = []any{}
-	file_dieter_v1_dieter_proto_msgTypes[153].OneofWrappers = []any{}
-	file_dieter_v1_dieter_proto_msgTypes[190].OneofWrappers = []any{
+	file_dieter_v1_dieter_proto_msgTypes[81].OneofWrappers = []any{}
+	file_dieter_v1_dieter_proto_msgTypes[99].OneofWrappers = []any{}
+	file_dieter_v1_dieter_proto_msgTypes[101].OneofWrappers = []any{}
+	file_dieter_v1_dieter_proto_msgTypes[148].OneofWrappers = []any{}
+	file_dieter_v1_dieter_proto_msgTypes[158].OneofWrappers = []any{}
+	file_dieter_v1_dieter_proto_msgTypes[195].OneofWrappers = []any{
 		(*RemoteDesktopInput_PointerMove)(nil),
 		(*RemoteDesktopInput_PointerButton)(nil),
 		(*RemoteDesktopInput_Scroll)(nil),
@@ -27042,15 +27464,15 @@ func file_dieter_v1_dieter_proto_init() {
 		(*RemoteDesktopInput_ReleaseAll)(nil),
 		(*RemoteDesktopInput_Text)(nil),
 	}
-	file_dieter_v1_dieter_proto_msgTypes[191].OneofWrappers = []any{}
-	file_dieter_v1_dieter_proto_msgTypes[193].OneofWrappers = []any{}
-	file_dieter_v1_dieter_proto_msgTypes[196].OneofWrappers = []any{
+	file_dieter_v1_dieter_proto_msgTypes[196].OneofWrappers = []any{}
+	file_dieter_v1_dieter_proto_msgTypes[198].OneofWrappers = []any{}
+	file_dieter_v1_dieter_proto_msgTypes[201].OneofWrappers = []any{
 		(*RemoteDesktopHostEvent_Cursor)(nil),
 		(*RemoteDesktopHostEvent_State)(nil),
 		(*RemoteDesktopHostEvent_InputAck)(nil),
 		(*RemoteDesktopHostEvent_Reference)(nil),
 	}
-	file_dieter_v1_dieter_proto_msgTypes[198].OneofWrappers = []any{
+	file_dieter_v1_dieter_proto_msgTypes[203].OneofWrappers = []any{
 		(*RemoteDesktopSignal_Binding)(nil),
 		(*RemoteDesktopSignal_Description)(nil),
 		(*RemoteDesktopSignal_Candidate)(nil),
@@ -27058,14 +27480,14 @@ func file_dieter_v1_dieter_proto_init() {
 		(*RemoteDesktopSignal_Error)(nil),
 		(*RemoteDesktopSignal_LeaseHeartbeat)(nil),
 	}
-	file_dieter_v1_dieter_proto_msgTypes[266].OneofWrappers = []any{}
+	file_dieter_v1_dieter_proto_msgTypes[271].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dieter_v1_dieter_proto_rawDesc), len(file_dieter_v1_dieter_proto_rawDesc)),
 			NumEnums:      14,
-			NumMessages:   285,
+			NumMessages:   290,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

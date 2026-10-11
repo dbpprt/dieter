@@ -46,6 +46,21 @@ object LinkExports {
     /** The rule to store for what the user typed; "" when it is not a valid host or HTTP(S) URL. */
     fun normalizeExternalBrowserRule(input: String): String = BrowserRules.normalized(input).orEmpty()
 
+    /**
+     * Why [url] opens in the system browser regardless of the user's rules,
+     * e.g. Claude Design; "" when the embedded browser may show it.
+     */
+    fun systemBrowserNotice(url: String): String = BrowserRules.systemBrowserNotice(url).orEmpty()
+
+    /**
+     * Whether [url] is a Claude artifact or design, which a client with its own
+     * signed-in claude.ai browser session shows there.
+     */
+    fun isClaudeDesign(url: String): Boolean = BrowserRules.isClaudeDesign(url)
+
+    /** Whether [url] is a claude.ai page that such a claude.ai session may navigate to. */
+    fun isClaudeAccountPage(url: String): Boolean = BrowserRules.isClaudeAccountPage(url)
+
     /** Whether a browser address's host is this machine, which a remote conversation's browser may not open. */
     fun isLoopbackBrowserHost(host: String): Boolean = BrowserRules.isLoopbackHost(host)
 

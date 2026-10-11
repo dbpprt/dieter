@@ -13,6 +13,7 @@ import com.dbpprt.dieter.core.admin.Administration
 import com.dbpprt.dieter.core.admin.BackgroundPolicy
 import com.dbpprt.dieter.core.admin.MachineAdmin
 import com.dbpprt.dieter.core.admin.MachineTelemetry
+import com.dbpprt.dieter.core.design.ClaudeDesign
 import com.dbpprt.dieter.core.board.BoardOperations
 import com.dbpprt.dieter.core.composition.ConversationDrafts
 import com.dbpprt.dieter.core.composition.Creation
@@ -144,6 +145,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
             board.reset()
             schedules.stop()
             telemetry.reset()
+            claudeDesign.reset()
             projectWorkspaces.reset()
             quotas.reset()
             gatewayListeners.forEach { it() }
@@ -166,6 +168,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
     val creation = CreationMemory(storage, platform.logger)
     val schedules = Schedules(sessions, workspace, choice, scope, metadata)
     val telemetry = MachineTelemetry(sessions, scope)
+    val claudeDesign = ClaudeDesign(sessions, scope)
     val projectWorkspaces = ProjectWorkspaces(sessions, workspace, choice)
     val quotas = ProviderQuotas(platform.logger)
     private var gatewayStorage: CoreStorage? = null

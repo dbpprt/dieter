@@ -115,6 +115,10 @@ final class ConversationContentModel {
         ExternalBrowserRules.matches($0, entries: ExternalBrowserRules.entries())
     }
     @ObservationIgnored var openWebURLExternally: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
+    /// Claude artifacts and designs, which open in a tab signed in to claude.ai.
+    @ObservationIgnored var usesClaudeSession: @MainActor (URL) -> Bool = {
+        ExternalBrowserRules.usesClaudeSession($0, entries: ExternalBrowserRules.entries())
+    }
     @ObservationIgnored var onSaveFailure: (String) -> Void = { _ in }
     @ObservationIgnored var onReviewSendMessage: @MainActor (String, Dieter_V1_Card, WorkspaceTarget) async -> Bool = {
         _, _, _ in false
@@ -311,14 +315,16 @@ final class ConversationContentModel {
         do {
             if ConversationContentLink.isWeb(url) {
                 try validateWebURL(url, id)
-                if shouldOpenWebURLExternally(url) {
+                let claude = usesClaudeSession(url)
+                if !claude, shouldOpenWebURLExternally(url) {
                     // Only an explicit link click may launch another app.
                     guard activation == .interactive else { return false }
                     openWebURLExternally(url)
                     return true
                 }
                 let link = try ConversationContentLink.resolve(url, workspaceRoot: "")
-                if let existing = tabs.first(where: { $0.selection == link }) {
+                let session: ConversationBrowserSession = claude ? .claude : .ephemeral
+                if let existing = tabs.first(where: { $0.selection == link && $0.browser.session == session }) {
                     existing.browser.reveal(url)
                     applyTitle(presentationTitle, to: existing)
                     selectTab(existing.id, reveal: reveal); return true
@@ -326,6 +332,7 @@ final class ConversationContentModel {
                 guard hasCapacity else { return false }
                 let tab = ConversationContentTab(kind: .browser, conversationID: id)
                 tab.browser.allowsLoopback = (try? validateWebURL(URL(string: "http://localhost")!, id)) != nil
+                tab.browser.session = session
                 tab.selection = link; tab.sourceURL = url
                 applyTitle(presentationTitle, to: tab)
                 append(tab, reveal: reveal)

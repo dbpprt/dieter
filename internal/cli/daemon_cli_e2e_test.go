@@ -66,7 +66,7 @@ func daemonCLIForTest(t *testing.T) (*CLI, *bytes.Buffer, *store.Store) {
 	if err := data.Ensure(); err != nil {
 		t.Fatal(err)
 	}
-	application := server.NewWithOptions(data, slog.New(slog.NewTextHandler(io.Discard, nil)), server.Options{Runner: &fakeRunner{}, PrivacyDriver: &cliPrivacyFixture{}, PrivacyBootID: func(context.Context) (string, error) { return "cli-boot", nil }})
+	application := server.NewWithOptions(data, slog.New(slog.NewTextHandler(io.Discard, nil)), server.Options{Runner: &fakeRunner{}, PrivacyDriver: &cliPrivacyFixture{}, PrivacyBootID: func(context.Context) (string, error) { return "cli-boot", nil }, ClaudeDesign: &cliDesignFixture{}})
 	host := httptest.NewServer(application.Handler())
 	t.Cleanup(host.Close)
 	if _, err := dieterdaemon.NewStatusWriter(root, dieterdaemon.RuntimeStatus{
@@ -462,6 +462,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 		defer control.Close()
 	}
 	remoteServer := server.NewWithOptions(remoteStore, logger, server.Options{
+		ClaudeDesign:  &cliDesignFixture{},
 		PrivacyDriver: &cliPrivacyFixture{},
 		PrivacyBootID: func(context.Context) (string, error) { return "cli-boot", nil },
 		ControlRTC:    control,
@@ -603,6 +604,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 		return
 	}
 	assertPrivacyCLI(t, first, &firstOutput)
+	assertDesignCLI(t, first, &firstOutput)
 	firstOutput.Reset()
 	if err := first.Run([]string{"machine", "info"}); err != nil || !strings.Contains(firstOutput.String(), `"daemonBuild"`) || !strings.Contains(firstOutput.String(), `"gpu"`) {
 		t.Fatalf("direct machine info output=%q err=%v", firstOutput.String(), err)
@@ -694,6 +696,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	}
 	assertChangesCLI(t, second, &secondOutput)
 	assertPrivacyCLI(t, second, &secondOutput)
+	assertDesignCLI(t, second, &secondOutput)
 	secondOutput.Reset()
 	if err := second.Run([]string{"machine", "info"}); err != nil || !strings.Contains(secondOutput.String(), `"daemonBuild"`) || !strings.Contains(secondOutput.String(), `"gpu"`) {
 		t.Fatalf("relay machine info output=%q err=%v", secondOutput.String(), err)

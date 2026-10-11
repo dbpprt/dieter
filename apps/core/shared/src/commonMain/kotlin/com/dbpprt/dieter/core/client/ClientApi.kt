@@ -458,6 +458,10 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
         command.telemetry?.let {
             return surfaces.telemetry.unscoped().execute(it)
         }
+        // One Claude Design surface: the machine its settings show.
+        command.claude_design?.let {
+            return surfaces.claudeDesign.unscoped().execute(it)
+        }
         command.project_workspaces?.let {
             return surfaces.projectWorkspaces.unscoped().execute(it)
         }
@@ -629,6 +633,12 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
                 Slice.SLICE_TELEMETRY ->
                     observeSurface(surfaces.telemetry, Surfaces.UNSCOPED, ::emit) { telemetry ->
                         telemetry.view.map { Update(telemetry = telemetrySlice(it)) }
+                    }
+                Slice.SLICE_CLAUDE_DESIGN ->
+                    observeSurface(surfaces.claudeDesign, Surfaces.UNSCOPED, ::emit) { design ->
+                        design.view.map(::claudeDesignSlice).distinctUntilChanged().map {
+                            Update(claude_design = it)
+                        }
                     }
                 Slice.SLICE_SCHEDULES ->
                     observeSurface(surfaces.schedules, scope, ::emit) { schedules ->

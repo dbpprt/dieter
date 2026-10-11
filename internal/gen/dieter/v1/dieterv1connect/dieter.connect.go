@@ -116,6 +116,18 @@ const (
 	// DieterServicePreviewPromptProcedure is the fully-qualified name of the DieterService's
 	// PreviewPrompt RPC.
 	DieterServicePreviewPromptProcedure = "/dieter.v1.DieterService/PreviewPrompt"
+	// DieterServiceGetClaudeDesignStatusProcedure is the fully-qualified name of the DieterService's
+	// GetClaudeDesignStatus RPC.
+	DieterServiceGetClaudeDesignStatusProcedure = "/dieter.v1.DieterService/GetClaudeDesignStatus"
+	// DieterServiceSignInClaudeDesignProcedure is the fully-qualified name of the DieterService's
+	// SignInClaudeDesign RPC.
+	DieterServiceSignInClaudeDesignProcedure = "/dieter.v1.DieterService/SignInClaudeDesign"
+	// DieterServiceSubmitClaudeDesignSignInCodeProcedure is the fully-qualified name of the
+	// DieterService's SubmitClaudeDesignSignInCode RPC.
+	DieterServiceSubmitClaudeDesignSignInCodeProcedure = "/dieter.v1.DieterService/SubmitClaudeDesignSignInCode"
+	// DieterServiceSetClaudeDesignAccessProcedure is the fully-qualified name of the DieterService's
+	// SetClaudeDesignAccess RPC.
+	DieterServiceSetClaudeDesignAccessProcedure = "/dieter.v1.DieterService/SetClaudeDesignAccess"
 	// DieterServiceListDirectoriesProcedure is the fully-qualified name of the DieterService's
 	// ListDirectories RPC.
 	DieterServiceListDirectoriesProcedure = "/dieter.v1.DieterService/ListDirectories"
@@ -501,6 +513,18 @@ type DieterServiceClient interface {
 	SetProjectPromptTemplate(context.Context, *connect.Request[v1.SetScopedPromptTemplateRequest]) (*connect.Response[v1.Project], error)
 	SetBoardPromptTemplate(context.Context, *connect.Request[v1.SetScopedPromptTemplateRequest]) (*connect.Response[v1.Board], error)
 	PreviewPrompt(context.Context, *connect.Request[v1.PreviewPromptRequest]) (*connect.Response[v1.PromptPreview], error)
+	// Claude Design (claude.ai/design) belongs to this daemon host's Claude
+	// account. Claude Code keeps the claude.ai login and the design credential
+	// in its own secure storage on the host; Dieter only records whether its
+	// Claude Code turns on this machine may use the Claude Design tools.
+	GetClaudeDesignStatus(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.ClaudeDesignStatus], error)
+	// SignInClaudeDesign starts Claude Code's design sign-in and streams its
+	// progress. The sign-in outlives the stream, so a code from the manual page
+	// still completes it after a client lost its connection; it ends when Claude
+	// Code finishes, after about five minutes, or when a newer sign-in replaces it.
+	SignInClaudeDesign(context.Context, *connect.Request[v1.SignInClaudeDesignRequest]) (*connect.ServerStreamForClient[v1.ClaudeDesignSignInEvent], error)
+	SubmitClaudeDesignSignInCode(context.Context, *connect.Request[v1.SubmitClaudeDesignSignInCodeRequest]) (*connect.Response[emptypb.Empty], error)
+	SetClaudeDesignAccess(context.Context, *connect.Request[v1.SetClaudeDesignAccessRequest]) (*connect.Response[v1.ClaudeDesignStatus], error)
 	ListDirectories(context.Context, *connect.Request[v1.ListDirectoriesRequest]) (*connect.Response[v1.DirectoryListing], error)
 	ConsolidateProject(context.Context, *connect.Request[v1.ConsolidateProjectRequest]) (*connect.Response[v1.Project], error)
 	AttachCheckout(context.Context, *connect.Request[v1.AttachCheckoutRequest]) (*connect.Response[v1.Checkout], error)
@@ -833,6 +857,30 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+DieterServicePreviewPromptProcedure,
 			connect.WithSchema(dieterServiceMethods.ByName("PreviewPrompt")),
+			connect.WithClientOptions(opts...),
+		),
+		getClaudeDesignStatus: connect.NewClient[emptypb.Empty, v1.ClaudeDesignStatus](
+			httpClient,
+			baseURL+DieterServiceGetClaudeDesignStatusProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("GetClaudeDesignStatus")),
+			connect.WithClientOptions(opts...),
+		),
+		signInClaudeDesign: connect.NewClient[v1.SignInClaudeDesignRequest, v1.ClaudeDesignSignInEvent](
+			httpClient,
+			baseURL+DieterServiceSignInClaudeDesignProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("SignInClaudeDesign")),
+			connect.WithClientOptions(opts...),
+		),
+		submitClaudeDesignSignInCode: connect.NewClient[v1.SubmitClaudeDesignSignInCodeRequest, emptypb.Empty](
+			httpClient,
+			baseURL+DieterServiceSubmitClaudeDesignSignInCodeProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("SubmitClaudeDesignSignInCode")),
+			connect.WithClientOptions(opts...),
+		),
+		setClaudeDesignAccess: connect.NewClient[v1.SetClaudeDesignAccessRequest, v1.ClaudeDesignStatus](
+			httpClient,
+			baseURL+DieterServiceSetClaudeDesignAccessProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("SetClaudeDesignAccess")),
 			connect.WithClientOptions(opts...),
 		),
 		listDirectories: connect.NewClient[v1.ListDirectoriesRequest, v1.DirectoryListing](
@@ -1578,6 +1626,10 @@ type dieterServiceClient struct {
 	setProjectPromptTemplate           *connect.Client[v1.SetScopedPromptTemplateRequest, v1.Project]
 	setBoardPromptTemplate             *connect.Client[v1.SetScopedPromptTemplateRequest, v1.Board]
 	previewPrompt                      *connect.Client[v1.PreviewPromptRequest, v1.PromptPreview]
+	getClaudeDesignStatus              *connect.Client[emptypb.Empty, v1.ClaudeDesignStatus]
+	signInClaudeDesign                 *connect.Client[v1.SignInClaudeDesignRequest, v1.ClaudeDesignSignInEvent]
+	submitClaudeDesignSignInCode       *connect.Client[v1.SubmitClaudeDesignSignInCodeRequest, emptypb.Empty]
+	setClaudeDesignAccess              *connect.Client[v1.SetClaudeDesignAccessRequest, v1.ClaudeDesignStatus]
 	listDirectories                    *connect.Client[v1.ListDirectoriesRequest, v1.DirectoryListing]
 	consolidateProject                 *connect.Client[v1.ConsolidateProjectRequest, v1.Project]
 	attachCheckout                     *connect.Client[v1.AttachCheckoutRequest, v1.Checkout]
@@ -1846,6 +1898,26 @@ func (c *dieterServiceClient) SetBoardPromptTemplate(ctx context.Context, req *c
 // PreviewPrompt calls dieter.v1.DieterService.PreviewPrompt.
 func (c *dieterServiceClient) PreviewPrompt(ctx context.Context, req *connect.Request[v1.PreviewPromptRequest]) (*connect.Response[v1.PromptPreview], error) {
 	return c.previewPrompt.CallUnary(ctx, req)
+}
+
+// GetClaudeDesignStatus calls dieter.v1.DieterService.GetClaudeDesignStatus.
+func (c *dieterServiceClient) GetClaudeDesignStatus(ctx context.Context, req *connect.Request[emptypb.Empty]) (*connect.Response[v1.ClaudeDesignStatus], error) {
+	return c.getClaudeDesignStatus.CallUnary(ctx, req)
+}
+
+// SignInClaudeDesign calls dieter.v1.DieterService.SignInClaudeDesign.
+func (c *dieterServiceClient) SignInClaudeDesign(ctx context.Context, req *connect.Request[v1.SignInClaudeDesignRequest]) (*connect.ServerStreamForClient[v1.ClaudeDesignSignInEvent], error) {
+	return c.signInClaudeDesign.CallServerStream(ctx, req)
+}
+
+// SubmitClaudeDesignSignInCode calls dieter.v1.DieterService.SubmitClaudeDesignSignInCode.
+func (c *dieterServiceClient) SubmitClaudeDesignSignInCode(ctx context.Context, req *connect.Request[v1.SubmitClaudeDesignSignInCodeRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.submitClaudeDesignSignInCode.CallUnary(ctx, req)
+}
+
+// SetClaudeDesignAccess calls dieter.v1.DieterService.SetClaudeDesignAccess.
+func (c *dieterServiceClient) SetClaudeDesignAccess(ctx context.Context, req *connect.Request[v1.SetClaudeDesignAccessRequest]) (*connect.Response[v1.ClaudeDesignStatus], error) {
+	return c.setClaudeDesignAccess.CallUnary(ctx, req)
 }
 
 // ListDirectories calls dieter.v1.DieterService.ListDirectories.
@@ -2483,6 +2555,18 @@ type DieterServiceHandler interface {
 	SetProjectPromptTemplate(context.Context, *connect.Request[v1.SetScopedPromptTemplateRequest]) (*connect.Response[v1.Project], error)
 	SetBoardPromptTemplate(context.Context, *connect.Request[v1.SetScopedPromptTemplateRequest]) (*connect.Response[v1.Board], error)
 	PreviewPrompt(context.Context, *connect.Request[v1.PreviewPromptRequest]) (*connect.Response[v1.PromptPreview], error)
+	// Claude Design (claude.ai/design) belongs to this daemon host's Claude
+	// account. Claude Code keeps the claude.ai login and the design credential
+	// in its own secure storage on the host; Dieter only records whether its
+	// Claude Code turns on this machine may use the Claude Design tools.
+	GetClaudeDesignStatus(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.ClaudeDesignStatus], error)
+	// SignInClaudeDesign starts Claude Code's design sign-in and streams its
+	// progress. The sign-in outlives the stream, so a code from the manual page
+	// still completes it after a client lost its connection; it ends when Claude
+	// Code finishes, after about five minutes, or when a newer sign-in replaces it.
+	SignInClaudeDesign(context.Context, *connect.Request[v1.SignInClaudeDesignRequest], *connect.ServerStream[v1.ClaudeDesignSignInEvent]) error
+	SubmitClaudeDesignSignInCode(context.Context, *connect.Request[v1.SubmitClaudeDesignSignInCodeRequest]) (*connect.Response[emptypb.Empty], error)
+	SetClaudeDesignAccess(context.Context, *connect.Request[v1.SetClaudeDesignAccessRequest]) (*connect.Response[v1.ClaudeDesignStatus], error)
 	ListDirectories(context.Context, *connect.Request[v1.ListDirectoriesRequest]) (*connect.Response[v1.DirectoryListing], error)
 	ConsolidateProject(context.Context, *connect.Request[v1.ConsolidateProjectRequest]) (*connect.Response[v1.Project], error)
 	AttachCheckout(context.Context, *connect.Request[v1.AttachCheckoutRequest]) (*connect.Response[v1.Checkout], error)
@@ -2811,6 +2895,30 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		DieterServicePreviewPromptProcedure,
 		svc.PreviewPrompt,
 		connect.WithSchema(dieterServiceMethods.ByName("PreviewPrompt")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceGetClaudeDesignStatusHandler := connect.NewUnaryHandler(
+		DieterServiceGetClaudeDesignStatusProcedure,
+		svc.GetClaudeDesignStatus,
+		connect.WithSchema(dieterServiceMethods.ByName("GetClaudeDesignStatus")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceSignInClaudeDesignHandler := connect.NewServerStreamHandler(
+		DieterServiceSignInClaudeDesignProcedure,
+		svc.SignInClaudeDesign,
+		connect.WithSchema(dieterServiceMethods.ByName("SignInClaudeDesign")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceSubmitClaudeDesignSignInCodeHandler := connect.NewUnaryHandler(
+		DieterServiceSubmitClaudeDesignSignInCodeProcedure,
+		svc.SubmitClaudeDesignSignInCode,
+		connect.WithSchema(dieterServiceMethods.ByName("SubmitClaudeDesignSignInCode")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceSetClaudeDesignAccessHandler := connect.NewUnaryHandler(
+		DieterServiceSetClaudeDesignAccessProcedure,
+		svc.SetClaudeDesignAccess,
+		connect.WithSchema(dieterServiceMethods.ByName("SetClaudeDesignAccess")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dieterServiceListDirectoriesHandler := connect.NewUnaryHandler(
@@ -3583,6 +3691,14 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 			dieterServiceSetBoardPromptTemplateHandler.ServeHTTP(w, r)
 		case DieterServicePreviewPromptProcedure:
 			dieterServicePreviewPromptHandler.ServeHTTP(w, r)
+		case DieterServiceGetClaudeDesignStatusProcedure:
+			dieterServiceGetClaudeDesignStatusHandler.ServeHTTP(w, r)
+		case DieterServiceSignInClaudeDesignProcedure:
+			dieterServiceSignInClaudeDesignHandler.ServeHTTP(w, r)
+		case DieterServiceSubmitClaudeDesignSignInCodeProcedure:
+			dieterServiceSubmitClaudeDesignSignInCodeHandler.ServeHTTP(w, r)
+		case DieterServiceSetClaudeDesignAccessProcedure:
+			dieterServiceSetClaudeDesignAccessHandler.ServeHTTP(w, r)
 		case DieterServiceListDirectoriesProcedure:
 			dieterServiceListDirectoriesHandler.ServeHTTP(w, r)
 		case DieterServiceConsolidateProjectProcedure:
@@ -3946,6 +4062,22 @@ func (UnimplementedDieterServiceHandler) SetBoardPromptTemplate(context.Context,
 
 func (UnimplementedDieterServiceHandler) PreviewPrompt(context.Context, *connect.Request[v1.PreviewPromptRequest]) (*connect.Response[v1.PromptPreview], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.PreviewPrompt is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) GetClaudeDesignStatus(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.ClaudeDesignStatus], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetClaudeDesignStatus is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) SignInClaudeDesign(context.Context, *connect.Request[v1.SignInClaudeDesignRequest], *connect.ServerStream[v1.ClaudeDesignSignInEvent]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.SignInClaudeDesign is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) SubmitClaudeDesignSignInCode(context.Context, *connect.Request[v1.SubmitClaudeDesignSignInCodeRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.SubmitClaudeDesignSignInCode is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) SetClaudeDesignAccess(context.Context, *connect.Request[v1.SetClaudeDesignAccessRequest]) (*connect.Response[v1.ClaudeDesignStatus], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.SetClaudeDesignAccess is not implemented"))
 }
 
 func (UnimplementedDieterServiceHandler) ListDirectories(context.Context, *connect.Request[v1.ListDirectoriesRequest]) (*connect.Response[v1.DirectoryListing], error) {

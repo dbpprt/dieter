@@ -66,6 +66,38 @@ object BrowserRules {
     }
 
     /**
+     * A claude.ai page in the user's own Claude account, such as a chat or an
+     * artifact: https on claude.ai or www.claude.ai, without a port or user info.
+     */
+    fun isClaudeAccountPage(url: String): Boolean = claudePath(url) != null
+
+    /** A Claude artifact (claude.ai/artifact/… or claude.ai/code/artifact/…). */
+    fun isClaudeArtifact(url: String): Boolean =
+        claudePath(url)?.let { it.startsWith("/artifact/") || it.startsWith("/code/artifact/") } == true
+
+    /**
+     * A Claude Design page: a claude.ai/design project or a Claude artifact,
+     * where Claude Design now lives. Both need the user's claude.ai session.
+     */
+    fun isClaudeDesign(url: String): Boolean =
+        claudePath(url)?.let { it == "/design" || it.startsWith("/design/") } == true || isClaudeArtifact(url)
+
+    /**
+     * Why an http(s) [url] opens in the system browser whatever the user's
+     * rules say, for a client without a claude.ai session of its own; null
+     * when it need not.
+     */
+    fun systemBrowserNotice(url: String): String? =
+        if (isClaudeDesign(url)) "Claude artifacts and designs open in your default browser, where you are signed in to claude.ai." else null
+
+    private fun claudePath(url: String): String? {
+        val address = parse(url.trim()) ?: return null
+        val claude = address.scheme == "https" && address.port == null && !address.userInfo &&
+            (address.host == "claude.ai" || address.host == "www.claude.ai")
+        return if (claude) address.path.ifEmpty { "/" } else null
+    }
+
+    /**
      * Whether a browser address's [host] is this machine: `localhost` and its
      * subdomains, `0.0.0.0`, `::`, any IPv4 form whose first octet is 127
      * (including `127.1` and `2130706433`), `::1`, and IPv4-mapped 127
