@@ -33,6 +33,10 @@ tags: [full]
 - tapOn:
     id: "chrome-back|BackButton"
     waitToSettleTimeoutMs: 500
+# The last Workspace row can sit below the fold on phone-sized screens.
+- scrollUntilVisible:
+    element:
+      id: tool-schedules
 - tapOn:
     id: tool-schedules
     waitToSettleTimeoutMs: 500

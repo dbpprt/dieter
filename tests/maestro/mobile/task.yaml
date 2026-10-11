@@ -41,6 +41,11 @@ tags: [smoke]
 - extendedWaitUntil:
     visible: "Mock harness received: Second turn.*"
     timeout: 180000
+# Review becomes available once the turn has settled, which trails its reply.
+- extendedWaitUntil:
+    visible:
+      id: move-review
+    timeout: 60000
 - tapOn:
     id: move-review
     waitToSettleTimeoutMs: 500
