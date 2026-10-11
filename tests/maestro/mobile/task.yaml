@@ -27,9 +27,10 @@ tags: [smoke]
 - tapOn:
     id: chrome-start-working
     waitToSettleTimeoutMs: 500
+# A hosted runner's first harness turn starts cold and has taken over 70 s.
 - extendedWaitUntil:
     visible: "Mock harness received: First turn.*"
-    timeout: 60000
+    timeout: 180000
 - tapOn:
     id: message-input
     waitToSettleTimeoutMs: 500
@@ -39,7 +40,7 @@ tags: [smoke]
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: "Mock harness received: Second turn.*"
-    timeout: 60000
+    timeout: 180000
 - tapOn:
     id: move-review
     waitToSettleTimeoutMs: 500
