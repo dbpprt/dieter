@@ -66,9 +66,16 @@ tags: [smoke]
     id: move-review
     waitToSettleTimeoutMs: 500
 # Android draws its own back button; iOS uses the system one.
-- tapOn:
-    id: "chrome-back|BackButton"
-    waitToSettleTimeoutMs: 500
+- runFlow: common/back.yaml
+# On iPad, going back from the task returns to the project list; reopen the board.
+- runFlow:
+    when:
+      notVisible:
+        id: lane-2
+    commands:
+      - tapOn:
+          text: "Main"
+          waitToSettleTimeoutMs: 500
 - tapOn:
     id: lane-2
     waitToSettleTimeoutMs: 500

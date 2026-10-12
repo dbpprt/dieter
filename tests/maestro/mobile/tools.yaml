@@ -17,9 +17,7 @@ tags: [full]
     id: tool-machines
     waitToSettleTimeoutMs: 500
 - assertVisible: "Isolated E2E machine"
-- tapOn:
-    id: "chrome-back|BackButton"
-    waitToSettleTimeoutMs: 500
+- runFlow: common/back.yaml
 - tapOn:
     id: tool-files
     waitToSettleTimeoutMs: 500
@@ -27,12 +25,8 @@ tags: [full]
     text: "README.md"
     waitToSettleTimeoutMs: 500
 - assertVisible: ".*One durable conversation.*"
-- tapOn:
-    id: "chrome-back|BackButton"
-    waitToSettleTimeoutMs: 500
-- tapOn:
-    id: "chrome-back|BackButton"
-    waitToSettleTimeoutMs: 500
+- runFlow: common/back.yaml
+- runFlow: common/back.yaml
 # The last Workspace row can sit below the fold on phone-sized screens.
 - scrollUntilVisible:
     element:
@@ -41,9 +35,7 @@ tags: [full]
     id: tool-schedules
     waitToSettleTimeoutMs: 500
 - assertVisible: "Daily workspace review"
-- tapOn:
-    id: "chrome-back|BackButton"
-    waitToSettleTimeoutMs: 500
+- runFlow: common/back.yaml
 - scrollUntilVisible:
     element:
       id: tool-settings

@@ -107,7 +107,10 @@ module Dieter
             next mac_plan(flow) if platform == "mac"
             flow["steps"].each do |step|
               next unless step.is_a?(Hash) && step.key?("runFlow")
-              reference = step["runFlow"].is_a?(Hash) ? step["runFlow"]["file"] : step["runFlow"]
+              run = step["runFlow"]
+              # An inline conditional block (`when` + `commands`) needs no file.
+              next if run.is_a?(Hash) && run.key?("commands") && !run.key?("file")
+              reference = run.is_a?(Hash) ? run["file"] : run
               unless File.file?(File.join(File.dirname(flow["path"]), reference.to_s))
                 raise ArgumentError, "#{flow["source"]}: missing subflow #{reference}"
               end

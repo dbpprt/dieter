@@ -1,0 +1,12 @@
+# Goes back one level when the layout has a back button. Phones navigate in a
+# stack; iPad shows the tool or task next to its list, without one.
+appId: ${APP_ID}
+---
+- runFlow:
+    when:
+      visible:
+        id: "chrome-back|BackButton"
+    commands:
+      - tapOn:
+          id: "chrome-back|BackButton"
+          waitToSettleTimeoutMs: 500
