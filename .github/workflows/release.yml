@@ -11,7 +11,9 @@ name: Release
 #
 # Signing jobs run in GitHub environments (apple-signing, android-signing,
 # stable-release) restricted to main, and each environment holds its domain's
-# secrets. No job passes or inherits secrets.
+# secrets; the repository has no signing secrets. A reusable builder sees its
+# environment's secrets only when its caller passes `secrets: inherit`, so the
+# builder calls (and nightly.yml's call of this workflow) keep it.
 on:
   workflow_call:
     inputs:
@@ -105,6 +107,7 @@ jobs:
     with:
       version: ${{ needs.version.outputs.version }}
       build: ${{ needs.version.outputs.build }}
+    secrets: inherit
 
   android:
     needs: version
@@ -115,6 +118,7 @@ jobs:
     with:
       version: ${{ needs.version.outputs.version }}
       build: ${{ needs.version.outputs.build }}
+    secrets: inherit
 
   publish:
     needs: [version, server, apple, android]
