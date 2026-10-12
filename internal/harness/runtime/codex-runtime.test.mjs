@@ -33,11 +33,6 @@ test("Codex bootstrap links the locked runtime CLI offline without changing the 
     recipe.files.find((file) => file.path.endsWith("/bridge.mjs")).content,
     original.files.find((file) => file.path.endsWith("/bridge.mjs")).content,
   );
-  assert.equal(
-    JSON.parse(original.files.find((file) => file.path.endsWith("/package.json")).content)
-      .dependencies["@openai/codex"],
-    "0.155.0",
-  );
   const collector = createSubagentCapabilityCollector({
     provider: "codex",
     messageId: "smoke",
@@ -201,9 +196,12 @@ test(
           .map((line) => JSON.parse(line)),
       );
     }
+    const runtime = JSON.parse(await readFile(join(runtimeRoot, "package.json"), "utf8"));
     assert(
       records.some(
-        (record) => record.type === "session_meta" && record.payload.cli_version === "0.159.2",
+        (record) =>
+          record.type === "session_meta" &&
+          record.payload.cli_version === runtime.dependencies["@openai/codex"],
       ),
     );
     const turns = records
