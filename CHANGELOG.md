@@ -10,7 +10,7 @@ copy the **Unreleased** notes into a section named after that exact version
 
 Nothing yet.
 
-## 0.5.403
+## 0.5.404
 
 The open-source foundation release. It is a clean break: reinstall the daemon
 and apps; nothing migrates from 0.4.
@@ -19,7 +19,7 @@ and apps; nothing migrates from 0.4.
 
 0.4 and 0.5 cannot talk to each other, so update everything in one go:
 
-1. **Gateway.** Deploy the 0.5.403 gateway bundle. Its signature now comes from
+1. **Gateway.** Deploy the 0.5.404 gateway bundle. Its signature now comes from
    `.github/workflows/release.yml`, so a deployment controller that pins signer
    workflows must trust that identity first. The new gateway rejects 0.4 apps
    and daemons.

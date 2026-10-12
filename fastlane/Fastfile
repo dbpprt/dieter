@@ -1082,7 +1082,7 @@ lane :publish do |options|
   created =
     set_github_release(
       repository_name: repository,
-      api_token: ENV.fetch("GITHUB_TOKEN"),
+      api_bearer: ENV.fetch("GITHUB_TOKEN"),
       tag_name: "v#{release["version"]}",
       name: "Dieter #{release["version"]}",
       commitish: release["revision"],
@@ -1099,7 +1099,7 @@ lane :publish do |options|
   end
   github_api(
     server_url: "https://api.github.com",
-    api_token: ENV.fetch("GITHUB_TOKEN"),
+    api_bearer: ENV.fetch("GITHUB_TOKEN"),
     http_method: "PATCH",
     path: "/repos/#{repository}/releases/#{created.fetch("id")}",
     body: {
@@ -1118,7 +1118,7 @@ lane :promote do |options|
   token = ENV.fetch("GITHUB_TOKEN")
   release =
     github_api(
-      api_token: token,
+      api_bearer: token,
       http_method: "GET",
       path: "/repos/#{repository}/releases/tags/#{tag}"
     )[
@@ -1168,7 +1168,7 @@ lane :promote do |options|
   }.each do |file, asset|
     current =
       github_api(
-        api_token: ENV.fetch("HOMEBREW_TAP_TOKEN"),
+        api_bearer: ENV.fetch("HOMEBREW_TAP_TOKEN"),
         http_method: "GET",
         path: "/repos/#{tap}/contents/#{file}"
       )[
@@ -1184,7 +1184,7 @@ lane :promote do |options|
       )
     next if updated == text
     github_api(
-      api_token: ENV.fetch("HOMEBREW_TAP_TOKEN"),
+      api_bearer: ENV.fetch("HOMEBREW_TAP_TOKEN"),
       http_method: "PUT",
       path: "/repos/#{tap}/contents/#{file}",
       body: {
@@ -1195,7 +1195,7 @@ lane :promote do |options|
     )
   end
   github_api(
-    api_token: token,
+    api_bearer: token,
     http_method: "PATCH",
     path: "/repos/#{repository}/releases/#{release.fetch("id")}",
     body: {
@@ -1215,7 +1215,7 @@ lane :prune do
   releases =
     (1..10).flat_map do |page|
       github_api(
-        api_token: ENV.fetch("GITHUB_TOKEN"),
+        api_bearer: ENV.fetch("GITHUB_TOKEN"),
         http_method: "GET",
         path: "/repos/#{repository}/releases?per_page=100&page=#{page}"
       )[
@@ -1226,7 +1226,7 @@ lane :prune do
     .expired(releases, count: retention.fetch("dev_count"), days: retention.fetch("dev_days"))
     .each do |release|
       github_api(
-        api_token: ENV.fetch("GITHUB_TOKEN"),
+        api_bearer: ENV.fetch("GITHUB_TOKEN"),
         http_method: "DELETE",
         path: "/repos/#{repository}/releases/#{release.fetch("id")}"
       )
