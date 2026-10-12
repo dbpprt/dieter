@@ -1,8 +1,9 @@
 name: Dependabot auto-merge
 
 # Dependabot's daily "agents" group (agent CLIs and AI SDK harness adapters in
-# the harness runtime) merges on its own once the required ci-ok check passes,
-# so each nightly release ships the latest agents. Other updates wait for review.
+# the harness runtime) merges as soon as a code owner approves it and the
+# required ci-ok check passes, so an approved bump ships with the next nightly.
+# Nothing merges unreviewed: their code runs in the release builders.
 on: pull_request
 
 permissions: {}
@@ -18,7 +19,7 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - name: Merge once ci-ok passes
+      - name: Merge once approved and ci-ok passes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}

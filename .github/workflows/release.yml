@@ -78,6 +78,7 @@ jobs:
         with:
           tools: ruby gem:bundler
           bundle: "true"
+          cache-scope: release
       - name: Reserve the next version
         id: reserve
         run: |
@@ -141,6 +142,7 @@ jobs:
         with:
           tools: ruby gem:bundler python cosign oras
           bundle: "true"
+          cache-scope: release
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: release-*
@@ -237,6 +239,7 @@ jobs:
         with:
           tools: ruby gem:bundler
           bundle: "true"
+          cache-scope: release
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-ios
@@ -267,6 +270,7 @@ jobs:
         with:
           tools: ruby gem:bundler
           bundle: "true"
+          cache-scope: release
       - name: Release identity and IPA
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -299,6 +303,7 @@ jobs:
         with:
           tools: ruby gem:bundler cosign
           bundle: "true"
+          cache-scope: release
       - name: Verify and promote the tested bytes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

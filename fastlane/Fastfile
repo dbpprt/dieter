@@ -862,7 +862,15 @@ platform :mac do
     zip(path: app, output_path: File.join(output, "Dieter-macOS-arm64.zip"), symlinks: true)
   end
 
-  desc "CI: signed, notarized darwin daemon tarball, side-by-side pkg and harness runtime into dist/daemon"
+  desc "CI: the darwin harness runtime archive into dist/harness-runtime, built without signing secrets"
+  lane :harness_runtime do
+    dist = Dieter.path("dist/harness-runtime")
+    FileUtils.rm_rf(dist)
+    FileUtils.mkdir_p(dist)
+    harness_runtime_archive(dist, "darwin", "arm64")
+  end
+
+  desc "CI: signed, notarized darwin daemon tarball and side-by-side pkg into dist/daemon, pinning the mac harness_runtime archive"
   lane :daemon do
     release = Dieter::Release.current
     ids = Dieter::Release.ids
@@ -871,7 +879,13 @@ platform :mac do
     stage = File.join(dist, "dieter-darwin-arm64")
     FileUtils.rm_rf(dist)
     FileUtils.mkdir_p(stage)
-    harness_runtime = harness_runtime_archive(dist, "darwin", "arm64")
+    # Installing the runtime runs third-party installers, so `mac harness_runtime`
+    # builds it in a job that never holds the signing secrets.
+    name = Dieter::Release.harness_runtime_archive("darwin", "arm64")
+    prebuilt = Dieter.path("dist/harness-runtime", name)
+    UI.user_error!("Run `mac harness_runtime` first: no #{prebuilt}") unless File.file?(prebuilt)
+    FileUtils.cp(prebuilt, dist)
+    harness_runtime = Dieter.sha256(File.join(dist, name))
     Dieter.sh(
       "go",
       "build",

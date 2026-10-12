@@ -64,8 +64,9 @@ published archive breaks first runs and updates of that release.
 The agent versions live only in `internal/harness/runtime/package.json` and its
 lockfile. Dependabot raises the agents group (`@anthropic-ai/*`,
 `@openai/codex`, `@oh-my-pi/*`, `@ai-sdk/*`, `ai`) to the latest releases daily
-and merges it when CI passes, so each nightly ships the current CLIs; the
-runtime tests fail a bump whose bridges need a package the runtime does not ship.
+and merges it once a code owner approves and CI passes, so the next nightly
+ships the current CLIs; the runtime tests fail a bump whose bridges need a
+package the runtime does not ship.
 
 ## Signing identity
 
@@ -136,8 +137,15 @@ are no repository-level signing secrets. Names, not values:
 
 Protected environments: `stable-release` (promotion) and `gateway-production`
 (gateway deployment preparation). Configure required reviewers on both. Branch
-protection on `main` requires the `ci-ok` check; changes land through squash
-merged pull requests.
+protection on `main` requires the `ci-ok` check and a code owner's approval of
+the latest push, so no unreviewed change, Dependabot's included, reaches the
+jobs that hold these secrets; changes land through squash merged pull requests.
+
+Jobs holding signing secrets never run npm install scripts: the darwin harness
+runtime archive is built in a job without secrets, and the signing `daemon` job
+pins it by hash. Jobs with an environment or a write token restore only
+`release`-scoped caches (the setup action's `cache-scope`), which CI and the
+secret-free builders never write.
 
 ## Cutting a release
 

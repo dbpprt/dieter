@@ -53,8 +53,8 @@ mise (Temurin 21).
 | `just pipeline android local action:emulator_run\|emulator_stop\|emulator_check\|emulator_setup\|status\|screenshot\|ui_dump` | Emulator lifecycle and inspection                                                                                                                |
 
 Release lanes run only in CI (`release.yml`): `version`, `server`,
-`mac release`, `mac daemon`, `ios release`, `android release`, `publish`,
-`ios beta` (TestFlight), `promote`, `prune`.
+`mac release`, `mac harness_runtime`, `mac daemon`, `ios release`,
+`android release`, `publish`, `ios beta` (TestFlight), `promote`, `prune`.
 
 ## Profiles and safety
 
@@ -137,8 +137,11 @@ monotonically (1 → `1.0.0`, 413 → `1.4.12`, 10 001 → `2.0.0`). Local build
    `contents: read`, each in its signing domain:
    `_build-server.yml` (Linux daemon + gateway tarballs on amd64/arm64 runners,
    TURN probes), `_build-apple.yml` (environment `apple-signing`: notarized Mac
-   app zip, App Store IPA, notarized darwin daemon tarball and pkg),
-   `_build-android.yml` (environment `android-signing`: signed APK).
+   app zip, App Store IPA, notarized darwin daemon tarball and pkg; the darwin
+   harness runtime archive is built first in a job without secrets),
+   `_build-android.yml` (environment `android-signing`: signed APK). Jobs with
+   an environment or a write token pass `cache-scope: release` to the setup
+   action, so they never restore a cache that CI wrote.
 3. `publish` pushes the multi-arch gateway image (Buildx, SBOM, provenance),
    signs it with cosign, packs/signs/pushes the gateway deployment bundle,
    writes `SHA256SUMS`, signs it (`SHA256SUMS.sigstore.json`), attests every
@@ -163,6 +166,7 @@ The signer of every release artifact is
 | `gateway-production` | none; required reviewers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `github-pages`       | Pages deployment                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
-Restrict every environment to the `main` branch. Branch protection requires the
-`ci-ok` check. Enable immutable releases. Bundle IDs, team, repository, tap,
+Restrict every environment to the `main` branch and keep signing secrets out
+of repository secrets. Branch protection requires the `ci-ok` check and a code
+owner's approval of the latest push. Enable immutable releases. Bundle IDs, team, repository, tap,
 registry and TestFlight groups come from `config/identity.json`.

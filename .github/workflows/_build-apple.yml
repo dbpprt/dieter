@@ -2,8 +2,10 @@ name: Build Apple
 
 # The Apple signing domain: the notarized Mac app, the App Store IPA and the
 # notarized darwin daemon (tarball + side-by-side pkg + the prebuilt harness
-# runtime archive it pins). Every job references the `apple-signing`
-# environment (main only), which holds the signing secrets.
+# runtime archive it pins). The signing jobs reference the `apple-signing`
+# environment (main only), which holds the signing secrets. The harness runtime
+# archive runs third-party installers, so `harness-runtime` builds it without
+# secrets and hands it to `daemon`.
 on:
   workflow_call:
     inputs:
@@ -42,6 +44,7 @@ jobs:
         with:
           tools: java node ruby gem:bundler xcbeautify
           bundle: "true"
+          cache-scope: release
       - name: Developer ID app, notarized and stapled
         env:
           MACOS_DEVELOPER_ID_CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
@@ -70,6 +73,7 @@ jobs:
         with:
           tools: java ruby gem:bundler xcbeautify
           bundle: "true"
+          cache-scope: release
       - name: App Store IPA
         env:
           IOS_DISTRIBUTION_CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
@@ -85,7 +89,29 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
+  harness-runtime:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          tools: go node ruby gem:bundler
+          bundle: "true"
+      - name: Harness runtime archive
+        run: bundle exec fastlane mac harness_runtime
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: harness-runtime-darwin
+          path: dist/harness-runtime/dieter-harness-runtime-darwin-arm64.tar.gz
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 0
+
   daemon:
+    needs: harness-runtime
     runs-on: macos-26
     timeout-minutes: 60
     environment: apple-signing
@@ -95,9 +121,14 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup
         with:
-          tools: go node ruby gem:bundler
+          tools: go ruby gem:bundler
           bundle: "true"
-      - name: Harness runtime, notarized darwin daemon tarball and installer
+          cache-scope: release
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: harness-runtime-darwin
+          path: dist/harness-runtime
+      - name: Notarized darwin daemon tarball and installer
         env:
           MACOS_DEVELOPER_ID_CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
           MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}

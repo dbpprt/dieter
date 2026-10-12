@@ -224,6 +224,11 @@ it.
 - **Android.** The in-app updater installs only an APK whose SHA-256 matches the
   digest GitHub publishes for that release asset; Android still verifies the
   signing key on upgrade.
+- **CI secrets.** Signing secrets live only in GitHub environments that
+  `main` alone may use, and `main` requires a code owner's approval, so
+  unreviewed code never runs with them. Jobs holding them never run npm install
+  scripts (the darwin harness runtime archive is built without secrets and
+  pinned by hash) and restore only release-scoped caches that CI cannot write.
 - **Gateway.** The image and deployment bundle are signed with cosign, with
   build provenance and an SBOM; `deploy/gateway/scripts/bundle.py verify`
   checks them.

@@ -332,25 +332,58 @@ class WorkflowContractTest < Minitest::Test
   end
 
   # Release daemons download their platform's harness runtime archive from
-  # their own release; every daemon builder must publish its archive.
+  # their own release; every daemon builder must publish its archive. Building
+  # an archive runs third-party installers, so no job that does holds secrets.
   def test_daemon_builders_publish_their_harness_runtime_archives
     server = workflow("_build-server.yml").fetch("jobs").fetch("linux")
     assert_equal %w[amd64 arm64],
                  server.dig("strategy", "matrix", "include").map { |item| item["arch"] }
-    apple = workflow("_build-apple.yml").fetch("jobs").fetch("daemon")
+    apple = workflow("_build-apple.yml").fetch("jobs")
+    archive = Dieter::Release.harness_runtime_archive("darwin", "arm64")
     {
       server => "dist/server/*.tar.gz",
-      apple => "dist/daemon/#{Dieter::Release.harness_runtime_archive("darwin", "arm64")}"
+      apple.fetch("harness-runtime") => "dist/harness-runtime/#{archive}"
     }.each do |job, path|
+      refute job.key?("environment")
       steps = job.fetch("steps")
       setup = steps.find { |step| step["uses"] == "./.github/actions/setup" }
       assert_includes setup.dig("with", "tools").split, "node"
       upload = steps.find { |step| step["uses"].to_s.start_with?("actions/upload-artifact@") }
       assert_includes upload.dig("with", "path").split, path
+    end
+    daemon = apple.fetch("daemon")
+    assert_equal "harness-runtime", daemon.fetch("needs")
+    { server => "dist/server/*.tar.gz", daemon => "dist/daemon/#{archive}" }.each do |job, path|
+      upload =
+        job.fetch("steps").find { |step| step["uses"].to_s.start_with?("actions/upload-artifact@") }
+      assert_includes upload.dig("with", "path").split, path
       assert upload.dig("with", "name").start_with?("release-")
     end
     publish = workflow("release.yml").fetch("jobs").fetch("publish").fetch("steps")
     assert_includes publish.map { |step| step["run"].to_s }.join("\n"), "cp dist/built/*.tar.gz"
+  end
+
+  # CI and the secret-free builders run third-party code that could poison a
+  # cache, so jobs holding signing secrets or a write token restore only
+  # release-scoped caches, which only such jobs write.
+  def test_privileged_jobs_use_release_caches
+    Dir
+      .glob(Dieter.path(".github/workflows/*.yml"))
+      .each do |file|
+        workflow = YAML.safe_load(File.read(file), aliases: true)
+        workflow
+          .fetch("jobs")
+          .each do |name, job|
+            setup = Array(job["steps"]).find { |step| step["uses"] == "./.github/actions/setup" }
+            next unless setup
+            permissions =
+              (job["permissions"] || workflow["permissions"]).to_h.except("security-events")
+            privileged = job.key?("environment") || permissions.value?("write")
+            assert_equal privileged,
+                         setup.dig("with", "cache-scope") == "release",
+                         "#{File.basename(file)}: #{name}"
+          end
+      end
   end
 
   def test_ci_ok_gates_every_job_and_every_job_has_a_timeout
