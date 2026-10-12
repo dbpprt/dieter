@@ -460,7 +460,7 @@ platform :ios do
     UI.success("App: #{app}")
   end
 
-  desc "Maestro flows on a disposable simulator; tags:smoke|full flows:NAMES profile:ios-iphone|ios-ipad"
+  desc "Maestro flows on a disposable simulator; configuration:debug|release tags:smoke|full flows:NAMES profile:ios-iphone|ios-ipad"
   lane :e2e do |options|
     target = Dieter.profile("ios", options[:profile])
     app_id = "#{Dieter::Release.ids["ios"]}.e2e"
@@ -518,7 +518,11 @@ platform :ios do
           log: File.join(evidence, "boot.log")
         )
       cleanup.add { boot.stop }
-      app = build_ios_simulator(configuration: "debug", evidence: evidence)
+      app =
+        build_ios_simulator(
+          configuration: (options[:configuration] || "debug").to_s,
+          evidence: evidence
+        )
       raise Dieter::Unavailable, "Simulator #{udid} did not boot" unless boot.wait(300).success?
       Dieter.sh(
         "xcrun",

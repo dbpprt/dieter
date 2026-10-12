@@ -32,7 +32,10 @@ object Markdown {
         val lines = source.split('\n')
         val blocks = mutableListOf<MarkdownBlock>()
         val pending = mutableListOf<String>()
-        var code: MutableList<String>? = null
+        // Kotlin/Native 2.4.10 release builds mis-devirtualize appends through a nullable,
+        // reassigned buffer. Keep the buffer concrete and track the fence separately.
+        val code = mutableListOf<String>()
+        var inFence = false
         var language = ""
 
         fun flush() {
@@ -46,18 +49,19 @@ object Markdown {
             val line = lines[index]
             val trimmedStart = line.trimStart()
             if (trimmedStart.startsWith("```")) {
-                if (code == null) {
+                if (!inFence) {
                     flush()
-                    code = mutableListOf()
+                    code.clear()
+                    inFence = true
                     language = trimmedStart.removePrefix("```").trim()
                 } else {
                     blocks += MarkdownBlock.Code(code.joinToString("\n"), language)
-                    code = null
+                    inFence = false
                 }
                 index++
                 continue
             }
-            if (code != null) {
+            if (inFence) {
                 code += line
                 index++
                 continue
@@ -107,7 +111,7 @@ object Markdown {
             pending += line
             index++
         }
-        code?.let { blocks += MarkdownBlock.Code(it.joinToString("\n"), language) }
+        if (inFence) blocks += MarkdownBlock.Code(code.joinToString("\n"), language)
         flush()
         return blocks
     }

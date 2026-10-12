@@ -10,6 +10,21 @@ import kotlin.test.assertTrue
 
 class MarkdownAndLinksTest {
     @Test
+    fun fencesResetTheirBufferAndKeepMarkdownLinesLiteral() {
+        assertEquals(
+            listOf(
+                MarkdownBlock.Code("", "text"),
+                MarkdownBlock.Code("# literal heading\n- literal bullet\n\nlast line", "kotlin"),
+                MarkdownBlock.Paragraph("between"),
+                MarkdownBlock.Code("unfinished", ""),
+            ),
+            Markdown.parse(
+                "```text\n```\n```kotlin\n# literal heading\n- literal bullet\n\nlast line\n```\nbetween\n```\nunfinished"
+            ),
+        )
+    }
+
+    @Test
     fun blankLinesSeparateParagraphsBulletsAndMultiLineFences() {
         val blocks =
             Markdown.parse(
