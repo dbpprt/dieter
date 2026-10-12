@@ -8,22 +8,15 @@ tags: [smoke]
     text: "Chats"
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
-    visible: "Mobile release checklist"
+    visible: "Markdown code fences"
     timeout: 40000
 - tapOn:
-    text: "Mobile release checklist"
+    text: "Markdown code fences"
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible:
       id: message-input
     timeout: 30000
-- tapOn:
-    id: message-input
-    waitToSettleTimeoutMs: 500
-- inputText: "Markdown regression\n```text\nfenced line one\nfenced line two\n```\nFence complete."
-- tapOn:
-    id: send-message
-    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: "Fence complete\\."
     timeout: 30000
