@@ -85,6 +85,7 @@ extension DieterStore {
             await self.loadProjectWorkspaces()
         }
         context.content.onSaveFailure = { [weak self] message in self?.errorMessage = message }
+        context.content.onLayoutChosen = { [weak self] mode in self?.defaultConversationMode = mode }
         context.content.validateWebURL = { [weak self] url, id in
             guard ConversationBrowserModel.isLoopback(url) else { return }
             guard let self, (self.selectedCardID ?? self.selectedChatID) == id,

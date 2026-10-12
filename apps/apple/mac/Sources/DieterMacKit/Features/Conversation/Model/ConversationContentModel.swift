@@ -87,7 +87,20 @@ final class ConversationContentTab: Identifiable {
 final class ConversationContentModel {
     private enum OpenActivation: Equatable { case interactive, automatic }
 
+    /// The tabs and layout a conversation had when the user switched away.
+    private struct RetainedWorkspace {
+        let endpointID: String
+        let tabs: [ConversationContentTab]
+        let selectedTabID: UUID?
+        let conversationTab: String
+        let isOpen: Bool
+        let splitMode: Bool
+    }
+
     static let maximumTabs = 12
+    /// Recently left conversations keep their tabs; the oldest clean one is
+    /// released beyond this bound. Edited documents are never dropped.
+    static let maximumRetainedConversations = 8
     private(set) var tabs: [ConversationContentTab] = []
     private(set) var selectedTabID: UUID?
     var conversationTab = "Conversation"
@@ -109,6 +122,10 @@ final class ConversationContentModel {
     @ObservationIgnored private var bindingGeneration = 0
     @ObservationIgnored private var suspended = false
     @ObservationIgnored private var pendingTab: ConversationContentTab?
+    @ObservationIgnored private var retained: [String: RetainedWorkspace] = [:]
+    @ObservationIgnored private var retainedOrder: [String] = []
+    /// Reports the layout the user last chose, which new conversations open in.
+    @ObservationIgnored var onLayoutChosen: @MainActor (ConversationDefaultMode) -> Void = { _ in }
     @ObservationIgnored var currentEndpointID: @MainActor (String) -> String? = { _ in nil }
     @ObservationIgnored var validateWebURL: @MainActor (URL, String) throws -> Void = { _, _ in }
     @ObservationIgnored var shouldOpenWebURLExternally: @MainActor (URL) -> Bool = {
@@ -214,6 +231,8 @@ final class ConversationContentModel {
         cancelPending()
         openTask = Task {
             if await enterConversation(id) {
+                // Entering restores that conversation's own layout first.
+                splitMode = true
                 isOpen = true
                 updateActivity()
             }
@@ -229,6 +248,26 @@ final class ConversationContentModel {
     }
 
     func showSinglePane() { splitMode = false }
+
+    /// The split toggle: switches this conversation's layout and remembers it
+    /// for conversations that open without retained tabs.
+    func chooseLayout(_ mode: ConversationDefaultMode, conversationID id: String) {
+        guard !confirming, !id.isEmpty else { return }
+        switch mode {
+        case .tabs: showSinglePane()
+        case .workspace: showEmpty(conversationID: id)
+        }
+        onLayoutChosen(mode)
+    }
+
+    /// Selecting a conversation restores the tabs and layout it had when the
+    /// user left it. One without retained tabs opens in `layout`.
+    func select(conversationID id: String, layout: ConversationDefaultMode) {
+        guard !id.isEmpty, id != conversationID else { return }
+        cancelPending()
+        if switchWorkspace(to: id) { return }
+        applyDefaultMode(layout, conversationID: id)
+    }
 
     func applyDefaultMode(_ mode: ConversationDefaultMode, conversationID id: String) {
         switch mode {
@@ -291,12 +330,13 @@ final class ConversationContentModel {
         activation: OpenActivation
     ) async -> Bool {
         let wasPresented = isPresented(for: id)
-        if activation == .automatic,
-            (conversationID != id || endpointID != (currentEndpointID(id) ?? "")),
-            tabs.contains(where: \.dirty)
-        {
-            // A background presentation must never interrupt the user with an
-            // unsaved-changes prompt from another conversation.
+        if activation == .automatic, !conversationID.isEmpty, conversationID != id {
+            // A background presentation must never take the workspace from
+            // the conversation the user is looking at.
+            return false
+        }
+        if activation == .automatic, endpointID != (currentEndpointID(id) ?? ""), tabs.contains(where: \.dirty) {
+            // Nor interrupt the user with an unsaved-changes prompt.
             return false
         }
         guard !confirming, await enterConversation(id), !Task.isCancelled else { return false }
@@ -475,7 +515,7 @@ final class ConversationContentModel {
     func invalidateTransports() {
         bindingGeneration &+= 1
         bindingTask?.cancel(); bindingTask = nil
-        for tab in tabs {
+        for tab in tabs + retained.values.flatMap(\.tabs) {
             guard tab.scope != nil else { continue }
             tab.files.isLive = false
             tab.terminals.active = false
@@ -546,14 +586,64 @@ final class ConversationContentModel {
         guard !id.isEmpty else { return false }
         let endpoint = currentEndpointID(id) ?? ""
         if conversationID == id, endpointID == endpoint { return true }
+        if conversationID != id {
+            switchWorkspace(to: id)
+            if endpointID == endpoint { return true }
+        }
+        // The conversation now runs on another machine; its documents cannot
+        // be reused there.
         let request = generation
         guard !tabs.contains(where: { $0.files.saving }), await allowClosing(tabs), generation == request,
             !Task.isCancelled
         else { return false }
         removeTabs()
-        conversationID = id
         endpointID = endpoint
         return true
+    }
+
+    /// Retains the current conversation's workspace and makes `id` current,
+    /// restoring its own retained workspace. Returns whether one was restored.
+    @discardableResult
+    private func switchWorkspace(to id: String) -> Bool {
+        bindingGeneration &+= 1
+        bindingTask?.cancel(); bindingTask = nil
+        if !conversationID.isEmpty {
+            for tab in tabs {
+                tab.terminals.active = false
+                tab.processes.active = false
+            }
+            retained[conversationID] = RetainedWorkspace(
+                endpointID: endpointID, tabs: tabs, selectedTabID: selectedTabID,
+                conversationTab: conversationTab, isOpen: isOpen, splitMode: splitMode)
+            retainedOrder.removeAll { $0 == conversationID }
+            retainedOrder.append(conversationID)
+        }
+        let restored = retained.removeValue(forKey: id)
+        retainedOrder.removeAll { $0 == id }
+        conversationID = id
+        endpointID = restored?.endpointID ?? currentEndpointID(id) ?? ""
+        tabs = restored?.tabs ?? []
+        selectedTabID = restored?.selectedTabID
+        conversationTab = restored?.conversationTab ?? "Conversation"
+        isOpen = restored?.isOpen ?? false
+        splitMode = restored?.splitMode ?? false
+        loading = false
+        error = nil
+        releaseRetainedBeyondBound()
+        updateActivity()
+        return restored != nil
+    }
+
+    private func releaseRetainedBeyondBound() {
+        var excess = retainedOrder.count - Self.maximumRetainedConversations
+        for id in retainedOrder where excess > 0 {
+            guard let workspace = retained[id], !workspace.tabs.contains(where: { $0.dirty || $0.files.saving })
+            else { continue }
+            retained[id] = nil
+            retainedOrder.removeAll { $0 == id }
+            releaseTabs(workspace.tabs)
+            excess -= 1
+        }
     }
 
     private func bind(_ tab: ConversationContentTab, scope: ConversationContentScope) {
@@ -632,14 +722,18 @@ final class ConversationContentModel {
     }
 
     private func removeTabs() {
-        for tab in tabs {
+        releaseTabs(tabs)
+        tabs = []; selectedTabID = nil
+    }
+
+    private func releaseTabs(_ candidates: [ConversationContentTab]) {
+        for tab in candidates {
             tab.terminals.active = false
             tab.processes.active = false
             tab.files.cancelContentRead()
             tab.review.resetWorkspaceSurface()
             tab.projectReview.suspend()
         }
-        tabs = []; selectedTabID = nil
     }
 
     private func allowClosing(_ candidates: [ConversationContentTab]) async -> Bool {

@@ -62,7 +62,7 @@ extension DieterStore {
         selectedCardID = opensChat ? nil : cardID
         selectedChatID = opensChat ? cardID : nil
         if previousConversationID != cardID {
-            conversationContext.content.applyDefaultMode(defaultConversationMode, conversationID: cardID)
+            conversationContext.content.select(conversationID: cardID, layout: defaultConversationMode)
             conversationModel.resetConversationHistory()
             conversation = nil
             selectedDetail = nil

@@ -112,9 +112,11 @@ struct GeneralSettings: View {
                         )
                         .accessibilityIdentifier("settings.conversation.defaultMode")
                     }
-                    Text("Applies when you open a different card or chat. You can still switch layouts in its header.")
-                        .font(.caption)
-                        .foregroundStyle(DieterTheme.tertiary)
+                    Text(
+                        "Follows the layout you last chose in a conversation header. Cards and chats you return to keep their own tabs and layout."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(DieterTheme.tertiary)
                     Divider().overlay(DieterTheme.border)
                     Toggle(
                         "Show reasoning traces",

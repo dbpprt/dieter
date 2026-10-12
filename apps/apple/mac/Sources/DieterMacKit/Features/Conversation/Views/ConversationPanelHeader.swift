@@ -221,11 +221,7 @@ struct ConversationSplitToggle: View {
 
     var body: some View {
         Button {
-            if workspacePresented {
-                model.showSinglePane()
-            } else {
-                model.showEmpty(conversationID: conversationID)
-            }
+            model.chooseLayout(workspacePresented ? .tabs : .workspace, conversationID: conversationID)
         } label: {
             Image(systemName: workspacePresented ? "rectangle.split.1x2" : "sidebar.right")
                 .font(.system(size: 12, weight: .medium))

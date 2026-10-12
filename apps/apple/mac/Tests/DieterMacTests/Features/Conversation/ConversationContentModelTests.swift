@@ -267,15 +267,19 @@ private actor ConversationContentTerminalFixture: TerminalsRPC {
         #expect(content.files.fileDocument == nil)
     }
 
-    @Test func discardOpensTheNextDocumentWithoutSavingOrCarryingItsBuffer() async throws {
+    @Test func anotherConversationOpensItsOwnDocumentAndRetainsTheEditedOne() async throws {
         let client = ConversationContentFilesFixture(), content = model(client)
         #expect(await content.open(try url("docs/first.md"), conversationID: "card-A"))
         edit(content)
         let oldSession = content.files.fileEditorSession
-        content.confirmUnsaved = { _ in .discard }
+        var confirmations = 0
+        content.confirmUnsaved = { _ in
+            confirmations += 1; return .discard
+        }
 
         #expect(await content.open(try url("docs/second.md"), conversationID: "card-B"))
 
+        #expect(confirmations == 0)
         #expect(await client.saves.isEmpty)
         #expect(content.conversationID == "card-B")
         #expect(content.files.fileEditorSession !== oldSession)
@@ -285,6 +289,97 @@ private actor ConversationContentTerminalFixture: TerminalsRPC {
         #expect(await content.close())
         #expect(!content.isOpen)
         #expect(content.selection == nil)
+
+        content.select(conversationID: "card-A", layout: .tabs)
+        #expect(content.files.fileEditorSession === oldSession)
+        #expect(oldSession.currentText() == "Unsaved draft")
+        #expect(oldSession.isDirty)
+    }
+
+    @Test func returningToAConversationRestoresItsTabsAndLayout() async throws {
+        let client = ConversationContentFilesFixture(), content = model(client)
+        #expect(await content.open(try url("plan.md"), conversationID: "card-A"))
+        #expect(await content.open(try url("https://example.com"), conversationID: "card-A"))
+        let tabsA = content.tabs.map(\.id)
+        content.selectTab(tabsA[0])
+        content.showEmpty(conversationID: "card-A")
+        #expect(content.splitMode)
+
+        content.select(conversationID: "card-B", layout: .tabs)
+        #expect(content.workspaceTabs(for: "card-A").isEmpty)
+        #expect(content.workspaceTabs(for: "card-B").isEmpty)
+        #expect(!content.splitMode)
+        #expect(!content.isPresented(for: "card-B"))
+        #expect(await content.openPanel(.browser, conversationID: "card-B"))
+        let tabB = try #require(content.selectedTabID)
+        content.conversationTab = "Subagents"
+
+        content.select(conversationID: "card-A", layout: .tabs)
+        #expect(content.tabs.map(\.id) == tabsA)
+        #expect(content.selectedTabID == tabsA[0])
+        #expect(content.splitMode)
+        #expect(content.conversationTab == "Conversation")
+        #expect(content.isPresented(for: "card-A"))
+        #expect(content.selection == .file(path: "plan.md", line: nil))
+
+        content.select(conversationID: "card-B", layout: .workspace)
+        #expect(content.tabs.map(\.id) == [tabB])
+        #expect(content.selectedTabID == tabB)
+        #expect(!content.splitMode)
+        #expect(content.conversationTab == "Subagents")
+        #expect(await client.reads.count == 1)
+    }
+
+    @Test func conversationsWithoutRetainedTabsOpenInTheLastChosenLayout() async throws {
+        let content = ConversationContentModel()
+        var chosen: [ConversationDefaultMode] = []
+        content.onLayoutChosen = { chosen.append($0) }
+        content.select(conversationID: "card-A", layout: .tabs)
+        content.chooseLayout(.workspace, conversationID: "card-A")
+        #expect(content.splitMode && content.isPresented(for: "card-A"))
+        content.chooseLayout(.tabs, conversationID: "card-A")
+        #expect(!content.splitMode)
+        #expect(chosen == [.workspace, .tabs])
+
+        content.select(conversationID: "card-B", layout: .workspace)
+        #expect(content.splitMode && content.isPresented(for: "card-B"))
+        content.select(conversationID: "card-C", layout: .tabs)
+        #expect(!content.splitMode && !content.isPresented(for: "card-C"))
+        #expect(chosen == [.workspace, .tabs], "Opening a conversation is not a layout choice")
+
+        content.showEmpty(conversationID: "card-D")
+        try await waitUntil { content.isPresented(for: "card-D") }
+        #expect(content.splitMode)
+    }
+
+    @Test func retainedConversationsAreBoundedWithoutDroppingEditedDocuments() async throws {
+        let client = ConversationContentFilesFixture(), content = model(client)
+        #expect(await content.open(try url("draft.md"), conversationID: "card-0"))
+        edit(content, text: "Kept beyond the bound")
+        let session = content.files.fileEditorSession
+        #expect(await content.openPanel(.browser, conversationID: "card-1"))
+        for index in 2...(ConversationContentModel.maximumRetainedConversations + 2) {
+            #expect(await content.openPanel(.browser, conversationID: "card-\(index)"))
+        }
+
+        content.select(conversationID: "card-1", layout: .tabs)
+        #expect(content.tabs.isEmpty, "The oldest clean conversation was released")
+        content.select(conversationID: "card-0", layout: .tabs)
+        #expect(content.files.fileEditorSession === session)
+        #expect(session.currentText() == "Kept beyond the bound")
+    }
+
+    @Test func backgroundPresentationNeverTakesTheVisibleConversationsWorkspace() async throws {
+        let client = ConversationContentFilesFixture(), content = model(client)
+        #expect(await content.open(try url("plan.md"), conversationID: "card-A"))
+        let tab = try #require(content.selectedTab)
+
+        #expect(!(await content.present(try url("other.md"), conversationID: "card-B")))
+
+        #expect(content.conversationID == "card-A")
+        #expect(content.tabs.map(\.id) == [tab.id])
+        #expect(content.isPresented(for: "card-A"))
+        #expect(await client.reads.count == 1)
     }
 
     @Test func saveConflictPreservesTheDirtyBufferAndTextSelection() async throws {
@@ -386,8 +481,10 @@ private actor ConversationContentTerminalFixture: TerminalsRPC {
         let session = content.files.fileEditorSession
         var pending: CheckedContinuation<ConversationContentModel.UnsavedChoice, Never>?
         content.confirmUnsaved = { _ in await withCheckedContinuation { pending = $0 } }
+        // Only a move to another machine closes a conversation's documents.
+        content.currentEndpointID = { _ in "gateway#machine-B" }
         let destination = try url("https://example.com")
-        let opening = Task { await content.open(destination, conversationID: "card-B") }
+        let opening = Task { await content.open(destination, conversationID: "card-A") }
         try await waitUntil { pending != nil }
 
         content.suspend()
@@ -399,7 +496,7 @@ private actor ConversationContentTerminalFixture: TerminalsRPC {
         #expect(content.files.fileEditorSession === session)
         #expect(session.isDirty)
         #expect(session.currentText() == "Unsaved draft")
-        #expect(!content.isPresented(for: "card-B"))
+        #expect(!content.isPresented(for: "card-A"))
     }
 
     @Test func canonicalFileAliasesSelectOneTabAndRevealTheNewLine() async throws {
@@ -451,6 +548,7 @@ private actor ConversationContentTerminalFixture: TerminalsRPC {
         #expect(content.files.fileDocument?.path == "second.md")
 
         content.hide()
+        content.select(conversationID: "card-B", layout: .tabs)
         #expect(await content.present(try url("other.md"), conversationID: "card-B"))
         #expect(!content.isPresented(for: "card-B"))
         #expect(content.selection == .file(path: "other.md", line: nil))
