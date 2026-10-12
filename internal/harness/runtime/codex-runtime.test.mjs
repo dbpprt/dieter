@@ -1,231 +1,434 @@
-import assert from 'node:assert/strict';
-import test from 'node:test';
-import { createServer } from 'node:http';
-import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, readdir, realpath, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createCodex } from '@ai-sdk/harness-codex';
-import { createSubagentCapabilityCollector, observeHarnessCapabilities } from './capabilities.mjs';
-import { createLocalCodex } from './codex-runtime.mjs';
+import assert from "node:assert/strict";
+import test from "node:test";
+import { createServer } from "node:http";
+import { spawn } from "node:child_process";
+import { mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createCodex } from "@ai-sdk/harness-codex";
+import { createSubagentCapabilityCollector, observeHarnessCapabilities } from "./capabilities.mjs";
+import { createLocalCodex } from "./codex-runtime.mjs";
 
 const runtimeRoot = dirname(fileURLToPath(import.meta.url));
 
-test('Codex bootstrap links the locked runtime CLI offline without changing the adapter bridge', async () => {
+test("Codex bootstrap links the locked runtime CLI offline without changing the adapter bridge", async () => {
   const original = await createCodex().getBootstrap();
-  const recipe = await createLocalCodex({ model: 'gpt-6-astra', reasoningEffort: 'ultra' }).getBootstrap();
-  const manifest = JSON.parse(recipe.files.find(file => file.path.endsWith('/package.json')).content);
-  const codexPath = manifest.dependencies['@openai/codex'].replace(/^file:/, '');
-  const codex = JSON.parse(await readFile(join(codexPath, 'package.json'), 'utf8'));
-  const runtime = JSON.parse(await readFile(join(runtimeRoot, 'package.json'), 'utf8'));
-  assert.equal(codex.version, runtime.dependencies['@openai/codex']);
+  const recipe = await createLocalCodex({
+    model: "gpt-6-astra",
+    reasoningEffort: "ultra",
+  }).getBootstrap();
+  const manifest = JSON.parse(
+    recipe.files.find((file) => file.path.endsWith("/package.json")).content,
+  );
+  const codexPath = manifest.dependencies["@openai/codex"].replace(/^file:/, "");
+  const codex = JSON.parse(await readFile(join(codexPath, "package.json"), "utf8"));
+  const runtime = JSON.parse(await readFile(join(runtimeRoot, "package.json"), "utf8"));
+  assert.equal(codex.version, runtime.dependencies["@openai/codex"]);
   assert.match(manifest.dependencies.ws, /^file:/);
   assert.match(recipe.commands[0].command, /--offline/);
   assert.match(recipe.commands[0].command, /--ignore-scripts/);
-  assert(!recipe.files.some(file => file.path.endsWith('pnpm-lock.yaml')));
-  assert.equal(recipe.files.find(file => file.path.endsWith('/bridge.mjs')).content,
-    original.files.find(file => file.path.endsWith('/bridge.mjs')).content);
-  assert.equal(JSON.parse(original.files.find(file => file.path.endsWith('/package.json')).content)
-    .dependencies['@openai/codex'], '0.155.0');
-  const collector = createSubagentCapabilityCollector({ provider: 'codex', messageId: 'smoke', emit: () => {} });
+  assert(!recipe.files.some((file) => file.path.endsWith("pnpm-lock.yaml")));
+  assert.equal(
+    recipe.files.find((file) => file.path.endsWith("/bridge.mjs")).content,
+    original.files.find((file) => file.path.endsWith("/bridge.mjs")).content,
+  );
+  assert.equal(
+    JSON.parse(original.files.find((file) => file.path.endsWith("/package.json")).content)
+      .dependencies["@openai/codex"],
+    "0.155.0",
+  );
+  const collector = createSubagentCapabilityCollector({
+    provider: "codex",
+    messageId: "smoke",
+    emit: () => {},
+  });
   const observed = await observeHarnessCapabilities(createLocalCodex(), collector).getBootstrap();
-  const bridge = observed.files.find(file => file.path.endsWith('/bridge.mjs')).content;
+  const bridge = observed.files.find((file) => file.path.endsWith("/bridge.mjs")).content;
   assert.match(bridge, /notification\.method === "turn\/plan\/updated"/);
   assert.match(bridge, /send\(\{ type: "raw", rawValue: event \}\)/);
 });
 
-test('bundled Codex streams GPT-6.1 Sol Ultra and resumes the same session with the next selection', { timeout: 90000 }, async t => {
-  const root = await realpath(await mkdtemp(join(tmpdir(), 'dieter-codex-runtime-')));
-  const projectPath = join(root, 'project');
-  const codexHome = join(root, 'codex');
-  await Promise.all([mkdir(projectPath), mkdir(codexHome)]);
-  t.after(() => rm(root, { recursive: true, force: true }));
-  const requests = [];
-  const server = createServer(async (request, response) => {
-    let body = '';
-    for await (const chunk of request) body += chunk;
-    if (request.url !== '/v1/responses') {
-      response.writeHead(404).end('{}');
-      return;
-    }
-    requests.push(JSON.parse(body));
-    response.writeHead(200, { 'content-type': 'text/event-stream' });
-    for (const event of responseEvents(requests.length)) {
-      response.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
-    }
-    response.end();
-  });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  t.after(() => { server.closeAllConnections(); server.close(); });
-  // Only disposable credentials and temporary provider state reach this child.
-  // npm bootstrap is offline; inference can only reach the loopback fixture.
-  const environment = {
-    PATH: process.env.PATH, HOME: root, TMPDIR: root, CODEX_HOME: codexHome,
-    OPENAI_BASE_URL: `http://127.0.0.1:${server.address().port}/v1`,
-    CODEX_API_KEY: 'dieter-loopback-fixture',
-  };
-  const base = {
-    harness: 'codex', adapter: 'codex', sessionId: 'sol-session', projectPath,
-    runtimeRoot: join(root, 'runtime'), model: 'gpt-6.1-sol', effort: 'ultra',
-    options: { fast_mode: 'true' }, prompt: 'First isolated fixture turn.', responseMessageId: 'first',
-  };
-  const first = await runWorker(base, environment);
-  assert.equal(first.code, 0, first.stderr);
-  assert(first.frames.some(frame => frame.type === 'chunk' && frame.chunk.type === 'text-delta'
-    && frame.chunk.delta === 'Fixture response 1.'));
-  assert(!first.frames.some(frame => frame.type === 'error'), JSON.stringify(first.frames));
-  const state = first.frames.find(frame => frame.type === 'session').state;
-  assert.equal(typeof state.data.threadId, 'string');
-  const second = await runWorker({
-    ...base, session: state, model: 'gpt-6-astra', effort: 'medium',
-    options: { fast_mode: 'false' }, prompt: 'Second isolated fixture turn.', responseMessageId: 'second',
-  }, environment);
-  assert.equal(second.code, 0, second.stderr);
-  assert.equal(second.frames.find(frame => frame.type === 'session').state.data.threadId, state.data.threadId);
-  assert(second.frames.some(frame => frame.type === 'chunk' && frame.chunk.type === 'text-delta'
-    && frame.chunk.delta === 'Fixture response 2.'));
-  assert.equal(requests.length, 2);
-  assert.equal(requests[0].model, 'gpt-6.1-sol');
-  assert.equal(requests[0].service_tier, 'priority');
-  assert.equal(requests[1].model, 'gpt-6-astra');
-  assert.equal(requests[1].reasoning.effort, 'medium');
-  assert.notEqual(requests[1].service_tier, 'priority');
-  assert.match(JSON.stringify(requests[1].input), /First isolated fixture turn/);
-  assert.match(JSON.stringify(requests[1].input), /Fixture response 1/);
-  assert.doesNotMatch(first.stderr + second.stderr, /model metadata.*not found|requires a newer version/i);
+test("Codex bootstrap fails instead of marking links to a removed runtime", async () => {
+  const recipe = await createLocalCodex().getBootstrap();
+  const manifest = JSON.parse(
+    recipe.files.find((file) => file.path.endsWith("/package.json")).content,
+  );
+  const verify = recipe.commands.at(-1).command;
+  const base = await mkdtemp(join(tmpdir(), "dieter-codex-bootstrap-"));
+  try {
+    const run = () =>
+      new Promise((resolve, reject) => {
+        const child = spawn("/bin/sh", ["-c", verify], {
+          cwd: base,
+          stdio: ["ignore", "ignore", "pipe"],
+        });
+        let stderr = "";
+        child.stderr.on("data", (chunk) => {
+          stderr += chunk;
+        });
+        child.once("error", reject);
+        child.once("exit", (code) => resolve({ code, stderr }));
+      });
+    await mkdir(join(base, "node_modules", "@openai"), { recursive: true });
+    await symlink(
+      manifest.dependencies["@openai/codex"].replace(/^file:/, ""),
+      join(base, "node_modules", "@openai", "codex"),
+    );
+    await symlink(join(base, "removed-runtime", "ws"), join(base, "node_modules", "ws"));
+    const stale = await run();
+    assert.equal(stale.code, 1);
+    assert.match(stale.stderr, /node_modules\/ws does not resolve to/);
 
-  const records = [];
-  for (const file of await readdir(join(codexHome, 'sessions'), { recursive: true })) {
-    if (!file.endsWith('.jsonl')) continue;
-    const text = await readFile(join(codexHome, 'sessions', file), 'utf8');
-    records.push(...text.trim().split('\n').map(line => JSON.parse(line)));
+    await rm(join(base, "node_modules", "ws"));
+    await symlink(manifest.dependencies.ws.replace(/^file:/, ""), join(base, "node_modules", "ws"));
+    assert.equal((await run()).code, 0);
+  } finally {
+    await rm(base, { recursive: true, force: true });
   }
-  assert(records.some(record => record.type === 'session_meta' && record.payload.cli_version === '0.159.2'));
-  const turns = records.filter(record => record.type === 'turn_context').map(record => record.payload);
-  // Ultra is recorded by Codex itself. Its wire effort is an implementation
-  // detail of that orchestration mode, not an API enum Dieter should translate.
-  assert(turns.some(turn => turn.model === 'gpt-6.1-sol' && turn.effort === 'ultra'));
-  assert(turns.some(turn => turn.model === 'gpt-6-astra' && turn.effort === 'medium'));
 });
+
+test(
+  "bundled Codex streams GPT-6.1 Sol Ultra and resumes the same session with the next selection",
+  { timeout: 90000 },
+  async (t) => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "dieter-codex-runtime-")));
+    const projectPath = join(root, "project");
+    const codexHome = join(root, "codex");
+    await Promise.all([mkdir(projectPath), mkdir(codexHome)]);
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const requests = [];
+    const server = createServer(async (request, response) => {
+      let body = "";
+      for await (const chunk of request) body += chunk;
+      if (request.url !== "/v1/responses") {
+        response.writeHead(404).end("{}");
+        return;
+      }
+      requests.push(JSON.parse(body));
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      for (const event of responseEvents(requests.length)) {
+        response.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+      }
+      response.end();
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    t.after(() => {
+      server.closeAllConnections();
+      server.close();
+    });
+    // Only disposable credentials and temporary provider state reach this child.
+    // npm bootstrap is offline; inference can only reach the loopback fixture.
+    const environment = {
+      PATH: process.env.PATH,
+      HOME: root,
+      TMPDIR: root,
+      CODEX_HOME: codexHome,
+      OPENAI_BASE_URL: `http://127.0.0.1:${server.address().port}/v1`,
+      CODEX_API_KEY: "dieter-loopback-fixture",
+    };
+    const base = {
+      harness: "codex",
+      adapter: "codex",
+      sessionId: "sol-session",
+      projectPath,
+      runtimeRoot: join(root, "runtime"),
+      model: "gpt-6.1-sol",
+      effort: "ultra",
+      options: { fast_mode: "true" },
+      prompt: "First isolated fixture turn.",
+      responseMessageId: "first",
+    };
+    const first = await runWorker(base, environment);
+    assert.equal(first.code, 0, first.stderr);
+    assert(
+      first.frames.some(
+        (frame) =>
+          frame.type === "chunk" &&
+          frame.chunk.type === "text-delta" &&
+          frame.chunk.delta === "Fixture response 1.",
+      ),
+    );
+    assert(!first.frames.some((frame) => frame.type === "error"), JSON.stringify(first.frames));
+    const state = first.frames.find((frame) => frame.type === "session").state;
+    assert.equal(typeof state.data.threadId, "string");
+    const second = await runWorker(
+      {
+        ...base,
+        session: state,
+        model: "gpt-6-astra",
+        effort: "medium",
+        options: { fast_mode: "false" },
+        prompt: "Second isolated fixture turn.",
+        responseMessageId: "second",
+      },
+      environment,
+    );
+    assert.equal(second.code, 0, second.stderr);
+    assert.equal(
+      second.frames.find((frame) => frame.type === "session").state.data.threadId,
+      state.data.threadId,
+    );
+    assert(
+      second.frames.some(
+        (frame) =>
+          frame.type === "chunk" &&
+          frame.chunk.type === "text-delta" &&
+          frame.chunk.delta === "Fixture response 2.",
+      ),
+    );
+    assert.equal(requests.length, 2);
+    assert.equal(requests[0].model, "gpt-6.1-sol");
+    assert.equal(requests[0].service_tier, "priority");
+    assert.equal(requests[1].model, "gpt-6-astra");
+    assert.equal(requests[1].reasoning.effort, "medium");
+    assert.notEqual(requests[1].service_tier, "priority");
+    assert.match(JSON.stringify(requests[1].input), /First isolated fixture turn/);
+    assert.match(JSON.stringify(requests[1].input), /Fixture response 1/);
+    assert.doesNotMatch(
+      first.stderr + second.stderr,
+      /model metadata.*not found|requires a newer version/i,
+    );
+
+    const records = [];
+    for (const file of await readdir(join(codexHome, "sessions"), { recursive: true })) {
+      if (!file.endsWith(".jsonl")) continue;
+      const text = await readFile(join(codexHome, "sessions", file), "utf8");
+      records.push(
+        ...text
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line)),
+      );
+    }
+    assert(
+      records.some(
+        (record) => record.type === "session_meta" && record.payload.cli_version === "0.159.2",
+      ),
+    );
+    const turns = records
+      .filter((record) => record.type === "turn_context")
+      .map((record) => record.payload);
+    // Ultra is recorded by Codex itself. Its wire effort is an implementation
+    // detail of that orchestration mode, not an API enum Dieter should translate.
+    assert(turns.some((turn) => turn.model === "gpt-6.1-sol" && turn.effort === "ultra"));
+    assert(turns.some((turn) => turn.model === "gpt-6-astra" && turn.effort === "medium"));
+  },
+);
 
 // Codex reports provider stream retries as top-level `error` events and keeps
 // running. These turns must not fail on the notice itself.
 async function runFlakyProviderTurn(t, respond) {
-  const root = await realpath(await mkdtemp(join(tmpdir(), 'dieter-codex-retry-')));
-  const projectPath = join(root, 'project');
-  const codexHome = join(root, 'codex');
+  const root = await realpath(await mkdtemp(join(tmpdir(), "dieter-codex-retry-")));
+  const projectPath = join(root, "project");
+  const codexHome = join(root, "codex");
   await Promise.all([mkdir(projectPath), mkdir(codexHome)]);
   t.after(() => rm(root, { recursive: true, force: true }));
   let requests = 0;
   const server = createServer(async (request, response) => {
     for await (const _ of request);
-    if (request.url !== '/v1/responses') {
-      response.writeHead(404).end('{}');
+    if (request.url !== "/v1/responses") {
+      response.writeHead(404).end("{}");
       return;
     }
     requests += 1;
     respond(requests, response);
   });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  t.after(() => { server.closeAllConnections(); server.close(); });
-  const result = await runWorker({
-    harness: 'codex', adapter: 'codex', sessionId: 'retry-session', projectPath,
-    runtimeRoot: join(root, 'runtime'), model: 'gpt-6-astra', prompt: 'Retry fixture turn.', responseMessageId: 'retry',
-  }, {
-    PATH: process.env.PATH, HOME: root, TMPDIR: root, CODEX_HOME: codexHome,
-    OPENAI_BASE_URL: `http://127.0.0.1:${server.address().port}/v1`,
-    CODEX_API_KEY: 'dieter-loopback-fixture',
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => {
+    server.closeAllConnections();
+    server.close();
   });
-  const chunks = result.frames.filter(frame => frame.type === 'chunk').map(frame => frame.chunk);
-  const statuses = result.frames.filter(frame => frame.type === 'capability' && frame.capability.id === 'provider-status')
-    .map(frame => frame.capability);
+  const result = await runWorker(
+    {
+      harness: "codex",
+      adapter: "codex",
+      sessionId: "retry-session",
+      projectPath,
+      runtimeRoot: join(root, "runtime"),
+      model: "gpt-6-astra",
+      prompt: "Retry fixture turn.",
+      responseMessageId: "retry",
+    },
+    {
+      PATH: process.env.PATH,
+      HOME: root,
+      TMPDIR: root,
+      CODEX_HOME: codexHome,
+      OPENAI_BASE_URL: `http://127.0.0.1:${server.address().port}/v1`,
+      CODEX_API_KEY: "dieter-loopback-fixture",
+    },
+  );
+  const chunks = result.frames
+    .filter((frame) => frame.type === "chunk")
+    .map((frame) => frame.chunk);
+  const statuses = result.frames
+    .filter((frame) => frame.type === "capability" && frame.capability.id === "provider-status")
+    .map((frame) => frame.capability);
   return { ...result, chunks, statuses, requests };
 }
 
 function dropStreamAfterStart(response, index) {
   const [created] = responseEvents(index);
-  response.writeHead(200, { 'content-type': 'text/event-stream' });
+  response.writeHead(200, { "content-type": "text/event-stream" });
   response.write(`event: ${created.type}\ndata: ${JSON.stringify(created)}\n\n`);
   setTimeout(() => response.socket.destroy(), 20);
 }
 
 function completeStream(response, index) {
-  response.writeHead(200, { 'content-type': 'text/event-stream' });
-  for (const event of responseEvents(index)) response.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+  response.writeHead(200, { "content-type": "text/event-stream" });
+  for (const event of responseEvents(index))
+    response.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
   response.end();
 }
 
-test('bundled Codex completes a turn after a transient provider stream drop', { timeout: 90000 }, async t => {
-  const turn = await runFlakyProviderTurn(t, (index, response) => index === 1 ? dropStreamAfterStart(response, index) : completeStream(response, index));
-  assert.equal(turn.code, 0, turn.stderr);
-  assert.equal(turn.requests, 2);
-  assert(!turn.chunks.some(chunk => chunk.type === 'error'), JSON.stringify(turn.chunks));
-  assert(!turn.frames.some(frame => frame.type === 'error'), JSON.stringify(turn.frames));
-  assert(turn.chunks.some(chunk => chunk.type === 'text-delta' && chunk.delta === 'Fixture response 2.'));
-  assert.equal(turn.chunks.at(-1).type, 'finish');
-  assert.deepEqual(turn.statuses.map(status => [status.operation, status.status?.state, status.status?.attempt, status.status?.maxAttempts]), [
-    ['replace', 'reconnecting', 1, 5],
-    ['clear', undefined, undefined, undefined],
-  ]);
-  assert.equal(turn.statuses[0].status.messageId, 'retry');
-  assert.match(turn.statuses[0].status.message, /^Reconnecting\.\.\. 1\/5/);
-  // The notice remains diagnosable in the worker log.
-  assert.match(turn.stderr, /\[harness:codex:warn\] Reconnecting\.\.\. 1\/5/);
-});
+test(
+  "bundled Codex completes a turn after a transient provider stream drop",
+  { timeout: 90000 },
+  async (t) => {
+    const turn = await runFlakyProviderTurn(t, (index, response) =>
+      index === 1 ? dropStreamAfterStart(response, index) : completeStream(response, index),
+    );
+    assert.equal(turn.code, 0, turn.stderr);
+    assert.equal(turn.requests, 2);
+    assert(!turn.chunks.some((chunk) => chunk.type === "error"), JSON.stringify(turn.chunks));
+    assert(!turn.frames.some((frame) => frame.type === "error"), JSON.stringify(turn.frames));
+    assert(
+      turn.chunks.some(
+        (chunk) => chunk.type === "text-delta" && chunk.delta === "Fixture response 2.",
+      ),
+    );
+    assert.equal(turn.chunks.at(-1).type, "finish");
+    assert.deepEqual(
+      turn.statuses.map((status) => [
+        status.operation,
+        status.status?.state,
+        status.status?.attempt,
+        status.status?.maxAttempts,
+      ]),
+      [
+        ["replace", "reconnecting", 1, 5],
+        ["clear", undefined, undefined, undefined],
+      ],
+    );
+    assert.equal(turn.statuses[0].status.messageId, "retry");
+    assert.match(turn.statuses[0].status.message, /^Reconnecting\.\.\. 1\/5/);
+    // The notice remains diagnosable in the worker log.
+    assert.match(turn.stderr, /\[harness:codex:warn\] Reconnecting\.\.\. 1\/5/);
+  },
+);
 
-test('bundled Codex fails with its final provider error after exhausting stream retries', { timeout: 120000 }, async t => {
-  const turn = await runFlakyProviderTurn(t, (index, response) => dropStreamAfterStart(response, index));
-  const errors = turn.chunks.filter(chunk => chunk.type === 'error');
-  assert.equal(errors.length, 1, JSON.stringify(turn.chunks));
-  assert.match(errors[0].errorText, /stream disconnected before completion/);
-  assert.doesNotMatch(errors[0].errorText, /^Reconnecting\.\.\./);
-  assert.equal(turn.requests, 6);
-  assert.deepEqual(turn.statuses.map(status => status.status?.attempt ?? status.operation), [1, 2, 3, 4, 5, 'clear']);
-});
+test(
+  "bundled Codex fails with its final provider error after exhausting stream retries",
+  { timeout: 120000 },
+  async (t) => {
+    const turn = await runFlakyProviderTurn(t, (index, response) =>
+      dropStreamAfterStart(response, index),
+    );
+    const errors = turn.chunks.filter((chunk) => chunk.type === "error");
+    assert.equal(errors.length, 1, JSON.stringify(turn.chunks));
+    assert.match(errors[0].errorText, /stream disconnected before completion/);
+    assert.doesNotMatch(errors[0].errorText, /^Reconnecting\.\.\./);
+    assert.equal(turn.requests, 6);
+    assert.deepEqual(
+      turn.statuses.map((status) => status.status?.attempt ?? status.operation),
+      [1, 2, 3, 4, 5, "clear"],
+    );
+  },
+);
 
-test('bundled Codex fails promptly on a permanent provider error', { timeout: 90000 }, async t => {
-  const turn = await runFlakyProviderTurn(t, (_index, response) => {
-    response.writeHead(400, { 'content-type': 'application/json' });
-    response.end(JSON.stringify({ error: { message: 'Fixture rejects this request.', type: 'invalid_request_error', code: 'fixture_rejected' } }));
-  });
-  const errors = turn.chunks.filter(chunk => chunk.type === 'error');
-  assert.equal(errors.length, 1, JSON.stringify(turn.chunks));
-  assert.match(errors[0].errorText, /Fixture rejects this request/);
-  assert.equal(turn.requests, 1);
-  assert.deepEqual(turn.statuses, []);
-});
+test(
+  "bundled Codex fails promptly on a permanent provider error",
+  { timeout: 90000 },
+  async (t) => {
+    const turn = await runFlakyProviderTurn(t, (_index, response) => {
+      response.writeHead(400, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          error: {
+            message: "Fixture rejects this request.",
+            type: "invalid_request_error",
+            code: "fixture_rejected",
+          },
+        }),
+      );
+    });
+    const errors = turn.chunks.filter((chunk) => chunk.type === "error");
+    assert.equal(errors.length, 1, JSON.stringify(turn.chunks));
+    assert.match(errors[0].errorText, /Fixture rejects this request/);
+    assert.equal(turn.requests, 1);
+    assert.deepEqual(turn.statuses, []);
+  },
+);
 
 async function runWorker(request, env) {
-  const child = spawn(process.execPath, [join(runtimeRoot, 'runner.mjs')], {
-    env, stdio: ['pipe', 'pipe', 'pipe'], timeout: 40000, killSignal: 'SIGTERM',
+  const child = spawn(process.execPath, [join(runtimeRoot, "runner.mjs")], {
+    env,
+    stdio: ["pipe", "pipe", "pipe"],
+    timeout: 40000,
+    killSignal: "SIGTERM",
   });
-  let stdout = '', stderr = '';
-  child.stdout.on('data', data => { stdout += data; });
-  child.stderr.on('data', data => { stderr += data; });
+  let stdout = "",
+    stderr = "";
+  child.stdout.on("data", (data) => {
+    stdout += data;
+  });
+  child.stderr.on("data", (data) => {
+    stderr += data;
+  });
   child.stdin.end(`${JSON.stringify(request)}\n`);
   const code = await new Promise((resolve, reject) => {
-    child.once('error', reject);
-    child.once('close', resolve);
+    child.once("error", reject);
+    child.once("close", resolve);
   });
-  const frames = stdout.split('\n').filter(Boolean).map(line => JSON.parse(line));
+  const frames = stdout
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
   return { code, stderr, frames };
 }
 
 function responseEvents(index) {
   const item = {
-    id: `message_${index}`, type: 'message', role: 'assistant', phase: 'final_answer', status: 'completed',
-    content: [{ type: 'output_text', text: `Fixture response ${index}.`, annotations: [] }],
+    id: `message_${index}`,
+    type: "message",
+    role: "assistant",
+    phase: "final_answer",
+    status: "completed",
+    content: [{ type: "output_text", text: `Fixture response ${index}.`, annotations: [] }],
   };
   return [
-    { type: 'response.created', response: { id: `response_${index}`, status: 'in_progress', output: [] } },
-    { type: 'response.output_item.added', output_index: 0, item: { ...item, status: 'in_progress', content: [] } },
-    { type: 'response.output_text.delta', item_id: item.id, output_index: 0, content_index: 0, delta: item.content[0].text },
-    { type: 'response.output_item.done', output_index: 0, item },
-    { type: 'response.completed', response: {
-      id: `response_${index}`, status: 'completed', output: [item],
-      usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15,
-        input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } },
-    } },
+    {
+      type: "response.created",
+      response: { id: `response_${index}`, status: "in_progress", output: [] },
+    },
+    {
+      type: "response.output_item.added",
+      output_index: 0,
+      item: { ...item, status: "in_progress", content: [] },
+    },
+    {
+      type: "response.output_text.delta",
+      item_id: item.id,
+      output_index: 0,
+      content_index: 0,
+      delta: item.content[0].text,
+    },
+    { type: "response.output_item.done", output_index: 0, item },
+    {
+      type: "response.completed",
+      response: {
+        id: `response_${index}`,
+        status: "completed",
+        output: [item],
+        usage: {
+          input_tokens: 10,
+          output_tokens: 5,
+          total_tokens: 15,
+          input_tokens_details: { cached_tokens: 0 },
+          output_tokens_details: { reasoning_tokens: 0 },
+        },
+      },
+    },
   ];
 }

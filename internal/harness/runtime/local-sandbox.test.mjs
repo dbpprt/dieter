@@ -1,36 +1,40 @@
-import assert from 'node:assert/strict';
-import test from 'node:test';
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { createLocalSandboxProvider } from './local-sandbox.mjs';
+import assert from "node:assert/strict";
+import test from "node:test";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createLocalSandboxProvider } from "./local-sandbox.mjs";
 
 async function assertProcessExited(pid) {
   // An orphan can briefly remain as a zombie after its process group has
   // disappeared. Wait for OS reaping as well as termination.
   const deadline = Date.now() + 2000;
   while (true) {
-    try { process.kill(pid, 0); } catch (error) {
-      if (error?.code === 'ESRCH') return;
+    try {
+      process.kill(pid, 0);
+    } catch (error) {
+      if (error?.code === "ESRCH") return;
       throw error;
     }
     assert.ok(Date.now() < deadline, `process ${pid} remained after session stop`);
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await new Promise((resolve) => setTimeout(resolve, 20));
   }
 }
 
-test('observes a process that exits before wait is called', async () => {
-  const base = await mkdtemp(join(tmpdir(), 'board-local-sandbox-'));
+test("observes a process that exits before wait is called", async () => {
+  const base = await mkdtemp(join(tmpdir(), "board-local-sandbox-"));
   try {
-    const projectPath = join(base, 'project');
+    const projectPath = join(base, "project");
     await mkdir(projectPath);
-    const provider = await createLocalSandboxProvider({ root: join(base, 'runtime'), projectPath });
+    const provider = await createLocalSandboxProvider({ root: join(base, "runtime"), projectPath });
     const session = await provider.createSession();
-    const processHandle = await session.spawn({ command: 'exit 7' });
-    await new Promise(resolve => setTimeout(resolve, 50));
+    const processHandle = await session.spawn({ command: "exit 7" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
     const result = await Promise.race([
       processHandle.wait(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('wait did not observe the early exit')), 500)),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("wait did not observe the early exit")), 500),
+      ),
     ]);
     assert.equal(result.exitCode, 7);
   } finally {
@@ -38,123 +42,176 @@ test('observes a process that exits before wait is called', async () => {
   }
 });
 
-test('only trusts the bootstrap marker for the currently materialized recipe', async () => {
-  const base = await mkdtemp(join(tmpdir(), 'board-local-sandbox-'));
+test("only trusts the bootstrap marker for the currently materialized recipe", async () => {
+  const base = await mkdtemp(join(tmpdir(), "board-local-sandbox-"));
   try {
-    const projectPath = join(base, 'project');
+    const projectPath = join(base, "project");
     await mkdir(projectPath);
-    const provider = await createLocalSandboxProvider({ root: join(base, 'runtime'), projectPath });
+    const provider = await createLocalSandboxProvider({ root: join(base, "runtime"), projectPath });
     const session = await provider.createSession();
-    const first = join(base, 'runtime', '.harness-bootstrap', 'omp', '.bootstrap-aaaa.ok');
-    const second = join(base, 'runtime', '.harness-bootstrap', 'omp', '.bootstrap-bbbb.ok');
+    const first = join(base, "runtime", ".harness-bootstrap", "omp", ".bootstrap-aaaa.ok");
+    const second = join(base, "runtime", ".harness-bootstrap", "omp", ".bootstrap-bbbb.ok");
 
-    await session.writeTextFile({ path: first, content: '' });
-    assert.equal(await session.readTextFile({ path: first }), '');
+    await session.writeTextFile({ path: first, content: "" });
+    assert.equal(await session.readTextFile({ path: first }), "");
     assert.equal(await session.readTextFile({ path: second }), null);
 
-    await session.writeTextFile({ path: second, content: '' });
+    await session.writeTextFile({ path: second, content: "" });
     assert.equal(await session.readTextFile({ path: first }), null);
-    assert.equal(await session.readTextFile({ path: second }), '');
+    assert.equal(await session.readTextFile({ path: second }), "");
   } finally {
     await rm(base, { recursive: true, force: true });
   }
 });
 
-test('stopping a local session terminates the entire spawned process group', { skip: process.platform === 'win32' }, async () => {
-  const base = await mkdtemp(join(tmpdir(), 'board-local-sandbox-'));
-  let provider;
+test("serializes concurrent commands in one shared bootstrap directory", async () => {
+  const base = await mkdtemp(join(tmpdir(), "board-local-sandbox-"));
   try {
-    const projectPath = join(base, 'project');
-    const childPIDFile = join(base, 'child.pid');
-    await mkdir(projectPath);
-    provider = await createLocalSandboxProvider({ root: join(base, 'runtime'), projectPath });
-    const session = await provider.createSession();
-    const processHandle = await session.spawn({
-      command: `node -e "const{spawn}=require('child_process');const{writeFileSync}=require('fs');const c=spawn(process.execPath,['-e','process.on(\\\"SIGTERM\\\",()=>{});setInterval(()=>{},1000)'],{stdio:'ignore'});writeFileSync('${childPIDFile}',String(c.pid));process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"`,
-    });
-    // Cold Node startup can exceed one second while other suites compile.
-    // Observe readiness with a bounded deadline instead of racing startup.
-    const deadline = Date.now() + 10_000;
-    for (;;) {
-      try {
-        if ((await readFile(childPIDFile, 'utf8')).trim()) break;
-      } catch (error) {
-        if (error.code !== 'ENOENT') throw error;
-      }
-      assert(Date.now() < deadline, 'descendant did not publish its PID');
-      await new Promise(resolve => setTimeout(resolve, 20));
-    }
-    const descendantPID = Number((await readFile(childPIDFile, 'utf8')).trim());
-
-    await session.stop();
-    await processHandle.wait();
-
-    await assertProcessExited(processHandle.pid);
-    await assertProcessExited(descendantPID);
-  } finally {
-    await provider?.stopAll();
-    await rm(base, { recursive: true, force: true });
-  }
-});
-
-test('stopping a local session terminates descendants after the group leader exits', { skip: process.platform === 'win32' }, async () => {
-  const base = await mkdtemp(join(tmpdir(), 'board-local-sandbox-'));
-  try {
-    const projectPath = join(base, 'project');
-    const childPIDFile = join(base, 'orphan-child.pid');
-    await mkdir(projectPath);
-    const provider = await createLocalSandboxProvider({ root: join(base, 'runtime'), projectPath });
-    const session = await provider.createSession();
-    const processHandle = await session.spawn({
-      command: `node -e "const{spawn}=require('child_process');const{writeFileSync}=require('fs');const c=spawn(process.execPath,['-e','process.on(\\\"SIGTERM\\\",()=>{});setInterval(()=>{},1000)'],{stdio:'ignore'});writeFileSync('${childPIDFile}',String(c.pid));c.unref()"`,
-    });
-    assert.equal((await processHandle.wait()).exitCode, 0);
-    const descendantPID = Number((await readFile(childPIDFile, 'utf8')).trim());
-    assert.doesNotThrow(() => process.kill(descendantPID, 0));
-
-    await session.stop();
-
-    await assertProcessExited(descendantPID);
-  } finally {
-    await rm(base, { recursive: true, force: true });
-  }
-});
-
-test('keeps concurrent workspaces isolated under one runtime root', async () => {
-  const base = await mkdtemp(join(tmpdir(), 'board-local-sandbox-'));
-  try {
-    const runtimeRoot = join(base, 'runtime');
-    const projectA = join(base, 'project-a');
-    const projectB = join(base, 'project-b');
+    const projectA = join(base, "project-a");
+    const projectB = join(base, "project-b");
     await Promise.all([mkdir(projectA), mkdir(projectB)]);
-    const workDirA = 'workspaces/card-a/repo';
-    const workDirB = 'workspaces/card-b/repo';
+    const bootstrapDir = join(base, "state", ".harness-bootstrap", "codex");
+    await mkdir(bootstrapDir, { recursive: true });
+    // A crashed installer must not block every later bootstrap.
+    await writeFile(join(bootstrapDir, ".bootstrap.lock"), "2147483646 stale\n");
+    // Separate providers stand in for separate conversation worker processes.
+    const sessions = await Promise.all(
+      [
+        createLocalSandboxProvider({ root: join(base, "runtime-a"), projectPath: projectA }),
+        createLocalSandboxProvider({ root: join(base, "runtime-b"), projectPath: projectB }),
+      ].map(async (provider) => (await provider).createSession()),
+    );
+    const command = "mkdir installing || exit 9; sleep 0.1; rmdir installing";
+    const results = await Promise.all(
+      [...sessions, ...sessions].map((session) =>
+        session.run({ command, workingDirectory: bootstrapDir }),
+      ),
+    );
+    assert.deepEqual(
+      results.map((result) => result.exitCode),
+      [0, 0, 0, 0],
+    );
+    await assert.rejects(readFile(join(bootstrapDir, ".bootstrap.lock")), { code: "ENOENT" });
+  } finally {
+    await rm(base, { recursive: true, force: true });
+  }
+});
+
+test(
+  "stopping a local session terminates the entire spawned process group",
+  { skip: process.platform === "win32" },
+  async () => {
+    const base = await mkdtemp(join(tmpdir(), "board-local-sandbox-"));
+    let provider;
+    try {
+      const projectPath = join(base, "project");
+      const childPIDFile = join(base, "child.pid");
+      await mkdir(projectPath);
+      provider = await createLocalSandboxProvider({ root: join(base, "runtime"), projectPath });
+      const session = await provider.createSession();
+      const processHandle = await session.spawn({
+        command: `node -e "const{spawn}=require('child_process');const{writeFileSync}=require('fs');const c=spawn(process.execPath,['-e','process.on(\\\"SIGTERM\\\",()=>{});setInterval(()=>{},1000)'],{stdio:'ignore'});writeFileSync('${childPIDFile}',String(c.pid));process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"`,
+      });
+      // Cold Node startup can exceed one second while other suites compile.
+      // Observe readiness with a bounded deadline instead of racing startup.
+      const deadline = Date.now() + 10_000;
+      for (;;) {
+        try {
+          if ((await readFile(childPIDFile, "utf8")).trim()) break;
+        } catch (error) {
+          if (error.code !== "ENOENT") throw error;
+        }
+        assert(Date.now() < deadline, "descendant did not publish its PID");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      const descendantPID = Number((await readFile(childPIDFile, "utf8")).trim());
+
+      await session.stop();
+      await processHandle.wait();
+
+      await assertProcessExited(processHandle.pid);
+      await assertProcessExited(descendantPID);
+    } finally {
+      await provider?.stopAll();
+      await rm(base, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "stopping a local session terminates descendants after the group leader exits",
+  { skip: process.platform === "win32" },
+  async () => {
+    const base = await mkdtemp(join(tmpdir(), "board-local-sandbox-"));
+    try {
+      const projectPath = join(base, "project");
+      const childPIDFile = join(base, "orphan-child.pid");
+      await mkdir(projectPath);
+      const provider = await createLocalSandboxProvider({
+        root: join(base, "runtime"),
+        projectPath,
+      });
+      const session = await provider.createSession();
+      const processHandle = await session.spawn({
+        command: `node -e "const{spawn}=require('child_process');const{writeFileSync}=require('fs');const c=spawn(process.execPath,['-e','process.on(\\\"SIGTERM\\\",()=>{});setInterval(()=>{},1000)'],{stdio:'ignore'});writeFileSync('${childPIDFile}',String(c.pid));c.unref()"`,
+      });
+      assert.equal((await processHandle.wait()).exitCode, 0);
+      const descendantPID = Number((await readFile(childPIDFile, "utf8")).trim());
+      assert.doesNotThrow(() => process.kill(descendantPID, 0));
+
+      await session.stop();
+
+      await assertProcessExited(descendantPID);
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  },
+);
+
+test("keeps concurrent workspaces isolated under one runtime root", async () => {
+  const base = await mkdtemp(join(tmpdir(), "board-local-sandbox-"));
+  try {
+    const runtimeRoot = join(base, "runtime");
+    const projectA = join(base, "project-a");
+    const projectB = join(base, "project-b");
+    await Promise.all([mkdir(projectA), mkdir(projectB)]);
+    const workDirA = "workspaces/card-a/repo";
+    const workDirB = "workspaces/card-b/repo";
     const [providerA, providerB] = await Promise.all([
       createLocalSandboxProvider({ root: runtimeRoot, projectPath: projectA, workDir: workDirA }),
       createLocalSandboxProvider({ root: runtimeRoot, projectPath: projectB, workDir: workDirB }),
     ]);
-    const [sessionA, sessionB] = await Promise.all([providerA.createSession(), providerB.createSession()]);
+    const [sessionA, sessionB] = await Promise.all([
+      providerA.createSession(),
+      providerB.createSession(),
+    ]);
     const [resultA, resultB] = await Promise.all([
-      sessionA.run({ command: 'sleep 0.05; printf alpha > sentinel', workingDirectory: join(runtimeRoot, workDirA) }),
-      sessionB.run({ command: 'sleep 0.05; printf beta > sentinel', workingDirectory: join(runtimeRoot, workDirB) }),
+      sessionA.run({
+        command: "sleep 0.05; printf alpha > sentinel",
+        workingDirectory: join(runtimeRoot, workDirA),
+      }),
+      sessionB.run({
+        command: "sleep 0.05; printf beta > sentinel",
+        workingDirectory: join(runtimeRoot, workDirB),
+      }),
     ]);
     assert.equal(resultA.exitCode, 0);
     assert.equal(resultB.exitCode, 0);
-    assert.equal(await readFile(join(projectA, 'sentinel'), 'utf8'), 'alpha');
-    assert.equal(await readFile(join(projectB, 'sentinel'), 'utf8'), 'beta');
+    assert.equal(await readFile(join(projectA, "sentinel"), "utf8"), "alpha");
+    assert.equal(await readFile(join(projectB, "sentinel"), "utf8"), "beta");
   } finally {
     await rm(base, { recursive: true, force: true });
   }
 });
 
-test('refuses to retarget an existing conversation workspace', async () => {
-  const base = await mkdtemp(join(tmpdir(), 'board-local-sandbox-'));
+test("refuses to retarget an existing conversation workspace", async () => {
+  const base = await mkdtemp(join(tmpdir(), "board-local-sandbox-"));
   try {
-    const runtimeRoot = join(base, 'runtime');
-    const projectA = join(base, 'project-a');
-    const projectB = join(base, 'project-b');
+    const runtimeRoot = join(base, "runtime");
+    const projectA = join(base, "project-a");
+    const projectB = join(base, "project-b");
     await Promise.all([mkdir(projectA), mkdir(projectB)]);
-    const workDir = 'workspaces/card/repo';
+    const workDir = "workspaces/card/repo";
     await createLocalSandboxProvider({ root: runtimeRoot, projectPath: projectA, workDir });
     await assert.rejects(
       createLocalSandboxProvider({ root: runtimeRoot, projectPath: projectB, workDir }),
