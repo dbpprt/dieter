@@ -770,17 +770,14 @@ platform :mac do
       keychain_name: "fastlane_tmp_keychain",
       keychain_password: ""
     )
-    update_code_signing_settings(
-      path: MAC_PROJECT,
-      targets: ["Dieter"],
-      use_automatic_signing: false,
-      team_id: team,
-      code_sign_identity: "Developer ID Application"
-    )
     output = Dieter.path("dist/apple")
+    # The app target signs with $(DIETER_MAC_SIGN_IDENTITY) (ad hoc by default);
+    # only the app, not its SwiftPM dependencies, gets the Developer ID here.
     settings = [
       "DIETER_RELEASE_VERSION=#{release["version"]}",
       "DIETER_BUILD_NUMBER=#{release["apple_build"]}",
+      "DIETER_MAC_TEAM_ID=#{team}",
+      "DIETER_MAC_SIGN_IDENTITY=Developer ID Application",
       "OTHER_CODE_SIGN_FLAGS=--timestamp"
     ]
     build_mac_app(
