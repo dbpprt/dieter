@@ -271,6 +271,25 @@ class ReleaseTest < Minitest::Test
     end
   end
 
+  def test_daemon_ldflags_pin_the_harness_runtime_archive
+    package = "github.com/dbpprt/dieter/internal/platform/buildinfo"
+    plain = Dieter::Release.ldflags("0.5.9", "abc123")
+    assert_includes plain, "-X #{package}.ReleaseVersion=0.5.9"
+    assert_includes plain, "-X #{package}.SourceRevision=abc123"
+    refute_includes plain, "HarnessRuntimeSHA256"
+    pinned = Dieter::Release.ldflags("0.5.9", "abc123", harness_runtime_sha256: "a" * 64)
+    assert pinned.start_with?(plain)
+    assert pinned.end_with?(" -X #{package}.HarnessRuntimeSHA256=#{"a" * 64}")
+    assert_raises(ArgumentError) do
+      Dieter::Release.ldflags("0.5.9", "abc123", harness_runtime_sha256: "a" * 63)
+    end
+    assert_raises(ArgumentError) do
+      Dieter::Release.ldflags("0.5.9", "abc123", harness_runtime_sha256: "a" * 64 + " -X x=y")
+    end
+    assert_equal "dieter-harness-runtime-linux-arm64.tar.gz",
+                 Dieter::Release.harness_runtime_archive("linux", "arm64")
+  end
+
   def test_retention_keeps_recent_and_newest_dev_releases_only
     now = Time.utc(2026, 10, 11)
     releases =
@@ -310,6 +329,28 @@ class WorkflowContractTest < Minitest::Test
     steps = publish.fetch("steps").map { |step| step["run"].to_s }.join("\n")
     assert_includes steps, "cosign sign-blob --yes --bundle dist/release/SHA256SUMS.sigstore.json"
     assert_includes File.read(Dieter.path("deploy/install/install.sh")), Dieter::Release.signer
+  end
+
+  # Release daemons download their platform's harness runtime archive from
+  # their own release; every daemon builder must publish its archive.
+  def test_daemon_builders_publish_their_harness_runtime_archives
+    server = workflow("_build-server.yml").fetch("jobs").fetch("linux")
+    assert_equal %w[amd64 arm64],
+                 server.dig("strategy", "matrix", "include").map { |item| item["arch"] }
+    apple = workflow("_build-apple.yml").fetch("jobs").fetch("daemon")
+    {
+      server => "dist/server/*.tar.gz",
+      apple => "dist/daemon/#{Dieter::Release.harness_runtime_archive("darwin", "arm64")}"
+    }.each do |job, path|
+      steps = job.fetch("steps")
+      setup = steps.find { |step| step["uses"] == "./.github/actions/setup" }
+      assert_includes setup.dig("with", "tools").split, "node"
+      upload = steps.find { |step| step["uses"].to_s.start_with?("actions/upload-artifact@") }
+      assert_includes upload.dig("with", "path").split, path
+      assert upload.dig("with", "name").start_with?("release-")
+    end
+    publish = workflow("release.yml").fetch("jobs").fetch("publish").fetch("steps")
+    assert_includes publish.map { |step| step["run"].to_s }.join("\n"), "cp dist/built/*.tar.gz"
   end
 
   def test_ci_ok_gates_every_job_and_every_job_has_a_timeout

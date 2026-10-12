@@ -584,7 +584,7 @@ func (c *Catalog) runOMPDiscoveryCommand(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	bunBin, err := ensureManagedBun(ctx, dieterHome)
+	bunBin, err := ensureManagedBun(ctx, dieterHome, c.env.runtimeArchive())
 	if err != nil {
 		return nil, fmt.Errorf("prepare managed Bun for pinned OMP discovery: %w", err)
 	}

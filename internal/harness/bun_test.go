@@ -31,11 +31,11 @@ ln -s ../bun/bin/bun.exe node_modules/.bin/bun
 	t.Setenv("PATH", commands+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("DIETER_TEST_BUN_TRACE", trace)
 	home := t.TempDir()
-	first, err := ensureManagedBun(context.Background(), home)
+	first, err := ensureManagedBun(context.Background(), home, RuntimeArchive{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := ensureManagedBun(context.Background(), home)
+	second, err := ensureManagedBun(context.Background(), home, RuntimeArchive{})
 	if err != nil {
 		t.Fatal(err)
 	}

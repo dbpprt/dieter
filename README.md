@@ -63,6 +63,9 @@ update all of them together. Breaking changes are listed in the
 | From source               | `just setup && just build`; see [docs/building.md](docs/building.md)                                                                                                   |
 
 Daemon hosts need Node.js 22.19+, npm and Git, and a configured agent account.
+Release daemons install a prebuilt, checksum-pinned harness runtime; npm sets up
+each agent's provider bridge on first use (and the runtime itself in source
+builds).
 Release checksums are signed; see [verifying releases](https://getdieter.com/docs/security/#verifying-releases).
 
 ## Quick start

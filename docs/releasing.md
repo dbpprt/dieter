@@ -39,10 +39,22 @@ approves the steps that reach users.
 
 A release contains the daemon/CLI archives for macOS arm64 and Linux
 amd64/arm64 (each with its screen-capture helper; macOS also with the privacy
-helper), gateway binaries for Linux amd64/arm64, the signed gateway container
-image and deployment bundle, the notarized Mac app, `Dieter-Android.apk`, the
-iOS build in TestFlight, the installer script, and `SHA256SUMS` with its
-signature.
+helper), the prebuilt harness runtime of each daemon platform, gateway binaries
+for Linux amd64/arm64, the signed gateway container image and deployment bundle,
+the notarized Mac app, `Dieter-Android.apk`, the iOS build in TestFlight, the
+installer script, and `SHA256SUMS` with its signature.
+
+Release daemons never run npm to install their harness runtime. On each daemon
+platform the builder first runs `dieter __harness-runtime-archive` from a
+development build of the same source: it installs the embedded runtime
+(`npm ci --omit=dev --ignore-scripts`) and the managed Bun package exactly as a
+daemon built from source would, writes
+`dieter-harness-runtime-<os>-<arch>.tar.gz` (sorted entries, fixed times, root
+ownership, normalized modes, and a manifest naming the runtime digest and the
+`package-lock.json` SHA-256), and verifies it by installing it. The release
+daemon is then linked with the archive's SHA-256 (`Dieter::Release.ldflags`) and
+downloads exactly that file from its own release. Removing or replacing a
+published archive breaks first runs and updates of that release.
 
 ## Signing identity
 

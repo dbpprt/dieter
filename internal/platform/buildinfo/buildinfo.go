@@ -9,3 +9,14 @@ var (
 	SourceRevision = "unknown"
 	BuiltAt        = "unknown"
 )
+
+// The prebuilt harness runtime of a release daemon. The release lanes build
+// dieter-harness-runtime-<goos>-<goarch>.tar.gz for each platform and pin its
+// SHA-256 here; the daemon then installs that archive instead of running npm.
+// Source builds leave HarnessRuntimeSHA256 empty and install with npm.
+// HarnessRuntimeBaseURL replaces the release's download directory
+// (ReleasesURL/download/vReleaseVersion) for local end-to-end builds only.
+var (
+	HarnessRuntimeSHA256  = ""
+	HarnessRuntimeBaseURL = ""
+)

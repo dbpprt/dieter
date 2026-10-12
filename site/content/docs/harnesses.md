@@ -66,7 +66,9 @@ Changing that selection does not reconfigure the already-running turn.
 The first catalog refresh or turn installs the exact locked OMP/DSH runtime under
 `DIETER_HOME`. Dieter also installs the pinned Bun executable required by OMP once
 per daemon home and shares it across content-addressed harness releases, so
-hosts need no global OMP or Bun installation. Bootstrap installs revalidate npm
+hosts need no global OMP or Bun installation. Published daemons take both from a
+prebuilt archive of their own release, verified against the SHA-256 built into
+the binary; daemons built from source install them with npm. Bootstrap installs revalidate npm
 package metadata, including on retries, so a cached package list cannot hide a
 newly published pinned dependency. Updating
 a separately installed global agent CLI does not update Dieter's bundled bridge

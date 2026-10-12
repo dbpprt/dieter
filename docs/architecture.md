@@ -62,6 +62,13 @@ so the CLI never links the daemon's storage or engine.
   transcripts and status in the store. The scheduler
   (`internal/engine/scheduler`) creates deterministic cards from authoritative
   occurrence records and runs only inside `dieter serve`.
+- **Harness runtime.** The daemon embeds the runtime sources and installs them
+  once per content digest under `DIETER_HOME/runtime/harness/<digest>`, with the
+  managed Bun under `runtime/tools/bun`. A release daemon pins the SHA-256 of its
+  platform's prebuilt archive (`buildinfo.HarnessRuntimeSHA256`), downloads it
+  from its own release, checks its manifest against the embedded runtime digest
+  and lockfile, and extracts it; a source build runs `npm ci` instead. An active
+  turn keeps its runtime digest across restarts.
 
 ## Shared metadata and peer replication
 

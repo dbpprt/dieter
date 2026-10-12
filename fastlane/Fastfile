@@ -235,6 +235,16 @@ end
 
 def android_sdk_tool(*parts) = File.join(Dieter::Emulator.sdk, *parts)
 
+# This host platform's prebuilt harness runtime archive into dist, written by a
+# development build of this source with the daemon's own install logic
+# (`dieter __harness-runtime-archive`, which also verifies it). Returns the
+# SHA-256 the release daemon pins.
+def harness_runtime_archive(dist, os, arch)
+  archive = File.join(dist, Dieter::Release.harness_runtime_archive(os, arch))
+  Dieter.sh("go", "run", "./cmd/dieter", "__harness-runtime-archive", "--output", archive)
+  Dieter.sha256(archive)
+end
+
 # --- Lanes ---------------------------------------------------------------------
 
 desc "Create the ignored fastlane/local.json from local.example.json (mode 0600)"
@@ -852,7 +862,7 @@ platform :mac do
     zip(path: app, output_path: File.join(output, "Dieter-macOS-arm64.zip"), symlinks: true)
   end
 
-  desc "CI: signed, notarized darwin daemon tarball and side-by-side pkg into dist/daemon"
+  desc "CI: signed, notarized darwin daemon tarball, side-by-side pkg and harness runtime into dist/daemon"
   lane :daemon do
     release = Dieter::Release.current
     ids = Dieter::Release.ids
@@ -861,12 +871,17 @@ platform :mac do
     stage = File.join(dist, "dieter-darwin-arm64")
     FileUtils.rm_rf(dist)
     FileUtils.mkdir_p(stage)
+    harness_runtime = harness_runtime_archive(dist, "darwin", "arm64")
     Dieter.sh(
       "go",
       "build",
       "-trimpath",
       "-ldflags",
-      Dieter::Release.ldflags(version, release["revision"]),
+      Dieter::Release.ldflags(
+        version,
+        release["revision"],
+        harness_runtime_sha256: harness_runtime
+      ),
       "-o",
       File.join(stage, "dieter"),
       "./cmd/dieter",
@@ -1020,14 +1035,23 @@ platform :mac do
   end
 end
 
-desc "CI: Linux daemon and gateway tarballs of this host's architecture (+ TURN probes on amd64) into dist/server"
+desc "CI: Linux daemon, harness runtime and gateway tarballs of this host's architecture (+ TURN probes on amd64) into dist/server"
 lane :server do
   release = Dieter::Release.current
   version = release["version"]
   dist = Dieter.path("dist/server")
   FileUtils.mkdir_p(dist)
   arch = Dieter.capture("go", "env", "GOHOSTARCH").strip
-  ldflags = Dieter::Release.ldflags(version, release["revision"])
+  harness_runtime = harness_runtime_archive(dist, "linux", arch)
+  ldflags = {
+    "dieter" =>
+      Dieter::Release.ldflags(
+        version,
+        release["revision"],
+        harness_runtime_sha256: harness_runtime
+      ),
+    "dieter-gateway" => Dieter::Release.ldflags(version, release["revision"])
+  }
   { "dieter" => "./cmd/dieter", "dieter-gateway" => "./cmd/dieter-gateway" }.each do |name, package|
     stage = File.join(dist, "#{name}-linux-#{arch}")
     FileUtils.mkdir_p(stage)
@@ -1036,7 +1060,7 @@ lane :server do
       "build",
       "-trimpath",
       "-ldflags",
-      ldflags,
+      ldflags.fetch(name),
       "-o",
       File.join(stage, name),
       package,

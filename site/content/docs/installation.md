@@ -23,6 +23,12 @@ Each daemon host needs **Node.js 22.19+**, **npm**, **Git**, and a configured
 [harness account](/docs/harnesses/). Install **tmux** if terminals should survive
 daemon restarts. Published binaries do not require Go or `just`.
 
+A published daemon downloads its prebuilt harness runtime from its own release on
+first use (`dieter-harness-runtime-<os>-<arch>.tar.gz`) and installs it only if it
+matches the SHA-256 built into the binary. Hosts behind a proxy need `HTTPS_PROXY`
+in the daemon's environment. npm still installs each agent's provider bridge the
+first time that agent runs.
+
 ## macOS
 
 Install the daemon with Homebrew:
@@ -123,8 +129,9 @@ dieter machine update --confirm UPDATE
 ```
 
 Use global `--machine MACHINE_ID` to select another host. Capability checks explain
-when managed update is unavailable. Updates prepare the pinned harness runtime
-before restarting; an active turn retains its runtime digest across recovery.
+when managed update is unavailable. Updates download and verify the new
+release's harness runtime before restarting; an active turn retains its runtime
+digest across recovery.
 
 ## Build from source
 
@@ -135,7 +142,8 @@ just setup
 just build          # bin/dieter and bin/dieter-gateway
 ```
 
-[Development](/docs/development/) links the per-component build guides,
+A daemon built from source installs its harness runtime with `npm ci` on first
+use. [Development](/docs/development/) links the per-component build guides,
 including the Mac, iOS and Android apps.
 
 ## Uninstall

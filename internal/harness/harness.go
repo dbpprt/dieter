@@ -236,9 +236,14 @@ func (r *SubprocessRunner) ensure(ctx context.Context) (string, error) {
 	return reference.Directory, nil
 }
 
+// home is the DIETER_HOME directory the runner's runtimes live under.
+func (r *SubprocessRunner) home() string { return filepath.Dir(filepath.Dir(r.root)) }
+
 // PrepareRuntime installs the embedded runtime when digest is empty, or
 // validates and reopens an already-published historical runtime when digest is
 // supplied by a suspended active turn. Historical assets are never rewritten.
+// Release builds install the prebuilt archive their binary pins (and the
+// managed Bun it carries); source builds install with npm.
 func (r *SubprocessRunner) PrepareRuntime(ctx context.Context, digest string) (RuntimeReference, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -279,7 +284,13 @@ func (r *SubprocessRunner) PrepareRuntime(ctx context.Context, digest string) (R
 		r.dirs[digest] = dir
 		return RuntimeReference{Digest: digest, ProtocolVersion: RuntimeProtocolVersion, Directory: dir}, nil
 	}
-	if err := installRuntimeAtomically(ctx, r.root, dir, digest); err != nil {
+	populate := npmInstallRuntime
+	if archive := r.env.runtimeArchive(); archive.pinned() {
+		populate = func(ctx context.Context, stage string) error {
+			return installRuntimeArchive(ctx, archive, stage, r.home())
+		}
+	}
+	if err := installRuntimeAtomically(ctx, r.root, dir, digest, populate); err != nil {
 		return RuntimeReference{}, err
 	}
 	r.dirs[digest] = dir
@@ -301,7 +312,7 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 	dir := reference.Directory
 	var runtimePaths []string
 	if request.Adapter == "omp-acp" {
-		bunBin, bunErr := ensureManagedBun(ctx, filepath.Dir(filepath.Dir(r.root)))
+		bunBin, bunErr := ensureManagedBun(ctx, r.home(), r.env.runtimeArchive())
 		if bunErr != nil {
 			return fmt.Errorf("prepare OMP runtime: %w", bunErr)
 		}

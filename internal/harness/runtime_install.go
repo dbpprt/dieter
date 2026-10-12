@@ -122,7 +122,11 @@ func validateRuntimeDirectory(dir, digest string) error {
 	return nil
 }
 
-func installRuntimeAtomically(ctx context.Context, root, finalDir, digest string) error {
+// installRuntimeAtomically publishes finalDir under the per-digest install
+// lock: it stages the embedded sources, lets populate add node_modules (npm,
+// or a prebuilt release archive), writes the .installed marker, validates the
+// result and renames it into place.
+func installRuntimeAtomically(ctx context.Context, root, finalDir, digest string, populate func(context.Context, string) error) error {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return err
 	}
@@ -162,11 +166,8 @@ func installRuntimeAtomically(ctx context.Context, root, finalDir, digest string
 	if err := stageRuntimeAssets(temporary); err != nil {
 		return fmt.Errorf("stage AI SDK harness runtime: %w", err)
 	}
-	command := exec.CommandContext(ctx, "npm", "ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund")
-	command.Dir = temporary
-	output, installErr := command.CombinedOutput()
-	if installErr != nil {
-		return fmt.Errorf("install pinned AI SDK harness runtime: %s: %w", strings.TrimSpace(string(output)), installErr)
+	if err := populate(ctx, temporary); err != nil {
+		return err
 	}
 	manifest, err := json.Marshal(runtimeManifest{
 		Digest: digest, ProtocolVersion: RuntimeProtocolVersion, SourceFiles: embeddedRuntimeSourceFiles(), InstalledAt: time.Now().UTC().Format(time.RFC3339Nano),
@@ -189,6 +190,19 @@ func installRuntimeAtomically(ctx context.Context, root, finalDir, digest string
 	}
 	if err := fsx.SyncDir(root); err != nil {
 		return err
+	}
+	return nil
+}
+
+// npmInstallRuntime installs the staged runtime's pinned dependencies. Source
+// builds run it on the daemon host; release builders run it once per platform
+// to produce the prebuilt archive.
+func npmInstallRuntime(ctx context.Context, dir string) error {
+	command := exec.CommandContext(ctx, "npm", "ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund")
+	command.Dir = dir
+	output, err := command.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("install pinned AI SDK harness runtime: %s: %w", strings.TrimSpace(string(output)), err)
 	}
 	return nil
 }

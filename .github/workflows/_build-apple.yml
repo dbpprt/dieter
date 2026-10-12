@@ -1,8 +1,9 @@
 name: Build Apple
 
 # The Apple signing domain: the notarized Mac app, the App Store IPA and the
-# notarized darwin daemon (tarball + side-by-side pkg). Every job references
-# the `apple-signing` environment (main only); the caller passes the signing secrets.
+# notarized darwin daemon (tarball + side-by-side pkg + the prebuilt harness
+# runtime archive it pins). Every job references the `apple-signing`
+# environment (main only); the caller passes the signing secrets.
 on:
   workflow_call:
     inputs:
@@ -94,9 +95,9 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup
         with:
-          tools: go ruby gem:bundler
+          tools: go node ruby gem:bundler
           bundle: "true"
-      - name: Notarized darwin daemon tarball and installer
+      - name: Harness runtime, notarized darwin daemon tarball and installer
         env:
           MACOS_DEVELOPER_ID_CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
           MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
@@ -112,5 +113,6 @@ jobs:
           path: |
             dist/daemon/dieter-darwin-arm64.tar.gz
             dist/daemon/dieter-darwin-arm64.pkg
+            dist/daemon/dieter-harness-runtime-darwin-arm64.tar.gz
           retention-days: 30
           if-no-files-found: error

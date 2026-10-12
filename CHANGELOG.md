@@ -8,7 +8,14 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
-Nothing yet.
+### Changed
+
+- Release daemons no longer install their harness runtime with npm. Each release
+  publishes a prebuilt runtime per daemon platform
+  (`dieter-harness-runtime-<os>-<arch>.tar.gz`); the daemon downloads the one
+  whose SHA-256 its binary pins on first use and during updates, and verifies
+  it before installing. Hosts still need Node.js 22.19+, npm (for agent provider
+  bridges) and Git. Daemons built from source keep installing with npm.
 
 ## 0.5.404
 

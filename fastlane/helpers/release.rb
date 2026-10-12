@@ -45,12 +45,25 @@ module Dieter
       }
     end
 
-    def ldflags(version, revision)
+    # The linker flags of a release binary. A daemon also pins the SHA-256 of
+    # its platform's prebuilt harness runtime archive, which it then downloads
+    # from its own release instead of running npm.
+    def ldflags(version, revision, harness_runtime_sha256: nil)
       package =
         "#{File.read(Dieter.path("go.mod"))[/^module (\S+)/, 1]}/internal/platform/buildinfo"
       built = Dieter.capture("git", "show", "-s", "--format=%cI", "HEAD").strip
-      "-s -w -X #{package}.ReleaseVersion=#{version} -X #{package}.SourceRevision=#{revision} -X #{package}.BuiltAt=#{built}"
+      flags =
+        "-s -w -X #{package}.ReleaseVersion=#{version} -X #{package}.SourceRevision=#{revision} -X #{package}.BuiltAt=#{built}"
+      return flags unless harness_runtime_sha256
+      unless harness_runtime_sha256.match?(/\A\h{64}\z/)
+        raise ArgumentError, "The harness runtime pin must be a SHA-256"
+      end
+      "#{flags} -X #{package}.HarnessRuntimeSHA256=#{harness_runtime_sha256}"
     end
+
+    # The release asset carrying one platform's prebuilt harness runtime
+    # (harness.RuntimeArchiveName).
+    def harness_runtime_archive(os, arch) = "dieter-harness-runtime-#{os}-#{arch}.tar.gz"
 
     # The stable notes: the CHANGELOG.md section of exactly this version.
     def changelog_section(text, version)
