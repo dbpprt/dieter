@@ -572,7 +572,7 @@ platform :ios do
         archive_path: Dieter.path("dist/ios/Dieter.xcarchive"),
         output_directory: Dieter.path("dist/ios"),
         output_name: "Dieter-iOS.ipa",
-        export_method: "app-store-connect",
+        export_method: "app-store",
         export_options: {
           signingStyle: "manual",
           teamID: team,
