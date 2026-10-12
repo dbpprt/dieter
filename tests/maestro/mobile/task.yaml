@@ -43,6 +43,21 @@ tags: [smoke]
     visible: "Mock harness received: Second turn.*"
     timeout: 300000
 # Review becomes available once the turn has settled, which trails its reply.
+# It is the last chip of a horizontally scrolling row and can sit past the
+# right edge on phones (for example once the context chip appears), so scroll
+# the row until it shows; on wider screens the swipes do nothing.
+- repeat:
+    while:
+      notVisible:
+        id: move-review
+    times: 15
+    commands:
+      - swipe:
+          from:
+            id: composer-chips
+          direction: LEFT
+      - waitForAnimationToEnd:
+          timeout: 2000
 - extendedWaitUntil:
     visible:
       id: move-review

@@ -74,6 +74,7 @@ internal fun Composer(
     ) {
         Row(
             Modifier.fillMaxWidth()
+                .testTag("composer-chips")
                 .horizontalScroll(rememberScrollState())
                 .padding(horizontal = ScreenMargin, vertical = 2.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),

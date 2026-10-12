@@ -89,9 +89,12 @@ class ManualClock(var current: Instant = Instant.parse("2026-09-30T12:00:00Z")) 
     override fun now(): Instant = current
 }
 
-/** Waits in real time for [flow] to satisfy [predicate]; end-to-end tests use a live fixture. */
+/**
+ * Waits in real time for [flow] to satisfy [predicate]; end-to-end tests use a live fixture. The
+ * default is a safety bound for loaded CI runners, not an expected duration.
+ */
 suspend fun <T> Flow<T>.await(
-    timeout: Duration = 20.seconds,
+    timeout: Duration = 60.seconds,
     describe: () -> String = { "condition" },
     predicate: (T) -> Boolean,
 ): T =
