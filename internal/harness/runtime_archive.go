@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -43,10 +44,13 @@ const (
 )
 
 // Size bounds of a downloaded archive (compressed) and of its regular file
-// contents. The darwin-arm64 archive is ~245 MB expanding to ~700 MB; Linux
-// archives carry more Bun variants. Variables so tests can exercise them.
+// contents. With the agent CLIs (October 2026) the darwin-arm64 archive is
+// ~690 MB expanding to ~2.0 GB in ~70,000 entries; linux-amd64 also carries
+// Claude Code's musl build and four Bun variants, ~1.03 GB expanding to
+// ~2.9 GB. GitHub release assets are limited to 2 GiB. Variables so tests can
+// exercise them.
 var (
-	maxRuntimeArchiveBytes    = int64(1 << 30)
+	maxRuntimeArchiveBytes    = int64(3 << 29)
 	maxRuntimeArchiveExpanded = int64(4 << 30)
 )
 
@@ -544,14 +548,43 @@ type RuntimeArchiveInfo struct {
 	Size          int64
 	SHA256        string
 	RuntimeDigest string
+	// Agents are the agent CLIs verified in the installed archive, by agent.
+	Agents map[string]RuntimeAgent
 }
+
+// RuntimeAgent is one agent CLI as the runtime's own check reports it: its
+// package and package-lock version, the CLI version it reports, and this
+// platform's native package.
+type RuntimeAgent struct {
+	Package        string `json:"package"`
+	PackageVersion string `json:"packageVersion"`
+	Version        string `json:"version"`
+	Native         string `json:"native"`
+}
+
+// runtimeAgents are the agents whose CLIs the runtime ships and their bridges
+// link instead of installing.
+var runtimeAgents = []string{"claude", "codex", "omp"}
 
 // BuildRuntimeArchive produces this platform's prebuilt runtime archive at
 // output. It installs the embedded runtime and the managed Bun package with
 // npm exactly as a source-built daemon does, writes the archive, and verifies
 // it by installing it into a scratch home through the daemon's archive path,
-// including Bun's postinstall and version check.
+// including Bun's postinstall and version check, and then running every agent
+// CLI from the installed runtime (verify-agents.mjs).
 func BuildRuntimeArchive(ctx context.Context, output string) (RuntimeArchiveInfo, error) {
+	return buildRuntimeArchive(ctx, output, func(ctx context.Context, sources map[string]string) error {
+		if err := npmInstallRuntime(ctx, sources[archiveHarnessTree]); err != nil {
+			return err
+		}
+		return npmInstallManagedBun(ctx, sources[archiveBunTree])
+	})
+}
+
+// buildRuntimeArchive is BuildRuntimeArchive with the install step supplied:
+// install populates each staged tree (tree name to directory) after the
+// embedded runtime sources are staged.
+func buildRuntimeArchive(ctx context.Context, output string, install func(context.Context, map[string]string) error) (RuntimeArchiveInfo, error) {
 	output, err := filepath.Abs(output)
 	if err != nil {
 		return RuntimeArchiveInfo{}, err
@@ -573,10 +606,7 @@ func BuildRuntimeArchive(ctx context.Context, output string) (RuntimeArchiveInfo
 	if err := stageRuntimeAssets(sources[archiveHarnessTree]); err != nil {
 		return RuntimeArchiveInfo{}, fmt.Errorf("stage AI SDK harness runtime: %w", err)
 	}
-	if err := npmInstallRuntime(ctx, sources[archiveHarnessTree]); err != nil {
-		return RuntimeArchiveInfo{}, err
-	}
-	if err := npmInstallManagedBun(ctx, sources[archiveBunTree]); err != nil {
+	if err := install(ctx, sources); err != nil {
 		return RuntimeArchiveInfo{}, err
 	}
 
@@ -605,23 +635,74 @@ func BuildRuntimeArchive(ctx context.Context, output string) (RuntimeArchiveInfo
 	if err := os.Chmod(file.Name(), 0o644); err != nil {
 		return RuntimeArchiveInfo{}, err
 	}
-
-	home := filepath.Join(work, "verify")
-	root := filepath.Join(home, "runtime", "harness")
-	if err := installRuntimeAtomically(ctx, root, filepath.Join(root, manifest.RuntimeDigest), manifest.RuntimeDigest, func(_ context.Context, stage string) error {
-		return extractRuntimeArchive(file.Name(), archiveHarnessTree, stage)
-	}); err != nil {
-		return RuntimeArchiveInfo{}, fmt.Errorf("verify the archive's harness runtime: %w", err)
-	}
-	if _, err := installArchiveBun(ctx, file.Name(), home); err != nil {
-		return RuntimeArchiveInfo{}, fmt.Errorf("verify the archive's managed Bun: %w", err)
-	}
+	// Release daemons refuse a larger download; never publish one. Verifying
+	// the archive below applies the entry and expanded-size bounds.
 	info, err := os.Stat(file.Name())
 	if err != nil {
 		return RuntimeArchiveInfo{}, err
 	}
+	if info.Size() > maxRuntimeArchiveBytes {
+		return RuntimeArchiveInfo{}, fmt.Errorf("archive is %d bytes; release daemons download at most %d", info.Size(), maxRuntimeArchiveBytes)
+	}
+
+	home := filepath.Join(work, "verify")
+	root := filepath.Join(home, "runtime", "harness")
+	installed := filepath.Join(root, manifest.RuntimeDigest)
+	if err := installRuntimeAtomically(ctx, root, installed, manifest.RuntimeDigest, func(_ context.Context, stage string) error {
+		return extractRuntimeArchive(file.Name(), archiveHarnessTree, stage)
+	}); err != nil {
+		return RuntimeArchiveInfo{}, fmt.Errorf("verify the archive's harness runtime: %w", err)
+	}
+	bunBin, err := installArchiveBun(ctx, file.Name(), home)
+	if err != nil {
+		return RuntimeArchiveInfo{}, fmt.Errorf("verify the archive's managed Bun: %w", err)
+	}
+	agents, err := verifyRuntimeAgents(ctx, installed, bunBin, filepath.Join(work, "agent-home"))
+	if err != nil {
+		return RuntimeArchiveInfo{}, fmt.Errorf("verify the archive's agent CLIs: %w", err)
+	}
 	if err := os.Rename(file.Name(), output); err != nil {
 		return RuntimeArchiveInfo{}, err
 	}
-	return RuntimeArchiveInfo{Path: output, Size: info.Size(), SHA256: hex.EncodeToString(hash.Sum(nil)), RuntimeDigest: manifest.RuntimeDigest}, nil
+	return RuntimeArchiveInfo{
+		Path: output, Size: info.Size(), SHA256: hex.EncodeToString(hash.Sum(nil)), RuntimeDigest: manifest.RuntimeDigest, Agents: agents,
+	}, nil
+}
+
+// verifyRuntimeAgents runs an installed runtime's own agent check with the
+// managed Bun on PATH and a scratch HOME: every agent CLI and this platform's
+// native package must be present and report the version package-lock.json
+// pins. npm runs no install scripts, and none of these packages needs one.
+func verifyRuntimeAgents(ctx context.Context, runtimeDir, bunBin, home string) (map[string]RuntimeAgent, error) {
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		return nil, err
+	}
+	command := exec.CommandContext(ctx, "node", filepath.Join(runtimeDir, "verify-agents.mjs"))
+	command.Dir = runtimeDir
+	command.Env = make([]string, 0, len(os.Environ())+2)
+	for _, item := range os.Environ() {
+		if name, _, _ := strings.Cut(item, "="); name != "HOME" && name != "PATH" {
+			command.Env = append(command.Env, item)
+		}
+	}
+	command.Env = append(command.Env, "HOME="+home, "PATH="+bunBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	output, err := command.Output()
+	if err != nil {
+		if message := strings.TrimSpace(stderr.String()); message != "" {
+			return nil, errors.New(message)
+		}
+		return nil, err
+	}
+	var agents map[string]RuntimeAgent
+	if err := json.Unmarshal(output, &agents); err != nil {
+		return nil, fmt.Errorf("decode agent check: %w", err)
+	}
+	for _, agent := range runtimeAgents {
+		if agents[agent].Version == "" || agents[agent].Native == "" {
+			return nil, fmt.Errorf("agent check did not verify %s", agent)
+		}
+	}
+	return agents, nil
 }

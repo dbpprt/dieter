@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/dbpprt/dieter/internal/harness"
@@ -33,7 +35,12 @@ func buildHarnessRuntimeArchive(args []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(output, "wrote %s (%d bytes, sha256 %s, harness runtime %s) in %s\n",
-		archive.Path, archive.Size, archive.SHA256, archive.RuntimeDigest, time.Since(started).Round(time.Second))
+	agents := make([]string, 0, len(archive.Agents))
+	for name, agent := range archive.Agents {
+		agents = append(agents, fmt.Sprintf("%s %s (%s@%s, %s)", name, agent.Version, agent.Package, agent.PackageVersion, agent.Native))
+	}
+	sort.Strings(agents)
+	_, err = fmt.Fprintf(output, "wrote %s (%d bytes, sha256 %s, harness runtime %s) in %s\nverified agents: %s\n",
+		archive.Path, archive.Size, archive.SHA256, archive.RuntimeDigest, time.Since(started).Round(time.Second), strings.Join(agents, "; "))
 	return err
 }

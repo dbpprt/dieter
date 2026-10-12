@@ -63,23 +63,28 @@ Changing that selection does not reconfigure the already-running turn.
 
 ## Runtime lifecycle
 
-The first catalog refresh or turn installs the exact locked OMP/DSH runtime under
-`DIETER_HOME`. Dieter also installs the pinned Bun executable required by OMP once
-per daemon home and shares it across content-addressed harness releases, so
-hosts need no global OMP or Bun installation. Published daemons take both from a
-prebuilt archive of their own release, verified against the SHA-256 built into
-the binary; daemons built from source install them with npm. Bootstrap installs revalidate npm
-package metadata, including on retries, so a cached package list cannot hide a
-newly published pinned dependency. Updating
-a separately installed global agent CLI does not update Dieter's bundled bridge
-or its advertised OMP catalog.
+The first catalog refresh or turn installs Dieter's harness runtime under
+`DIETER_HOME`. It contains the Claude Agent SDK with its Claude Code executable,
+Codex and OMP at the versions locked in Dieter's `package-lock.json`, which are
+their latest releases when Dieter is built. Each agent's bridge links its
+packages from that runtime on first use and checks that the CLI reports the
+locked version, so Claude Code, Codex and OMP never install anything from npm and
+hosts need no global installation of them. Pi runs inside the runtime itself.
+Dieter also installs the pinned Bun executable required by OMP once per daemon
+home and shares it across content-addressed harness releases. Published daemons
+take the runtime and Bun from a prebuilt archive of their own release, verified
+against the SHA-256 built into the binary; daemons built from source install them
+with npm. Updating a separately installed global agent CLI does not change the
+version Dieter runs or its advertised OMP catalog.
 Managed daemon updates prepare the new content-addressed runtime first; a turn
 already in flight remains pinned to its digest across recovery, and the next turn
 uses the current runtime.
 
-DSH is installed lazily through the ACP bootstrap at its tested version; a global
-`dsh` installation is not required. Use `dieter harness list` for the current
-provider configuration and `dieter doctor` for host diagnostics.
+DSH is installed lazily from npm through the ACP bootstrap at its tested version,
+so DSH hosts need npm; a global `dsh` installation is not required. Its bootstrap
+revalidates npm package metadata, so a cached package list cannot hide a newly
+published pinned dependency. Use `dieter harness list` for the current provider
+configuration and `dieter doctor` for host diagnostics.
 
 ## Background commands
 

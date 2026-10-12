@@ -67,8 +67,13 @@ so the CLI never links the daemon's storage or engine.
   managed Bun under `runtime/tools/bun`. A release daemon pins the SHA-256 of its
   platform's prebuilt archive (`buildinfo.HarnessRuntimeSHA256`), downloads it
   from its own release, checks its manifest against the embedded runtime digest
-  and lockfile, and extracts it; a source build runs `npm ci` instead. An active
-  turn keeps its runtime digest across restarts.
+  and lockfile, and extracts it; a source build runs `npm ci` instead. The
+  runtime's `package-lock.json` pins the agent CLIs (the Claude Agent SDK with
+  its Claude Code executable, Codex, OMP) and every package their AI SDK bridges
+  import. The Claude, Codex and OMP bridge bootstraps (`runtime-packages.mjs`)
+  link those packages into the shared bootstrap directory and check each CLI's
+  version and platform package instead of running npm; only DSH still installs
+  from npm. An active turn keeps its runtime digest across restarts.
 
 ## Shared metadata and peer replication
 

@@ -24,6 +24,9 @@ type runtimeManifest struct {
 	InstalledAt     string   `json:"installedAt"`
 }
 
+// requiredRuntimeFiles must exist in every installed runtime: the adapters,
+// the agent CLIs whose bridges link them from the runtime, and the packages
+// those bridges import. Platform packages are checked per agent at bootstrap.
 var requiredRuntimeFiles = []string{
 	"runner.mjs",
 	"package.json",
@@ -34,6 +37,11 @@ var requiredRuntimeFiles = []string{
 	"node_modules/@ai-sdk/harness-codex/dist/index.js",
 	"node_modules/@ai-sdk/harness-pi/dist/index.js",
 	"node_modules/@earendil-works/pi-coding-agent/dist/index.js",
+	"node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs",
+	"node_modules/@openai/codex/bin/codex.js",
+	"node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js",
+	"node_modules/@agentclientprotocol/sdk/package.json",
+	"node_modules/@modelcontextprotocol/sdk/package.json",
 }
 
 func embeddedRuntimeSourceFiles() []string {

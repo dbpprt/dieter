@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -81,6 +82,12 @@ func fixtureArchiveSources(t *testing.T) map[string]string {
 	t.Helper()
 	work := t.TempDir()
 	harnessDir, bunDir := filepath.Join(work, "harness"), filepath.Join(work, "bun")
+	writeFixtureArchiveTrees(t, harnessDir, bunDir)
+	return map[string]string{archiveHarnessTree: harnessDir, archiveBunTree: bunDir}
+}
+
+func writeFixtureArchiveTrees(t *testing.T, harnessDir, bunDir string) {
+	t.Helper()
 	for _, name := range requiredRuntimeFiles {
 		if strings.HasPrefix(name, "node_modules/") {
 			writeFixtureFile(t, filepath.Join(harnessDir, filepath.FromSlash(name)), "export {};\n", 0o644)
@@ -106,7 +113,6 @@ func fixtureArchiveSources(t *testing.T) map[string]string {
 	if err := os.Symlink("../bun/bin/bun.exe", filepath.Join(bunDir, "node_modules", ".bin", "bun")); err != nil {
 		t.Fatal(err)
 	}
-	return map[string]string{archiveHarnessTree: harnessDir, archiveBunTree: bunDir}
 }
 
 func fixtureArchive(t *testing.T, mutate func(*runtimeArchiveManifest)) []byte {
@@ -338,8 +344,9 @@ func TestPrepareRuntimeRejectsUnverifiedArchives(t *testing.T) {
 			manifest.BunVersion = "0.0.1"
 		}), want: "carries Bun 0.0.1"},
 	}
+	limit := maxRuntimeArchiveBytes
 	maxRuntimeArchiveBytes = int64(len(valid) + 1024)
-	t.Cleanup(func() { maxRuntimeArchiveBytes = 1 << 30 })
+	t.Cleanup(func() { maxRuntimeArchiveBytes = limit })
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
 			archiveFixtureCommands(t)
@@ -512,8 +519,9 @@ func TestExtractRuntimeArchiveRejectsUnsafeEntries(t *testing.T) {
 		}
 	})
 	t.Run("expanded size bound", func(t *testing.T) {
+		limit := maxRuntimeArchiveExpanded
 		maxRuntimeArchiveExpanded = 8
-		t.Cleanup(func() { maxRuntimeArchiveExpanded = 4 << 30 })
+		t.Cleanup(func() { maxRuntimeArchiveExpanded = limit })
 		big := archiveEntry{header: tar.Header{Name: "harness/node_modules/big", Typeflag: tar.TypeReg, Mode: 0o644}, contents: strings.Repeat("z", 9)}
 		if _, err := extractRawArchive(t, rawArchive(t, big), archiveHarnessTree); err == nil || !strings.Contains(err.Error(), "expands beyond") {
 			t.Fatalf("error=%v", err)
@@ -668,4 +676,139 @@ func mustGunzip(t *testing.T, body []byte) *gzip.Reader {
 		t.Fatal(err)
 	}
 	return reader
+}
+
+// nodeHost names this platform as Node does in its native package names.
+func nodeHost() string {
+	arch := runtime.GOARCH
+	if arch == "amd64" {
+		arch = "x64"
+	}
+	return runtime.GOOS + "-" + arch
+}
+
+// writeFixtureAgents installs stand-ins for the agent CLIs and this host's
+// native packages: each executable reports its version like the real one.
+func writeFixtureAgents(t *testing.T, harnessDir string) {
+	t.Helper()
+	modules := filepath.Join(harnessDir, "node_modules")
+	write := func(name, contents string, mode os.FileMode) {
+		path := filepath.Join(modules, filepath.FromSlash(name))
+		_ = os.Remove(path)
+		writeFixtureFile(t, path, contents, mode)
+	}
+	write("@anthropic-ai/claude-agent-sdk/package.json", `{"name":"@anthropic-ai/claude-agent-sdk","version":"0.9.9","claudeCodeVersion":"9.9.9"}`, 0o644)
+	claudeNatives := []string{"@anthropic-ai/claude-agent-sdk-" + nodeHost()}
+	if runtime.GOOS == "linux" {
+		// npm installs both libc variants on Linux; the check picks the host's.
+		claudeNatives = append(claudeNatives, claudeNatives[0]+"-musl")
+	}
+	for _, native := range claudeNatives {
+		write(native+"/package.json", `{"version":"0.9.9"}`, 0o644)
+		write(native+"/claude", "#!/bin/sh\nprintf '9.9.9 (Claude Code)\\n'\n", 0o755)
+	}
+	write("@openai/codex/package.json", `{"name":"@openai/codex","version":"1.2.3"}`, 0o644)
+	write("@openai/codex/bin/codex.js", "console.log('codex-cli 1.2.3');\n", 0o644)
+	write("@openai/codex-"+nodeHost()+"/package.json", `{"version":"1.2.3"}`, 0o644)
+	write("@oh-my-pi/pi-coding-agent/package.json", `{"name":"@oh-my-pi/pi-coding-agent","version":"7.8.9","bin":{"omp":"dist/cli.js"}}`, 0o644)
+	write("@oh-my-pi/pi-coding-agent/dist/cli.js", "#!/bin/sh\nprintf 'omp/7.8.9\\n'\n", 0o755)
+	write("@oh-my-pi/pi-natives/package.json", `{"version":"7.8.9"}`, 0o644)
+	write("@oh-my-pi/pi-natives-"+nodeHost()+"/package.json", `{"version":"7.8.9"}`, 0o644)
+	if err := os.Symlink("../@oh-my-pi/pi-coding-agent/dist/cli.js", filepath.Join(modules, ".bin", "omp")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// archiveBuildFixtureCommands is archiveFixtureCommands with a node that runs
+// every other script with the real Node.js, for the runtime's agent check.
+func archiveBuildFixtureCommands(t *testing.T) {
+	t.Helper()
+	realNode, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("Node.js is not installed")
+	}
+	archiveFixtureCommands(t)
+	bin := filepath.SplitList(os.Getenv("PATH"))[0]
+	node := `#!/bin/sh
+set -eu
+if [ "$1" = "--version" ]; then printf 'v22.19.0\n'; exit 0; fi
+if [ "$1" = "node_modules/bun/install.js" ]; then
+  /bin/mv -f node_modules/@oven/bun-test/bin/bun node_modules/bun/bin/bun.exe
+  exit 0
+fi
+exec ` + realNode + ` "$@"
+`
+	if err := os.WriteFile(filepath.Join(bin, "node"), []byte(node), 0o700); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBuildRuntimeArchiveVerifiesEveryAgentCLI(t *testing.T) {
+	archiveBuildFixtureCommands(t)
+	output := filepath.Join(t.TempDir(), RuntimeArchiveName(runtime.GOOS, runtime.GOARCH))
+	info, err := buildRuntimeArchive(context.Background(), output, func(_ context.Context, sources map[string]string) error {
+		writeFixtureArchiveTrees(t, sources[archiveHarnessTree], sources[archiveBunTree])
+		writeFixtureAgents(t, sources[archiveHarnessTree])
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]RuntimeAgent{
+		"claude": {Package: "@anthropic-ai/claude-agent-sdk", PackageVersion: "0.9.9", Version: "9.9.9", Native: "@anthropic-ai/claude-agent-sdk-" + nodeHost()},
+		"codex":  {Package: "@openai/codex", PackageVersion: "1.2.3", Version: "1.2.3", Native: "@openai/codex-" + nodeHost()},
+		"omp":    {Package: "@oh-my-pi/pi-coding-agent", PackageVersion: "7.8.9", Version: "7.8.9", Native: "@oh-my-pi/pi-natives-" + nodeHost()},
+	}
+	if len(info.Agents) != len(want) {
+		t.Fatalf("agents=%#v", info.Agents)
+	}
+	for name, agent := range want {
+		if info.Agents[name] != agent {
+			t.Fatalf("%s=%#v want %#v", name, info.Agents[name], agent)
+		}
+	}
+	if stat, err := os.Stat(output); err != nil || stat.Size() != info.Size {
+		t.Fatalf("archive stat=%v err=%v info=%#v", stat, err, info)
+	}
+}
+
+func TestBuildRuntimeArchiveRejectsAMissingNativeAgentPackage(t *testing.T) {
+	archiveBuildFixtureCommands(t)
+	output := filepath.Join(t.TempDir(), RuntimeArchiveName(runtime.GOOS, runtime.GOARCH))
+	_, err := buildRuntimeArchive(context.Background(), output, func(_ context.Context, sources map[string]string) error {
+		writeFixtureArchiveTrees(t, sources[archiveHarnessTree], sources[archiveBunTree])
+		writeFixtureAgents(t, sources[archiveHarnessTree])
+		matches, _ := filepath.Glob(filepath.Join(sources[archiveHarnessTree], "node_modules", "@anthropic-ai", "claude-agent-sdk-*"))
+		for _, match := range matches {
+			if err := os.RemoveAll(match); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "verify the archive's agent CLIs: Claude Code needs @anthropic-ai/claude-agent-sdk-"+nodeHost()) {
+		t.Fatalf("error=%v", err)
+	}
+	if _, statErr := os.Stat(output); !errors.Is(statErr, fs.ErrNotExist) {
+		t.Fatalf("a failed build published %s: %v", output, statErr)
+	}
+}
+
+func TestBuildRuntimeArchiveRefusesAnArchiveDaemonsWouldReject(t *testing.T) {
+	archiveBuildFixtureCommands(t)
+	limit := maxRuntimeArchiveBytes
+	maxRuntimeArchiveBytes = 1024
+	t.Cleanup(func() { maxRuntimeArchiveBytes = limit })
+	output := filepath.Join(t.TempDir(), RuntimeArchiveName(runtime.GOOS, runtime.GOARCH))
+	_, err := buildRuntimeArchive(context.Background(), output, func(_ context.Context, sources map[string]string) error {
+		writeFixtureArchiveTrees(t, sources[archiveHarnessTree], sources[archiveBunTree])
+		writeFixtureAgents(t, sources[archiveHarnessTree])
+		return nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "release daemons download at most 1024") {
+		t.Fatalf("error=%v", err)
+	}
+	if _, statErr := os.Stat(output); !errors.Is(statErr, fs.ErrNotExist) {
+		t.Fatalf("an oversized build published %s: %v", output, statErr)
+	}
 }

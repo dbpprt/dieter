@@ -9,15 +9,19 @@
     "test": "node --test *.test.mjs"
   },
   "dependencies": {
-    "@ai-sdk/harness": "1.0.147",
-    "@ai-sdk/harness-acp": "1.0.86",
-    "@ai-sdk/harness-claude-code": "1.0.151",
-    "@ai-sdk/harness-codex": "1.0.149",
-    "@ai-sdk/harness-pi": "1.0.149",
-    "@openai/codex": "0.162.0",
-    "ai": "7.0.136",
+    "@agentclientprotocol/sdk": "1.8.0",
+    "@ai-sdk/harness": "1.0.148",
+    "@ai-sdk/harness-acp": "1.0.87",
+    "@ai-sdk/harness-claude-code": "1.0.152",
+    "@ai-sdk/harness-codex": "1.0.150",
+    "@ai-sdk/harness-pi": "1.0.150",
+    "@anthropic-ai/claude-agent-sdk": "0.3.296",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "@oh-my-pi/pi-coding-agent": "18.10.1",
+    "@openai/codex": "0.162.1",
+    "ai": "7.0.137",
     "smol-toml": "1.9.1",
     "ws": "8.22.0",
-    "zod": "4.6.5"
+    "zod": "4.6.6"
   }
 }

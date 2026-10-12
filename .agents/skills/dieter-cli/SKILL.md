@@ -116,16 +116,16 @@ response before the local credential is saved can be retried; do not guess
 whether the server committed or edit `identity.json` or gateway SQLite.
 Different keys or accounts require a separate audited recovery process.
 
-`dieter harness list` returns the selected machine's catalog. OMP discovery uses
-the same Dieter-pinned OMP build as new turns, not a separately installed global
-`omp`, and exposes only GPT-6 Luna, Sol, and Astra. The
-first OMP catalog refresh can install that pinned build and Dieter's pinned Bun;
+`dieter harness list` returns the selected machine's catalog. OMP discovery runs
+the OMP build in Dieter's harness runtime, the same as new turns, not a separately
+installed global `omp`, and exposes only GPT-6 Luna, Sol, and Astra. The
+first OMP catalog refresh can install that runtime and Dieter's pinned Bun;
 later refreshes reuse them. New turns pass the selected model at OMP launch rather
-than relying on OMP's narrower ACP cycling-model option; old durable sessions
-retain bounded resume compatibility.
-OMP bootstrap installs revalidate npm metadata even when the host prefers offline
-cache reads. OMP's bounded publication retries therefore observe newly published
-dependencies while retaining the exact pinned version and saved session.
+than relying on OMP's narrower ACP cycling-model option.
+Claude Code, Codex and OMP run at the versions in the runtime's
+`package-lock.json`; their bridges link them from the runtime and never run npm,
+so a release daemon host needs no npm (`dieter doctor` reports it as optional).
+Only DSH still installs from npm on first use.
 
 Provider quotas are scoped to the enrolled daemon's gateway account, not one
 daemon. Do not pass global `--machine`:

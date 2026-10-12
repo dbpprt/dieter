@@ -2,32 +2,42 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
-import { mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCodex } from "@ai-sdk/harness-codex";
 import { createSubagentCapabilityCollector, observeHarnessCapabilities } from "./capabilities.mjs";
 import { createLocalCodex } from "./codex-runtime.mjs";
+import { runtimePackageVersion } from "./runtime-packages.mjs";
 
 const runtimeRoot = dirname(fileURLToPath(import.meta.url));
 
-test("Codex bootstrap links the locked runtime CLI offline without changing the adapter bridge", async () => {
+test("Codex bootstrap links the runtime's locked CLI without a package manager or bridge changes", async () => {
   const original = await createCodex().getBootstrap();
   const recipe = await createLocalCodex({
     model: "gpt-6-astra",
     reasoningEffort: "ultra",
   }).getBootstrap();
   const manifest = JSON.parse(
-    recipe.files.find((file) => file.path.endsWith("/package.json")).content,
+    recipe.files.find((file) => file.path === `${recipe.bootstrapDir}/package.json`).content,
   );
-  const codexPath = manifest.dependencies["@openai/codex"].replace(/^file:/, "");
-  const codex = JSON.parse(await readFile(join(codexPath, "package.json"), "utf8"));
-  const runtime = JSON.parse(await readFile(join(runtimeRoot, "package.json"), "utf8"));
-  assert.equal(codex.version, runtime.dependencies["@openai/codex"]);
-  assert.match(manifest.dependencies.ws, /^file:/);
-  assert.match(recipe.commands[0].command, /--offline/);
-  assert.match(recipe.commands[0].command, /--ignore-scripts/);
+  const lock = JSON.parse(await readFile(join(runtimeRoot, "package-lock.json"), "utf8"));
+  assert.equal(
+    manifest.dependencies["@openai/codex"],
+    lock.packages["node_modules/@openai/codex"].version,
+  );
+  assert.equal(manifest.dependencies.ws, lock.packages["node_modules/ws"].version);
+  assert.deepEqual(recipe.commands, [{ command: "node dieter-runtime-link.mjs" }]);
   assert(!recipe.files.some((file) => file.path.endsWith("pnpm-lock.yaml")));
   assert.equal(
     recipe.files.find((file) => file.path.endsWith("/bridge.mjs")).content,
@@ -44,43 +54,45 @@ test("Codex bootstrap links the locked runtime CLI offline without changing the 
   assert.match(bridge, /send\(\{ type: "raw", rawValue: event \}\)/);
 });
 
-test("Codex bootstrap fails instead of marking links to a removed runtime", async () => {
+test("Codex bootstrap replaces links into a removed runtime before it is marked", async (t) => {
   const recipe = await createLocalCodex().getBootstrap();
-  const manifest = JSON.parse(
-    recipe.files.find((file) => file.path.endsWith("/package.json")).content,
-  );
-  const verify = recipe.commands.at(-1).command;
-  const base = await mkdtemp(join(tmpdir(), "dieter-codex-bootstrap-"));
-  try {
-    const run = () =>
-      new Promise((resolve, reject) => {
-        const child = spawn("/bin/sh", ["-c", verify], {
-          cwd: base,
-          stdio: ["ignore", "ignore", "pipe"],
-        });
-        let stderr = "";
-        child.stderr.on("data", (chunk) => {
-          stderr += chunk;
-        });
-        child.once("error", reject);
-        child.once("exit", (code) => resolve({ code, stderr }));
-      });
-    await mkdir(join(base, "node_modules", "@openai"), { recursive: true });
-    await symlink(
-      manifest.dependencies["@openai/codex"].replace(/^file:/, ""),
-      join(base, "node_modules", "@openai", "codex"),
-    );
-    await symlink(join(base, "removed-runtime", "ws"), join(base, "node_modules", "ws"));
-    const stale = await run();
-    assert.equal(stale.code, 1);
-    assert.match(stale.stderr, /node_modules\/ws does not resolve to/);
-
-    await rm(join(base, "node_modules", "ws"));
-    await symlink(manifest.dependencies.ws.replace(/^file:/, ""), join(base, "node_modules", "ws"));
-    assert.equal((await run()).code, 0);
-  } finally {
-    await rm(base, { recursive: true, force: true });
+  const base = await realpath(await mkdtemp(join(tmpdir(), "dieter-codex-bootstrap-")));
+  t.after(() => rm(base, { recursive: true, force: true }));
+  for (const file of recipe.files) {
+    const path = join(base, file.path.slice(recipe.bootstrapDir.length + 1));
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, file.content);
   }
+  // What an interrupted relink of an older bootstrap left behind.
+  await mkdir(join(base, "node_modules", "@openai"), { recursive: true });
+  await symlink(
+    join(base, "removed-runtime", "codex"),
+    join(base, "node_modules", "@openai", "codex"),
+  );
+  await symlink(join(base, "removed-runtime", "ws"), join(base, "node_modules", "ws"));
+  const run = () =>
+    new Promise((resolve, reject) => {
+      const child = spawn("/bin/sh", ["-c", recipe.commands[0].command], {
+        cwd: base,
+        stdio: ["ignore", "ignore", "pipe"],
+      });
+      let stderr = "";
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk;
+      });
+      child.once("error", reject);
+      child.once("exit", (code) => resolve({ code, stderr }));
+    });
+  const linked = await run();
+  assert.equal(linked.code, 0, linked.stderr);
+  assert.equal(
+    await realpath(join(base, "node_modules", "@openai", "codex")),
+    await realpath(join(runtimeRoot, "node_modules", "@openai", "codex")),
+  );
+  assert.equal(
+    await realpath(join(base, "node_modules", "ws")),
+    await realpath(join(runtimeRoot, "node_modules", "ws")),
+  );
 });
 
 test(
@@ -113,7 +125,7 @@ test(
       server.close();
     });
     // Only disposable credentials and temporary provider state reach this child.
-    // npm bootstrap is offline; inference can only reach the loopback fixture.
+    // Bootstrap links the runtime's packages; inference reaches only the fixture.
     const environment = {
       PATH: process.env.PATH,
       HOME: root,
@@ -196,12 +208,11 @@ test(
           .map((line) => JSON.parse(line)),
       );
     }
-    const runtime = JSON.parse(await readFile(join(runtimeRoot, "package.json"), "utf8"));
     assert(
       records.some(
         (record) =>
           record.type === "session_meta" &&
-          record.payload.cli_version === runtime.dependencies["@openai/codex"],
+          record.payload.cli_version === runtimePackageVersion("@openai/codex"),
       ),
     );
     const turns = records

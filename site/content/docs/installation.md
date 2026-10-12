@@ -19,15 +19,17 @@ host work, or install just a client when your agents run on another machine.
 | Screen host    | With OS permissions | Active X11 / Wayland desktop | —          | —             |
 | Gateway        | Source build        | Published image and binaries | —          | —             |
 
-Each daemon host needs **Node.js 22.19+**, **npm**, **Git**, and a configured
+Each daemon host needs **Node.js 22.19+**, **Git**, and a configured
 [harness account](/docs/harnesses/). Install **tmux** if terminals should survive
-daemon restarts. Published binaries do not require Go or `just`.
+daemon restarts. Published binaries do not require Go, `just` or npm; only the
+[DSH harness](/docs/harnesses/#runtime-lifecycle) still installs from npm.
 
 A published daemon downloads its prebuilt harness runtime from its own release on
 first use (`dieter-harness-runtime-<os>-<arch>.tar.gz`) and installs it only if it
 matches the SHA-256 built into the binary. Hosts behind a proxy need `HTTPS_PROXY`
-in the daemon's environment. npm still installs each agent's provider bridge the
-first time that agent runs.
+in the daemon's environment. The runtime contains the Claude Code, Codex and OMP
+command-line agents at the versions the release pins; each agent links them from
+the runtime the first time it runs instead of installing anything.
 
 ## macOS
 
@@ -63,9 +65,11 @@ guide. Recheck the host with `dieter daemon permissions --check`.
 
 ## Linux
 
-Use a systemd user session. Install Node.js 22.19+, npm, Git, and
+Use a systemd user session. Install Node.js 22.19+, Git, and
 [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) first;
-`tmux` is recommended. Then:
+`tmux` is recommended, and npm only if you use DSH. Release runtimes are built
+for glibc Linux; on musl Linux, OMP turns fail because OMP publishes no musl
+native addon. Then:
 
 ```sh
 curl -fsSL https://github.com/dbpprt/dieter/releases/latest/download/install.sh | sh
@@ -143,7 +147,8 @@ just build          # bin/dieter and bin/dieter-gateway
 ```
 
 A daemon built from source installs its harness runtime with `npm ci` on first
-use. [Development](/docs/development/) links the per-component build guides,
+use; its agents then link their command-line tools from that runtime exactly as a
+published daemon's do. [Development](/docs/development/) links the per-component build guides,
 including the Mac, iOS and Android apps.
 
 ## Uninstall

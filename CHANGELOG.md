@@ -8,7 +8,20 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
-Nothing yet.
+### Changed
+
+- Claude Code, Codex and OMP now run at the latest versions Dieter ships with
+  instead of the versions the AI SDK adapters pin: Claude Code 2.1.296 (Claude
+  Agent SDK 0.3.296), Codex 0.162.1 and OMP 18.10.1. Updates follow each release.
+- Release daemons no longer need npm. The prebuilt harness runtime now includes
+  the Claude Code, Codex and OMP command-line tools, and an agent's first turn
+  links them instead of installing them with npm. Only the DeepSeek Harness
+  (DSH) still installs from npm, and daemons built from source still install
+  their runtime with npm. The runtime download grows accordingly, to about
+  600 MB on macOS and about 1 GB on Linux.
+- OMP and DSH conversations started before this update cannot continue: the
+  updated agent adapter no longer accepts their saved session. Start a new
+  conversation for them.
 
 ## 0.5.405
 

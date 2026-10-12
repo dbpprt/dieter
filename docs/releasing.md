@@ -44,17 +44,28 @@ for Linux amd64/arm64, the signed gateway container image and deployment bundle,
 the notarized Mac app, `Dieter-Android.apk`, the iOS build in TestFlight, the
 installer script, and `SHA256SUMS` with its signature.
 
-Release daemons never run npm to install their harness runtime. On each daemon
-platform the builder first runs `dieter __harness-runtime-archive` from a
-development build of the same source: it installs the embedded runtime
-(`npm ci --omit=dev --ignore-scripts`) and the managed Bun package exactly as a
-daemon built from source would, writes
+Release daemons never run npm to install their harness runtime or their
+Claude Code, Codex and OMP bridges. On each daemon platform the builder first
+runs `dieter __harness-runtime-archive` from a development build of the same
+source: it installs the embedded runtime (`npm ci --omit=dev --ignore-scripts`)
+and the managed Bun package exactly as a daemon built from source would, writes
 `dieter-harness-runtime-<os>-<arch>.tar.gz` (sorted entries, fixed times, root
 ownership, normalized modes, and a manifest naming the runtime digest and the
-`package-lock.json` SHA-256), and verifies it by installing it. The release
-daemon is then linked with the archive's SHA-256 (`Dieter::Release.ldflags`) and
+`package-lock.json` SHA-256), and verifies it by installing it and running each
+agent CLI from it (`verify-agents.mjs`: the build host's native package must be
+present and every CLI must report its locked version). The archive therefore
+carries the agent CLIs and their platform executables; none of them needs an
+install script. Linux archives are built on glibc runners: npm adds the Claude
+Code musl executable there too, while OMP has no musl build. The release daemon
+is then linked with the archive's SHA-256 (`Dieter::Release.ldflags`) and
 downloads exactly that file from its own release. Removing or replacing a
 published archive breaks first runs and updates of that release.
+
+The agent versions live only in `internal/harness/runtime/package.json` and its
+lockfile. Dependabot raises the agents group (`@anthropic-ai/*`,
+`@openai/codex`, `@oh-my-pi/*`, `@ai-sdk/*`, `ai`) to the latest releases daily
+and merges it when CI passes, so each nightly ships the current CLIs; the
+runtime tests fail a bump whose bridges need a package the runtime does not ship.
 
 ## Signing identity
 

@@ -228,12 +228,14 @@ it.
   build provenance and an SBOM; `deploy/gateway/scripts/bundle.py verify`
   checks them.
 - **Dependencies.** Go modules are checksum-verified (`go.sum`); the harness
-  runtime installs from `package-lock.json` with integrity hashes and pinned
-  OMP/DSH/Bun versions; vendored Swift packages live in `third_party/` with their
-  patches documented; GitHub Actions are pinned by commit SHA.
+  runtime installs from `package-lock.json` with integrity hashes, including the
+  Claude Code, Codex and OMP CLIs that agent bridges link instead of installing,
+  and pinned DSH/Bun versions; vendored Swift packages live in `third_party/`
+  with their patches documented; GitHub Actions are pinned by commit SHA.
 
 **Residual risk:** npm and other registries remain upstream trust roots for the
-harness runtime that daemons install on first use.
+harness runtime that release builders and source-built daemons install, and for
+DSH, which daemons install on first use.
 
 ## Non-goals
 

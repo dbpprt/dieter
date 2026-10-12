@@ -208,16 +208,8 @@ const [
   { z },
   { createLocalCodex },
   { createLocalClaudeCode },
-  {
-    codexConfig,
-    dshACPArgs,
-    dshPackageVersion,
-    ompACPArgs,
-    ompACPModelMapping,
-    ompImplementations,
-    ompPackageVersion,
-    ompRuntimeConfig,
-  },
+  { codexConfig, dshACPArgs, dshPackageVersion, ompACPArgs, ompRuntimeConfig },
+  { createLocalOMP, ompSource },
   { harnessDiagnosticErrorMessage },
   { createContentPresentationTool, contentPresentationInstructions },
   { createBackgroundProcessTools, backgroundProcessInstructions },
@@ -225,7 +217,6 @@ const [
   { createClaudeTurnSummary, observeClaudeTurnChunk, retryEmptyClaudeResume },
   {
     createOMPLaunchCandidates,
-    createOMPSessionWithBootstrapRetry,
     createOMPSessionWithCompatibility,
     prepareOMPConfig,
     prepareOMPHookPaths,
@@ -240,6 +231,7 @@ const [
   import("./codex-runtime.mjs"),
   import("./claude-runtime.mjs"),
   import("./provider-options.mjs"),
+  import("./omp-runtime.mjs"),
   import("./harness-errors.mjs"),
   import("./content-presentation.mjs"),
   import("./background-processes.mjs"),
@@ -250,7 +242,6 @@ const [
 
 let harness;
 let ompSettingsForCandidate;
-let ompInitialCandidate;
 let ompHookPaths;
 let ompConfigPath;
 switch (adapter) {
@@ -279,16 +270,11 @@ switch (adapter) {
       capabilityCollector.consumeOMPEnvelope(event),
     );
     process.env.DIETER_OMP_CAPABILITY_FILE = capabilityFile;
-    ompSettingsForCandidate = ({ packageVersion, modelStrategy, hookPath, configPath }) => ({
+    ompSettingsForCandidate = ({ hookPath, configPath }) => ({
       harnessId: "omp",
-      source: {
-        type: "npm-simple",
-        packageName: "@oh-my-pi/pi-coding-agent",
-        packageVersion,
-      },
+      source: ompSource(),
       executable: "omp",
-      args: ompACPArgs(request, hookPath, configPath, modelStrategy),
-      ...(modelStrategy === "session-config-option" ? { modelMapping: ompACPModelMapping } : {}),
+      args: ompACPArgs(request, hookPath, configPath),
       forwardEnv: [
         "HOME",
         "PI_CODING_AGENT_DIR",
@@ -306,12 +292,9 @@ switch (adapter) {
       runtimeRoot: request.runtimeRoot,
       content: ompRuntimeConfig(),
     });
-    ompInitialCandidate = {
-      ...ompImplementations[0],
-      hookPath: ompHookPaths[0],
-      configPath: ompConfigPath,
-    };
-    harness = createACP(ompSettingsForCandidate(ompInitialCandidate));
+    harness = createLocalOMP(
+      ompSettingsForCandidate({ hookPath: ompHookPaths[0], configPath: ompConfigPath }),
+    );
     break;
   }
   case "dsh-acp": {
@@ -462,22 +445,13 @@ try {
       permissionMode: "allow-all",
       sandboxConfig: { workDir: sandboxWorkDir },
     });
-  let agent = createAgent(
-    harness,
-    ompInitialCandidate?.modelStrategy === "launch-argument"
-      ? undefined
-      : request.model || undefined,
-  );
+  // OMP receives its model as a launch argument (ompACPArgs).
+  let agent = createAgent(harness, adapter === "omp-acp" ? undefined : request.model || undefined);
   const sessionOptions = { sessionId: request.sessionId, abortSignal: controller.signal };
   const incompleteACPSession =
     (adapter === "omp-acp" || adapter === "dsh-acp") &&
     request.session &&
     !request.session.data?.acpSessionId;
-  const logOMPBootstrapRetry = ({ attempt, maxAttempts, delayMs, packageVersion }) => {
-    console.error(
-      `OMP ${packageVersion} bootstrap is not fully available from npm; retrying session creation (${attempt + 1}/${maxAttempts}) in ${delayMs}ms`,
-    );
-  };
   if (request.continue && request.session?.continueFrom) {
     sessionOptions.continueFrom = request.session.continueFrom;
   } else if (request.session && !incompleteACPSession) {
@@ -493,11 +467,7 @@ try {
       sessionOptions.resumeFrom?.continueFrom ??
       sessionOptions.resumeFrom;
     const candidates = prioritizeOMPLaunchCandidates({
-      candidates: createOMPLaunchCandidates({
-        hookPaths: ompHookPaths,
-        configPath: ompConfigPath,
-        implementations: ompImplementations,
-      }),
+      candidates: createOMPLaunchCandidates({ hookPaths: ompHookPaths, configPath: ompConfigPath }),
       lifecycleState,
       settingsForCandidate: ompSettingsForCandidate,
       acpPackageVersion,
@@ -505,34 +475,16 @@ try {
     const resumed = await createOMPSessionWithCompatibility({
       candidates,
       createAgent: (candidate) =>
-        createAgent(
-          createACP(ompSettingsForCandidate(candidate)),
-          candidate.modelStrategy === "launch-argument" ? undefined : request.model || undefined,
-        ),
+        createAgent(createLocalOMP(ompSettingsForCandidate(candidate)), undefined),
       sessionOptions,
-      onBootstrapRetry: logOMPBootstrapRetry,
     });
-    if (
-      resumed.candidate.packageVersion !== ompPackageVersion ||
-      resumed.candidate.hookPath !== ompHookPaths[0] ||
-      resumed.candidate.configPath == null
-    ) {
-      console.error(
-        `resumed OMP lifecycle with compatible ${resumed.candidate.packageVersion} launch ${resumed.candidate.hookPath}`,
-      );
+    if (resumed.candidate.hookPath !== ompHookPaths[0] || resumed.candidate.configPath == null) {
+      console.error(`resumed OMP lifecycle with compatible launch ${resumed.candidate.hookPath}`);
     }
     agent = resumed.agent;
     session = resumed.session;
   } else {
-    session =
-      adapter === "omp-acp"
-        ? await createOMPSessionWithBootstrapRetry({
-            createSession: (options) => agent.createSession(options),
-            packageVersion: ompInitialCandidate.packageVersion,
-            sessionOptions,
-            onRetry: logOMPBootstrapRetry,
-          })
-        : await agent.createSession(sessionOptions);
+    session = await agent.createSession(sessionOptions);
   }
   const createdAt = new Date().toISOString();
   const contextWindowTokens =

@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dbpprt/dieter/internal/platform/buildinfo"
 )
 
 type doctorCheck struct {
@@ -39,7 +41,7 @@ durability dependencies. Doctor is read-only and does not initialize storage.
 	checks := []doctorCheck{
 		commandDoctorCheck("git", true, "--version", nil),
 		commandDoctorCheck("node", true, "--version", nodeVersionSupported),
-		commandDoctorCheck("npm", true, "--version", nil),
+		npmDoctorCheck(strings.TrimSpace(buildinfo.HarnessRuntimeSHA256) == ""),
 		commandDoctorCheck("tmux", false, "-V", nil),
 		commandDoctorCheck("xdg-open", false, "--help", nil),
 	}
@@ -112,6 +114,17 @@ durability dependencies. Doctor is read-only and does not initialize storage.
 		return errors.New("required local prerequisites are unavailable")
 	}
 	return nil
+}
+
+// npmDoctorCheck requires npm only of a source build, which installs its
+// harness runtime with npm. A release binary installs its pinned prebuilt
+// runtime, whose agents link their CLIs from it; only DSH still uses npm.
+func npmDoctorCheck(sourceBuild bool) doctorCheck {
+	check := commandDoctorCheck("npm", sourceBuild, "--version", nil)
+	if check.Status == "warning" {
+		check.Detail += "; only the DSH harness needs npm"
+	}
+	return check
 }
 
 func commandDoctorCheck(name string, required bool, argument string, validate func(string) error) doctorCheck {
