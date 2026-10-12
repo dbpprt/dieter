@@ -282,9 +282,8 @@ class WorkspaceStoreTest {
         override val cardId: String,
         val change: (Card) -> Card,
         val done: (Card) -> Boolean,
+        override val operationId: String = "op_$cardId",
     ) : CardOverlay {
-        override val operationId = "op_$cardId"
-
         override fun apply(card: Card) = change(card)
 
         override fun satisfiedBy(card: Card) = done(card)
@@ -320,6 +319,24 @@ class WorkspaceStoreTest {
             loaded = true,
         )
         assertEquals("running", store.state.value.card("c_new")?.lane)
+    }
+
+    @Test
+    fun aRestoreShowsTheCardWhenTheViewNeverListedItArchived() {
+        val card = Card(id = "c_1", project_id = "p_1", board_id = "b_1", title = "Kept")
+        val store = storeWith(directory(cards = listOf(card)))
+        store.addOverlay(Overlay("c_1", { it.copy(archived = true) }, { it.archived }, "archive"))
+        store.addOverlay(
+            Overlay("c_1", { it.copy(title = "New") }, { it.title == "New" }, "rename")
+        )
+        store.confirmOverlay("archive")
+        // The stream coalesced the archive and the restore: the card never left the view.
+        store.applyDirectory(directory(cards = listOf(card.copy(updated_at = t2))), loaded = true)
+        assertNull(store.state.value.card("c_1"))
+
+        store.dropArchive("c_1")
+        assertEquals("New", store.state.value.card("c_1")?.title, "other changes stay")
+        assertEquals(setOf("rename"), store.overlayIds.value)
     }
 
     @Test
