@@ -112,15 +112,16 @@ built-in actions (`fastlane/Fastfile`); run a lane locally with
 ## Repository configuration
 
 Publishing jobs run only in the upstream repository; forks build but do not
-publish. Signing secrets are available only to the jobs that sign for their
-domain. Names, not values:
+publish. Each signing domain's secrets live in its GitHub environment, which
+only `main` may use, so only the jobs that sign for that domain see them; there
+are no repository-level signing secrets. Names, not values:
 
-| Domain   | Secrets                                                                                                                                                                                                                                                                |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| macOS    | `MACOS_DEVELOPER_ID_CERTIFICATE_BASE64`, `MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD`, `MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_BASE64`, `MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_PASSWORD`, `MACOS_NOTARY_KEY_ID`, `MACOS_NOTARY_ISSUER_ID`, `MACOS_NOTARY_KEY_BASE64` |
-| iOS      | `IOS_APP_STORE_CONNECT_KEY_ID`, `IOS_APP_STORE_CONNECT_ISSUER_ID`, `IOS_APP_STORE_CONNECT_KEY_BASE64`, `IOS_DISTRIBUTION_CERTIFICATE_BASE64`, `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD`, `IOS_PROVISIONING_PROFILE_BASE64`, `IOS_SHARE_PROVISIONING_PROFILE_BASE64`      |
-| Android  | `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`                                                                                                                                                                    |
-| Homebrew | `HOMEBREW_TAP_TOKEN`                                                                                                                                                                                                                                                   |
+| Domain (environment)        | Secrets                                                                                                                                                                                                                                                                |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| macOS (`apple-signing`)     | `MACOS_DEVELOPER_ID_CERTIFICATE_BASE64`, `MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD`, `MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_BASE64`, `MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_PASSWORD`, `MACOS_NOTARY_KEY_ID`, `MACOS_NOTARY_ISSUER_ID`, `MACOS_NOTARY_KEY_BASE64` |
+| iOS (`apple-signing`)       | `IOS_APP_STORE_CONNECT_KEY_ID`, `IOS_APP_STORE_CONNECT_ISSUER_ID`, `IOS_APP_STORE_CONNECT_KEY_BASE64`, `IOS_DISTRIBUTION_CERTIFICATE_BASE64`, `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD`, `IOS_PROVISIONING_PROFILE_BASE64`, `IOS_SHARE_PROVISIONING_PROFILE_BASE64`      |
+| Android (`android-signing`) | `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`                                                                                                                                                                    |
+| Homebrew (`stable-release`) | `HOMEBREW_TAP_TOKEN`                                                                                                                                                                                                                                                   |
 
 Protected environments: `stable-release` (promotion) and `gateway-production`
 (gateway deployment preparation). Configure required reviewers on both. Branch
