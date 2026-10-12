@@ -1171,36 +1171,38 @@ lane :promote do |options|
   notes = Dieter::Release.changelog_section(File.read(Dieter.path("CHANGELOG.md")), version)
   directory = Dir.mktmpdir("dieter-promote-")
   Dieter.sh("gh", "release", "download", tag, "--repo", repository, "--dir", directory)
-  Dir.chdir(directory) do
-    Dieter.sh(
-      "cosign",
-      "verify-blob",
-      "--bundle",
-      "SHA256SUMS.sigstore.json",
-      "--certificate-identity",
-      Dieter::Release.signer,
-      "--certificate-oidc-issuer",
-      "https://token.actions.githubusercontent.com",
-      "SHA256SUMS"
-    )
-    Dieter.sh("shasum", "-a", "256", "--check", "--strict", "SHA256SUMS")
-    File
-      .read("SHA256SUMS")
-      .lines
-      .map { |line| line.split.last }
-      .each do |asset|
-        Dieter.sh(
-          "gh",
-          "attestation",
-          "verify",
-          asset,
-          "--repo",
-          repository,
-          "--signer-workflow",
-          "#{repository}/.github/workflows/release.yml"
-        )
-      end
-  end
+  # Verify in the download directory: the signature, every checksum, and the
+  # provenance attestation of every asset, all against release.yml.
+  Dieter.sh(
+    "cosign",
+    "verify-blob",
+    "--bundle",
+    "SHA256SUMS.sigstore.json",
+    "--certificate-identity",
+    Dieter::Release.signer,
+    "--certificate-oidc-issuer",
+    "https://token.actions.githubusercontent.com",
+    "SHA256SUMS",
+    chdir: directory
+  )
+  Dieter.sh("shasum", "-a", "256", "--check", "--strict", "SHA256SUMS", chdir: directory)
+  File
+    .read(File.join(directory, "SHA256SUMS"))
+    .lines
+    .map { |line| line.split.last }
+    .each do |asset|
+      Dieter.sh(
+        "gh",
+        "attestation",
+        "verify",
+        asset,
+        "--repo",
+        repository,
+        "--signer-workflow",
+        "#{repository}/.github/workflows/release.yml",
+        chdir: directory
+      )
+    end
   sums = File.read(File.join(directory, "SHA256SUMS")).lines.to_h { |line| line.split.reverse }
   tap = Dieter.identity.fetch("homebrew_tap")
   {
