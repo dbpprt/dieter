@@ -98,10 +98,10 @@ func newRelayFleet(t *testing.T, setup ...func(*Server)) *relayFleet {
 	target, source := enroll("target"), enroll("source")
 	ts, ss := store.New(target.Root), store.New(source.Root)
 	scope := crdt.Revision([]string{target.Issuer(), "github:1234"})
-	if _, err = ts.BindPeerAccount(scope, "github:1234", target.ID, target.Issuer()); err != nil {
+	if _, err = ts.Replica.BindPeerAccount(scope, "github:1234", target.ID, target.Issuer()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = ss.BindPeerAccount(scope, "github:1234", source.ID, source.Issuer()); err != nil {
+	if _, err = ss.Replica.BindPeerAccount(scope, "github:1234", source.ID, source.Issuer()); err != nil {
 		t.Fatal(err)
 	}
 	local, err := net.Listen("tcp", "127.0.0.1:0")
@@ -186,11 +186,11 @@ func TestRelayFleetWatchSaturationPreservesCLIHealthAndReplication(t *testing.T)
 	f.command(t, "status")
 	f.command(t, "peer", "status")
 	// Real peer exchange must converge while every subscription slot is occupied.
-	binding, err := f.sourceStore.BindPeerAccount(crdt.Revision([]string{f.source.Issuer(), "github:1234"}), "github:1234", f.source.ID, f.source.Issuer())
+	binding, err := f.sourceStore.Replica.BindPeerAccount(crdt.Revision([]string{f.source.Issuer(), "github:1234"}), "github:1234", f.source.ID, f.source.Issuer())
 	if err != nil {
 		t.Fatal(err)
 	}
-	record, err := f.sourceStore.PutPeerRecord(binding, "project-settings", "saturation", "", []byte(`{"name":"Shared while full"}`), false)
+	record, err := f.sourceStore.Replica.PutPeerRecord(binding, "project-settings", "saturation", "", []byte(`{"name":"Shared while full"}`), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +198,7 @@ func TestRelayFleetWatchSaturationPreservesCLIHealthAndReplication(t *testing.T)
 	if err = syncer.Round(ctx); err != nil {
 		t.Fatal(err)
 	}
-	remote, err := f.targetStore.PeerData(binding.Account)
+	remote, err := f.targetStore.Replica.PeerData(binding.Account)
 	if err != nil || remote.Records["project-settings/saturation"].Revision() != record.Revision() {
 		t.Fatalf("replication failed under watch saturation: %v", err)
 	}
@@ -430,7 +430,7 @@ func TestRelayFleetLargeResponsesPreservePayloadAcrossFragments(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	replica, err := f.sourceStore.PeerData(account)
+	replica, err := f.sourceStore.Replica.PeerData(account)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -480,11 +480,11 @@ func TestRelayFleetStalledPeerDoesNotDelayHealthyPeerConvergence(t *testing.T) {
 		}
 	}()
 	waitRelay(t, func() bool { return f.gateway.Hub.RelayReady(stalled.ID) }, "stalled peer enrollment")
-	binding, err := f.sourceStore.BindPeerAccount(crdt.Revision([]string{f.source.Issuer(), "github:1234"}), "github:1234", f.source.ID, f.source.Issuer())
+	binding, err := f.sourceStore.Replica.BindPeerAccount(crdt.Revision([]string{f.source.Issuer(), "github:1234"}), "github:1234", f.source.ID, f.source.Issuer())
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := f.sourceStore.PutPeerRecord(binding, "project-settings", "independent", "", []byte(`{"name":"first"}`), false)
+	first, err := f.sourceStore.Replica.PutPeerRecord(binding, "project-settings", "independent", "", []byte(`{"name":"first"}`), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -506,11 +506,11 @@ func TestRelayFleetStalledPeerDoesNotDelayHealthyPeerConvergence(t *testing.T) {
 		t.Fatal("stalled exchange was not admitted")
 	}
 	converged := func(revision string) bool {
-		remote, err := f.targetStore.PeerData(binding.Account)
+		remote, err := f.targetStore.Replica.PeerData(binding.Account)
 		return err == nil && remote.Records["project-settings/independent"].Revision() == revision
 	}
 	waitRelay(t, func() bool { return converged(first.Revision()) }, "first healthy convergence")
-	second, err := f.sourceStore.PutPeerRecord(binding, "project-settings", "independent", first.Revision(), []byte(`{"name":"second"}`), false)
+	second, err := f.sourceStore.Replica.PutPeerRecord(binding, "project-settings", "independent", first.Revision(), []byte(`{"name":"second"}`), false)
 	if err != nil {
 		t.Fatal(err)
 	}

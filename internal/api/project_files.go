@@ -16,7 +16,7 @@ import (
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/platform/fault"
 	"github.com/dbpprt/dieter/internal/platform/fsx"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 )
 
 const maxProjectFileSize = 5 << 20
@@ -25,26 +25,26 @@ const projectTimeFormat = "2006-01-02T15:04:05.999999999Z07:00"
 func (s *Server) scopedProject(ctx context.Context, projectID, cardID string) (model.Project, error) {
 	cardID = strings.TrimSpace(cardID)
 	if cardID == "" {
-		return s.store.ProjectForCheckout(strings.TrimSpace(projectID), store.CheckoutFromContext(ctx))
+		return s.store.Kanban.ProjectForCheckout(strings.TrimSpace(projectID), kanban.CheckoutFromContext(ctx))
 	}
-	card, err := s.store.ResolveCard(cardID)
+	card, err := s.store.Kanban.ResolveCard(cardID)
 	if err != nil {
 		return model.Project{}, err
 	}
 	if projectID != "" && strings.TrimSpace(projectID) != card.ProjectID {
 		return model.Project{}, fault.New(fault.Invalid, "card does not belong to the requested project")
 	}
-	if err = s.store.RequireLocalCard(card); err != nil {
+	if err = s.store.Kanban.RequireLocalCard(card); err != nil {
 		return model.Project{}, err
 	}
-	if checkout := store.CheckoutFromContext(ctx); checkout != "" && checkout != card.CheckoutID {
+	if checkout := kanban.CheckoutFromContext(ctx); checkout != "" && checkout != card.CheckoutID {
 		return model.Project{}, fault.New(fault.Invalid, "checkout does not match conversation")
 	}
 	value, err := s.workspaces.Ensure(ctx, card.ID)
 	if err != nil {
 		return model.Project{}, err
 	}
-	project, err := s.store.ResolveProject(card.ProjectID)
+	project, err := s.store.Kanban.ResolveProject(card.ProjectID)
 	if err != nil {
 		return model.Project{}, err
 	}

@@ -9,7 +9,7 @@ import (
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/harness"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -19,15 +19,15 @@ func TestBackgroundProcessesBindConversationAndShareExecutionLifecycle(t *testin
 	ctx, cancel := context.WithTimeout(context.Background(), testkit.Budget(30*time.Second))
 	defer cancel()
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Path: testkit.CheckoutDir(t), Name: "Background"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Path: testkit.CheckoutDir(t), Name: "Background"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	card, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Owner", WorkspaceMode: "project"})
+	card, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Owner", WorkspaceMode: "project"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Other", WorkspaceMode: "project"})
+	other, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Other", WorkspaceMode: "project"})
 	if err != nil {
 		t.Fatal(err)
 	}

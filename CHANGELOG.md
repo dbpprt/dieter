@@ -16,6 +16,10 @@ copy the **Unreleased** notes into a section named after that exact version
   whose SHA-256 its binary pins on first use and during updates, and verifies
   it before installing. Hosts still need Node.js 22.19+, npm (for agent provider
   bridges) and Git. Daemons built from source keep installing with npm.
+- The daemon's storage (`internal/store`) is split into one package per
+  aggregate (projects and cards, conversations, schedules, workspaces, the peer
+  replica, …) with a lint-enforced dependency order. Files on disk do not
+  change.
 
 ## 0.5.404
 

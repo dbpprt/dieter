@@ -9,6 +9,7 @@ import (
 
 	"github.com/dbpprt/dieter/internal/platform/fault"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/home"
 )
 
 // Store holds this daemon's local operational state under DIETER_HOME:
@@ -54,5 +55,5 @@ func (s *Store) SetMachinePrivacyRequest(value MachinePrivacyRequest) error {
 		return err
 	}
 	defer release()
-	return store.WriteJSON(filepath.Join(s.store.Root, "runtime", "machine-privacy.json"), value)
+	return home.WriteJSON(filepath.Join(s.store.Root, "runtime", "machine-privacy.json"), value)
 }

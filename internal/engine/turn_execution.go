@@ -12,7 +12,8 @@ import (
 
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
+	"github.com/dbpprt/dieter/internal/store/leases"
 )
 
 // This is part of Service's single turn owner. Service.mu, durable runtime leases,
@@ -77,7 +78,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 		}
 	}
 	finished := false
-	finish := func(startQueued bool, finalCache store.CardCacheInput) error {
+	finish := func(startQueued bool, finalCache kanban.CardCacheInput) error {
 		if finished {
 			return nil
 		}
@@ -89,7 +90,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 			if finalCache.Runtime == "" {
 				return nil
 			}
-			_, err := s.Store.UpdateCardCache(detail.Card.ID, finalCache)
+			_, err := s.Store.Kanban.UpdateCardCache(detail.Card.ID, finalCache)
 			return err
 		})
 		if startQueued {
@@ -98,7 +99,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 		return updateErr
 	}
 	defer func() {
-		_ = finish(false, store.CardCacheInput{})
+		_ = finish(false, kanban.CardCacheInput{})
 		close(done)
 		close(updates)
 	}()
@@ -115,9 +116,9 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 		var conversation model.Conversation
 		err := retryWhileStoreBusy(ctx, func() (err error) {
 			if len(chunks) == 1 {
-				_, conversation, err = s.Store.AppendUIChunk(detail.Card.ID, turnID, chunks[0])
+				_, conversation, err = s.Store.Conversations.AppendUIChunk(detail.Card.ID, turnID, chunks[0])
 			} else {
-				_, conversation, err = s.Store.AppendUIChunks(detail.Card.ID, turnID, chunks)
+				_, conversation, err = s.Store.Conversations.AppendUIChunks(detail.Card.ID, turnID, chunks)
 			}
 			return err
 		})
@@ -138,7 +139,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 			runtimeStatus = model.RuntimeCancelling
 		}
 		if err := retryWhileStoreBusy(ctx, func() error {
-			_, err := s.Store.UpdateCardCache(detail.Card.ID, store.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: runtimeStatus})
+			_, err := s.Store.Kanban.UpdateCardCache(detail.Card.ID, kanban.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: runtimeStatus})
 			return err
 		}); err != nil {
 			return err
@@ -167,7 +168,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 			return persistChunks([]json.RawMessage{output.Chunk})
 		case "session":
 			return retryWhileStoreBusy(ctx, func() error {
-				_, err := s.Store.SetConversationSession(detail.Card.ID, turnID, output.State)
+				_, err := s.Store.Conversations.SetSession(detail.Card.ID, turnID, output.State)
 				return err
 			})
 		case "capability":
@@ -175,7 +176,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 				return nil
 			}
 			return retryWhileStoreBusy(ctx, func() error {
-				_, _, err := s.Store.AppendCapability(detail.Card.ID, turnID, output.Capability)
+				_, _, err := s.Store.Conversations.AppendCapability(detail.Card.ID, turnID, output.Capability)
 				return err
 			})
 		case "present-content":
@@ -214,10 +215,10 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 	}
 	if recoveryErr := s.turnRecoveryFailure(detail.Card.ID, turnID); recoveryErr != nil {
 		chunk, _ := json.Marshal(map[string]any{"type": "error", "errorText": recoveryErr.Error()})
-		if _, _, appendErr := s.Store.AppendUIChunk(detail.Card.ID, turnID, chunk); appendErr != nil {
+		if _, _, appendErr := s.Store.Conversations.AppendUIChunk(detail.Card.ID, turnID, chunk); appendErr != nil {
 			recoveryErr = errors.Join(recoveryErr, appendErr)
 		}
-		if updateErr := finish(true, store.CardCacheInput{Runtime: "failed"}); updateErr != nil {
+		if updateErr := finish(true, kanban.CardCacheInput{Runtime: "failed"}); updateErr != nil {
 			recoveryErr = errors.Join(recoveryErr, updateErr)
 		}
 		select {
@@ -227,9 +228,9 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 		return
 	}
 	if suspending {
-		conversation, conversationErr := s.Store.Conversation(detail.Card.ID)
+		conversation, conversationErr := s.Store.Conversations.Get(detail.Card.ID)
 		if conversationErr == nil && hasTurnContinuation(conversation.Session) {
-			conversation, _ = s.Store.SetConversationStatus(detail.Card.ID, turnID, "running")
+			conversation, _ = s.Store.Conversations.SetStatus(detail.Card.ID, turnID, "running")
 			if conversation.ActiveTurn == nil {
 				userMessageID := ""
 				for index := len(conversation.Messages) - 1; index >= 0; index-- {
@@ -238,15 +239,15 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 						break
 					}
 				}
-				conversation, _ = s.Store.SetConversationActiveTurn(detail.Card.ID, model.ConversationTurn{
+				conversation, _ = s.Store.Conversations.SetActiveTurn(detail.Card.ID, model.ConversationTurn{
 					ID: turnID, UserMessageID: userMessageID, ResponseMessageID: request.ResponseMessageID,
 					HarnessRuntimeDigest: request.RuntimeDigest, HarnessRuntimeProtocol: harness.RuntimeProtocolVersion,
 					Instructions: request.Instructions,
 					Selection:    &model.HarnessSelection{Provider: request.Harness, Model: request.ConfiguredModel, Effort: request.Effort, ProviderOptions: request.Options},
 				})
 			}
-			_, _ = s.Store.UpdateCardCache(detail.Card.ID, store.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: "running"})
-			_ = finish(false, store.CardCacheInput{})
+			_, _ = s.Store.Kanban.UpdateCardCache(detail.Card.ID, kanban.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: "running"})
+			_ = finish(false, kanban.CardCacheInput{})
 			select {
 			case updates <- TurnUpdate{Done: true}:
 			default:
@@ -255,11 +256,11 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 		}
 	}
 	if err == nil && !streamFailed {
-		conversation, conversationErr := s.Store.Conversation(detail.Card.ID)
+		conversation, conversationErr := s.Store.Conversations.Get(detail.Card.ID)
 		if conversationErr == nil && assistantResponseEmpty(conversation) {
 			message := emptyHarnessResponseMessage(request)
 			chunk, _ := json.Marshal(map[string]any{"type": "error", "errorText": message})
-			_, _, _ = s.Store.AppendUIChunk(detail.Card.ID, turnID, chunk)
+			_, _, _ = s.Store.Conversations.AppendUIChunk(detail.Card.ID, turnID, chunk)
 			streamFailed = true
 			select {
 			case updates <- TurnUpdate{Chunk: chunk}:
@@ -269,14 +270,14 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 	}
 	if ctx.Err() != nil {
 		chunk, _ := json.Marshal(map[string]any{"type": "abort"})
-		_, _, _ = s.Store.AppendUIChunk(detail.Card.ID, turnID, chunk)
+		_, _, _ = s.Store.Conversations.AppendUIChunk(detail.Card.ID, turnID, chunk)
 		// ACP implementations can persist the interrupted prompt inside their
 		// own session even when the Harness continuation envelope is discarded.
 		// A queued message must replace that prompt, so restart ACP cleanly.
 		if request.Adapter == "omp-acp" || request.Adapter == "dsh-acp" {
-			_, _ = s.Store.SetConversationSession(detail.Card.ID, turnID, json.RawMessage("null"))
+			_, _ = s.Store.Conversations.SetSession(detail.Card.ID, turnID, json.RawMessage("null"))
 		}
-		_ = finish(true, store.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: "idle"})
+		_ = finish(true, kanban.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: "idle"})
 		select {
 		case updates <- TurnUpdate{Chunk: chunk, Done: true}:
 		default:
@@ -285,8 +286,8 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 	}
 	if err != nil {
 		chunk, _ := json.Marshal(map[string]any{"type": "error", "errorText": err.Error()})
-		_, _, _ = s.Store.AppendUIChunk(detail.Card.ID, turnID, chunk)
-		_ = finish(true, store.CardCacheInput{Runtime: "failed"})
+		_, _, _ = s.Store.Conversations.AppendUIChunk(detail.Card.ID, turnID, chunk)
+		_ = finish(true, kanban.CardCacheInput{Runtime: "failed"})
 		select {
 		case updates <- TurnUpdate{Chunk: chunk, Err: err, Done: true}:
 		case <-ctx.Done():
@@ -297,7 +298,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 	if streamFailed {
 		finalRuntime = "failed"
 	}
-	_ = finish(true, store.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: finalRuntime})
+	_ = finish(true, kanban.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: finalRuntime})
 	select {
 	case updates <- TurnUpdate{Done: true}:
 	case <-ctx.Done():
@@ -319,7 +320,7 @@ func (s *Service) turnIsSuspending(cardID, turnID string) bool {
 }
 
 func (s *Service) MergeCard(source, target string) (model.Card, error) {
-	card, err := s.Store.MergeCard(source, target)
+	card, err := s.Store.Conversations.MergeCard(source, target)
 	if err == nil {
 		s.startNextQueued(card.MergedIntoCardID)
 	}
@@ -327,7 +328,7 @@ func (s *Service) MergeCard(source, target string) (model.Card, error) {
 }
 
 func (s *Service) startNextQueued(cardID string) {
-	conversation, err := s.Store.Conversation(cardID)
+	conversation, err := s.Store.Conversations.Get(cardID)
 	if err != nil || len(conversation.Queue) == 0 {
 		return
 	}
@@ -364,7 +365,7 @@ func drainTurnUpdates(updates <-chan TurnUpdate) {
 }
 
 func (s *Service) CancelCard(ref string) error {
-	card, err := s.Store.ResolveCard(ref)
+	card, err := s.Store.Kanban.ResolveCard(ref)
 	if err != nil {
 		return err
 	}
@@ -372,7 +373,7 @@ func (s *Service) CancelCard(ref string) error {
 	active := s.active[card.ID]
 	s.mu.Unlock()
 	if active == nil || active.cardID != card.ID {
-		lease, hasLease, leaseErr := s.Store.RuntimeLeaseForCard(card.ID)
+		lease, hasLease, leaseErr := s.Store.Leases.ForCard(card.ID)
 		if leaseErr != nil {
 			return leaseErr
 		}
@@ -382,7 +383,7 @@ func (s *Service) CancelCard(ref string) error {
 				return err
 			}
 		}
-		interrupted, err := s.Store.InterruptConversation(card.ID)
+		interrupted, err := s.Store.Conversations.Interrupt(card.ID)
 		if err != nil {
 			return err
 		}
@@ -412,12 +413,12 @@ func (s *Service) CancelCard(ref string) error {
 		return nil
 	}
 	active.cancel()
-	current, err := s.Store.ResolveCard(card.ID)
+	current, err := s.Store.Kanban.ResolveCard(card.ID)
 	if err != nil {
 		return err
 	}
 	if current.Runtime == model.RuntimeStarting || current.Runtime == model.RuntimeRunning {
-		_, err = s.Store.UpdateCardCache(card.ID, store.CardCacheInput{Runtime: model.RuntimeCancelling})
+		_, err = s.Store.Kanban.UpdateCardCache(card.ID, kanban.CardCacheInput{Runtime: model.RuntimeCancelling})
 	}
 	return err
 }
@@ -431,7 +432,7 @@ func (s *Service) clearActive(cardID, turnID string) {
 // the active map as a teardown barrier without racing the final store write.
 func (s *Service) finishActive(cardID, turnID string, finalize func() error) error {
 	s.mu.Lock()
-	var lease store.RuntimeLease
+	var lease leases.RuntimeLease
 	claimed := false
 	current := s.active[cardID]
 	if current != nil && current.cardID == cardID && current.turnID == turnID && !current.finishing {

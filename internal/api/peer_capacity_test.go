@@ -16,7 +16,7 @@ func TestKVRetainedPagesBoundWireBytesAndResumeAcrossNativeAdapter(t *testing.T)
 	t.Parallel()
 	s := testkit.Store(t)
 	defer s.Close()
-	identity, err := s.KVIdentity()
+	identity, err := s.Replica.EnsureIdentity()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +29,7 @@ func TestKVRetainedPagesBoundWireBytesAndResumeAcrossNativeAdapter(t *testing.T)
 			}
 			records = append(records, r)
 		}
-		if err = s.MergePeerRecords(identity, records); err != nil {
+		if err = s.Replica.MergePeerRecords(identity, records); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -63,7 +63,7 @@ func TestKVRetainedPagesBoundWireBytesAndResumeAcrossNativeAdapter(t *testing.T)
 		t.Fatalf("pagination lost records: %d", len(seen))
 	}
 	// Cursors remain tied to the complete replica projection, not page arrival.
-	if _, err = s.PutPeerRecord(identity, "kv.retained", "key_new", "", []byte(`true`), false); err != nil {
+	if _, err = s.Replica.PutPeerRecord(identity, "kv.retained", "key_new", "", []byte(`true`), false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = client.ListKV(t.Context(), request); connect.CodeOf(err) != connect.CodeAborted {

@@ -92,6 +92,80 @@ linters:
               desc: storage receives configuration, not the composition root
             - pkg: github.com/dbpprt/dieter/internal/cli
               desc: storage is daemon-side
+        # The store aggregates form an acyclic graph (internal/store/store.go):
+        # home <- replica, leases, settings, commands <- kv (home, replica) <-
+        # kanban (home, replica, leases) <- workspaces, conversations, schedules.
+        # Only the composition root imports every aggregate; vaults and
+        # daemonstate build on the composed store. Lax mode: an allowed
+        # subpackage overrides the shorter denied store prefix.
+        store-home:
+          files:
+            - "**/internal/store/home/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/dbpprt/dieter/internal/store$
+              desc: the composition root wires the aggregates, never the reverse
+            - pkg: github.com/dbpprt/dieter/internal/store/
+              desc: home is the base of the store aggregates
+        store-on-home:
+          list-mode: lax
+          files:
+            - "**/internal/store/replica/**"
+            - "**/internal/store/leases/**"
+            - "**/internal/store/settings/**"
+            - "**/internal/store/commands/**"
+            - "!$test"
+          allow:
+            - github.com/dbpprt/dieter/internal/store/home
+          deny:
+            - pkg: github.com/dbpprt/dieter/internal/store$
+              desc: the composition root wires the aggregates, never the reverse
+            - pkg: github.com/dbpprt/dieter/internal/store/
+              desc: this aggregate builds only on home
+        store-kv:
+          list-mode: lax
+          files:
+            - "**/internal/store/kv/**"
+            - "!$test"
+          allow:
+            - github.com/dbpprt/dieter/internal/store/home
+            - github.com/dbpprt/dieter/internal/store/replica
+          deny:
+            - pkg: github.com/dbpprt/dieter/internal/store$
+              desc: the composition root wires the aggregates, never the reverse
+            - pkg: github.com/dbpprt/dieter/internal/store/
+              desc: kv builds only on home and replica
+        store-kanban:
+          list-mode: lax
+          files:
+            - "**/internal/store/kanban/**"
+            - "!$test"
+          allow:
+            - github.com/dbpprt/dieter/internal/store/home
+            - github.com/dbpprt/dieter/internal/store/replica
+            - github.com/dbpprt/dieter/internal/store/leases
+          deny:
+            - pkg: github.com/dbpprt/dieter/internal/store$
+              desc: the composition root wires the aggregates, never the reverse
+            - pkg: github.com/dbpprt/dieter/internal/store/
+              desc: kanban reaches higher aggregates only through hooks the root wires
+        store-on-kanban:
+          list-mode: lax
+          files:
+            - "**/internal/store/workspaces/**"
+            - "**/internal/store/conversations/**"
+            - "**/internal/store/schedules/**"
+            - "!$test"
+          allow:
+            - github.com/dbpprt/dieter/internal/store/home
+            - github.com/dbpprt/dieter/internal/store/replica
+            - github.com/dbpprt/dieter/internal/store/leases
+            - github.com/dbpprt/dieter/internal/store/kanban
+          deny:
+            - pkg: github.com/dbpprt/dieter/internal/store$
+              desc: the composition root wires the aggregates, never the reverse
+            - pkg: github.com/dbpprt/dieter/internal/store/
+              desc: workspaces, conversations and schedules never import each other
         # The gateway stores only account sessions, daemon identities, presence,
         # route metadata, and quota snapshots; it never links daemon-side code.
         gateway:

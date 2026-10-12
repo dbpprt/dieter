@@ -1,10 +1,13 @@
-package store
+package store_test
 
 import (
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/home"
 )
 
 func TestUnsupportedDevelopmentStoreIsNotConverted(t *testing.T) {
@@ -19,7 +22,7 @@ func TestUnsupportedDevelopmentStoreIsNotConverted(t *testing.T) {
 	if err := os.WriteFile(path, content, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := New(root).Ensure(); !errors.Is(err, ErrUnsupportedStore) {
+	if err := store.New(root).Ensure(); !errors.Is(err, home.ErrUnsupportedStore) {
 		t.Fatalf("error=%v", err)
 	}
 	got, err := os.ReadFile(path)

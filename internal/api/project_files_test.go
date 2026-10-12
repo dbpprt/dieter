@@ -8,7 +8,7 @@ import (
 	"time"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit"
 )
 
@@ -31,7 +31,7 @@ func TestProjectFilesConnectEndToEnd(t *testing.T) {
 	}
 
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Workspace", Path: repo})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Workspace", Path: repo})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestProjectFilesConnectRejectsTraversalAndEscapingSymlinks(t *testing.T) {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Workspace", Path: repo})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Workspace", Path: repo})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -74,7 +74,7 @@ func TestPeerCatchUpRoundsAreBoundedAndResume(t *testing.T) {
 	t.Parallel()
 	s := testkit.Store(t)
 	defer s.Close()
-	binding, err := s.BindPeerAccount("account", "github:1", "local", "https://gateway.test")
+	binding, err := s.Replica.BindPeerAccount("account", "github:1", "local", "https://gateway.test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestPeerCatchUpRoundsAreBoundedAndResume(t *testing.T) {
 	if !errors.Is(err, ErrPeerCatchUp) || remote.pulls != peerExchangePages {
 		t.Fatalf("round budget: calls=%d err=%v", remote.pulls, err)
 	}
-	diagnostics, err := s.PeerSyncDiagnostics(binding.Account)
+	diagnostics, err := s.Replica.PeerSyncDiagnostics(binding.Account)
 	if err != nil || len(diagnostics) != 1 || diagnostics[0].Direction != "catchup" || diagnostics[0].LastSuccessAt != "" || diagnostics[0].FailureCode != "" {
 		t.Fatalf("incomplete exchange marked complete/failed: %+v %v", diagnostics, err)
 	}
@@ -104,7 +104,7 @@ func TestPeerCatchUpRoundsAreBoundedAndResume(t *testing.T) {
 	if remote.pulls != peerExchangePages+1 || len(remote.received) != peerExchangePages+1 {
 		t.Fatalf("did not resume: pulls=%d records=%d", remote.pulls, len(remote.received))
 	}
-	diagnostics, err = s.PeerSyncDiagnostics(binding.Account)
+	diagnostics, err = s.Replica.PeerSyncDiagnostics(binding.Account)
 	if err != nil || diagnostics[0].Direction != "complete" || diagnostics[0].LastSuccessAt == "" {
 		t.Fatalf("missing completed exchange: %+v %v", diagnostics, err)
 	}
@@ -113,15 +113,15 @@ func TestPeerReplacedReplicaReceivesRetainedDeletesAndLostReplyReplay(t *testing
 	t.Parallel()
 	s := testkit.Store(t)
 	defer s.Close()
-	binding, err := s.BindPeerAccount("account", "github:1", "local", "https://gateway.test")
+	binding, err := s.Replica.BindPeerAccount("account", "github:1", "local", "https://gateway.test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	original, err := s.PutPeerRecord(binding, "kv.retained", "deleted", "", []byte(`true`), false)
+	original, err := s.Replica.PutPeerRecord(binding, "kv.retained", "deleted", "", []byte(`true`), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	deleted, err := s.PutPeerRecord(binding, original.Kind, original.ID, original.Revision(), nil, true)
+	deleted, err := s.Replica.PutPeerRecord(binding, original.Kind, original.ID, original.Revision(), nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestPeerReplacedReplicaReceivesRetainedDeletesAndLostReplyReplay(t *testing
 	if err = syncer.Exchange(t.Context(), binding, remote); status.Code(err) != codes.Unavailable {
 		t.Fatalf("lost reply: %v", err)
 	}
-	checkpoint, err := s.PeerCheckpoint(binding.Account, "remote", "push")
+	checkpoint, err := s.Replica.PeerCheckpoint(binding.Account, "remote", "push")
 	if err != nil || checkpoint.Sequence != 0 {
 		t.Fatalf("uncertain reply advanced cursor: %+v %v", checkpoint, err)
 	}
@@ -151,7 +151,7 @@ func TestPeerReplacedReplicaReceivesRetainedDeletesAndLostReplyReplay(t *testing
 	if remote.received["kv.retained/deleted"].Revision() != deleted.Revision() {
 		t.Fatal("old push cursor skipped a replaced receiver")
 	}
-	checkpoint, err = s.PeerCheckpoint(binding.Account, "remote", "push")
+	checkpoint, err = s.Replica.PeerCheckpoint(binding.Account, "remote", "push")
 	if err != nil || checkpoint.RemoteEpoch != "epoch_2" {
 		t.Fatalf("push incarnation not durable: %+v %v", checkpoint, err)
 	}
@@ -160,7 +160,7 @@ func TestPeerReplacedReplicaReceivesRetainedDeletesAndLostReplyReplay(t *testing
 	if err = syncer.Exchange(t.Context(), binding, remote); err != nil {
 		t.Fatal(err)
 	}
-	current, err := s.ReadPeerRecord(t.Context(), binding.Account, original.Kind, original.ID)
+	current, err := s.Replica.ReadPeerRecord(t.Context(), binding.Account, original.Kind, original.ID)
 	if err != nil || current.Revision() != deleted.Revision() {
 		t.Fatalf("offline resurrection: %+v %v", current, err)
 	}

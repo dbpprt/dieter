@@ -113,7 +113,7 @@ tests cannot cover, and keep assertions about rules in Kotlin unit tests.
 ## Cross-language fixtures
 
 Golden vectors shared by Go, Kotlin and Swift live in `tests/fixtures` (for
-example `board-lifecycle.tsv`, read by `internal/store` and the Kotlin
+example `board-lifecycle.tsv`, read by `internal/store/kanban` and the Kotlin
 `BoardLifecycleTest`). Go generates or validates them; the clients load them as
 test resources. Change the producer and every consumer in one change.
 

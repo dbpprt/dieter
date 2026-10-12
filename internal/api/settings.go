@@ -9,7 +9,7 @@ import (
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/model"
 	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/home"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -18,7 +18,7 @@ func (api *settingsAPI) GetHarnesses(ctx context.Context, _ *emptypb.Empty) (*di
 }
 
 func (api *settingsAPI) GetSettings(context.Context, *emptypb.Empty) (*dieterv1.Settings, error) {
-	value, err := api.server.store.Settings()
+	value, err := api.server.store.Settings.Get()
 	if err != nil {
 		return nil, err
 	}
@@ -26,11 +26,11 @@ func (api *settingsAPI) GetSettings(context.Context, *emptypb.Empty) (*dieterv1.
 }
 
 func (api *settingsAPI) GetSettingsOptions(ctx context.Context, _ *emptypb.Empty) (*dieterv1.SettingsOptions, error) {
-	projects, err := api.server.store.ListProjects()
+	projects, err := api.server.store.Kanban.ListProjects()
 	if err != nil {
 		return nil, err
 	}
-	boards, err := api.server.store.ListBoards("")
+	boards, err := api.server.store.Kanban.ListBoards("")
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +45,7 @@ func (api *settingsAPI) GetSettingsOptions(ctx context.Context, _ *emptypb.Empty
 }
 
 func (api *settingsAPI) UpdateSettings(_ context.Context, request *dieterv1.UpdateSettingsRequest) (*dieterv1.Settings, error) {
-	value, err := api.server.store.UpdateSettings(modelSettings(request.GetSettings()))
+	value, err := api.server.store.Settings.Update(modelSettings(request.GetSettings()))
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func (api *settingsAPI) UpdateSettings(_ context.Context, request *dieterv1.Upda
 }
 
 func (api *settingsAPI) GetPromptSettings(context.Context, *emptypb.Empty) (*dieterv1.PromptSettings, error) {
-	value, err := api.server.store.Settings()
+	value, err := api.server.store.Settings.Get()
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +61,7 @@ func (api *settingsAPI) GetPromptSettings(context.Context, *emptypb.Empty) (*die
 }
 
 func (api *settingsAPI) UpdatePromptSettings(_ context.Context, request *dieterv1.UpdatePromptSettingsRequest) (*dieterv1.PromptSettings, error) {
-	value, err := api.server.store.UpdatePromptSettings(request.GetPromptTemplate(), request.GetBoardSkillTemplate(), request.GetChatSkillTemplate())
+	value, err := api.server.store.Settings.UpdatePrompts(request.GetPromptTemplate(), request.GetBoardSkillTemplate(), request.GetChatSkillTemplate())
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +73,7 @@ func (api *settingsAPI) SetProjectPromptTemplate(_ context.Context, request *die
 	if request.GetInherit() {
 		template = ""
 	}
-	value, err := api.server.store.UpdateProjectPromptTemplate(request.GetScopeId(), template)
+	value, err := api.server.store.Kanban.UpdateProjectPromptTemplate(request.GetScopeId(), template)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +85,7 @@ func (api *settingsAPI) SetBoardPromptTemplate(_ context.Context, request *diete
 	if request.GetInherit() {
 		template = ""
 	}
-	value, err := api.server.store.UpdateBoardPromptTemplate(request.GetScopeId(), template)
+	value, err := api.server.store.Kanban.UpdateBoardPromptTemplate(request.GetScopeId(), template)
 	if err != nil {
 		return nil, err
 	}
@@ -96,11 +96,11 @@ func (api *settingsAPI) PreviewPrompt(ctx context.Context, request *dieterv1.Pre
 	var detail model.CardDetail
 	var err error
 	if request.GetCardId() != "" {
-		detail, err = api.server.store.CardDetail(request.GetCardId())
+		detail, err = api.server.store.Kanban.CardDetail(request.GetCardId())
 	} else {
-		detail.Project, err = api.server.store.ResolveProject(request.GetProjectId())
+		detail.Project, err = api.server.store.Kanban.ResolveProject(request.GetProjectId())
 		if err == nil && request.GetBoardId() != "" {
-			detail.Board, err = api.server.store.ResolveBoard(detail.Project.ID, request.GetBoardId())
+			detail.Board, err = api.server.store.Kanban.ResolveBoard(detail.Project.ID, request.GetBoardId())
 		}
 		detail.Card = model.Card{ID: "preview", Scope: request.GetScope(), ProjectID: detail.Project.ID, BoardID: detail.Board.ID, Lane: model.LaneTodo, Title: "Prompt preview", LabelIDs: request.GetLabelIds()}
 		if detail.Card.Scope == "" {
@@ -118,7 +118,7 @@ func (api *settingsAPI) PreviewPrompt(ctx context.Context, request *dieterv1.Pre
 	if request.GetCardId() != "" && len(labelIDs) == 0 {
 		labelIDs = detail.Card.LabelIDs
 	}
-	settings, err := api.server.store.Settings()
+	settings, err := api.server.store.Settings.Get()
 	if err != nil {
 		return nil, err
 	}
@@ -144,10 +144,10 @@ func (api *settingsAPI) PreviewPrompt(ctx context.Context, request *dieterv1.Pre
 		workspaceValue.Path = filepath.Join(api.server.store.WorktreeRoot(), detail.Project.ID, detail.Card.ID)
 	}
 	if request.GetCardId() != "" {
-		storedWorkspace, workspaceErr := api.server.store.WorkspaceByCardID(detail.Card.ID)
+		storedWorkspace, workspaceErr := api.server.store.Workspaces.ByCardID(detail.Card.ID)
 		if workspaceErr == nil {
 			workspaceValue = storedWorkspace
-		} else if !errors.Is(workspaceErr, store.ErrNotFound) {
+		} else if !errors.Is(workspaceErr, home.ErrNotFound) {
 			return nil, workspaceErr
 		}
 	}

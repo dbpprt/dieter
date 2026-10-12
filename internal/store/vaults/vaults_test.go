@@ -9,12 +9,13 @@ import (
 	"github.com/dbpprt/dieter/internal/replication/crdt"
 	"github.com/dbpprt/dieter/internal/security/vault"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/replica"
 )
 
-func vaultReplica(t *testing.T, daemon string) (*Store, store.PeerIdentity) {
+func vaultReplica(t *testing.T, daemon string) (*Store, replica.PeerIdentity) {
 	t.Helper()
 	s := New(store.New(t.TempDir()))
-	identity, err := s.store.BindPeerAccount("account", "github:1", daemon, "https://gateway.test")
+	identity, err := s.store.Replica.BindPeerAccount("account", "github:1", daemon, "https://gateway.test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,9 +23,9 @@ func vaultReplica(t *testing.T, daemon string) (*Store, store.PeerIdentity) {
 }
 
 // replicateVault copies every peer record the way anti-entropy would.
-func replicateVault(t *testing.T, from *Store, to *Store, identity store.PeerIdentity) {
+func replicateVault(t *testing.T, from *Store, to *Store, identity replica.PeerIdentity) {
 	t.Helper()
-	data, err := from.store.PeerData(identity.Account)
+	data, err := from.store.Replica.PeerData(identity.Account)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,14 +33,14 @@ func replicateVault(t *testing.T, from *Store, to *Store, identity store.PeerIde
 	for _, record := range data.Records {
 		page = append(page, record)
 		if len(page) == crdt.PageSize {
-			if err = to.store.MergePeerRecords(identity, page); err != nil {
+			if err = to.store.Replica.MergePeerRecords(identity, page); err != nil {
 				t.Fatal(err)
 			}
 			page = nil
 		}
 	}
 	if len(page) > 0 {
-		if err = to.store.MergePeerRecords(identity, page); err != nil {
+		if err = to.store.Replica.MergePeerRecords(identity, page); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -67,7 +68,7 @@ func TestVaultJoinByCodeRecoveryRotationAndRemoval(t *testing.T) {
 	}
 
 	// The replicated store holds only ciphertext.
-	data, _ := a.store.PeerData(identityA.Account)
+	data, _ := a.store.Replica.PeerData(identityA.Account)
 	raw, _ := json.Marshal(data.Records)
 	if strings.Contains(string(raw), "correct horse") || strings.Contains(string(raw), "GitHub") || strings.Contains(string(raw), "octo") {
 		t.Fatal("peer state contains plaintext item content")
@@ -173,7 +174,7 @@ func TestVaultRejectsSubstitutedRootAfterJoin(t *testing.T) {
 	// An attacker replaces the replicated vault root before approval.
 	attacker, ring := vault.New("2026-10-10T00:00:00Z")
 	attacker.ID = mustVaultRecord(t, b).ID
-	if err = b.mutateVault(func(identity store.PeerIdentity, view vaultView) error {
+	if err = b.mutateVault(func(identity replica.PeerIdentity, view vaultView) error {
 		return putVaultRecord(view.data, identity, vault.KindVault, vault.VaultRecordID, attacker, false)
 	}); err != nil {
 		t.Fatal(err)

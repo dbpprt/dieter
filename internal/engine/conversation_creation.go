@@ -14,7 +14,7 @@ import (
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/platform/fault"
 	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 )
 
 // This is part of Service's single turn owner. Service.mu, durable runtime leases,
@@ -50,7 +50,7 @@ func (s *Service) RegisterProject(ctx context.Context, input ProjectInput) (mode
 	if _, err := os.Stat(filepath.Join(abs, ".git")); err != nil {
 		return model.Project{}, fault.New(fault.Invalid, "project path must be an existing Git working tree")
 	}
-	return s.Store.CreateProject(store.CreateProjectInput{
+	return s.Store.Kanban.CreateProject(kanban.CreateProjectInput{
 		OperationID: input.OperationID, InitialBoardName: input.InitialBoardName, InitialWorkflow: input.InitialWorkflow,
 		Name: input.Name, Path: abs, Summary: input.Summary, Prompt: input.Prompt,
 		BaseRemote: input.BaseRemote, BaseBranch: input.BaseBranch, ValidationCommands: input.ValidationCommands,
@@ -89,11 +89,11 @@ func (s *Service) CreateChat(ctx context.Context, input CardInput) (model.Card, 
 // boundary. Provider lifecycle state and workspace state are intentionally not
 // shared with the source conversation.
 func (s *Service) ForkChat(sourceRef, messageID, title string) (model.Card, error) {
-	return s.Store.ForkChat(sourceRef, messageID, title)
+	return s.Store.Conversations.ForkChat(sourceRef, messageID, title)
 }
 
 func (s *Service) createConversation(ctx context.Context, input CardInput, scope string) (model.Card, error) {
-	project, err := s.Store.ResolveProject(input.Project)
+	project, err := s.Store.Kanban.ResolveProject(input.Project)
 	if err != nil {
 		return model.Card{}, err
 	}
@@ -139,12 +139,12 @@ func (s *Service) createConversation(ctx context.Context, input CardInput, scope
 			return model.Card{}, err
 		}
 	}
-	createInput := store.CreateCardInput{CheckoutID: input.CheckoutID, Project: project.ID, Board: input.Board, ID: input.ID, Lane: input.Lane, Title: input.Title, Prompt: input.Prompt, Provider: provider, Model: input.Model, Effort: input.Effort, ProviderOptions: input.ProviderOptions, LabelIDs: input.LabelIDs, Origin: input.Origin, WorkspaceMode: input.WorkspaceMode, WorkspaceBranch: input.WorkspaceBranch, WorkspaceBaseBranch: input.WorkspaceBaseBranch, WorkspaceBaseRemote: input.WorkspaceBaseRemote, RemotePublishMode: input.RemotePublishMode, VaultAccess: input.VaultAccess}
+	createInput := kanban.CreateCardInput{CheckoutID: input.CheckoutID, Project: project.ID, Board: input.Board, ID: input.ID, Lane: input.Lane, Title: input.Title, Prompt: input.Prompt, Provider: provider, Model: input.Model, Effort: input.Effort, ProviderOptions: input.ProviderOptions, LabelIDs: input.LabelIDs, Origin: input.Origin, WorkspaceMode: input.WorkspaceMode, WorkspaceBranch: input.WorkspaceBranch, WorkspaceBaseBranch: input.WorkspaceBaseBranch, WorkspaceBaseRemote: input.WorkspaceBaseRemote, RemotePublishMode: input.RemotePublishMode, VaultAccess: input.VaultAccess}
 	var card model.Card
 	if scope == model.ConversationScopeChat {
-		card, err = s.Store.CreateChat(createInput)
+		card, err = s.Store.Kanban.CreateChat(createInput)
 	} else {
-		card, err = s.Store.CreateCard(createInput)
+		card, err = s.Store.Kanban.CreateCard(createInput)
 	}
 	if err != nil {
 		return model.Card{}, err
@@ -155,7 +155,7 @@ func (s *Service) createConversation(ctx context.Context, input CardInput, scope
 		defer s.scheduleQuickTaskTitle(card, input.Prompt)
 	}
 	if len(input.Attachments) > 0 {
-		if _, err = s.Store.SetConversationDraftAttachments(card.ID, input.Attachments); err != nil {
+		if _, err = s.Store.Conversations.SetDraftAttachments(card.ID, input.Attachments); err != nil {
 			return card, err
 		}
 	}
@@ -165,13 +165,13 @@ func (s *Service) createConversation(ctx context.Context, input CardInput, scope
 		updates, startErr := s.StartCardWithMessageParts(card.ID, parts, provider, input.Model, input.Effort, input.ProviderOptions, "")
 		if startErr != nil {
 			if scope == model.ConversationScopeBoard {
-				_, _ = s.Store.MoveCard(card.ID, model.LaneTodo, nil)
+				_, _ = s.Store.Kanban.MoveCard(card.ID, model.LaneTodo, nil)
 			}
 			return card, startErr
 		}
 		go drainTurnUpdates(updates)
 	}
-	return s.Store.ResolveCard(card.ID)
+	return s.Store.Kanban.ResolveCard(card.ID)
 }
 
 func (s *Service) generateQuickTaskTitle(ctx context.Context, story string) (string, error) {
@@ -267,7 +267,7 @@ func normalizeQuickTaskTitle(value string) string {
 }
 
 func (s *Service) resolveInstructions(detail model.CardDetail, workspaceValue model.Workspace) (dieterprompt.Resolution, error) {
-	settings, err := s.Store.Settings()
+	settings, err := s.Store.Settings.Get()
 	if err != nil {
 		return dieterprompt.Resolution{}, err
 	}

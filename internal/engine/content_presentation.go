@@ -35,7 +35,7 @@ func (s *Service) PresentConversationContent(ctx context.Context, cardID, turnID
 	if content.Line < 0 || content.Line > 10_000_000 || (content.URL != "" && content.Line != 0) {
 		return invalid("line must be 1–10000000 for a file, or omitted")
 	}
-	card, err := s.Store.ResolveCard(cardID)
+	card, err := s.Store.Kanban.ResolveCard(cardID)
 	if err != nil {
 		return model.ContentPresentation{}, err
 	}
@@ -106,7 +106,7 @@ func (s *Service) PresentConversationContent(ctx context.Context, cardID, turnID
 		content.Path = filepath.ToSlash(relative)
 	}
 	content.Title = strings.TrimSpace(content.Title)
-	return s.Store.PresentConversationContent(card.ID, turnID, content)
+	return s.Store.Conversations.PresentContent(card.ID, turnID, content)
 }
 
 func presentationPathContained(relative string) bool {

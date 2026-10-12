@@ -16,7 +16,7 @@ import (
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/home"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -55,7 +55,7 @@ type localChanges struct {
 
 	// Inputs of the last refresh, so unchanged parts are not rebuilt.
 	scanned     bool
-	metadata    store.StoreRevision
+	metadata    home.Revision
 	owned       []model.Card
 	checkouts   []model.Checkout
 	transcripts map[string]string
@@ -116,11 +116,11 @@ func (l *localChanges) refresh(ctx context.Context) error {
 		return err
 	}
 	if !l.scanned || revision != l.metadata {
-		owned, err := l.server.store.OwnedCards(ctx)
+		owned, err := l.server.store.Kanban.OwnedCards(ctx)
 		if err != nil {
 			return err
 		}
-		checkouts, err := l.server.store.OwnedCheckouts()
+		checkouts, err := l.server.store.Kanban.OwnedCheckouts()
 		if err != nil {
 			return err
 		}
@@ -138,7 +138,7 @@ func (l *localChanges) refresh(ctx context.Context) error {
 	transcripts := map[string]string{}
 	for _, id := range activityCards(l.owned) {
 		key := "activity/" + id
-		transcript, err := l.server.store.ConversationRevisionByID(id)
+		transcript, err := l.server.store.Conversations.RevisionByID(id)
 		if err != nil {
 			continue
 		}
@@ -149,9 +149,9 @@ func (l *localChanges) refresh(ctx context.Context) error {
 			}
 			continue
 		}
-		conversation, err := l.server.store.ActivityConversation(id, activityMessages)
+		conversation, err := l.server.store.Conversations.Activity(id, activityMessages)
 		if err != nil {
-			if !errors.Is(err, store.ErrNotFound) && !errors.Is(err, os.ErrNotExist) {
+			if !errors.Is(err, home.ErrNotFound) && !errors.Is(err, os.ErrNotExist) {
 				l.server.log.Warn("conversation activity unavailable", "card", id, "error", err)
 			}
 			continue
@@ -358,14 +358,14 @@ func boundedText(text string) string {
 
 func (s *Server) peerSyncStatus() (*dieterv1.PeerSyncStatus, error) {
 	status := &dieterv1.PeerSyncStatus{}
-	identity, err := s.store.PeerIdentity()
+	identity, err := s.store.Replica.PeerIdentity()
 	if errors.Is(err, os.ErrNotExist) {
 		return status, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	diagnostics, err := s.store.PeerSyncDiagnostics(identity.Account)
+	diagnostics, err := s.store.Replica.PeerSyncDiagnostics(identity.Account)
 	if err != nil {
 		return nil, err
 	}

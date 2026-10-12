@@ -8,7 +8,7 @@ import (
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit"
 )
 
@@ -17,18 +17,18 @@ func TestConnectProviderStatusSnapshotAndDelta(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), testkit.Budget(30*time.Second))
 	defer cancel()
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Path: testkit.CheckoutDir(t), Name: "Provider status"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Path: testkit.CheckoutDir(t), Name: "Provider status"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	card, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Reconnect", WorkspaceMode: "project"})
+	card, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Reconnect", WorkspaceMode: "project"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := data.SetConversationActiveTurn(card.ID, model.ConversationTurn{ID: "turn", UserMessageID: "user", ResponseMessageID: "response"}); err != nil {
+	if _, err := data.Conversations.SetActiveTurn(card.ID, model.ConversationTurn{ID: "turn", UserMessageID: "user", ResponseMessageID: "response"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := data.StartConversationTurn(card.ID, "turn", "user", "Continue"); err != nil {
+	if _, err := data.Conversations.StartTurn(card.ID, "turn", "user", "Continue"); err != nil {
 		t.Fatal(err)
 	}
 	client, _ := newConnectTestClient(t, data, newFakeRunner())
@@ -36,7 +36,7 @@ func TestConnectProviderStatusSnapshotAndDelta(t *testing.T) {
 	if err != nil || before.GetConversation().GetProviderStatus() != nil {
 		t.Fatalf("before=%v err=%v", before, err)
 	}
-	if _, _, err := data.AppendCapability(card.ID, "turn", json.RawMessage(`{"id":"provider-status","operation":"replace","status":{"state":"waiting-for-network","message":"Reconnecting... waiting for network (Connection failed: error sending request)","provider":"codex","messageId":"response"}}`)); err != nil {
+	if _, _, err := data.Conversations.AppendCapability(card.ID, "turn", json.RawMessage(`{"id":"provider-status","operation":"replace","status":{"state":"waiting-for-network","message":"Reconnecting... waiting for network (Connection failed: error sending request)","provider":"codex","messageId":"response"}}`)); err != nil {
 		t.Fatal(err)
 	}
 	seq := before.GetConversation().GetLastSeq()
@@ -56,7 +56,7 @@ func TestConnectProviderStatusSnapshotAndDelta(t *testing.T) {
 	if !stream.Receive() || stream.Msg().GetSnapshot().GetConversation().GetProviderStatus().GetState() != "waiting-for-network" {
 		t.Fatalf("provider status not in reconnect snapshot: %v", stream.Err())
 	}
-	if _, _, err := data.AppendCapability(card.ID, "turn", json.RawMessage(`{"id":"provider-status","operation":"clear"}`)); err != nil {
+	if _, _, err := data.Conversations.AppendCapability(card.ID, "turn", json.RawMessage(`{"id":"provider-status","operation":"clear"}`)); err != nil {
 		t.Fatal(err)
 	}
 	if !stream.Receive() || stream.Msg().GetSnapshot() != nil || stream.Msg().GetProviderStatus() != nil {

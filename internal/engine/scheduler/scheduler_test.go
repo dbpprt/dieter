@@ -13,6 +13,8 @@ import (
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
+	"github.com/dbpprt/dieter/internal/store/schedules"
 	"github.com/dbpprt/dieter/internal/testkit"
 )
 
@@ -40,11 +42,11 @@ func setup(t *testing.T) (*Manager, *store.Store, model.Project, model.Board) {
 		t.Fatal(err)
 	}
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Atlas", Path: repo})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Atlas", Path: repo})
 	if err != nil {
 		t.Fatal(err)
 	}
-	board, err := data.CreateBoard(store.CreateBoardInput{Project: project.ID, Name: "Delivery", Workflow: model.WorkflowReview})
+	board, err := data.Kanban.CreateBoard(kanban.CreateBoardInput{Project: project.ID, Name: "Delivery", Workflow: model.WorkflowReview})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +59,7 @@ func TestRunNowCreatesOneTemplatedDraftWithOrigin(t *testing.T) {
 	manager, data, project, board := setup(t)
 	fixed := time.Date(2026, 8, 13, 7, 30, 0, 0, time.UTC)
 	manager.now = func() time.Time { return fixed }
-	schedule, err := manager.Create(store.ScheduleInput{
+	schedule, err := manager.Create(schedules.Input{
 		Project: project.ID, Board: board.ID, Name: "Daily work", Cron: "0 9 * * 1-5", Timezone: "Europe/Berlin", Enabled: true,
 		Action: model.ScheduleActionDraft, TitleTemplate: "Daily · {{date}}", PromptTemplate: "Work in {{project}} on {{scheduled_at}}", Provider: "mock", Model: "mock",
 	})
@@ -71,18 +73,18 @@ func TestRunNowCreatesOneTemplatedDraftWithOrigin(t *testing.T) {
 	if run.Status != model.ScheduleRunCompleted {
 		t.Fatalf("run=%#v", run)
 	}
-	card, err := data.ResolveCard(run.CardID)
+	card, err := data.Kanban.ResolveCard(run.CardID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if card.Title != "Daily · 2026-08-13" || card.Lane != model.LaneTodo || card.Origin == nil || card.Origin.ScheduleRunID != run.ID || card.InitialPrompt != "Work in Atlas on 2026-08-13T07:30:00Z" {
 		t.Fatalf("card=%#v", card)
 	}
-	second, err := data.ClaimScheduleRun(schedule.ID, run.ScheduledFor, "", true)
+	second, err := data.Schedules.ClaimRun(schedule.ID, run.ScheduledFor, "", true)
 	if err != nil || second.ID != run.ID {
 		t.Fatalf("duplicate claim=%#v err=%v", second, err)
 	}
-	cards, _ := data.ListCards(store.CardFilter{})
+	cards, _ := data.Kanban.ListCards(kanban.CardFilter{})
 	if len(cards) != 1 {
 		t.Fatalf("cards=%#v", cards)
 	}
@@ -105,7 +107,7 @@ func TestAdvertisedTemplateVariablesRenderInTitleAndPrompt(t *testing.T) {
 func TestSchedulePersistsValidatedEffortOnCreatedCard(t *testing.T) {
 	t.Parallel()
 	manager, data, project, board := setup(t)
-	schedule, err := manager.Create(store.ScheduleInput{
+	schedule, err := manager.Create(schedules.Input{
 		Project: project.ID, Board: board.ID, Name: "Careful work", Cron: "0 9 * * *", Timezone: "UTC",
 		Action: model.ScheduleActionDraft, TitleTemplate: "Careful", PromptTemplate: "Think", Provider: "codex", Model: "gpt-6-astra", Effort: "ultra",
 	})
@@ -116,11 +118,11 @@ func TestSchedulePersistsValidatedEffortOnCreatedCard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	card, err := data.ResolveCard(run.CardID)
+	card, err := data.Kanban.ResolveCard(run.CardID)
 	if err != nil || card.Model != "gpt-6-astra" || card.Effort != "ultra" {
 		t.Fatalf("card=%#v err=%v", card, err)
 	}
-	_, err = manager.Create(store.ScheduleInput{
+	_, err = manager.Create(schedules.Input{
 		Project: project.ID, Board: board.ID, Name: "Unsupported", Cron: "0 10 * * *", Timezone: "UTC",
 		Action: model.ScheduleActionDraft, TitleTemplate: "Bad", PromptTemplate: "Think", Provider: "codex", Model: "gpt-5.6-luna", Effort: "ultra",
 	})
@@ -132,7 +134,7 @@ func TestSchedulePersistsValidatedEffortOnCreatedCard(t *testing.T) {
 func TestSchedulePreconfiguresCodexFastModeOnCreatedTask(t *testing.T) {
 	t.Parallel()
 	manager, data, project, board := setup(t)
-	schedule, err := manager.Create(store.ScheduleInput{
+	schedule, err := manager.Create(schedules.Input{
 		Project: project.ID, Board: board.ID, Name: "Fast work", Cron: "0 9 * * *", Timezone: "UTC",
 		Action: model.ScheduleActionDraft, TitleTemplate: "Fast", PromptTemplate: "Move quickly", Provider: "codex",
 		ProviderOptions: map[string]string{"fast_mode": "true"},
@@ -144,7 +146,7 @@ func TestSchedulePreconfiguresCodexFastModeOnCreatedTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	card, err := data.ResolveCard(run.CardID)
+	card, err := data.Kanban.ResolveCard(run.CardID)
 	if err != nil || card.ProviderOptions["fast_mode"] != "true" {
 		t.Fatalf("scheduled card=%#v err=%v", card, err)
 	}
@@ -153,7 +155,7 @@ func TestSchedulePreconfiguresCodexFastModeOnCreatedTask(t *testing.T) {
 func TestScheduleRejectsCodexFastModeForUnsupportedModel(t *testing.T) {
 	t.Parallel()
 	manager, _, project, board := setup(t)
-	_, err := manager.Create(store.ScheduleInput{
+	_, err := manager.Create(schedules.Input{
 		Project: project.ID, Board: board.ID, Name: "Fast Spark work", Cron: "0 9 * * *", Timezone: "UTC",
 		Action: model.ScheduleActionDraft, TitleTemplate: "Fast", PromptTemplate: "Move quickly", Provider: "codex",
 		Model: "gpt-5.3-codex-spark", ProviderOptions: map[string]string{"fast_mode": "true"},
@@ -166,14 +168,14 @@ func TestScheduleRejectsCodexFastModeForUnsupportedModel(t *testing.T) {
 func TestTickArchivesDoneCardsUsingBoardPolicy(t *testing.T) {
 	t.Parallel()
 	manager, data, project, board := setup(t)
-	if _, err := data.UpdateBoardDoneArchivePolicy(board.ID, model.DoneArchiveImmediately); err != nil {
+	if _, err := data.Kanban.UpdateBoardDoneArchivePolicy(board.ID, model.DoneArchiveImmediately); err != nil {
 		t.Fatal(err)
 	}
-	card, err := data.CreateCard(store.CreateCardInput{Project: project.ID, Board: board.ID, Title: "Completed"})
+	card, err := data.Kanban.CreateCard(kanban.CreateCardInput{Project: project.ID, Board: board.ID, Title: "Completed"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := data.MoveCard(card.ID, model.LaneDone, nil); err != nil {
+	if _, err := data.Kanban.MoveCard(card.ID, model.LaneDone, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -181,7 +183,7 @@ func TestTickArchivesDoneCardsUsingBoardPolicy(t *testing.T) {
 	fixed := time.Now().UTC().Add(time.Second)
 	manager.now = func() time.Time { return fixed }
 	manager.Tick()
-	card, err = data.ResolveCard(card.ID)
+	card, err = data.Kanban.ResolveCard(card.ID)
 	if err != nil || !card.Archived {
 		t.Fatalf("archived card=%#v err=%v", card, err)
 	}
@@ -207,17 +209,17 @@ func TestDueRunUsesLatestMisfireAndAdvancesCursor(t *testing.T) {
 	manager, data, project, board := setup(t)
 	clock := time.Date(2026, 8, 13, 7, 29, 0, 0, time.UTC)
 	manager.now = func() time.Time { return clock }
-	schedule, err := manager.Create(store.ScheduleInput{Project: project.ID, Board: board.ID, Name: "Minute", Cron: "* * * * *", Timezone: "UTC", Enabled: true, Action: "draft", TitleTemplate: "Tick {{scheduled_at}}", PromptTemplate: "Tick", Provider: "mock", Model: "mock"})
+	schedule, err := manager.Create(schedules.Input{Project: project.ID, Board: board.ID, Name: "Minute", Cron: "* * * * *", Timezone: "UTC", Enabled: true, Action: "draft", TitleTemplate: "Tick {{scheduled_at}}", PromptTemplate: "Tick", Provider: "mock", Model: "mock"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	clock = clock.Add(4*time.Minute + 20*time.Second)
 	manager.Tick()
-	runs, _ := data.ListScheduleRuns(schedule.ID, 0)
+	runs, _ := data.Schedules.ListRuns(schedule.ID, 0)
 	if len(runs) != 1 || runs[0].ScheduledFor != "2026-08-13T07:33:00Z" || runs[0].Status != model.ScheduleRunCompleted {
 		t.Fatalf("runs=%#v", runs)
 	}
-	updated, _ := data.ResolveSchedule(schedule.ID)
+	updated, _ := data.Schedules.Resolve(schedule.ID)
 	if updated.NextRunAt != "2026-08-13T07:34:00Z" {
 		t.Fatalf("next=%s", updated.NextRunAt)
 	}
@@ -226,11 +228,11 @@ func TestDueRunUsesLatestMisfireAndAdvancesCursor(t *testing.T) {
 func TestAutoRunStartsAlongsideOtherConversations(t *testing.T) {
 	t.Parallel()
 	manager, data, project, board := setup(t)
-	hold, err := data.AcquireRuntimeLeaseFor("another-project", "another-board", "hold", "mock")
+	hold, err := data.Kanban.AcquireRuntimeLeaseFor("another-project", "another-board", "hold", "mock")
 	if err != nil {
 		t.Fatal(err)
 	}
-	schedule, err := manager.Create(store.ScheduleInput{Project: project.ID, Board: board.ID, Name: "Agent", Cron: "0 9 * * *", Timezone: "UTC", Enabled: true, Action: "run", TitleTemplate: "Run", PromptTemplate: "Do it", Provider: "mock", Model: "mock", OpenCardPolicy: "always"})
+	schedule, err := manager.Create(schedules.Input{Project: project.ID, Board: board.ID, Name: "Agent", Cron: "0 9 * * *", Timezone: "UTC", Enabled: true, Action: "run", TitleTemplate: "Run", PromptTemplate: "Do it", Provider: "mock", Model: "mock", OpenCardPolicy: "always"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,12 +241,12 @@ func TestAutoRunStartsAlongsideOtherConversations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = data.ReleaseRuntimeLease(hold) }()
+	defer func() { _ = data.Leases.Release(hold) }()
 	completed := waitSettled(t, settled, run.ID)
 	if completed.Status != model.ScheduleRunCompleted {
 		t.Fatalf("run=%#v", completed)
 	}
-	card, _ := data.ResolveCard(completed.CardID)
+	card, _ := data.Kanban.ResolveCard(completed.CardID)
 	if card.InitialPromptSentAt == "" || card.Lane != model.LaneRunning {
 		t.Fatalf("started card=%#v", card)
 	}
@@ -253,7 +255,7 @@ func TestAutoRunStartsAlongsideOtherConversations(t *testing.T) {
 func TestSkipIfOpenRecordsOccurrenceWithoutBrokenCardLink(t *testing.T) {
 	t.Parallel()
 	manager, data, project, board := setup(t)
-	schedule, err := manager.Create(store.ScheduleInput{Project: project.ID, Board: board.ID, Name: "Guarded", Cron: "0 9 * * *", Timezone: "UTC", Enabled: true, Action: "draft", TitleTemplate: "Guarded", PromptTemplate: "Do it", Provider: "mock", Model: "mock", OpenCardPolicy: "skip_if_open"})
+	schedule, err := manager.Create(schedules.Input{Project: project.ID, Board: board.ID, Name: "Guarded", Cron: "0 9 * * *", Timezone: "UTC", Enabled: true, Action: "draft", TitleTemplate: "Guarded", PromptTemplate: "Do it", Provider: "mock", Model: "mock", OpenCardPolicy: "skip_if_open"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +270,7 @@ func TestSkipIfOpenRecordsOccurrenceWithoutBrokenCardLink(t *testing.T) {
 	if second.Status != model.ScheduleRunSkipped || second.CardID != "" || second.Message == "" {
 		t.Fatalf("second=%#v", second)
 	}
-	cards, _ := data.ListCards(store.CardFilter{})
+	cards, _ := data.Kanban.ListCards(kanban.CardFilter{})
 	if len(cards) != 1 {
 		t.Fatalf("cards=%#v", cards)
 	}

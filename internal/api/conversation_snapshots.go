@@ -11,7 +11,11 @@ import (
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/platform/fault"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/commands"
+	"github.com/dbpprt/dieter/internal/store/conversations"
+	"github.com/dbpprt/dieter/internal/store/home"
+	"github.com/dbpprt/dieter/internal/store/leases"
+	"github.com/dbpprt/dieter/internal/store/schedules"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -103,22 +107,22 @@ func conversationDelta(previous, current *dieterv1.ConversationSnapshot) *dieter
 // the same command should be retried after teardown, not marked permanently
 // failed by clients.
 func sendMessageFailure(err error) error {
-	if errors.Is(err, store.ErrCardActive) {
+	if errors.Is(err, leases.ErrCardActive) {
 		return fault.Wrap(fault.Conflict, err)
 	}
 	return err
 }
 
-func scheduleInput(request *dieterv1.SaveScheduleRequest) (store.ScheduleInput, error) {
+func scheduleInput(request *dieterv1.SaveScheduleRequest) (schedules.Input, error) {
 	value := request.GetSchedule()
 	if value == nil {
-		return store.ScheduleInput{}, fault.New(fault.Invalid, "schedule is required")
+		return schedules.Input{}, fault.New(fault.Invalid, "schedule is required")
 	}
 	workspaceMode, ok := model.CanonicalWorkspaceMode(value.GetWorkspaceMode())
 	if strings.TrimSpace(value.GetWorkspaceMode()) == "" || !ok {
-		return store.ScheduleInput{}, fault.New(fault.Invalid, "workspace mode must be selected for each scheduled card")
+		return schedules.Input{}, fault.New(fault.Invalid, "workspace mode must be selected for each scheduled card")
 	}
-	return store.ScheduleInput{CheckoutID: value.GetCheckoutId(),
+	return schedules.Input{CheckoutID: value.GetCheckoutId(),
 		Project: value.GetProjectId(), Board: value.GetBoardId(), Name: value.GetName(),
 		Description: value.GetDescription(), Cron: value.GetCron(), Timezone: value.GetTimezone(),
 		Enabled: value.GetEnabled(), Action: value.GetAction(), TitleTemplate: value.GetTitleTemplate(),
@@ -150,23 +154,23 @@ func (s *Server) idempotentConversation(ctx context.Context, request *dieterv1.C
 	s.commandMu.Lock()
 	defer s.commandMu.Unlock()
 	kind := "create_" + scope
-	if result, ok, err := s.store.LoadCommandResult(clientID, commandID); err != nil {
+	if result, ok, err := s.store.Commands.Load(clientID, commandID); err != nil {
 		return nil, err
 	} else if ok {
 		if result.Kind != kind {
 			return nil, fault.New(fault.AlreadyExists, "command_id was already used for another operation")
 		}
-		card, resolveErr := s.store.ResolveCard(result.CardID)
+		card, resolveErr := s.store.Kanban.ResolveCard(result.CardID)
 		if resolveErr != nil {
 			return nil, resolveErr
 		}
 		return protoCard(card), nil
 	}
-	cardID, err := store.DeterministicCommandID("c_", clientID, commandID)
+	cardID, err := commands.DeterministicID("c_", clientID, commandID)
 	if err != nil {
 		return nil, err
 	}
-	if existing, resolveErr := s.store.ResolveCard(cardID); resolveErr == nil {
+	if existing, resolveErr := s.store.Kanban.ResolveCard(cardID); resolveErr == nil {
 		if existing.Scope != scope {
 			return nil, fault.New(fault.AlreadyExists, "command_id resolved to another conversation scope")
 		}
@@ -174,11 +178,11 @@ func (s *Server) idempotentConversation(ctx context.Context, request *dieterv1.C
 		if resolveErr != nil {
 			return nil, resolveErr
 		}
-		if saveErr := s.store.SaveCommandResult(clientID, commandID, store.CommandResult{Kind: kind, CardID: cardID}); saveErr != nil {
+		if saveErr := s.store.Commands.Save(clientID, commandID, commands.Result{Kind: kind, CardID: cardID}); saveErr != nil {
 			return nil, saveErr
 		}
 		return protoCard(existing), nil
-	} else if !errors.Is(resolveErr, store.ErrNotFound) {
+	} else if !errors.Is(resolveErr, home.ErrNotFound) {
 		return nil, resolveErr
 	}
 	input, err := conversationInput(request)
@@ -195,7 +199,7 @@ func (s *Server) idempotentConversation(ctx context.Context, request *dieterv1.C
 	if err != nil {
 		return nil, err
 	}
-	if err := s.store.SaveCommandResult(clientID, commandID, store.CommandResult{Kind: kind, CardID: value.ID}); err != nil {
+	if err := s.store.Commands.Save(clientID, commandID, commands.Result{Kind: kind, CardID: value.ID}); err != nil {
 		return nil, err
 	}
 	return protoCard(value), nil
@@ -211,7 +215,7 @@ func (s *Server) completeConversationCreation(card model.Card, request *dieterv1
 	if !shouldStart || card.InitialPromptSentAt != "" {
 		return card, nil
 	}
-	conversation, err := s.store.Conversation(card.ID)
+	conversation, err := s.store.Conversations.Get(card.ID)
 	if err != nil {
 		return card, err
 	}
@@ -230,11 +234,11 @@ func (s *Server) completeConversationCreation(card model.Card, request *dieterv1
 		return card, err
 	}
 	go drainUpdates(updates)
-	return s.store.ResolveCard(card.ID)
+	return s.store.Kanban.ResolveCard(card.ID)
 }
 
 func (s *Server) conversation(cardID string) (model.Conversation, error) {
-	revision, err := s.store.ConversationRevisionByID(cardID)
+	revision, err := s.store.Conversations.RevisionByID(cardID)
 	if err != nil {
 		return model.Conversation{}, err
 	}
@@ -244,18 +248,18 @@ func (s *Server) conversation(cardID string) (model.Conversation, error) {
 func (s *Server) conversationAtRevision(cardID, _ string) (model.Conversation, error) {
 	// The Store owns the single byte-bounded, revision-validated cache. Keeping a
 	// second full-transcript cache here multiplies memory across client routes.
-	return s.store.ConversationByID(cardID)
+	return s.store.Conversations.ByID(cardID)
 }
 
 func (s *Server) conversationSnapshot(cardID string, limit int, before *int32) (*dieterv1.ConversationSnapshot, error) {
 	if before != nil && *before < 0 {
 		return nil, fault.New(fault.Invalid, "before must be a non-negative integer")
 	}
-	detail, err := s.store.CardDetail(cardID)
+	detail, err := s.store.Kanban.CardDetail(cardID)
 	if err != nil {
 		return nil, err
 	}
-	window, err := s.store.ConversationWindowByID(cardID, limit, before)
+	window, err := s.store.Conversations.WindowByID(cardID, limit, before)
 	if err != nil {
 		return nil, err
 	}
@@ -282,12 +286,12 @@ func (s *Server) boundedConversationSnapshot(detail model.CardDetail, conversati
 	start := max(0, end-limit)
 	total := len(conversation.Messages)
 	conversation.Messages = append([]model.UIMessage(nil), conversation.Messages[start:end]...)
-	return s.windowedConversationSnapshot(detail, store.ConversationWindow{
+	return s.windowedConversationSnapshot(detail, conversations.Window{
 		Conversation: conversation, Start: start, End: end, Total: total,
 	}, budget, before == nil && remember)
 }
 
-func (s *Server) windowedConversationSnapshot(detail model.CardDetail, window store.ConversationWindow, budget int, remember bool) *dieterv1.ConversationSnapshot {
+func (s *Server) windowedConversationSnapshot(detail model.CardDetail, window conversations.Window, budget int, remember bool) *dieterv1.ConversationSnapshot {
 	conversation := window.Conversation
 	visibleMessages := make(map[string]bool, len(conversation.Messages))
 	for _, message := range conversation.Messages {
@@ -436,7 +440,7 @@ func (s *Server) watchConversation(ctx context.Context, request *dieterv1.WatchC
 			// status change on another card must not clone and re-encode this
 			// conversation's tool-heavy history. Still read all selected-card
 			// detail so project, board, workspace and read-state changes propagate.
-			detail, err := s.store.CardDetail(request.GetCardId())
+			detail, err := s.store.Kanban.CardDetail(request.GetCardId())
 			if err != nil {
 				return err
 			}

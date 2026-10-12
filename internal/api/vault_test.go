@@ -13,6 +13,7 @@ import (
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit"
 	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -87,8 +88,8 @@ func waitForIdle(t *testing.T, data *store.Store, cardID string) {
 	t.Helper()
 	deadline := time.Now().Add(testkit.Budget(30 * time.Second))
 	for time.Now().Before(deadline) {
-		if card, err := data.ResolveCard(cardID); err == nil && card.Runtime == "idle" {
-			if _, err := data.GlobalStateContext(t.Context()); err != nil {
+		if card, err := data.Kanban.ResolveCard(cardID); err == nil && card.Runtime == "idle" {
+			if _, err := data.Kanban.GlobalStateContext(t.Context()); err != nil {
 				t.Fatal(err)
 			}
 			return
@@ -101,19 +102,19 @@ func waitForIdle(t *testing.T, data *store.Store, cardID string) {
 func TestVaultAgentAccessFollowsConversationCreationAndRoute(t *testing.T) {
 	t.Parallel()
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Vault", Path: testkit.CheckoutDir(t)})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Vault", Path: testkit.CheckoutDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	board, err := data.CreateBoard(store.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
+	board, err := data.Kanban.CreateBoard(kanban.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
 	if err != nil {
 		t.Fatal(err)
 	}
-	allowed, err := data.CreateCard(store.CreateCardInput{Project: project.ID, Board: board.ID, Lane: model.LaneTodo, Title: "With vault", Prompt: "Log in", Provider: "mock", Model: "mock", VaultAccess: true})
+	allowed, err := data.Kanban.CreateCard(kanban.CreateCardInput{Project: project.ID, Board: board.ID, Lane: model.LaneTodo, Title: "With vault", Prompt: "Log in", Provider: "mock", Model: "mock", VaultAccess: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	denied, err := data.CreateCard(store.CreateCardInput{Project: project.ID, Board: board.ID, Lane: model.LaneTodo, Title: "Without vault", Prompt: "Log in", Provider: "mock", Model: "mock"})
+	denied, err := data.Kanban.CreateCard(kanban.CreateCardInput{Project: project.ID, Board: board.ID, Lane: model.LaneTodo, Title: "Without vault", Prompt: "Log in", Provider: "mock", Model: "mock"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +169,7 @@ func TestVaultAgentAccessFollowsConversationCreationAndRoute(t *testing.T) {
 	// Tool output that repeats the revealed secret is redacted in the transcript.
 	runner.release <- "logged in with " + secret
 	waitForIdle(t, data, allowed.ID)
-	conversation, err := data.Conversation(allowed.ID)
+	conversation, err := data.Conversations.Get(allowed.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +217,7 @@ func TestVaultAgentAccessFollowsConversationCreationAndRoute(t *testing.T) {
 func TestVaultAccessIsSetWhenChatIsCreated(t *testing.T) {
 	t.Parallel()
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Vault", Path: testkit.CheckoutDir(t)})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Vault", Path: testkit.CheckoutDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +226,7 @@ func TestVaultAccessIsSetWhenChatIsCreated(t *testing.T) {
 	if err != nil || !chat.GetVaultAccess() {
 		t.Fatalf("chat = %v, %v", chat, err)
 	}
-	stored, err := data.ResolveCard(chat.GetId())
+	stored, err := data.Kanban.ResolveCard(chat.GetId())
 	if err != nil || !stored.VaultAccess {
 		t.Fatalf("stored chat = %+v, %v", stored, err)
 	}

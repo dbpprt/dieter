@@ -10,13 +10,14 @@ import (
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func TestDaemonCLIContentPresentation(t *testing.T) {
 	t.Parallel()
 	client, output, data := daemonCLIForTest(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Path: initTestRepository(t, "presentation"), Name: "Presentation"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Path: initTestRepository(t, "presentation"), Name: "Presentation"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,17 +27,17 @@ func TestDaemonCLIContentPresentation(t *testing.T) {
 // The same assertions run against loopback, verified direct TLS, and relay.
 func assertContentPresentationCLI(t *testing.T, client *CLI, output *bytes.Buffer, data *store.Store, projectID string) {
 	t.Helper()
-	board, err := data.CreateBoard(store.CreateBoardInput{Project: projectID, Name: "Present", Workflow: "review"})
+	board, err := data.Kanban.CreateBoard(kanban.CreateBoardInput{Project: projectID, Name: "Present", Workflow: "review"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, scope := range []string{"card", "chat"} {
-		input := store.CreateCardInput{Project: projectID, Board: board.ID, Title: "Present", WorkspaceMode: model.WorkspaceModeProject}
+		input := kanban.CreateCardInput{Project: projectID, Board: board.ID, Title: "Present", WorkspaceMode: model.WorkspaceModeProject}
 		var card model.Card
 		if scope == "chat" {
-			card, err = data.CreateChat(input)
+			card, err = data.Kanban.CreateChat(input)
 		} else {
-			card, err = data.CreateCard(input)
+			card, err = data.Kanban.CreateCard(input)
 		}
 		if err != nil {
 			t.Fatal(err)
@@ -49,7 +50,7 @@ func assertContentPresentationCLI(t *testing.T, client *CLI, output *bytes.Buffe
 		if file.GetId() == "" || file.GetPath() != "README.md" || file.GetLine() != 2 || file.GetTitle() != "Deliverable" {
 			t.Fatalf("presentation: %s", raw)
 		}
-		conversation, err := data.Conversation(card.ID)
+		conversation, err := data.Conversations.Get(card.ID)
 		if err != nil || conversation.PresentedContent == nil || conversation.PresentedContent.ID != file.Id || len(conversation.Messages) != 0 || conversation.Status != "idle" {
 			t.Fatalf("presentation changed conversation: %#v %v", conversation, err)
 		}
@@ -87,7 +88,7 @@ func assertContentPresentationCLI(t *testing.T, client *CLI, output *bytes.Buffe
 		if err := client.Run([]string{scope, "present", "--path", "../outside.md", card.ID}); err == nil {
 			t.Fatal("accepted an outside-workspace path")
 		}
-		unchanged, err := data.Conversation(card.ID)
+		unchanged, err := data.Conversations.Get(card.ID)
 		if err != nil || unchanged.PresentedContent.ID != browser.Id {
 			t.Fatalf("invalid presentation replaced latest: %#v %v", unchanged, err)
 		}

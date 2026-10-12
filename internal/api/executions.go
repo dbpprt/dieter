@@ -9,12 +9,12 @@ import (
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/host/remoteexec"
 	"github.com/dbpprt/dieter/internal/platform/fault"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 func (api *executionsAPI) ListExecutions(ctx context.Context, request *dieterv1.ListExecutionsRequest) (*dieterv1.ExecutionsResponse, error) {
-	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
+	ctx = kanban.WithCheckout(ctx, request.GetCheckoutId())
 	projectID := strings.TrimSpace(request.GetProjectId())
 	cardID := strings.TrimSpace(request.GetCardId())
 	if projectID != "" || cardID != "" {
@@ -32,7 +32,7 @@ func (api *executionsAPI) ListExecutions(ctx context.Context, request *dieterv1.
 }
 
 func (api *executionsAPI) StartExecution(ctx context.Context, request *dieterv1.StartExecutionRequest) (*dieterv1.Execution, error) {
-	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
+	ctx = kanban.WithCheckout(ctx, request.GetCheckoutId())
 	timeoutMilliseconds := request.GetTimeoutMs()
 	if timeoutMilliseconds < 0 || timeoutMilliseconds > (7*24*time.Hour).Milliseconds() {
 		return nil, fault.New(fault.Invalid, "execution timeout must be between zero and seven days")

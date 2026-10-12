@@ -15,6 +15,8 @@ import (
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/commands"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit"
 	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 )
@@ -42,7 +44,7 @@ func creationRetryClient(t *testing.T, data *store.Store, runner harness.Runner,
 		server.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), testkit.Budget(30*time.Second))
 		defer cancel()
-		cards, err := data.ListCards(store.CardFilter{IncludeArchived: true})
+		cards, err := data.Kanban.ListCards(kanban.CardFilter{IncludeArchived: true})
 		if err != nil {
 			t.Error(err)
 		}
@@ -57,9 +59,9 @@ func creationRetryClient(t *testing.T, data *store.Store, runner harness.Runner,
 		for {
 			settled := true
 			for _, card := range cards {
-				current, resolveErr := data.ResolveCard(card.ID)
-				conversation, conversationErr := data.Conversation(card.ID)
-				leased, leaseErr := data.CardHasRuntimeLease(card.ID)
+				current, resolveErr := data.Kanban.ResolveCard(card.ID)
+				conversation, conversationErr := data.Conversations.Get(card.ID)
+				leased, leaseErr := data.Leases.CardActive(card.ID)
 				if resolveErr != nil || conversationErr != nil || leaseErr != nil {
 					t.Errorf("inspect canceled creation-retry turn: card=%v conversation=%v lease=%v", resolveErr, conversationErr, leaseErr)
 					return
@@ -92,11 +94,11 @@ func TestCreateConversationRetriesFirstTurnAfterStorageAdmissionFailure(t *testi
 		t.Run(scope, func(t *testing.T) {
 			// Reject admission regardless of the host's actual available space.
 			data := testkit.Store(t)
-			project, err := data.CreateProject(store.CreateProjectInput{Name: "Retry", Path: testkit.CheckoutDir(t)})
+			project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Retry", Path: testkit.CheckoutDir(t)})
 			if err != nil {
 				t.Fatal(err)
 			}
-			board, err := data.CreateBoard(store.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
+			board, err := data.Kanban.CreateBoard(kanban.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -106,7 +108,7 @@ func TestCreateConversationRetriesFirstTurnAfterStorageAdmissionFailure(t *testi
 				WorkspaceMode: model.WorkspaceModeProject, ClientId: "retry-client", CommandId: "retry-command",
 				Attachments: []*dieterv1.MessagePart{{Type: "file", MediaType: "text/plain", Filename: "notes.txt", Data: []byte("original attachment")}},
 			}
-			id, err := store.DeterministicCommandID("c_", request.ClientId, request.CommandId)
+			id, err := commands.DeterministicID("c_", request.ClientId, request.CommandId)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -127,11 +129,11 @@ func TestCreateConversationRetriesFirstTurnAfterStorageAdmissionFailure(t *testi
 				if _, err := create(); connect.CodeOf(err) != connect.CodeResourceExhausted || !strings.Contains(err.Error(), "insufficient free disk space") {
 					t.Fatalf("attempt %d: expected storage admission error, got %v", attempt, err)
 				}
-				card, err := data.ResolveCard(id)
+				card, err := data.Kanban.ResolveCard(id)
 				if err != nil || card.InitialPromptSentAt != "" {
 					t.Fatalf("draft=%#v err=%v", card, err)
 				}
-				if _, saved, err := data.LoadCommandResult(request.ClientId, request.CommandId); err != nil || saved {
+				if _, saved, err := data.Commands.Load(request.ClientId, request.CommandId); err != nil || saved {
 					t.Fatalf("rejected admission was acknowledged: saved=%v err=%v", saved, err)
 				}
 			}
@@ -140,7 +142,7 @@ func TestCreateConversationRetriesFirstTurnAfterStorageAdmissionFailure(t *testi
 			}
 			if scope == model.ConversationScopeBoard {
 				// Also recover an interruption between persisting the card and its attachments.
-				if _, err := data.SetConversationDraftAttachments(id, nil); err != nil {
+				if _, err := data.Conversations.SetDraftAttachments(id, nil); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -154,11 +156,11 @@ func TestCreateConversationRetriesFirstTurnAfterStorageAdmissionFailure(t *testi
 			}
 			deadline := time.Now().Add(testkit.Budget(30 * time.Second))
 			for {
-				conversation, err := data.Conversation(id)
+				conversation, err := data.Conversations.Get(id)
 				if err != nil {
 					t.Fatal(err)
 				}
-				current, err := data.ResolveCard(id)
+				current, err := data.Kanban.ResolveCard(id)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -175,7 +177,7 @@ func TestCreateConversationRetriesFirstTurnAfterStorageAdmissionFailure(t *testi
 					t.Fatalf("repeat=%v err=%v", repeated, err)
 				}
 			}
-			conversation, err := data.Conversation(id)
+			conversation, err := data.Conversations.Get(id)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -185,7 +187,7 @@ func TestCreateConversationRetriesFirstTurnAfterStorageAdmissionFailure(t *testi
 					users++
 				}
 			}
-			cards, err := data.ListCards(store.CardFilter{Project: project.ID, Scope: scope})
+			cards, err := data.Kanban.ListCards(kanban.CardFilter{Project: project.ID, Scope: scope})
 			if err != nil || len(cards) != 1 || users != 1 || runner.calls.Load() != 1 || runner.attachments.Load() != 1 {
 				t.Fatalf("cards=%d user messages=%d runner calls=%d attachments=%d err=%v", len(cards), users, runner.calls.Load(), runner.attachments.Load(), err)
 			}
@@ -196,19 +198,19 @@ func TestCreateConversationRetriesFirstTurnAfterStorageAdmissionFailure(t *testi
 func TestCreateConversationRetryDoesNotReplayAmbiguousTurn(t *testing.T) {
 	t.Parallel()
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Ambiguous", Path: testkit.CheckoutDir(t)})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Ambiguous", Path: testkit.CheckoutDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := store.DeterministicCommandID("c_", "retry-client", "ambiguous")
+	id, err := commands.DeterministicID("c_", "retry-client", "ambiguous")
 	if err != nil {
 		t.Fatal(err)
 	}
-	card, err := data.CreateChat(store.CreateCardInput{ID: id, Project: project.ID, Title: "Partial admission", Prompt: "Run once", Provider: "mock", Model: "mock", WorkspaceMode: model.WorkspaceModeProject})
+	card, err := data.Kanban.CreateChat(kanban.CreateCardInput{ID: id, Project: project.ID, Title: "Partial admission", Prompt: "Run once", Provider: "mock", Model: "mock", WorkspaceMode: model.WorkspaceModeProject})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := data.StartConversationTurnParts(card.ID, "partial-turn", "first-message", []model.UIMessagePart{{Type: "text", Text: card.InitialPrompt}}); err != nil {
+	if _, err := data.Conversations.StartTurnParts(card.ID, "partial-turn", "first-message", []model.UIMessagePart{{Type: "text", Text: card.InitialPrompt}}); err != nil {
 		t.Fatal(err)
 	}
 	runner := &creationRetryRunner{}
@@ -220,7 +222,7 @@ func TestCreateConversationRetryDoesNotReplayAmbiguousTurn(t *testing.T) {
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || runner.calls.Load() != 0 {
 		t.Fatalf("ambiguous admission was replayed: calls=%d err=%v", runner.calls.Load(), err)
 	}
-	if _, saved, err := data.LoadCommandResult("retry-client", "ambiguous"); err != nil || saved {
+	if _, saved, err := data.Commands.Load("retry-client", "ambiguous"); err != nil || saved {
 		t.Fatalf("ambiguous admission acknowledged: saved=%v err=%v", saved, err)
 	}
 }

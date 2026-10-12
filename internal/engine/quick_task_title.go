@@ -51,7 +51,7 @@ func (s *Service) scheduleQuickTaskTitle(card model.Card, story string) {
 		}
 		// Compare the durable revision as well as the text: changing a title and
 		// then restoring it must still take precedence over the generated title.
-		_, _ = s.Store.ApplyGeneratedCardTitle(card.ID, card.Title, card.TitleRevision, title)
+		_, _ = s.Store.Kanban.ApplyGeneratedCardTitle(card.ID, card.Title, card.TitleRevision, title)
 	}()
 }
 

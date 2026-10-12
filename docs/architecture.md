@@ -88,8 +88,8 @@ with their owner machine.
   gateway, at most four exchanges at a time, with independent per-peer backoff.
   Checkpoints advance only after durable merges.
 - The store keeps peer records in its own write-ahead views
-  (`internal/store/peer*.go`, `shared*.go`); a write acknowledges local
-  durability, not a quorum.
+  (`internal/store/replica`); a write acknowledges local durability, not a
+  quorum.
 - Vault items replicate through the same records as AES-256-GCM ciphertext;
   keys are sealed to each member's hybrid ML-KEM-768/X25519 key
   (`internal/security/vault`, `internal/store/vaults`).
@@ -111,8 +111,11 @@ internal/
   engine/scheduler/      schedules and occurrence history
   harness/               harness adapters, discovery, runner; catalog/ (embedded
                          harnesses.yaml); runtime/ (Node bridge, pinned with package-lock)
-  store/                 central storage: lock, schema, cards, conversations, boards,
-                         projects, schedules, peer views; vaults/, daemonstate/
+  store/                 central storage: a composition root (Store, New, Ensure, Recover,
+                         Close) over aggregates: home/ (DIETER_HOME, writer lock, schema,
+                         change counter), replica/ (peer replica), leases/, kv/, settings/,
+                         commands/, kanban/ (projects, checkouts, boards, cards, chats),
+                         workspaces/, conversations/, schedules/; vaults/, daemonstate/
   replication/           crdt/ (bounded registers, provenance), schema/ (record kinds),
                          peersync/ (daemon-to-daemon exchange)
   link/                  gateway tunnel client, enrollment identity (sole writer),
@@ -140,8 +143,10 @@ internal/
 
 `.golangci.yml` enforces the main boundaries with depguard: the CLI does not
 import the store, API, engine, daemon, harness, git or host packages; the store
-does not import the API, engine, daemon or CLI; the gateway imports no
-daemon-side package. `forbidigo` keeps `os.Getenv` inside
+does not import the API, engine, daemon or CLI, and its aggregates import only
+the layers below them (home; then replica, leases, settings, commands; then kv
+and kanban; then workspaces, conversations and schedules, which never import
+each other); the gateway imports no daemon-side package. `forbidigo` keeps `os.Getenv` inside
 `internal/platform/config`. See [adr/0001](adr/0001-foundation-refactor.md) for
 the parts of the target layout that are deferred.
 

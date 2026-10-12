@@ -155,15 +155,15 @@ func TestVaultCLIGrantsAccessAtCreation(t *testing.T) {
 		t.Fatalf("card without --vault = %q", plain)
 	}
 	chat := runDaemonCLI(t, client, output, "chat", "create", "--project", created.Project.ID, "--title", "Vault chat", "--workspace", "project", "--provider", "mock", "--model", "mock", "--vault", "--format", "id")
-	stored, err := data.ResolveCard(strings.TrimSpace(chat))
+	stored, err := data.Kanban.ResolveCard(strings.TrimSpace(chat))
 	if err != nil || !stored.VaultAccess {
 		t.Fatalf("chat = %q %+v %v", chat, stored, err)
 	}
 	// Chats start immediately; let the mock turn finish before cleanup.
 	for deadline := time.Now().Add(testkit.Budget(30 * time.Second)); stored.Runtime != "idle" && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-		stored, _ = data.ResolveCard(stored.ID)
+		stored, _ = data.Kanban.ResolveCard(stored.ID)
 	}
-	if _, err := data.GlobalStateContext(t.Context()); err != nil {
+	if _, err := data.Kanban.GlobalStateContext(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	schedule := runDaemonCLI(t, client, output, "schedule", "create", "--project", created.Project.ID, "--board", created.Board.ID, "--name", "Nightly login", "--cron", "0 3 * * *", "--title", "Login", "--prompt", "Check login", "--provider", "mock", "--model", "mock", "--vault")

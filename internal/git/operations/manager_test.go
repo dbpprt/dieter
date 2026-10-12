@@ -13,7 +13,7 @@ import (
 	"github.com/dbpprt/dieter/internal/git/operations"
 	"github.com/dbpprt/dieter/internal/git/workspace"
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit"
 )
 
@@ -21,11 +21,11 @@ func TestCommitFastForwardMergeAndCleanupEndToEnd(t *testing.T) {
 	t.Parallel()
 	repository := testkit.GitRepo(t)
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	chat, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Operation", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
+	chat, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Operation", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,13 +83,13 @@ func TestPushBasePublishingPushesValidatedIntegration(t *testing.T) {
 	testkit.RunGit(t, repository, "remote", "add", "private", remote)
 	testkit.RunGit(t, repository, "push", "private", "main")
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{
 		Name: "Fixture", Path: repository, BaseBranch: "main", BaseRemote: "private",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	chat, err := data.CreateChat(store.CreateCardInput{
+	chat, err := data.Kanban.CreateChat(kanban.CreateCardInput{
 		Project: project.ID, Title: "Publish main", WorkspaceMode: model.WorkspaceModeWorktree,
 		RemotePublishMode: model.RemotePublishPushBase,
 	})
@@ -129,11 +129,11 @@ func TestPullRequestPublishingRejectsLocalMerge(t *testing.T) {
 	t.Parallel()
 	repository := testkit.GitRepo(t)
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	chat, err := data.CreateChat(store.CreateCardInput{
+	chat, err := data.Kanban.CreateChat(kanban.CreateCardInput{
 		Project: project.ID, Title: "PR only", WorkspaceMode: model.WorkspaceModeWorktree,
 		RemotePublishMode: model.RemotePublishPullRequest,
 	})
@@ -159,11 +159,11 @@ func TestRebaseConflictCanBeResolvedAndContinued(t *testing.T) {
 	t.Parallel()
 	repository := testkit.GitRepo(t)
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	chat, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Conflict", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
+	chat, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Conflict", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +208,7 @@ func TestRebaseConflictCanBeResolvedAndContinued(t *testing.T) {
 	if err != nil || update.Status != model.GitOperationSucceeded {
 		t.Fatalf("original update was not completed: %#v %v", update, err)
 	}
-	workspaceValue, err := data.Workspace(chat.ID)
+	workspaceValue, err := data.Workspaces.Get(chat.ID)
 	if err != nil || workspaceValue.State != model.WorkspaceStateReady || workspaceValue.CurrentOperationID != "" {
 		t.Fatalf("workspace did not recover: %#v %v", workspaceValue, err)
 	}
@@ -218,15 +218,15 @@ func TestWorkspaceCanBeAdoptedByAnotherConversation(t *testing.T) {
 	t.Parallel()
 	repository := testkit.GitRepo(t)
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	source, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Source", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
+	source, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Source", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
 	if err != nil {
 		t.Fatal(err)
 	}
-	target, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Target", Prompt: "work"})
+	target, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Target", Prompt: "work"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +246,7 @@ func TestWorkspaceCanBeAdoptedByAnotherConversation(t *testing.T) {
 	if operation.Status != model.GitOperationSucceeded || operation.Result != target.ID {
 		t.Fatalf("adoption failed: %#v", operation)
 	}
-	adopted, err := data.Workspace(target.ID)
+	adopted, err := data.Workspaces.Get(target.ID)
 	if err != nil || adopted.Path != before.Path || adopted.CardID != target.ID || len(adopted.PreviousCardIDs) != 1 || adopted.CurrentOperationID != "" {
 		t.Fatalf("unexpected adopted workspace: %#v %v", adopted, err)
 	}
@@ -259,11 +259,11 @@ func TestPullRequestWorkflowPersistsAndMarksWorkspaceForCleanup(t *testing.T) {
 	t.Parallel()
 	repository := testkit.GitRepo(t)
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main", BaseRemote: "origin"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main", BaseRemote: "origin"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	chat, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Pull request", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
+	chat, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Pull request", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +285,7 @@ func TestPullRequestWorkflowPersistsAndMarksWorkspaceForCleanup(t *testing.T) {
 	if created.Status != model.GitOperationSucceeded || created.Result != "https://example.test/pull/17" {
 		t.Fatalf("create PR failed: %#v", created)
 	}
-	persisted, err := data.PullRequest(chat.ID)
+	persisted, err := data.Workspaces.PullRequest(chat.ID)
 	if err != nil || persisted.Number != 17 || persisted.State != "open" {
 		t.Fatalf("pull request was not persisted: %#v %v", persisted, err)
 	}
@@ -299,7 +299,7 @@ func TestPullRequestWorkflowPersistsAndMarksWorkspaceForCleanup(t *testing.T) {
 	if merged.Status != model.GitOperationSucceeded || provider.mergedHead != value.HeadSHA {
 		t.Fatalf("merge PR failed: %#v provider=%#v", merged, provider)
 	}
-	workspaceValue, err := data.Workspace(chat.ID)
+	workspaceValue, err := data.Workspaces.Get(chat.ID)
 	if err != nil || workspaceValue.State != model.WorkspaceStateCleanupPending || workspaceValue.IntegratedHeadSHA != value.HeadSHA {
 		t.Fatalf("merged PR did not mark cleanup state: %#v %v", workspaceValue, err)
 	}
@@ -309,11 +309,11 @@ func TestDiscardCreatesRecoveryArtifactsBeforeRemovingWorktree(t *testing.T) {
 	t.Parallel()
 	repository := testkit.GitRepo(t)
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	chat, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Discard", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
+	chat, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Discard", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,7 +343,7 @@ func TestDiscardCreatesRecoveryArtifactsBeforeRemovingWorktree(t *testing.T) {
 			t.Fatalf("missing recovery artifact %s: %v", name, statErr)
 		}
 	}
-	if _, err := data.Workspace(chat.ID); err == nil {
+	if _, err := data.Workspaces.Get(chat.ID); err == nil {
 		t.Fatal("discard left a workspace record")
 	}
 }
@@ -352,7 +352,7 @@ func TestProjectCheckoutStageCommitAndDiscardAreProjectScoped(t *testing.T) {
 	t.Parallel()
 	repository := testkit.GitRepo(t)
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -447,7 +447,7 @@ func TestProjectCheckoutDiscardsAFolder(t *testing.T) {
 	write("README.md", "outside\n")
 
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -489,7 +489,7 @@ func TestProjectCheckoutCanPushItsCurrentBranch(t *testing.T) {
 	testkit.RunGit(t, repository, "push", "--set-upstream", "origin", "main")
 
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{
 		Name: "Fixture", Path: repository, BaseRemote: "origin", BaseBranch: "main",
 	})
 	if err != nil {
@@ -532,21 +532,21 @@ func TestProjectCheckoutCanStageWhileAProjectModeAgentIsActive(t *testing.T) {
 	t.Parallel()
 	repository := testkit.GitRepo(t)
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Shared", Path: repository, BaseBranch: "main"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Shared", Path: repository, BaseBranch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	card, err := data.CreateChat(store.CreateCardInput{
+	card, err := data.Kanban.CreateChat(kanban.CreateCardInput{
 		Project: project.ID, Title: "Active", Prompt: "work", WorkspaceMode: model.WorkspaceModeProject,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	lease, err := data.AcquireRuntimeLease(project.ID, card.ID)
+	lease, err := data.Kanban.AcquireRuntimeLease(project.ID, card.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = data.ReleaseRuntimeLease(lease) }()
+	defer func() { _ = data.Leases.Release(lease) }()
 	if err := os.WriteFile(filepath.Join(repository, "README.md"), []byte("agent edit\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -579,7 +579,7 @@ func TestProjectCheckoutUnstageAndDiscardSupportUnbornRepository(t *testing.T) {
 	testkit.RunGit(t, repository, "config", "user.name", "Dieter Test")
 	testkit.RunGit(t, repository, "config", "user.email", "dieter@example.test")
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Unborn", Path: repository, BaseBranch: "feature/unborn"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Unborn", Path: repository, BaseBranch: "feature/unborn"})
 	if err != nil {
 		t.Fatal(err)
 	}

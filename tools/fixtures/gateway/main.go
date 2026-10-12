@@ -36,6 +36,7 @@ import (
 	"github.com/dbpprt/dieter/internal/replication/crdt"
 	"github.com/dbpprt/dieter/internal/security/localauth"
 	boardstore "github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit/topology"
 	"github.com/dbpprt/dieter/internal/transport/controlrtc"
 	"github.com/dbpprt/dieter/tools/fixtures/fixtureturn"
@@ -138,7 +139,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 	}
 	subject := fmt.Sprintf("github:%d", isolatedAccount)
 	account := crdt.Revision([]string{identity.GatewayURL, subject})
-	if _, err = data.BindPeerAccount(account, subject, identity.ID, identity.GatewayURL); err != nil {
+	if _, err = data.Replica.BindPeerAccount(account, subject, identity.ID, identity.GatewayURL); err != nil {
 		return err
 	}
 	repository := filepath.Join(home, "repo")
@@ -169,13 +170,13 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 			return fmt.Errorf("%s: %s: %w", strings.Join(command, " "), output, commandErr)
 		}
 	}
-	project, err := data.CreateProject(boardstore.CreateProjectInput{
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{
 		Name: "Isolated E2E", Path: repository, BaseBranch: "main",
 	})
 	if err != nil {
 		return err
 	}
-	board, err := data.CreateBoard(boardstore.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
+	board, err := data.Kanban.CreateBoard(kanban.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
 	if err != nil {
 		return err
 	}
@@ -376,7 +377,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 		if identityErr != nil {
 			return identityErr
 		}
-		if _, err = secondData.BindPeerAccount(account, subject, secondIdentity.ID, secondIdentity.GatewayURL); err != nil {
+		if _, err = secondData.Replica.BindPeerAccount(account, subject, secondIdentity.ID, secondIdentity.GatewayURL); err != nil {
 			return err
 		}
 		secondDaemonID = secondIdentity.ID
@@ -702,7 +703,7 @@ func isolatedMachineCapabilities(context.Context) []machine.OperationCapability 
 // tool-heavy histories. All writes use the disposable fixture store.
 func seedChatPerformanceFixture(data *boardstore.Store, project model.Project) error {
 	for i := range 40 {
-		card, err := data.CreateChat(boardstore.CreateCardInput{
+		card, err := data.Kanban.CreateChat(kanban.CreateCardInput{
 			Project: project.ID, Title: fmt.Sprintf("Performance chat %02d", i),
 			Provider: "mock", Model: "mock", WorkspaceMode: model.WorkspaceModeProject,
 		})
@@ -712,7 +713,7 @@ func seedChatPerformanceFixture(data *boardstore.Store, project model.Project) e
 		if i >= 2 {
 			continue
 		}
-		if _, err := data.PinChat(card.ID, true); err != nil {
+		if _, err := data.Kanban.PinChat(card.ID, true); err != nil {
 			return err
 		}
 		messages := make([]model.UIMessage, 300)
@@ -734,7 +735,7 @@ func seedChatPerformanceFixture(data *boardstore.Store, project model.Project) e
 			}
 			messages[len(messages)-1].Parts = parts
 		}
-		if _, err := data.InitializeForkConversation(card.ID, messages); err != nil {
+		if _, err := data.Conversations.InitializeFork(card.ID, messages); err != nil {
 			return err
 		}
 	}

@@ -10,12 +10,12 @@ import (
 
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/home"
 )
 
 func TestRetryWhileStoreBusyRetriesOnlyBoundedBusyWrites(t *testing.T) {
 	t.Parallel()
-	busy := fmt.Errorf("%w: %w", store.ErrWriterBusy, context.DeadlineExceeded)
+	busy := fmt.Errorf("%w: %w", home.ErrWriterBusy, context.DeadlineExceeded)
 	attempts := 0
 	if err := retryWhileStoreBusy(context.Background(), func() error {
 		attempts++
@@ -27,7 +27,7 @@ func TestRetryWhileStoreBusyRetriesOnlyBoundedBusyWrites(t *testing.T) {
 		t.Fatalf("recovered write err=%v attempts=%d", err, attempts)
 	}
 	attempts = 0
-	if err := retryWhileStoreBusy(context.Background(), func() error { attempts++; return busy }); !errors.Is(err, store.ErrWriterBusy) || attempts != storeBusyWriteAttempts {
+	if err := retryWhileStoreBusy(context.Background(), func() error { attempts++; return busy }); !errors.Is(err, home.ErrWriterBusy) || attempts != storeBusyWriteAttempts {
 		t.Fatalf("persistent busy err=%v attempts=%d", err, attempts)
 	}
 	attempts = 0
@@ -38,7 +38,7 @@ func TestRetryWhileStoreBusyRetriesOnlyBoundedBusyWrites(t *testing.T) {
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
 	attempts = 0
-	if err := retryWhileStoreBusy(canceled, func() error { attempts++; return busy }); !errors.Is(err, store.ErrWriterBusy) || attempts != 1 {
+	if err := retryWhileStoreBusy(canceled, func() error { attempts++; return busy }); !errors.Is(err, home.ErrWriterBusy) || attempts != 1 {
 		t.Fatalf("canceled turn kept retrying: err=%v attempts=%d", err, attempts)
 	}
 }
@@ -108,7 +108,7 @@ func TestWatchdogDoesNotBlameWorkerForDaemonHostWork(t *testing.T) {
 	if terminal.Err != nil {
 		t.Fatalf("turn failed: %v", terminal.Err)
 	}
-	conversation, err := service.Store.Conversation(card.ID)
+	conversation, err := service.Store.Conversations.Get(card.ID)
 	if err != nil || conversation.Status != "idle" {
 		t.Fatalf("conversation status=%q err=%v", conversation.Status, err)
 	}

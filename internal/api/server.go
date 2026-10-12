@@ -178,14 +178,14 @@ func NewWithOptions(data *store.Store, logger *slog.Logger, options Options) *Se
 	s.changesets = changeset.New(s.workspaces)
 	s.local = newLocalChanges(s)
 	service.BackgroundProcesses = s.backgroundProcess
-	if err := data.InterruptRunningGitOperations(); err != nil {
+	if err := data.Workspaces.InterruptRunningGitOperations(); err != nil {
 		logger.Warn("could not reconcile interrupted Git operations", "error", err)
 	}
 	s.gitOperations = operations.New(data, s.workspaces, logger)
 	s.gitOperations.Changesets = s.changesets
 	s.gitOperations.Busy = func(cardID string) bool {
 		workspacePath := ""
-		if value, err := data.Workspace(cardID); err == nil {
+		if value, err := data.Workspaces.Get(cardID); err == nil {
 			workspacePath = value.Path
 			if resolved, resolveErr := filepath.EvalSymlinks(workspacePath); resolveErr == nil {
 				workspacePath = resolved

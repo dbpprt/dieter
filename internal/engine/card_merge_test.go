@@ -23,7 +23,7 @@ func TestMergeQueuesBehindRunningTargetAndDeliversInitialRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = service.Store.SetConversationDraftAttachments(source.ID, []model.UIMessagePart{{Type: "file", MediaType: "image/png", Filename: "request.png", URL: "data:image/png;base64,iVBORw0KGgo="}})
+	_, err = service.Store.Conversations.SetDraftAttachments(source.ID, []model.UIMessagePart{{Type: "file", MediaType: "image/png", Filename: "request.png", URL: "data:image/png;base64,iVBORw0KGgo="}})
 	if err != nil {
 		t.Fatal(err)
 	}

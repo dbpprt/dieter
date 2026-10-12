@@ -18,6 +18,7 @@ import (
 	"github.com/dbpprt/dieter/internal/link"
 	"github.com/dbpprt/dieter/internal/replication/crdt"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/replica"
 	"github.com/dbpprt/dieter/internal/transport/controlrtc"
 	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -302,7 +303,7 @@ func (p *PeerSync) Run(ctx context.Context) {
 		logger = slog.Default()
 	}
 	delay := interval
-	changes := p.Store.PeerChangesAvailable()
+	changes := p.Store.Replica.PeerChangesAvailable()
 	var workers sync.WaitGroup
 	defer workers.Wait()
 	for ctx.Err() == nil {
@@ -343,7 +344,7 @@ func (p *PeerSync) Round(ctx context.Context) error { return p.round(ctx, ctx, n
 // Serve dispatches without waiting for slow exchanges. Explicit Round waits for
 // its admitted peers, preserving callers' durable convergence boundary.
 func (p *PeerSync) round(ctx, workerCtx context.Context, workers *sync.WaitGroup) error {
-	if err := p.Store.FlushSharedOutbox(); err != nil {
+	if err := p.Store.Schedules.FlushSharedOutbox(); err != nil {
 		return err
 	}
 	current, err := link.LoadIdentity(p.Store.Root)
@@ -368,7 +369,7 @@ func (p *PeerSync) round(ctx, workerCtx context.Context, workers *sync.WaitGroup
 	}
 	subject := fmt.Sprintf("github:%d", account.GetGithubId())
 	scope := crdt.Revision([]string{p.Identity.Issuer(), subject})
-	binding, err := p.Store.BindPeerAccount(scope, subject, p.Identity.ID, p.Identity.Issuer())
+	binding, err := p.Store.Replica.BindPeerAccount(scope, subject, p.Identity.ID, p.Identity.Issuer())
 	if err != nil {
 		return err
 	}
@@ -391,7 +392,7 @@ func (p *PeerSync) round(ctx, workerCtx context.Context, workers *sync.WaitGroup
 			peers = append(peers, d.GetId())
 		}
 	}
-	if err := p.Store.ObservePeerAvailability(binding, online); err != nil {
+	if err := p.Store.Replica.ObservePeerAvailability(binding, online); err != nil {
 		return err
 	}
 	sort.Strings(peers)
@@ -449,10 +450,10 @@ func (p *PeerSync) round(ctx, workerCtx context.Context, workers *sync.WaitGroup
 	return lastErr
 }
 
-func (p *PeerSync) exchangePeer(ctx context.Context, binding store.PeerIdentity, conn grpc.ClientConnInterface, target string) error {
+func (p *PeerSync) exchangePeer(ctx context.Context, binding replica.PeerIdentity, conn grpc.ClientConnInterface, target string) error {
 	connection, e := dialPeer(ctx, p.Identity, conn, target, p.RelayOnly, !p.RelayOnly && !p.rtcAttemptAllowed(target))
 	if e != nil {
-		_ = p.Store.RecordPeerSync(binding, store.PeerSyncDiagnostic{PeerID: target, LastAttemptAt: time.Now().UTC().Format(time.RFC3339Nano), Direction: "connect", FailureCode: sanitizedRTCReason(e)})
+		_ = p.Store.Replica.RecordPeerSync(binding, replica.PeerSyncDiagnostic{PeerID: target, LastAttemptAt: time.Now().UTC().Format(time.RFC3339Nano), Direction: "connect", FailureCode: sanitizedRTCReason(e)})
 		return fmt.Errorf("peer %s: %w", target, e)
 	}
 	defer connection.Close()
@@ -468,7 +469,7 @@ func (p *PeerSync) exchangePeer(ctx context.Context, binding store.PeerIdentity,
 	}
 	e = p.exchange(ctx, binding, connection.Client, target, connection.Route)
 	if e == nil {
-		e = p.Store.PeerSynced(binding, target, connection.Route)
+		e = p.Store.Replica.PeerSynced(binding, target, connection.Route)
 	} else if errors.Is(e, ErrPeerCatchUp) {
 		e = nil
 	}
@@ -477,12 +478,12 @@ func (p *PeerSync) exchangePeer(ctx context.Context, binding store.PeerIdentity,
 
 // Exchange resumes each direction from a durable local transport checkpoint.
 // Merge commits before checkpoint advancement; lost replies only repeat joins.
-func (p *PeerSync) Exchange(ctx context.Context, binding store.PeerIdentity, client dieterclient.Client) error {
+func (p *PeerSync) Exchange(ctx context.Context, binding replica.PeerIdentity, client dieterclient.Client) error {
 	return p.exchange(ctx, binding, client, "", "")
 }
 
-func (p *PeerSync) exchange(ctx context.Context, binding store.PeerIdentity, client dieterclient.Client, target, route string) (resultErr error) {
-	diagnostic := store.PeerSyncDiagnostic{PeerID: target, LastAttemptAt: time.Now().UTC().Format(time.RFC3339Nano), Direction: "status", Route: route}
+func (p *PeerSync) exchange(ctx context.Context, binding replica.PeerIdentity, client dieterclient.Client, target, route string) (resultErr error) {
+	diagnostic := replica.PeerSyncDiagnostic{PeerID: target, LastAttemptAt: time.Now().UTC().Format(time.RFC3339Nano), Direction: "status", Route: route}
 	defer func() {
 		if diagnostic.PeerID == "" {
 			return
@@ -491,7 +492,7 @@ func (p *PeerSync) exchange(ctx context.Context, binding store.PeerIdentity, cli
 			diagnostic.Direction = "catchup"
 		} else if resultErr != nil {
 			diagnostic.FailureCode = sanitizedRTCReason(resultErr)
-			var record *store.PeerRecordError
+			var record *replica.PeerRecordError
 			if errors.As(resultErr, &record) {
 				diagnostic.RecordKind, diagnostic.RecordID, diagnostic.Field, diagnostic.FailureCode = record.Kind, record.ID, record.Field, record.Code
 			}
@@ -506,7 +507,7 @@ func (p *PeerSync) exchange(ctx context.Context, binding store.PeerIdentity, cli
 		} else {
 			diagnostic.Direction = "complete"
 		}
-		if err := p.Store.RecordPeerSync(binding, diagnostic); err != nil && (resultErr == nil || errors.Is(resultErr, ErrPeerCatchUp)) {
+		if err := p.Store.Replica.RecordPeerSync(binding, diagnostic); err != nil && (resultErr == nil || errors.Is(resultErr, ErrPeerCatchUp)) {
 			resultErr = err
 		}
 	}()
@@ -523,7 +524,7 @@ func (p *PeerSync) exchange(ctx context.Context, binding store.PeerIdentity, cli
 		diagnostic.PeerID = peer
 	}
 	diagnostic.Direction = "pull"
-	pull, err := p.Store.PeerCheckpoint(binding.Account, peer, "pull")
+	pull, err := p.Store.Replica.PeerCheckpoint(binding.Account, peer, "pull")
 	if err != nil {
 		return err
 	}
@@ -532,7 +533,7 @@ func (p *PeerSync) exchange(ctx context.Context, binding store.PeerIdentity, cli
 	for page := 0; page < peerExchangePages; page++ {
 		changes, e := client.GetPeerChanges(ctx, &dieterv1.PeerChangesRequest{Account: binding.Account, Epoch: pull.Epoch, AfterSequence: pull.Sequence})
 		if status.Code(e) == codes.Aborted && pull.Epoch != "" {
-			pull = store.PeerCheckpoint{}
+			pull = replica.PeerCheckpoint{}
 			continue
 		}
 		if e != nil {
@@ -549,14 +550,14 @@ func (p *PeerSync) exchange(ctx context.Context, binding store.PeerIdentity, cli
 			}
 			records = append(records, record)
 		}
-		if err = p.Store.MergePeerRecords(binding, records); err != nil {
+		if err = p.Store.Replica.MergePeerRecords(binding, records); err != nil {
 			return err
 		}
 		if changes.GetMore() && changes.GetAfterSequence() == pull.Sequence {
 			return fmt.Errorf("peer made no progress")
 		}
-		pull = store.PeerCheckpoint{Epoch: changes.GetEpoch(), Sequence: changes.GetAfterSequence()}
-		if err = p.Store.SavePeerCheckpoint(binding, peer, "pull", pull); err != nil {
+		pull = replica.PeerCheckpoint{Epoch: changes.GetEpoch(), Sequence: changes.GetAfterSequence()}
+		if err = p.Store.Replica.SavePeerCheckpoint(binding, peer, "pull", pull); err != nil {
 			return err
 		}
 		diagnostic.Pull = pull
@@ -566,19 +567,19 @@ func (p *PeerSync) exchange(ctx context.Context, binding store.PeerIdentity, cli
 		}
 	}
 	diagnostic.Direction = "push"
-	push, err := p.Store.PeerCheckpoint(binding.Account, peer, "push")
+	push, err := p.Store.Replica.PeerCheckpoint(binding.Account, peer, "push")
 	if err != nil {
 		return err
 	}
 	// A replaced receiving replica has lost earlier acknowledgements too.
 	if push.RemoteEpoch != pull.Epoch {
-		push = store.PeerCheckpoint{RemoteEpoch: pull.Epoch}
+		push = replica.PeerCheckpoint{RemoteEpoch: pull.Epoch}
 	}
 	diagnostic.Push = push
 	for page := 0; page < peerExchangePages; page++ {
-		changes, e := p.Store.PeerChanges(binding.Account, push.Epoch, push.Sequence)
+		changes, e := p.Store.Replica.PeerChanges(binding.Account, push.Epoch, push.Sequence)
 		if errors.Is(e, crdt.ErrConflict) && push.Epoch != "" {
-			push = store.PeerCheckpoint{RemoteEpoch: pull.Epoch}
+			push = replica.PeerCheckpoint{RemoteEpoch: pull.Epoch}
 			continue
 		}
 		if e != nil {
@@ -597,8 +598,8 @@ func (p *PeerSync) exchange(ctx context.Context, binding store.PeerIdentity, cli
 				return err
 			}
 		}
-		push = store.PeerCheckpoint{Epoch: changes.Epoch, Sequence: changes.After, RemoteEpoch: pull.Epoch}
-		if err = p.Store.SavePeerCheckpoint(binding, peer, "push", push); err != nil {
+		push = replica.PeerCheckpoint{Epoch: changes.Epoch, Sequence: changes.After, RemoteEpoch: pull.Epoch}
+		if err = p.Store.Replica.SavePeerCheckpoint(binding, peer, "push", push); err != nil {
 			return err
 		}
 		diagnostic.Push = push

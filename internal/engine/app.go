@@ -14,6 +14,7 @@ import (
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/leases"
 )
 
 type Service struct {
@@ -26,14 +27,14 @@ type Service struct {
 
 	mu               sync.Mutex
 	active           map[string]*activeTurn
-	strandedLeases   map[string]store.RuntimeLease
+	strandedLeases   map[string]leases.RuntimeLease
 	shuttingDown     bool
 	quickTitleJobs   map[string]*quickTitleJob
 	quickTitleSlots  chan struct{}
 	minimumFreeBytes uint64
 	diskAvailable    func(string) (uint64, error)
 	turnTokenKey     []byte
-	releaseLease     func(store.RuntimeLease) error
+	releaseLease     func(leases.RuntimeLease) error
 }
 
 type activeTurn struct {
@@ -41,7 +42,7 @@ type activeTurn struct {
 	cancel         context.CancelFunc
 	cardID         string
 	turnID         string
-	lease          store.RuntimeLease
+	lease          leases.RuntimeLease
 	done           chan struct{}
 	suspend        bool
 	startedAt      time.Time
@@ -92,8 +93,8 @@ func NewWithOptions(data *store.Store, options Options) *Service {
 		minimumFreeBytes = *options.MinimumFreeBytes
 	}
 	return &Service{
-		Store: data, Runner: runner, Catalog: catalog, Workspaces: workspace.New(data, nil), active: map[string]*activeTurn{}, strandedLeases: map[string]store.RuntimeLease{},
-		minimumFreeBytes: minimumFreeBytes, diskAvailable: availableDiskBytes, turnTokenKey: newTurnTokenKey(), releaseLease: data.ReleaseRuntimeLease,
+		Store: data, Runner: runner, Catalog: catalog, Workspaces: workspace.New(data, nil), active: map[string]*activeTurn{}, strandedLeases: map[string]leases.RuntimeLease{},
+		minimumFreeBytes: minimumFreeBytes, diskAvailable: availableDiskBytes, turnTokenKey: newTurnTokenKey(), releaseLease: data.Leases.Release,
 		quickTitleJobs: map[string]*quickTitleJob{}, quickTitleSlots: make(chan struct{}, quickTaskTitleConcurrency),
 	}
 }

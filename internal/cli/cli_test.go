@@ -53,13 +53,13 @@ func TestCLIConversationWorkflowAndHelp(t *testing.T) {
 	if err := c.Run([]string{"project", "open", repo, "--prompt", "Stay concise."}); err != nil {
 		t.Fatal(err)
 	}
-	projects, _ := data.ListProjects()
+	projects, _ := data.Kanban.ListProjects()
 	projectID := projects[0].ID
 	out.Reset()
 	if err := c.Run([]string{"board", "create", "--project", projectID, "--name", "Delivery", "--workflow", "review"}); err != nil {
 		t.Fatal(err)
 	}
-	boards, _ := data.ListBoards(projectID)
+	boards, _ := data.Kanban.ListBoards(projectID)
 	attachmentPath := filepath.Join(t.TempDir(), "notes.txt")
 	if err := os.WriteFile(attachmentPath, []byte("CLI attachment"), 0o600); err != nil {
 		t.Fatal(err)
@@ -72,7 +72,7 @@ func TestCLIConversationWorkflowAndHelp(t *testing.T) {
 	if !strings.HasPrefix(cardID, "c_") {
 		t.Fatalf("card id=%q", cardID)
 	}
-	draft, err := data.Conversation(cardID)
+	draft, err := data.Conversations.Get(cardID)
 	if err != nil || len(draft.DraftAttachments) != 1 || draft.DraftAttachments[0].Filename != "notes.txt" {
 		t.Fatalf("draft attachments=%#v err=%v", draft.DraftAttachments, err)
 	}
@@ -82,7 +82,7 @@ func TestCLIConversationWorkflowAndHelp(t *testing.T) {
 	}
 	deadline := time.Now().Add(testkit.Budget(30 * time.Second))
 	for time.Now().Before(deadline) {
-		current, err := data.ResolveCard(cardID)
+		current, err := data.Kanban.ResolveCard(cardID)
 		if err == nil && current.InitialPromptSentAt != "" && current.Runtime == "idle" {
 			break
 		}
@@ -96,7 +96,7 @@ func TestCLIConversationWorkflowAndHelp(t *testing.T) {
 	if err := c.Run([]string{"card", "move", cardID, "--lane", "review"}); err != nil {
 		t.Fatal(err)
 	}
-	card, _ := data.ResolveCard(cardID)
+	card, _ := data.Kanban.ResolveCard(cardID)
 	if card.Lane != "review" {
 		t.Fatalf("lane=%s", card.Lane)
 	}
@@ -104,7 +104,7 @@ func TestCLIConversationWorkflowAndHelp(t *testing.T) {
 	if err := c.Run([]string{"board", "retention", "--archive-done", "after_30_days", boards[0].ID}); err != nil {
 		t.Fatal(err)
 	}
-	board, _ := data.ResolveBoard("", boards[0].ID)
+	board, _ := data.Kanban.ResolveBoard("", boards[0].ID)
 	if board.DoneArchivePolicy != "after_30_days" {
 		t.Fatalf("Done archive policy=%q", board.DoneArchivePolicy)
 	}
@@ -141,13 +141,13 @@ func TestCLIProjectRemoveAndRestore(t *testing.T) {
 	if err := c.Run([]string{"project", "open", repo, "--name", "Temporary"}); err != nil {
 		t.Fatal(err)
 	}
-	projects, _ := data.ListProjects()
+	projects, _ := data.Kanban.ListProjects()
 	projectID := projects[0].ID
 	out.Reset()
 	if err := c.Run([]string{"project", "remove", projectID}); err != nil {
 		t.Fatal(err)
 	}
-	if projects, _ := data.ListProjects(); len(projects) != 0 {
+	if projects, _ := data.Kanban.ListProjects(); len(projects) != 0 {
 		t.Fatalf("project still active: %#v", projects)
 	}
 	out.Reset()
@@ -158,7 +158,7 @@ func TestCLIProjectRemoveAndRestore(t *testing.T) {
 	if err := c.Run([]string{"project", "restore", projectID}); err != nil {
 		t.Fatal(err)
 	}
-	if projects, _ := data.ListProjects(); len(projects) != 1 || projects[0].ID != projectID {
+	if projects, _ := data.Kanban.ListProjects(); len(projects) != 1 || projects[0].ID != projectID {
 		t.Fatalf("restored projects: %#v", projects)
 	}
 }
@@ -235,7 +235,7 @@ func TestSetupRejectsProjectPathsBeforeOnboarding(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "register a project explicitly with `dieter project open PATH`") {
 		t.Fatalf("setup error=%v", err)
 	}
-	projects, listErr := data.ListProjects()
+	projects, listErr := data.Kanban.ListProjects()
 	if listErr != nil || len(projects) != 0 {
 		t.Fatalf("projects=%#v err=%v", projects, listErr)
 	}
@@ -277,7 +277,7 @@ func TestSetupDoesNotRegisterCurrentGitProject(t *testing.T) {
 	if err := c.Run([]string{"setup", "--no-open", "--no-start"}); err != nil {
 		t.Fatal(err)
 	}
-	projects, err := data.ListProjects()
+	projects, err := data.Kanban.ListProjects()
 	if err != nil || len(projects) != 0 {
 		t.Fatalf("projects=%#v err=%v", projects, err)
 	}

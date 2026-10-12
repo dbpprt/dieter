@@ -22,7 +22,7 @@ func (api *schedulesAPI) ListSchedules(_ context.Context, request *dieterv1.List
 }
 
 func (api *schedulesAPI) GetSchedule(_ context.Context, request *dieterv1.ScheduleRef) (*dieterv1.Schedule, error) {
-	value, err := api.server.store.ResolveSchedule(request.GetScheduleId())
+	value, err := api.server.store.Schedules.Resolve(request.GetScheduleId())
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +65,7 @@ func (api *schedulesAPI) UpdateSchedule(_ context.Context, request *dieterv1.Sav
 }
 
 func (api *schedulesAPI) DeleteSchedule(_ context.Context, request *dieterv1.ScheduleRef) (*emptypb.Empty, error) {
-	if err := api.server.store.DeleteSchedule(request.GetScheduleId()); err != nil {
+	if err := api.server.store.Schedules.Delete(request.GetScheduleId()); err != nil {
 		return nil, err
 	}
 	return &emptypb.Empty{}, nil
@@ -88,7 +88,7 @@ func (api *schedulesAPI) SetScheduleEnabled(_ context.Context, request *dieterv1
 }
 
 func (api *schedulesAPI) ListScheduleRuns(_ context.Context, request *dieterv1.ListScheduleRunsRequest) (*dieterv1.ScheduleRunsResponse, error) {
-	page, err := api.server.store.ListScheduleRunsPage(request.GetScheduleId(), int(request.GetPageSize()), request.GetPageToken())
+	page, err := api.server.store.Schedules.ListRunsPage(request.GetScheduleId(), int(request.GetPageSize()), request.GetPageToken())
 	if err != nil {
 		return nil, err
 	}

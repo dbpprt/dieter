@@ -16,6 +16,9 @@ import (
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/commands"
+	"github.com/dbpprt/dieter/internal/store/kanban"
+	"github.com/dbpprt/dieter/internal/store/replica"
 	"github.com/dbpprt/dieter/internal/testkit"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/codes"
@@ -25,11 +28,11 @@ import (
 func changesFixture(t *testing.T) (*store.Store, *service, model.Card) {
 	t.Helper()
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Changes", Path: testkit.CheckoutDir(t)})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Changes", Path: testkit.CheckoutDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	card, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "before", Prompt: "Owner-only prompt"})
+	card, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "before", Prompt: "Owner-only prompt"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +119,7 @@ func recordIDs(frames ...*dieterv1.ChangesFrame) map[string]*dieterv1.PeerRecord
 func TestChangesStreamRecordsThenOnlyWhatChanged(t *testing.T) {
 	t.Parallel()
 	data, api, card := changesFixture(t)
-	identity, err := data.PeerIdentity()
+	identity, err := data.Replica.PeerIdentity()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +129,7 @@ func TestChangesStreamRecordsThenOnlyWhatChanged(t *testing.T) {
 	if !first.GetResetRecords() || !first.GetResetLocal() || first.GetDaemonId() != identity.DaemonID || first.GetAccount() != identity.Account {
 		t.Fatalf("first frame does not start both halves: %#v", first)
 	}
-	checkouts, err := data.ListCheckouts(card.ProjectID)
+	checkouts, err := data.Kanban.ListCheckouts(card.ProjectID)
 	if err != nil || len(checkouts) != 1 {
 		t.Fatalf("checkouts=%v err=%v", checkouts, err)
 	}
@@ -162,7 +165,7 @@ func TestChangesStreamRecordsThenOnlyWhatChanged(t *testing.T) {
 		t.Fatalf("owner details missing or carry shared fields: %#v", owned)
 	}
 
-	if _, err := data.RenameCard(card.ID, "after"); err != nil {
+	if _, err := data.Kanban.RenameCard(card.ID, "after"); err != nil {
 		t.Fatal(err)
 	}
 	changed := nextDataFrame(t, frames)
@@ -187,7 +190,7 @@ func TestChangesResumeFromCursorAndResetWhenItNoLongerApplies(t *testing.T) {
 	if err := stop(); !errors.Is(err, context.Canceled) {
 		t.Fatalf("stop: %v", err)
 	}
-	if _, err := data.RenameCard(card.ID, "while away"); err != nil {
+	if _, err := data.Kanban.RenameCard(card.ID, "while away"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -230,10 +233,10 @@ func TestChangesSendOnlyHeartbeatsForNoops(t *testing.T) {
 	frames, _ := watchChangesFrames(t, api, &dieterv1.ChangesRequest{HeartbeatMs: 1_000})
 	initial := untilCaughtUp(t, frames)
 	cursor := initial[len(initial)-1].GetCursor()
-	if err := data.SaveCommandResult("changes-test", "projection-neutral", store.CommandResult{Kind: "test"}); err != nil {
+	if err := data.Commands.Save("changes-test", "projection-neutral", commands.Result{Kind: "test"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := data.UpdateCardCache(card.ID, store.CardCacheInput{Runtime: card.Runtime}); err != nil {
+	if _, err := data.Kanban.UpdateCardCache(card.ID, kanban.CardCacheInput{Runtime: card.Runtime}); err != nil {
 		t.Fatal(err)
 	}
 	for range 2 {
@@ -247,11 +250,11 @@ func TestChangesSendOnlyHeartbeatsForNoops(t *testing.T) {
 func TestChangesCarryRunningTurnActivityAndFinish(t *testing.T) {
 	t.Parallel()
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Activity", Path: testkit.CheckoutDir(t)})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Activity", Path: testkit.CheckoutDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	card, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Turn", Provider: "mock", Model: "mock"})
+	card, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Turn", Provider: "mock", Model: "mock"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -305,7 +308,7 @@ func TestChangesRemoveArchivedOwnedCards(t *testing.T) {
 	data, api, card := changesFixture(t)
 	frames, _ := watchChangesFrames(t, api, &dieterv1.ChangesRequest{HeartbeatMs: 1_000})
 	untilCaughtUp(t, frames)
-	if _, err := data.ArchiveCard(card.ID, true); err != nil {
+	if _, err := data.Kanban.ArchiveCard(card.ID, true); err != nil {
 		t.Fatal(err)
 	}
 	removed, archivedRecord := false, false
@@ -367,7 +370,7 @@ func TestChangesRecoverAWriterKilledBeforeItsCommit(t *testing.T) {
 func TestChangesSkipAnUnreadableConversation(t *testing.T) {
 	t.Parallel()
 	data, api, card := changesFixture(t)
-	if _, err := data.MarkPromptSent(card.ID); err != nil {
+	if _, err := data.Kanban.MarkPromptSent(card.ID); err != nil {
 		t.Fatal(err)
 	}
 	dir := filepath.Join(data.Root, "conversations", card.ID)
@@ -407,7 +410,7 @@ func TestChangesFramesStayBounded(t *testing.T) {
 	data, api, card := changesFixture(t)
 	// Each chat has several records, so a dozen span more than one page.
 	for index := range 12 {
-		if _, err := data.CreateChat(store.CreateCardInput{Project: card.ProjectID, Title: fmt.Sprintf("chat %d", index)}); err != nil {
+		if _, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: card.ProjectID, Title: fmt.Sprintf("chat %d", index)}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -476,23 +479,23 @@ func TestChangesCarryPeerSyncIssues(t *testing.T) {
 	t.Parallel()
 	data, api, _ := changesFixture(t)
 	api.server.local.diagnosticsInterval = 50 * time.Millisecond
-	identity, err := data.PeerIdentity()
+	identity, err := data.Replica.PeerIdentity()
 	if err != nil {
 		t.Fatal(err)
 	}
 	frames, _ := watchChangesFrames(t, api, &dieterv1.ChangesRequest{HeartbeatMs: 1_000})
 	untilCaughtUp(t, frames)
 	now := time.Now().UTC()
-	for _, issue := range []store.PeerSyncDiagnostic{
+	for _, issue := range []replica.PeerSyncDiagnostic{
 		{PeerID: "online", LastAttemptAt: now.Format(time.RFC3339Nano), FailureCode: "Unavailable"},
 		{PeerID: "rejected", LastAttemptAt: now.Add(-time.Hour).Format(time.RFC3339Nano), FailureCode: "invalid-record", RecordID: "b_one.retired"},
 		{PeerID: "old", LastAttemptAt: now.Add(-time.Hour).Format(time.RFC3339Nano), FailureCode: "Unavailable"},
 	} {
-		if err := data.RecordPeerSync(identity, issue); err != nil {
+		if err := data.Replica.RecordPeerSync(identity, issue); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := data.ObservePeerAvailability(identity, map[string]bool{"online": true, "old": true}); err != nil {
+	if err := data.Replica.ObservePeerAvailability(identity, map[string]bool{"online": true, "old": true}); err != nil {
 		t.Fatal(err)
 	}
 	var issues []*dieterv1.PeerSyncDiagnostic
@@ -509,7 +512,7 @@ func TestChangesCarryPeerSyncIssues(t *testing.T) {
 		t.Fatalf("issues=%v", issues)
 	}
 	for _, peer := range []string{"online", "rejected"} {
-		if err := data.RecordPeerSync(identity, store.PeerSyncDiagnostic{PeerID: peer, LastAttemptAt: time.Now().UTC().Format(time.RFC3339Nano)}); err != nil {
+		if err := data.Replica.RecordPeerSync(identity, replica.PeerSyncDiagnostic{PeerID: peer, LastAttemptAt: time.Now().UTC().Format(time.RFC3339Nano)}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -525,11 +528,11 @@ func TestChangesAndOutboxCommandsEndToEnd(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Outbox", Path: testkit.CheckoutDir(t)})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Outbox", Path: testkit.CheckoutDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	board, err := data.CreateBoard(store.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
+	board, err := data.Kanban.CreateBoard(kanban.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -590,7 +593,7 @@ func TestChangesAndOutboxCommandsEndToEnd(t *testing.T) {
 	}
 	deadline := time.Now().Add(testkit.Budget(30 * time.Second))
 	for {
-		conversation, conversationErr := data.Conversation(chat.GetId())
+		conversation, conversationErr := data.Conversations.Get(chat.GetId())
 		if conversationErr != nil {
 			t.Fatal(conversationErr)
 		}
@@ -600,7 +603,7 @@ func TestChangesAndOutboxCommandsEndToEnd(t *testing.T) {
 				count++
 			}
 		}
-		resolved, _ := data.ResolveCard(chat.GetId())
+		resolved, _ := data.Kanban.ResolveCard(chat.GetId())
 		if count == 1 && conversation.Status == "idle" && resolved.Runtime == "idle" && conversation.ActiveTurn == nil {
 			break
 		}
@@ -620,15 +623,15 @@ func TestIdempotentStartAdmissionReachesTheStream(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), testkit.Budget(30*time.Second))
 	defer cancel()
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Admission", Path: testkit.CheckoutDir(t)})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Admission", Path: testkit.CheckoutDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	board, err := data.CreateBoard(store.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
+	board, err := data.Kanban.CreateBoard(kanban.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
 	if err != nil {
 		t.Fatal(err)
 	}
-	card, err := data.CreateCard(store.CreateCardInput{Project: project.ID, Board: board.ID, Lane: model.LaneTodo, Title: "Admit me", Prompt: "Read only", Provider: "mock", Model: "mock"})
+	card, err := data.Kanban.CreateCard(kanban.CreateCardInput{Project: project.ID, Board: board.ID, Lane: model.LaneTodo, Title: "Admit me", Prompt: "Read only", Provider: "mock", Model: "mock"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -638,7 +641,7 @@ func TestIdempotentStartAdmissionReachesTheStream(t *testing.T) {
 		releaseOnce.Do(func() { close(release) })
 		deadline := time.Now().Add(testkit.Budget(30 * time.Second))
 		for time.Now().Before(deadline) {
-			if resolved, err := data.ResolveCard(card.ID); err == nil && resolved.Runtime == "idle" {
+			if resolved, err := data.Kanban.ResolveCard(card.ID); err == nil && resolved.Runtime == "idle" {
 				_ = data.WaitForWriter(context.Background())
 				return
 			}
@@ -678,29 +681,29 @@ func TestOnePassGlobalStateMatchesPerProjectProjection(t *testing.T) {
 	t.Parallel()
 	data := testkit.Store(t)
 	for _, name := range []string{"Alpha", "Beta"} {
-		project, err := data.CreateProject(store.CreateProjectInput{Name: name, Path: testkit.CheckoutDir(t)})
+		project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: name, Path: testkit.CheckoutDir(t)})
 		if err != nil {
 			t.Fatal(err)
 		}
-		board, err := data.CreateBoard(store.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
+		board, err := data.Kanban.CreateBoard(kanban.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := data.CreateCard(store.CreateCardInput{Project: project.ID, Board: board.ID, Title: name + " card"}); err != nil {
+		if _, err := data.Kanban.CreateCard(kanban.CreateCardInput{Project: project.ID, Board: board.ID, Title: name + " card"}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: name + " chat"}); err != nil {
+		if _, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: name + " chat"}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	expected := &dieterv1.State{StorePath: data.Root}
-	projects, err := data.ListProjects()
+	projects, err := data.Kanban.ListProjects()
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, project := range projects {
 		expected.Projects = append(expected.Projects, protoProject(project))
-		projectState, err := data.State(project.ID, store.CardFilter{})
+		projectState, err := data.Kanban.State(project.ID, kanban.CardFilter{})
 		if err != nil {
 			t.Fatal(err)
 		}

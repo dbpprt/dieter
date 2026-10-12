@@ -66,17 +66,21 @@ Adopt the proposal with the owner's answers to its open questions:
 
 Recorded so nobody mistakes the proposal's target for the current state:
 
-- **Store aggregates, partially.** Only `internal/store/vaults` and
-  `internal/store/daemonstate` were extracted. Projects, boards, cards,
-  conversations, schedules, workspace, KV and the peer/shared write-ahead views
-  stay in `internal/store`: their call graph is cyclic and they share
-  unexported peer-view internals, so a split needs a domain-service design
-  (handlers → services → stores) rather than a mechanical move. Recovery work
+- **Store aggregates, done.** `internal/store` is a composition root over
+  aggregate subpackages behind the same root lock: `home` (DIETER_HOME, writer
+  lock, schema, change counter), `replica` (the peer replica and its
+  write-ahead views), `leases`, `kv`, `settings`, `commands`, `kanban`
+  (projects, checkouts, boards, cards and chats), `workspaces`,
+  `conversations` and `schedules`, beside `vaults` and `daemonstate`. The
+  graph is acyclic: a lower aggregate reaches a higher one only through hooks
+  the root wires, and depguard enforces the order. Durable formats and the lock
+  order did not change. Rules still live in the aggregates; domain services
+  (handlers → services → stores) come as each domain is touched. Recovery work
   moved off the write path to startup plus a periodic sweeper.
 - **Replication, partially.** The CRDT (`replication/crdt`), record schema
   (`replication/schema`) and peer exchange (`replication/peersync`) are separate
-  packages; the store-resident peer and shared-record code stays in the store
-  for the reason above.
+  packages; the peer replica stays in `internal/store/replica`, because a
+  replica transaction commits together with the store's local file effects.
 - **Protocol split done, as a wire break.** `dieter.proto` became one file and
   service per domain (`CardService`, `ConversationService`, …) plus
   `common.proto`. RPC paths changed from `/dieter.v1.DieterService/X` to

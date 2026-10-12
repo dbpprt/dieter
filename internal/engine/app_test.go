@@ -16,6 +16,8 @@ import (
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
+	"github.com/dbpprt/dieter/internal/store/leases"
 	"github.com/dbpprt/dieter/internal/testkit"
 )
 
@@ -452,11 +454,11 @@ func appSetup(t *testing.T) (*Service, *fakeRunner, model.Project, model.Board) 
 		t.Fatal(err)
 	}
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Atlas", Path: repo, Prompt: "Run tests."})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Atlas", Path: repo, Prompt: "Run tests."})
 	if err != nil {
 		t.Fatal(err)
 	}
-	board, err := data.CreateBoard(store.CreateBoardInput{Project: project.ID, Name: "Delivery", Workflow: model.WorkflowReview})
+	board, err := data.Kanban.CreateBoard(kanban.CreateBoardInput{Project: project.ID, Name: "Delivery", Workflow: model.WorkflowReview})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -468,7 +470,7 @@ func TestHarnessTurnRunsInsideConversationWorktree(t *testing.T) {
 	t.Parallel()
 	repository := testkit.GitRepo(t)
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Workspace", Path: repository, BaseBranch: "main"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Workspace", Path: repository, BaseBranch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -481,11 +483,11 @@ func TestHarnessTurnRunsInsideConversationWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool {
-		stored, resolveErr := data.ResolveCard(card.ID)
+		stored, resolveErr := data.Kanban.ResolveCard(card.ID)
 		return resolveErr == nil && runner.Count() == 1 && stored.Runtime == "idle" && !hasActiveTurn(service, project.ID)
 	})
 	request := runner.Request(0)
-	value, err := data.Workspace(card.ID)
+	value, err := data.Workspaces.Get(card.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -513,7 +515,7 @@ func TestConcurrentProjectDirectoryAndWorktreeHarnessTurnsStayIsolatedEndToEnd(t
 	repository := testkit.GitRepo(t)
 	data := testkit.Store(t)
 	runner, catalog := testkit.MockHarness(t, data.Root)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Concurrent", Path: repository, BaseBranch: "main"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Concurrent", Path: repository, BaseBranch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -549,7 +551,7 @@ func TestConcurrentProjectDirectoryAndWorktreeHarnessTurnsStayIsolatedEndToEnd(t
 		}
 	}
 
-	worktree, err := data.Workspace(worktreeCard.ID)
+	worktree, err := data.Workspaces.Get(worktreeCard.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -583,11 +585,11 @@ func TestWorkspaceProvisioningFailureDoesNotConsumeInitialTurn(t *testing.T) {
 	if err := service.SendCard(context.Background(), card.ID, "", "", "", ""); err == nil {
 		t.Fatal("expected workspace provisioning failure")
 	}
-	stored, err := service.Store.ResolveCard(card.ID)
+	stored, err := service.Store.Kanban.ResolveCard(card.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := service.Store.Conversation(card.ID)
+	conversation, err := service.Store.Conversations.Get(card.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -669,11 +671,11 @@ func completedFakeTurn(t *testing.T, service *Service, fake *fakeRunner, cardID 
 	case <-time.After(timeout):
 		t.Fatalf("turn %s did not finish; runner requests=%d", cardID, fake.Count())
 	}
-	stored, err := service.Store.ResolveCard(cardID)
+	stored, err := service.Store.Kanban.ResolveCard(cardID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := service.Store.Conversation(cardID)
+	conversation, err := service.Store.Conversations.Get(cardID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -714,8 +716,8 @@ func TestCreateRunningCardStartsHarnessWithBoardInstructions(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool {
-		stored, _ := service.Store.ResolveCard(card.ID)
-		conversation, _ := service.Store.Conversation(card.ID)
+		stored, _ := service.Store.Kanban.ResolveCard(card.ID)
+		conversation, _ := service.Store.Conversations.Get(card.ID)
 		return fake.Count() == 1 && stored.Runtime == "idle" && len(conversation.Session) > 0 && !hasActiveTurn(service, project.ID)
 	})
 	request := fake.Request(0)
@@ -792,7 +794,7 @@ func TestCreateQuickTaskGeneratesTitleWithSparkAndKeepsConversationDefaults(t *t
 		t.Fatalf("card=%#v", card)
 	}
 	waitFor(t, func() bool {
-		updated, resolveErr := service.Store.ResolveCard(card.ID)
+		updated, resolveErr := service.Store.Kanban.ResolveCard(card.ID)
 		return resolveErr == nil && updated.Title == "Add Keyboard Board Navigation" && quickTitleJobsFinished(service)
 	})
 	if card.Provider != "codex" || card.Model != "gpt-5.6-sol" || card.Lane != model.LaneTodo || card.WorkspaceMode != model.WorkspaceModeWorktree {
@@ -850,7 +852,7 @@ func TestCreateRunningCardCanDeferStartToStreamingClient(t *testing.T) {
 	if fake.Count() != 0 || card.InitialPromptSentAt != "" {
 		t.Fatalf("deferred card started early: card=%#v requests=%d", card, fake.Count())
 	}
-	conversation, err := service.Store.Conversation(card.ID)
+	conversation, err := service.Store.Conversations.Get(card.ID)
 	if err != nil || len(conversation.Messages) != 0 {
 		t.Fatalf("deferred conversation=%#v err=%v", conversation, err)
 	}
@@ -867,11 +869,11 @@ func TestCreateRunningCardCanDeferStartToStreamingClient(t *testing.T) {
 	if request := fake.Request(0); request.Prompt != "Ship it" {
 		t.Fatalf("request=%#v", request)
 	}
-	stored, _ := service.Store.ResolveCard(card.ID)
+	stored, _ := service.Store.Kanban.ResolveCard(card.ID)
 	if stored.InitialPromptSentAt == "" || stored.Runtime != "idle" || stored.ProviderAccountKey != "owner_scoped_account_key" {
 		t.Fatalf("started card=%#v", stored)
 	}
-	conversation, err = service.Store.Conversation(card.ID)
+	conversation, err = service.Store.Conversations.Get(card.ID)
 	if err != nil || len(conversation.Messages) != 2 || !strings.Contains(string(conversation.Messages[1].Metadata), `"totalTokens"`) || !strings.Contains(string(conversation.Messages[1].Metadata), `"contextWindowTokens"`) {
 		t.Fatalf("conversation metadata=%#v err=%v", conversation.Messages, err)
 	}
@@ -914,15 +916,15 @@ func TestStalledWorkerHeartbeatFailsDurablyAndCanResume(t *testing.T) {
 	if terminal.Err == nil || !strings.Contains(terminal.Err.Error(), "stopped reporting progress") {
 		t.Fatalf("terminal update=%#v", terminal)
 	}
-	conversation, err := service.Store.Conversation(card.ID)
+	conversation, err := service.Store.Conversations.Get(card.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	stored, err := service.Store.ResolveCard(card.ID)
+	stored, err := service.Store.Kanban.ResolveCard(card.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	leased, err := service.Store.CardHasRuntimeLease(card.ID)
+	leased, err := service.Store.Leases.CardActive(card.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -941,7 +943,7 @@ func TestStalledWorkerHeartbeatFailsDurablyAndCanResume(t *testing.T) {
 	}
 	for range updates {
 	}
-	conversation, err = service.Store.Conversation(card.ID)
+	conversation, err = service.Store.Conversations.Get(card.ID)
 	if err != nil || conversation.Status != "idle" || resumed.Count() != 1 {
 		t.Fatalf("resumed conversation=%#v requests=%d err=%v", conversation, resumed.Count(), err)
 	}
@@ -962,15 +964,15 @@ func TestStartCardRejectsLowDiskBeforeMutatingConversation(t *testing.T) {
 	if _, err = service.StartCard(card.ID, "", card.Provider, card.Model, card.Effort); !errors.Is(err, ErrInsufficientStorage) {
 		t.Fatalf("StartCard error=%v", err)
 	}
-	conversation, err := service.Store.Conversation(card.ID)
+	conversation, err := service.Store.Conversations.Get(card.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	stored, err := service.Store.ResolveCard(card.ID)
+	stored, err := service.Store.Kanban.ResolveCard(card.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	leased, err := service.Store.CardHasRuntimeLease(card.ID)
+	leased, err := service.Store.Leases.CardActive(card.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1042,8 +1044,8 @@ func TestOMPSelectionUsesConfiguredACPAdapterAndContextWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool {
-		stored, _ := service.Store.ResolveCard(card.ID)
-		conversation, _ := service.Store.Conversation(card.ID)
+		stored, _ := service.Store.Kanban.ResolveCard(card.ID)
+		conversation, _ := service.Store.Conversations.Get(card.ID)
 		return fake.Count() == 1 && stored.Runtime == "idle" && len(conversation.Session) > 0 && !hasActiveTurn(service, project.ID)
 	})
 	request := fake.Request(0)
@@ -1063,7 +1065,7 @@ func TestClaudeThinkingEffortReachesHarness(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool { return fake.Count() == 1 && !hasActiveTurn(service, project.ID) })
-	stored, _ := service.Store.ResolveCard(card.ID)
+	stored, _ := service.Store.Kanban.ResolveCard(card.ID)
 	if stored.Effort != "max" || fake.Request(0).Effort != "max" || fake.Request(0).Adapter != "claude-code" {
 		t.Fatalf("card=%#v request=%#v", stored, fake.Request(0))
 	}
@@ -1081,7 +1083,7 @@ func TestPiDefaultModelAndThinkingEffortReachHarness(t *testing.T) {
 	}
 	waitFor(t, func() bool { return fake.Count() == 1 && !hasActiveTurn(service, project.ID) })
 	request := fake.Request(0)
-	stored, _ := service.Store.ResolveCard(card.ID)
+	stored, _ := service.Store.Kanban.ResolveCard(card.ID)
 	if stored.Model != "default" || request.ConfiguredModel != "default" || request.Model != "" || request.Effort != "minimal" || request.Adapter != "pi" {
 		t.Fatalf("card=%#v request=%#v", stored, request)
 	}
@@ -1105,8 +1107,8 @@ func TestStreamProtocolErrorRemainsFailed(t *testing.T) {
 	}
 	for range updates {
 	}
-	stored, _ := service.Store.ResolveCard(card.ID)
-	conversation, _ := service.Store.Conversation(card.ID)
+	stored, _ := service.Store.Kanban.ResolveCard(card.ID)
+	conversation, _ := service.Store.Conversations.Get(card.ID)
 	if stored.Runtime != "failed" || conversation.Status != "failed" || conversation.Messages[1].Parts[0].Text != "ACP session initialization failed: bun was not found" {
 		t.Fatalf("card=%#v conversation=%#v", stored, conversation)
 	}
@@ -1130,8 +1132,8 @@ func TestEmptyClaudeCompletionPreservesSessionInFailureMessage(t *testing.T) {
 	}
 	for range updates {
 	}
-	stored, _ := service.Store.ResolveCard(card.ID)
-	conversation, _ := service.Store.Conversation(card.ID)
+	stored, _ := service.Store.Kanban.ResolveCard(card.ID)
+	conversation, _ := service.Store.Conversations.Get(card.ID)
 	last := conversation.Messages[len(conversation.Messages)-1]
 	if stored.Runtime != "failed" || conversation.Status != "failed" || len(last.Parts) != 1 || !strings.Contains(last.Parts[0].Text, "without producing output") || !strings.Contains(last.Parts[0].Text, "durable session is preserved") || strings.Contains(last.Parts[0].Text, "authenticated") {
 		t.Fatalf("card=%#v conversation=%#v", stored, conversation)
@@ -1157,11 +1159,11 @@ func TestRunnerFailureIsPersisted(t *testing.T) {
 	}
 	for range updates {
 	}
-	stored, err := service.Store.ResolveCard(card.ID)
+	stored, err := service.Store.Kanban.ResolveCard(card.ID)
 	if err != nil || stored.Runtime != "failed" {
 		t.Fatalf("card=%#v err=%v", stored, err)
 	}
-	conversation, _ := service.Store.Conversation(card.ID)
+	conversation, _ := service.Store.Conversations.Get(card.ID)
 	if conversation.Status != "failed" {
 		t.Fatalf("conversation=%#v", conversation)
 	}
@@ -1184,7 +1186,7 @@ func TestRunnerFailurePersistsCompleteDiagnostics(t *testing.T) {
 	}
 	for range updates {
 	}
-	conversation, err := service.Store.Conversation(card.ID)
+	conversation, err := service.Store.Conversations.Get(card.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1214,7 +1216,7 @@ func TestFailedTurnCanRetryExactUserMessage(t *testing.T) {
 	}
 	for range updates {
 	}
-	failed, err := service.Store.Conversation(card.ID)
+	failed, err := service.Store.Conversations.Get(card.ID)
 	if err != nil || failed.Status != "failed" || len(failed.Messages) < 2 {
 		t.Fatalf("failed conversation=%#v err=%v", failed, err)
 	}
@@ -1224,10 +1226,10 @@ func TestFailedTurnCanRetryExactUserMessage(t *testing.T) {
 		t.Fatalf("queued=%v err=%v", queued, err)
 	}
 	waitFor(t, func() bool {
-		conversation, _ := service.Store.Conversation(card.ID)
+		conversation, _ := service.Store.Conversations.Get(card.ID)
 		return runner.count() == 2 && conversation.Status == "idle" && !hasActiveTurn(service, project.ID)
 	})
-	retried, err := service.Store.Conversation(card.ID)
+	retried, err := service.Store.Conversations.Get(card.ID)
 	if err != nil || len(retried.Messages) != 4 || retried.Messages[2].Role != "user" ||
 		retried.Messages[2].Parts[0].Text != "Run the flaky verification" ||
 		!strings.Contains(retried.Messages[3].Parts[0].Text, "retry completed") {
@@ -1245,13 +1247,13 @@ func TestMessageReopensDoneCardAndResumesSession(t *testing.T) {
 	if err = service.SendCard(context.Background(), card.ID, "", "", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = service.Store.MoveCard(card.ID, model.LaneDone, nil); err != nil {
+	if _, err = service.Store.Kanban.MoveCard(card.ID, model.LaneDone, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err = service.SendCard(context.Background(), card.ID, "Change it", "", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	stored, _ := service.Store.ResolveCard(card.ID)
+	stored, _ := service.Store.Kanban.ResolveCard(card.ID)
 	request := fake.Request(1)
 	if stored.Lane != model.LaneRunning || request.Prompt != "Change it" || len(request.Session) == 0 {
 		t.Fatalf("stored=%#v request=%#v", stored, request)
@@ -1317,7 +1319,7 @@ func TestProviderOptionsPersistReachRuntimeAndLockAfterFirstTurn(t *testing.T) {
 		t.Fatalf("runtime options=%#v", request.Options)
 	}
 	waitFor(t, func() bool {
-		stored, resolveErr := service.Store.ResolveCard(card.ID)
+		stored, resolveErr := service.Store.Kanban.ResolveCard(card.ID)
 		return resolveErr == nil && stored.Runtime == "idle"
 	})
 	waitFor(t, func() bool {
@@ -1349,7 +1351,7 @@ func TestCodexFastModePersistsForTasksAndChatsAndCanChangeBetweenTurns(t *testin
 	}
 	waitFor(t, func() bool { return fake.Count() == 1 })
 	waitFor(t, func() bool {
-		stored, resolveErr := service.Store.ResolveCard(task.ID)
+		stored, resolveErr := service.Store.Kanban.ResolveCard(task.ID)
 		return resolveErr == nil && stored.Runtime == "idle"
 	})
 	waitFor(t, func() bool {
@@ -1364,7 +1366,7 @@ func TestCodexFastModePersistsForTasksAndChatsAndCanChangeBetweenTurns(t *testin
 	}
 	waitFor(t, func() bool { return fake.Count() == 2 })
 	waitFor(t, func() bool {
-		stored, resolveErr := service.Store.ResolveCard(task.ID)
+		stored, resolveErr := service.Store.Kanban.ResolveCard(task.ID)
 		return resolveErr == nil && stored.Runtime == "idle"
 	})
 	waitFor(t, func() bool {
@@ -1375,7 +1377,7 @@ func TestCodexFastModePersistsForTasksAndChatsAndCanChangeBetweenTurns(t *testin
 	if fake.Request(0).Options["fast_mode"] != "true" || fake.Request(1).Options["fast_mode"] != "false" {
 		t.Fatalf("runtime options first=%#v second=%#v", fake.Request(0).Options, fake.Request(1).Options)
 	}
-	storedTask, err := service.Store.ResolveCard(task.ID)
+	storedTask, err := service.Store.Kanban.ResolveCard(task.ID)
 	if err != nil || storedTask.ProviderOptions["fast_mode"] != "false" {
 		t.Fatalf("stored task=%#v err=%v", storedTask, err)
 	}
@@ -1425,7 +1427,7 @@ func TestProviderOptionDefaultsDoNotLockLegacyConversation(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool {
-		stored, resolveErr := service.Store.ResolveCard(card.ID)
+		stored, resolveErr := service.Store.Kanban.ResolveCard(card.ID)
 		return resolveErr == nil && stored.Runtime == "idle"
 	})
 	waitFor(t, func() bool {
@@ -1437,7 +1439,7 @@ func TestProviderOptionDefaultsDoNotLockLegacyConversation(t *testing.T) {
 	// Simulate a conversation created before the adapter advertised its first
 	// provider option. An omitted value and the advertised default are the same
 	// locked configuration.
-	if _, err = service.Store.UpdateCardCache(card.ID, store.CardCacheInput{ProviderOptions: map[string]string{}}); err != nil {
+	if _, err = service.Store.Kanban.UpdateCardCache(card.ID, kanban.CardCacheInput{ProviderOptions: map[string]string{}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = service.SubmitCardParts(card.ID, []model.UIMessagePart{{Type: "text", Text: "Continue"}}, "omp", card.Model, "", map[string]string{"advisor": "false"}); err != nil {
@@ -1445,7 +1447,7 @@ func TestProviderOptionDefaultsDoNotLockLegacyConversation(t *testing.T) {
 	}
 	waitFor(t, func() bool { return fake.Count() == 2 })
 	waitFor(t, func() bool {
-		stored, resolveErr := service.Store.ResolveCard(card.ID)
+		stored, resolveErr := service.Store.Kanban.ResolveCard(card.ID)
 		return resolveErr == nil && stored.Runtime == "idle"
 	})
 	waitFor(t, func() bool {
@@ -1465,7 +1467,7 @@ func TestFirstTurnCanExplicitlyRestoreAdapterDefaultEffort(t *testing.T) {
 	if err = service.SendCard(context.Background(), card.ID, "", "codex", "gpt-5.6-sol", "default"); err != nil {
 		t.Fatal(err)
 	}
-	stored, _ := service.Store.ResolveCard(card.ID)
+	stored, _ := service.Store.Kanban.ResolveCard(card.ID)
 	if stored.Effort != "" || fake.Request(0).Effort != "" {
 		t.Fatalf("stored effort=%q request effort=%q", stored.Effort, fake.Request(0).Effort)
 	}
@@ -1510,7 +1512,7 @@ func TestCancelCardAcknowledgesBeforeSlowTurnStopsAndPromotesQueue(t *testing.T)
 	case <-time.After(testkit.Budget(30 * time.Second)):
 		t.Fatal("cancellation waited for provider cleanup")
 	}
-	conversation, err := service.Store.Conversation(card.ID)
+	conversation, err := service.Store.Conversations.Get(card.ID)
 	if err != nil || len(conversation.Queue) != 1 || conversation.Queue[0].Text != "Use this next" {
 		t.Fatalf("queued handoff was not preserved: conversation=%#v err=%v", conversation, err)
 	}
@@ -1530,7 +1532,7 @@ func TestCancelCardAcknowledgesBeforeSlowTurnStopsAndPromotesQueue(t *testing.T)
 		t.Fatal("queued run did not start after active cleanup")
 	}
 	waitFor(t, func() bool {
-		conversation, conversationErr := service.Store.Conversation(card.ID)
+		conversation, conversationErr := service.Store.Conversations.Get(card.ID)
 		return conversationErr == nil && conversation.Status == "idle" && len(conversation.Queue) == 0 && !hasActiveTurn(service, project.ID)
 	})
 }
@@ -1553,7 +1555,7 @@ func TestQueuedMessageStartsAfterInterruptWithoutRecordingFailure(t *testing.T) 
 		t.Fatalf("first turn=%d", turn)
 	}
 	waitFor(t, func() bool {
-		conversation, conversationErr := service.Store.Conversation(card.ID)
+		conversation, conversationErr := service.Store.Conversations.Get(card.ID)
 		if conversationErr != nil {
 			return false
 		}
@@ -1574,7 +1576,7 @@ func TestQueuedMessageStartsAfterInterruptWithoutRecordingFailure(t *testing.T) 
 	if err != nil || !queued {
 		t.Fatalf("queued=%v err=%v", queued, err)
 	}
-	conversation, _ := service.Store.Conversation(card.ID)
+	conversation, _ := service.Store.Conversations.Get(card.ID)
 	if len(conversation.Queue) != 1 || conversation.Queue[0].Text != "Use this instead" || len(conversation.Queue[0].Parts) != 2 {
 		t.Fatalf("queue=%#v", conversation.Queue)
 	}
@@ -1600,8 +1602,8 @@ func TestQueuedMessageStartsAfterInterruptWithoutRecordingFailure(t *testing.T) 
 	case <-time.After(testkit.Budget(30 * time.Second)):
 		t.Fatal("queued turn did not finish")
 	}
-	conversation, _ = service.Store.Conversation(card.ID)
-	stored, _ := service.Store.ResolveCard(card.ID)
+	conversation, _ = service.Store.Conversations.Get(card.ID)
+	stored, _ := service.Store.Kanban.ResolveCard(card.ID)
 	service.mu.Lock()
 	active := service.active[card.ID]
 	service.mu.Unlock()
@@ -1691,11 +1693,11 @@ func TestQueuedMessageUsesUpdatedMutableProviderOptions(t *testing.T) {
 	if err != nil || !queued {
 		t.Fatalf("queued=%v err=%v", queued, err)
 	}
-	stored, err := service.Store.ResolveCard(card.ID)
+	stored, err := service.Store.Kanban.ResolveCard(card.ID)
 	if err != nil || stored.ProviderOptions["fast_mode"] != "false" {
 		t.Fatalf("stored options=%#v err=%v", stored.ProviderOptions, err)
 	}
-	queuedConversation, err := store.New(service.Store.Root).Conversation(card.ID)
+	queuedConversation, err := store.New(service.Store.Root).Conversations.Get(card.ID)
 	if err != nil || len(queuedConversation.Queue) != 1 || queuedConversation.Queue[0].Selection == nil || queuedConversation.Queue[0].Selection.ProviderOptions["fast_mode"] != "true" {
 		t.Fatalf("durable queued selection=%#v err=%v", queuedConversation.Queue, err)
 	}
@@ -1732,21 +1734,21 @@ func TestQueuedMessageUsesUpdatedMutableProviderOptions(t *testing.T) {
 func TestReconcileOrphanedTurnAndRepeatedCancelAreIdempotent(t *testing.T) {
 	t.Parallel()
 	service, _, project, _ := appSetup(t)
-	chat, err := service.Store.CreateChat(store.CreateCardInput{Project: project.ID, ID: "chat_orphan", Title: "Orphaned", Prompt: "Work"})
+	chat, err := service.Store.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, ID: "chat_orphan", Title: "Orphaned", Prompt: "Work"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Store.StartConversationTurn(chat.ID, "turn_orphan", "user_orphan", "Continue"); err != nil {
+	if _, err := service.Store.Conversations.StartTurn(chat.ID, "turn_orphan", "user_orphan", "Continue"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Store.UpdateCardCache(chat.ID, store.CardCacheInput{Runtime: "running"}); err != nil {
+	if _, err := service.Store.Kanban.UpdateCardCache(chat.ID, kanban.CardCacheInput{Runtime: "running"}); err != nil {
 		t.Fatal(err)
 	}
 	recovered, err := service.ReconcileOrphanedTurns()
 	if err != nil || len(recovered) != 1 || recovered[0] != chat.ID {
 		t.Fatalf("recovered=%#v err=%v", recovered, err)
 	}
-	conversation, err := service.Store.Conversation(chat.ID)
+	conversation, err := service.Store.Conversations.Get(chat.ID)
 	if err != nil || conversation.Status != "interrupted" {
 		t.Fatalf("conversation=%#v err=%v", conversation, err)
 	}
@@ -1761,19 +1763,19 @@ func TestReconcileOrphanedTurnAndRepeatedCancelAreIdempotent(t *testing.T) {
 func TestCancelOrphanedTurnReleasesLiveDaemonLeaseAndCanResume(t *testing.T) {
 	t.Parallel()
 	service, fake, project, _ := appSetup(t)
-	chat, err := service.Store.CreateChat(store.CreateCardInput{
+	chat, err := service.Store.Kanban.CreateChat(kanban.CreateCardInput{
 		Project: project.ID, ID: "chat_stranded_cancel", Title: "Stranded", Prompt: "Work", Provider: "codex", Model: "gpt-5.5",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Store.StartConversationTurn(chat.ID, "turn_stranded", "user_stranded", "Work"); err != nil {
+	if _, err := service.Store.Conversations.StartTurn(chat.ID, "turn_stranded", "user_stranded", "Work"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Store.UpdateCardCache(chat.ID, store.CardCacheInput{Runtime: "running"}); err != nil {
+	if _, err := service.Store.Kanban.UpdateCardCache(chat.ID, kanban.CardCacheInput{Runtime: "running"}); err != nil {
 		t.Fatal(err)
 	}
-	lease, err := service.Store.AcquireRuntimeLeaseFor(project.ID, "", chat.ID, "codex")
+	lease, err := service.Store.Kanban.AcquireRuntimeLeaseFor(project.ID, "", chat.ID, "codex")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1783,10 +1785,10 @@ func TestCancelOrphanedTurnReleasesLiveDaemonLeaseAndCanResume(t *testing.T) {
 	if err := service.CancelCard(chat.ID); err != nil {
 		t.Fatal(err)
 	}
-	if active, err := service.Store.CardHasRuntimeLease(chat.ID); err != nil || active {
+	if active, err := service.Store.Leases.CardActive(chat.ID); err != nil || active {
 		t.Fatalf("cancel left runtime lease: active=%v err=%v", active, err)
 	}
-	conversation, err := service.Store.Conversation(chat.ID)
+	conversation, err := service.Store.Conversations.Get(chat.ID)
 	if err != nil || conversation.Status != "interrupted" {
 		t.Fatalf("conversation=%#v err=%v", conversation, err)
 	}
@@ -1802,7 +1804,7 @@ func TestCancelOrphanedTurnReleasesLiveDaemonLeaseAndCanResume(t *testing.T) {
 func TestFailedLeaseReleaseIsRetriedBeforeNextTurn(t *testing.T) {
 	t.Parallel()
 	service, fake, project, _ := appSetup(t)
-	chat, err := service.Store.CreateChat(store.CreateCardInput{
+	chat, err := service.Store.Kanban.CreateChat(kanban.CreateCardInput{
 		Project: project.ID, ID: "chat_release_retry", Title: "Retry release", Prompt: "First", Provider: "codex", Model: "gpt-5.5",
 	})
 	if err != nil {
@@ -1811,7 +1813,7 @@ func TestFailedLeaseReleaseIsRetriedBeforeNextTurn(t *testing.T) {
 	realRelease := service.releaseLease
 	var releaseMu sync.Mutex
 	releaseCalls := 0
-	service.releaseLease = func(lease store.RuntimeLease) error {
+	service.releaseLease = func(lease leases.RuntimeLease) error {
 		releaseMu.Lock()
 		releaseCalls++
 		call := releaseCalls
@@ -1827,7 +1829,7 @@ func TestFailedLeaseReleaseIsRetriedBeforeNextTurn(t *testing.T) {
 	}
 	for range updates {
 	}
-	if active, err := service.Store.CardHasRuntimeLease(chat.ID); err != nil || !active {
+	if active, err := service.Store.Leases.CardActive(chat.ID); err != nil || !active {
 		t.Fatalf("failed release was not retained: active=%v err=%v", active, err)
 	}
 	service.mu.Lock()
@@ -1843,7 +1845,7 @@ func TestFailedLeaseReleaseIsRetriedBeforeNextTurn(t *testing.T) {
 	for range updates {
 	}
 	waitFor(t, func() bool { return fake.Count() == 2 && !hasActiveTurn(service, project.ID) })
-	if active, err := service.Store.CardHasRuntimeLease(chat.ID); err != nil || active {
+	if active, err := service.Store.Leases.CardActive(chat.ID); err != nil || active {
 		t.Fatalf("retried release left runtime lease: active=%v err=%v", active, err)
 	}
 }
@@ -1949,20 +1951,20 @@ func TestGracefulRestartContinuesActiveTurnForEveryProvider(t *testing.T) {
 			if runner.cleanupCount() != 0 {
 				t.Fatal("clean suspension terminated its resumable provider bridge")
 			}
-			parked, err := service.Store.Conversation(card.ID)
+			parked, err := service.Store.Conversations.Get(card.ID)
 			if err != nil || parked.Status != "running" || parked.ActiveTurn == nil || !hasTurnContinuation(parked.Session) {
 				t.Fatalf("parked conversation=%#v err=%v", parked, err)
 			}
 			responseMessageID := parked.ActiveTurn.ResponseMessageID
-			settings, settingsErr := service.Store.Settings()
+			settings, settingsErr := service.Store.Settings.Get()
 			if settingsErr != nil {
 				t.Fatal(settingsErr)
 			}
-			if _, settingsErr = service.Store.UpdatePromptSettings("Changed after suspension\n{{project.instructions_block}}\n{{labels.instructions_block}}", settings.BoardSkillTemplate, settings.ChatSkillTemplate); settingsErr != nil {
+			if _, settingsErr = service.Store.Settings.UpdatePrompts("Changed after suspension\n{{project.instructions_block}}\n{{labels.instructions_block}}", settings.BoardSkillTemplate, settings.ChatSkillTemplate); settingsErr != nil {
 				t.Fatal(settingsErr)
 			}
 			changedEffort := "different-effort"
-			if _, err := service.Store.UpdateCardCache(card.ID, store.CardCacheInput{Model: "different-model", Effort: &changedEffort, ProviderOptions: map[string]string{}}); err != nil {
+			if _, err := service.Store.Kanban.UpdateCardCache(card.ID, kanban.CardCacheInput{Model: "different-model", Effort: &changedEffort, ProviderOptions: map[string]string{}}); err != nil {
 				t.Fatal(err)
 			}
 			restarted := New(service.Store, runner)
@@ -1992,7 +1994,7 @@ func TestGracefulRestartContinuesActiveTurnForEveryProvider(t *testing.T) {
 			if runner.cleanupCount() != 1 {
 				t.Fatalf("completed continuation cleanup count=%d, want 1", runner.cleanupCount())
 			}
-			conversation, err := service.Store.Conversation(card.ID)
+			conversation, err := service.Store.Conversations.Get(card.ID)
 			if err != nil || conversation.Status != "idle" || conversation.ActiveTurn != nil || len(conversation.Messages) != 2 || conversation.Messages[1].ID != responseMessageID || conversation.Messages[1].Parts[0].Text != "before restart after restart" {
 				t.Fatalf("continued conversation=%#v err=%v", conversation, err)
 			}
@@ -2003,7 +2005,7 @@ func TestGracefulRestartContinuesActiveTurnForEveryProvider(t *testing.T) {
 			if provider.options != nil && (requests[0].Options["advisor"] != "true" || requests[1].Options["advisor"] != "true") {
 				t.Fatalf("provider options were not retained across restart: %#v", requests)
 			}
-			stored, err := service.Store.ResolveCard(card.ID)
+			stored, err := service.Store.Kanban.ResolveCard(card.ID)
 			if err != nil || stored.Model != requests[0].ConfiguredModel || stored.Effort != requests[0].Effort || !providerOptionsEqual(stored.ProviderOptions, requests[0].Options) {
 				t.Fatalf("recovery cache=%#v err=%v", stored, err)
 			}
@@ -2046,7 +2048,7 @@ func TestRestartPinsOnlyActiveTurnThenNextTurnUsesCurrentRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	parkCancel()
-	parked, err := service.Store.Conversation(card.ID)
+	parked, err := service.Store.Conversations.Get(card.ID)
 	if err != nil || parked.ActiveTurn == nil || parked.ActiveTurn.HarnessRuntimeDigest != "runtime-a" {
 		t.Fatalf("parked conversation=%#v err=%v", parked, err)
 	}
@@ -2072,8 +2074,8 @@ func TestRestartPinsOnlyActiveTurnThenNextTurnUsesCurrentRuntime(t *testing.T) {
 		t.Fatal("continued turn did not finish")
 	}
 	waitFor(t, func() bool {
-		conversation, conversationErr := restarted.Store.Conversation(card.ID)
-		leased, leaseErr := restarted.Store.CardHasRuntimeLease(card.ID)
+		conversation, conversationErr := restarted.Store.Conversations.Get(card.ID)
+		leased, leaseErr := restarted.Store.Leases.CardActive(card.ID)
 		return conversationErr == nil && leaseErr == nil && conversation.Status == "idle" && conversation.ActiveTurn == nil && !leased && !hasActiveTurn(restarted, project.ID)
 	})
 
@@ -2096,7 +2098,7 @@ func TestRestartPinsOnlyActiveTurnThenNextTurnUsesCurrentRuntime(t *testing.T) {
 	if prepared := runner.snapshotPrepared(); len(prepared) != 3 || prepared[0] != "runtime-a" || prepared[1] != "runtime-a" || prepared[2] != "runtime-b" {
 		t.Fatalf("runtime preparations=%#v", prepared)
 	}
-	conversation, err := restarted.Store.Conversation(card.ID)
+	conversation, err := restarted.Store.Conversations.Get(card.ID)
 	if err != nil || conversation.Status != "idle" || conversation.ActiveTurn != nil || len(conversation.Messages) != 4 {
 		t.Fatalf("final conversation=%#v err=%v", conversation, err)
 	}
@@ -2134,7 +2136,7 @@ func TestFailedRestartSuspensionCleansProviderBridge(t *testing.T) {
 	case <-time.After(testkit.Budget(30 * time.Second)):
 		t.Fatal("failed suspension did not clean its provider bridge")
 	}
-	conversation, err := service.Store.Conversation(card.ID)
+	conversation, err := service.Store.Conversations.Get(card.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2251,7 +2253,7 @@ func TestCapabilityStormCompletesWithBoundedDurableEvents(t *testing.T) {
 	}
 	for range updates {
 	}
-	conversation, err := service.Store.Conversation(card.ID)
+	conversation, err := service.Store.Conversations.Get(card.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

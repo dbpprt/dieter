@@ -51,14 +51,14 @@ func TestRemoteDesktopPermissionGuideVerifiesWithoutSettingsMutation(t *testing.
 	if err := client.Run([]string{"daemon", "permissions", "--no-open"}); err != nil {
 		t.Fatal(err)
 	}
-	settings, err := data.Settings()
+	settings, err := data.Settings.Get()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if settings.UpdatedAt != "" {
 		t.Fatalf("daemon settings=%#v", settings)
 	}
-	local, _ := store.New(client.Root).Settings()
+	local, _ := store.New(client.Root).Settings.Get()
 	if local.UpdatedAt != "" {
 		t.Fatal("onboarding mutated caller's store")
 	}
@@ -75,7 +75,7 @@ func TestRemoteDesktopPermissionCheckDoesNotChangeSettings(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	settings, _ := data.Settings()
+	settings, _ := data.Settings.Get()
 	if settings.UpdatedAt != "" {
 		t.Fatal("check changed settings")
 	}
@@ -96,7 +96,7 @@ func TestRemoteDesktopPermissionCheckUsesDeniedDaemonContext(t *testing.T) {
 			t.Fatalf("lost service error: %v %s", err, out.String())
 		}
 	}
-	settings, _ := data.Settings()
+	settings, _ := data.Settings.Get()
 	if settings.UpdatedAt != "" {
 		t.Fatal("denied capture enabled screen sharing")
 	}
@@ -166,7 +166,7 @@ func TestRemoteDesktopPermissionGuideVerifiesEachGrantInOrder(t *testing.T) {
 	if recording < 0 || accessibility <= recording || !strings.Contains(transcript, "permissions are verified") {
 		t.Fatal(transcript)
 	}
-	if settings, _ := data.Settings(); settings.UpdatedAt != "" {
+	if settings, _ := data.Settings.Get(); settings.UpdatedAt != "" {
 		t.Fatal("guide wrote settings")
 	}
 }

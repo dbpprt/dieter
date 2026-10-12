@@ -9,7 +9,7 @@ import (
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit"
 	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 )
@@ -22,15 +22,15 @@ func TestQueuedSelectionSurvivesCommandReplayAndRemoval(t *testing.T) {
 			t.Errorf("close isolated store: %v", err)
 		}
 	})
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Selections", Path: testkit.CheckoutDir(t)})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Selections", Path: testkit.CheckoutDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	board, err := data.CreateBoard(store.CreateBoardInput{Project: project.ID, Name: "Selections", Workflow: "review"})
+	board, err := data.Kanban.CreateBoard(kanban.CreateBoardInput{Project: project.ID, Name: "Selections", Workflow: "review"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	card, err := data.CreateCard(store.CreateCardInput{Project: project.ID, Board: board.ID, Title: "Selections", Provider: "codex", Model: "gpt-5.5", Effort: "low"})
+	card, err := data.Kanban.CreateCard(kanban.CreateCardInput{Project: project.ID, Board: board.ID, Title: "Selections", Provider: "codex", Model: "gpt-5.5", Effort: "low"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestQueuedSelectionSurvivesCommandReplayAndRemoval(t *testing.T) {
 	if err != nil || again.GetMessageId() != first.GetMessageId() {
 		t.Fatalf("replay=%v err=%v", again, err)
 	}
-	conversation, err := data.Conversation(card.ID)
+	conversation, err := data.Conversations.Get(card.ID)
 	if err != nil || len(conversation.Queue) != 1 {
 		t.Fatalf("queue=%#v err=%v", conversation.Queue, err)
 	}

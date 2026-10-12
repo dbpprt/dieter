@@ -10,7 +10,9 @@ import (
 	"github.com/dbpprt/dieter/internal/platform/fault"
 	"github.com/dbpprt/dieter/internal/replication/crdt"
 	"github.com/dbpprt/dieter/internal/replication/schema"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/home"
+	"github.com/dbpprt/dieter/internal/store/kv"
+	"github.com/dbpprt/dieter/internal/store/replica"
 )
 
 func kvEntry(r crdt.Record) *dieterv1.KVEntry {
@@ -32,8 +34,8 @@ func kvFilter(ns, prefix string) error {
 	return nil
 }
 
-func (s *Server) kvIdentity(ctx context.Context, account string) (store.PeerIdentity, error) {
-	identity, err := s.store.KVIdentity()
+func (s *Server) kvIdentity(ctx context.Context, account string) (replica.PeerIdentity, error) {
+	identity, err := s.store.Replica.EnsureIdentity()
 	if err == nil && identity.Account == "local" && remoteDesktopOperator(ctx) == "" {
 		if account != "" && account != identity.Account {
 			return identity, fault.New(fault.PermissionDenied, "KV account mismatch")
@@ -53,8 +55,8 @@ func (api *kvAPI) GetKV(ctx context.Context, r *dieterv1.KVRef) (*dieterv1.KVEnt
 	if err != nil {
 		return nil, domainFailure(err)
 	}
-	record, err := api.server.store.ReadPeerRecord(ctx, identity.Account, kind, r.GetKey())
-	if errors.Is(err, store.ErrNotFound) {
+	record, err := api.server.store.Replica.ReadPeerRecord(ctx, identity.Account, kind, r.GetKey())
+	if errors.Is(err, home.ErrNotFound) {
 		return nil, fault.New(fault.NotFound, "KV key not found")
 	}
 	if err != nil {
@@ -72,15 +74,15 @@ func (api *kvAPI) ListKV(ctx context.Context, r *dieterv1.KVListRequest) (*diete
 	if err = kvFilter(r.GetNamespace(), r.GetPrefix()); err != nil {
 		return nil, err
 	}
-	var cursor *store.PeerCheckpoint
+	var cursor *replica.PeerCheckpoint
 	if r.GetSnapshot() != nil {
-		cursor = &store.PeerCheckpoint{Epoch: r.Snapshot.Epoch, Sequence: r.Snapshot.Sequence}
+		cursor = &replica.PeerCheckpoint{Epoch: r.Snapshot.Epoch, Sequence: r.Snapshot.Sequence}
 	}
 	kind := schema.KVKindPrefix
 	if r.GetNamespace() != "" {
 		kind += r.GetNamespace()
 	}
-	page, err := api.server.store.ListPeerRecordPage(ctx, identity.Account, kind, r.GetPrefix(), r.GetAfterKey(), "", cursor)
+	page, err := api.server.store.Replica.ListPeerRecordPage(ctx, identity.Account, kind, r.GetPrefix(), r.GetAfterKey(), "", cursor)
 	if err != nil {
 		return nil, domainFailure(err)
 	}
@@ -91,7 +93,7 @@ func (api *kvAPI) ListKV(ctx context.Context, r *dieterv1.KVListRequest) (*diete
 	return out, nil
 }
 
-func (s *Server) mutateKV(ctx context.Context, ref *dieterv1.KVRef, m store.KVMutation) (*dieterv1.KVEntry, error) {
+func (s *Server) mutateKV(ctx context.Context, ref *dieterv1.KVRef, m kv.Mutation) (*dieterv1.KVEntry, error) {
 	identity, err := s.kvIdentity(ctx, ref.GetAccount())
 	if err != nil {
 		return nil, err
@@ -101,7 +103,7 @@ func (s *Server) mutateKV(ctx context.Context, ref *dieterv1.KVRef, m store.KVMu
 		return nil, fault.New(fault.Invalid, "KV account required")
 	}
 	m.Namespace, m.Key = ref.GetNamespace(), ref.GetKey()
-	record, err := s.store.MutateKV(identity, m)
+	record, err := s.store.KV.Mutate(identity, m)
 	if err != nil {
 		return nil, domainFailure(err)
 	}
@@ -110,17 +112,17 @@ func (s *Server) mutateKV(ctx context.Context, ref *dieterv1.KVRef, m store.KVMu
 
 func (api *kvAPI) PutKV(ctx context.Context, r *dieterv1.KVPutRequest) (*dieterv1.KVEntry, error) {
 	ctx = operatorContext(ctx)
-	return api.server.mutateKV(ctx, r.GetRef(), store.KVMutation{Value: r.GetValueJson(), Revision: r.GetExpectedRevision(), OperationID: r.GetOperationId(), DaemonID: r.GetDaemonId()})
+	return api.server.mutateKV(ctx, r.GetRef(), kv.Mutation{Value: r.GetValueJson(), Revision: r.GetExpectedRevision(), OperationID: r.GetOperationId(), DaemonID: r.GetDaemonId()})
 }
 
 func (api *kvAPI) DeleteKV(ctx context.Context, r *dieterv1.KVDeleteRequest) (*dieterv1.KVEntry, error) {
 	ctx = operatorContext(ctx)
-	return api.server.mutateKV(ctx, r.GetRef(), store.KVMutation{Delete: true, Revision: r.GetExpectedRevision(), OperationID: r.GetOperationId(), DaemonID: r.GetDaemonId()})
+	return api.server.mutateKV(ctx, r.GetRef(), kv.Mutation{Delete: true, Revision: r.GetExpectedRevision(), OperationID: r.GetOperationId(), DaemonID: r.GetDaemonId()})
 }
 
 func (api *kvAPI) MoveKV(ctx context.Context, r *dieterv1.KVMoveRequest) (*dieterv1.KVEntry, error) {
 	ctx = operatorContext(ctx)
-	return api.server.mutateKV(ctx, r.GetRef(), store.KVMutation{Move: &store.KVMove{Parent: r.GetParent(), After: r.GetAfterKey(), Before: r.GetBeforeKey()}, Revision: r.GetExpectedRevision(), OperationID: r.GetOperationId(), DaemonID: r.GetDaemonId()})
+	return api.server.mutateKV(ctx, r.GetRef(), kv.Mutation{Move: &kv.Move{Parent: r.GetParent(), After: r.GetAfterKey(), Before: r.GetBeforeKey()}, Revision: r.GetExpectedRevision(), OperationID: r.GetOperationId(), DaemonID: r.GetDaemonId()})
 }
 
 func (s *Server) watchKV(ctx context.Context, r *dieterv1.KVWatchRequest, send func(*dieterv1.KVFrame) error) error {
@@ -149,7 +151,7 @@ func (s *Server) watchKV(ctx context.Context, r *dieterv1.KVWatchRequest, send f
 		if current != identity {
 			return fault.New(fault.FailedPrecondition, "KV account changed")
 		}
-		changes, e := s.store.PeerChanges(identity.Account, epoch, seq)
+		changes, e := s.store.Replica.PeerChanges(identity.Account, epoch, seq)
 		if errors.Is(e, crdt.ErrConflict) {
 			epoch, seq, reset = "", 0, true
 			continue

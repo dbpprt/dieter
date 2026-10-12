@@ -79,7 +79,7 @@ func TestWorkerFailurePersistsTerminalCapabilities(t *testing.T) {
 			// Reopen the store to verify what native clients receive after a restart,
 			// not merely the in-memory objects used by the failed worker.
 			reopened := store.New(service.Store.Root)
-			conversation, err := reopened.Conversation(card.ID)
+			conversation, err := reopened.Conversations.Get(card.ID)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -105,7 +105,7 @@ func TestWorkerFailurePersistsTerminalCapabilities(t *testing.T) {
 			if tasks[0].Status != "completed" || tasks[1].Status != "abandoned" {
 				t.Fatalf("tasks=%+v", tasks)
 			}
-			stored, err := reopened.ResolveCard(card.ID)
+			stored, err := reopened.Kanban.ResolveCard(card.ID)
 			if err != nil || stored.Runtime != "failed" {
 				t.Fatalf("card runtime=%q err=%v", stored.Runtime, err)
 			}

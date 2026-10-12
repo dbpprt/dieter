@@ -12,6 +12,8 @@ import (
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/replication/crdt"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
+	"github.com/dbpprt/dieter/internal/store/replica"
 	"github.com/dbpprt/dieter/internal/testkit"
 	"google.golang.org/protobuf/proto"
 )
@@ -55,7 +57,7 @@ func TestAccountProjectionFixture(t *testing.T) {
 	// The daemon's own projection of the fixture's records must still be the
 	// one the fixture holds, so the clients' agreement means agreement today.
 	observer := projectionStore(t, "observer")
-	identity, err := observer.PeerIdentity()
+	identity, err := observer.Replica.PeerIdentity()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,21 +92,21 @@ func TestAccountProjectionFixture(t *testing.T) {
 func generateProjectionFixture(t *testing.T) projectionFixture {
 	t.Helper()
 	a, b := projectionStore(t, "machine_a"), projectionStore(t, "machine_b")
-	project, err := a.CreateProject(store.CreateProjectInput{Name: "Atlas", Path: testkit.CheckoutDir(t), InitialBoardName: "Main", InitialWorkflow: model.WorkflowReview})
+	project, err := a.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Atlas", Path: testkit.CheckoutDir(t), InitialBoardName: "Main", InitialWorkflow: model.WorkflowReview})
 	if err != nil {
 		t.Fatal(err)
 	}
-	main, err := a.InitialBoard(project.ID)
+	main, err := a.Kanban.InitialBoard(project.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	direct := must(a.CreateBoard(store.CreateBoardInput{Project: project.ID, Name: "Ops", Workflow: model.WorkflowDirect, DoneArchivePolicy: model.DoneArchiveNever}))(t)
-	retired := must(a.CreateBoard(store.CreateBoardInput{Project: project.ID, Name: "Old"}))(t)
-	if _, err := a.SetBoardRetired(store.BoardRetirementInput{BoardID: retired.ID, Retired: true, ExpectedRevision: "absent", OperationID: "retire-old"}); err != nil {
+	direct := must(a.Kanban.CreateBoard(kanban.CreateBoardInput{Project: project.ID, Name: "Ops", Workflow: model.WorkflowDirect, DoneArchivePolicy: model.DoneArchiveNever}))(t)
+	retired := must(a.Kanban.CreateBoard(kanban.CreateBoardInput{Project: project.ID, Name: "Old"}))(t)
+	if _, err := a.Kanban.SetBoardRetired(kanban.BoardRetirementInput{BoardID: retired.ID, Retired: true, ExpectedRevision: "absent", OperationID: "retire-old"}); err != nil {
 		t.Fatal(err)
 	}
-	must(a.CreateBoardLabel(main.ID, "bug", "#d1242f", "Reproduce first"))(t)
-	labeled := must(a.CreateBoardLabel(main.ID, "chore", "#6e7781"))(t)
+	must(a.Kanban.CreateBoardLabel(main.ID, "bug", "#d1242f", "Reproduce first"))(t)
+	labeled := must(a.Kanban.CreateBoardLabel(main.ID, "chore", "#6e7781"))(t)
 	var bug, chore string
 	for _, label := range labeled.Labels {
 		if label.Name == "bug" {
@@ -113,55 +115,55 @@ func generateProjectionFixture(t *testing.T) projectionFixture {
 			chore = label.ID
 		}
 	}
-	docs := must(a.CreateCard(store.CreateCardInput{Project: project.ID, Board: main.ID, Title: "Write docs", Prompt: "Owner-only prompt"}))(t)
-	fix := must(a.CreateCard(store.CreateCardInput{Project: project.ID, Board: main.ID, Title: "Fix bug", LabelIDs: []string{bug}}))(t)
-	ops := must(a.CreateCard(store.CreateCardInput{Project: project.ID, Board: direct.ID, Title: "Rotate keys"}))(t)
-	question := must(a.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Question"}))(t)
-	pinned := must(a.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Pinned"}))(t)
-	if _, err := a.PinChat(pinned.ID, true); err != nil {
+	docs := must(a.Kanban.CreateCard(kanban.CreateCardInput{Project: project.ID, Board: main.ID, Title: "Write docs", Prompt: "Owner-only prompt"}))(t)
+	fix := must(a.Kanban.CreateCard(kanban.CreateCardInput{Project: project.ID, Board: main.ID, Title: "Fix bug", LabelIDs: []string{bug}}))(t)
+	ops := must(a.Kanban.CreateCard(kanban.CreateCardInput{Project: project.ID, Board: direct.ID, Title: "Rotate keys"}))(t)
+	question := must(a.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Question"}))(t)
+	pinned := must(a.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Pinned"}))(t)
+	if _, err := a.Kanban.PinChat(pinned.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.UpdateCardCache(fix.ID, store.CardCacheInput{Runtime: model.RuntimeFailed, Provider: "codex", Model: "gpt-5"}); err != nil {
+	if _, err := a.Kanban.UpdateCardCache(fix.ID, kanban.CardCacheInput{Runtime: model.RuntimeFailed, Provider: "codex", Model: "gpt-5"}); err != nil {
 		t.Fatal(err)
 	}
-	archived := must(a.CreateProject(store.CreateProjectInput{Name: "Shelved", Path: testkit.CheckoutDir(t)}))(t)
-	must(a.CreateChat(store.CreateCardInput{Project: archived.ID, Title: "Shelved chat"}))(t)
-	if _, err := a.ArchiveProject(archived.ID, true); err != nil {
+	archived := must(a.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Shelved", Path: testkit.CheckoutDir(t)}))(t)
+	must(a.Kanban.CreateChat(kanban.CreateCardInput{Project: archived.ID, Title: "Shelved chat"}))(t)
+	if _, err := a.Kanban.ArchiveProject(archived.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	sidecar := must(a.CreateProject(store.CreateProjectInput{Name: "Sidecar", Path: testkit.CheckoutDir(t)}))(t)
-	must(a.CreateChat(store.CreateCardInput{Project: sidecar.ID, Title: "Sidecar chat"}))(t)
-	if _, err := a.ConsolidateProject(sidecar.ID, project.ID); err != nil {
+	sidecar := must(a.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Sidecar", Path: testkit.CheckoutDir(t)}))(t)
+	must(a.Kanban.CreateChat(kanban.CreateCardInput{Project: sidecar.ID, Title: "Sidecar chat"}))(t)
+	if _, err := a.Kanban.ConsolidateProject(sidecar.ID, project.ID); err != nil {
 		t.Fatal(err)
 	}
 	joinProjectionStores(t, a, b)
 
 	// From here the machines diverge; neither sees the other's edits.
-	if _, err := a.RenameCard(docs.ID, "Docs"); err != nil {
+	if _, err := a.Kanban.RenameCard(docs.ID, "Docs"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.RenameCard(docs.ID, "Write the docs"); err != nil {
+	if _, err := b.Kanban.RenameCard(docs.ID, "Write the docs"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.SetCardLabels(fix.ID, []string{bug, chore}); err != nil {
+	if _, err := b.Kanban.SetCardLabels(fix.ID, []string{bug, chore}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.DeleteBoardLabel(main.ID, chore); err != nil {
+	if _, err := a.Kanban.DeleteBoardLabel(main.ID, chore); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.MoveCard(ops.ID, model.LaneDone, nil); err != nil {
+	if _, err := b.Kanban.MoveCard(ops.ID, model.LaneDone, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.ArchiveCard(question.ID, true); err != nil {
+	if _, err := b.Kanban.ArchiveCard(question.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	beacon := must(b.CreateProject(store.CreateProjectInput{Name: "Beacon", Path: testkit.CheckoutDir(t), InitialBoardName: "Main", InitialWorkflow: model.WorkflowReview}))(t)
-	beaconBoard, err := b.InitialBoard(beacon.ID)
+	beacon := must(b.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Beacon", Path: testkit.CheckoutDir(t), InitialBoardName: "Main", InitialWorkflow: model.WorkflowReview}))(t)
+	beaconBoard, err := b.Kanban.InitialBoard(beacon.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	must(b.CreateCard(store.CreateCardInput{Project: beacon.ID, Board: beaconBoard.ID, Title: "Ship it"}))(t)
-	must(b.CreateChat(store.CreateCardInput{Project: beacon.ID, Title: "Beacon chat"}))(t)
+	must(b.Kanban.CreateCard(kanban.CreateCardInput{Project: beacon.ID, Board: beaconBoard.ID, Title: "Ship it"}))(t)
+	must(b.Kanban.CreateChat(kanban.CreateCardInput{Project: beacon.ID, Title: "Beacon chat"}))(t)
 
 	observer := projectionStore(t, "observer")
 	joinProjectionStores(t, a, observer)
@@ -169,11 +171,11 @@ func generateProjectionFixture(t *testing.T) projectionFixture {
 	state, retiredBoards := observedProjection(t, observer)
 	fixture := projectionFixture{Machines: map[string]string{}, State: encodeFixture(t, state), RetiredBoards: encodeFixture(t, retiredBoards)}
 	for name, machine := range map[string]*store.Store{"machine_a": a, "machine_b": b, "observer": observer} {
-		identity, err := machine.PeerIdentity()
+		identity, err := machine.Replica.PeerIdentity()
 		if err != nil {
 			t.Fatal(err)
 		}
-		data, err := machine.PeerData(identity.Account)
+		data, err := machine.Replica.PeerData(identity.Account)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -189,7 +191,7 @@ func generateProjectionFixture(t *testing.T) projectionFixture {
 func projectionStore(t *testing.T, daemon string) *store.Store {
 	t.Helper()
 	data := testkit.Store(t)
-	if _, err := data.BindPeerAccount("account", "subject", daemon, "https://gateway.test"); err != nil {
+	if _, err := data.Replica.BindPeerAccount("account", "subject", daemon, "https://gateway.test"); err != nil {
 		t.Fatal(err)
 	}
 	return data
@@ -197,22 +199,22 @@ func projectionStore(t *testing.T, daemon string) *store.Store {
 
 func joinProjectionStores(t *testing.T, from, to *store.Store) {
 	t.Helper()
-	identity, err := to.PeerIdentity()
+	identity, err := to.Replica.PeerIdentity()
 	if err != nil {
 		t.Fatal(err)
 	}
-	source, err := from.PeerData(identity.Account)
+	source, err := from.Replica.PeerData(identity.Account)
 	if err != nil {
 		t.Fatal(err)
 	}
 	mergeRecords(t, to, identity, source.Sorted())
 }
 
-func mergeRecords(t *testing.T, to *store.Store, identity store.PeerIdentity, records []crdt.Record) {
+func mergeRecords(t *testing.T, to *store.Store, identity replica.PeerIdentity, records []crdt.Record) {
 	t.Helper()
 	for len(records) > 0 {
 		n := min(len(records), crdt.PageSize)
-		if err := to.MergePeerRecords(identity, records[:n]); err != nil {
+		if err := to.Replica.MergePeerRecords(identity, records[:n]); err != nil {
 			t.Fatal(err)
 		}
 		records = records[n:]

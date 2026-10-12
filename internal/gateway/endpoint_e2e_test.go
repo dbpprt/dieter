@@ -74,7 +74,7 @@ func TestGatewayRelocationPreservesEnrollmentAndPeerIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	scope := crdt.Revision([]string{identity.Issuer(), "github:42"})
-	binding, err := local.BindPeerAccount(scope, "github:42", identity.ID, identity.Issuer())
+	binding, err := local.Replica.BindPeerAccount(scope, "github:42", identity.ID, identity.Issuer())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestGatewayRelocationPreservesEnrollmentAndPeerIdentity(t *testing.T) {
 	if !bytes.Equal(keyBefore, keyAfter) {
 		t.Fatal("daemon private key changed")
 	}
-	next, err := local.BindPeerAccount(scope, "github:42", moved.ID, moved.Issuer())
+	next, err := local.Replica.BindPeerAccount(scope, "github:42", moved.ID, moved.Issuer())
 	if err != nil || next != binding {
 		t.Fatalf("peer binding/actor changed: %v", err)
 	}

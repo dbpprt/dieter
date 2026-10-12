@@ -38,7 +38,7 @@ func TestSameProviderTurnSelectionPreservesCardAndChatSessions(t *testing.T) {
 				if err := service.SendCard(t.Context(), card.ID, "First", provider.id, provider.first, "low"); err != nil {
 					t.Fatal(err)
 				}
-				before, err := service.Store.Conversation(card.ID)
+				before, err := service.Store.Conversations.Get(card.ID)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -49,7 +49,7 @@ func TestSameProviderTurnSelectionPreservesCardAndChatSessions(t *testing.T) {
 				if request.SessionID != card.ID || request.ConfiguredModel != provider.second || request.Effort != provider.effort || string(request.Session) != string(before.Session) {
 					t.Fatalf("resumed with incorrect selection/session: %#v", request)
 				}
-				after, err := service.Store.Conversation(card.ID)
+				after, err := service.Store.Conversations.Get(card.ID)
 				if err != nil || len(after.Messages) < len(before.Messages) || !reflect.DeepEqual(after.Messages[:len(before.Messages)], before.Messages) {
 					t.Fatalf("prior history changed: %#v, %v", after.Messages, err)
 				}
@@ -132,11 +132,11 @@ func TestQueuedMessagesKeepIndependentDurableTurnSelections(t *testing.T) {
 			t.Fatalf("queue %d admitted=%v err=%v", index, queued, err)
 		}
 	}
-	durable, err := store.New(service.Store.Root).Conversation(card.ID)
+	durable, err := store.New(service.Store.Root).Conversations.Get(card.ID)
 	if err != nil || len(durable.Queue) != 2 || durable.Queue[0].Selection.Model != "gpt-5.6-sol" || durable.Queue[1].Selection.Effort != "" {
 		t.Fatalf("durable queue=%#v err=%v", durable.Queue, err)
 	}
-	active, err := service.Store.ResolveCard(card.ID)
+	active, err := service.Store.Kanban.ResolveCard(card.ID)
 	if err != nil || active.Model != first.ConfiguredModel || active.Effort != first.Effort || active.ProviderOptions["fast_mode"] != "false" {
 		t.Fatalf("queued changes altered active config=%#v err=%v", active, err)
 	}

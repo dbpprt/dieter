@@ -23,6 +23,7 @@ import (
 	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"github.com/dbpprt/dieter/internal/security/localauth"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit"
 	"github.com/dbpprt/dieter/internal/testkit/topology"
 	"github.com/dbpprt/dieter/internal/transport/controlrtc"
@@ -73,7 +74,7 @@ func TestDaemonCLIControlsLocalDaemonEndToEnd(t *testing.T) {
 	if err := json.Unmarshal([]byte(cardJSON), &card); err != nil || card.ID == "" || card.WorkspaceBaseRemote != "private" || card.RemotePublishMode != "pull_request" {
 		t.Fatalf("created card JSON=%q err=%v", cardJSON, err)
 	}
-	localProject, err := data.ResolveProject(created.Project.ID)
+	localProject, err := data.Kanban.ResolveProject(created.Project.ID)
 	if err != nil || len(localProject.Checkouts) != 1 {
 		t.Fatalf("local project=%+v err=%v", localProject, err)
 	}
@@ -301,7 +302,7 @@ func TestOperationalCLINeverFallsBackToDirectStorage(t *testing.T) {
 	t.Parallel()
 	data := testkit.Store(t)
 	repository := initTestRepository(t, "stored-only")
-	if _, err := data.CreateProject(store.CreateProjectInput{Name: "Must remain hidden", Path: repository}); err != nil {
+	if _, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Must remain hidden", Path: repository}); err != nil {
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
@@ -340,7 +341,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	}
 	remoteStore := testkit.Store(t)
 	remoteRepository := initTestRepository(t, "remote-route")
-	remoteProject, err := remoteStore.CreateProject(store.CreateProjectInput{Name: "Remote route", Path: remoteRepository})
+	remoteProject, err := remoteStore.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Remote route", Path: remoteRepository})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -635,20 +636,20 @@ func assertMachineOperationAccepted(t *testing.T, raw []byte) {
 func TestDaemonCLICardTokenUsage(t *testing.T) {
 	t.Parallel()
 	client, output, data := daemonCLIForTest(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Path: initTestRepository(t, "usage"), Name: "Usage"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Path: initTestRepository(t, "usage"), Name: "Usage"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	board, err := data.CreateBoard(store.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: "review"})
+	board, err := data.Kanban.CreateBoard(kanban.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: "review"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	card, err := data.CreateCard(store.CreateCardInput{Project: project.ID, Board: board.ID, Title: "Usage", Prompt: "Count"})
+	card, err := data.Kanban.CreateCard(kanban.CreateCardInput{Project: project.ID, Board: board.ID, Title: "Usage", Prompt: "Count"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, raw := range []string{`{"type":"start","messageId":"answer"}`, `{"type":"finish","messageMetadata":{"totalUsage":{"inputTokens":100,"outputTokens":25,"totalTokens":125}}}`} {
-		if _, _, err := data.AppendUIChunk(card.ID, "turn", json.RawMessage(raw)); err != nil {
+		if _, _, err := data.Conversations.AppendUIChunk(card.ID, "turn", json.RawMessage(raw)); err != nil {
 			t.Fatal(err)
 		}
 	}

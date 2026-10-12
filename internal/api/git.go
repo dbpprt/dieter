@@ -10,7 +10,7 @@ import (
 	"github.com/dbpprt/dieter/internal/git/operations"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/platform/fault"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 )
 
 func (api *gitAPI) GetWorkspace(ctx context.Context, request *dieterv1.ConversationRef) (*dieterv1.Workspace, error) {
@@ -22,7 +22,7 @@ func (api *gitAPI) GetWorkspace(ctx context.Context, request *dieterv1.Conversat
 }
 
 func (api *gitAPI) ListProjectWorkspaces(_ context.Context, request *dieterv1.ProjectRef) (*dieterv1.WorkspacesResponse, error) {
-	values, err := api.server.store.ListWorkspaces(request.GetProjectId())
+	values, err := api.server.store.Workspaces.List(request.GetProjectId())
 	if err != nil {
 		return nil, err
 	}
@@ -37,26 +37,26 @@ func (api *gitAPI) ListProjectWorkspaces(_ context.Context, request *dieterv1.Pr
 }
 
 func (api *gitAPI) GetChangeset(ctx context.Context, request *dieterv1.GetChangesetRequest) (*dieterv1.Changeset, error) {
-	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
+	ctx = kanban.WithCheckout(ctx, request.GetCheckoutId())
 	value, err := api.server.changesets.GetTarget(ctx, request.GetCardId(), request.GetProjectId())
 	if err != nil {
 		return nil, err
 	}
 	if request.GetProjectId() != "" {
-		if active, leaseErr := api.server.store.ProjectCheckoutHasRuntimeLease(value.ProjectID, ""); leaseErr == nil {
+		if active, leaseErr := api.server.store.Workspaces.ProjectCheckoutActive(value.ProjectID, ""); leaseErr == nil {
 			value.Volatile = active
 		}
-		if operation, operationErr := api.server.store.ActiveProjectGitOperation(value.ProjectID); operationErr == nil {
+		if operation, operationErr := api.server.store.Workspaces.ActiveProjectGitOperation(value.ProjectID); operationErr == nil {
 			value.CurrentOperationID = operation.ID
 		}
-	} else if active, leaseErr := api.server.store.CardHasRuntimeLease(request.GetCardId()); leaseErr == nil {
+	} else if active, leaseErr := api.server.store.Leases.CardActive(request.GetCardId()); leaseErr == nil {
 		value.Volatile = active
 	}
 	return protoChangeset(value), nil
 }
 
 func (api *gitAPI) GetFileDiff(ctx context.Context, request *dieterv1.GetDiffRequest) (*dieterv1.FileDiff, error) {
-	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
+	ctx = kanban.WithCheckout(ctx, request.GetCheckoutId())
 	value, err := api.server.changesets.FileDiffTarget(
 		ctx, request.GetCardId(), request.GetProjectId(), request.GetExpectedRevision(), request.GetPath(), "", request.GetSection(), int(request.GetOffset()), int(request.GetLimit()),
 	)
@@ -67,7 +67,7 @@ func (api *gitAPI) GetFileDiff(ctx context.Context, request *dieterv1.GetDiffReq
 }
 
 func (api *gitAPI) GetCommitDiff(ctx context.Context, request *dieterv1.GetDiffRequest) (*dieterv1.FileDiff, error) {
-	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
+	ctx = kanban.WithCheckout(ctx, request.GetCheckoutId())
 	if strings.TrimSpace(request.GetCommitSha()) == "" {
 		return nil, fault.New(fault.Invalid, "commit SHA is required")
 	}
@@ -86,7 +86,7 @@ func (api *gitAPI) AddChangeComment(_ context.Context, request *dieterv1.AddChan
 	if request.GetRevision() == "" {
 		return nil, fault.New(fault.Invalid, "revision is required")
 	}
-	value, err := api.server.store.AddChangeComment(model.ChangeComment{
+	value, err := api.server.store.Workspaces.AddChangeComment(model.ChangeComment{
 		CardID: request.GetCardId(), ChangesetRevision: request.GetRevision(), Path: request.GetPath(),
 		Side: request.GetSide(), Line: int(request.GetLine()), Body: request.GetBody(),
 		Author: model.Author{Kind: "human", Name: request.GetAuthor()},
@@ -98,7 +98,7 @@ func (api *gitAPI) AddChangeComment(_ context.Context, request *dieterv1.AddChan
 }
 
 func (api *gitAPI) ListChangeComments(_ context.Context, request *dieterv1.ListChangeCommentsRequest) (*dieterv1.ChangeCommentsResponse, error) {
-	values, err := api.server.store.ListChangeComments(request.GetCardId())
+	values, err := api.server.store.Workspaces.ListChangeComments(request.GetCardId())
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +121,7 @@ func (api *gitAPI) GetSCMCapabilities(ctx context.Context, request *dieterv1.Con
 }
 
 func (api *gitAPI) StartGitOperation(ctx context.Context, request *dieterv1.StartGitOperationRequest) (*dieterv1.GitOperation, error) {
-	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
+	ctx = kanban.WithCheckout(ctx, request.GetCheckoutId())
 	value, err := api.server.gitOperations.Start(ctx, operations.Request{
 		CardID: request.GetCardId(), ProjectID: request.GetProjectId(), Kind: request.GetKind(), ExpectedRevision: request.GetExpectedRevision(),
 		Parameters: cloneProtoStringMap(request.GetParameters()),

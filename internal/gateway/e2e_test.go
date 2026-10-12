@@ -31,6 +31,8 @@ import (
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/commands"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit"
 	"github.com/dbpprt/dieter/internal/testkit/topology"
 	"github.com/dbpprt/dieter/internal/transport/dieterclient"
@@ -152,7 +154,7 @@ func startRelayFixture(t *testing.T) *relayFixture {
 	if err := data.Ensure(); err != nil {
 		t.Fatal(err)
 	}
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Relay", Path: f.repository, BaseBranch: "main"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Relay", Path: f.repository, BaseBranch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,7 +297,7 @@ func TestGatewayRelaysChangesCommandsAndWorkspaceOperations(t *testing.T) {
 	}
 	// Without a peer service this machine never binds an account, so its
 	// records name the store's own peer identity as owner, as do its frames.
-	peer, err := boardStore.PeerIdentity()
+	peer, err := boardStore.Replica.PeerIdentity()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -411,7 +413,7 @@ func TestGatewayRelaysChangesCommandsAndWorkspaceOperations(t *testing.T) {
 			heartbeats++
 		}
 	}
-	if err := boardStore.SaveCommandResult("gateway-e2e-client", "projection-neutral", store.CommandResult{Kind: "test"}); err != nil {
+	if err := boardStore.Commands.Save("gateway-e2e-client", "projection-neutral", commands.Result{Kind: "test"}); err != nil {
 		t.Fatal(err)
 	}
 	for heartbeats := 0; heartbeats < 2; heartbeats++ {
@@ -567,7 +569,7 @@ func TestGatewayTunnelLossKeepsDaemonOwnedTurns(t *testing.T) {
 	// transport never cancels a durable turn or duplicates a queued message.
 	gatewayServer.Hub.CloseDaemon(identity.ID)
 	waitForGatewayEvent(t, gatewayEvents, link.GatewayDisconnected, 5*time.Second)
-	if running, resolveErr := boardStore.ResolveCard(created.GetId()); resolveErr != nil || running.Runtime != "running" {
+	if running, resolveErr := boardStore.Kanban.ResolveCard(created.GetId()); resolveErr != nil || running.Runtime != "running" {
 		t.Fatalf("tunnel loss changed daemon-owned turn runtime=%q err=%v", running.Runtime, resolveErr)
 	}
 	select {
@@ -597,7 +599,7 @@ func TestGatewayTunnelLossKeepsDaemonOwnedTurns(t *testing.T) {
 	if err != nil || repeatedQueue.GetMessageId() != queued.GetMessageId() || !repeatedQueue.GetQueued() {
 		t.Fatalf("repeat post-reconnect message first=%#v repeated=%#v err=%v", queued, repeatedQueue, err)
 	}
-	conversation, err := boardStore.Conversation(created.GetId())
+	conversation, err := boardStore.Conversations.Get(created.GetId())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -623,15 +625,15 @@ func TestGatewayTunnelLossKeepsDaemonOwnedTurns(t *testing.T) {
 	// lifecycle's own bounds instead of failing during final persistence.
 	deadline := time.Now().Add(35 * time.Second)
 	for time.Now().Before(deadline) {
-		resolved, resolveErr := boardStore.ResolveCard(created.GetId())
-		latestConversation, conversationErr := boardStore.Conversation(created.GetId())
+		resolved, resolveErr := boardStore.Kanban.ResolveCard(created.GetId())
+		latestConversation, conversationErr := boardStore.Conversations.Get(created.GetId())
 		if resolveErr == nil && conversationErr == nil && resolved.Runtime == "idle" && len(latestConversation.Queue) == 0 && runner.Completed.Load() >= 2 {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	resolved, resolveErr := boardStore.ResolveCard(created.GetId())
-	conversation, conversationErr := boardStore.Conversation(created.GetId())
+	resolved, resolveErr := boardStore.Kanban.ResolveCard(created.GetId())
+	conversation, conversationErr := boardStore.Conversations.Get(created.GetId())
 	if resolveErr != nil || conversationErr != nil || resolved.Runtime != "idle" || len(conversation.Queue) != 0 || runner.Completed.Load() < 2 {
 		t.Fatalf("daemon-owned turns did not finish after release: runtime=%q queue=%d completed=%d resolveErr=%v conversationErr=%v", resolved.Runtime, len(conversation.Queue), runner.Completed.Load(), resolveErr, conversationErr)
 	}

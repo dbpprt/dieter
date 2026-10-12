@@ -8,5 +8,6 @@
 //
 // testkit imports the store and harness packages, so their own internal tests
 // (and those of the packages they import) cannot use it without an import
-// cycle; they keep minimal local setup instead.
+// cycle; they keep minimal local setup instead. The external tests of the
+// store aggregates (package <aggregate>_test) use its store fixtures.
 package testkit

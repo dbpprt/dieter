@@ -13,7 +13,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/dbpprt/dieter/internal/git"
 	"github.com/dbpprt/dieter/internal/platform/fault"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/replica"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -62,7 +62,7 @@ func rpcError(err error) error {
 		return failure
 	}
 	failure := connect.NewError(rpcCode(err), err)
-	var record *store.PeerRecordError
+	var record *replica.PeerRecordError
 	if errors.As(err, &record) {
 		info := &errdetails.ErrorInfo{Reason: record.Code, Domain: "dieter.peer", Metadata: map[string]string{"kind": record.Kind, "id": record.ID, "field": record.Field}}
 		if detail, detailErr := connect.NewErrorDetail(info); detailErr == nil {
@@ -82,7 +82,7 @@ func rpcCode(err error) connect.Code {
 	if kind, ok := fault.KindOf(err); ok {
 		return kindCode(kind)
 	}
-	var record *store.PeerRecordError
+	var record *replica.PeerRecordError
 	var command *git.CommandError
 	switch {
 	case errors.As(err, &record):

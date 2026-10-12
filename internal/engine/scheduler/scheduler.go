@@ -13,6 +13,10 @@ import (
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/home"
+	"github.com/dbpprt/dieter/internal/store/kanban"
+	"github.com/dbpprt/dieter/internal/store/leases"
+	"github.com/dbpprt/dieter/internal/store/schedules"
 	"github.com/robfig/cron/v3"
 )
 
@@ -40,7 +44,7 @@ func New(data *store.Store, service *engine.Service) *Manager {
 }
 
 func (m *Manager) Start(ctx context.Context) {
-	_ = m.store.RecoverScheduleRuns()
+	_ = m.store.Schedules.RecoverRuns()
 	m.Tick()
 	go func() {
 		ticker := time.NewTicker(m.interval)
@@ -56,7 +60,7 @@ func (m *Manager) Start(ctx context.Context) {
 	}()
 }
 
-func (m *Manager) validate(input store.ScheduleInput) (store.ScheduleInput, error) {
+func (m *Manager) validate(input schedules.Input) (schedules.Input, error) {
 	location, err := time.LoadLocation(strings.TrimSpace(input.Timezone))
 	if err != nil {
 		return input, fmt.Errorf("invalid timezone: %w", err)
@@ -90,24 +94,24 @@ func (m *Manager) validate(input store.ScheduleInput) (store.ScheduleInput, erro
 	return input, nil
 }
 
-func (m *Manager) Create(input store.ScheduleInput) (model.Schedule, error) {
+func (m *Manager) Create(input schedules.Input) (model.Schedule, error) {
 	validated, err := m.validate(input)
 	if err != nil {
 		return model.Schedule{}, err
 	}
-	return m.store.CreateSchedule(validated)
+	return m.store.Schedules.Create(validated)
 }
 
-func (m *Manager) Update(ref string, input store.ScheduleInput) (model.Schedule, error) {
+func (m *Manager) Update(ref string, input schedules.Input) (model.Schedule, error) {
 	validated, err := m.validate(input)
 	if err != nil {
 		return model.Schedule{}, err
 	}
-	return m.store.UpdateSchedule(ref, validated)
+	return m.store.Schedules.Update(ref, validated)
 }
 
 func (m *Manager) SetEnabled(ref string, enabled bool) (model.Schedule, error) {
-	item, err := m.store.ResolveSchedule(ref)
+	item, err := m.store.Schedules.Resolve(ref)
 	if err != nil {
 		return model.Schedule{}, err
 	}
@@ -119,11 +123,11 @@ func (m *Manager) SetEnabled(ref string, enabled bool) (model.Schedule, error) {
 		}
 		next = times[0]
 	}
-	return m.store.SetScheduleEnabled(item.ID, enabled, next)
+	return m.store.Schedules.SetEnabled(item.ID, enabled, next)
 }
 
 func (m *Manager) List(projectRef string) ([]model.Schedule, error) {
-	items, err := m.store.ListSchedules(projectRef)
+	items, err := m.store.Schedules.List(projectRef)
 	if err != nil {
 		return nil, err
 	}
@@ -133,10 +137,10 @@ func (m *Manager) List(projectRef string) ([]model.Schedule, error) {
 	return items, nil
 }
 
-func (m *Manager) ListPage(projectRef string, pageSize int, pageToken string) (store.SchedulePage, error) {
-	page, err := m.store.ListSharedSchedulesPage(projectRef, pageSize, pageToken)
+func (m *Manager) ListPage(projectRef string, pageSize int, pageToken string) (schedules.Page, error) {
+	page, err := m.store.Schedules.ListSharedPage(projectRef, pageSize, pageToken)
 	if err != nil {
-		return store.SchedulePage{}, err
+		return schedules.Page{}, err
 	}
 	for index := range page.Items {
 		page.Items[index].NextRuns, _ = m.Preview(page.Items[index].Cron, page.Items[index].Timezone, 5)
@@ -166,25 +170,25 @@ func (m *Manager) Preview(expression, timezone string, count int) ([]string, err
 }
 
 func (m *Manager) RunNow(ref string) (model.ScheduleRun, error) {
-	schedule, err := m.store.ResolveSchedule(ref)
+	schedule, err := m.store.Schedules.Resolve(ref)
 	if err != nil {
 		return model.ScheduleRun{}, err
 	}
 	scheduledFor := m.now().UTC().Format(time.RFC3339Nano)
-	run, err := m.store.ClaimScheduleRun(schedule.ID, scheduledFor, "", true)
+	run, err := m.store.Schedules.ClaimRun(schedule.ID, scheduledFor, "", true)
 	if err != nil {
 		return model.ScheduleRun{}, err
 	}
 	m.processRun(run)
-	return m.store.ResolveScheduleRun(run.ID)
+	return m.store.Schedules.ResolveRun(run.ID)
 }
 
 func (m *Manager) Tick() {
 	now := m.now().UTC()
-	_, _ = m.store.ArchiveDoneCards(now)
-	schedules, err := m.store.ListDueSchedules(now, 100)
+	_, _ = m.store.Kanban.ArchiveDoneCards(now)
+	items, err := m.store.Schedules.ListDue(now, 100)
 	if err == nil {
-		for _, schedule := range schedules {
+		for _, schedule := range items {
 			due, parseErr := time.Parse(time.RFC3339Nano, schedule.NextRunAt)
 			if parseErr != nil || due.After(now) {
 				continue
@@ -196,10 +200,10 @@ func (m *Manager) Tick() {
 			}
 			latest := latestOccurrence(parsed, due.In(location), now.In(location))
 			next := parsed.Next(now.In(location)).UTC().Format(time.RFC3339Nano)
-			_, _ = m.store.ClaimScheduleRun(schedule.ID, latest.UTC().Format(time.RFC3339Nano), next, false)
+			_, _ = m.store.Schedules.ClaimRun(schedule.ID, latest.UTC().Format(time.RFC3339Nano), next, false)
 		}
 	}
-	runs, err := m.store.ListRunnableScheduleRuns(now, 100)
+	runs, err := m.store.Schedules.ListRunnableRuns(now, 100)
 	if err != nil {
 		return
 	}
@@ -224,26 +228,26 @@ func (m *Manager) processRun(run model.ScheduleRun) {
 		m.mu.Unlock()
 	}()
 
-	schedule, err := m.store.ResolveScheduleIncludingArchived(run.ScheduleID)
+	schedule, err := m.store.Schedules.ResolveIncludingArchived(run.ScheduleID)
 	if err != nil {
-		_, _ = m.store.UpdateScheduleRun(run.ID, model.ScheduleRunCancelled, "schedule was deleted before the occurrence started")
+		_, _ = m.store.Schedules.UpdateRun(run.ID, model.ScheduleRunCancelled, "schedule was deleted before the occurrence started")
 		return
 	}
-	if _, err := m.store.ResolveProject(schedule.ProjectID); err != nil {
-		_, _ = m.store.UpdateScheduleRun(run.ID, model.ScheduleRunCancelled, "the schedule project was removed from Board")
+	if _, err := m.store.Kanban.ResolveProject(schedule.ProjectID); err != nil {
+		_, _ = m.store.Schedules.UpdateRun(run.ID, model.ScheduleRunCancelled, "the schedule project was removed from Board")
 		return
 	}
 	if schedule.OpenCardPolicy == "skip_if_open" && m.hasOpenCard(schedule.ID, run.CardID) {
-		_, _ = m.store.SetScheduleRunCard(run.ID, "")
-		_, _ = m.store.UpdateScheduleRun(run.ID, model.ScheduleRunSkipped, "an earlier card from this schedule is still open")
+		_, _ = m.store.Schedules.SetRunCard(run.ID, "")
+		_, _ = m.store.Schedules.UpdateRun(run.ID, model.ScheduleRunSkipped, "an earlier card from this schedule is still open")
 		return
 	}
-	card, err := m.store.ResolveCard(run.CardID)
-	if errors.Is(err, store.ErrNotFound) {
-		project, projectErr := m.store.ResolveProject(schedule.ProjectID)
-		board, boardErr := m.store.ResolveBoard(schedule.ProjectID, schedule.BoardID)
+	card, err := m.store.Kanban.ResolveCard(run.CardID)
+	if errors.Is(err, home.ErrNotFound) {
+		project, projectErr := m.store.Kanban.ResolveProject(schedule.ProjectID)
+		board, boardErr := m.store.Kanban.ResolveBoard(schedule.ProjectID, schedule.BoardID)
 		if projectErr != nil || boardErr != nil {
-			_, _ = m.store.UpdateScheduleRun(run.ID, model.ScheduleRunFailed, "the schedule project or board no longer exists")
+			_, _ = m.store.Schedules.UpdateRun(run.ID, model.ScheduleRunFailed, "the schedule project or board no longer exists")
 			return
 		}
 		variables := map[string]string{
@@ -259,24 +263,24 @@ func (m *Manager) processRun(run model.ScheduleRun) {
 		})
 	}
 	if err != nil {
-		_, _ = m.store.UpdateScheduleRun(run.ID, model.ScheduleRunFailed, err.Error())
+		_, _ = m.store.Schedules.UpdateRun(run.ID, model.ScheduleRunFailed, err.Error())
 		return
 	}
 	if run.Action == model.ScheduleActionDraft {
-		_, _ = m.store.UpdateScheduleRun(run.ID, model.ScheduleRunCompleted, "draft card created")
+		_, _ = m.store.Schedules.UpdateRun(run.ID, model.ScheduleRunCompleted, "draft card created")
 		return
 	}
 	updates, err := m.app.StartCard(card.ID, "", card.Provider, card.Model, card.Effort)
-	if errors.Is(err, store.ErrCardActive) {
-		_, _ = m.store.UpdateScheduleRun(run.ID, model.ScheduleRunInterrupted, "conversation already has an active turn; dispatch was not replayed")
+	if errors.Is(err, leases.ErrCardActive) {
+		_, _ = m.store.Schedules.UpdateRun(run.ID, model.ScheduleRunInterrupted, "conversation already has an active turn; dispatch was not replayed")
 		return
 	}
 	if err != nil {
-		_, _ = m.store.UpdateScheduleRun(run.ID, model.ScheduleRunFailed, err.Error())
+		_, _ = m.store.Schedules.UpdateRun(run.ID, model.ScheduleRunFailed, err.Error())
 		return
 	}
-	_, _ = m.store.UpdateScheduleRun(run.ID, model.ScheduleRunStarting, "agent turn admitted")
-	_, _ = m.store.UpdateScheduleRun(run.ID, model.ScheduleRunRunning, "agent turn started")
+	_, _ = m.store.Schedules.UpdateRun(run.ID, model.ScheduleRunStarting, "agent turn admitted")
+	_, _ = m.store.Schedules.UpdateRun(run.ID, model.ScheduleRunRunning, "agent turn started")
 	go m.observe(run.ID, updates)
 }
 
@@ -322,14 +326,14 @@ func (m *Manager) observe(runID string, updates <-chan engine.TurnUpdate) {
 	} else if failed {
 		status = model.ScheduleRunFailed
 	}
-	run, err := m.store.UpdateScheduleRun(runID, status, message)
+	run, err := m.store.Schedules.UpdateRun(runID, status, message)
 	if err == nil && m.OnRunSettled != nil {
 		m.OnRunSettled(run)
 	}
 }
 
 func (m *Manager) hasOpenCard(scheduleID, excludeCardID string) bool {
-	cards, err := m.store.ListCards(store.CardFilter{})
+	cards, err := m.store.Kanban.ListCards(kanban.CardFilter{})
 	if err != nil {
 		return false
 	}

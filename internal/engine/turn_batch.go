@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/dbpprt/dieter/internal/harness"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/conversations"
 )
 
 const turnChunkBatchDelay = 20 * time.Millisecond
@@ -16,7 +16,7 @@ const turnChunkBatchDelay = 20 * time.Millisecond
 // Only adjacent token deltas may wait. Every semantic output is a durability
 // barrier, including session/continuation state emitted after a terminal chunk.
 func batchableTurnOutput(output harness.Output) bool {
-	if output.Type != "chunk" || len(output.Chunk) > store.MaxUIChunkBatchBytes {
+	if output.Type != "chunk" || len(output.Chunk) > conversations.MaxUIChunkBatchBytes {
 		return false
 	}
 	var chunk struct {
@@ -101,7 +101,7 @@ func runBatchedTurnOutputs(ctx context.Context, runner harness.Runner, request h
 			output := item.output
 			var err error
 			if batchableTurnOutput(output) {
-				if size+len(output.Chunk) > store.MaxUIChunkBatchBytes {
+				if size+len(output.Chunk) > conversations.MaxUIChunkBatchBytes {
 					err = flush()
 				}
 				if err == nil {
@@ -116,7 +116,7 @@ func runBatchedTurnOutputs(ctx context.Context, runner harness.Runner, request h
 					}
 					pending = append(pending, bytes.Clone(output.Chunk))
 					size += len(output.Chunk)
-					if len(pending) == store.MaxUIChunkBatchEvents || size == store.MaxUIChunkBatchBytes {
+					if len(pending) == conversations.MaxUIChunkBatchEvents || size == conversations.MaxUIChunkBatchBytes {
 						err = flush()
 					}
 				}

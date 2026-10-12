@@ -179,7 +179,7 @@ func (s *Server) vaultCaller(ctx context.Context) (vaultCaller, error) {
 	if err != nil {
 		return caller, fault.New(fault.PermissionDenied, err.Error())
 	}
-	card, err := s.store.ResolveCard(cardID)
+	card, err := s.store.Kanban.ResolveCard(cardID)
 	if err != nil {
 		return caller, err
 	}
@@ -225,7 +225,7 @@ func (s *Server) vaultStatus(caller vaultCaller) (*dieterv1.VaultStatus, error) 
 
 func (s *Server) memberIdentity() (string, string) {
 	name, _ := os.Hostname()
-	if identity, err := s.store.PeerIdentity(); err == nil {
+	if identity, err := s.store.Replica.PeerIdentity(); err == nil {
 		return name, identity.DaemonID
 	}
 	return name, ""

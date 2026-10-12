@@ -56,7 +56,7 @@ func (s *changeStream) next() (*dieterv1.ChangesFrame, bool, error) {
 // records adds the next page of this machine's peer records. The account can
 // appear (first shared write) or change (enrollment); its log then restarts.
 func (s *changeStream) records(frame *dieterv1.ChangesFrame) (bool, error) {
-	identity, err := s.server.store.PeerIdentity()
+	identity, err := s.server.store.Replica.PeerIdentity()
 	if errors.Is(err, os.ErrNotExist) {
 		frame.ResetRecords = s.resetRecords
 		s.resetRecords = false
@@ -66,10 +66,10 @@ func (s *changeStream) records(frame *dieterv1.ChangesFrame) (bool, error) {
 		return false, err
 	}
 	s.daemonID, s.account = identity.DaemonID, identity.Account
-	page, err := s.server.store.PeerChanges(identity.Account, s.cursor.GetRecordsEpoch(), s.cursor.GetRecordsSequence())
+	page, err := s.server.store.Replica.PeerChanges(identity.Account, s.cursor.GetRecordsEpoch(), s.cursor.GetRecordsSequence())
 	if errors.Is(err, crdt.ErrConflict) {
 		s.cursor.RecordsEpoch, s.cursor.RecordsSequence, s.resetRecords = "", 0, true
-		page, err = s.server.store.PeerChanges(identity.Account, "", 0)
+		page, err = s.server.store.Replica.PeerChanges(identity.Account, "", 0)
 	}
 	if err != nil {
 		return false, err
