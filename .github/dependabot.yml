@@ -1,4 +1,5 @@
-# Weekly, grouped version updates for every ecosystem the repository pins.
+# Grouped version updates for every ecosystem the repository pins: weekly,
+# except the harness runtime, which is checked daily.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -13,8 +14,18 @@ updates:
     directory: /apps/kotlin
     schedule: { interval: weekly }
     groups: { gradle: { patterns: ["*"] } }
+  # The agent CLIs (Claude Code, Codex, OMP) and the AI SDK harness adapters
+  # are checked daily, before the nightly release, and their group merges on
+  # its own once ci-ok passes (dependabot-automerge.yml).
   - package-ecosystem: npm
-    directories: ["/internal/harness/runtime", "/apps/apple/mac/MarkdownPreview"]
+    directory: /internal/harness/runtime
+    schedule: { interval: daily, time: "00:30", timezone: Etc/UTC }
+    groups:
+      agents:
+        patterns: ["@anthropic-ai/*", "@openai/codex", "@oh-my-pi/*", "@ai-sdk/*", "ai"]
+      npm: { patterns: ["*"] }
+  - package-ecosystem: npm
+    directory: /apps/apple/mac/MarkdownPreview
     schedule: { interval: weekly }
     groups: { npm: { patterns: ["*"] } }
   - package-ecosystem: bundler
