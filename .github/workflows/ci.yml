@@ -298,7 +298,7 @@ jobs:
         if: env.CHANGE_BASE != ''
         run: |
           git fetch --no-tags --depth=200 origin "$CHANGE_BASE"
-          ruby fastlane/helpers/format.rb --base "$CHANGE_BASE"
+          ruby fastlane/helpers/format.rb --base "$CHANGE_BASE" --only swift
       - name: Prepare the hosted desktop
         run: swift fastlane/helpers/mac_ci_desktop.swift
       - name: Mac flows
