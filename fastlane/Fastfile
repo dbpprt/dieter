@@ -618,7 +618,7 @@ platform :ios do
       )
     end
     upload_to_testflight(
-      ipa: options[:ipa] || Dieter.path("dist/ios/Dieter-iOS.ipa"),
+      ipa: File.expand_path(options[:ipa] || "dist/ios/Dieter-iOS.ipa", Dieter::ROOT),
       app_identifier: app,
       groups: Dieter.identity.fetch("testflight_groups"),
       distribute_external: false,
@@ -1070,8 +1070,10 @@ desc "CI: create the GitHub release of dist:DIR with generated notes; channel:de
 lane :publish do |options|
   release = Dieter::Release.current
   repository = Dieter.identity.fetch("repository")
-  assets = Dir.glob(File.join(options.fetch(:dist), "*")).select { |file| File.file?(file) }.sort
-  UI.user_error!("No release assets in #{options[:dist]}") if assets.empty?
+  # Lanes run inside fastlane/; resolve a relative directory from the repository root.
+  dist = File.expand_path(options.fetch(:dist), Dieter::ROOT)
+  assets = Dir.glob(File.join(dist, "*")).select { |file| File.file?(file) }.sort
+  UI.user_error!("No release assets in #{dist}") if assets.empty?
   body =
     "Development build #{release["version"]} from #{release["revision"]}.#{options[:qualified_by] ? " Qualified by #{options[:qualified_by]}." : ""}\n\n" \
       "Verify `SHA256SUMS` with `cosign verify-blob --bundle SHA256SUMS.sigstore.json --certificate-identity #{Dieter::Release.signer} " \
