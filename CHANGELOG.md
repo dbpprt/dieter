@@ -8,6 +8,10 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.5.405
+
 ### Changed
 
 - Release daemons no longer install their harness runtime with npm. Each release
@@ -20,6 +24,11 @@ copy the **Unreleased** notes into a section named after that exact version
   aggregate (projects and cards, conversations, schedules, workspaces, the peer
   replica, …) with a lint-enforced dependency order. Files on disk do not
   change.
+
+### Fixed
+
+- `brew uninstall --zap dieter-app` removes the Mac app's data under its
+  current identifier, `com.getdieter.mac`.
 
 ## 0.5.404
 
