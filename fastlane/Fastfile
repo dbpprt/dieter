@@ -534,7 +534,7 @@ platform :ios do
     ids = Dieter::Release.ids
     team = Dieter.identity.fetch("apple_team_id")
     Dieter::Lease.hold("apple-build") { build_framework("release", ["ios-device"]) }
-    setup_ci(provider: "github", force: true)
+    setup_ci(force: true)
     import_certificate(
       certificate_path:
         Dieter.secret_file("IOS_DISTRIBUTION_CERTIFICATE_BASE64", "distribution.p12"),
@@ -762,7 +762,7 @@ platform :mac do
       build_framework("release", ["macos"])
       markdown_preview
     end
-    setup_ci(provider: "github", force: true)
+    setup_ci(force: true)
     import_certificate(
       certificate_path:
         Dieter.secret_file("MACOS_DEVELOPER_ID_CERTIFICATE_BASE64", "developer-id.p12"),
@@ -871,7 +871,7 @@ platform :mac do
         "DIETER_RELEASE_VERSION" => version
       }
     )
-    setup_ci(provider: "github", force: true)
+    setup_ci(force: true)
     import_certificate(
       certificate_path:
         Dieter.secret_file("MACOS_DEVELOPER_ID_CERTIFICATE_BASE64", "developer-id.p12"),
