@@ -13,6 +13,13 @@ on:
         description: Run every component, every Maestro flow and the iPad layout
         type: boolean
         default: false
+  # Full qualification on demand, without a release.
+  workflow_dispatch:
+    inputs:
+      full:
+        description: Run every component, every Maestro flow and the iPad layout
+        type: boolean
+        default: true
 
 permissions:
   contents: read
