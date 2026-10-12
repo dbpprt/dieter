@@ -1205,10 +1205,7 @@ lane :promote do |options|
     end
   sums = File.read(File.join(directory, "SHA256SUMS")).lines.to_h { |line| line.split.reverse }
   tap = Dieter.identity.fetch("homebrew_tap")
-  {
-    "Formula/dieter.rb" => "dieter-darwin-arm64.tar.gz",
-    "Casks/dieter-app.rb" => "Dieter-macOS-arm64.zip"
-  }.each do |file, asset|
+  Dieter::Release::HOMEBREW.each do |file, (template, asset)|
     current =
       github_api(
         api_bearer: ENV.fetch("HOMEBREW_TAP_TOKEN"),
@@ -1217,15 +1214,8 @@ lane :promote do |options|
       )[
         :json
       ]
-    text = Base64.decode64(current.fetch("content"))
-    updated =
-      Dieter::Release.homebrew(
-        text,
-        version: version,
-        sha256: sums.fetch(asset),
-        repository: repository
-      )
-    next if updated == text
+    updated = Dieter::Release.homebrew(template, version: version, sha256: sums.fetch(asset))
+    next if updated == Base64.decode64(current.fetch("content"))
     github_api(
       api_bearer: ENV.fetch("HOMEBREW_TAP_TOKEN"),
       http_method: "PUT",

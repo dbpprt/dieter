@@ -27,8 +27,8 @@ tags: [smoke]
 - tapOn:
     id: chrome-start-working
     waitToSettleTimeoutMs: 500
-# Each mock turn starts a Node worker that loads the full harness module graph;
-# on a loaded hosted macOS runner that has taken up to 172 s (2026-10-12).
+# A safety bound: mock turns take seconds, but hosted macOS runners shared with
+# the simulator have stalled worker start-up for minutes.
 - extendedWaitUntil:
     visible: "Mock harness received: First turn.*"
     timeout: 300000

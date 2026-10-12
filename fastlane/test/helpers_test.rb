@@ -235,27 +235,39 @@ class ReleaseTest < Minitest::Test
     assert_raises(Dieter::Unavailable) { Dieter::Release.changelog_section(text, "0.4.3") }
   end
 
-  def test_homebrew_rewrite_touches_only_version_url_and_digest
-    formula = <<~RUBY
-      class Dieter < Formula
-        url "https://github.com/old/tap/releases/download/v0.4.1/dieter-darwin-arm64.tar.gz"
-        version "0.4.1"
-        sha256 "#{"0" * 64}"
-      end
-    RUBY
-    updated =
+  def test_homebrew_files_render_from_the_identity_and_release
+    identity = {
+      "repository" => "owner/dieter",
+      "homebrew_tap" => "owner/homebrew-tap",
+      "bundle_prefix" => "org.example"
+    }
+    formula =
       Dieter::Release.homebrew(
-        formula,
-        version: "0.4.2",
+        "dieter.rb.erb",
+        version: "0.5.9",
         sha256: "f" * 64,
-        repository: "owner/dieter"
+        identity: identity
       )
-    assert_includes updated,
-                    %(url "https://github.com/owner/dieter/releases/download/v0.4.2/dieter-darwin-arm64.tar.gz")
-    assert_includes updated, %(version "0.4.2")
-    assert_includes updated, %(sha256 "#{"f" * 64}")
+    assert_includes formula,
+                    %(url "https://github.com/owner/dieter/releases/download/v0.5.9/dieter-darwin-arm64.tar.gz")
+    assert_includes formula, %(version "0.5.9")
+    assert_includes formula, %(sha256 "#{"f" * 64}")
+    cask =
+      Dieter::Release.homebrew(
+        "dieter-app.rb.erb",
+        version: "0.5.9",
+        sha256: "e" * 64,
+        identity: identity
+      )
+    assert_includes cask,
+                    %(url "https://github.com/owner/dieter/releases/download/v\#{version}/Dieter-macOS-arm64.zip")
+    assert_includes cask, %("~/Library/Application Support/org.example.mac")
+    refute_match(/<%|dbpprt|getdieter/, formula + cask)
+    Dieter::Release::HOMEBREW.each_value do |template, _asset|
+      assert File.file?(Dieter.path("deploy/homebrew", template)), template
+    end
     assert_raises(ArgumentError) do
-      Dieter::Release.homebrew("class X; end", version: "1", sha256: "a", repository: "o/r")
+      Dieter::Release.homebrew("dieter.rb.erb", version: "1", sha256: "a", identity: identity)
     end
   end
 
