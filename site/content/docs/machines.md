@@ -10,8 +10,10 @@ slug: "machines"
 An enrolled Mac or Linux daemon can run agents without an open native client.
 Use an always-on host for long tasks: your laptop or phone can disconnect while
 the execution host keeps working. Keep the host awake and its daemon service
-running. A headless Linux host needs no graphical login for agents or terminals;
-[screen hosting](/docs/screens/) has additional desktop requirements.
+running. A host that sleeps shows as offline; when it wakes, its daemon and the
+Mac app reconnect on their own within seconds. A headless Linux host needs no
+graphical login for agents or terminals; [screen hosting](/docs/screens/) has
+additional desktop requirements.
 
 ## Enroll another host
 

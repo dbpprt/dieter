@@ -130,4 +130,10 @@ extension DieterStore {
     func applicationDidResignActive() {
         Task { await composerDrafts.save() }
     }
+
+    /// The Mac woke from sleep. Its connections from before can be dead
+    /// without having failed; the core decides whether to reopen them.
+    func systemDidWake() {
+        Task { await perform { $0.systemWoke = ClientSystemWoke() } }
+    }
 }

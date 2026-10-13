@@ -1761,6 +1761,14 @@ public nonisolated struct ClientCommand: Sendable {
     set {command = .reconnect(newValue)}
   }
 
+  public var systemWoke: ClientSystemWoke {
+    get {
+      if case .systemWoke(let v)? = command {return v}
+      return ClientSystemWoke()
+    }
+    set {command = .systemWoke(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Command: Equatable, Sendable {
@@ -1836,6 +1844,7 @@ public nonisolated struct ClientCommand: Sendable {
     case chooseAgent(ClientChooseAgent)
     case signOut(ClientSignOut)
     case reconnect(ClientReconnect)
+    case systemWoke(ClientSystemWoke)
 
   }
 
@@ -1966,6 +1975,19 @@ public nonisolated struct ClientSetForeground: Sendable {
   // methods supported on all messages.
 
   public var foreground: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// The device woke from sleep. Connections opened before it slept can be dead
+/// without having failed, so a connected or connecting core reopens them now;
+/// one that is disconnected or waits for sign-in or an update stays as it is.
+public nonisolated struct ClientSystemWoke: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -12547,7 +12569,7 @@ nonisolated extension ClientQuotaSeverity: SwiftProtobuf._ProtoNameProviding {
 
 nonisolated extension ClientCommand: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Command"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}adopt_session\0\u{3}begin_sign_in\0\u{3}complete_sign_in\0\u{4}\u{2}select_gateway\0\u{4}\u{2}set_connected\0\u{3}set_foreground\0\u{4}\u{2}create_conversation\0\u{3}send_message\0\u{3}start_card\0\u{3}move_card\0\u{3}finish_card\0\u{3}set_card_labels\0\u{3}set_card_pinned\0\u{3}rename_card\0\u{3}archive_card\0\u{3}cancel_card\0\u{3}mark_card_read\0\u{3}retry_pending\0\u{3}discard_pending\0\u{3}restore_card\0\u{3}add_card_label\0\u{3}update_card_draft\0\u{3}merge_card\0\u{3}fork_card\0\u{3}list_archived_cards\0\u{4}\u{2}load_earlier_messages\0\u{3}return_to_latest\0\u{3}refresh_conversation\0\u{3}set_visible_conversation\0\u{3}load_later_messages\0\u{3}retry_failed_turn\0\u{3}remove_queued_message\0\u{3}steer_conversation\0\u{3}load_tool_output\0\u{4}\u{2}rename_machine\0\u{3}revoke_machine\0\u{3}ensure_metadata\0\u{3}use_gateway\0\u{1}resync\0\u{3}set_project_order\0\u{4}\u{3}set_project_expanded\0\u{3}set_chat_section_collapsed\0\u{3}set_chats_show_all\0\u{3}set_lane_descending\0\u{3}set_folders\0\u{3}list_drafts\0\u{3}set_draft_text\0\u{3}remember_creation\0\u{1}files\0\u{3}file_tree\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedules\0\u{1}review\0\u{3}project_changes\0\u{3}project_workspaces\0\u{1}admin\0\u{1}telemetry\0\u{1}quotas\0\u{1}processes\0\u{1}search\0\u{1}screen\0\u{4}\u{2}set_show_reasoning\0\u{3}board_view\0\u{2}\u{2}chats\0\u{1}navigation\0\u{3}creation_preview\0\u{3}choose_agent\0\u{3}sign_out\0\u{1}reconnect\0\u{3}remove_gateway\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}adopt_session\0\u{3}begin_sign_in\0\u{3}complete_sign_in\0\u{4}\u{2}select_gateway\0\u{4}\u{2}set_connected\0\u{3}set_foreground\0\u{4}\u{2}create_conversation\0\u{3}send_message\0\u{3}start_card\0\u{3}move_card\0\u{3}finish_card\0\u{3}set_card_labels\0\u{3}set_card_pinned\0\u{3}rename_card\0\u{3}archive_card\0\u{3}cancel_card\0\u{3}mark_card_read\0\u{3}retry_pending\0\u{3}discard_pending\0\u{3}restore_card\0\u{3}add_card_label\0\u{3}update_card_draft\0\u{3}merge_card\0\u{3}fork_card\0\u{3}list_archived_cards\0\u{4}\u{2}load_earlier_messages\0\u{3}return_to_latest\0\u{3}refresh_conversation\0\u{3}set_visible_conversation\0\u{3}load_later_messages\0\u{3}retry_failed_turn\0\u{3}remove_queued_message\0\u{3}steer_conversation\0\u{3}load_tool_output\0\u{4}\u{2}rename_machine\0\u{3}revoke_machine\0\u{3}ensure_metadata\0\u{3}use_gateway\0\u{1}resync\0\u{3}set_project_order\0\u{4}\u{3}set_project_expanded\0\u{3}set_chat_section_collapsed\0\u{3}set_chats_show_all\0\u{3}set_lane_descending\0\u{3}set_folders\0\u{3}list_drafts\0\u{3}set_draft_text\0\u{3}remember_creation\0\u{1}files\0\u{3}file_tree\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedules\0\u{1}review\0\u{3}project_changes\0\u{3}project_workspaces\0\u{1}admin\0\u{1}telemetry\0\u{1}quotas\0\u{1}processes\0\u{1}search\0\u{1}screen\0\u{4}\u{2}set_show_reasoning\0\u{3}board_view\0\u{2}\u{2}chats\0\u{1}navigation\0\u{3}creation_preview\0\u{3}choose_agent\0\u{3}sign_out\0\u{1}reconnect\0\u{3}remove_gateway\0\u{3}system_woke\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -13478,6 +13500,19 @@ nonisolated extension ClientCommand: SwiftProtobuf.Message, SwiftProtobuf._Messa
           self.command = .removeGateway(v)
         }
       }()
+      case 81: try {
+        var v: ClientSystemWoke?
+        var hadOneofValue = false
+        if let current = self.command {
+          hadOneofValue = true
+          if case .systemWoke(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.command = .systemWoke(v)
+        }
+      }()
       default: break
       }
     }
@@ -13773,6 +13808,10 @@ nonisolated extension ClientCommand: SwiftProtobuf.Message, SwiftProtobuf._Messa
       guard case .removeGateway(let v)? = self.command else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 80)
     }()
+    case .systemWoke?: try {
+      guard case .systemWoke(let v)? = self.command else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 81)
+    }()
     case nil: break
     }
     try unknownFields.traverse(visitor: &visitor)
@@ -14057,6 +14096,25 @@ nonisolated extension ClientSetForeground: SwiftProtobuf.Message, SwiftProtobuf.
 
   public static func ==(lhs: ClientSetForeground, rhs: ClientSetForeground) -> Bool {
     if lhs.foreground != rhs.foreground {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientSystemWoke: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".SystemWoke"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    // Load everything into unknown fields
+    while try decoder.nextFieldNumber() != nil {}
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientSystemWoke, rhs: ClientSystemWoke) -> Bool {
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

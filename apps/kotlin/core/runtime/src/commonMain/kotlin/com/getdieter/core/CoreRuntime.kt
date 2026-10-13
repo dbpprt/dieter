@@ -414,6 +414,9 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
         connection.restart()
     }
 
+    /** The device woke from sleep: reopens a live connection without undoing a disconnect. */
+    suspend fun systemWoke() = onCore { connection.systemWoke() }
+
     /**
      * Queues a card or chat as [request] says; returns its optimistic row. [create] applies the
      * creation rules first.

@@ -39,6 +39,28 @@ func TestGatewayReconnectBackoffResetsAfterStableSession(t *testing.T) {
 	}
 }
 
+func TestGatewayHostSleptOnlyWhenTheWallClockOutranTheMonotonicClock(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		wall, monotonic time.Duration
+		slept           bool
+	}{
+		{wall: time.Second, monotonic: time.Second},
+		{wall: time.Second + gatewayHostSleepTolerance, monotonic: time.Second},
+		{wall: -time.Hour, monotonic: time.Second},
+		{wall: 3 * time.Hour, monotonic: time.Second, slept: true},
+	} {
+		if got := gatewayHostSlept(test.wall, test.monotonic); got != test.slept {
+			t.Fatalf("gatewayHostSlept(%s, %s) = %t, want %t", test.wall, test.monotonic, got, test.slept)
+		}
+	}
+	previous := time.Now()
+	now := time.Now()
+	if gatewayHostSlept(now.Round(0).Sub(previous.Round(0)), now.Sub(previous)) {
+		t.Fatal("two readings of an awake host must not count as sleep")
+	}
+}
+
 func TestRelayMethodPriorityKeepsCommandsAheadOfStreams(t *testing.T) {
 	t.Parallel()
 	for _, method := range []string{

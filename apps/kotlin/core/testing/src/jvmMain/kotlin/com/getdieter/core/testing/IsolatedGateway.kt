@@ -60,8 +60,12 @@ class IsolatedGateway(
         )
     }
 
+    /** The gateway's loopback `host:port`. */
+    val address
+        get() = values.getValue("DIETER_ISOLATED_ADDR")
+
     val url
-        get() = "http://${values.getValue("DIETER_ISOLATED_ADDR")}"
+        get() = "http://$address"
 
     val token
         get() = values.getValue("DIETER_ISOLATED_TOKEN")

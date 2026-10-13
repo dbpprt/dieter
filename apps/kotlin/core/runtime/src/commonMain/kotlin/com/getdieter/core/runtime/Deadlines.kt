@@ -17,6 +17,9 @@ object Deadlines {
     val PROVISION = 60.seconds
 }
 
+/** Why a gateway call that got no answer failed. */
+const val GATEWAY_SILENT = "The gateway did not answer in time."
+
 /**
  * Runs [block] within [timeout]. An expired deadline is a transient failure, not a cancellation, so
  * loops and retry policies treat it like any other unanswered call instead of silently stopping.

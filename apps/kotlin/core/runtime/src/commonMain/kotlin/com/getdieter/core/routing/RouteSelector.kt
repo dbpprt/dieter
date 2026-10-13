@@ -19,8 +19,11 @@ import com.getdieter.core.platform.RpcChannel
 import com.getdieter.core.platform.RpcTransport
 import com.getdieter.core.runtime.CoreException
 import com.getdieter.core.runtime.CoreLogger
+import com.getdieter.core.runtime.Deadlines
 import com.getdieter.core.runtime.FailureKind
 import com.getdieter.core.runtime.Failures
+import com.getdieter.core.runtime.GATEWAY_SILENT
+import com.getdieter.core.runtime.withDeadline
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Duration
@@ -62,9 +65,18 @@ class RouteSelector(
         access: GatewayAccess,
         daemonId: String,
     ): DataPlane {
-        val route = gateway.ResolveDaemonRoute().execute(DaemonRef(daemon_id = daemonId))
+        // A gateway connection that outlived a sleep can stay silent without failing; an
+        // unanswered call must not hold the machine's stream forever.
+        val route =
+            withDeadline(Deadlines.CALL, GATEWAY_SILENT) {
+                gateway.ResolveDaemonRoute().execute(DaemonRef(daemon_id = daemonId))
+            }
         val exchange = DaemonTokenExchange {
-            gateway.ExchangeDaemonToken().execute(ExchangeDaemonTokenRequest(daemon_id = daemonId))
+            withDeadline(Deadlines.CALL, GATEWAY_SILENT) {
+                gateway
+                    .ExchangeDaemonToken()
+                    .execute(ExchangeDaemonTokenRequest(daemon_id = daemonId))
+            }
         }
         val candidates = candidates(route.direct_candidates)
         if (candidates.isNotEmpty()) {
