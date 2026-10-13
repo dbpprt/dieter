@@ -28,6 +28,12 @@
 
 ![Dieter on macOS: a shared project board with tasks running on two machines](site/static/images/screenshots/macos-board.png)
 
+<p align="center">
+  <img src="site/static/images/screenshots/ios-inbox.png" alt="iPhone Inbox with the replies that need you and the tasks still running" width="250">
+  <img src="site/static/images/screenshots/ios-conversation.png" alt="A running task on iPhone with its reply and plan progress" width="250">
+  <img src="site/static/images/screenshots/android-board.png" alt="An Android board with the running tasks and their machines" width="250">
+</p>
+
 Dieter is a workspace for coding agents (Codex, Claude Code, Pi, Oh My Pi and
 DeepSeek Harness) that run on your own machines. A small daemon starts each
 agent beside your Git checkout, with your tools and your provider accounts, and

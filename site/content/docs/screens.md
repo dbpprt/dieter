@@ -15,7 +15,7 @@ machine, so the gateway can relay it but cannot read it.
 Agents and terminals can run headless. Screen hosting additionally needs an active
 graphical session and the platform's capture and control permissions.
 
-{{< screenshot src="macos-screens.png" width="1380" height="870" alt="Native Mac screen-sharing viewer streaming an Orbit sample dashboard from Studio Mac" caption="Live screen sharing through the native viewer. The documentation fixture captures only its owned demo window; the shipped host shares a display." >}}
+{{< screenshot src="macos-screens.png" width="1380" height="870" alt="Native Mac screen-sharing viewer streaming an Orbit sample dashboard from Studio Mac" caption="Live screen sharing through the native viewer, captured in September 2026 with the earlier Mac design. That capture limited its source to an owned demo window; the shipped host shares a display." >}}
 
 ## Open a screen
 
@@ -25,8 +25,8 @@ handoff from another viewer, or **Release Control** to keep watching without inp
 Up to four viewers can connect; only one controls the machine at a time.
 
 On Mac, the expand action moves the same session into a separate native window.
-**Control–Command–F** toggles full screen. Closing that window returns the share
-to Dieter; closing the Screens tab disconnects it. **Command–Shift–Escape**
+**⌃⌘F** toggles full screen. Closing that window returns the share
+to Dieter; closing the Screens tab disconnects it. **⌘⇧Esc**
 releases held input and pauses pointer forwarding until you focus the viewer again.
 Inactivity disconnect is optional and disabled by default.
 

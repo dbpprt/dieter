@@ -8,10 +8,11 @@ slug: "workspace"
 ---
 
 The Mac conversation workspace opens files, web pages, terminals, changes, and
-registered processes beside the chat. The Android and iOS app offers files,
-changes, terminals, and machine tools through **Tools** and each task's panes.
+registered processes beside the chat. Use **Split conversation and workspace** in
+the conversation header to show it, and **+** to open another workspace tab. The
+Android and iOS app offers the same tools through **Tools** and each task's panes.
 
-> **Enable it first:** On Mac, open **Settings → Experimental → Show the workspace side panel**. The panel is off by default. The Files screenshot below uses the main project workspace and leaves this panel disabled.
+{{< screenshot src="macos-conversation.png" width="1380" height="870" alt="A running Atlas API task with its reply and plan progress on the left and the limiter.go diff in the Changes tab on the right" caption="A running task with its Git changes open beside the conversation." >}}
 
 ## Open the result
 
@@ -38,11 +39,10 @@ regular, outside `.git`, and no larger than 5 MiB; symlink escapes are rejected.
 
 ## Browse project files
 
-A project's **Files** surface works independently of the conversation side panel.
-Choose the checkout to browse, then open a file in the main workspace. This is
-also where shared project-directory conversations expose their Git changes.
+A project's **Files** surface opens a checkout's files in the main workspace.
+Choose the checkout to browse, then open a file.
 
-{{< screenshot src="macos-files.png" width="1380" height="870" alt="Orbit project Files with a launch plan and host-assignment table open in the native Markdown editor" caption="Read and edit the project’s actual files. This capture uses the main Files surface with the conversation side panel disabled." >}}
+{{< screenshot src="macos-files.png" width="1380" height="870" alt="Atlas API Files on Office mini with docs/rate-limits.md open in the native Markdown editor" caption="Read and edit the project’s actual files on the host that has the checkout." >}}
 
 ## Edit Markdown
 
@@ -62,7 +62,8 @@ and Copy as Markdown work for a selection or the whole document.
 
 Changes behaves like a source-control panel, not a per-agent report.
 New-worktree conversations own their Changes view. For project-directory work,
-open the project's **Files → Changes**, which shows the shared checkout. The
+open the project's **Changes** (on Android and iOS, **Tools → Changes**), which
+shows the shared checkout. The
 daemon reads one lightweight status snapshot, loads diffs on selection, and owns
 staging, commits, updates, validation, integration and explicit publishing, so
 Mac, Android, iOS and CLI clients converge on the same Git state. The same file can appear in both Staged
@@ -104,7 +105,7 @@ different lifecycles; see [Terminals & automation](/docs/automation/).
 ## Capture an idea on Mac
 
 Choose **Capture task** in the expanded Dieter Island and drag a screen region.
-The capture opens in Quick Task with project, board, and agent selection.
+The capture opens in **Quick task** with project, board, and agent selection.
 Supported browsers can contribute their current page URL; you can edit it.
 Draw, highlight, or add arrows in the attachment markup editor before adding
 or running the task. Escape cancels capture.

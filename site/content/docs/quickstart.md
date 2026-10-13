@@ -77,7 +77,8 @@ Choose **New worktree** for a separate branch and working directory, or **Projec
 directory** to work in the registered checkout as it stands. On a project with
 several checkouts, choose where the work should execute.
 
-Save to **Todo** to start later, or use **Run task** to begin immediately.
+Choose **Add task** (Mac) or **Add to Todo** (Android and iOS) to start later, or
+**Run task** (Mac) or **Start now** to begin immediately.
 Watch the transcript, tool activity, and result in the same conversation.
 
 ## 5. Review and continue

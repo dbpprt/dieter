@@ -1,7 +1,7 @@
 ---
 title: "A tour of Dieter"
 linkTitle: "Product tour"
-description: "See headless agents across machines, a busy shared board, native terminals, screen sharing, and mobile conversations."
+description: "See agents working across machines on a shared board, a task beside its changes, native terminals, screen sharing, and the Android, iPhone, and iPad app."
 group: "Overview"
 weight: 2
 slug: "tour"
@@ -11,12 +11,11 @@ Run agents on an always-on Mac or headless Linux host. Follow their work from
 your laptop or phone. Closing a client does not stop the agent on another host;
 that execution host must stay powered on and awake.
 
-These are real native captures from September 2026, using disposable projects and
-a mock agent. They illustrate the interface, not model quality or performance.
-The Mac set uses the **Electric Blue** design in dark appearance, with the
-conversation workspace side panel disabled. The phone captures show the earlier
-Android app; Android and iOS now share one redesigned app with the same tasks
-and tools. Open any image to inspect it at full size.
+These are real native captures from October 2026. The demo workspace runs real
+daemons for two Mac minis, plus a MacBook Pro that is offline, with four
+projects, Git checkouts, and scripted agent turns. The captures illustrate the
+interface, not model quality or performance. Android, iPhone, and iPad share one
+app. Open any image to inspect it at full size.
 
 ## One board, work across machines
 
@@ -25,15 +24,26 @@ keeps one durable conversation, its execution machine, and its workspace choice.
 Lane and agent status are separate: an idle agent can leave a card in Running
 until the work is ready for review.
 
-{{< screenshot src="macos-board.png" width="1380" height="870" alt="Orbit Product launch board with 17 labeled tasks across four lanes, five projects in the sidebar, and Studio Mac and Build Mac execution owners" caption="Five projects. Seventeen tasks on one board. Two connected machine identities, with three mock turns active at capture." >}}
+{{< screenshot src="macos-board.png" width="1380" height="870" alt="Atlas API Roadmap board with fifteen labeled tasks across four lanes, four projects in the sidebar, and Home mini and Office mini as execution machines" caption="Fifteen tasks on one roadmap. Three agents are working, on two machines." >}}
 
-**Studio Mac** and **Build Mac** each have a checkout of the same shared Orbit
-project. Their cards appear together, with the execution owner visible on each
-card. The capture uses two isolated daemon identities on one physical Mac to
-exercise real ownership and routing without involving a production account.
+**Home mini** and **Office mini** each have a checkout of the shared Atlas API
+project. Their cards appear together, with the execution machine named on each
+card. The capture runs both daemon identities on one physical Mac to exercise
+real ownership and routing without a production account.
 
 Use **Quick task** to capture an idea or open a standalone chat for work that does
 not need a board card. [Learn about projects, tasks, and worktrees →](/docs/projects/)
+
+## Follow a task and review its changes
+
+Open a card to follow its conversation. The reply, tool activity, and the
+agent's plan update while the turn runs, and messages you send meanwhile join
+its queue. **Split conversation and workspace** keeps the Git changes beside the
+conversation, where you can stage, discard, and commit.
+
+{{< screenshot src="macos-conversation.png" width="1380" height="870" alt="A running Atlas API task on Office mini: the reply with a rate-limit table and plan progress on the left, the limiter.go diff in Changes on the right" caption="The agent is still running its race tests while the diff it has written waits for review." >}}
+
+[Explore files and the conversation workspace →](/docs/workspace/)
 
 ## Open a terminal on the host
 
@@ -41,7 +51,7 @@ Choose **Terminals** and the machine doing the work. Run an interactive shell,
 inspect the output, and reconnect later. Leaving the client does not close its
 host-owned terminal session.
 
-{{< screenshot src="macos-terminal.png" width="1380" height="870" alt="Native terminal on Build Mac showing Python source, eight passing demo tests, and Git working-tree status" caption="A real shell on Build Mac, running a small disposable project's tests. Project and machine navigation stay within reach." >}}
+{{< screenshot src="macos-terminal.png" width="1380" height="870" alt="Native terminal on Office mini in the Atlas API checkout, showing Git history, working-tree status, and passing Go race tests" caption="A real shell in the Atlas API checkout on Office mini. Project and machine navigation stay within reach." >}}
 
 For unattended commands, registered background processes retain bounded stdout,
 stderr, and exit state. For recurring work, a schedule runs on its owning daemon.
@@ -54,7 +64,7 @@ graphical session, **Screens** lets you view it and take control from the native
 client. Media travels directly between peers or through TURN; the Dieter gateway
 relays the encrypted signaling without being able to read it.
 
-{{< screenshot src="macos-screens.png" width="1380" height="870" alt="Dieter Screens connected to Studio Mac, displaying a live Orbit demo dashboard with native control and connection status" caption="A live screen stream in the native Mac viewer. This isolated capture limits its source to an owned demo window; standard screen hosting shares a display." >}}
+{{< screenshot src="macos-screens.png" width="1380" height="870" alt="Dieter Screens connected to Studio Mac, displaying a live Orbit demo dashboard with native control and connection status" caption="A live screen stream in the native Mac viewer, captured in September 2026 with the earlier Mac design. That capture limited its source to an owned demo window; standard screen hosting shares a display." >}}
 
 The sample dashboard is a disposable visual target, not another Dieter interface.
 Its sample metrics are not agent results. [Use a remote screen →](/docs/screens/)
@@ -65,17 +75,14 @@ Open a project's **Files** surface, choose its checkout, and read the actual fil
 on that host. Markdown supports rich editing and source modes, revision-checked
 saves, and PDF/HTML export.
 
-{{< screenshot src="macos-files.png" width="1380" height="870" alt="Orbit project Files surface with launch-plan.md open in the native Markdown editor, including a workstream and execution-host table" caption="The full Files workspace, with the conversation side panel disabled. The launch plan connects each workstream to its execution host." >}}
-
-An optional experimental workspace panel can also keep files, previews, processes,
-and Git review beside a conversation. [Explore files and the conversation workspace →](/docs/workspace/)
+{{< screenshot src="macos-files.png" width="1380" height="870" alt="Atlas API Files on Office mini with docs/rate-limits.md open in the native Markdown editor, showing a plan table and a 429 response example" caption="The project's real files, read from the Office mini checkout." >}}
 
 ## Check the machine behind a task
 
 Open a machine in the Mac sidebar to inspect its availability, route, and live
 host telemetry without losing your board.
 
-{{< screenshot src="macos-machines.png" width="1380" height="870" alt="Build Mac information popover over the Orbit board, showing online status, gateway route, CPU, memory, and GPU telemetry" caption="The execution host stays visible. Telemetry is an actual capture-time snapshot from the fixture host, not a benchmark." >}}
+{{< screenshot src="macos-machines.png" width="1380" height="870" alt="Office mini machine details over the Atlas API board, showing its local route, CPU, memory, and Apple M4 GPU telemetry" caption="The execution host stays a click away. Telemetry is the fixture host's actual load at capture time, not a benchmark." >}}
 
 ## Pick up the thread on your phone
 
@@ -86,27 +93,34 @@ Completed replies that you have not viewed appear under **Needs you**. Opening
 the latest reply clears that state across clients; questions waiting for your
 answer continue to need attention.
 
-{{< screenshot src="android-activity.png" kind="phone" width="1080" height="2424" alt="Android Activity feed showing sample onboarding tasks with runtime and machine information" caption="Activity brings recent work into one native feed." >}}
+{{< shots >}}
+{{< screenshot src="ios-inbox.png" kind="phone" width="1206" height="2622" alt="iPhone Inbox with four replies that need you, provider quotas, and running tasks" caption="Inbox on iPhone." >}}
+{{< screenshot src="android-board.png" kind="phone" width="1080" height="2400" alt="Android Atlas API Roadmap board filtered to its four running tasks, each with its machine, branch, and agent" caption="A board on Android." >}}
+{{< /shots >}}
 
-A standalone chat stays separate from the board. A task conversation also exposes
-its **Changes** and **Subagents**. Messages sent during an active
-turn join its queue; closing the app leaves the host working.
+A task conversation shows the same reply, tool activity, and plan as on Mac,
+and exposes its **Changes** and **Subagents**. A standalone chat stays separate
+from the board. Messages sent during an active turn join its queue; closing the
+app leaves the host working.
 
-{{< screenshot src="android-chat.png" kind="phone" width="1080" height="2424" alt="Android standalone conversation with an onboarding request and a starting mock agent" caption="A standalone chat, captured as the fixture starts its mock agent." >}}
+{{< shots >}}
+{{< screenshot src="ios-conversation.png" kind="phone" width="1206" height="2622" alt="A running task on iPhone with its reply, rate-limit table, plan progress, and the test command in flight" caption="A running task on iPhone." >}}
+{{< screenshot src="android-chats.png" kind="phone" width="1080" height="2400" alt="Android Chats with a pinned chat and standalone chats grouped by project" caption="Standalone chats on Android." >}}
+{{< /shots >}}
 
-## Know where the work runs
+**Tools → Changes** opens a project's shared checkout, with the same staging and
+diff review as the desktop. **Tools → Machines** lists enrolled hosts and their
+availability. Clients check compatibility before connecting and reject a
+mismatched release compatibility policy.
 
-Open **Tools → Machines** to inspect enrolled hosts and their availability.
-Clients check compatibility before connecting and reject a mismatched
-release compatibility policy. The fixture below also includes an intentionally
-incompatible host.
+{{< shots >}}
+{{< screenshot src="ios-changes.png" kind="phone" width="1206" height="2622" alt="iPhone Changes for the Storefront checkout with an inline diff of CartSummary.tsx and a new ShipmentGroup.tsx" caption="Project changes on iPhone." >}}
+{{< screenshot src="android-machines.png" kind="phone" width="1080" height="2400" alt="Android Machines with Home mini and Office mini online through the relay and MacBook Pro offline" caption="Machines on Android." >}}
+{{< /shots >}}
 
-{{< screenshot src="android-machines.png" kind="phone" width="1080" height="2424" alt="Android Machines screen with an online compatible host and an intentionally incompatible test host" caption="Machine discovery makes availability and compatibility visible." >}}
+On iPad, a board and the open task sit side by side.
 
-Open a compatible host to inspect its route and live CPU, memory, and supported
-GPU telemetry. These values describe the host, not the phone displaying them.
-
-{{< screenshot src="android-telemetry.png" kind="phone" width="1080" height="2424" alt="Android machine detail with connection route, CPU utilization, memory usage, and Apple GPU telemetry" caption="Native machine tools show the state of the host doing the work. Values are a capture-time snapshot, not a benchmark." >}}
+{{< screenshot src="ipad-conversation.png" kind="tablet" width="2048" height="2732" alt="iPad with the Atlas API board on the left and a running task's reply, rate-limit table, and plan on the right" caption="The board and a running task, side by side on iPad." >}}
 
 [Connect more machines →](/docs/machines/) · [Use a remote screen →](/docs/screens/)
 

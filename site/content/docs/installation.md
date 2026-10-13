@@ -14,10 +14,10 @@ host work, or install just a client when your agents run on another machine.
 
 | Role           | Apple Silicon macOS | Linux amd64 / arm64          | Android    | iPhone / iPad |
 | -------------- | ------------------- | ---------------------------- | ---------- | ------------- |
-| CLI and daemon | Yes                 | Yes                          | —          | —             |
-| Native client  | macOS 26+           | —                            | Android 8+ | iOS 18+, beta |
-| Screen host    | With OS permissions | Active X11 / Wayland desktop | —          | —             |
-| Gateway        | Source build        | Published image and binaries | —          | —             |
+| CLI and daemon | Yes                 | Yes                          | No         | No            |
+| Native client  | macOS 26+           | No                           | Android 8+ | iOS 18+, beta |
+| Screen host    | With OS permissions | Active X11 / Wayland desktop | No         | No            |
+| Gateway        | Source build        | Published image and binaries | No         | No            |
 
 Each daemon host needs **Node.js 22.19+**, **Git**, and a configured
 [harness account](/docs/harnesses/). Install **tmux** if terminals should survive
@@ -116,8 +116,8 @@ gateway in the browser and returns to the app, which then
 [pairs](/docs/machines/#pair-an-app) like the other apps. Its Share extension
 sends files from other apps into a new task or an existing task or chat.
 
-iOS distribution uses the manual TestFlight workflow. Availability depends on
-beta access; there is no App Store download promised here. You can also build
+iOS builds go to TestFlight with each dev release. Availability depends on beta
+access; there is no App Store listing yet. You can also build
 with Xcode using the [Apple apps guide](https://github.com/dbpprt/dieter/blob/main/apps/apple/README.md).
 
 ## Updates

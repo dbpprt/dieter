@@ -71,19 +71,20 @@ func main() {
 	inboxFixture := flag.Bool("inbox-fixture", false, "seed deterministic Inbox activity and real conversations")
 	e2eFixture := flag.Bool("e2e-fixture", false, "seed the small persisted workspace that every Maestro flow uses")
 	usageFixture := flag.Bool("usage-fixture", false, "publish deterministic provider usage without provider credentials")
+	showcaseFixture := flag.Bool("showcase-fixture", false, "seed the multi-machine workspace with live agent turns used for documentation screenshots")
 	directRoute := flag.String("direct-route", "", `advertise a loopback direct TLS route for the primary daemon: "live" serves it, "dead" advertises a closed port`)
 	flag.Parse()
 	if *directRoute != "" && *directRoute != "live" && *directRoute != "dead" {
 		fmt.Fprintln(os.Stderr, `error: -direct-route must be "live" or "dead"`)
 		os.Exit(2)
 	}
-	if err := run(*address, *home, *offlineTrigger, *daemonRestartTrigger, *directRoute, *inboxFixture, *usageFixture, *e2eFixture); err != nil {
+	if err := run(*address, *home, *offlineTrigger, *daemonRestartTrigger, *directRoute, *inboxFixture, *usageFixture, *e2eFixture, *showcaseFixture); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
-func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string, inboxFixture, usageFixture, e2eFixture bool) error {
+func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string, inboxFixture, usageFixture, e2eFixture, showcaseFixture bool) error {
 	if home == "" {
 		var err error
 		home, err = os.MkdirTemp("", "dieter-isolated-*")
@@ -130,7 +131,11 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 		})
 	}
 
-	identity, err := enroll("primary", filepath.Join(home, "dieter"), "Isolated E2E machine")
+	primaryName := "Isolated E2E machine"
+	if showcaseFixture {
+		primaryName = showcaseOffice
+	}
+	identity, err := enroll("primary", filepath.Join(home, "dieter"), primaryName)
 	if err != nil {
 		return err
 	}
@@ -144,43 +149,52 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 	if _, err = data.Replica.BindPeerAccount(account, subject, identity.ID, identity.GatewayURL); err != nil {
 		return err
 	}
-	repository := filepath.Join(home, "repo")
-	for _, command := range [][]string{
-		{"git", "init", "-b", "main", repository},
-		{"git", "-C", repository, "config", "user.name", "Dieter Isolated E2E"},
-		{"git", "-C", repository, "config", "user.email", "dieter@localhost"},
-	} {
-		process := exec.CommandContext(ctx, command[0], command[1:]...)
-		process.Env = isolatedGitEnvironment(os.Environ())
-		if output, commandErr := process.CombinedOutput(); commandErr != nil {
-			return fmt.Errorf("%s: %s: %w", strings.Join(command, " "), output, commandErr)
+	var project model.Project
+	var board model.Board
+	var showcased *showcase
+	if showcaseFixture {
+		if showcased, project, board, err = seedShowcaseOffice(ctx, home, data); err != nil {
+			return err
 		}
-	}
-	if err = os.WriteFile(filepath.Join(repository, "README.md"), []byte("# Isolated E2E\n"), 0o644); err != nil {
-		return err
-	}
-	linkedWorktree := filepath.Join(home, "linked-worktree")
-	for _, command := range [][]string{
-		{"git", "-C", repository, "add", "README.md"},
-		// Disposable fixture commits must not invoke the operator's signing agent.
-		{"git", "-C", repository, "-c", "commit.gpgsign=false", "commit", "-m", "initial"},
-		{"git", "-C", repository, "worktree", "add", "-b", "linked-worktree", linkedWorktree},
-	} {
-		process := exec.CommandContext(ctx, command[0], command[1:]...)
-		process.Env = isolatedGitEnvironment(os.Environ())
-		if output, commandErr := process.CombinedOutput(); commandErr != nil {
-			return fmt.Errorf("%s: %s: %w", strings.Join(command, " "), output, commandErr)
+	} else {
+		repository := filepath.Join(home, "repo")
+		for _, command := range [][]string{
+			{"git", "init", "-b", "main", repository},
+			{"git", "-C", repository, "config", "user.name", "Dieter Isolated E2E"},
+			{"git", "-C", repository, "config", "user.email", "dieter@localhost"},
+		} {
+			process := exec.CommandContext(ctx, command[0], command[1:]...)
+			process.Env = isolatedGitEnvironment(os.Environ())
+			if output, commandErr := process.CombinedOutput(); commandErr != nil {
+				return fmt.Errorf("%s: %s: %w", strings.Join(command, " "), output, commandErr)
+			}
 		}
-	}
-	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{
-		Name: "Isolated E2E", Path: repository, BaseBranch: "main",
-	})
-	if err != nil {
-		return err
-	}
-	board, err := data.Kanban.CreateBoard(kanban.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
-	if err != nil {
-		return err
+		if err = os.WriteFile(filepath.Join(repository, "README.md"), []byte("# Isolated E2E\n"), 0o644); err != nil {
+			return err
+		}
+		linkedWorktree := filepath.Join(home, "linked-worktree")
+		for _, command := range [][]string{
+			{"git", "-C", repository, "add", "README.md"},
+			// Disposable fixture commits must not invoke the operator's signing agent.
+			{"git", "-C", repository, "-c", "commit.gpgsign=false", "commit", "-m", "initial"},
+			{"git", "-C", repository, "worktree", "add", "-b", "linked-worktree", linkedWorktree},
+		} {
+			process := exec.CommandContext(ctx, command[0], command[1:]...)
+			process.Env = isolatedGitEnvironment(os.Environ())
+			if output, commandErr := process.CombinedOutput(); commandErr != nil {
+				return fmt.Errorf("%s: %s: %w", strings.Join(command, " "), output, commandErr)
+			}
+		}
+		project, err = data.Kanban.CreateProject(kanban.CreateProjectInput{
+			Name: "Isolated E2E", Path: repository, BaseBranch: "main",
+		})
+		if err != nil {
+			return err
+		}
+		board, err = data.Kanban.CreateBoard(kanban.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
+		if err != nil {
+			return err
+		}
 	}
 	if inboxFixture {
 		if err := seedInboxFixture(ctx, data, project, board); err != nil {
@@ -237,6 +251,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 		// reserve turn that transport assertion into a machine-capacity test.
 		noDiskReserve := uint64(0)
 		runner.logger = logger
+		runner.showcase = showcaseFixture
 		value := api.NewWithOptions(fixtureData, logger, api.Options{
 			Runner:        runner,
 			PrivacyDriver: &isolatedPrivacy{},
@@ -327,6 +342,9 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 	if usageFixture {
 		tunnel.ProviderQuotas = isolatedUsageQuotas{}
 	}
+	if showcaseFixture {
+		tunnel.ProviderQuotas = showcaseUsageQuotas{}
+	}
 	defer routes.close()
 	if offlineTrigger == "" {
 		go func() { _ = tunnel.Run(ctx) }()
@@ -376,12 +394,16 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 	// Keep an enrolled incompatible machine in discovery. The gateway rejects
 	// its obsolete contract, so it must remain offline rather than opening a
 	// fake incompatible tunnel against the current data plane.
-	incompatibleIdentity, err := enroll("incompatible", filepath.Join(home, "incompatible-daemon"), "Incompatible API machine")
-	if err != nil {
-		return err
-	}
-	if err = isolated.Store.MarkDaemonSeen(incompatibleIdentity.ID, "incompatible-e2e", []byte("[]"), []byte("{}")); err != nil {
-		return err
+	incompatibleID := ""
+	if !showcaseFixture {
+		incompatibleIdentity, enrollErr := enroll("incompatible", filepath.Join(home, "incompatible-daemon"), "Incompatible API machine")
+		if enrollErr != nil {
+			return enrollErr
+		}
+		if err = isolated.Store.MarkDaemonSeen(incompatibleIdentity.ID, "incompatible-e2e", []byte("[]"), []byte("{}")); err != nil {
+			return err
+		}
+		incompatibleID = incompatibleIdentity.ID
 	}
 
 	secondDaemonID := ""
@@ -507,12 +529,23 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 		return err
 	}
 	go approvePairingCode(ctx, primaryTrust, pairingCode, logger)
+	if showcased != nil {
+		if err = showcased.connect(ctx, showcaseEnvironment{
+			logger: logger, gateway: isolated, enroll: enroll, newServer: newFixtureServer, account: account, subject: subject,
+			office: identity, officeAddress: boardListener.Addr().String(), officeToken: localToken,
+			primaryTrust: primaryTrust, trusts: trusts,
+		}); err != nil {
+			return err
+		}
+	}
 
 	fmt.Printf("DIETER_ISOLATED_ADDR=%s\n", isolated.Address)
 	fmt.Printf("DIETER_ISOLATED_TOKEN=%s\n", token)
 	fmt.Printf("DIETER_ISOLATED_PAIRING_CODE=%s\n", pairingCode)
 	fmt.Printf("DIETER_ISOLATED_DAEMON=%s\n", identity.ID)
-	fmt.Printf("DIETER_ISOLATED_INCOMPATIBLE_DAEMON=%s\n", incompatibleIdentity.ID)
+	if incompatibleID != "" {
+		fmt.Printf("DIETER_ISOLATED_INCOMPATIBLE_DAEMON=%s\n", incompatibleID)
+	}
 	if secondDaemonID != "" {
 		fmt.Printf("DIETER_ISOLATED_SECOND_DAEMON=%s\n", secondDaemonID)
 	}
@@ -640,6 +673,7 @@ type isolatedRunner struct {
 	active   map[*isolatedRun]struct{}
 	logger   *slog.Logger // Optional; set before admitting any fixture turns.
 	sequence uint64
+	showcase bool // Plays the scripted showcase turns; set before admitting any turns.
 }
 
 func newIsolatedRunner(runner isolatedHarness) *isolatedRunner {
@@ -719,6 +753,11 @@ func (runner *isolatedRunner) Run(ctx context.Context, request harness.Request, 
 }
 
 func (runner *isolatedRunner) run(ctx context.Context, request harness.Request, emit func(harness.Output) error) error {
+	if runner.showcase {
+		if script := showcaseScript(request); script != nil {
+			return runShowcaseTurn(ctx, request, emit, script)
+		}
+	}
 	// Activity receipt tests exercise the real daemon event pipeline without
 	// waiting for an unrelated SDK runtime installation in each disposable home.
 	if request.Harness == "mock" && request.Prompt == "mock-activity-reply" {

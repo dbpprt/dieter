@@ -175,7 +175,7 @@ An absent sensor is unknown, not a measurement of zero. Machine listings show
 the daemon release, compatibility decision, and minimum required release. An
 older but compatible release remains routable; Update Required does not.
 
-{{< screenshot src="macos-machines.png" width="1380" height="870" alt="Build Mac machine details showing live route, CPU, memory, and GPU values over a multi-machine board" caption="Inspect the host from the Mac sidebar. These are capture-time values from an isolated fixture, not performance claims." >}}
+{{< screenshot src="macos-machines.png" width="1380" height="870" alt="Office mini machine details showing its local route, CPU, memory, and GPU values over a multi-machine board" caption="Inspect the host from the Mac sidebar. These are capture-time values from an isolated fixture, not performance claims." >}}
 
 ## macOS privacy mode
 

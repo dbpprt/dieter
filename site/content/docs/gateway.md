@@ -175,9 +175,8 @@ origin; saved credentials are not copied between origins.
 Update DNS, OAuth callback URLs, and TLS certificates for the new origin before
 cutover. Keep the previous endpoint available until enrolled machines reconnect.
 
-The standard gateway is now `https://gateway.getdieter.com`, with STUN/TURN at
-`turn.getdieter.com`. App updates move saved standard gateway addresses and ask
-for a fresh sign-in at the new origin; custom gateway addresses are preserved.
+The standard gateway is `https://gateway.getdieter.com`, with STUN/TURN at
+`turn.getdieter.com`.
 
 ## Relay protocol rollout
 
