@@ -6,6 +6,7 @@ import com.getdieter.core.connection.ConnectionPhase
 import com.getdieter.core.connection.SyncState
 import com.getdieter.core.identity.Gateway
 import com.getdieter.core.platform.Platform
+import com.getdieter.core.trust.TrustState
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CoroutineScope
@@ -35,6 +36,8 @@ open class EndToEnd {
         fixture: IsolatedGateway,
         platform: Platform = jvmTestPlatform(),
         token: String? = fixture.token,
+        /** The fixture's code makes the runtime a trusted device; null leaves it unpaired. */
+        pairingCode: String? = fixture.pairingCode,
         clientVersion: String = RELEASE,
         active: Boolean = true,
         configure: (RuntimeConfig) -> RuntimeConfig = { it },
@@ -53,14 +56,27 @@ open class EndToEnd {
         val gateway = requireNotNull(Gateway.parse(fixture.url))
         runtime.setGateways(listOf(gateway), gateway.origin)
         if (token != null) runtime.credentials.save(gateway, token)
+        if (pairingCode != null) runtime.onCore { runtime.trust.usePairingCode(pairingCode) }
         runtime.start()
         runtime.setActive(active)
         return runtime
     }
 
-    suspend fun CoreRuntime.awaitConnected(timeout: Duration = 30.seconds) =
+    /** Waits until the gateway is connected and, when [trusted], this device is paired. */
+    suspend fun CoreRuntime.awaitConnected(
+        timeout: Duration = 30.seconds,
+        trusted: Boolean = true,
+    ) {
         connection.state.await(timeout, describe = { "connected: ${connection.state.value}" }) {
             it.phase == ConnectionPhase.CONNECTED
+        }
+        if (trusted) awaitTrusted(timeout)
+    }
+
+    /** Waits until this device is a trusted member of the fixture account's device roster. */
+    suspend fun CoreRuntime.awaitTrusted(timeout: Duration = 30.seconds) =
+        trust.view.await(timeout, describe = { "trusted: ${trust.view.value}" }) {
+            it.state == TrustState.TRUSTED
         }
 
     suspend fun CoreRuntime.awaitLoaded(fixture: IsolatedGateway) =

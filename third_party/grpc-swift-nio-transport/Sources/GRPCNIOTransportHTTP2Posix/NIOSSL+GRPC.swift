@@ -236,7 +236,7 @@ extension TLSConfiguration {
       self.privateKey = .privateKey(privateKeySource)
     }
 
-    self.minimumTLSVersion = .tlsv12
+    self.minimumTLSVersion = tlsConfig.minimumTLSVersion ?? .tlsv12
     self.certificateVerification = CertificateVerification(tlsConfig.serverCertificateVerification)
     self.trustRoots = try NIOSSLTrustRoots(tlsConfig.trustRoots)
     self.verifySignatureAlgorithms = tlsConfig.verifySignatureAlgorithms

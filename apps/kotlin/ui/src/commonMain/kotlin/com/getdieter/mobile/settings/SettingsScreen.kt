@@ -298,18 +298,22 @@ internal fun SettingsScreen(store: MobileStore) {
             destructive = true,
         )
     }
-    if (signOut)
-        ConfirmDialog(
-            "Sign out of Dieter?",
-            "This clears this device’s cached workspace, unsent work and drafts for this account.",
-            "Sign out",
-            {
-                store.command(Command(sign_out = SignOut()))
-                signOut = false
-            },
-            { signOut = false },
-            destructive = true,
-        )
+    if (signOut) SignOutDialog(store) { signOut = false }
+}
+
+@Composable
+internal fun SignOutDialog(store: MobileStore, onDismiss: () -> Unit) {
+    ConfirmDialog(
+        "Sign out of Dieter?",
+        "This clears this device’s cached workspace, unsent work and drafts for this account.",
+        "Sign out",
+        {
+            store.command(Command(sign_out = SignOut()))
+            onDismiss()
+        },
+        onDismiss,
+        destructive = true,
+    )
 }
 
 @Composable

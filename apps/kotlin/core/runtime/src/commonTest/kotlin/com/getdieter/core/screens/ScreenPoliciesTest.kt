@@ -75,22 +75,6 @@ class ScreenPoliciesTest {
     }
 
     @Test
-    fun publicKeyIsReadFromTheCertificatesSubjectKey() {
-        val key = ByteArray(32) { it.toByte() }
-        val spki =
-            byteArrayOf(0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00) +
-                key
-        val pem =
-            "-----BEGIN CERTIFICATE-----\n${(byteArrayOf(1, 2, 3) + spki + byteArrayOf(9)).toByteString().base64()}\n-----END CERTIFICATE-----\n"
-        assertEquals(key.toByteString(), ScreenTrust.ed25519PublicKey(pem))
-        assertNull(
-            ScreenTrust.ed25519PublicKey(
-                "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----"
-            )
-        )
-    }
-
-    @Test
     fun recoveryBacksOffToFiveSecondsAndResetsAfterStableStreaming() {
         val recovery = ScreenRecovery()
         val delays = (0 until 7).map { recovery.nextDelay(t0).inWholeMilliseconds }

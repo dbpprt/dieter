@@ -1,5 +1,6 @@
 package com.getdieter.core.testing
 
+import com.getdieter.api.gateway.v1.RelayLane
 import com.getdieter.core.connection.MachineDirectory
 import com.getdieter.core.machines.MachineChoice
 import com.getdieter.core.platform.DaemonTokenSource
@@ -9,13 +10,18 @@ import com.getdieter.core.platform.GatewayAccess
 import com.getdieter.core.platform.RpcChannel
 import com.getdieter.core.platform.RpcTransport
 import com.getdieter.core.platform.SecureStore
+import com.getdieter.core.platform.Tunnel
+import com.getdieter.core.platform.TunnelFactory
 import com.getdieter.core.routing.RouteSelector
 import com.getdieter.core.routing.RoutingPolicy
 import com.getdieter.core.routing.WebRtcCooldown
+import com.getdieter.core.runtime.CoreException
+import com.getdieter.core.runtime.FailureKind
 import com.getdieter.core.runtime.SilentLogger
 import com.getdieter.core.session.MachineSessions
 import com.getdieter.core.store.WorkspaceStore
 import com.getdieter.core.sync.AccountSync
+import com.getdieter.core.trust.DeviceTrust
 import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -53,12 +59,13 @@ class MemoryDeviceSettings : DeviceSettings {
 }
 
 /** A transport whose every route fails: a client that never connects. */
-object OfflineTransport : RpcTransport {
+object OfflineTransport : RpcTransport, TunnelFactory {
     override fun gateway(access: GatewayAccess): RpcChannel = error("offline")
 
-    override fun relay(access: GatewayAccess, daemonId: String): RpcChannel = error("offline")
-
     override fun direct(target: DirectTarget, tokens: DaemonTokenSource): RpcChannel =
+        error("offline")
+
+    override suspend fun open(access: GatewayAccess, daemonId: String, lane: RelayLane): Tunnel =
         error("offline")
 }
 
@@ -67,7 +74,9 @@ fun offlineSessions(): MachineSessions =
     MachineSessions(
         RouteSelector(
             OfflineTransport,
+            OfflineTransport,
             null,
+            { throw CoreException(FailureKind.TRANSIENT, DeviceTrust.NOT_TRUSTED) },
             RoutingPolicy(false),
             WebRtcCooldown(Clock.System),
             SilentLogger,

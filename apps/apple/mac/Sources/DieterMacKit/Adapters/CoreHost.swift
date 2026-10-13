@@ -1,6 +1,8 @@
 import DieterCore
 import DieterIdentity
+import DieterPlatform
 import Foundation
+import SystemConfiguration
 
 /// Where the app keeps its state, and how it identifies itself to the core.
 package struct CoreHostConfiguration: Sendable {
@@ -19,11 +21,13 @@ package struct CoreHostConfiguration: Sendable {
 }
 
 /// What differs between the apps that host the core: where gateway sessions
-/// are kept, which routes and transcript window the device uses, how a shared
-/// screen's host names it, and the platform services it injects.
+/// and the device key are kept, which routes and transcript window the device
+/// uses, how a shared screen's host names it, and the platform services it injects.
 package struct CoreHostPlatform: @unchecked Sendable {
     /// Gateway session tokens, keyed by gateway origin.
     package let secureStore: any NativeSecureStore
+    /// This install's roster key; it signs every daemon route's TLS handshake.
+    package let deviceKeys: CoreDeviceKeys
     /// Only a machine that can run a daemon itself tries loopback routes.
     package let includeLoopbackRoutes: Bool
     /// Phones and tablets keep a smaller transcript window than desktops.
@@ -40,11 +44,12 @@ package struct CoreHostPlatform: @unchecked Sendable {
     package let clipboard: (any NativeClipboard)?
 
     package init(
-        secureStore: any NativeSecureStore, includeLoopbackRoutes: Bool, compactTranscripts: Bool,
-        screenClientName: String, desktopScreens: Bool, clientIDPrefix: String, oauthRedirectURI: String,
-        notifications: (any NativeNotifications)?, clipboard: (any NativeClipboard)?
+        secureStore: any NativeSecureStore, deviceKeys: CoreDeviceKeys, includeLoopbackRoutes: Bool,
+        compactTranscripts: Bool, screenClientName: String, desktopScreens: Bool, clientIDPrefix: String,
+        oauthRedirectURI: String, notifications: (any NativeNotifications)?, clipboard: (any NativeClipboard)?
     ) {
         self.secureStore = secureStore
+        self.deviceKeys = deviceKeys
         self.includeLoopbackRoutes = includeLoopbackRoutes
         self.compactTranscripts = compactTranscripts
         self.screenClientName = screenClientName
@@ -66,19 +71,27 @@ package struct CoreHostPlatform: @unchecked Sendable {
         url.scheme?.lowercased() == nativeOAuthScheme && url.host?.lowercased() == "oauth"
     }
 
-    /// The Mac: sessions in a private file, loopback routes to its own daemon,
-    /// full transcripts, and desktop-sized screens. `notificationsEnabled` is
-    /// read on every post.
+    /// The Mac: sessions and the device key in private files (never the
+    /// Keychain), loopback routes to its own daemon, full transcripts, and
+    /// desktop-sized screens. `notificationsEnabled` is read on every post.
     package static func mac(
-        credentialsFile: URL, notificationsEnabled: @escaping @Sendable () -> Bool,
+        credentialsFile: URL, deviceKeyFile: URL, notificationsEnabled: @escaping @Sendable () -> Bool,
         clipboard: (any NativeClipboard)? = nil
     ) -> CoreHostPlatform {
         CoreHostPlatform(
-            secureStore: CoreFileSecureStore(fileURL: credentialsFile), includeLoopbackRoutes: true,
-            compactTranscripts: false, screenClientName: "Mac", desktopScreens: true, clientIDPrefix: "mac",
-            oauthRedirectURI: nativeOAuthRedirectURI,
+            secureStore: CoreFileSecureStore(fileURL: credentialsFile),
+            deviceKeys: CoreDeviceKeys(
+                store: DeviceKeyFile(url: deviceKeyFile), platform: "macos", deviceName: macName()),
+            includeLoopbackRoutes: true, compactTranscripts: false, screenClientName: "Mac", desktopScreens: true,
+            clientIDPrefix: "mac", oauthRedirectURI: nativeOAuthRedirectURI,
             notifications: CoreUserNotifications(isEnabled: notificationsEnabled),
             clipboard: clipboard)
+    }
+
+    /// The name other devices list for this Mac: its computer name.
+    private static func macName() -> String {
+        if let name = SCDynamicStoreCopyComputerName(nil, nil) as String?, !name.isEmpty { return name }
+        return Host.current().localizedName ?? "Mac"
     }
 }
 
@@ -121,7 +134,9 @@ package final class CoreHost: Sendable {
                 screenClientName: platform.screenClientName,
                 desktopScreens: platform.desktopScreens),
             extensions: SharedExtensions(
-                rpc: CoreRpcBridge(),
+                rpc: CoreRpcBridge(deviceKeys: platform.deviceKeys),
+                tunnels: CoreRelayTunnels(),
+                deviceKeys: platform.deviceKeys,
                 secureStore: platform.secureStore,
                 settings: CoreDefaultsSettings(defaults: defaults),
                 http: CoreURLSessionHttp(),

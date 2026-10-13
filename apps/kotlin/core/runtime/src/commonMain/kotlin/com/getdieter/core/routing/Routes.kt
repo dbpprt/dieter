@@ -15,6 +15,7 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import okio.ByteString
 
 /** How a data plane reaches its daemon, best first. */
 enum class RouteKind(val label: String) {
@@ -36,6 +37,8 @@ internal constructor(
     val kind: RouteKind,
     val client: DaemonApi,
     val latency: Duration,
+    /** The machine's roster key the connection's TLS was pinned to. */
+    val daemonKey: ByteString,
     private val onClose: () -> Unit,
 ) {
     private var closed = false

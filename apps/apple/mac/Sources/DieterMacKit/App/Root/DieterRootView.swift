@@ -25,7 +25,9 @@ struct DieterRootView: View {
     /// The core's notice while synchronized views show cached data; this
     /// window decides which sections show it.
     private var workspaceNotice: ClientWorkspaceNotice? {
-        guard showsSynchronizedWorkspace, store.hasLoadedWorkspace else { return nil }
+        guard showsSynchronizedWorkspace, store.hasLoadedWorkspace, !store.session.deviceTrust.needsPairing else {
+            return nil
+        }
         return store.workspaceNotice
     }
 
@@ -134,6 +136,13 @@ struct DieterRootView: View {
                 if section == .inbox { hasOpenedInbox = true }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay {
+                // Until another device approves this one, machines are out of
+                // reach: pairing takes their place (Settings stays available).
+                if store.session.deviceTrust.needsPairing && store.section != .settings {
+                    PairingView().ignoresSafeArea(.container, edges: .top)
+                }
+            }
             .overlay(alignment: .bottom) {
                 if let notice = workspaceNotice {
                     WorkspaceFreshnessBanner(notice: notice, lastSyncedAt: store.lastSyncedAt)

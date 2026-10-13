@@ -1,11 +1,11 @@
 package com.getdieter.core.routing
 
 import com.getdieter.api.gateway.v1.DaemonRef
-import com.getdieter.api.gateway.v1.DaemonRoute
 import com.getdieter.api.gateway.v1.DirectCandidate
 import com.getdieter.api.gateway.v1.ExchangeDaemonTokenRequest
 import com.getdieter.api.gateway.v1.GatewayServiceClient
 import com.getdieter.api.gateway.v1.RTCConfiguration
+import com.getdieter.api.gateway.v1.RelayLane
 import com.getdieter.api.v1.ControlConnectionRef
 import com.getdieter.api.v1.StartControlConnectionRequest
 import com.getdieter.core.api.DaemonApi
@@ -13,14 +13,19 @@ import com.getdieter.core.api.GrpcDaemonApi
 import com.getdieter.core.identity.Hosts
 import com.getdieter.core.platform.ControlChannelFactory
 import com.getdieter.core.platform.DaemonTokenExchange
+import com.getdieter.core.platform.DaemonTokenSource
 import com.getdieter.core.platform.DirectTarget
 import com.getdieter.core.platform.GatewayAccess
 import com.getdieter.core.platform.RpcChannel
 import com.getdieter.core.platform.RpcTransport
+import com.getdieter.core.platform.Tunnel
+import com.getdieter.core.platform.TunnelFactory
 import com.getdieter.core.runtime.CoreException
 import com.getdieter.core.runtime.CoreLogger
 import com.getdieter.core.runtime.FailureKind
 import com.getdieter.core.runtime.Failures
+import com.getdieter.core.trust.RoutePin
+import com.getdieter.core.trust.RouteTrust
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Duration
@@ -38,20 +43,25 @@ data class RoutingPolicy(
     /** Try loopback candidates: only hosts that can run a daemon themselves (macOS, JVM). */
     val includeLoopback: Boolean,
     val probeTimeout: Duration = 2.seconds,
-    val relayProbeTimeout: Duration = 5.seconds,
+    /** Opening a relay tunnel plus the TLS handshake and first call through it. */
+    val relayProbeTimeout: Duration = 8.seconds,
     /** Head start the WebRTC route gets over the relay. */
     val hedgeDelay: Duration = 1.seconds,
-    val controlTimeout: Duration = 12.seconds,
+    val controlTimeout: Duration = 15.seconds,
 )
 
 /**
- * One route-selection policy for every caller: pinned direct TLS by priority, then the WebRTC
- * control route hedged against the relay, then the relay. Only connection setup races; application
- * RPCs are never replayed.
+ * One route-selection policy for every caller: direct TLS by priority, then the WebRTC control
+ * route hedged against the relay, then the relay. Every route is the same mutually authenticated
+ * TLS to the daemon, pinned to its key in the device roster ([RouteTrust]); the relay is an opaque
+ * tunnel and WebRTC signaling runs inside one. Only connection setup races; application RPCs are
+ * never replayed.
  */
 class RouteSelector(
     private val transport: RpcTransport,
+    private val tunnels: TunnelFactory,
     private val controlChannels: ControlChannelFactory?,
+    private val trust: RouteTrust,
     private val policy: RoutingPolicy,
     private val cooldown: WebRtcCooldown,
     private val logger: CoreLogger,
@@ -62,23 +72,25 @@ class RouteSelector(
         access: GatewayAccess,
         daemonId: String,
     ): DataPlane {
+        val pin = trust.pin(daemonId)
         val route = gateway.ResolveDaemonRoute().execute(DaemonRef(daemon_id = daemonId))
+        // Daemon tokens are bound to this device's roster ID; the daemon accepts one only over TLS
+        // authenticated by this device's key.
         val exchange = DaemonTokenExchange {
-            gateway.ExchangeDaemonToken().execute(ExchangeDaemonTokenRequest(daemon_id = daemonId))
+            gateway
+                .ExchangeDaemonToken()
+                .execute(
+                    ExchangeDaemonTokenRequest(
+                        daemon_id = daemonId,
+                        client_key_thumbprint = pin.deviceId,
+                    )
+                )
         }
-        val candidates = candidates(route.direct_candidates)
-        if (candidates.isNotEmpty()) {
-            val tokens = runCatching {
-                RenewingDaemonToken(exchange.exchange(), exchange, clock)
-            }
-                .onFailure { if (it is CancellationException) throw it }
-                .getOrNull()
-            if (tokens != null) {
-                for (candidate in candidates) {
-                    direct(daemonId, candidate, route, tokens, access)?.let {
-                        return it
-                    }
-                }
+        val tokens = RenewingDaemonToken(exchange.exchange(), exchange, clock)
+        val dial = Dial(access, daemonId, pin, tokens)
+        for (candidate in candidates(route.direct_candidates)) {
+            direct(dial, candidate)?.let {
+                return it
             }
         }
         val control = controlChannels
@@ -88,7 +100,7 @@ class RouteSelector(
                 route.relay_available &&
                 cooldown.allows(daemonId)
         ) {
-            return hedged(gateway, access, daemonId, route, exchange, control)
+            return hedged(gateway, dial, control)
         }
         if (!route.relay_available) {
             throw CoreException(
@@ -96,7 +108,25 @@ class RouteSelector(
                 "This machine has no reachable route and its relay is unavailable.",
             )
         }
-        return relay(access, daemonId)
+        return relay(dial)
+    }
+
+    /** One selection's target and credentials. */
+    private class Dial(
+        val access: GatewayAccess,
+        val daemonId: String,
+        val pin: RoutePin,
+        val tokens: DaemonTokenSource,
+    ) {
+        fun target(host: String, port: Int) =
+            DirectTarget(
+                daemonId,
+                host,
+                port,
+                pin.daemonPublicKey,
+                pin.clientCertificate,
+                access.clientVersion,
+            )
     }
 
     private fun candidates(all: List<DirectCandidate>): List<DirectCandidate> =
@@ -107,22 +137,8 @@ class RouteSelector(
             }
             .sortedByDescending { it.priority }
 
-    private suspend fun direct(
-        daemonId: String,
-        candidate: DirectCandidate,
-        route: DaemonRoute,
-        tokens: RenewingDaemonToken,
-        access: GatewayAccess,
-    ): DataPlane? {
-        val target =
-            DirectTarget(
-                daemonId,
-                candidate.host,
-                candidate.port,
-                route.daemon_ca_pem.utf8(),
-                access.clientVersion,
-            )
-        val channel = transport.direct(target, tokens)
+    private suspend fun direct(dial: Dial, candidate: DirectCandidate): DataPlane? {
+        val channel = transport.direct(dial.target(candidate.host, candidate.port), dial.tokens)
         val client = GrpcDaemonApi(channel.client)
         val started = TimeSource.Monotonic.markNow()
         return try {
@@ -130,28 +146,57 @@ class RouteSelector(
             val kind =
                 if (candidate.network.equals("loopback", ignoreCase = true)) RouteKind.LOCAL
                 else RouteKind.DIRECT
-            DataPlane(daemonId, kind, client, started.elapsedNow(), channel::close)
+            DataPlane(
+                dial.daemonId,
+                kind,
+                client,
+                started.elapsedNow(),
+                dial.pin.daemonPublicKey,
+                channel::close,
+            )
         } catch (cancelled: CancellationException) {
             channel.close()
             if (cancelled is TimeoutCancellationException) null else throw cancelled
         } catch (error: Throwable) {
             logger.debug(
                 TAG,
-                "direct candidate ${candidate.id} for $daemonId failed: ${Failures.message(error)}",
+                "direct candidate ${candidate.id} for ${dial.daemonId} failed: ${Failures.message(error)}",
             )
             channel.close()
             null
         }
     }
 
-    private suspend fun relay(access: GatewayAccess, daemonId: String): DataPlane {
-        val channel = transport.relay(access, daemonId)
-        val client = GrpcDaemonApi(channel.client)
+    /**
+     * A relay tunnel to the daemon's own endpoint, bridged to a loopback port, carrying the same
+     * pinned TLS as a direct route: the gateway relays ciphertext only.
+     */
+    private suspend fun relay(dial: Dial): DataPlane {
         val started = TimeSource.Monotonic.markNow()
+        var tunnel: Tunnel? = null
+        var channel: RpcChannel? = null
         try {
-            withTimeout(policy.relayProbeTimeout) { client.Health().execute(Unit) }
+            return withTimeout(policy.relayProbeTimeout) {
+                val opened = tunnels.open(dial.access, dial.daemonId, RelayLane.RELAY_LANE_COMMAND)
+                tunnel = opened
+                val direct = transport.direct(dial.target(LOOPBACK, opened.port), dial.tokens)
+                channel = direct
+                val client = GrpcDaemonApi(direct.client)
+                client.Health().execute(Unit)
+                DataPlane(
+                    dial.daemonId,
+                    RouteKind.RELAY,
+                    client,
+                    started.elapsedNow(),
+                    dial.pin.daemonPublicKey,
+                ) {
+                    direct.close()
+                    opened.close()
+                }
+            }
         } catch (error: Throwable) {
-            channel.close()
+            channel?.close()
+            tunnel?.close()
             if (error is TimeoutCancellationException) {
                 throw CoreException(
                     FailureKind.TRANSIENT,
@@ -161,30 +206,37 @@ class RouteSelector(
             }
             throw error
         }
-        return DataPlane(daemonId, RouteKind.RELAY, client, started.elapsedNow(), channel::close)
     }
 
+    /**
+     * WebRTC to the daemon's endpoint. Its signaling runs over a relay tunnel, so the gateway sees
+     * neither the offer nor the answer; the data channel then carries the same pinned TLS.
+     */
     private suspend fun control(
         gateway: GatewayServiceClient,
-        access: GatewayAccess,
-        daemonId: String,
-        route: DaemonRoute,
-        exchange: DaemonTokenExchange,
+        dial: Dial,
         factory: ControlChannelFactory,
     ): DataPlane =
         withTimeout(policy.controlTimeout) {
             val started = TimeSource.Monotonic.markNow()
             val configuration: RTCConfiguration =
-                gateway.GetRTCConfiguration().execute(DaemonRef(daemon_id = daemonId))
-            val tokens = RenewingDaemonToken(exchange.exchange(), exchange, clock)
+                gateway.GetRTCConfiguration().execute(DaemonRef(daemon_id = dial.daemonId))
             val channel = factory.create(RTCConfiguration.ADAPTER.encode(configuration))
             var direct: RpcChannel? = null
             try {
-                val bootstrap = transport.relay(access, daemonId)
-                val offer = channel.offer()
-                val session =
+                val session = coroutineScope {
+                    val bootstrap = async { relay(dial) }
+                    val offer =
+                        try {
+                            channel.offer()
+                        } catch (error: Throwable) {
+                            bootstrap.cancel()
+                            runCatching { bootstrap.await() }.getOrNull()?.close()
+                            throw error
+                        }
+                    val signaling = bootstrap.await()
                     try {
-                        GrpcDaemonApi(bootstrap.client)
+                        signaling.client
                             .StartControlConnection()
                             .execute(
                                 StartControlConnectionRequest(
@@ -193,18 +245,11 @@ class RouteSelector(
                                 )
                             )
                     } finally {
-                        bootstrap.close()
+                        signaling.close()
                     }
+                }
                 val port = channel.connect(session.answer_sdp)
-                val target =
-                    DirectTarget(
-                        daemonId,
-                        "127.0.0.1",
-                        port,
-                        route.daemon_ca_pem.utf8(),
-                        access.clientVersion,
-                    )
-                direct = transport.direct(target, tokens)
+                direct = transport.direct(dial.target(LOOPBACK, port), dial.tokens)
                 val client: DaemonApi = GrpcDaemonApi(direct.client)
                 client.Health().execute(Unit)
                 val mode = runCatching {
@@ -221,7 +266,13 @@ class RouteSelector(
                         else -> RouteKind.WEBRTC
                     }
                 val owned = direct
-                DataPlane(daemonId, kind, client, started.elapsedNow()) {
+                DataPlane(
+                    dial.daemonId,
+                    kind,
+                    client,
+                    started.elapsedNow(),
+                    dial.pin.daemonPublicKey,
+                ) {
                     owned.close()
                     channel.close()
                 }
@@ -237,12 +288,10 @@ class RouteSelector(
      */
     private suspend fun hedged(
         gateway: GatewayServiceClient,
-        access: GatewayAccess,
-        daemonId: String,
-        route: DaemonRoute,
-        exchange: DaemonTokenExchange,
+        dial: Dial,
         factory: ControlChannelFactory,
     ): DataPlane = coroutineScope {
+        val daemonId = dial.daemonId
         val winner = CompletableDeferred<DataPlane>()
         var failures = 0
         var lastError: Throwable? = null
@@ -255,9 +304,7 @@ class RouteSelector(
             }
         }
         val preferred = async {
-            val result = runCatching {
-                control(gateway, access, daemonId, route, exchange, factory)
-            }
+            val result = runCatching { control(gateway, dial, factory) }
             if (result.exceptionOrNull() is CancellationException && winner.isCompleted)
                 return@async
             result.exceptionOrNull()?.let {
@@ -276,7 +323,7 @@ class RouteSelector(
         val fallback = async {
             fallbackStart.await()
             if (winner.isCompleted) return@async
-            offer(runCatching { relay(access, daemonId) })
+            offer(runCatching { relay(dial) })
         }
         try {
             val plane = winner.await()
@@ -295,5 +342,6 @@ class RouteSelector(
 
     private companion object {
         const val TAG = "Routing"
+        const val LOOPBACK = "127.0.0.1"
     }
 }

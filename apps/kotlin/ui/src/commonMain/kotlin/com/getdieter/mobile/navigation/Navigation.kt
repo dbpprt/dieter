@@ -59,6 +59,7 @@ enum class ToolPage(val title: String, internal val glyph: Glyph, internal val t
     CHANGES("Changes", Glyph.CHANGES, 0xFFFF9F0A),
     SCHEDULES("Schedules", Glyph.SCHEDULES, 0xFFFF453A),
     USAGE("Usage", Glyph.USAGE, 0xFF30B158),
+    DEVICES("Devices", Glyph.DEVICES, 0xFF32ADE6),
     SETTINGS("Settings", Glyph.SETTINGS, 0xFF8E8E93),
 }
 

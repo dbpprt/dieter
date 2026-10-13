@@ -31,7 +31,8 @@ class MainActivity : ComponentActivity() {
         if (BuildConfig.DEBUG) {
             val url = intent.getStringExtra("fixture_url")
             val token = intent.getStringExtra("fixture_token")
-            if (url != null && token != null) session.adoptFixture(url, token)
+            val pairingCode = intent.getStringExtra("fixture_pairing_code").orEmpty()
+            if (url != null && token != null) session.adoptFixture(url, token, pairingCode)
             intent.getStringExtra("script")?.let {
                 if (savedInstanceState == null) store.debugScript(it)
             }

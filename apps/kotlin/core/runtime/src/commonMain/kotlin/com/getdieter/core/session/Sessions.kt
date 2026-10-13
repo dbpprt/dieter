@@ -1,5 +1,6 @@
 package com.getdieter.core.session
 
+import com.getdieter.api.gateway.v1.Account
 import com.getdieter.api.gateway.v1.CompatibilityComponent
 import com.getdieter.api.gateway.v1.CompatibilityRequest
 import com.getdieter.api.gateway.v1.CompatibilityStatus
@@ -34,6 +35,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.update
+import okio.ByteString
 import okio.IOException
 
 /** An authenticated connection to one gateway. */
@@ -67,8 +69,12 @@ class GatewaySession(
                 "Dieter update required: installed $clientVersion, minimum ${compatibility.minimum_release_version}",
             )
         }
-        classified { client.GetAccount().execute(Unit) }
+        account = classified { client.GetAccount().execute(Unit) }
     }
+
+    /** The signed-in account, once [verify] read it. */
+    var account: Account? = null
+        private set
 
     /** The gateway's build, as its latest directory or presence report described it. */
     var information: GatewayInformation? = null
@@ -132,9 +138,15 @@ data class MachineRoute(val kind: RouteKind, val latency: Duration)
 
 /**
  * One shared data plane per daemon. Every feature that talks to a machine, its change stream
- * included, uses it, so opening a card never reconnects anything. Confined to the core dispatcher.
+ * included, uses it, so opening a card never reconnects anything. [onPlane] runs for every newly
+ * established plane, e.g. to compare roster heads with the machine. Confined to the core
+ * dispatcher.
  */
-class MachineSessions(private val selector: RouteSelector, private val scope: CoroutineScope) {
+class MachineSessions(
+    private val selector: RouteSelector,
+    private val scope: CoroutineScope,
+    private val onPlane: (DataPlane) -> Unit = {},
+) {
     private var gateway: GatewaySession? = null
     val gatewaySession: GatewaySession?
         get() = gateway
@@ -177,7 +189,18 @@ class MachineSessions(private val selector: RouteSelector, private val scope: Co
         }
         planes[daemonId] = plane
         mutableRoutes.update { it + (daemonId to MachineRoute(plane.kind, plane.latency)) }
+        onPlane(plane)
         return plane
+    }
+
+    /**
+     * Closes every plane whose pinned machine key [trusted] no longer accepts, e.g. after the
+     * machine was removed from the roster.
+     */
+    fun retainTrusted(trusted: (daemonId: String, key: ByteString) -> Boolean) {
+        for ((daemonId, plane) in planes.toList()) {
+            if (!trusted(daemonId, plane.daemonKey)) invalidate(daemonId, plane)
+        }
     }
 
     /**

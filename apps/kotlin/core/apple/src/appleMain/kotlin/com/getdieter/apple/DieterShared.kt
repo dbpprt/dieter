@@ -1,6 +1,7 @@
 package com.getdieter.apple
 
 import com.getdieter.api.gateway.v1.RTCConfiguration
+import com.getdieter.api.gateway.v1.RelayLane
 import com.getdieter.api.v1.RemoteDesktopClipboardItem
 import com.getdieter.api.v1.RemoteDesktopICECandidate
 import com.getdieter.api.v1.RemoteDesktopReceiverFeedback
@@ -29,12 +30,15 @@ import com.getdieter.core.notifications.NotificationSink
 import com.getdieter.core.platform.AuthHttp
 import com.getdieter.core.platform.ControlChannel
 import com.getdieter.core.platform.ControlChannelFactory
+import com.getdieter.core.platform.DeviceKeys
 import com.getdieter.core.platform.DeviceSettings
 import com.getdieter.core.platform.GatewayAccess
 import com.getdieter.core.platform.HttpResponse
 import com.getdieter.core.platform.Platform
 import com.getdieter.core.platform.SecureStore
 import com.getdieter.core.platform.SignatureVerifier
+import com.getdieter.core.platform.Tunnel
+import com.getdieter.core.platform.TunnelFactory
 import com.getdieter.core.runtime.CoreLogger
 import com.getdieter.core.runtime.SilentLogger
 import com.getdieter.core.screens.LocalClipboard
@@ -58,6 +62,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.suspendCancellableCoroutine
+import okio.ByteString.Companion.toByteString
 import okio.FileSystem
 import okio.IOException
 import okio.Path.Companion.toPath
@@ -91,9 +96,77 @@ interface NativeHttpCompletion {
     fun completed(status: Int, body: String)
 }
 
-/** CryptoKit `Curve25519.Signing.PublicKey` verification. */
+/** CryptoKit signature verification for roster entries and screen bindings. */
 interface NativeSignatures {
+    /** `Curve25519.Signing.PublicKey(rawRepresentation:)`: [publicKey] is the raw 32-byte key. */
     fun verifyEd25519(publicKey: NSData, message: NSData, signature: NSData): Boolean
+
+    /**
+     * `P256.Signing.PublicKey(derRepresentation:)` and
+     * `P256.Signing.ECDSASignature(derRepresentation:)` over SHA-256 of [message]. False for any
+     * malformed input.
+     */
+    fun verifyEcdsaP256(publicKey: NSData, message: NSData, signature: NSData): Boolean
+}
+
+/**
+ * This install's P-256 device key: Secure Enclave where available (on macOS its
+ * `dataRepresentation` lives in the app's 0600 Application Support file, never the Keychain), else
+ * a software CryptoKit key. The same key signs TLS client handshakes in the RPC bridge and the
+ * relay tunnels. Calls may come from any core thread.
+ */
+interface NativeDeviceKeys {
+    /** "ios" or "macos". */
+    fun platform(): String
+
+    /** The name other devices show, e.g. the device's name. */
+    fun deviceName(): String
+
+    /**
+     * The key's DER SubjectPublicKeyInfo (`P256.Signing.PublicKey.derRepresentation`); creates and
+     * stores the key on first use. Empty when the key is unavailable.
+     */
+    fun publicKey(): NSData
+
+    /** `signature(for:).derRepresentation`: DER ECDSA over SHA-256. Empty on failure. */
+    fun sign(message: NSData): NSData
+
+    /** Deletes the key; the next [publicKey] creates a new one. */
+    fun reset()
+}
+
+/**
+ * Relay tunnels: `dieter.gateway.v1.RelayService/OpenTunnel` (a bidirectional gRPC stream) to the
+ * gateway at [url] with `authorization: Bearer <session>` and `x-dieter-client-version`, bridged to
+ * a loopback TCP port that accepts one connection. Send OPEN{daemon_id, lane}; complete once the
+ * gateway answers OPENED, or with the CLOSE frame's status. Then DATA frames of at most 64 KiB both
+ * ways with at most 8 uncredited per direction: send WINDOW{credit: 1} after writing each received
+ * DATA frame to the socket, and send DATA only while fewer than 8 are uncredited. CLOSE, the end of
+ * the stream, the socket's end, or [NativeTunnel.close] ends both directions.
+ */
+interface NativeTunnels {
+    /** [lane] is a `dieter.gateway.v1.RelayLane` number. */
+    fun open(
+        url: String,
+        sessionToken: String,
+        clientVersion: String,
+        daemonId: String,
+        lane: Int,
+        completion: NativeTunnelCompletion,
+    )
+}
+
+interface NativeTunnelCompletion {
+    /** [tunnel] once open; otherwise [status] is the gRPC status code of the failure. */
+    fun completed(tunnel: NativeTunnel?, status: Int, error: String?)
+}
+
+interface NativeTunnel {
+    /** The loopback port (127.0.0.1) bridged to the tunnel. */
+    fun port(): Int
+
+    /** Ends the tunnel; safe to call more than once. */
+    fun close()
 }
 
 /** `os_log`. Levels: 0 debug, 1 info, 2 warning. */
@@ -270,11 +343,14 @@ interface NativeScreenFixture {
     fun open(): NativeScreenFixtureRoute?
 }
 
-/** [rtc] is an encoded `dieter.gateway.v1.RTCConfiguration`; [url] must be loopback HTTP. */
+/**
+ * [rtc] is an encoded `dieter.gateway.v1.RTCConfiguration`; [url] must be loopback HTTP;
+ * [daemonPublicKey] is the fixture machine's Ed25519 DER SubjectPublicKeyInfo.
+ */
 class NativeScreenFixtureRoute(
     val url: String,
     val token: String,
-    val certificatePem: String,
+    val daemonPublicKey: NSData,
     val rtc: NSData,
     val label: String,
 )
@@ -313,10 +389,12 @@ class SharedConfiguration(
 
 class SharedExtensions(
     val rpc: NativeRpcBridge,
+    val tunnels: NativeTunnels,
+    val deviceKeys: NativeDeviceKeys,
     val secureStore: NativeSecureStore,
     val settings: NativeSettings,
     val http: NativeHttp,
-    val signatures: NativeSignatures?,
+    val signatures: NativeSignatures,
     val logger: NativeLogger?,
     val notifications: NativeNotifications?,
     /** Absent: the core never tries the WebRTC route. */
@@ -342,6 +420,9 @@ class DieterShared(configuration: SharedConfiguration, extensions: SharedExtensi
         CoreRuntime(
             Platform(
                 transport = transport,
+                tunnels = NativeTunnelFactory(extensions.tunnels),
+                deviceKeys = NativeDeviceKeysAdapter(extensions.deviceKeys),
+                signatures = NativeSignatureVerifier(extensions.signatures),
                 secureStore =
                     object : SecureStore {
                         override fun read(key: String) = extensions.secureStore.read(key)
@@ -361,21 +442,6 @@ class DieterShared(configuration: SharedConfiguration, extensions: SharedExtensi
                 http = NativeAuthHttp(extensions.http),
                 fileSystem = FileSystem.SYSTEM,
                 stateDirectory = configuration.stateDirectory.toPath(),
-                signatures =
-                    extensions.signatures?.let { native ->
-                        object : SignatureVerifier {
-                            override fun verifyEd25519(
-                                publicKey: ByteArray,
-                                message: ByteArray,
-                                signature: ByteArray,
-                            ) =
-                                native.verifyEd25519(
-                                    publicKey.toNSData(),
-                                    message.toNSData(),
-                                    signature.toNSData(),
-                                )
-                        }
-                    },
                 notifications =
                     extensions.notifications?.let { native ->
                         object : NotificationSink {
@@ -507,6 +573,67 @@ class DieterShared(configuration: SharedConfiguration, extensions: SharedExtensi
     @Throws(CancellationException::class) suspend fun shutdown() = runtime.shutdown()
 }
 
+internal class NativeSignatureVerifier(private val native: NativeSignatures) : SignatureVerifier {
+    override fun verifyEd25519(publicKey: ByteArray, message: ByteArray, signature: ByteArray) =
+        native.verifyEd25519(publicKey.toNSData(), message.toNSData(), signature.toNSData())
+
+    override fun verifyEcdsaP256(publicKey: ByteArray, message: ByteArray, signature: ByteArray) =
+        native.verifyEcdsaP256(publicKey.toNSData(), message.toNSData(), signature.toNSData())
+}
+
+private class NativeDeviceKeysAdapter(private val native: NativeDeviceKeys) : DeviceKeys {
+    override val platform: String
+        get() = native.platform()
+
+    override val deviceName: String
+        get() = native.deviceName()
+
+    override fun publicKey(): ByteArray =
+        native.publicKey().toByteArray().takeIf { it.isNotEmpty() }
+            ?: throw IllegalStateException("This device's key is unavailable.")
+
+    override fun sign(message: ByteArray): ByteArray =
+        native.sign(message.toNSData()).toByteArray().takeIf { it.isNotEmpty() }
+            ?: throw IllegalStateException("This device's key could not sign.")
+
+    override fun reset() = native.reset()
+}
+
+private class NativeTunnelFactory(private val native: NativeTunnels) : TunnelFactory {
+    override suspend fun open(access: GatewayAccess, daemonId: String, lane: RelayLane): Tunnel =
+        suspendCancellableCoroutine { continuation ->
+            native.open(
+                access.url,
+                access.sessionToken,
+                access.clientVersion,
+                daemonId,
+                lane.value,
+                object : NativeTunnelCompletion {
+                    override fun completed(tunnel: NativeTunnel?, status: Int, error: String?) {
+                        if (tunnel == null) {
+                            if (continuation.isActive)
+                                continuation.resumeWithException(
+                                    GrpcException(
+                                        GrpcStatus.get(status).takeIf { it != GrpcStatus.OK }
+                                            ?: GrpcStatus.UNAVAILABLE,
+                                        error ?: "The relay could not reach this machine.",
+                                    )
+                                )
+                            return
+                        }
+                        val adapted =
+                            object : Tunnel {
+                                override val port: Int = tunnel.port()
+
+                                override fun close() = tunnel.close()
+                            }
+                        if (continuation.isActive) continuation.resume(adapted) else tunnel.close()
+                    }
+                },
+            )
+        }
+}
+
 private class NativeControlChannelFactory(private val native: NativeControlChannels) :
     ControlChannelFactory {
     override suspend fun create(configuration: ByteArray): ControlChannel =
@@ -582,7 +709,7 @@ private fun DieterShared.fixtureRoutes(
     val channel = fixtureChannel(GatewayAccess(opened.url, opened.token, clientVersion))
     ScreenRoute(
         GrpcDaemonApi(channel.client),
-        opened.certificatePem,
+        opened.daemonPublicKey.toByteArray().toByteString(),
         RTCConfiguration.ADAPTER.decode(opened.rtc.toByteArray()),
         opened.label,
         onClose = channel::close,

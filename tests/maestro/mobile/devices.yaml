@@ -1,0 +1,24 @@
+# Tools → Devices: the fixture's machine approved this app's pairing code, so
+# the account's trusted devices list this device and that machine.
+appId: ${APP_ID}
+name: Devices
+tags: [smoke]
+---
+- runFlow: common/launch.yaml
+- tapOn:
+    text: "Tools"
+    waitToSettleTimeoutMs: 500
+- scrollUntilVisible:
+    element:
+      id: tool-devices
+- tapOn:
+    id: tool-devices
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible:
+      id: device-this
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      text: "Isolated E2E machine"
+- takeScreenshot: devices

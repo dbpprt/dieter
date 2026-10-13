@@ -23,6 +23,7 @@ import com.getdieter.api.v1.GrpcScreenServiceClient
 import com.getdieter.api.v1.GrpcSettingsServiceClient
 import com.getdieter.api.v1.GrpcStateServiceClient
 import com.getdieter.api.v1.GrpcTerminalServiceClient
+import com.getdieter.api.v1.GrpcTrustServiceClient
 import com.getdieter.api.v1.GrpcVaultServiceClient
 import com.getdieter.api.v1.KVServiceClient
 import com.getdieter.api.v1.MachineServiceClient
@@ -33,6 +34,7 @@ import com.getdieter.api.v1.ScreenServiceClient
 import com.getdieter.api.v1.SettingsServiceClient
 import com.getdieter.api.v1.StateServiceClient
 import com.getdieter.api.v1.TerminalServiceClient
+import com.getdieter.api.v1.TrustServiceClient
 import com.getdieter.api.v1.VaultServiceClient
 import com.squareup.wire.GrpcClient
 
@@ -57,7 +59,8 @@ interface DaemonApi :
     ScheduleServiceClient,
     VaultServiceClient,
     KVServiceClient,
-    PeerServiceClient
+    PeerServiceClient,
+    TrustServiceClient
 
 /** [DaemonApi] over Wire's generated clients, all sharing [client]'s channel. */
 class GrpcDaemonApi(client: GrpcClient) :
@@ -78,4 +81,5 @@ class GrpcDaemonApi(client: GrpcClient) :
     ScheduleServiceClient by GrpcScheduleServiceClient(client),
     VaultServiceClient by GrpcVaultServiceClient(client),
     KVServiceClient by GrpcKVServiceClient(client),
-    PeerServiceClient by GrpcPeerServiceClient(client)
+    PeerServiceClient by GrpcPeerServiceClient(client),
+    TrustServiceClient by GrpcTrustServiceClient(client)

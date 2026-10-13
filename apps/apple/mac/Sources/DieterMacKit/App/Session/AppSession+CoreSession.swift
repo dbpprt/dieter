@@ -28,6 +28,7 @@ extension AppSession {
                             $0.gatewayURL = override.gateway.address
                             $0.sessionToken = override.token
                             $0.name = override.gateway.name
+                            $0.pairingCode = override.pairingCode
                         }
                     }
                 } catch { self.show(error) }

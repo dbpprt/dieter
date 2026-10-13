@@ -83,8 +83,10 @@ final class AppSession {
     @ObservationIgnored var coreFoldsHeld = false {
         didSet { if oldValue, !coreFoldsHeld { releaseHeldFolds() } }
     }
-    /// A session this launch adopts from `--dieter-endpoint` and `--dieter-access-token-file`.
-    let launchSession: (gateway: MachineEndpoint, token: String)?
+    /// A session this launch adopts from `--dieter-endpoint` and
+    /// `--dieter-access-token-file`, with the isolated fixture's pairing code
+    /// from `--dieter-pairing-code-file` when given.
+    let launchSession: (gateway: MachineEndpoint, token: String, pairingCode: String)?
     @ObservationIgnored lazy var fleet = FleetModel(
         machines: { [weak self] in
             guard let self else { return [] }
@@ -124,6 +126,8 @@ final class AppSession {
         active: { [weak self] in self?.section == .terminals && self?.terminalsModel.terminalScopeCardID == nil },
         reportError: { [weak self] in self?.errorMessage = $0 })
     let filesModel = FilesModel()
+    /// This device's trust and the account's devices.
+    let devicesModel = DevicesModel()
     let worktreeChanges = WorktreeChangesModel()
     let projectChanges = ProjectChangesModel()
     /// Counts `refreshState()` calls; navigating never makes one.
@@ -256,17 +260,20 @@ final class AppSession {
         themeSelection = initialTheme
         DieterTheme.install(selection: initialTheme)
         let arguments = environment.arguments
-        var tokenOverride: String?
-        if let flag = arguments.firstIndex(of: "--dieter-access-token-file"), arguments.indices.contains(flag + 1),
-            let token = try? String(contentsOfFile: arguments[flag + 1], encoding: .utf8)
-                .trimmingCharacters(in: .whitespacesAndNewlines), !token.isEmpty
-        {
-            tokenOverride = token
+        // The trimmed contents of the file named by `flag`, if any.
+        func launchFile(_ flag: String) -> String? {
+            guard let index = arguments.firstIndex(of: flag), arguments.indices.contains(index + 1),
+                let value = try? String(contentsOfFile: arguments[index + 1], encoding: .utf8)
+                    .trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty
+            else { return nil }
+            return value
         }
+        let tokenOverride = launchFile("--dieter-access-token-file")
+        let pairingCode = launchFile("--dieter-pairing-code-file") ?? ""
         let override = arguments.firstIndex(of: "--dieter-endpoint")
             .flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
             .flatMap { MachineEndpoint(address: $0, name: "Command line") }
-        launchSession = override.flatMap { gateway in tokenOverride.map { (gateway, $0) } }
+        launchSession = override.flatMap { gateway in tokenOverride.map { (gateway, $0, pairingCode) } }
         let gateway = override ?? MachineEndpoint.defaultGateway
         endpoints = []
         activeGateway = gateway
@@ -281,8 +288,8 @@ final class AppSession {
                 configuration: CoreHostConfiguration(
                     root: root, clientVersion: DieterRelease.current, logSubsystem: DistributionIdentity.macBundleID),
                 platform: .mac(
-                    credentialsFile: environment.credentialsFile, notificationsEnabled: { true },
-                    clipboard: CoreScreenClipboard()),
+                    credentialsFile: environment.credentialsFile, deviceKeyFile: environment.deviceKeyFile,
+                    notificationsEnabled: { true }, clipboard: CoreScreenClipboard()),
                 defaults: defaults, screens: CoreHostScreens(media: media))
         }
         let resolved: CoreClient = core ?? host?.client ?? ScriptedCoreClient()
@@ -292,6 +299,7 @@ final class AppSession {
         composer = ComposerModel(store: composerDrafts)
         conversationModel.core = resolved
         screensModel.core = resolved
+        devicesModel.core = resolved
         screensModel.media = screenMedia
         quickTaskForm.remember = { [weak self] remember in
             Task { await self?.perform { $0.rememberCreation = remember } }

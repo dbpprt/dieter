@@ -52,6 +52,7 @@ class MobileStore(
     val machines: MachinesModel = MachinesModel(context)
     val terminals: TerminalsModel = TerminalsModel(context) { conversation.showsTerminal }
     val screens: ScreensModel = ScreensModel(context)
+    val devices: DevicesModel = DevicesModel(context)
     private var activeTop = ""
 
     init {
@@ -188,6 +189,7 @@ class MobileStore(
         if (context.closed) return
         context.closed = true
         conversation.release()
+        devices.release()
         context.release()
     }
 

@@ -48,6 +48,7 @@ internal enum class Glyph(val symbol: String, private val material: () -> ImageV
     SETTINGS("gearshape", { Icons.Outlined.Settings }),
     MACHINE("laptopcomputer", { Icons.Outlined.Computer }),
     PHONE("iphone", { Icons.Outlined.Smartphone }),
+    DEVICES("laptopcomputer.and.iphone", { Icons.Outlined.Smartphone }),
     SERVER("server.rack", { Icons.Outlined.Dns }),
     TERMINAL("apple.terminal", { Icons.Outlined.Terminal }),
     SCREENS("display", { Icons.Outlined.DesktopWindows }),

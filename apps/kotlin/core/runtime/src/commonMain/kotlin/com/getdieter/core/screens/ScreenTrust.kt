@@ -4,9 +4,9 @@ import com.getdieter.api.v1.RemoteDesktopSessionBinding
 import com.getdieter.api.v1.StartRemoteDesktopRequest
 import com.getdieter.core.platform.SignatureVerifier
 import com.getdieter.core.runtime.Timestamps
+import com.getdieter.core.trust.DeviceKeyFormats
 import kotlin.time.Instant
 import okio.ByteString
-import okio.ByteString.Companion.decodeBase64
 import okio.ByteString.Companion.encodeUtf8
 
 const val SCREEN_INPUT_PROTOCOL = 3
@@ -16,7 +16,8 @@ class ScreenTrustException(message: String) : IllegalStateException(message)
 /**
  * Verifies the daemon-signed binding of a screen session: it ties the session to this client's
  * offer, the host's DTLS fingerprint, the granted control and display, and an input epoch. The
- * signature must come from the enrolled daemon's Ed25519 certificate. Any failure is fatal.
+ * signature must come from the machine's Ed25519 key in the pinned device roster. Any failure is
+ * fatal.
  */
 object ScreenTrust {
     private const val CONTEXT = "dieter-remote-desktop-v3"
@@ -43,7 +44,7 @@ object ScreenTrust {
         sessionId: String,
         request: StartRemoteDesktopRequest,
         answerSdp: String,
-        certificatePem: String,
+        daemonPublicKey: ByteString,
         now: Instant,
         verifier: SignatureVerifier,
     ) {
@@ -86,37 +87,17 @@ object ScreenTrust {
         if (expires <= now)
             fail("The screen session expired before it was verified. Check this device's clock.")
         val key =
-            ed25519PublicKey(certificatePem)
-                ?: fail("The machine certificate is not an Ed25519 certificate.")
+            DeviceKeyFormats.ed25519Raw(daemonPublicKey.toByteArray())
+                ?: fail("The machine's trusted key is not an Ed25519 key.")
         if (
             binding.daemon_signature.size != 64 ||
                 !verifier.verifyEd25519(
-                    key.toByteArray(),
+                    key,
                     message(sessionId, binding).toByteArray(),
                     binding.daemon_signature.toByteArray(),
                 )
         ) {
-            fail("The screen session was not signed by the enrolled machine.")
+            fail("The screen session was not signed by the trusted machine.")
         }
-    }
-
-    /** The raw 32-byte key from an X.509 certificate's Ed25519 SubjectPublicKeyInfo. */
-    fun ed25519PublicKey(pem: String): ByteString? {
-        val body =
-            pem.lineSequence()
-                .filterNot { it.startsWith("-----") }
-                .joinToString("")
-                .filterNot { it.isWhitespace() }
-        val der = body.decodeBase64() ?: return null
-        // SubjectPublicKeyInfo for Ed25519: SEQUENCE { SEQUENCE { OID 1.3.101.112 } BIT STRING (0
-        // unused bits, 32 bytes) }.
-        val prefix =
-            byteArrayOf(0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00)
-        val bytes = der.toByteArray()
-        outer@ for (start in 0..bytes.size - prefix.size - 32) {
-            for (index in prefix.indices) if (bytes[start + index] != prefix[index]) continue@outer
-            return der.substring(start + prefix.size, start + prefix.size + 32)
-        }
-        return null
     }
 }

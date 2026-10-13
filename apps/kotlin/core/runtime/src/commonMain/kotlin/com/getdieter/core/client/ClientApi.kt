@@ -10,6 +10,7 @@ import com.getdieter.client.v1.Drafts
 import com.getdieter.client.v1.Failure
 import com.getdieter.client.v1.FolderScope as ClientFolderScope
 import com.getdieter.client.v1.MessageQueued
+import com.getdieter.client.v1.Outcome
 import com.getdieter.client.v1.PageLoaded
 import com.getdieter.client.v1.Result
 import com.getdieter.client.v1.SearchHit
@@ -40,6 +41,7 @@ import com.getdieter.core.screens.ScreenMediaEngineFactory
 import com.getdieter.core.screens.ScreenRouteFactory
 import com.getdieter.core.search.TaskSearchIndex
 import com.getdieter.core.store.WorkspaceView
+import com.getdieter.core.trust.DevicesPresenter
 import com.getdieter.core.workspace.ProjectChangesView
 import com.getdieter.core.workspace.WorkspaceReviewView
 import kotlin.coroutines.cancellation.CancellationException
@@ -104,7 +106,11 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
         val done = Result(done = Done())
         command.adopt_session?.let { adopt ->
             if (adopt.session_token.isBlank()) invalid("The session token is empty.")
-            runtime.adoptSession(gateway(adopt.gateway_url, adopt.name), adopt.session_token)
+            runtime.adoptSession(
+                gateway(adopt.gateway_url, adopt.name),
+                adopt.session_token,
+                adopt.pairing_code.ifBlank { null },
+            )
             return done
         }
         command.begin_sign_in?.let {
@@ -468,6 +474,22 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
         command.admin?.let {
             return runtime.administer(it)
         }
+        command.devices?.let { devices ->
+            devices.refresh?.let { runtime.refreshDevices() }
+            devices.approve?.let { approval ->
+                if (approval.code.isBlank()) invalid("Type the code the new device shows.")
+                runtime.approveDevice(approval.code)
+                return Result(outcome = Outcome(succeeded = true))
+            }
+            devices.revoke?.let {
+                if (it.device_id.isBlank()) invalid("Choose a device to remove.")
+                runtime.revokeDevice(it.device_id)
+            }
+            devices.reset?.let { runtime.resetTrust() }
+            if (devices.refresh == null && devices.revoke == null && devices.reset == null)
+                invalid("Choose what to do with your devices.")
+            return done
+        }
         invalid("Choose a command.")
     }
 
@@ -549,6 +571,14 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
                     }
                 Slice.SLICE_QUOTAS ->
                     collect(runtime.quotas.view.map(::quotasSlice)) { emit(Update(quotas = it)) }
+                Slice.SLICE_DEVICES -> {
+                    // Waiting devices are read while some view shows them.
+                    val release = runtime.trust.observeRequests()
+                    collect(runtime.trust.view.map { devicesSlice(DevicesPresenter.present(it)) }) {
+                            emit(Update(devices = it))
+                        }
+                        .also { job -> job.invokeOnCompletion { release() } }
+                }
                 Slice.SLICE_FILES ->
                     observeSurface(surfaces.files, scope, ::emit) { files ->
                         var previous: FilesView? = null

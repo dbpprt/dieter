@@ -349,7 +349,7 @@ abstract class ScreenSessionHarness {
 
         fun route(): ScreenRoute {
             routeReads.incrementAndGet()
-            return ScreenRoute(client, key.certificatePem, RTCConfiguration(), "direct")
+            return ScreenRoute(client, key.publicKey, RTCConfiguration(), "direct")
         }
 
         /**
