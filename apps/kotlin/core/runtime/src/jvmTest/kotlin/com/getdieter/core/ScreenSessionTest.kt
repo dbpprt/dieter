@@ -15,9 +15,12 @@ import com.getdieter.core.screens.ScreenRoute
 import com.getdieter.core.screens.ScreenSessionPolicy
 import com.getdieter.core.screens.ScreenTrust
 import com.getdieter.core.testing.JcaSignatureVerifier
+import com.getdieter.core.testing.TestMachineKey
 import com.getdieter.core.testing.await
 import com.squareup.wire.GrpcException
 import com.squareup.wire.GrpcStatus
+import java.io.ByteArrayInputStream
+import java.security.cert.CertificateFactory
 import java.util.Base64
 import java.util.Properties
 import kotlin.test.Test
@@ -129,7 +132,7 @@ class ScreenSessionTest : ScreenSessionHarness() {
         onCore { session.connect { daemon.route() } }
         val failed = session.view.await { it.phase is ScreenPhase.Failed }
         assertEquals(
-            ScreenPhase.Failed("The screen session was not signed by the enrolled machine."),
+            ScreenPhase.Failed("The screen session was not signed by the trusted machine."),
             failed.phase,
         )
         delay(600)
@@ -324,7 +327,7 @@ class ScreenSessionTest : ScreenSessionHarness() {
         var routes = 0
         session.connect {
             if (routes++ == 0) daemon.route()
-            else ScreenRoute(daemon.client, "another machine", RTCConfiguration(), "relay")
+            else ScreenRoute(daemon.client, TestMachineKey().publicKey, RTCConfiguration(), "relay")
         }
         runCurrent()
         val engine = engines.created.single()
@@ -479,7 +482,13 @@ class ScreenSessionTest : ScreenSessionHarness() {
                 input_protocol_version = 3,
                 input_epoch = bytes("epoch"),
             )
-        val pem = bytes("certificate").utf8()
+        // Only the certificate's key matters: it stands for the machine's roster key.
+        val key =
+            CertificateFactory.getInstance("X.509")
+                .generateCertificate(ByteArrayInputStream(bytes("certificate").toByteArray()))
+                .publicKey
+                .encoded
+                .toByteString()
         val now = Instant.parse("2026-09-30T00:00:00Z")
         fun verify(
             value: RemoteDesktopSessionBinding = binding,
@@ -491,7 +500,7 @@ class ScreenSessionTest : ScreenSessionHarness() {
                 "session",
                 request.copy(offer = RemoteDesktopSessionDescription(type = "offer", sdp = sdp)),
                 answer,
-                pem,
+                key,
                 now,
                 JcaSignatureVerifier,
             )

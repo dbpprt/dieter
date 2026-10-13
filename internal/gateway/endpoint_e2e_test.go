@@ -47,7 +47,6 @@ func TestGatewayRelocationPreservesEnrollmentAndPeerIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer g.APIGRPC.Stop()
-	defer g.RelayGRPC.Stop()
 	go func() { _ = g.APIGRPC.Serve(oldListener) }()
 	go func() { _ = g.APIGRPC.Serve(newListener) }()
 	local := testkit.Store(t)
@@ -70,7 +69,7 @@ func TestGatewayRelocationPreservesEnrollmentAndPeerIdentity(t *testing.T) {
 		t.Fatal("enrollment lost durable issuer")
 	}
 	// Model an existing enrollment created before explicit issuer discovery.
-	if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetDaemonCaPem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
+	if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
 		t.Fatal(err)
 	}
 	scope := crdt.Revision([]string{identity.Issuer(), "github:42"})
@@ -99,7 +98,7 @@ func TestGatewayRelocationPreservesEnrollmentAndPeerIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if moved.GatewayURL != endpoint || moved.Issuer() != oldURL.String() || moved.ID != identity.ID || moved.Generation != identity.Generation || !bytes.Equal(moved.CertificatePEM, identity.CertificatePEM) || !bytes.Equal(moved.DaemonCAPEM, identity.DaemonCAPEM) {
+	if moved.GatewayURL != endpoint || moved.Issuer() != oldURL.String() || moved.ID != identity.ID || moved.Generation != identity.Generation || !bytes.Equal(moved.CertificatePEM, identity.CertificatePEM) {
 		t.Fatal("gateway move changed enrollment identity")
 	}
 	keyAfter, _ := os.ReadFile(keyPath)

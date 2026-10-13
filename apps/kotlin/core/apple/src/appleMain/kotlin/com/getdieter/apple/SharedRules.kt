@@ -55,6 +55,7 @@ import com.getdieter.core.client.rules.AdminExports
 import com.getdieter.core.client.rules.BoardExports
 import com.getdieter.core.client.rules.ConversationExports
 import com.getdieter.core.client.rules.CreationExports
+import com.getdieter.core.client.rules.DeviceExports
 import com.getdieter.core.client.rules.FileExports
 import com.getdieter.core.client.rules.FormatExports
 import com.getdieter.core.client.rules.LabelExports
@@ -66,10 +67,10 @@ import com.getdieter.core.client.rules.ScheduleExports
 import com.getdieter.core.client.rules.ScreenExports
 import com.getdieter.core.client.rules.TerminalExports
 import com.getdieter.core.client.rules.WorkspaceExports
-import com.getdieter.core.platform.SignatureVerifier
 import com.getdieter.core.screens.ScreenTrust
 import com.getdieter.core.screens.ScreenTrustException
 import kotlin.time.Instant
+import okio.ByteString.Companion.toByteString
 import platform.Foundation.NSData
 
 /**
@@ -144,6 +145,17 @@ object SharedRules {
 
     /** How many more files may join [count] attached ones. */
     fun attachmentSlots(count: Int): Int = FormatExports.attachmentSlots(count)
+
+    // --- Devices ------------------------------------------------------------------
+
+    /**
+     * The "Add a device" field's text for [typed]: uppercase pairing-code characters in groups of
+     * four, at most 16, e.g. "ABCD-EFGH-JK".
+     */
+    fun pairingCodeInput(typed: String): String = DeviceExports.pairingCodeInput(typed)
+
+    /** [typed] is a complete pairing code, so the field can approve it. */
+    fun pairingCodeComplete(typed: String): Boolean = DeviceExports.pairingCodeComplete(typed)
 
     // --- Labels -------------------------------------------------------------------
 
@@ -223,15 +235,16 @@ object SharedRules {
     /**
      * Why a screen session's daemon-signed [binding] (an encoded `RemoteDesktopSessionBinding`)
      * does not belong to [request] (an encoded `StartRemoteDesktopRequest`), the host's
-     * [answerSdp], and the enrolled machine's [certificatePem]; "" when it does. [signatures]
-     * checks the Ed25519 signature.
+     * [answerSdp], and the trusted machine's [daemonPublicKey] (its Ed25519 DER
+     * SubjectPublicKeyInfo from the device roster); "" when it does. [signatures] checks the
+     * Ed25519 signature.
      */
     fun screenBindingProblem(
         binding: NSData,
         sessionId: String,
         request: NSData,
         answerSdp: String,
-        certificatePem: String,
+        daemonPublicKey: NSData,
         nowMillis: Long,
         signatures: NativeSignatures,
     ): String =
@@ -241,20 +254,9 @@ object SharedRules {
                 sessionId,
                 StartRemoteDesktopRequest.ADAPTER.decode(request.toByteArray()),
                 answerSdp,
-                certificatePem,
+                daemonPublicKey.toByteArray().toByteString(),
                 Instant.fromEpochMilliseconds(nowMillis),
-                object : SignatureVerifier {
-                    override fun verifyEd25519(
-                        publicKey: ByteArray,
-                        message: ByteArray,
-                        signature: ByteArray,
-                    ) =
-                        signatures.verifyEd25519(
-                            publicKey.toNSData(),
-                            message.toNSData(),
-                            signature.toNSData(),
-                        )
-                },
+                NativeSignatureVerifier(signatures),
             )
             ""
         } catch (failure: ScreenTrustException) {

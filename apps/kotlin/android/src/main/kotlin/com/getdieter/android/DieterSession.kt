@@ -2,7 +2,9 @@ package com.getdieter.android
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import com.getdieter.android.data.AndroidDeviceKeys
 import com.getdieter.android.data.DieterCredentialStore
+import com.getdieter.android.data.KeyStoreTls
 import com.getdieter.android.update.AppUpdateManager
 import com.getdieter.client.v1.*
 import com.getdieter.core.*
@@ -15,7 +17,6 @@ import kotlinx.coroutines.*
 import okio.FileSystem
 import okio.Path.Companion.toOkioPath
 import org.bouncycastle.jce.provider.BouncyCastleProvider
-import org.bouncycastle.jsse.provider.BouncyCastleJsseProvider
 
 /** Keeps the core session and shared drafts/forms alive across Activity recreation. */
 class DieterSession(application: Application) : AndroidViewModel(application) {
@@ -33,15 +34,19 @@ class DieterSession(application: Application) : AndroidViewModel(application) {
         val credentials = DieterCredentialStore(applicationContext)
         val preferences =
             application.getSharedPreferences("dieter_core", android.content.Context.MODE_PRIVATE)
-        val crypto = BouncyCastleProvider()
+        val deviceKeys = AndroidDeviceKeys()
+        val transport =
+            OkHttpRpcTransport(
+                identity = deviceKeys,
+                providers = KeyStoreTls.providers(BouncyCastleProvider()),
+            )
         screenMedia = com.getdieter.android.screens.AndroidScreenMedia(applicationContext)
         runtime =
             CoreRuntime(
                 Platform(
-                    transport =
-                        OkHttpRpcTransport(
-                            providers = DirectTlsProviders(crypto, BouncyCastleJsseProvider(crypto))
-                        ),
+                    transport = transport,
+                    tunnels = GrpcTunnelFactory(transport),
+                    deviceKeys = deviceKeys,
                     secureStore =
                         object : SecureStore {
                             override fun read(key: String) = credentials.get(key)
@@ -83,6 +88,12 @@ class DieterSession(application: Application) : AndroidViewModel(application) {
                                 verifier.verifySignature(signature)
                             }
                                 .getOrDefault(false)
+
+                            override fun verifyEcdsaP256(
+                                publicKey: ByteArray,
+                                message: ByteArray,
+                                signature: ByteArray,
+                            ): Boolean = JcaEcdsa.verify(publicKey, message, signature)
                         },
                 ),
                 RuntimeConfig(
@@ -124,12 +135,16 @@ class DieterSession(application: Application) : AndroidViewModel(application) {
         runtime.start()
     }
 
-    fun adoptFixture(url: String, token: String) {
+    /** Maestro flows: the isolated fixture's session and the code its machine approves. */
+    fun adoptFixture(url: String, token: String, pairingCode: String) {
         if (fixtureAdopted) return
         fixtureAdopted = true
         store.action {
             store.core.dispatch(
-                Command(adopt_session = AdoptSession(url, token, "Isolated journey"))
+                Command(
+                    adopt_session =
+                        AdoptSession(url, token, "Isolated journey", pairing_code = pairingCode)
+                )
             )
             store.creation.agentSelection =
                 com.getdieter.api.v1.HarnessSelection("mock", "mock", "low")

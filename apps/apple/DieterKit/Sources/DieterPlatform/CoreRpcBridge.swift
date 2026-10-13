@@ -10,8 +10,9 @@ import Synchronization
 /// core; this type only moves bytes for one method path. Each core channel
 /// gets one HTTP/2 connection, released when the core retires it.
 ///
-/// Direct targets pin the daemon: the chain must end at the enrolled daemon CA
-/// and the leaf must carry the exact SPIFFE URI SAN. Host names are not trusted.
+/// Direct targets (direct candidates, WebRTC bridges, and relay tunnels) run
+/// mutual TLS 1.3 pinned to the daemon's roster key and present this device's
+/// certificate, signed by `deviceKeys`. Host names are not trusted.
 public final class CoreRpcBridge: NSObject, NativeRpcBridge, Sendable {
     private typealias Client = GRPCClient<HTTP2ClientTransport.Posix>
     private struct Channels {
@@ -26,6 +27,12 @@ public final class CoreRpcBridge: NSObject, NativeRpcBridge, Sendable {
     static let maximumMessageBytes = 32 * 1_024 * 1_024
     private static let releasedLimit = 1_024
     private let channels = Mutex(Channels())
+    private let deviceKeys: any DeviceSigner
+
+    /// `deviceKeys` signs the TLS handshakes of daemon routes.
+    public init(deviceKeys: any DeviceSigner) {
+        self.deviceKeys = deviceKeys
+    }
 
     deinit {
         channels.withLock { $0.open.values.forEach { $0.beginGracefulShutdown() } }
@@ -105,7 +112,7 @@ public final class CoreRpcBridge: NSObject, NativeRpcBridge, Sendable {
 
     private func client(for target: Destination) throws -> Client {
         if let existing = channels.withLock({ $0.open[target.channel] }) { return existing }
-        let transport = try Self.transport(for: target)
+        let transport = try transport(for: target)
         let created = Client(transport: transport)
         let winner = try channels.withLock { channels -> Client in
             guard !channels.releasedSet.contains(target.channel) else {
@@ -123,33 +130,24 @@ public final class CoreRpcBridge: NSObject, NativeRpcBridge, Sendable {
         return winner
     }
 
-    private static func transport(for target: Destination) throws -> HTTP2ClientTransport.Posix {
-        if target.kind == NativeRpcTarget.companion.DIRECT {
-            let daemonCAPEM = Data(target.daemonCaPem.utf8)
-            let daemonID = target.daemonId
-            let security: HTTP2ClientTransport.Posix.TransportSecurity = .tls { config in
-                config.trustRoots = .certificates([.bytes(Array(daemonCAPEM), format: .pem)])
-                // Direct candidates are IP targets; the daemon's identity is its
-                // SPIFFE URI SAN, verified below together with the CA chain.
-                config.serverCertificateVerification = .noHostnameVerification
-                config.verifySignatureAlgorithms = [.ed25519]
-                config.customVerificationCallback = { certificates, promise in
-                    let chain = certificates.compactMap { try? Data($0.toDERBytes()) }
-                    let verified = DaemonCertificatePinning.verify(
-                        chain, daemonCAPEM: daemonCAPEM, daemonID: daemonID)
-                    promise.succeed(verified ? .certificateVerified(.init(nil)) : .failed)
-                }
-            }
-            return try .http2NIOPosix(
-                target: DieterTransportTarget.make(host: target.host, port: Int(target.port)),
-                transportSecurity: security)
-        }
-        guard let url = URL(string: target.url), let host = url.host else {
-            throw RPCError(code: .invalidArgument, message: "invalid gateway URL \(target.url)")
-        }
-        let secure = url.scheme == "https"
+    private func transport(for target: Destination) throws -> HTTP2ClientTransport.Posix {
+        guard target.kind == NativeRpcTarget.companion.DIRECT else { return try Self.gateway(target.url) }
         return try .http2NIOPosix(
-            target: DieterTransportTarget.make(host: host, port: url.port ?? (secure ? 443 : 80)),
+            target: DieterTransportTarget.make(host: target.host, port: Int(target.port)),
+            transportSecurity: DaemonTLS.security(
+                daemonPublicKey: target.daemonPublicKey, clientCertificate: target.clientCertificate,
+                signer: deviceKeys))
+    }
+
+    /// The gateway at `url`, over the system's TLS trust (or plaintext for an
+    /// isolated `http` fixture).
+    static func gateway(_ url: String) throws -> HTTP2ClientTransport.Posix {
+        guard let parsed = URL(string: url), let host = parsed.host else {
+            throw RPCError(code: .invalidArgument, message: "invalid gateway URL \(url)")
+        }
+        let secure = parsed.scheme == "https"
+        return try .http2NIOPosix(
+            target: DieterTransportTarget.make(host: host, port: parsed.port ?? (secure ? 443 : 80)),
             transportSecurity: secure ? .tls : .plaintext)
     }
 
@@ -181,8 +179,8 @@ private struct Destination: Sendable {
     let url: String
     let host: String
     let port: Int32
-    let daemonId: String
-    let daemonCaPem: String
+    let daemonPublicKey: Data
+    let clientCertificate: Data
     let metadata: Metadata
 
     init(_ target: NativeRpcTarget) {
@@ -191,14 +189,11 @@ private struct Destination: Sendable {
         url = target.url
         host = target.host
         port = target.port
-        daemonId = target.daemonId
-        daemonCaPem = target.daemonCaPem
+        daemonPublicKey = target.daemonPublicKey
+        clientCertificate = target.clientCertificate
         var metadata = Metadata()
         metadata.addString(target.authorization, forKey: "authorization")
         metadata.addString(target.clientVersion, forKey: "x-dieter-client-version")
-        if target.kind == NativeRpcTarget.companion.RELAY {
-            metadata.addString(target.daemonId, forKey: "x-dieter-daemon-id")
-        }
         self.metadata = metadata
     }
 }

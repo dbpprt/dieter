@@ -1,5 +1,6 @@
 // Command dieter-gateway is the machine-only Dieter gateway: account
-// sessions, daemon identities, presence, and the authenticated relay.
+// sessions, daemon identities, presence, the signed device roster, and
+// authenticated relay tunnels that carry only end-to-end encrypted bytes.
 package main
 
 import (

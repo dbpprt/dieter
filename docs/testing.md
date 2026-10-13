@@ -38,8 +38,11 @@ go test -race ./internal/engine/...       # one package, with the race detector
   `testkit.FakeRunner` and `testkit.MockCatalog()` for harnesses, and
   `testkit.Eventually` (race-scaled budgets) instead of sleeps.
   `internal/testkit/topology` starts an in-process gateway with enrolled
-  daemons, sessions and relay routes. Packages that `testkit` itself imports
-  (store, harness and their dependencies) keep local helpers to avoid cycles.
+  daemons that share one device roster, sessions and relay tunnels.
+  `Gateway.NewClient` pairs a test app device (a software P-256 key) through the
+  production pairing path, so tests dial daemons over the same mutual TLS as
+  the apps. Packages that `testkit` itself imports (store, harness and their
+  dependencies) keep local helpers to avoid cycles.
 - **Time.** Do not poll the wall clock or sleep to wait for an effect. Inject a
   clock, wait on an observer (for example `scheduler.Manager.OnRunSettled`), or
   use `testkit.Eventually`.
@@ -61,6 +64,7 @@ These keep the product surfaces in step. Never weaken them to land a change:
 | `go run ./tools/identity -check`                                                                                                                  | Committed identity constants match `config/identity.json`               |
 | `go test ./tools/brandcheck`                                                                                                                      | Brand assets exist once and every product uses them                     |
 | Maestro flow lint (in `just check-changed`)                                                                                                       | Every flow parses and only uses supported commands                      |
+| `TestGatewayRelaysButNeverSeesContent`, `TestDaemonsAndClientsRefuseUntrustedPeersThroughTheGateway` (`internal/testkit/topology`, `-tags e2e`)   | The gateway relays only ciphertext and cannot impersonate a device      |
 
 ## Kotlin
 
@@ -75,6 +79,18 @@ the rule. `:core:e2e` builds `tools/fixtures/gateway` once and starts a fresh
 gateway and daemon with a temporary home and random ports for each test. iOS
 simulator tests need a caller-provided simulator:
 `just kotlin :core:runtime:iosSimulatorArm64Test -Pdieter.simulator=<UDID>`.
+
+### Pairing in fixtures
+
+Machines answer only trusted devices, so every fixture client pairs. The fixture
+gateway starts the device roster on its primary daemon, pairs its other
+daemons, and prints one pairing code, `DIETER_ISOLATED_PAIRING_CODE`, before
+`READY`. Its primary daemon keeps approving every request that proves that code,
+exactly as `dieter device approve` does. Clients receive the code in
+`AdoptSession.pairing_code` (fixtures only; the Mac app reads it from
+`--dieter-pairing-code-file`) and use it instead of a random one. Everything else
+is the production path: the client still verifies the approver's confirmation
+before it pins the roster.
 
 ## Swift
 
@@ -114,7 +130,10 @@ tests cannot cover, and keep assertions about rules in Kotlin unit tests.
 
 Golden vectors shared by Go, Kotlin and Swift live in `tests/fixtures` (for
 example `board-lifecycle.tsv`, read by `internal/store/kanban` and the Kotlin
-`BoardLifecycleTest`). Go generates or validates them; the clients load them as
+`BoardLifecycleTest`, and `roster/vectors.json`, the device roster's encoding,
+hashes, device IDs, pairing codes and MACs, read by
+`internal/security/roster`, the Kotlin `RosterVectorsTest` and DieterKit's
+`DeviceTrustTests`). Go generates or validates them; the clients load them as
 test resources. Change the producer and every consumer in one change.
 
 ## Safety

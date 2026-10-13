@@ -52,7 +52,7 @@ stderr, and exit state. For recurring work, a schedule runs on its owning daemon
 Agents and terminals work without a desktop. When a host does have an active
 graphical session, **Screens** lets you view it and take control from the native
 client. Media travels directly between peers or through TURN; the Dieter gateway
-handles signaling.
+relays the encrypted signaling without being able to read it.
 
 {{< screenshot src="macos-screens.png" width="1380" height="870" alt="Dieter Screens connected to Studio Mac, displaying a live Orbit demo dashboard with native control and connection status" caption="A live screen stream in the native Mac viewer. This isolated capture limits its source to an owned demo window; standard screen hosting shares a display." >}}
 

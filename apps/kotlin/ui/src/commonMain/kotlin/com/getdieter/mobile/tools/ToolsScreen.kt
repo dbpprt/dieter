@@ -16,6 +16,7 @@ import com.getdieter.mobile.app.*
 import com.getdieter.mobile.design.*
 import com.getdieter.mobile.navigation.*
 import com.getdieter.mobile.screens.*
+import com.getdieter.mobile.settings.DevicesScreen
 import com.getdieter.mobile.settings.SettingsScreen
 import com.getdieter.mobile.store.*
 
@@ -88,6 +89,7 @@ internal fun ToolScreen(store: MobileStore, page: ToolPage) {
         ToolPage.CHANGES -> ProjectChangesScreen(store)
         ToolPage.SCHEDULES -> SchedulesScreen(store)
         ToolPage.USAGE -> UsageScreen(store)
+        ToolPage.DEVICES -> DevicesScreen(store)
         ToolPage.SETTINGS -> SettingsScreen(store)
     }
 }
@@ -173,7 +175,8 @@ internal fun ToolsScreen(store: MobileStore) {
             }
             item { SectionHeader("Account") }
             item {
-                Group(listOf(ToolPage.USAGE, ToolPage.SETTINGS)) { page, position ->
+                Group(listOf(ToolPage.USAGE, ToolPage.DEVICES, ToolPage.SETTINGS)) { page, position
+                    ->
                     val lowest =
                         quotas.group_rows
                             .filter { it.lowest_remaining >= 0 }

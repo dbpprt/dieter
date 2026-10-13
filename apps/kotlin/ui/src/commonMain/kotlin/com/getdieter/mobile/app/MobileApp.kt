@@ -25,6 +25,7 @@ import com.getdieter.mobile.design.*
 import com.getdieter.mobile.navigation.*
 import com.getdieter.mobile.platform.*
 import com.getdieter.mobile.screens.*
+import com.getdieter.mobile.settings.PairingScreen
 import com.getdieter.mobile.share.*
 import com.getdieter.mobile.store.*
 import com.getdieter.mobile.tools.*
@@ -72,13 +73,22 @@ private fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
             store.error.value = ""
         }
     }
+    val signIn = session.phase == SessionSlice.Phase.PHASE_AUTH_REQUIRED && !workspace.loaded
     SystemBackHandler(
-        navigation.modal != null || navigation.stack.size > 1 || navigation.tab != MobileTab.INBOX
+        !signIn &&
+            !session.pairing &&
+            (navigation.modal != null ||
+                navigation.stack.size > 1 ||
+                navigation.tab != MobileTab.INBOX)
     ) {
         store.handleBack()
     }
-    if (session.phase == SessionSlice.Phase.PHASE_AUTH_REQUIRED && !workspace.loaded) {
+    if (signIn) {
         SignInScreen(store)
+        return
+    }
+    if (session.pairing) {
+        PairingScreen(store)
         return
     }
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -358,5 +368,12 @@ private fun SignInScreen(store: MobileStore) {
     }
 }
 
-/** Sign-in screen hosted directly by the iOS app before a session exists. */
-@Composable internal fun SignInContent(store: MobileStore) = SignInScreen(store)
+/**
+ * What the iOS app hosts before it shows machine content: sign-in, then pairing until this device
+ * is trusted.
+ */
+@Composable
+internal fun SignInContent(store: MobileStore) {
+    val session by store.session.slice.collectAsState()
+    if (session.pairing) PairingScreen(store) else SignInScreen(store)
+}

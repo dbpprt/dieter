@@ -1,7 +1,6 @@
 package vault
 
 import (
-	"bytes"
 	"errors"
 	"strings"
 	"testing"
@@ -172,25 +171,8 @@ func TestItemEnvelopeRejectsTamperingAndKeySubstitution(t *testing.T) {
 	}
 }
 
-func TestCrockfordRoundTripAcceptsTypedForms(t *testing.T) {
+func TestRandomIDIsLowercaseCrockford(t *testing.T) {
 	t.Parallel()
-	for length := range 41 {
-		value := randomBytes(length)
-		encoded := crockford.EncodeToString(value)
-		for _, typed := range []string{encoded, strings.ToLower(encoded), group(encoded, 4)} {
-			decoded, err := crockford.DecodeString(typed)
-			if err != nil || !bytes.Equal(decoded, value) {
-				t.Fatalf("length %d typed %q = %x, %v", length, typed, decoded, err)
-			}
-		}
-	}
-	decoded, err := crockford.DecodeString("oil")
-	if want, _ := crockford.DecodeString("011"); err != nil || !bytes.Equal(decoded, want) {
-		t.Fatalf("confusable characters = %x, %v", decoded, err)
-	}
-	if _, err := crockford.DecodeString("U"); err == nil {
-		t.Fatal("decoded a character outside the alphabet")
-	}
 	if id := RandomID("vi_"); !strings.HasPrefix(id, "vi_") || len(id) != len("vi_")+26 || id != strings.ToLower(id) {
 		t.Fatalf("random ID = %q", id)
 	}

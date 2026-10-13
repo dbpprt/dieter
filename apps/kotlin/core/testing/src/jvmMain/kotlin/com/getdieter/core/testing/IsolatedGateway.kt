@@ -66,6 +66,17 @@ class IsolatedGateway(
     val token
         get() = values.getValue("DIETER_ISOLATED_TOKEN")
 
+    /**
+     * The one-time pairing code the fixture's machine approves: a runtime that pairs with it
+     * becomes a trusted device without user interaction.
+     */
+    val pairingCode: String
+        get() =
+            values.getOrElse("DIETER_ISOLATED_PAIRING_CODE") {
+                values.entries.firstOrNull { it.key.uppercase().endsWith("PAIRING_CODE") }?.value
+                    ?: error("the fixture gateway printed no pairing code")
+            }
+
     val daemonId
         get() = values.getValue("DIETER_ISOLATED_DAEMON")
 

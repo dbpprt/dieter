@@ -11,8 +11,12 @@ import (
 )
 
 var ErrCapacity = errors.New("relay buffer capacity is exhausted")
-var ErrFull = errors.New("relay stream queue is full")
-var ErrFragment = errors.New("invalid relay payload fragment")
+var ErrFull = errors.New("relay tunnel queue is full")
+
+// QueuedFrames bounds the frames one tunnel may have queued in one direction:
+// a full window of DATA, as many WINDOW credits, and the frames that open and
+// close it. A peer that respects the window never reaches it.
+const QueuedFrames = 2*TunnelWindow + 2
 
 // Budget reserves actual allocations. Independent parent budgets for each lane
 // preserve capacity for maintenance even when another lane reaches its ceiling.
@@ -50,25 +54,18 @@ func (b *Budget) Release(n int64) {
 }
 func (b *Budget) Used() int64 { b.mu.Lock(); defer b.mu.Unlock(); return b.used }
 
-// Copy only metadata. Cloning a large payload just to replace it would allocate
-// an unaccounted second copy of the logical message.
-func metadataFrame(f *gatewayv1.DaemonLinkFrame) *gatewayv1.DaemonLinkFrame {
-	return &gatewayv1.DaemonLinkFrame{Kind: f.Kind, StreamId: f.StreamId, DaemonId: f.DaemonId, Generation: f.Generation, Method: f.Method, RequestId: f.RequestId, DeadlineUnixMillis: f.DeadlineUnixMillis, Metadata: f.Metadata, StatusCode: f.StatusCode, StatusMessage: f.StatusMessage, DelegationAssertion: f.DelegationAssertion, PayloadSha256: f.PayloadSha256}
-}
-
 type queued struct {
-	frame   *gatewayv1.DaemonLinkFrame
-	offset  int
-	bytes   int64
-	refs    int
-	removed bool
+	frame *gatewayv1.DaemonLinkFrame
+	bytes int64
 }
 
-// Queue schedules one fragment per stream per round. A reservation stays alive
-// through Send, including cancellation of an in-flight fragment.
+// Queue schedules the tunnel frames of one link connection, one frame per
+// tunnel per round, so a busy tunnel cannot delay the others. Each frame is
+// reserved against the link's byte budget from Add until the writer releases
+// it after sending, including a frame whose tunnel was canceled meanwhile.
 type Queue struct {
 	mu      sync.Mutex
-	streams map[uint64][]*queued
+	streams map[uint64][]queued
 	order   []uint64
 	bytes   int64
 	budget  *Budget
@@ -78,7 +75,13 @@ type Queue struct {
 }
 
 func NewQueue(b *Budget) *Queue {
-	return &Queue{streams: map[uint64][]*queued{}, budget: b, Wake: make(chan struct{}, 1), changed: make(chan struct{})}
+	return &Queue{streams: map[uint64][]queued{}, budget: b, Wake: make(chan struct{}, 1), changed: make(chan struct{})}
+}
+
+// signal wakes producers waiting in AddWait; q.mu is held.
+func (q *Queue) signal() {
+	close(q.changed)
+	q.changed = make(chan struct{})
 }
 func (q *Queue) wake() {
 	select {
@@ -86,46 +89,48 @@ func (q *Queue) wake() {
 	default:
 	}
 }
+
+// Add queues f behind its tunnel's earlier frames. It never blocks: a tunnel
+// whose peer ignores its window gets ErrFull and is closed by its owner.
 func (q *Queue) Add(f *gatewayv1.DaemonLinkFrame) error {
+	if len(f.GetPayload()) > ChunkBytes {
+		return ErrCapacity
+	}
 	n := int64(proto.Size(f))
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if q.closed || len(f.Payload) > MessageBytes || n-int64(len(f.Payload)) > ChunkBytes {
+	if q.closed {
 		return ErrCapacity
 	}
-	if len(q.streams[f.StreamId]) >= 8 {
+	if len(q.streams[f.GetStreamId()]) >= QueuedFrames {
 		return ErrFull
 	}
 	if !q.budget.Reserve(n) {
 		return ErrCapacity
 	}
-	if len(q.streams[f.StreamId]) == 0 {
-		q.order = append(q.order, f.StreamId)
+	if len(q.streams[f.GetStreamId()]) == 0 {
+		q.order = append(q.order, f.GetStreamId())
 	}
-	q.streams[f.StreamId] = append(q.streams[f.StreamId], &queued{frame: f, bytes: n})
+	q.streams[f.GetStreamId()] = append(q.streams[f.GetStreamId()], queued{frame: f, bytes: n})
 	q.bytes += n
 	q.wake()
 	return nil
 }
 
-// AddWait applies bounded backpressure to a producing RPC, never the receiver.
+// AddWait applies bounded backpressure to one producer while its tunnel's
+// queue is full, never to the writer or other tunnels. It gives up after
+// WriteTimeout, when ctx ends, or when the queue closes.
 func (q *Queue) AddWait(ctx context.Context, f *gatewayv1.DaemonLinkFrame) error {
 	timer := time.NewTimer(WriteTimeout)
 	defer timer.Stop()
 	for {
 		q.mu.Lock()
 		changed := q.changed
-		closed := q.closed
 		q.mu.Unlock()
-		if closed {
-			return ErrCapacity
+		if err := ctx.Err(); err != nil {
+			return err
 		}
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		if err := q.Add(f); err == nil {
-			return nil
-		} else if !errors.Is(err, ErrFull) {
+		if err := q.Add(f); !errors.Is(err, ErrFull) {
 			return err
 		}
 		select {
@@ -137,15 +142,9 @@ func (q *Queue) AddWait(ctx context.Context, f *gatewayv1.DaemonLinkFrame) error
 		}
 	}
 }
-func (q *Queue) free(item *queued) {
-	if item.removed && item.refs == 0 && item.bytes != 0 {
-		q.bytes -= item.bytes
-		q.budget.Release(item.bytes)
-		item.bytes = 0
-		close(q.changed)
-		q.changed = make(chan struct{})
-	}
-}
+
+// Next returns the next frame in round-robin order and the function that
+// releases its reservation once it was written.
 func (q *Queue) Next() (*gatewayv1.DaemonLinkFrame, func()) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -154,39 +153,30 @@ func (q *Queue) Next() (*gatewayv1.DaemonLinkFrame, func()) {
 	}
 	id := q.order[0]
 	q.order = q.order[1:]
-	item := q.streams[id][0]
-	f := item.frame
-	end := min(item.offset+ChunkBytes, len(f.Payload))
-	if len(f.Payload) > ChunkBytes {
-		if item.offset == 0 {
-			f = metadataFrame(f)
-		} else {
-			f = &gatewayv1.DaemonLinkFrame{Kind: f.Kind, StreamId: id}
-		}
-		f.Payload = item.frame.Payload[item.offset:end]
-		f.PayloadSize = uint32(len(item.frame.Payload))
-		f.PayloadOffset = uint32(item.offset)
-	}
-	item.offset = end
-	item.refs++
-	if end == len(item.frame.Payload) {
-		q.streams[id] = q.streams[id][1:]
-		item.removed = true
-		close(q.changed)
-		q.changed = make(chan struct{})
-	}
-	if len(q.streams[id]) > 0 {
+	items := q.streams[id]
+	item := items[0]
+	if len(items) == 1 {
+		delete(q.streams, id)
+	} else {
+		q.streams[id] = items[1:]
 		q.order = append(q.order, id)
 		q.wake()
-	} else {
-		delete(q.streams, id)
 	}
-	return f, sync.OnceFunc(func() { q.mu.Lock(); defer q.mu.Unlock(); item.refs--; q.free(item) })
+	q.signal()
+	return item.frame, sync.OnceFunc(func() { q.release(item.bytes) })
 }
+
+func (q *Queue) release(n int64) {
+	q.mu.Lock()
+	q.bytes -= n
+	q.mu.Unlock()
+	q.budget.Release(n)
+}
+
 func (q *Queue) cancel(id uint64) {
 	for _, item := range q.streams[id] {
-		item.removed = true
-		q.free(item)
+		q.bytes -= item.bytes
+		q.budget.Release(item.bytes)
 	}
 	delete(q.streams, id)
 	for i, v := range q.order {
@@ -196,100 +186,21 @@ func (q *Queue) cancel(id uint64) {
 		}
 	}
 }
-func (q *Queue) Cancel(id uint64) { q.mu.Lock(); defer q.mu.Unlock(); q.cancel(id) }
+
+// Cancel drops a tunnel's queued frames.
+func (q *Queue) Cancel(id uint64) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.cancel(id)
+	q.signal()
+}
 func (q *Queue) Close() {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.closed = true
-	close(q.changed)
-	q.changed = make(chan struct{})
 	for id := range q.streams {
 		q.cancel(id)
 	}
+	q.signal()
 }
 func (q *Queue) Bytes() int64 { q.mu.Lock(); defer q.mu.Unlock(); return q.bytes }
-
-type assembly struct {
-	head     *gatewayv1.DaemonLinkFrame
-	size     int
-	reserved int64
-	expires  time.Time
-}
-
-// Assembler is confined to one receiving loop. Orphan continuations allocate
-// nothing: cancellation can overtake an already-sent fragment.
-type Assembler struct {
-	messages map[uint64]*assembly
-	budget   *Budget
-	limit    int
-}
-
-func NewAssembler(b *Budget, limit int) *Assembler {
-	return &Assembler{messages: map[uint64]*assembly{}, budget: b, limit: limit}
-}
-func (a *Assembler) Accept(f *gatewayv1.DaemonLinkFrame) (*gatewayv1.DaemonLinkFrame, func(), error) {
-	noop := func() {}
-	if f.PayloadSize == 0 {
-		if a.messages[f.StreamId] != nil {
-			a.Cancel(f.StreamId)
-			return nil, noop, ErrFragment
-		}
-		if f.PayloadOffset != 0 || len(f.Payload) > ChunkBytes {
-			return nil, noop, ErrFragment
-		}
-		return f, noop, nil
-	}
-	if f.StreamId == 0 || f.PayloadSize > MessageBytes || len(f.Payload) > ChunkBytes || len(f.Payload) == 0 || uint64(f.PayloadOffset)+uint64(len(f.Payload)) > uint64(f.PayloadSize) {
-		a.Cancel(f.StreamId)
-		return nil, noop, ErrFragment
-	}
-	m := a.messages[f.StreamId]
-	if f.PayloadOffset == 0 {
-		if m != nil {
-			a.Cancel(f.StreamId)
-			return nil, noop, ErrFragment
-		}
-		n := int64(f.PayloadSize) + int64(proto.Size(f)) - int64(len(f.Payload))
-		if len(a.messages) >= a.limit || !a.budget.Reserve(n) {
-			return nil, noop, ErrCapacity
-		}
-		head := metadataFrame(f)
-		head.Payload = make([]byte, 0, int(f.PayloadSize))
-		m = &assembly{head: head, size: int(f.PayloadSize), reserved: n, expires: time.Now().Add(AssemblyTimeout)}
-		a.messages[f.StreamId] = m
-	}
-	if m == nil {
-		return nil, noop, nil
-	}
-	if m.head.Kind != f.Kind || m.size != int(f.PayloadSize) || len(m.head.Payload) != int(f.PayloadOffset) {
-		a.Cancel(f.StreamId)
-		return nil, noop, ErrFragment
-	}
-	m.head.Payload = append(m.head.Payload, f.Payload...)
-	if len(m.head.Payload) != m.size {
-		return nil, noop, nil
-	}
-	delete(a.messages, f.StreamId)
-	return m.head, sync.OnceFunc(func() { a.budget.Release(m.reserved) }), nil
-}
-func (a *Assembler) Cancel(id uint64) {
-	if m := a.messages[id]; m != nil {
-		delete(a.messages, id)
-		a.budget.Release(m.reserved)
-	}
-}
-func (a *Assembler) Expired(now time.Time) []uint64 {
-	var ids []uint64
-	for id, m := range a.messages {
-		if !now.Before(m.expires) {
-			ids = append(ids, id)
-			a.Cancel(id)
-		}
-	}
-	return ids
-}
-func (a *Assembler) Close() {
-	for id := range a.messages {
-		a.Cancel(id)
-	}
-}

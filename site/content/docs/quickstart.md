@@ -26,6 +26,10 @@ account. For self-hosting, use `dieter setup --gateway https://YOUR-GATEWAY`. Si
 GitHub, then check and approve the machine name and enrollment code in the
 browser. Setup starts the managed service and guides supported host permissions.
 
+On your account's first machine, setup also starts your list of
+[trusted devices](/docs/machines/#trusted-devices) and prints a recovery key
+once. Store it offline.
+
 For a Linux host, follow the [Linux installation steps](/docs/installation/#linux).
 
 ## 2. Register a checkout
@@ -51,8 +55,17 @@ open -a Dieter
 Sign in to the same gateway. On Android, install the
 [release APK](https://github.com/dbpprt/dieter/releases/latest/download/Dieter-Android.apk)
 and sign in to that origin instead; iPhone and iPad use the same app through the
-[beta](/docs/installation/#iphone-and-ipad-beta). Your shared projects appear
-across clients.
+[beta](/docs/installation/#iphone-and-ipad-beta).
+
+The app then shows a one-time code. Approve it on your host:
+
+```sh
+dieter device approve ABCD-EFGH-JKMN-PQRS
+```
+
+Use the code your app shows. Once the app is trusted, your shared projects
+appear. Later apps can also be approved from **Devices → Add a device** in an
+app that is already trusted.
 
 ## 4. Create a task
 

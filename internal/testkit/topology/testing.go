@@ -1,6 +1,7 @@
 package topology
 
 import (
+	"context"
 	"testing"
 
 	"github.com/dbpprt/dieter/internal/link"
@@ -93,4 +94,54 @@ func Dial(tb testing.TB, g *Gateway) *grpc.ClientConn {
 	}
 	tb.Cleanup(func() { _ = connection.Close() })
 	return connection
+}
+
+// StartClient pairs a test app device approved by approver until the test
+// ends.
+func StartClient(tb testing.TB, g *Gateway, approver *Daemon, name string) *Client {
+	tb.Helper()
+	client, err := g.NewClient(tb.Context(), approver, name)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	tb.Cleanup(client.Close)
+	return client
+}
+
+// DialDaemon connects client to daemon over route until the test ends.
+func DialDaemon(tb testing.TB, client *Client, daemon *Daemon, route Route) *grpc.ClientConn {
+	tb.Helper()
+	connection, err := client.Dial(tb.Context(), daemon.Identity.ID, route)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	tb.Cleanup(func() { _ = connection.Close() })
+	return connection
+}
+
+// Join pairs the device trust of identity, a machine whose daemon the test
+// plays itself (peer sync, the CLI), with the code approver approves. Its
+// roster follows the gateway until the test ends.
+func Join(tb testing.TB, g *Gateway, approver *Daemon, identity *link.Identity) *link.Trust {
+	tb.Helper()
+	deviceTrust, err := link.OpenTrust(identity, discard())
+	if err != nil {
+		tb.Fatal(err)
+	}
+	deviceTrust.PairingPoll = PairingPoll
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		deviceTrust.Run(ctx)
+	}()
+	tb.Cleanup(func() {
+		cancel()
+		<-done
+		deviceTrust.Close()
+	})
+	if err := Pair(tb.Context(), approver.Trust, deviceTrust); err != nil {
+		tb.Fatal(err)
+	}
+	return deviceTrust
 }

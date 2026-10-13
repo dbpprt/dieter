@@ -51,7 +51,7 @@ func (r vaultTurnRunner) Run(ctx context.Context, request harness.Request, emit 
 }
 
 // vaultHeaders sends headers with the calls made in the returned context, as
-// the gateway relay and a daemon agent turn do.
+// the DirectServer and a daemon agent turn do.
 func withHeaders(ctx context.Context, headers map[string]string) context.Context {
 	ctx, call := connect.NewClientContext(ctx)
 	for name, value := range headers {
@@ -132,12 +132,18 @@ func TestVaultAgentAccessFollowsConversationCreationAndRoute(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The gateway relay never carries decrypted content.
-	relay := map[string]string{routeMetadata: "relay", operatorSubjectMetadata: "github:1"}
-	_, err = client.ListVaultItems(withHeaders(ctx, relay), &dieterv1.ListVaultItemsRequest{})
-	wantCode(t, err, connect.CodeFailedPrecondition, "relay list")
-	if status, err := client.GetVaultStatus(withHeaders(ctx, relay), &emptypb.Empty{}); err != nil || status.GetCaller().GetRoute() != "relay" {
-		t.Fatalf("relay status = %v, %v", status, err)
+	// A remote roster device, forwarded by the DirectServer over any carrier,
+	// is the operator's: every carrier is TLS end to end.
+	remote := map[string]string{operatorSubjectMetadata: "github:1", deviceIDMetadata: "dv_remote"}
+	if items, err := client.ListVaultItems(withHeaders(ctx, remote), &dieterv1.ListVaultItemsRequest{}); err != nil || len(items.GetItems()) != 1 {
+		t.Fatalf("remote list = %v, %v", items, err)
+	}
+	if status, err := client.GetVaultStatus(withHeaders(ctx, remote), &emptypb.Empty{}); err != nil || status.GetCaller().GetRoute() != "remote" || status.GetCaller().GetKind() != "remote" {
+		t.Fatalf("remote status = %v, %v", status, err)
+	}
+	// A turn token from a remote caller is never trusted.
+	if status, err := client.GetVaultStatus(withHeaders(ctx, map[string]string{operatorSubjectMetadata: "github:1", turnTokenMetadata: "forged"}), &emptypb.Empty{}); err != nil || status.GetCaller().GetKind() != "remote" {
+		t.Fatalf("remote turn token = %v, %v", status, err)
 	}
 
 	// An agent of a vault-enabled card is identified by its turn token.

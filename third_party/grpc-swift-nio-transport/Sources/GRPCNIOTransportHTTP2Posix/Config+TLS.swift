@@ -386,6 +386,9 @@ extension HTTP2ClientTransport.Posix.TransportSecurity {
     /// `nil` uses the TLS backend defaults.
     public var verifySignatureAlgorithms: [SignatureAlgorithm]?
 
+    /// The oldest TLS version the client negotiates. `nil` allows TLS 1.2.
+    public var minimumTLSVersion: TLSVersion? = nil
+
     /// A certificate reloader providing the current certificate chain and private key to
     /// use at that point in time.
     public var certificateReloader: (any CertificateReloader)?

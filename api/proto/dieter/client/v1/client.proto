@@ -101,6 +101,7 @@ message Command {
     ChooseAgent choose_agent = 77;
     SignOut sign_out = 78;
     Reconnect reconnect = 79;
+    DevicesCommand devices = 81;
   }
 }
 
@@ -116,6 +117,9 @@ message AdoptSession {
   string gateway_url = 1;
   string session_token = 2;
   string name = 3;
+  // Isolated fixtures only: pair with this one-time code, which the fixture
+  // gateway's machine approves, instead of a fresh random one.
+  string pairing_code = 4;
 }
 
 message BeginSignIn { string gateway_url = 1; }
@@ -1249,6 +1253,8 @@ enum Slice {
   SLICE_CHATS = 23;
   // Scoped by the form's surface key (CreationPreviewCommand).
   SLICE_CREATION_PREVIEW = 24;
+  // This device's trust and the account's trusted devices.
+  SLICE_DEVICES = 25;
 }
 
 message Update {
@@ -1283,6 +1289,7 @@ message Update {
     BoardViewSlice board_view = 33;
     ChatsSlice chats = 34;
     CreationPreview creation_preview = 35;
+    DevicesSlice devices = 36;
     // The view's surface could not open, e.g. screen sharing on a device
     // without it. Sent once; nothing follows.
     Failure failure = 9;
@@ -1324,6 +1331,11 @@ message SessionSlice {
   // When some machine's view last changed, kept with the cached views; 0
   // before any. Heartbeats never advance it.
   int64 updated_at_millis = 20;
+  // Whether this device is a trusted member of the account's device roster.
+  // Machines are unreachable until it is; shells show pairing instead.
+  DeviceTrust device_trust = 21;
+  // This device's pairing code while device_trust is PENDING.
+  string pairing_code = 22;
 }
 
 // The connection notice above cached synchronized views.
@@ -3733,4 +3745,95 @@ message ScreenToolbarKey {
   // The modifier bit a modifier key arms (Shift 1, Control 2, Option 4,
   // Command 8); 0 for other keys.
   int32 modifier = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Devices: the account's signed device roster. Every machine and app holds its
+// own key; a device joins only when an existing one approves it after both
+// screens show the same pairing code. The gateway relays but cannot join.
+
+enum DeviceTrust {
+  // Signed out, or the roster has not been read yet.
+  DEVICE_TRUST_UNKNOWN = 0;
+  // The account has no trusted devices yet: set up a machine first.
+  DEVICE_TRUST_NO_ROSTER = 1;
+  // This device asked to join; another device must approve its code.
+  DEVICE_TRUST_PENDING = 2;
+  DEVICE_TRUST_TRUSTED = 3;
+  // This device was removed from the account.
+  DEVICE_TRUST_REVOKED = 4;
+  // The gateway served a roster that conflicts with the one this device
+  // pinned. Connections stay closed until the device resets trust.
+  DEVICE_TRUST_CONFLICT = 5;
+}
+
+message DevicesCommand {
+  oneof action {
+    // Reread the roster and pending requests.
+    Step refresh = 1;
+    // Approve the device that shows code; the result is whether it was
+    // signed into the roster.
+    DeviceApproval approve = 2;
+    // Remove a device from the account.
+    DeviceRef revoke = 3;
+    // Forget the pinned roster and this device's key, then ask to join
+    // again. Used after a conflict or a revocation.
+    Step reset = 4;
+  }
+}
+
+message DeviceApproval {
+  // The code the new device shows, as typed.
+  string code = 1;
+}
+
+message DeviceRef { string device_id = 1; }
+
+message DevicesSlice {
+  DeviceTrust trust = 1;
+  // While PENDING: the one-time code to type on a trusted device, e.g.
+  // "ABCD-EFGH-JKMN-PQRS".
+  string pairing_code = 2;
+  string this_device_id = 3;
+  // Active devices first (this device first), then removed ones; each by name.
+  repeated DeviceEntry devices = 4;
+  // Devices waiting for approval, newest first. Only a trusted device lists
+  // them; approving needs the code the new device shows.
+  repeated PairingEntry requests = 5;
+  // Recent roster changes, newest first, e.g. "Pixel 9 was added by MacBook".
+  repeated DeviceNotice notices = 6;
+  // Presentation-ready status, e.g. "Waiting for approval" and what to do.
+  string title = 7;
+  string detail = 8;
+  string error = 9;
+  bool loading = 10;
+}
+
+message DeviceEntry {
+  string device_id = 1;
+  string name = 2;
+  // "Machine", "App" or "Recovery key".
+  string kind_label = 3;
+  string platform = 4;
+  bool this_device = 5;
+  bool revoked = 6;
+  // Name of the device that added it; empty for the first device.
+  string added_by = 7;
+  // The machine's gateway daemon ID, for machines.
+  string daemon_id = 8;
+  // Only active devices other than recovery keys can be removed.
+  bool revocable = 9;
+}
+
+message PairingEntry {
+  string request_id = 1;
+  string name = 2;
+  string kind_label = 3;
+  string platform = 4;
+  string device_id = 5;
+}
+
+message DeviceNotice {
+  uint64 sequence = 1;
+  string text = 2;
 }

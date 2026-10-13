@@ -18,7 +18,7 @@ logic layer of their own.
 | --------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `:core:model`   | `core/model`   | Wire models and gRPC stubs generated from `api/proto` (relocated to `com.getdieter.api.*`), the core's on-device records (`dieter/core/v1`, `com.getdieter.core.v1`) and the UI contract (`dieter/client/v1/client.proto`, `com.getdieter.client.v1`).                                                                               |
 | `:core:runtime` | `core/runtime` | All client logic (`com.getdieter.core.*`), the platform-extension contracts (`platform/Platform.kt`, `screens/ScreenMedia.kt`, `terminals/TerminalScreen.kt`), the OkHttp transport for Android and the JVM (`jvmSharedMain`), the distribution identity (`identity/DistributionIdentity.kt`, generated), and its unit tests.        |
-| `:core:testing` | `core/testing` | Fakes, `SliceFolds` (applies keyed deltas as a Swift observer does), the JVM platform, the JDK's Ed25519 verifier, and the `IsolatedGateway` fixture launcher.                                                                                                                                                                       |
+| `:core:testing` | `core/testing` | Fakes, `SliceFolds` (applies keyed deltas as a Swift observer does), the JVM platform (a software device key in its state directory), the JDK's Ed25519 and ECDSA verifier, and the `IsolatedGateway` fixture launcher, whose pairing code makes test runtimes trusted devices.                                                      |
 | `:core:apple`   | `core/apple`   | The Swift façade (`com.getdieter.apple`): `DieterShared` (`dispatch(command)` and `observe(slice, scope)` over encoded `dieter.client.v1` messages), the synchronous `SharedRules` exports, `SharedTouchScreen`, and the native extension protocols, including the RPC bridge (`NativeRpc.kt`). Its macOS framework is `DieterCore`. |
 | `:core:e2e`     | `core/e2e`     | JVM end-to-end tests of the core and the shared UI against a disposable gateway and daemon built from this repository. Opt-in: they need Go and Node.                                                                                                                                                                                |
 | `:ui`           | `ui`           | The Compose Multiplatform UI of the Android and iOS apps (`com.getdieter.mobile`): screens, view lifetime, and navigation over `ClientApi`. Its iOS framework, also named `DieterCore`, exports the `:core:apple` façade.                                                                                                            |
@@ -51,6 +51,13 @@ library version.
   with deterministic IDs, so a retry can never duplicate a command. Pending
   cards carry aliases (the deterministic and the acknowledged daemon ID), so a
   card never shows twice when sync delivers it before the create reply.
+- **Device trust.** `trust/DeviceTrust` keeps this device's place in the
+  account's signed device roster: it pairs with a one-time code that a trusted
+  device types, pins the roster only after the approver's confirmation, and
+  enters CONFLICT when a later roster does not extend the pinned one. Every
+  route (direct, WebRTC, and the relay's opaque tunnel) is mutual TLS pinned to
+  the machine's roster key, so the gateway relays ciphertext only. Machines are
+  reachable only while the device is trusted.
 - **Division of labour.** Platforms own HTTP/2, TLS, credentials, rendering,
   terminals (SwiftTerm, Termux), and screen media (WebRTC, decoders, Metal).
   The core makes every decision around them.
@@ -144,8 +151,16 @@ commands are shared.
 | Files/editing/history, Git diffs/operations/merge                            | `ToolScreens`, `ReviewScreen`, `WorkspaceTools` | Binary previews                                    |
 | Schedules/editor/history, projects/checkouts/boards/labels/archive           | `ManagementScreens`, `AdministrationScreens`    | Core administration                                |
 | Machine telemetry/actions, quotas, gateways, appearance                      | `ToolScreens`, `MobileTheme`                    | Core operations                                    |
+| Pairing (until this device is trusted), trusted devices, adding a device     | `DevicesScreen`                                 | Device key and TLS client authentication           |
 | Persistent terminals                                                         | Shared controls and bounded core output         | Termux on Android, SwiftTerm on iOS                |
 | Screen sharing                                                               | `ScreenUI` and core session state               | GPU/Metal renderers, WebRTC and native touch input |
+
+Machines answer only a trusted device, so until the session's `device_trust` is
+trusted (or still unknown) both apps show the pairing screen instead of the
+tabs: the one-time code to type on a trusted device (Tools › Devices, or
+`dieter device approve CODE` on a machine), or Reset after this device was
+removed or saw a conflicting roster. Tools › Devices lists the account's
+devices, adds one by the code it shows, and removes one.
 
 Items shared from other apps reach `MobileStore.share` as `SharedItems` once the
 workspace has loaded: a new task opens prefilled, or `ShareTargetScreen` picks
@@ -165,6 +180,11 @@ A Material 3 shell hosting the shared UI. It keeps only adapters, under
   `MobileStore`, preferences and screen media across Activity recreation.
 - `data/DieterCredentialStore`: session tokens encrypted with a device-bound
   Android Keystore key, keyed by gateway origin; the core's `SecureStore`.
+- `data/AndroidDeviceKeys`: the device key, a non-exportable ECDSA P-256 key
+  in the Android Keystore (StrongBox when available). `data/KeyStoreTls`
+  configures BouncyCastle JSSE (Conscrypt cannot verify the machines' Ed25519
+  certificates) to sign the TLS 1.3 client CertificateVerify with it through
+  the Keystore's own provider.
 - `sharedcore/ControlRTCBridge`: the WebRTC control channel the core routes
   requests over.
 - `screens/` and `ComposeScreenSurface`: WebRTC/MediaCodec screen media, the

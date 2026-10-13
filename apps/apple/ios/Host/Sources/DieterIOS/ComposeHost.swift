@@ -19,6 +19,9 @@ public final class ComposeHost {
         let media = CoreScreenMedia {
             MTLCreateSystemDefaultDevice() == nil ? "Metal is unavailable on this device." : nil
         }
+        // This install's roster key: in the Secure Enclave where the device has
+        // one (never on a simulator), kept in a device-only Keychain item.
+        let deviceKeys = CoreDeviceKeys(store: DeviceKeyKeychain(), platform: "ios", deviceName: UIDevice.current.name)
         shared = DieterShared(
             configuration: SharedConfiguration(
                 stateDirectory: directory.path, clientVersion: version,
@@ -27,7 +30,8 @@ public final class ComposeHost {
                 screenClientName: UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone",
                 desktopScreens: false),
             extensions: SharedExtensions(
-                rpc: CoreRpcBridge(), secureStore: CoreKeychainSecureStore(),
+                rpc: CoreRpcBridge(deviceKeys: deviceKeys), tunnels: CoreRelayTunnels(), deviceKeys: deviceKeys,
+                secureStore: CoreKeychainSecureStore(),
                 settings: CoreDefaultsSettings(defaults: .standard), http: CoreURLSessionHttp(),
                 signatures: CoreCryptoKitSignatures(),
                 logger: CoreOSLogger(subsystem: DistributionIdentity.iosBundleID), notifications: nil,
@@ -52,7 +56,10 @@ public final class ComposeHost {
         let staged = ShareInbox.consume(request, in: container)
         mobile.share(message: staged.message, destination: request.destination, problem: staged.problem)
     }
-    public func adoptFixture(url: String, token: String) { mobile.adoptFixture(url: url, token: token) }
+    /// Debug builds: the isolated E2E gateway's session and the pairing code its machine approves.
+    public func adoptFixture(url: String, token: String, pairingCode: String) {
+        mobile.adoptFixture(url: url, token: token, pairingCode: pairingCode)
+    }
     /// Debug builds: replays shared navigation steps for screenshots.
     public func runDebugScript(_ script: String) { mobile.runDebugScript(script: script) }
     public func close() { observation?.close(); mobile.close() }

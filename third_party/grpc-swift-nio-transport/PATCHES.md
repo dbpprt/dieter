@@ -20,7 +20,11 @@ Used by `apps/apple/DieterKit` and `apps/apple/mac` as a local package.
    (`ClientTLSConfig.verifySignatureAlgorithms` in `Config+TLS.swift`, applied in
    `NIOSSL+GRPC.swift`). Dieter uses it to enable Ed25519 for daemon
    certificates.
+3. **TLS 1.3 daemon routes.** The Posix client TLS configuration exposes
+   NIOSSL's minimum TLS version (`ClientTLSConfig.minimumTLSVersion` in
+   `Config+TLS.swift`, applied in `NIOSSL+GRPC.swift`; `nil` keeps TLS 1.2).
+   Dieter requires TLS 1.3 on roster-pinned daemon routes.
 
 Remove patch 1 and return to the remote package once the release toolchain
 passes `unreachableEndpointSurvivesConnectionBackoffAndShutdown` (in
-DieterMacTests) without it; patch 2 then needs an upstream equivalent.
+DieterMacTests) without it; patches 2 and 3 then need upstream equivalents.

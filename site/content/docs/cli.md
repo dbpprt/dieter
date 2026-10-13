@@ -35,8 +35,11 @@ dieter --machine MACHINE_ID status
 dieter --machine MACHINE_ID project list --format jsonl
 ```
 
-Remote authentication uses the local daemon enrollment, not a second CLI login.
-Verified direct TLS is preferred, followed by supported WebRTC and gateway relay.
+Remote authentication uses the local machine's enrollment key, which is also its
+key in the account's [trusted devices](/docs/machines/#trusted-devices); there is
+no second CLI login. Both machines must be trusted. Verified direct TLS is
+preferred, followed by supported WebRTC and the gateway relay; every route is
+end-to-end encrypted between the two machines.
 `--checkout` chooses among checkouts on the selected machine, not a different host.
 Quota commands are account-wide and reject `--machine`.
 
@@ -45,6 +48,7 @@ Quota commands are account-wide and reject `--machine`.
 | Group                                   | Use it for                                                                                             |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `setup`, `doctor`, `daemon`             | Enrollment, prerequisites, permissions, service state, logs, and Linux user units                      |
+| `device`                                | Trusted devices: pairing approvals, removal, roster history, sync and recovery                         |
 | `machine`                               | Directory, routes, live telemetry, contract/release versions, updates, power, and connection signaling |
 | `harness`, `quota`                      | Host model catalogs and account quota windows                                                          |
 | `project`, `board`                      | Shared project identities, local checkouts, board settings, labels, host mappings, retention           |
@@ -75,6 +79,22 @@ dieter daemon logs --follow
 Setup defaults to `https://gateway.getdieter.com`; for self-hosting, pass
 `--gateway https://YOUR-GATEWAY`. Run `daemon start` or `serve` for foreground
 operation only when a daemon is not already running.
+
+### Pair and manage devices
+
+```sh
+dieter device status                  # trust state, the pairing code while PENDING, all devices
+dieter device requests                # devices waiting to join, by name only
+dieter device approve CODE            # approve the new device that shows CODE
+dieter device revoke DEVICE_ID        # remove a device
+dieter device roster                  # signed history of additions and removals
+```
+
+Type only a code you see on your own new device. `dieter device init` starts
+the roster on the account's first machine and prints a recovery key once;
+`dieter device recover --recovery-key -` adds a machine back with it. Both run
+only on the machine itself, and agent turns cannot change device trust. See
+[trusted devices](/docs/machines/#trusted-devices).
 
 ### Create and follow a task
 

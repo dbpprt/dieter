@@ -1,7 +1,6 @@
 package com.getdieter.core
 
 import com.getdieter.client.v1.Command
-import com.getdieter.client.v1.Failure
 import com.getdieter.client.v1.ScreenCommand
 import com.getdieter.client.v1.ScreenConnect
 import com.getdieter.client.v1.ScreenDisplayTarget
@@ -21,7 +20,6 @@ import com.getdieter.core.screens.ScreenMediaEvents
 import com.getdieter.core.screens.ViewportPolicy
 import com.getdieter.core.testing.EndToEnd
 import com.getdieter.core.testing.await
-import com.getdieter.core.testing.jvmTestPlatform
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -117,33 +115,5 @@ class ClientApiScreenEndToEndTest : EndToEnd() {
             }
         failures.await(describe = { "failure" }) { it?.contains("unavailable") == true }
         bare.close()
-    }
-
-    @Test
-    fun aDeviceThatCannotVerifyScreenSessionsReportsItInsteadOfFailing() = e2e {
-        val runtime =
-            CoreRuntime(
-                jvmTestPlatform(signatures = null),
-                RuntimeConfig(
-                    RELEASE,
-                    "dieter-test://oauth/callback",
-                    includeLoopbackRoutes = false,
-                ),
-            )
-        runtimes += runtime
-        val api =
-            ClientApi(
-                runtime,
-                ScreenHost({ NoMedia }, null, ScreenConfig("Core test", ViewportPolicy.Desktop)),
-            )
-        val failure = MutableStateFlow<Failure?>(null)
-        val watch =
-            api.observe(Slice.SLICE_SCREEN, "unverified") {
-                failure.value = Update.ADAPTER.decode(it.encode()).failure
-            }
-        val reported = failure.await(describe = { "failure" }) { it != null }!!
-        assertEquals(Failure.Kind.KIND_PERMANENT, reported.kind)
-        assertEquals("Screen sharing is unavailable on this device.", reported.message)
-        watch.close()
     }
 }

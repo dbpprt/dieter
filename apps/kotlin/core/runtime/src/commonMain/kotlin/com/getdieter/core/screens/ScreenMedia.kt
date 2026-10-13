@@ -5,6 +5,7 @@ import com.getdieter.api.v1.RemoteDesktopClipboardItem
 import com.getdieter.api.v1.RemoteDesktopICECandidate
 import com.getdieter.api.v1.RemoteDesktopReceiverFeedback
 import com.getdieter.core.api.DaemonApi
+import okio.ByteString
 
 /** An RTP codec the native stack can receive; [profile] is its `profile-level-id` when known. */
 data class RtpCodec(val name: String, val profile: String? = null)
@@ -107,10 +108,13 @@ interface ScreenMediaEngineFactory {
     fun create(config: ScreenMediaConfig, events: ScreenMediaEvents): ScreenMediaEngine
 }
 
-/** The authenticated signaling route to the screen's machine, with its trust anchor. */
+/**
+ * The authenticated signaling route to the screen's machine, with its trust anchor: the machine's
+ * Ed25519 key (DER SubjectPublicKeyInfo) from the pinned device roster.
+ */
 class ScreenRoute(
     val client: DaemonApi,
-    val certificatePem: String,
+    val daemonPublicKey: ByteString,
     val rtc: RTCConfiguration,
     val label: String,
     private val onFailure: (Throwable) -> Unit = {},

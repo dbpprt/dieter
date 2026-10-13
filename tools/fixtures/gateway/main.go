@@ -33,8 +33,10 @@ import (
 	"github.com/dbpprt/dieter/internal/link"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/platform/buildinfo"
+	"github.com/dbpprt/dieter/internal/platform/fault"
 	"github.com/dbpprt/dieter/internal/replication/crdt"
 	"github.com/dbpprt/dieter/internal/security/localauth"
+	"github.com/dbpprt/dieter/internal/security/roster"
 	boardstore "github.com/dbpprt/dieter/internal/store"
 	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit/topology"
@@ -204,22 +206,23 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 	if err != nil {
 		return err
 	}
+	// Device trust and the unadvertised TLS endpoint that relay tunnels and
+	// WebRTC control channels reach, exactly as `dieter serve` wires them.
+	primaryTrust, err := fixtureTrust(ctx, identity, logger)
+	if err != nil {
+		return err
+	}
+	endpoint, err := fixtureEndpoint(identity, primaryTrust, boardListener.Addr().String(), localToken)
+	if err != nil {
+		return err
+	}
+	defer endpoint.Server.Stop()
 	var control *controlrtc.Manager
 	if os.Getenv("DIETER_TEST_CONTROL_WEBRTC") == "1" {
-		tlsListener, listenErr := net.Listen("tcp", "127.0.0.1:0")
-		if listenErr != nil {
-			return listenErr
-		}
-		direct, directErr := link.NewDirectServer(identity, boardListener.Addr().String(), localToken)
-		if directErr != nil {
-			tlsListener.Close()
-			return directErr
-		}
-		go func() { _ = direct.Serve(tlsListener) }()
-		defer direct.Stop()
-		control = controlrtc.New(controlrtc.Identity{DaemonID: identity.ID, GatewayURL: identity.GatewayURL, Generation: identity.Generation, GatewaySigningPublicKey: identity.GatewaySigningPublicKey}, tlsListener.Addr().String())
+		control = controlrtc.New(controlrtc.Identity{DaemonID: identity.ID, GatewayURL: identity.GatewayURL, Generation: identity.Generation, GatewaySigningPublicKey: identity.GatewaySigningPublicKey}, endpoint.Listener.Addr().String())
 		defer control.Close()
 	}
+	trusts := map[*boardstore.Store]*link.Trust{data: primaryTrust}
 	var boardServersMu sync.Mutex
 	var boardServers []*api.Server
 	var boardRunners []*isolatedRunner
@@ -250,6 +253,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 				}
 				return nil
 			}(),
+			Trust: trusts[fixtureData],
 			MachineAction: func(_ context.Context, operation machine.Operation) error {
 				logger.Info("isolated machine operation accepted", "operation", operation)
 				return nil
@@ -288,11 +292,20 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 	var newSecondServer func() *api.Server
 	var secondServer *api.Server
 	var secondData *boardstore.Store
+	var secondIdentity *link.Identity
 	if daemonRestartTrigger != "" {
 		secondData = boardstore.New(filepath.Join(home, "second-dieter"))
 		if err = secondData.Ensure(); err != nil {
 			return err
 		}
+		if secondIdentity, err = enroll("second", filepath.Join(home, "second-dieter"), "Projectless E2E machine"); err != nil {
+			return err
+		}
+		secondTrust, trustErr := fixtureTrust(ctx, secondIdentity, logger)
+		if trustErr != nil {
+			return trustErr
+		}
+		trusts[secondData] = secondTrust
 		secondListener, listenErr := net.Listen("tcp", "127.0.0.1:0")
 		if listenErr != nil {
 			return listenErr
@@ -306,11 +319,11 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 		secondTarget = secondListener.Addr().String()
 	}
 
-	routes, err := fixtureDirectRoute(directRoute, identity, boardListener.Addr().String(), localToken)
+	routes, err := fixtureDirectRoute(directRoute, identity, primaryTrust, boardListener.Addr().String(), localToken)
 	if err != nil {
 		return err
 	}
-	tunnel := &link.GatewayClient{ControlWebRTC: control != nil, Identity: identity, LocalTarget: boardListener.Addr().String(), LocalToken: localToken, Version: buildinfo.ReleaseVersion, Routes: routes.candidates, Log: logger}
+	tunnel := &link.GatewayClient{ControlWebRTC: control != nil, Identity: identity, TunnelTarget: endpoint.Listener.Addr().String(), Version: buildinfo.ReleaseVersion, Routes: routes.candidates, Log: logger}
 	if usageFixture {
 		tunnel.ProviderQuotas = isolatedUsageQuotas{}
 	}
@@ -373,10 +386,6 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 
 	secondDaemonID := ""
 	if daemonRestartTrigger != "" {
-		secondIdentity, identityErr := enroll("second", filepath.Join(home, "second-dieter"), "Projectless E2E machine")
-		if identityErr != nil {
-			return identityErr
-		}
 		if _, err = secondData.Replica.BindPeerAccount(account, subject, secondIdentity.ID, secondIdentity.GatewayURL); err != nil {
 			return err
 		}
@@ -385,8 +394,13 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 		if tokenErr != nil {
 			return tokenErr
 		}
+		secondEndpoint, endpointErr := fixtureEndpoint(secondIdentity, trusts[secondData], secondTarget, secondToken)
+		if endpointErr != nil {
+			return endpointErr
+		}
+		defer secondEndpoint.Server.Stop()
 		secondTunnel := &link.GatewayClient{
-			Identity: secondIdentity, LocalTarget: secondTarget, LocalToken: secondToken, Version: buildinfo.ReleaseVersion,
+			Identity: secondIdentity, TunnelTarget: secondEndpoint.Listener.Addr().String(), Version: buildinfo.ReleaseVersion,
 			Log: logger,
 		}
 		acknowledged := make(chan struct{}, 1)
@@ -476,9 +490,27 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 		(secondDaemonID != "" && !gatewayServer.Hub.Online(secondDaemonID)) {
 		return fmt.Errorf("compatible daemon tunnels did not come online")
 	}
+	// The primary machine starts the account's device roster and pairs the
+	// second one through the production pairing path.
+	if _, _, err = primaryTrust.Initialize(ctx, false); err != nil {
+		return fmt.Errorf("start the isolated device roster: %w", err)
+	}
+	if secondDaemonID != "" {
+		if err = topology.Pair(ctx, primaryTrust, trusts[secondData]); err != nil {
+			return fmt.Errorf("pair the isolated second machine: %w", err)
+		}
+	}
+	// Clients pair with one shared code; the primary machine approves every
+	// request that proves it, exactly as `dieter device approve CODE` does.
+	_, pairingCode, err := roster.NewPairingSecret()
+	if err != nil {
+		return err
+	}
+	go approvePairingCode(ctx, primaryTrust, pairingCode, logger)
 
 	fmt.Printf("DIETER_ISOLATED_ADDR=%s\n", isolated.Address)
 	fmt.Printf("DIETER_ISOLATED_TOKEN=%s\n", token)
+	fmt.Printf("DIETER_ISOLATED_PAIRING_CODE=%s\n", pairingCode)
 	fmt.Printf("DIETER_ISOLATED_DAEMON=%s\n", identity.ID)
 	fmt.Printf("DIETER_ISOLATED_INCOMPATIBLE_DAEMON=%s\n", incompatibleIdentity.ID)
 	if secondDaemonID != "" {
@@ -497,10 +529,54 @@ type directRoutes struct {
 	close      func()
 }
 
+// fixtureTrust opens a fixture machine's device trust and follows its roster
+// until ctx ends.
+func fixtureTrust(ctx context.Context, identity *link.Identity, logger *slog.Logger) (*link.Trust, error) {
+	deviceTrust, err := link.OpenTrust(identity, logger)
+	if err != nil {
+		return nil, err
+	}
+	deviceTrust.PairingPoll = 200 * time.Millisecond
+	go deviceTrust.Run(ctx)
+	return deviceTrust, nil
+}
+
+// fixtureEndpoint serves a machine's unadvertised loopback TLS endpoint.
+func fixtureEndpoint(identity *link.Identity, deviceTrust *link.Trust, localTarget, localToken string) (*link.DirectRoute, error) {
+	route, err := link.NewDirectRoute(identity, deviceTrust, localTarget, localToken, "endpoint", "127.0.0.1:0", "127.0.0.1", "loopback", 0)
+	if err != nil {
+		return nil, err
+	}
+	go func() { _ = route.Server.Serve(route.Listener) }()
+	return route, nil
+}
+
+// approvePairingCode keeps approving devices that post a pairing request
+// proving code, until ctx ends. Each device still verifies the confirmation.
+func approvePairingCode(ctx context.Context, approver *link.Trust, code string, logger *slog.Logger) {
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		before := approver.Status().GetHeadSequence()
+		if _, err := approver.Approve(ctx, code); err == nil {
+			if after := approver.Status().GetHeadSequence(); after != before {
+				logger.Info("isolated fixture approved a device", "head", after)
+			}
+		} else if kind, _ := fault.KindOf(err); kind != fault.NotFound {
+			logger.Warn("isolated fixture approval failed", "error", err)
+		}
+	}
+}
+
 // fixtureDirectRoute mirrors the daemon's automatic loopback route, so clients
 // exercise pinned direct TLS against the disposable daemon. A "dead" route
 // advertises a port that refuses connections to cover relay fallback.
-func fixtureDirectRoute(mode string, identity *link.Identity, localTarget, localToken string) (directRoutes, error) {
+func fixtureDirectRoute(mode string, identity *link.Identity, deviceTrust *link.Trust, localTarget, localToken string) (directRoutes, error) {
 	if mode == "" {
 		return directRoutes{close: func() {}}, nil
 	}
@@ -516,7 +592,7 @@ func fixtureDirectRoute(mode string, identity *link.Identity, localTarget, local
 		}
 		return directRoutes{candidates: []*gatewayv1.DirectCandidate{candidate}, close: func() {}}, nil
 	}
-	server, err := link.NewDirectServer(identity, localTarget, localToken)
+	server, err := link.NewDirectServer(identity, deviceTrust, localTarget, localToken)
 	if err != nil {
 		_ = listener.Close()
 		return directRoutes{}, err

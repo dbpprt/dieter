@@ -25,9 +25,9 @@ import okio.Timeout
 import platform.Foundation.NSData
 
 /**
- * Implemented in Swift with grpc-swift, which owns HTTP/2, gRPC trailers, and SPIFFE-pinned TLS.
- * Callbacks may arrive on any thread, at most once per completion. The core chooses routes; the
- * bridge only moves bytes.
+ * Implemented in Swift with grpc-swift, which owns HTTP/2, gRPC trailers, and roster-pinned mutual
+ * TLS. Callbacks may arrive on any thread, at most once per completion. The core chooses routes;
+ * the bridge only moves bytes.
  */
 interface NativeRpcBridge {
     fun unary(
@@ -67,8 +67,11 @@ interface NativeRpcCancellable {
 
 /**
  * Where one RPC goes. [channelId] groups the calls of one logical channel onto one HTTP/2
- * connection. Direct targets carry the daemon CA the leaf must chain to; the SPIFFE identity
- * follows from [daemonId].
+ * connection. Gateway targets use the system trust store. Direct targets (direct candidates, WebRTC
+ * bridges and relay tunnels, all on [host]:[port]) run TLS 1.3 that accepts the server only if its
+ * leaf certificate's DER SubjectPublicKeyInfo equals [daemonPublicKey] (no CA, host name or expiry
+ * checks), and present [clientCertificate] (DER) signed with this device's key ([NativeDeviceKeys])
+ * as the client certificate. Both are empty for gateway targets.
  */
 class NativeRpcTarget(
     val kind: String,
@@ -79,11 +82,11 @@ class NativeRpcTarget(
     val daemonId: String,
     val host: String,
     val port: Int,
-    val daemonCaPem: String,
+    val daemonPublicKey: NSData,
+    val clientCertificate: NSData,
 ) {
     companion object {
         const val GATEWAY = "gateway"
-        const val RELAY = "relay"
         const val DIRECT = "direct"
     }
 }
@@ -106,21 +109,8 @@ internal class NativeRpcTransport(private val bridge: NativeRpcBridge) : RpcTran
             "",
             "",
             0,
-            "",
-        )
-    }
-
-    override fun relay(access: GatewayAccess, daemonId: String): RpcChannel = channel { id ->
-        NativeRpcTarget(
-            NativeRpcTarget.RELAY,
-            id,
-            access.url,
-            "Bearer ${access.sessionToken}",
-            access.clientVersion,
-            daemonId,
-            "",
-            0,
-            "",
+            NSData(),
+            NSData(),
         )
     }
 
@@ -129,13 +119,14 @@ internal class NativeRpcTransport(private val bridge: NativeRpcBridge) : RpcTran
             NativeRpcTarget(
                 NativeRpcTarget.DIRECT,
                 id,
-                "https://${target.host}:${target.port}",
+                "https://${if (':' in target.host) "[${target.host}]" else target.host}:${target.port}",
                 "Bearer ${tokens.token()}",
                 target.clientVersion,
                 target.daemonId,
                 target.host,
                 target.port,
-                target.daemonCaPem,
+                target.daemonPublicKey.toByteArray().toNSData(),
+                target.clientCertificate.toByteArray().toNSData(),
             )
         }
 }

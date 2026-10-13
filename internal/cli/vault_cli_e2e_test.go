@@ -192,15 +192,14 @@ func assertVaultDirectCLI(t *testing.T, client *CLI, output *bytes.Buffer) {
 	}
 }
 
-// assertVaultRelayRefusedCLI runs on the gateway relay route, where the
-// gateway sees payloads: status works, decrypted content is refused.
-func assertVaultRelayRefusedCLI(t *testing.T, client *CLI, output *bytes.Buffer) {
+// assertVaultRelayCLI runs on the gateway relay route. The relay carries an
+// opaque tunnel with TLS end to end, so vault contents work as on any route.
+func assertVaultRelayCLI(t *testing.T, client *CLI, output *bytes.Buffer) {
 	t.Helper()
-	if status := runDaemonCLI(t, client, output, "vault", "status"); !strings.Contains(status, "unlocked") || !strings.Contains(status, "via relay") {
+	if status := runDaemonCLI(t, client, output, "vault", "status"); !strings.Contains(status, "unlocked") || !strings.Contains(status, "via remote") {
 		t.Fatalf("relay vault status = %q", status)
 	}
-	output.Reset()
-	if err := client.Run([]string{"vault", "get", "Remote", "--reveal"}); err == nil || !strings.Contains(err.Error(), "gateway relay") {
-		t.Fatalf("relay vault get = %v %q", err, output.String())
+	if value := runDaemonCLI(t, client, output, "vault", "get", "Remote", "--reveal"); value != "remote-secret\n" {
+		t.Fatalf("relay vault get = %q", value)
 	}
 }

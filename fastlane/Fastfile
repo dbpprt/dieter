@@ -187,6 +187,8 @@ def run_maestro(device, app_id, fixture, flows, evidence, results)
     "FIXTURE_URL=http://#{fixture.address}",
     "-e",
     "FIXTURE_TOKEN=#{fixture.token}",
+    "-e",
+    "FIXTURE_PAIRING_CODE=#{fixture.pairing_code}",
     *flows.map { |flow| flow["path"] }
   ]
   java = ENV["JAVA_HOME"]
@@ -1320,6 +1322,8 @@ def run_mac_flow(app, plan, output, fixture)
   begin
     token = File.join(state, "session-token")
     File.write(token, fixture.token, perm: 0o600)
+    pairing = File.join(state, "pairing-code")
+    File.write(pairing, fixture.pairing_code, perm: 0o600)
     File.write(File.join(state, "plan.json"), JSON.generate(plan))
     activation = File.join(output, "activation.pid")
     process =
@@ -1334,6 +1338,8 @@ def run_mac_flow(app, plan, output, fixture)
           "http://#{fixture.address}",
           "--dieter-access-token-file",
           token,
+          "--dieter-pairing-code-file",
+          pairing,
           "--e2e-activation-ready",
           activation,
           "--e2e-flow",

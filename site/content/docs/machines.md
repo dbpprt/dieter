@@ -24,10 +24,116 @@ dieter setup
 Setup defaults to `https://gateway.getdieter.com` (STUN/TURN at
 `turn.getdieter.com`; an allowed account is required); for self-hosting, pass
 `--gateway https://YOUR-GATEWAY`. After GitHub sign-in, approve the machine name and
-verification code. Setup starts the managed service. On macOS it also registers
+verification code. Setup starts the managed service and sets up
+[device trust](#trusted-devices): on your account's first machine it starts the
+device roster and prints a recovery key; on any other machine it prints a
+one-time code to type on a device you already trust. On macOS it also registers
 the background privacy helper (see [privacy mode](#macos-privacy-mode)). For manual service setups,
 `dieter daemon enroll --gateway URL --name "Workstation"` handles enrollment and
 `dieter daemon start` runs the daemon in the foreground.
+
+## Trusted devices
+
+Machines and apps talk to each other only when both are in your account's
+**device roster**, the list of trusted devices that every machine and app
+checks itself. The gateway stores the list but cannot add a device to it. The
+[security model](/docs/security/#trusted-devices) explains why.
+
+### Start with the first machine
+
+On the first machine of your account, `dieter setup` starts the roster when the
+account has none; `dieter device init` does the same on its own. It prints a
+recovery key once:
+
+```text
+Recovery key (shown once; store it offline, e.g. on paper):
+
+  DRK1-…
+```
+
+Store the key offline. It adds a machine back when no trusted device is left,
+and anyone who holds it can add a machine to your account. Setup starts a roster
+only when the gateway reports that your account has none. If you already use
+Dieter on other devices and setup starts one anyway, check your gateway: it may
+be compromised.
+
+### Pair an app
+
+Sign in to the app. Until another device approves it, the app shows a pairing
+screen with a one-time code instead of your machines. On a device you already
+trust, type that code:
+
+- in an app, under **Add a device** in **Tools › Devices** (Android, iPhone and
+  iPad) or **Settings › Devices** (Mac);
+- on a machine, with `dieter device approve CODE`, where `CODE` is the code the
+  app shows (for example `ABCD-EFGH-JKMN-PQRS`; case and hyphens do not matter).
+
+The app becomes trusted a few seconds later. The two devices do not need to be
+on the same network.
+
+{{< callout type="warn" title="Only type a code you see yourself" >}}
+Type a code only when it is on the screen of your own new device. Anyone whose
+code you type gets full access to your machines.
+{{< /callout >}}
+
+### Pair another machine
+
+After `dieter setup` on a further machine, it waits with a code:
+
+```sh
+dieter device status          # PENDING, with the pairing code
+```
+
+Type the code on a trusted device as above. On a trusted machine,
+`dieter device requests` lists the devices waiting to join, by name only;
+codes are never listed.
+
+### Manage devices
+
+The **Devices** screen lists your account's machines, apps and recovery key, the
+devices waiting to join, and recent changes such as "Pixel 9 was added by
+Studio". **Remove** takes a device out of the roster; machines refuse it from
+its next call. **Reset this device** gives this app a new key, after which it
+pairs again.
+
+```sh
+dieter device status                     # state, roster head and every device
+dieter device roster                     # the signed history: who added or removed whom
+dieter device revoke DEVICE_ID           # remove a device (IDs start with dv_)
+dieter device sync                       # refresh the roster from the gateway
+dieter --machine MACHINE_ID device sync  # also offer this machine's roster to another one
+```
+
+`status`, `roster`, `sync`, `requests`, `approve` and `revoke` accept global
+`--machine`; `init` and `recover` run only on the machine itself. Agent turns
+cannot change device trust.
+
+If every trusted device is lost, set up a machine with `dieter setup`; it waits
+with a code. Add it with the recovery key instead, then approve your other
+devices from it:
+
+```sh
+dieter device recover --recovery-key -   # paste the key, then press Ctrl-D
+```
+
+A removed machine, or one that reports a conflict, cannot rejoin with its old
+key. Run `dieter daemon unenroll`, then `dieter setup` to enroll it as a new
+machine, and approve its code. See
+[troubleshooting](/docs/troubleshooting/#a-device-is-not-trusted).
+
+### Upgrading from 0.5
+
+Release 0.6 introduced trusted devices. Nothing carries over, so after you
+upgrade:
+
+1. Update the gateway, every daemon and every app. 0.5 and 0.6 cannot talk to
+   each other.
+2. On one machine, run `dieter device init` (or `dieter setup`) and store the
+   recovery key.
+3. Every other machine waits with a code; `dieter device status` shows it.
+   Approve it on the first machine with `dieter device approve CODE`.
+4. Open each app, sign in if it asks, and type the code it shows on a trusted
+   device.
 
 ## Attach an existing project
 
@@ -59,9 +165,10 @@ dieter peer status
 ```
 
 Clients prefer verified direct TLS, then WebRTC when available, then the gateway
-relay. Route details distinguish **WebRTC · Direct** from **WebRTC · TURN**.
-TURN still relays traffic. Read the [architecture](/docs/architecture/) for the
-transport and ownership boundaries.
+relay. Every route is end-to-end encrypted between two trusted devices. Route
+details distinguish **WebRTC · Direct** from **WebRTC · TURN**. TURN still
+relays traffic. Read the [architecture](/docs/architecture/) for the transport
+and ownership boundaries.
 
 `machine info` reports live CPU, memory, processes, and optional GPU/sensor data.
 An absent sensor is unknown, not a measurement of zero. Machine listings show
@@ -126,8 +233,10 @@ dieter daemon start \
 Use an address clients can actually reach. This is an example for starting a
 configured daemon, not a command to run beside an already-running service.
 Keep raw port **4242 loopback-only**. It also requires the daemon's local API
-token, which only the daemon user can read. Direct access verifies the enrolled
-daemon certificate and a short-lived token targeted to that daemon.
+token, which only the daemon user can read. Direct access runs the same mutual
+TLS as every route: the client accepts only the machine's key from the device
+roster, and the daemon accepts only a trusted device with a short-lived token
+bound to it.
 
 ## Updates and power controls
 
@@ -162,6 +271,8 @@ storage or `identity.json` by hand; see `dieter daemon recover --help`.
 
 ## Unenroll
 
-On the machine being removed, run `dieter daemon unenroll`. It revokes the machine
-identity and removes the local gateway credential while retaining project data,
-conversations, schedules, and harness settings.
+On the machine being removed, run `dieter daemon unenroll`. It removes the
+machine from your trusted devices, revokes its gateway identity, and deletes
+its key and gateway credential while retaining project data, conversations,
+schedules, and harness settings. Enrolling it again creates a new machine that
+a trusted device approves.

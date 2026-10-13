@@ -60,7 +60,7 @@ func TestPublicGatewayEnvelopeRejectedBeforeExposingAllocationSize(t *testing.T)
 func TestDaemonEnvelopeBoundsBothHelloAndProof(t *testing.T) {
 	t.Parallel()
 	hello := append(grpcEnvelopeHeader(maxDaemonPresenceBytes, 0), make([]byte, maxDaemonPresenceBytes)...)
-	source := bytes.NewReader(append(hello, grpcEnvelopeHeader(maxRelayPayload, 0)...))
+	source := bytes.NewReader(append(hello, grpcEnvelopeHeader(maxGatewayMessageBytes, 0)...))
 	reader := limitGatewayEnvelopes(t.Context(), io.NopCloser(source), 2, maxDaemonPresenceBytes)
 	defer reader.Close()
 	got, err := io.ReadAll(reader)
@@ -172,7 +172,6 @@ func TestProxyEnrollmentRateLimitsThroughHTTP2(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(gateway.APIGRPC.Stop)
-	t.Cleanup(gateway.RelayGRPC.Stop)
 	server, err := gateway.httpServer()
 	if err != nil {
 		t.Fatal(err)
@@ -245,9 +244,9 @@ func TestGatewayRejectsOversizedEnvelopesThroughTLSProxyWithoutPayload(t *testin
 		{"compatibility", "/dieter.gateway.v1.GatewayService/GetCompatibility", nil, 0},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			// Advertise 16 MiB but send only the envelope. The gateway must
+			// Advertise 1 MiB but send only the envelope. The gateway must
 			// reject its size instead of allocating and reporting a short body.
-			prefix := append(bytes.Clone(test.prefix), grpcEnvelopeHeader(maxRelayPayload, test.compressed)...)
+			prefix := append(bytes.Clone(test.prefix), grpcEnvelopeHeader(maxGatewayMessageBytes, test.compressed)...)
 			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 			defer cancel()
 			request, err := http.NewRequestWithContext(ctx, http.MethodPost, frontend.URL+test.path, bytes.NewReader(prefix))
@@ -289,7 +288,6 @@ func TestGatewayRejectsExcessHandshakesBeforeReadingBody(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer gateway.APIGRPC.Stop()
-	defer gateway.RelayGRPC.Stop()
 	for range cap(gateway.Hub.handshakes) {
 		gateway.Hub.handshakes <- struct{}{}
 	}

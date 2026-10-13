@@ -142,6 +142,13 @@ func commandTable() []command {
 			subcommands: []string{"status", "members", "init", "join", "approve", "remove-member", "rotate", "list", "show", "add", "edit", "remove", "get", "totp", "exec", "audit"},
 		},
 		{
+			name:        "device",
+			aliases:     []string{"devices"},
+			summary:     "Pair, approve, revoke, and inspect the account's trusted devices",
+			run:         (*CLI).rpcDevice,
+			subcommands: []string{"status", "roster", "sync", "init", "requests", "approve", "revoke", "recover"},
+		},
+		{
 			name:        "peer",
 			summary:     "Inspect and edit account peer settings (leaderless sync)",
 			run:         (*CLI).rpcPeer,

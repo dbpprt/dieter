@@ -8,8 +8,11 @@ slug: "gateway"
 ---
 
 The gateway authenticates allowlisted GitHub accounts and relays each account
-only to its own enrolled daemons. It never stores code, transcripts, files, or
-harness credentials; only control metadata and normalized, credential-free provider quota snapshots.
+only to its own enrolled daemons. Every relayed connection is TLS between two
+of the account's trusted devices, so the gateway forwards bytes it cannot read.
+It never stores code, transcripts, files, or harness credentials; only control
+metadata, each account's signed device roster, short-lived pairing requests,
+and normalized, credential-free provider quota snapshots.
 
 ## Register a GitHub OAuth App
 
@@ -76,7 +79,8 @@ The public origin intentionally serves only:
 - `/healthz`
 - the minimal GitHub OAuth start, callback, exchange, and completion routes
 - `dieter.gateway.v1.GatewayService` and `DaemonLinkService`
-- authenticated relay calls to the `dieter.v1` daemon API
+- `dieter.gateway.v1.RelayService`, whose tunnels carry encrypted connections
+  from an account's devices to its own daemons
 
 **All other paths, including `/`, return 404.**
 
@@ -106,16 +110,38 @@ configuration lifetime and defaults to five minutes.
 ## Storage
 
 The gateway owns a SQLite database under `DIETER_GATEWAY_HOME` plus its private
-signing and daemon-CA keys. Releases publish a container image; build one from
-source with
+signing and daemon-CA keys. The database holds account sessions, enrolled
+daemons, presence and routes, provider quota snapshots, each account's device
+roster and its pending pairing requests. Roster entries are signed by the
+account's devices: the gateway checks every new entry and serves the list, but
+cannot write one, so it cannot add a device to an account. A pairing request
+holds the new device's name, kind and public key and a proof of its code, never
+the code itself, and expires after 15 minutes. The daemon CA only
+authenticates daemons to the gateway; clients never receive it. Releases
+publish a container image; build one from source with
 [`deploy/gateway/Dockerfile`](https://github.com/dbpprt/dieter/blob/main/deploy/gateway/Dockerfile).
+
+## Relay tunnels
+
+A client reaches a daemon through the relay by opening a tunnel: one gRPC
+stream that names the daemon and a traffic class. The gateway admits it only
+for the caller's own daemon, asks the daemon on that class's connection, and
+then forwards frames of at most 64 KiB in both directions, eight unacknowledged
+frames per direction at most. Inside, the client and the daemon run the same
+mutually authenticated TLS as on a direct route. The gateway never parses the
+frames; it sees when a tunnel opens and closes and how many bytes it carries.
+Per daemon, the gateway admits at most 4 control, 8 replication, 32 command and
+32 subscription tunnels at once, within its per-class byte budgets.
+Signing out closes a session's tunnels within about five seconds; revoking a
+machine closes all of them at once.
 
 Enrolled daemons advertise `controlWebrtc` in route discovery when their
 WebRTC-to-authenticated-TLS bridge is available. Current clients prefer direct
 TLS, then attempt WebRTC, retaining the gateway relay for unavailable routes or failed
 ICE negotiation. Machine connection details distinguish WebRTC Direct from
 WebRTC TURN using the selected candidate pair. TURN traffic is still relayed;
-the daemon's TLS certificate and per-RPC access token remain verified.
+the TLS connection inside stays pinned to both devices' roster keys, and the
+per-call access token is still verified.
 
 ## Signed deployment bundles
 
@@ -130,9 +156,12 @@ UDP/TCP/TLS TURN transport configuration. See the
 
 A gateway's public HTTPS endpoint can change without changing its enrolled
 identity. Set `DIETER_PUBLIC_URL` to the new origin and preserve the original
-origin in `DIETER_GATEWAY_ISSUER`. The issuer is a durable authentication and
-peer-store namespace; it is not a network destination. Keep the signing keys,
-daemon CA, sessions, allowlist and state volume intact.
+origin in `DIETER_GATEWAY_ISSUER`. The issuer is a durable authentication,
+device roster and peer-store namespace; it is not a network destination. Keep
+the signing keys, daemon CA, sessions, allowlist and state volume intact.
+Machines keep their trusted devices across the move. Apps sign in again at the
+new origin and show their pairing code once more; approving it confirms their
+existing key and adds no device.
 
 On startup an enrolled daemon checks the account-bound endpoint assertion signed
 by its pinned gateway key, authenticates the destination, and atomically updates
@@ -151,6 +180,12 @@ The standard gateway is now `https://gateway.getdieter.com`, with STUN/TURN at
 for a fresh sign-in at the new origin; custom gateway addresses are preserved.
 
 ## Relay protocol rollout
+
+Release 0.6 replaced the per-call relay with end-to-end encrypted tunnels and
+raised both compatibility floors to `0.6.0-dev.0`. Update the gateway, every
+daemon and every app together, then start the device roster on one machine and
+pair the others: see
+[upgrading to trusted devices](/docs/machines/#upgrading-from-05).
 
 Deploy the gateway and daemon/CLI from the same canonical SemVer release. The
 first release with isolated relay connections must set
