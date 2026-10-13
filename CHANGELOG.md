@@ -1,15 +1,70 @@
 # Changelog
 
 Dieter ships one version across the daemon/CLI, gateway and native clients.
-Nightly dev prereleases (`v0.5.N`) list their pull requests on the GitHub
+Nightly dev prereleases (`v0.6.N`) list their pull requests on the GitHub
 release. A stable release promotes one tested dev build; before you promote it,
 copy the **Unreleased** notes into a section named after that exact version
-(for example `## 0.5.412`). Promotion fails without that section.
+(for example `## 0.6.412`). Promotion fails without that section.
 
 ## Unreleased
 
+End-to-end encryption between your devices. This release starts the 0.6 line
+and is a clean break: nothing migrates, and every machine and app pairs again
+after the upgrade.
+
+### Upgrading
+
+0.5 and 0.6 cannot talk to each other, so update everything in one go:
+
+1. **Gateway.** Deploy the 0.6 gateway. Its minimum client and daemon releases
+   are `0.6.0-dev.0`, so it rejects 0.5 apps and daemons.
+2. **First machine.** Update the daemon on the host itself (`brew upgrade dieter`
+   on macOS; `dieter machine update --confirm UPDATE` or `install.sh` on
+   Linux), then run `dieter setup`. It starts your account's device roster and
+   prints a recovery key once. Store it offline.
+3. **Other machines.** Update each one the same way and run `dieter setup`. It
+   prints a one-time code; approve it on the first machine with
+   `dieter device approve CODE`.
+4. **Apps.** Update each app and open it. It shows a one-time code; type it on a
+   trusted device: `dieter device approve CODE` on a machine, or
+   **Devices → Add a device** in an app that is already trusted.
+
+### Security
+
+- Every remote call now runs mutually authenticated TLS 1.3 between the calling
+  device and the daemon, on every route: direct TLS, WebRTC and the gateway
+  relay. The relay is an opaque tunnel, so the gateway forwards bytes it can
+  neither read nor change: chats, terminals, files, executions, Git, vault
+  content, peer records and screen signaling. It still sees metadata (devices,
+  presence, routes, tunnel timing and sizes, provider quota snapshots) and can
+  deny service.
+- Every machine and app has its own key in the account's device roster, an
+  append-only list in which every change is signed by a trusted device. The
+  gateway stores the list but cannot add a device or remove one. A new device
+  shows a one-time code; typing it on a trusted device adds it. Only type a code
+  you see on your own new device.
+- App keys live in the Secure Enclave (Mac, iPhone, iPad) or the Android
+  Keystore and cannot be exported. The Mac app keeps its key in its user-only
+  data folder, never in the Keychain.
+- Gateway tokens are bound to the calling device, so a session or token without
+  the device key reaches no machine. The gateway's daemon CA now only
+  authenticates daemons to the gateway; clients pin keys from the roster.
+
 ### Changed
 
+- New `dieter device` commands: `status`, `roster`, `sync`, `init`, `requests`,
+  `approve`, `revoke` and `recover`. `init` and `recover` run only on the
+  machine itself, and agent turns cannot change device trust.
+- `dieter setup` starts the device roster on an account's first machine, or
+  prints the code that a new machine waits with.
+- `dieter daemon unenroll` also removes the machine from the trusted devices and
+  deletes its key. Enrolling it again creates a new machine that a trusted
+  device approves.
+- The apps show a pairing screen until the device is trusted, and a Devices
+  screen (**Tools › Devices** on Android, iPhone and iPad; **Settings › Devices**
+  on Mac) to add, list and remove devices.
+- Vault commands that return decrypted content now work over the gateway relay
+  too, and the vault audit records which device asked.
 - Claude Code, Codex and OMP now run at the latest versions Dieter ships with
   instead of the versions the AI SDK adapters pin: Claude Code 2.1.296 (Claude
   Agent SDK 0.3.296), Codex 0.162.1 and OMP 18.10.1. Updates follow each release.

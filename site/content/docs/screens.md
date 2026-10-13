@@ -9,7 +9,8 @@ slug: "screens"
 
 Screens gives you a view-and-control experience of an enrolled machine's
 display. Media and remote input travel between your client and the daemon, directly or
-through TURN. The gateway only brokers bounded signaling.
+through TURN. Signaling runs inside the end-to-end encrypted connection to the
+machine, so the gateway can relay it but cannot read it.
 
 Agents and terminals can run headless. Screen hosting additionally needs an active
 graphical session and the platform's capture and control permissions.
@@ -115,8 +116,11 @@ never through the Dieter gateway.
 
 Native clients verify an Ed25519 binding between the offer, daemon DTLS fingerprint,
 session, nonce, lease, control grant, display, and input epoch before applying
-the answer. Pointer motion uses an unordered no-retransmit DataChannel while
-keys, buttons, scrolling, and release-all use a reliable channel. The signed
+the answer. They check it with the machine's key from your account's
+[trusted devices](/docs/security/#trusted-devices), never with a key the gateway
+supplies, and a renegotiated answer carries a binding of its own. Pointer
+motion uses an unordered no-retransmit DataChannel while keys, buttons,
+scrolling, and release-all use a reliable channel. The signed
 macOS helper or release-verified Linux helper owns platform capture and input
 permission and releases every held input immediately on disconnect.
 

@@ -9,11 +9,11 @@ slug: "architecture"
 
 ## Three components
 
-| Component               | Owns                                                                                                                              |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `dieter` daemon and CLI | Local checkouts, conversations, harness workers, files, terminals, processes, and schedules; a replica of shared account metadata |
-| `dieter-gateway`        | Account sessions, enrolled machine identity, presence, route metadata, and normalized provider quota snapshots                    |
-| Native clients          | Presentation, local caches, drafts, and durable pending client commands                                                           |
+| Component               | Owns                                                                                                                                     |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `dieter` daemon and CLI | Local checkouts, conversations, harness workers, files, terminals, processes, and schedules; a replica of shared account metadata        |
+| `dieter-gateway`        | Account sessions, enrolled machine identity, presence, route metadata, the signed device roster, and normalized provider quota snapshots |
+| Native clients          | Presentation, local caches, drafts, and durable pending client commands                                                                  |
 
 The Go daemon hosts agents on macOS and Linux. A SwiftUI client serves macOS;
 Android and iOS share one Compose Multiplatform interface inside thin native
@@ -41,44 +41,55 @@ Clients prefer:
 
 1. **Verified direct TLS** to an advertised daemon route.
 2. **Data-only WebRTC**, using a direct ICE pair or TURN when supported.
-3. **Authenticated gateway relay** if earlier routes cannot connect.
+3. **Gateway relay tunnel** if earlier routes cannot connect.
 
-Native clients start a parallel authenticated relay connection if WebRTC is
-still connecting after one second, use whichever route becomes healthy first,
-and close the unused attempt. Application requests are sent once.
+Native clients start a parallel relay connection if WebRTC is still connecting
+after one second, use whichever route becomes healthy first, and close the
+unused attempt. Application requests are sent once.
 
-All carry the same `dieter.v1` daemon API (one service per domain). WebRTC API transport is
-independent of Screens and requests no capture permissions. It carries an
-end-to-end daemon TLS connection through a bounded reliable data channel.
-TURN is a relay, even when used as the WebRTC route.
+All carry the same `dieter.v1` daemon API (one service per domain), inside the
+same TLS 1.3 connection between your device and the daemon. Both ends
+authenticate with their keys in your account's device roster, so the gateway
+and TURN relay only ciphertext; see
+[trusted devices](/docs/security/#trusted-devices). A device that is not
+trusted yet reaches no machine. WebRTC API transport is independent of Screens
+and requests no capture permissions. Its signaling travels through a relay
+tunnel, and the data channel then carries the end-to-end TLS connection. TURN
+is a relay, even when used as the WebRTC route.
 
 Watches resume from the last delivered sequence or complete sync projection.
 Transient recovery does not replay domain mutations, process starts, or stdin.
-Canceling a relay RPC cancels that transport operation, not an agent turn.
+Canceling an RPC cancels that transport operation, not an agent turn.
 
-Gateway relay uses four separate connections and flow-control windows. Every
-connection proves possession of the enrolled daemon key, and joins the same
-process session and enrollment generation. Traffic classes affect resources,
-never authorization.
+The daemon keeps four separate connections to the gateway, one per traffic
+class. Every connection proves possession of the enrolled daemon key, and joins
+the same process session and enrollment generation. A client opens a relay
+tunnel in one class; the gateway connects it to the daemon's own TLS endpoint
+and forwards opaque frames that it cannot read. Traffic classes affect
+resources, never authorization.
 
-| Relay traffic | Concurrent RPCs per daemon | Examples                                                        |
-| ------------- | -------------------------: | --------------------------------------------------------------- |
-| Control       |                          4 | Health and runtime status                                       |
-| Replication   |                          4 | Peer reads and merges                                           |
-| Command       |                         16 | Board edits, messages, and other ordinary RPCs                  |
-| Subscription  |                         64 | Every declared server stream, including KV and screen signaling |
+| Traffic class | Concurrent tunnels per daemon |
+| ------------- | ----------------------------: |
+| Control       |                             4 |
+| Replication   |                             8 |
+| Command       |                            32 |
+| Subscription  |                            32 |
 
-Large payloads travel in 64 KiB fragments, scheduled fairly between streams.
-Logical messages remain bounded to 16 MiB; each daemon channel has a 64 MiB
-allocation budget, backed by independent account (128 MiB) and gateway (256 MiB)
-budgets for that traffic class. These bounds include queued relay responses and
-incomplete payload assemblies. Unconsumed responses fail only their RPC. A writer
-stalled for ten seconds resets its connection. Enrollment revocation closes all
-four connections. The gateway retains no shared project or conversation data.
+Apps and the CLI open command tunnels; one tunnel carries one TLS connection
+and every call on it. Peer sync between daemons uses replication tunnels.
 
-`dieter machine route MACHINE` reports channel connectivity, active calls, limits,
-buffered bytes, rejections, response freshness, and writer stalls. Heartbeat
-presence can remain online while one channel is unavailable.
+Tunnels carry frames of at most 64 KiB. Each direction may have eight frames in
+flight that the other end has not acknowledged, so a slow reader stalls only
+its own tunnel. Each daemon connection has a 64 MiB buffer budget, backed by
+independent account (128 MiB) and gateway (256 MiB) budgets for that traffic
+class. Messages inside a tunnel remain bounded to 16 MiB, and a daemon serves
+at most 64 remote calls at once. A writer stalled for ten seconds resets its
+connection. Enrollment revocation closes all four connections and their
+tunnels. The gateway retains no shared project or conversation data.
+
+`dieter machine route MACHINE` reports channel connectivity, open tunnels,
+limits, buffered bytes, rejections, response freshness, and writer stalls.
+Heartbeat presence can remain online while one channel is unavailable.
 
 ## Durability and bounds
 
@@ -92,7 +103,7 @@ interrupted rather than risking duplicate effects. Runtime leases allow one
 active turn per conversation while permitting independent conversations to run
 concurrently.
 
-Queues, messages, relay streams, output retention, and process counts have
+Queues, messages, relay tunnels, output retention, and process counts have
 resource bounds. A bounded recent transcript can load before complete history;
 clients fetch older messages and large tool output as needed.
 
@@ -136,9 +147,10 @@ files and owner transcripts are outside this replication contract.
 
 ## Screens and terminals
 
-Screen signaling uses authenticated RPC. Video and input use a separately
-admitted WebRTC session, directly or over TURN. The gateway does not relay screen
-media. Four viewers can share a host; one holds the control grant at a time.
+Screen signaling uses the same end-to-end encrypted connection as every other
+call. Video and input use a separately admitted WebRTC session, directly or over
+TURN. The gateway cannot read screen signaling and never relays screen media.
+Four viewers can share a host; one holds the control grant at a time.
 
 Terminal output has a bounded replay cursor. With tmux installed, the shell can
 survive a daemon replacement. Remote executions are a separate exact-argv API
