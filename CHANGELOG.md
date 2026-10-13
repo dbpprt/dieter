@@ -8,6 +8,10 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.6.410
+
 End-to-end encryption between your devices. This release starts the 0.6 line
 and is a clean break: nothing migrates, and every machine and app pairs again
 after the upgrade.
@@ -77,6 +81,11 @@ after the upgrade.
 - OMP and DSH conversations started before this update cannot continue: the
   updated agent adapter no longer accepts their saved session. Start a new
   conversation for them.
+
+### Fixed
+
+- The iOS app no longer crashes when it opens a conversation that contains a
+  fenced Markdown code block. Only optimized release builds were affected.
 
 ## 0.5.405
 
