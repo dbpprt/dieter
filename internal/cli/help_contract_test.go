@@ -46,6 +46,8 @@ var rpcCommand = map[string]string{
 	"GetRemoteDesktopSession":        "screen status", "UpdateRemoteDesktopSession": "screen configure",
 	"GetSchedule": "schedule show", "ListSchedules": "schedule list", "PreviewSchedule": "schedule preview", "CreateSchedule": "schedule create", "UpdateSchedule": "schedule update", "DeleteSchedule": "schedule delete", "RunSchedule": "schedule run", "SetScheduleEnabled": "schedule pause", "ListScheduleRuns": "schedule runs",
 	"GetVaultStatus": "vault status", "InitVault": "vault init", "JoinVault": "vault join", "ApproveVaultMember": "vault approve", "RemoveVaultMember": "vault remove-member", "RotateVault": "vault rotate",
+	"GetTrustStatus": "device status", "GetDeviceRoster": "device roster", "SyncDeviceRoster": "device sync", "InitializeDeviceRoster": "device init",
+	"ListPairingRequests": "device requests", "ApproveDevice": "device approve", "RevokeDevice": "device revoke", "RecoverDeviceTrust": "device recover",
 	"ListVaultItems": "vault list", "GetVaultItem": "vault show", "RevealVaultItem": "vault get", "CreateVaultItem": "vault add", "UpdateVaultItem": "vault edit", "DeleteVaultItem": "vault remove", "ListVaultAudit": "vault audit",
 }
 

@@ -3,7 +3,11 @@ package controlrtc_test
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"errors"
 	"io"
@@ -12,11 +16,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/gateway"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/link"
 	"github.com/dbpprt/dieter/internal/security/trust"
+	"github.com/dbpprt/dieter/internal/testkit"
 	"github.com/dbpprt/dieter/internal/transport/controlrtc"
 	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 	"github.com/pion/turn/v5"
@@ -65,27 +69,33 @@ type fixture struct {
 	configuration *gatewayv1.RTCConfiguration
 	identity      *link.Identity
 	token         string
-	keys          *gateway.Keys
+	signingKey    ed25519.PrivateKey
+	certificate   tls.Certificate
+	daemonKey     []byte
 	local         *service
 }
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	keys, err := gateway.LoadOrCreateKeys(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	signingKey, signing := testkit.SigningKey(t)
 	identity, err := link.LoadOrCreateEnrollmentIdentity(t.TempDir(), "test", "https://gateway.example")
 	if err != nil {
 		t.Fatal(err)
 	}
-	public, _ := identity.PublicKeyDER()
-	certificate, expires, err := keys.IssueDaemonCertificate("d_control", public)
+	if err = identity.SaveCredential("d_control", "test", []byte("enrollment"), signing, time.Now().Add(time.Hour).Format(time.RFC3339Nano), 1); err != nil {
+		t.Fatal(err)
+	}
+	testkit.PinRoster(t, identity.Root, testkit.TestAccount, testkit.DaemonSigner(t, identity.PrivateKey, identity.ID, "test"))
+	deviceTrust, err := link.OpenTrust(identity, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	signing, _ := keys.SigningPublicPEM()
-	if err = identity.SaveCredential("d_control", "test", certificate, keys.DaemonCAPEM, signing, expires.Format(time.RFC3339Nano), 1); err != nil {
+	daemonKey, err := deviceTrust.DaemonKey(identity.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certificate, err := identity.DeviceCertificate()
+	if err != nil {
 		t.Fatal(err)
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -98,7 +108,7 @@ func newFixture(t *testing.T) *fixture {
 	dieterv1.RegisterStateServiceServer(local, handler)
 	go func() { _ = local.Serve(listener) }()
 	t.Cleanup(local.Stop)
-	direct, err := link.NewDirectServer(identity, listener.Addr().String(), "local-token")
+	direct, err := link.NewDirectServer(identity, deviceTrust, listener.Addr().String(), "local-token")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,11 +120,8 @@ func newFixture(t *testing.T) *fixture {
 	t.Cleanup(direct.Stop)
 	manager := controlrtc.New(controlrtc.Identity{DaemonID: identity.ID, GatewayURL: identity.GatewayURL, Generation: 1, GatewaySigningPublicKey: signing}, directListener.Addr().String())
 	t.Cleanup(manager.Close)
-	token, _, err := keys.SignDaemonToken(identity.GatewayURL, identity.ID, 42, 1, "", 5*time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	f := &fixture{manager: manager, identity: identity, token: token, keys: keys, local: handler}
+	token, _ := testkit.DaemonToken(t, signingKey, identity.GatewayURL, identity.ID, 1, identity.DeviceID(), 5*time.Minute)
+	f := &fixture{manager: manager, identity: identity, token: token, signingKey: signingKey, certificate: certificate, daemonKey: daemonKey, local: handler}
 	f.configuration = &gatewayv1.RTCConfiguration{DaemonId: identity.ID, DaemonGeneration: 1, OperatorSubject: "github:42", ConfigurationId: "rtc_control", ExpiresAt: time.Now().Add(5 * time.Minute).UTC().Format(time.RFC3339Nano)}
 	f.sign(t)
 	return f
@@ -123,7 +130,7 @@ func (f *fixture) sign(t *testing.T) {
 	f.configuration.SignedEnvelope = nil
 	raw, _ := proto.MarshalOptions{Deterministic: true}.Marshal(f.configuration)
 	digest := sha256.Sum256(raw)
-	signed, err := f.keys.SignRTCConfiguration(f.identity.GatewayURL, trust.RTCConfigurationClaims{Audience: "board-daemon:" + f.identity.ID, Subject: "github:42", ID: f.configuration.ConfigurationId, ConfigurationHash: base64.RawURLEncoding.EncodeToString(digest[:]), DaemonGeneration: 1, IssuedAt: time.Now().Unix(), ExpiresAt: time.Now().Add(5 * time.Minute).Unix()})
+	signed, err := trust.SignCompact(f.signingKey, trust.RTCConfigurationClaims{Issuer: f.identity.GatewayURL, Audience: "board-daemon:" + f.identity.ID, Subject: "github:42", ID: f.configuration.ConfigurationId, ConfigurationHash: base64.RawURLEncoding.EncodeToString(digest[:]), DaemonGeneration: 1, IssuedAt: time.Now().Unix(), ExpiresAt: time.Now().Add(5 * time.Minute).Unix()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,14 +203,14 @@ func TestControlTLSRPCDirectAndTURN(t *testing.T) {
 			}
 			t.Cleanup(func() { stream.Close() })
 			var once sync.Once
-			connection, err := link.DialDirectWithCredentials(ctx, "passthrough:///rtc", f.identity.ID, f.identity.DaemonCAPEM, bearer(f.token), grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			connection, err := link.DialDaemon(f.certificate, f.daemonKey, bearer(f.token), func(context.Context, string) (net.Conn, error) {
 				var result net.Conn
 				once.Do(func() { result = stream })
 				if result == nil {
 					return nil, io.EOF
 				}
 				return result, nil
-			}))
+			})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -277,13 +284,22 @@ func TestControlRejectsTamperedConfiguration(t *testing.T) {
 
 func TestControlTLSAuthenticatesBothEndpoints(t *testing.T) {
 	t.Parallel()
+	other, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherKey, err := x509.MarshalPKIXPublicKey(other)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, test := range []struct {
-		name, identity, token string
-		want                  codes.Code
+		name, token string
+		otherDaemon bool
+		want        codes.Code
 	}{
-		{"missing bearer", "d_control", "", codes.Unauthenticated},
-		{"invalid bearer", "d_control", "invalid", codes.Unauthenticated},
-		{"wrong daemon identity", "d_other", "valid", codes.DeadlineExceeded},
+		{"missing bearer", "", false, codes.Unauthenticated},
+		{"invalid bearer", "invalid", false, codes.Unauthenticated},
+		{"wrong daemon key", "valid", true, codes.Unavailable},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			f := newFixture(t)
@@ -299,20 +315,24 @@ func TestControlTLSAuthenticatesBothEndpoints(t *testing.T) {
 				token = f.token
 			}
 			var once sync.Once
-			conn, err := link.DialDirectWithCredentials(ctx, "passthrough:///rtc", test.identity, f.identity.DaemonCAPEM, bearer(token), grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			daemonKey := f.daemonKey
+			if test.otherDaemon {
+				daemonKey = otherKey
+			}
+			conn, err := link.DialDaemon(f.certificate, daemonKey, bearer(token), func(context.Context, string) (net.Conn, error) {
 				var result net.Conn
 				once.Do(func() { result = stream })
 				if result == nil {
 					return nil, io.EOF
 				}
 				return result, nil
-			}))
+			})
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer conn.Close()
 			_, err = dieterclient.New(conn).Health(ctx, &emptypb.Empty{})
-			if status.Code(err) != test.want && !(test.identity == "d_other" && status.Code(err) == codes.Unavailable) {
+			if status.Code(err) != test.want && !(test.otherDaemon && status.Code(err) == codes.DeadlineExceeded) {
 				t.Fatalf("authentication failure=%v, want %v", err, test.want)
 			}
 		})

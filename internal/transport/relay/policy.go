@@ -1,5 +1,6 @@
-// Package relaypolicy owns the gateway and daemon's transport resource contract.
-// Lanes change scheduling, never authorization or execution ownership.
+// Package relay owns the gateway and daemon's tunnel resource contract. Lanes
+// change scheduling, never authorization or execution ownership. Tunnels carry
+// opaque bytes: the gateway never parses what flows through them.
 package relay
 
 import (
@@ -7,67 +8,44 @@ import (
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
-	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"google.golang.org/protobuf/reflect/protoreflect"
-	"google.golang.org/protobuf/reflect/protoregistry"
 )
 
 type Lane = gatewayv1.RelayLane
 
 const (
-	ControlCalls      = 4
-	ReplicationCalls  = 4
-	CommandCalls      = 16
-	SubscriptionCalls = 64
-	Control           = gatewayv1.RelayLane_RELAY_LANE_CONTROL
-	Replication       = gatewayv1.RelayLane_RELAY_LANE_REPLICATION
-	Command           = gatewayv1.RelayLane_RELAY_LANE_COMMAND
-	Subscription      = gatewayv1.RelayLane_RELAY_LANE_SUBSCRIPTION
-	ChunkBytes        = 64 << 10
-	MessageBytes      = 16 << 20
-	BufferedBytes     = 64 << 20
-	WriteTimeout      = 10 * time.Second
-	AssemblyTimeout   = 30 * time.Second
+	Control       = gatewayv1.RelayLane_RELAY_LANE_CONTROL
+	Replication   = gatewayv1.RelayLane_RELAY_LANE_REPLICATION
+	Command       = gatewayv1.RelayLane_RELAY_LANE_COMMAND
+	Subscription  = gatewayv1.RelayLane_RELAY_LANE_SUBSCRIPTION
+	ChunkBytes    = 64 << 10
+	BufferedBytes = 64 << 20
+	WriteTimeout  = 10 * time.Second
 )
 
 var Lanes = [...]Lane{Control, Replication, Command, Subscription}
 
-func Valid(lane Lane) bool { return lane >= Control && lane <= Subscription }
-func Limit(lane Lane) int {
+// TunnelWindow is how many DATA frames of ChunkBytes a tunnel side may send
+// before the other side credits them. Credits are end to end between client
+// and daemon; the gateway only forwards them and enforces the window.
+const TunnelWindow = 8
+
+// TunnelLimit bounds the concurrent tunnels of one daemon on lane. A tunnel
+// multiplexes every call of one client connection.
+func TunnelLimit(lane Lane) int {
 	switch lane {
 	case Control:
-		return ControlCalls
+		return 4
 	case Replication:
-		return ReplicationCalls
-	case Command:
-		return CommandCalls
-	case Subscription:
-		return SubscriptionCalls
+		return 8
+	case Command, Subscription:
+		return 32
 	default:
 		return 0
 	}
 }
 
-// subscriptions holds the server-streaming methods of every dieter.v1
-// service, including WatchKV and StartRemoteDesktop, keyed by full method path.
-// Unknown methods receive ordinary admission and remain subject to the
-// daemon's explicit Unimplemented response.
-var subscriptions = func() map[string]bool {
-	result := map[string]bool{}
-	protoregistry.GlobalFiles.RangeFilesByPackage(dieterPackage, func(file protoreflect.FileDescriptor) bool {
-		services := file.Services()
-		for i := 0; i < services.Len(); i++ {
-			methods := services.Get(i).Methods()
-			for j := 0; j < methods.Len(); j++ {
-				if method := methods.Get(j); method.IsStreamingServer() {
-					result[FullMethod(method)] = true
-				}
-			}
-		}
-		return true
-	})
-	return result
-}()
+func Valid(lane Lane) bool { return lane >= Control && lane <= Subscription }
 
 const dieterPackage = protoreflect.FullName("dieter.v1")
 
@@ -76,28 +54,9 @@ func FullMethod(method protoreflect.MethodDescriptor) string {
 	return "/" + string(method.Parent().FullName()) + "/" + string(method.Name())
 }
 
-// Method assigns a relayed Dieter RPC to its lane.
-func Method(method string) Lane {
-	switch method {
-	case dieterv1.MachineService_Health_FullMethodName, dieterv1.MachineService_GetRuntimeStatus_FullMethodName:
-		return Control
-	}
-	switch method {
-	case dieterv1.PeerService_GetPeerChanges_FullMethodName, dieterv1.PeerService_GetPeerRecord_FullMethodName,
-		dieterv1.PeerService_GetPeerStoreStatus_FullMethodName, dieterv1.PeerService_ListPeerRecords_FullMethodName,
-		dieterv1.PeerService_MergePeerRecords_FullMethodName:
-		return Replication
-	}
-	if subscriptions[method] {
-		return Subscription
-	}
-	return Command
-}
-
 // DaemonMethod reports whether a gRPC path belongs to the daemon API: any
-// dieter.v1 service. It is the only API the gateway relays and direct routes
-// serve. It checks the package rather than a method list, so a gateway that is
-// older than its daemons still relays newer RPCs; daemons answer unknown
+// dieter.v1 service. It is the only API a daemon's direct endpoint serves. It
+// checks the package rather than a method list; daemons answer unknown
 // methods with Unimplemented.
 func DaemonMethod(method string) bool {
 	rest, ok := strings.CutPrefix(method, "/"+string(dieterPackage)+".")

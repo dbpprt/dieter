@@ -3,22 +3,71 @@ package replica
 import (
 	"bytes"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 
+	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/platform/fault"
 	"github.com/dbpprt/dieter/internal/replication/crdt"
 	"github.com/dbpprt/dieter/internal/replication/schema"
+	"github.com/dbpprt/dieter/internal/security/roster"
+	"google.golang.org/protobuf/proto"
 )
 
 type peerCredential struct {
-	ID          string `json:"id"`
-	Certificate []byte `json:"certificatePem"`
-	CA          []byte `json:"daemonCaPem"`
+	ID string `json:"id"`
+}
+
+// ownerKeyCache holds the daemon keys of the pinned device roster
+// (daemon/roster.pb, written only by internal/link), keyed by its content.
+type ownerKeyCache struct {
+	mu     sync.Mutex
+	digest [sha256.Size]byte
+	keys   map[string][]ed25519.PublicKey
+}
+
+// ownerKeys returns, per daemon ID, every key the verified roster ever bound
+// to it, revoked ones included, so historical owner edits stay valid.
+func (s *Store) ownerKeys() (func(string) []ed25519.PublicKey, error) {
+	raw, err := os.ReadFile(filepath.Join(s.home.Root, "daemon", "roster.pb"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, fault.New(fault.FailedPrecondition, "this machine has no trusted device roster yet")
+	}
+	if err != nil {
+		return nil, err
+	}
+	digest := sha256.Sum256(raw)
+	cache := &s.ownerKeyCache
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	if cache.keys == nil || cache.digest != digest {
+		var value gatewayv1.DeviceRoster
+		if err := proto.Unmarshal(raw, &value); err != nil {
+			return nil, err
+		}
+		state, err := roster.Verify(value.GetEntries())
+		if err != nil {
+			return nil, fault.Wrap(fault.FailedPrecondition, err)
+		}
+		keys := map[string][]ed25519.PublicKey{}
+		for _, member := range state.Members() {
+			if member.Descriptor.GetKind() != gatewayv1.DeviceKind_DEVICE_KIND_DAEMON {
+				continue
+			}
+			if key, ok := member.PublicKey().(ed25519.PublicKey); ok {
+				keys[member.Descriptor.GetDaemonId()] = append(keys[member.Descriptor.GetDaemonId()], key)
+			}
+		}
+		cache.digest, cache.keys = digest, keys
+	}
+	keys := cache.keys
+	return func(owner string) []ed25519.PublicKey { return keys[owner] }, nil
 }
 
 func (s *Store) peerCredential() (peerCredential, error) {
@@ -82,7 +131,7 @@ func (s *Store) signOwnerRecord(account string, data PeerData, r crdt.Record) (c
 				return r, fault.New(fault.Invalid, "invalid daemon signing key type")
 			}
 		}
-		versions[i] = crdt.SignOwnerVersion(account, r, v, credential.ID, credential.Certificate, private)
+		versions[i] = crdt.SignOwnerVersion(account, r, v, credential.ID, private)
 	}
 	r.Versions = versions
 	return r, nil
@@ -118,9 +167,9 @@ func (s *Store) validatePeerDomainMerge(data PeerData, old, incoming crdt.Record
 	if err != nil || credential.ID == "" {
 		return err
 	}
-	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM(credential.CA) {
-		return fault.New(fault.Invalid, "missing enrolled trust root")
+	roots, err := s.ownerKeys()
+	if err != nil {
+		return err
 	}
 	identity, err := s.PeerIdentity()
 	if err != nil {

@@ -1,8 +1,9 @@
 // Package topology runs isolated in-process gateway and daemon topologies on
 // random loopback ports: a gateway with its own state root, enrolled daemons
-// serving the Dieter API through reverse tunnels and optional direct TLS
-// routes, and signed-in client sessions. Tests use the testing.TB helpers;
-// fixture programs use the error-returning constructors.
+// whose device roster is started and paired exactly as in production, serving
+// the Dieter API through relay tunnels and optional direct TLS routes, and
+// paired test clients. Tests use the testing.TB helpers; fixture programs use
+// the error-returning constructors.
 package topology
 
 import (
@@ -19,11 +20,14 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dbpprt/dieter/internal/api"
 	"github.com/dbpprt/dieter/internal/gateway"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/link"
 	"github.com/dbpprt/dieter/internal/security/localauth"
 	"github.com/dbpprt/dieter/internal/store"
@@ -39,8 +43,10 @@ const (
 	// ClientVersion is the release tests report for clients and tunnels.
 	ClientVersion = "0.4.1-dev"
 	// ReadyTimeout bounds how long a started daemon may take to register its
-	// relay with the gateway.
+	// relay with the gateway, and a pairing to complete.
 	ReadyTimeout = 10 * time.Second
+	// PairingPoll is how often pending daemons check for their approval.
+	PairingPoll = 25 * time.Millisecond
 )
 
 // GatewayOptions configures an isolated gateway. Configure runs last and may
@@ -56,6 +62,8 @@ type GatewayOptions struct {
 	SessionTTL time.Duration
 	Logger     *slog.Logger
 	Configure  func(*gateway.Config)
+	// Listen wraps the gateway's listener, e.g. to record every byte.
+	Listen func(net.Listener) net.Listener
 }
 
 // Gateway is a running in-process gateway.
@@ -69,6 +77,10 @@ type Gateway struct {
 
 	listener net.Listener
 	login    string
+	mu       sync.Mutex
+	// trusted holds the paired daemons of each account, first the one that
+	// started its roster.
+	trusted map[int64][]*Daemon
 }
 
 // NewGateway starts a gateway in development mode (plaintext, no GitHub).
@@ -136,19 +148,22 @@ func NewGateway(options GatewayOptions) (*Gateway, error) {
 		_ = listener.Close()
 		return nil, err
 	}
-	go func() { _ = server.Serve(listener) }()
+	served := listener
+	if options.Listen != nil {
+		served = options.Listen(listener)
+	}
+	go func() { _ = server.Serve(served) }()
 	login := options.Login
 	if login == "" {
 		login = "owner"
 	}
-	return &Gateway{Config: config, Store: data, Server: server, Address: listener.Addr().String(), URL: config.PublicURL.String(), listener: listener, login: login}, nil
+	return &Gateway{Config: config, Store: data, Server: server, Address: listener.Addr().String(), URL: config.PublicURL.String(), listener: listener, login: login, trusted: map[int64][]*Daemon{}}, nil
 }
 
 // Close stops the gateway's listener, gRPC services, and store.
 func (g *Gateway) Close() {
 	_ = g.listener.Close()
 	g.Server.APIGRPC.Stop()
-	g.Server.RelayGRPC.Stop()
 	_ = g.Store.Close()
 }
 
@@ -171,7 +186,7 @@ func (g *Gateway) Enroll(ctx context.Context, root, name string, account int64) 
 		return nil, fmt.Errorf("complete enrollment of %s: %w", name, err)
 	}
 	identity.GatewayIssuer = credential.GetGatewayIssuer()
-	if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetDaemonCaPem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
+	if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
 		return nil, err
 	}
 	return identity, nil
@@ -212,10 +227,24 @@ func Authorized(ctx context.Context, session string) context.Context {
 	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+session, "x-dieter-client-version", ClientVersion)
 }
 
-// Routed attaches a client session and a target daemon to ctx, so gateway
-// Daemon API calls relay to that daemon.
-func Routed(ctx context.Context, session, daemonID string) context.Context {
-	return metadata.AppendToOutgoingContext(Authorized(ctx, session), "x-dieter-daemon-id", daemonID)
+// sessionConn authenticates every gateway call, including relay tunnels,
+// with a client session.
+type sessionConn struct {
+	grpc.ClientConnInterface
+	session string
+}
+
+func (c sessionConn) Invoke(ctx context.Context, method string, in, out any, opts ...grpc.CallOption) error {
+	return c.ClientConnInterface.Invoke(Authorized(ctx, c.session), method, in, out, opts...)
+}
+
+func (c sessionConn) NewStream(ctx context.Context, desc *grpc.StreamDesc, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+	return c.ClientConnInterface.NewStream(Authorized(ctx, c.session), desc, method, opts...)
+}
+
+// SessionConn wraps a gateway connection so every call carries session.
+func SessionConn(conn grpc.ClientConnInterface, session string) grpc.ClientConnInterface {
+	return sessionConn{conn, session}
 }
 
 // DaemonOptions configures an in-process daemon behind a gateway.
@@ -237,10 +266,13 @@ type DaemonOptions struct {
 	Version string
 	// Direct serves and advertises an authenticated loopback direct TLS route.
 	Direct bool
-	// ControlWebRTC offers WebRTC control connections. They forward to their
-	// own unadvertised direct TLS route, so a test can stop the advertised
-	// route and keep WebRTC, or the reverse.
+	// ControlWebRTC offers WebRTC control connections. They reach the daemon's
+	// unadvertised tunnel endpoint, so a test can stop the advertised route and
+	// keep WebRTC, or the reverse.
 	ControlWebRTC bool
+	// Untrusted leaves the device roster alone: the daemon starts no roster
+	// and nobody approves it.
+	Untrusted bool
 	// Tunnel adjusts the gateway client before it runs.
 	Tunnel func(*link.GatewayClient)
 	// NoWait returns before the gateway registered the relay.
@@ -248,27 +280,37 @@ type DaemonOptions struct {
 	Logger *slog.Logger
 }
 
-// Daemon is an enrolled in-process daemon: its store, API server, optional
-// direct route, and reverse tunnel.
+// Daemon is an enrolled in-process daemon: its store, device trust, API
+// server, routes, and reverse tunnel.
 type Daemon struct {
 	Identity *link.Identity
 	Store    *store.Store
+	Trust    *link.Trust
 	API      *api.Server
 	// Address is the loopback API address; Token authenticates it.
 	Address string
 	Token   string
-	Direct  *link.DirectRoute
-	Control *controlrtc.Manager
-	Tunnel  *link.GatewayClient
+	// Direct is the advertised direct route, when requested.
+	Direct *link.DirectRoute
+	// Endpoint is the unadvertised TLS route that relay tunnels and WebRTC
+	// control channels reach.
+	Endpoint *link.DirectRoute
+	Control  *controlrtc.Manager
+	Tunnel   *link.GatewayClient
+	Account  int64
 
-	http         *http.Server
-	controlRoute *link.DirectRoute
-	stopTunnel   context.CancelFunc
-	tunnelDone   chan struct{}
+	http       *http.Server
+	closed     atomic.Bool
+	stopTrust  context.CancelFunc
+	trustDone  chan struct{}
+	stopTunnel context.CancelFunc
+	tunnelDone chan struct{}
 }
 
 // StartDaemon enrolls (unless options.Identity is set) and starts a daemon
-// whose tunnel connects to g. It waits until the gateway relays to it.
+// whose tunnel connects to g. It waits until the gateway relays to it and,
+// unless options.Untrusted, until it is a trusted device of its account: the
+// account's first daemon starts the roster, later ones are paired by it.
 func (g *Gateway) StartDaemon(ctx context.Context, options DaemonOptions) (*Daemon, error) {
 	if options.API.Runner == nil || options.API.Catalog == nil {
 		return nil, errors.New("topology: daemon API needs a runner and a catalog")
@@ -277,14 +319,14 @@ func (g *Gateway) StartDaemon(ctx context.Context, options DaemonOptions) (*Daem
 	if logger == nil {
 		logger = discard()
 	}
+	account := options.Account
+	if account == 0 {
+		account = Account
+	}
 	identity := options.Identity
 	if identity == nil {
 		if options.Root == "" {
 			return nil, errors.New("topology: daemon root is required")
-		}
-		account := options.Account
-		if account == 0 {
-			account = Account
 		}
 		var err error
 		if identity, err = g.Enroll(ctx, options.Root, options.Name, account); err != nil {
@@ -302,36 +344,48 @@ func (g *Gateway) StartDaemon(ctx context.Context, options DaemonOptions) (*Daem
 	if err != nil {
 		return nil, err
 	}
+	deviceTrust, err := link.OpenTrust(identity, logger)
+	if err != nil {
+		return nil, err
+	}
+	deviceTrust.PairingPoll = PairingPoll
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, err
 	}
-	daemon := &Daemon{Identity: identity, Store: data, Address: listener.Addr().String(), Token: token}
+	daemon := &Daemon{Identity: identity, Store: data, Trust: deviceTrust, Address: listener.Addr().String(), Token: token, Account: account}
+	if daemon.Endpoint, err = serveDirectRoute(identity, deviceTrust, daemon.Address, token, "endpoint"); err != nil {
+		_ = listener.Close()
+		return nil, err
+	}
 	var routes []*gatewayv1.DirectCandidate
 	if options.Direct {
-		if daemon.Direct, err = serveDirectRoute(identity, daemon.Address, token, "loopback"); err != nil {
+		if daemon.Direct, err = serveDirectRoute(identity, deviceTrust, daemon.Address, token, "loopback"); err != nil {
+			daemon.Close()
 			_ = listener.Close()
 			return nil, err
 		}
 		routes = append(routes, daemon.Direct.Candidate)
 	}
 	if options.ControlWebRTC {
-		if daemon.controlRoute, err = serveDirectRoute(identity, daemon.Address, token, "control"); err != nil {
-			daemon.Close()
-			_ = listener.Close()
-			return nil, err
-		}
-		daemon.Control = controlrtc.New(controlrtc.Identity{DaemonID: identity.ID, GatewayURL: identity.Issuer(), Generation: identity.Generation, GatewaySigningPublicKey: identity.GatewaySigningPublicKey}, daemon.controlRoute.Listener.Addr().String())
+		daemon.Control = controlrtc.New(controlrtc.Identity{DaemonID: identity.ID, GatewayURL: identity.Issuer(), Generation: identity.Generation, GatewaySigningPublicKey: identity.GatewaySigningPublicKey}, daemon.Endpoint.Listener.Addr().String())
 		options.API.ControlRTC = daemon.Control
 	}
+	options.API.Trust = deviceTrust
 	daemon.API = api.NewWithOptions(data, logger, options.API)
 	daemon.http = &http.Server{Handler: daemon.API.Handler(), Protocols: api.LoopbackProtocols()}
 	go func() { _ = daemon.http.Serve(listener) }()
+	trustCtx, stopTrust := context.WithCancel(context.WithoutCancel(ctx))
+	daemon.stopTrust, daemon.trustDone = stopTrust, make(chan struct{})
+	go func() {
+		defer close(daemon.trustDone)
+		deviceTrust.Run(trustCtx)
+	}()
 	version := options.Version
 	if version == "" {
 		version = ClientVersion
 	}
-	daemon.Tunnel = &link.GatewayClient{Identity: identity, LocalTarget: daemon.Address, LocalToken: token, Version: version, Routes: routes, ControlWebRTC: options.ControlWebRTC, Log: logger}
+	daemon.Tunnel = &link.GatewayClient{Identity: identity, TunnelTarget: daemon.Endpoint.Listener.Addr().String(), Version: version, Routes: routes, ControlWebRTC: options.ControlWebRTC, Log: logger}
 	if options.Tunnel != nil {
 		options.Tunnel(daemon.Tunnel)
 	}
@@ -343,15 +397,89 @@ func (g *Gateway) StartDaemon(ctx context.Context, options DaemonOptions) (*Daem
 		daemon.Close()
 		return nil, err
 	}
+	if !options.Untrusted {
+		if err := g.Trust(ctx, daemon); err != nil {
+			daemon.Close()
+			return nil, err
+		}
+	}
 	return daemon, nil
 }
 
-// WaitRelay waits until the gateway relays to daemonID.
-func (g *Gateway) WaitRelay(ctx context.Context, daemonID string) error {
+// Trust makes daemon a trusted device of its account: the first daemon of an
+// account starts its roster, every later one shows a code that the first
+// trusted daemon approves through the production pairing path.
+func (g *Gateway) Trust(ctx context.Context, daemon *Daemon) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	members := g.trusted[daemon.Account]
+	for _, member := range members {
+		if member == daemon {
+			return nil
+		}
+	}
+	switch {
+	case daemon.Trust.State() == dieterv1.TrustState_TRUST_STATE_TRUSTED:
+		// A restarted daemon keeps the roster it pinned.
+	case len(members) == 0:
+		if _, _, err := daemon.Trust.Initialize(ctx, false); err != nil {
+			return fmt.Errorf("start the device roster on %s: %w", daemon.Identity.Name, err)
+		}
+	default:
+		approver := members[0]
+		for _, member := range members {
+			if !member.closed.Load() {
+				approver = member
+				break
+			}
+		}
+		if err := Pair(ctx, approver.Trust, daemon.Trust); err != nil {
+			return fmt.Errorf("pair %s: %w", daemon.Identity.Name, err)
+		}
+	}
+	g.trusted[daemon.Account] = append(members, daemon)
+	// Every running trusted daemon learns the new member before a test uses it.
+	return waitFor(ctx, func() bool {
+		for _, member := range g.trusted[daemon.Account] {
+			if member.closed.Load() {
+				continue
+			}
+			for _, other := range g.trusted[daemon.Account] {
+				if _, err := member.Trust.DaemonKey(other.Identity.ID); err != nil && !other.closed.Load() {
+					return false
+				}
+			}
+		}
+		return true
+	}, "trusted daemons to see every member")
+}
+
+// Pair approves pending through approver with the code pending shows, and
+// waits until pending pinned the roster.
+func Pair(ctx context.Context, approver, pending *link.Trust) error {
+	var code string
+	if err := waitFor(ctx, func() bool {
+		code = pending.Status().GetPairingCode()
+		return pending.State() == dieterv1.TrustState_TRUST_STATE_PENDING && code != ""
+	}, "a pairing code"); err != nil {
+		return err
+	}
+	// The code shows as soon as it exists; its request may still be on its way.
+	var approveErr error
+	if err := waitFor(ctx, func() bool {
+		_, approveErr = approver.Approve(ctx, code)
+		return approveErr == nil
+	}, "the pairing request"); err != nil {
+		return errors.Join(err, approveErr)
+	}
+	return waitFor(ctx, func() bool { return pending.State() == dieterv1.TrustState_TRUST_STATE_TRUSTED }, "the paired device to pin the roster")
+}
+
+func waitFor(ctx context.Context, condition func() bool, what string) error {
 	deadline := time.Now().Add(ReadyTimeout)
-	for !g.Server.Hub.RelayReady(daemonID) {
+	for !condition() {
 		if time.Now().After(deadline) {
-			return fmt.Errorf("daemon %s did not connect to the gateway within %s", daemonID, ReadyTimeout)
+			return fmt.Errorf("timed out after %s waiting for %s", ReadyTimeout, what)
 		}
 		select {
 		case <-ctx.Done():
@@ -360,6 +488,11 @@ func (g *Gateway) WaitRelay(ctx context.Context, daemonID string) error {
 		}
 	}
 	return nil
+}
+
+// WaitRelay waits until the gateway relays to daemonID.
+func (g *Gateway) WaitRelay(ctx context.Context, daemonID string) error {
+	return waitFor(ctx, func() bool { return g.Server.Hub.RelayReady(daemonID) }, "daemon "+daemonID+" to connect to the gateway")
 }
 
 // StartTunnel runs the daemon's gateway tunnel until StopTunnel or Close.
@@ -385,14 +518,20 @@ func (d *Daemon) StopTunnel() {
 	d.stopTunnel, d.tunnelDone = nil, nil
 }
 
-// Close stops the tunnel, the control connections, the direct route, and
-// the API server.
+// Close stops the tunnel, device trust, the control connections, the routes,
+// and the API server.
 func (d *Daemon) Close() {
+	d.closed.Store(true)
 	d.StopTunnel()
+	if d.stopTrust != nil {
+		d.stopTrust()
+		<-d.trustDone
+		d.stopTrust = nil
+	}
 	if d.Control != nil {
 		d.Control.Close()
 	}
-	for _, route := range []*link.DirectRoute{d.controlRoute, d.Direct} {
+	for _, route := range []*link.DirectRoute{d.Endpoint, d.Direct} {
 		if route != nil {
 			route.Server.Stop()
 			_ = route.Listener.Close()
@@ -401,10 +540,13 @@ func (d *Daemon) Close() {
 	if d.http != nil {
 		_ = d.http.Close()
 	}
+	if d.Trust != nil {
+		d.Trust.Close()
+	}
 }
 
-func serveDirectRoute(identity *link.Identity, target, token, id string) (*link.DirectRoute, error) {
-	route, err := link.NewDirectRoute(identity, target, token, id, "127.0.0.1:0", "127.0.0.1", "loopback", 1000)
+func serveDirectRoute(identity *link.Identity, deviceTrust *link.Trust, target, token, id string) (*link.DirectRoute, error) {
+	route, err := link.NewDirectRoute(identity, deviceTrust, target, token, id, "127.0.0.1:0", "127.0.0.1", "loopback", 1000)
 	if err != nil {
 		return nil, err
 	}

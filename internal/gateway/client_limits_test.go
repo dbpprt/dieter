@@ -96,7 +96,6 @@ func TestGatewayBoundsHandshakesPerClientBeforeReadingBody(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer gateway.APIGRPC.Stop()
-	defer gateway.RelayGRPC.Stop()
 	gateway.Hub.handshakeClients.held["192.0.2.1"] = maxDaemonHandshakesPerClient
 	connect := func(remote string, body *repeatedBody) *httptest.ResponseRecorder {
 		request := httptest.NewRequest(http.MethodPost, "/dieter.gateway.v1.DaemonLinkService/Connect", body)

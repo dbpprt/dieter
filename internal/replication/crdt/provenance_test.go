@@ -3,35 +3,23 @@ package crdt
 import (
 	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/pem"
-	"math/big"
 	"testing"
-	"time"
 )
 
 func TestOwnerProvenanceBindsAccountRecordValueAndCausalClock(t *testing.T) {
 	t.Parallel()
 	pub, key, _ := ed25519.GenerateKey(rand.Reader)
-	now := time.Now()
-	ca := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "test root"}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign}
-	caDER, err := x509.CreateCertificate(rand.Reader, ca, ca, pub, key)
-	if err != nil {
-		t.Fatal(err)
+	other, _, _ := ed25519.GenerateKey(rand.Reader)
+	keys := func(owner string) []ed25519.PublicKey {
+		if owner == "machine_a" {
+			return []ed25519.PublicKey{other, pub}
+		}
+		return nil
 	}
-	ca, _ = x509.ParseCertificate(caDER)
-	leaf := &x509.Certificate{SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: "machine_a"}, NotBefore: now.Add(-time.Minute), NotAfter: now.Add(time.Minute), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}
-	der, err := x509.CreateCertificate(rand.Reader, leaf, ca, pub, key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	roots := x509.NewCertPool()
-	roots.AddCert(ca)
 	record := Record{Kind: "item", ID: "card.identity"}
 	version := Version{Clock: Clock{"actor_a": 1}, Value: []byte(`{"ownerDaemonId":"machine_a"}`)}
-	signed := SignOwnerVersion("account", record, version, "machine_a", pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), key)
-	if owner, err := VerifyOwnerVersion("account", record, signed, roots); err != nil || owner != "machine_a" {
+	signed := SignOwnerVersion("account", record, version, "machine_a", key)
+	if owner, err := VerifyOwnerVersion("account", record, signed, keys); err != nil || owner != "machine_a" {
 		t.Fatal(owner, err)
 	}
 	for _, change := range []func(*Record, *Version){
@@ -42,15 +30,19 @@ func TestOwnerProvenanceBindsAccountRecordValueAndCausalClock(t *testing.T) {
 	} {
 		r, v := record, signed
 		change(&r, &v)
-		if _, err := VerifyOwnerVersion("account", r, v, roots); err == nil {
+		if _, err := VerifyOwnerVersion("account", r, v, keys); err == nil {
 			t.Fatal("forged owner record accepted")
 		}
 	}
-	if _, err := VerifyOwnerVersion("another-account", record, signed, roots); err == nil {
+	if _, err := VerifyOwnerVersion("another-account", record, signed, keys); err == nil {
 		t.Fatal("cross-account proof accepted")
 	}
-	if _, err := VerifyOwnerVersion("account", record, signed, x509.NewCertPool()); err == nil {
-		t.Fatal("untrusted certificate accepted")
+	if _, err := VerifyOwnerVersion("account", record, signed, func(string) []ed25519.PublicKey { return []ed25519.PublicKey{other} }); err == nil {
+		t.Fatal("a key outside the roster verified")
+	}
+	forged := SignOwnerVersion("account", record, version, "machine_b", key)
+	if _, err := VerifyOwnerVersion("account", record, forged, keys); err == nil {
+		t.Fatal("a daemon signed for another owner")
 	}
 }
 

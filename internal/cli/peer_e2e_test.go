@@ -102,7 +102,9 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner := &peersync.PeerSync{Identity: a, Store: sa, RelayOnly: wantRoute == "webrtc-turn"}
+	// A's daemon is played by this test: its device trust joins B's roster.
+	trustA := topology.Join(t, g, daemonB, a)
+	runner := &peersync.PeerSync{Identity: a, Trust: trustA, Store: sa, RelayOnly: wantRoute == "webrtc-turn"}
 	if err = runner.Round(ctx); err != nil {
 		t.Fatal(err)
 	}

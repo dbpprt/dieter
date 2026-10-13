@@ -39,6 +39,13 @@ const (
 	GatewayService_RefreshProviderQuotas_FullMethodName            = "/dieter.gateway.v1.GatewayService/RefreshProviderQuotas"
 	GatewayService_SetProviderQuotaSummaryInclusion_FullMethodName = "/dieter.gateway.v1.GatewayService/SetProviderQuotaSummaryInclusion"
 	GatewayService_ConsumeProviderQuotaReset_FullMethodName        = "/dieter.gateway.v1.GatewayService/ConsumeProviderQuotaReset"
+	GatewayService_GetDeviceRoster_FullMethodName                  = "/dieter.gateway.v1.GatewayService/GetDeviceRoster"
+	GatewayService_WatchDeviceRoster_FullMethodName                = "/dieter.gateway.v1.GatewayService/WatchDeviceRoster"
+	GatewayService_AppendDeviceRoster_FullMethodName               = "/dieter.gateway.v1.GatewayService/AppendDeviceRoster"
+	GatewayService_PostPairingRequest_FullMethodName               = "/dieter.gateway.v1.GatewayService/PostPairingRequest"
+	GatewayService_ListPairingRequests_FullMethodName              = "/dieter.gateway.v1.GatewayService/ListPairingRequests"
+	GatewayService_ConfirmPairingRequest_FullMethodName            = "/dieter.gateway.v1.GatewayService/ConfirmPairingRequest"
+	GatewayService_DeletePairingRequest_FullMethodName             = "/dieter.gateway.v1.GatewayService/DeletePairingRequest"
 )
 
 // GatewayServiceClient is the client API for GatewayService service.
@@ -48,7 +55,9 @@ const (
 // GatewayService is Dieter's account and machine directory. Project,
 // conversation, schedule, file, and provider credential data never enters this
 // service. The gateway may cache normalized, credential-free provider quota
-// snapshots for the authenticated account.
+// snapshots for the authenticated account. It also stores the account's signed
+// device roster and short-lived pairing requests: public keys and display
+// names that devices verify themselves. The gateway cannot extend the roster.
 type GatewayServiceClient interface {
 	// GetCompatibility is the stable, unauthenticated bootstrap used before
 	// sign-in. It contains no account or machine data.
@@ -78,6 +87,25 @@ type GatewayServiceClient interface {
 	RefreshProviderQuotas(ctx context.Context, in *RefreshProviderQuotasRequest, opts ...grpc.CallOption) (*RefreshProviderQuotasResponse, error)
 	SetProviderQuotaSummaryInclusion(ctx context.Context, in *SetProviderQuotaSummaryInclusionRequest, opts ...grpc.CallOption) (*SetProviderQuotaSummaryInclusionResponse, error)
 	ConsumeProviderQuotaReset(ctx context.Context, in *ConsumeProviderQuotaResetRequest, opts ...grpc.CallOption) (*ConsumeProviderQuotaResetResponse, error)
+	// The account's device roster: an append-only, hash-chained list of device
+	// keys. Every entry is signed by a device that is already a member; devices
+	// verify the chain against the root they pinned when they were paired.
+	GetDeviceRoster(ctx context.Context, in *GetDeviceRosterRequest, opts ...grpc.CallOption) (*DeviceRoster, error)
+	// Streams the roster from from_sequence, then every appended entry.
+	WatchDeviceRoster(ctx context.Context, in *GetDeviceRosterRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DeviceRoster], error)
+	// Appends one entry if it extends the current head (compare-and-swap); a
+	// concurrent append fails with ABORTED. replace only accepts a genesis entry
+	// and starts a new roster, which every previously paired device rejects.
+	AppendDeviceRoster(ctx context.Context, in *AppendDeviceRosterRequest, opts ...grpc.CallOption) (*DeviceRoster, error)
+	// Pairing requests are notes from a device that wants to join. The new
+	// device shows a one-time code; a person types it on a trusted device. The
+	// request's proof and the approver's confirmation are HMACs keyed by that
+	// code, so the gateway can neither substitute the new device's key nor
+	// approve a device into a roster of its own.
+	PostPairingRequest(ctx context.Context, in *PostPairingRequestRequest, opts ...grpc.CallOption) (*PairingRequest, error)
+	ListPairingRequests(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ListPairingRequestsResponse, error)
+	ConfirmPairingRequest(ctx context.Context, in *ConfirmPairingRequestRequest, opts ...grpc.CallOption) (*PairingRequest, error)
+	DeletePairingRequest(ctx context.Context, in *PairingRequestRef, opts ...grpc.CallOption) (*emptypb.Empty, error)
 }
 
 type gatewayServiceClient struct {
@@ -296,6 +324,85 @@ func (c *gatewayServiceClient) ConsumeProviderQuotaReset(ctx context.Context, in
 	return out, nil
 }
 
+func (c *gatewayServiceClient) GetDeviceRoster(ctx context.Context, in *GetDeviceRosterRequest, opts ...grpc.CallOption) (*DeviceRoster, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeviceRoster)
+	err := c.cc.Invoke(ctx, GatewayService_GetDeviceRoster_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayServiceClient) WatchDeviceRoster(ctx context.Context, in *GetDeviceRosterRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DeviceRoster], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &GatewayService_ServiceDesc.Streams[2], GatewayService_WatchDeviceRoster_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[GetDeviceRosterRequest, DeviceRoster]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type GatewayService_WatchDeviceRosterClient = grpc.ServerStreamingClient[DeviceRoster]
+
+func (c *gatewayServiceClient) AppendDeviceRoster(ctx context.Context, in *AppendDeviceRosterRequest, opts ...grpc.CallOption) (*DeviceRoster, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeviceRoster)
+	err := c.cc.Invoke(ctx, GatewayService_AppendDeviceRoster_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayServiceClient) PostPairingRequest(ctx context.Context, in *PostPairingRequestRequest, opts ...grpc.CallOption) (*PairingRequest, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PairingRequest)
+	err := c.cc.Invoke(ctx, GatewayService_PostPairingRequest_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayServiceClient) ListPairingRequests(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ListPairingRequestsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPairingRequestsResponse)
+	err := c.cc.Invoke(ctx, GatewayService_ListPairingRequests_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayServiceClient) ConfirmPairingRequest(ctx context.Context, in *ConfirmPairingRequestRequest, opts ...grpc.CallOption) (*PairingRequest, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PairingRequest)
+	err := c.cc.Invoke(ctx, GatewayService_ConfirmPairingRequest_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayServiceClient) DeletePairingRequest(ctx context.Context, in *PairingRequestRef, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, GatewayService_DeletePairingRequest_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // GatewayServiceServer is the server API for GatewayService service.
 // All implementations must embed UnimplementedGatewayServiceServer
 // for forward compatibility.
@@ -303,7 +410,9 @@ func (c *gatewayServiceClient) ConsumeProviderQuotaReset(ctx context.Context, in
 // GatewayService is Dieter's account and machine directory. Project,
 // conversation, schedule, file, and provider credential data never enters this
 // service. The gateway may cache normalized, credential-free provider quota
-// snapshots for the authenticated account.
+// snapshots for the authenticated account. It also stores the account's signed
+// device roster and short-lived pairing requests: public keys and display
+// names that devices verify themselves. The gateway cannot extend the roster.
 type GatewayServiceServer interface {
 	// GetCompatibility is the stable, unauthenticated bootstrap used before
 	// sign-in. It contains no account or machine data.
@@ -333,6 +442,25 @@ type GatewayServiceServer interface {
 	RefreshProviderQuotas(context.Context, *RefreshProviderQuotasRequest) (*RefreshProviderQuotasResponse, error)
 	SetProviderQuotaSummaryInclusion(context.Context, *SetProviderQuotaSummaryInclusionRequest) (*SetProviderQuotaSummaryInclusionResponse, error)
 	ConsumeProviderQuotaReset(context.Context, *ConsumeProviderQuotaResetRequest) (*ConsumeProviderQuotaResetResponse, error)
+	// The account's device roster: an append-only, hash-chained list of device
+	// keys. Every entry is signed by a device that is already a member; devices
+	// verify the chain against the root they pinned when they were paired.
+	GetDeviceRoster(context.Context, *GetDeviceRosterRequest) (*DeviceRoster, error)
+	// Streams the roster from from_sequence, then every appended entry.
+	WatchDeviceRoster(*GetDeviceRosterRequest, grpc.ServerStreamingServer[DeviceRoster]) error
+	// Appends one entry if it extends the current head (compare-and-swap); a
+	// concurrent append fails with ABORTED. replace only accepts a genesis entry
+	// and starts a new roster, which every previously paired device rejects.
+	AppendDeviceRoster(context.Context, *AppendDeviceRosterRequest) (*DeviceRoster, error)
+	// Pairing requests are notes from a device that wants to join. The new
+	// device shows a one-time code; a person types it on a trusted device. The
+	// request's proof and the approver's confirmation are HMACs keyed by that
+	// code, so the gateway can neither substitute the new device's key nor
+	// approve a device into a roster of its own.
+	PostPairingRequest(context.Context, *PostPairingRequestRequest) (*PairingRequest, error)
+	ListPairingRequests(context.Context, *emptypb.Empty) (*ListPairingRequestsResponse, error)
+	ConfirmPairingRequest(context.Context, *ConfirmPairingRequestRequest) (*PairingRequest, error)
+	DeletePairingRequest(context.Context, *PairingRequestRef) (*emptypb.Empty, error)
 	mustEmbedUnimplementedGatewayServiceServer()
 }
 
@@ -399,6 +527,27 @@ func (UnimplementedGatewayServiceServer) SetProviderQuotaSummaryInclusion(contex
 }
 func (UnimplementedGatewayServiceServer) ConsumeProviderQuotaReset(context.Context, *ConsumeProviderQuotaResetRequest) (*ConsumeProviderQuotaResetResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ConsumeProviderQuotaReset not implemented")
+}
+func (UnimplementedGatewayServiceServer) GetDeviceRoster(context.Context, *GetDeviceRosterRequest) (*DeviceRoster, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetDeviceRoster not implemented")
+}
+func (UnimplementedGatewayServiceServer) WatchDeviceRoster(*GetDeviceRosterRequest, grpc.ServerStreamingServer[DeviceRoster]) error {
+	return status.Error(codes.Unimplemented, "method WatchDeviceRoster not implemented")
+}
+func (UnimplementedGatewayServiceServer) AppendDeviceRoster(context.Context, *AppendDeviceRosterRequest) (*DeviceRoster, error) {
+	return nil, status.Error(codes.Unimplemented, "method AppendDeviceRoster not implemented")
+}
+func (UnimplementedGatewayServiceServer) PostPairingRequest(context.Context, *PostPairingRequestRequest) (*PairingRequest, error) {
+	return nil, status.Error(codes.Unimplemented, "method PostPairingRequest not implemented")
+}
+func (UnimplementedGatewayServiceServer) ListPairingRequests(context.Context, *emptypb.Empty) (*ListPairingRequestsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListPairingRequests not implemented")
+}
+func (UnimplementedGatewayServiceServer) ConfirmPairingRequest(context.Context, *ConfirmPairingRequestRequest) (*PairingRequest, error) {
+	return nil, status.Error(codes.Unimplemented, "method ConfirmPairingRequest not implemented")
+}
+func (UnimplementedGatewayServiceServer) DeletePairingRequest(context.Context, *PairingRequestRef) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeletePairingRequest not implemented")
 }
 func (UnimplementedGatewayServiceServer) mustEmbedUnimplementedGatewayServiceServer() {}
 func (UnimplementedGatewayServiceServer) testEmbeddedByValue()                        {}
@@ -749,6 +898,125 @@ func _GatewayService_ConsumeProviderQuotaReset_Handler(srv interface{}, ctx cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _GatewayService_GetDeviceRoster_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDeviceRosterRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).GetDeviceRoster(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_GetDeviceRoster_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).GetDeviceRoster(ctx, req.(*GetDeviceRosterRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GatewayService_WatchDeviceRoster_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(GetDeviceRosterRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(GatewayServiceServer).WatchDeviceRoster(m, &grpc.GenericServerStream[GetDeviceRosterRequest, DeviceRoster]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type GatewayService_WatchDeviceRosterServer = grpc.ServerStreamingServer[DeviceRoster]
+
+func _GatewayService_AppendDeviceRoster_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AppendDeviceRosterRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).AppendDeviceRoster(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_AppendDeviceRoster_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).AppendDeviceRoster(ctx, req.(*AppendDeviceRosterRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GatewayService_PostPairingRequest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PostPairingRequestRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).PostPairingRequest(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_PostPairingRequest_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).PostPairingRequest(ctx, req.(*PostPairingRequestRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GatewayService_ListPairingRequests_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).ListPairingRequests(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_ListPairingRequests_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).ListPairingRequests(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GatewayService_ConfirmPairingRequest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfirmPairingRequestRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).ConfirmPairingRequest(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_ConfirmPairingRequest_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).ConfirmPairingRequest(ctx, req.(*ConfirmPairingRequestRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GatewayService_DeletePairingRequest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PairingRequestRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).DeletePairingRequest(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_DeletePairingRequest_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).DeletePairingRequest(ctx, req.(*PairingRequestRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // GatewayService_ServiceDesc is the grpc.ServiceDesc for GatewayService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -824,6 +1092,30 @@ var GatewayService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "ConsumeProviderQuotaReset",
 			Handler:    _GatewayService_ConsumeProviderQuotaReset_Handler,
 		},
+		{
+			MethodName: "GetDeviceRoster",
+			Handler:    _GatewayService_GetDeviceRoster_Handler,
+		},
+		{
+			MethodName: "AppendDeviceRoster",
+			Handler:    _GatewayService_AppendDeviceRoster_Handler,
+		},
+		{
+			MethodName: "PostPairingRequest",
+			Handler:    _GatewayService_PostPairingRequest_Handler,
+		},
+		{
+			MethodName: "ListPairingRequests",
+			Handler:    _GatewayService_ListPairingRequests_Handler,
+		},
+		{
+			MethodName: "ConfirmPairingRequest",
+			Handler:    _GatewayService_ConfirmPairingRequest_Handler,
+		},
+		{
+			MethodName: "DeletePairingRequest",
+			Handler:    _GatewayService_DeletePairingRequest_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
@@ -835,6 +1127,117 @@ var GatewayService_ServiceDesc = grpc.ServiceDesc{
 			StreamName:    "WatchProviderQuotas",
 			Handler:       _GatewayService_WatchProviderQuotas_Handler,
 			ServerStreams: true,
+		},
+		{
+			StreamName:    "WatchDeviceRoster",
+			Handler:       _GatewayService_WatchDeviceRoster_Handler,
+			ServerStreams: true,
+		},
+	},
+	Metadata: "dieter/gateway/v1/gateway.proto",
+}
+
+const (
+	RelayService_OpenTunnel_FullMethodName = "/dieter.gateway.v1.RelayService/OpenTunnel"
+)
+
+// RelayServiceClient is the client API for RelayService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// RelayService carries the daemon API between a client and one daemon as an
+// opaque byte stream. The client runs mutually authenticated TLS 1.3 inside
+// the tunnel to the daemon's own endpoint, so the gateway relays ciphertext
+// and never sees calls, responses, or credentials.
+type RelayServiceClient interface {
+	OpenTunnel(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[TunnelFrame, TunnelFrame], error)
+}
+
+type relayServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewRelayServiceClient(cc grpc.ClientConnInterface) RelayServiceClient {
+	return &relayServiceClient{cc}
+}
+
+func (c *relayServiceClient) OpenTunnel(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[TunnelFrame, TunnelFrame], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &RelayService_ServiceDesc.Streams[0], RelayService_OpenTunnel_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[TunnelFrame, TunnelFrame]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type RelayService_OpenTunnelClient = grpc.BidiStreamingClient[TunnelFrame, TunnelFrame]
+
+// RelayServiceServer is the server API for RelayService service.
+// All implementations must embed UnimplementedRelayServiceServer
+// for forward compatibility.
+//
+// RelayService carries the daemon API between a client and one daemon as an
+// opaque byte stream. The client runs mutually authenticated TLS 1.3 inside
+// the tunnel to the daemon's own endpoint, so the gateway relays ciphertext
+// and never sees calls, responses, or credentials.
+type RelayServiceServer interface {
+	OpenTunnel(grpc.BidiStreamingServer[TunnelFrame, TunnelFrame]) error
+	mustEmbedUnimplementedRelayServiceServer()
+}
+
+// UnimplementedRelayServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedRelayServiceServer struct{}
+
+func (UnimplementedRelayServiceServer) OpenTunnel(grpc.BidiStreamingServer[TunnelFrame, TunnelFrame]) error {
+	return status.Error(codes.Unimplemented, "method OpenTunnel not implemented")
+}
+func (UnimplementedRelayServiceServer) mustEmbedUnimplementedRelayServiceServer() {}
+func (UnimplementedRelayServiceServer) testEmbeddedByValue()                      {}
+
+// UnsafeRelayServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to RelayServiceServer will
+// result in compilation errors.
+type UnsafeRelayServiceServer interface {
+	mustEmbedUnimplementedRelayServiceServer()
+}
+
+func RegisterRelayServiceServer(s grpc.ServiceRegistrar, srv RelayServiceServer) {
+	// If the following call panics, it indicates UnimplementedRelayServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&RelayService_ServiceDesc, srv)
+}
+
+func _RelayService_OpenTunnel_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(RelayServiceServer).OpenTunnel(&grpc.GenericServerStream[TunnelFrame, TunnelFrame]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type RelayService_OpenTunnelServer = grpc.BidiStreamingServer[TunnelFrame, TunnelFrame]
+
+// RelayService_ServiceDesc is the grpc.ServiceDesc for RelayService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var RelayService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "dieter.gateway.v1.RelayService",
+	HandlerType: (*RelayServiceServer)(nil),
+	Methods:     []grpc.MethodDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "OpenTunnel",
+			Handler:       _RelayService_OpenTunnel_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
 		},
 	},
 	Metadata: "dieter/gateway/v1/gateway.proto",
@@ -848,9 +1251,9 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// DaemonLinkService is a persistent daemon-initiated reverse tunnel. Every
-// logical Dieter RPC is framed independently so one slow conversation stream
-// cannot block unrelated calls on the same machine.
+// DaemonLinkService is a persistent daemon-initiated reverse link. It carries
+// presence, provider quota frames, and client tunnels. Every tunnel has its own
+// credit window, so one slow client cannot block other tunnels to the machine.
 type DaemonLinkServiceClient interface {
 	Connect(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[DaemonLinkFrame, DaemonLinkFrame], error)
 }
@@ -880,9 +1283,9 @@ type DaemonLinkService_ConnectClient = grpc.BidiStreamingClient[DaemonLinkFrame,
 // All implementations must embed UnimplementedDaemonLinkServiceServer
 // for forward compatibility.
 //
-// DaemonLinkService is a persistent daemon-initiated reverse tunnel. Every
-// logical Dieter RPC is framed independently so one slow conversation stream
-// cannot block unrelated calls on the same machine.
+// DaemonLinkService is a persistent daemon-initiated reverse link. It carries
+// presence, provider quota frames, and client tunnels. Every tunnel has its own
+// credit window, so one slow client cannot block other tunnels to the machine.
 type DaemonLinkServiceServer interface {
 	Connect(grpc.BidiStreamingServer[DaemonLinkFrame, DaemonLinkFrame]) error
 	mustEmbedUnimplementedDaemonLinkServiceServer()

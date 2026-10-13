@@ -17,8 +17,14 @@ func TestNewDirectRouteAdvertisesEphemeralLoopback(t *testing.T) {
 		GatewayURL:     "https://dieter.example.com",
 		CertificatePEM: []byte("enrolled"),
 		PrivateKey:     private,
+		PublicKey:      private.Public().(ed25519.PublicKey),
+		Root:           t.TempDir(),
 	}
-	route, err := NewDirectRoute(identity, "127.0.0.1:4242", "local-token", "loopback", "127.0.0.1:0", "127.0.0.1", "loopback", 1000)
+	deviceTrust, err := OpenTrust(identity, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route, err := NewDirectRoute(identity, deviceTrust, "127.0.0.1:4242", "local-token", "loopback", "127.0.0.1:0", "127.0.0.1", "loopback", 1000)
 	if err != nil {
 		t.Fatal(err)
 	}

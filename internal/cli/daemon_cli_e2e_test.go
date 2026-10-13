@@ -597,7 +597,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	}
 	assertScreenSessionCLI(t, second, &secondOutput, nil)
 	assertMachineHomeTerminalCLI(t, second, &secondOutput)
-	assertVaultRelayRefusedCLI(t, second, &secondOutput)
+	assertVaultRelayCLI(t, second, &secondOutput)
 	assertQueueRemovalCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertCardMergeCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertProjectHostnameCLI(t, second, &secondOutput, remoteProject.ID)

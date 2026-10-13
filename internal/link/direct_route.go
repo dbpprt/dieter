@@ -22,7 +22,7 @@ type DirectRoute struct {
 // NewDirectRoute binds listenAddress and prepares a direct TLS forwarder to
 // localTarget. The advertised candidate uses the bound port, so an ephemeral
 // listen port is advertised exactly.
-func NewDirectRoute(identity *Identity, localTarget, localToken, id, listenAddress, advertisedHost, network string, priority int32) (*DirectRoute, error) {
+func NewDirectRoute(identity *Identity, deviceTrust *Trust, localTarget, localToken, id, listenAddress, advertisedHost, network string, priority int32) (*DirectRoute, error) {
 	listener, err := net.Listen("tcp", strings.TrimSpace(listenAddress))
 	if err != nil {
 		return nil, err
@@ -41,7 +41,7 @@ func NewDirectRoute(identity *Identity, localTarget, localToken, id, listenAddre
 	if err != nil || port < 1 || port > 65535 {
 		return nil, fmt.Errorf("resolve direct listener port: invalid port %q", portText)
 	}
-	direct, err := NewDirectServer(identity, localTarget, localToken)
+	direct, err := NewDirectServer(identity, deviceTrust, localTarget, localToken)
 	if err != nil {
 		return nil, err
 	}
