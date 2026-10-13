@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"io/fs"
 	"net"
@@ -144,18 +145,20 @@ func exercise(t *testing.T, client dieterclient.Client, repository, label string
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Read until the execution exits, so nothing still writes to the daemon's
-	// home when the test removes it.
+	// Read until the daemon ends the watch after the execution's final event,
+	// so nothing still writes to the daemon's home when the test removes it.
+	// Every event carries a snapshot of the execution, so an exit code can
+	// arrive before the output does.
 	var echoed []byte
 	for {
 		event, err := watch.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
 		if err != nil {
 			t.Fatalf("%s: execution output %q: %v", label, echoed, err)
 		}
 		echoed = append(echoed, event.GetData()...)
-		if event.GetExecution().ExitCode != nil {
-			break
-		}
 	}
 	if !bytes.Contains(echoed, []byte(output)) {
 		t.Fatalf("%s: execution output %q", label, echoed)
