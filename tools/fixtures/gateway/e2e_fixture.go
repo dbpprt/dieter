@@ -67,7 +67,7 @@ func seedE2EFixture(data *boardstore.Store, project model.Project, board model.B
 			return err
 		}
 	}
-	for _, title := range []string{"Mobile release checklist", "Ideas for the next iteration"} {
+	for _, title := range []string{"Mobile release checklist", "Ideas for the next iteration", "Markdown code fences"} {
 		chat, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: title, Prompt: "Review the mobile design together.", Provider: "mock", Model: "mock", WorkspaceMode: model.WorkspaceModeProject})
 		if err != nil {
 			return err
@@ -75,7 +75,11 @@ func seedE2EFixture(data *boardstore.Store, project model.Project, board model.B
 		if _, err = data.Kanban.MarkPromptSent(chat.ID); err != nil {
 			return err
 		}
-		if _, err = data.Conversations.InitializeFork(chat.ID, []model.UIMessage{{ID: "chat-" + chat.ID, Role: "assistant", Parts: []model.UIMessagePart{{Type: "text", Text: "## Ready to review\n\nCheck the board, the keyboard and both native layouts.\n\n| Platform | Presentation |\n| --- | --- |\n| Android | Material and Sora |\n| iOS | System type and Liquid Glass |"}}}}); err != nil {
+		text := "## Ready to review\n\nCheck the board, the keyboard and both native layouts.\n\n| Platform | Presentation |\n| --- | --- |\n| Android | Material and Sora |\n| iOS | System type and Liquid Glass |"
+		if title == "Markdown code fences" {
+			text = "Markdown regression\n\n```text\nfenced line one\nfenced line two\n```\n\nFence complete."
+		}
+		if _, err = data.Conversations.InitializeFork(chat.ID, []model.UIMessage{{ID: "chat-" + chat.ID, Role: "assistant", Parts: []model.UIMessagePart{{Type: "text", Text: text}}}}); err != nil {
 			return err
 		}
 		if _, err = data.Kanban.UpdateCardCache(chat.ID, kanban.CardCacheInput{Runtime: "idle", Summary: "Review the shared mobile experience."}); err != nil {

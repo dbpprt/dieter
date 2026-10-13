@@ -353,10 +353,11 @@ jobs:
           xcrun simctl list runtimes -j | jq -e --arg v "$sdk" '.runtimes[] | select(.isAvailable and .platform == "iOS" and (.version | startswith($v)))' >/dev/null \
             || xcodebuild -downloadPlatform iOS -buildVersion "$sdk"
       - name: iPhone flows
-        run: bundle exec fastlane ios e2e tags:${{ needs.plan.outputs.full == 'true' && 'full' || 'smoke' }} profile:ios-iphone
+        # Kotlin/Native optimizer failures can pass Debug and crash the shipped app.
+        run: bundle exec fastlane ios e2e configuration:release tags:${{ needs.plan.outputs.full == 'true' && 'full' || 'smoke' }} profile:ios-iphone
       - name: iPad flows
         if: needs.plan.outputs.full == 'true'
-        run: bundle exec fastlane ios e2e tags:full profile:ios-ipad
+        run: bundle exec fastlane ios e2e configuration:release tags:full profile:ios-ipad
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: github.ref == 'refs/heads/main' && !cancelled()
         with:

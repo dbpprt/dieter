@@ -97,7 +97,9 @@ is redacted from evidence.
   installed APK has the same hash), and reaches the fixture through an owned
   `adb reverse` port.
 - **iOS** creates and journals a simulator, boots it while the app builds, and
-  deletes it afterwards.
+  deletes it afterwards. It defaults to Debug; pass `configuration:release`
+  to exercise optimized Kotlin/Native code (as CI does), for example
+  `just e2e ios flows:markdown configuration:release` for fenced-code rendering.
 - **macOS** builds `DieterE2E.app` (Debug, `DIETER_E2E`); the app interprets each
   flow as a JSON plan in-process (`--e2e-flow`). Commands outside
   `launchApp tapOn assertVisible assertNotVisible inputText extendedWaitUntil
