@@ -21,6 +21,123 @@ public enum Dieter_V1_FileService: Sendable {
     public static let descriptor = GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.FileService")
     /// Namespace for method metadata.
     public enum Method: Sendable {
+        /// Namespace for "StatTransferFile" metadata.
+        public enum StatTransferFile: Sendable {
+            /// Request type for "StatTransferFile".
+            public typealias Input = Dieter_V1_TransferPath
+            /// Response type for "StatTransferFile".
+            public typealias Output = Dieter_V1_TransferEntry
+            /// Descriptor for "StatTransferFile".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.FileService"),
+                method: "StatTransferFile",
+                type: .unary
+            )
+        }
+        /// Namespace for "ListTransferFiles" metadata.
+        public enum ListTransferFiles: Sendable {
+            /// Request type for "ListTransferFiles".
+            public typealias Input = Dieter_V1_ListTransferFilesRequest
+            /// Response type for "ListTransferFiles".
+            public typealias Output = Dieter_V1_TransferPage
+            /// Descriptor for "ListTransferFiles".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.FileService"),
+                method: "ListTransferFiles",
+                type: .unary
+            )
+        }
+        /// Namespace for "ReadFileChunk" metadata.
+        public enum ReadFileChunk: Sendable {
+            /// Request type for "ReadFileChunk".
+            public typealias Input = Dieter_V1_ReadFileChunkRequest
+            /// Response type for "ReadFileChunk".
+            public typealias Output = Dieter_V1_FileChunk
+            /// Descriptor for "ReadFileChunk".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.FileService"),
+                method: "ReadFileChunk",
+                type: .unary
+            )
+        }
+        /// Namespace for "BeginFileUpload" metadata.
+        public enum BeginFileUpload: Sendable {
+            /// Request type for "BeginFileUpload".
+            public typealias Input = Dieter_V1_BeginFileUploadRequest
+            /// Response type for "BeginFileUpload".
+            public typealias Output = Dieter_V1_FileUpload
+            /// Descriptor for "BeginFileUpload".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.FileService"),
+                method: "BeginFileUpload",
+                type: .unary
+            )
+        }
+        /// Namespace for "WriteFileChunk" metadata.
+        public enum WriteFileChunk: Sendable {
+            /// Request type for "WriteFileChunk".
+            public typealias Input = Dieter_V1_WriteFileChunkRequest
+            /// Response type for "WriteFileChunk".
+            public typealias Output = Dieter_V1_FileUpload
+            /// Descriptor for "WriteFileChunk".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.FileService"),
+                method: "WriteFileChunk",
+                type: .unary
+            )
+        }
+        /// Namespace for "GetFileUpload" metadata.
+        public enum GetFileUpload: Sendable {
+            /// Request type for "GetFileUpload".
+            public typealias Input = Dieter_V1_FileUploadRequest
+            /// Response type for "GetFileUpload".
+            public typealias Output = Dieter_V1_FileUpload
+            /// Descriptor for "GetFileUpload".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.FileService"),
+                method: "GetFileUpload",
+                type: .unary
+            )
+        }
+        /// Namespace for "CommitFileUpload" metadata.
+        public enum CommitFileUpload: Sendable {
+            /// Request type for "CommitFileUpload".
+            public typealias Input = Dieter_V1_FileUploadRequest
+            /// Response type for "CommitFileUpload".
+            public typealias Output = Dieter_V1_FileUpload
+            /// Descriptor for "CommitFileUpload".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.FileService"),
+                method: "CommitFileUpload",
+                type: .unary
+            )
+        }
+        /// Namespace for "AbortFileUpload" metadata.
+        public enum AbortFileUpload: Sendable {
+            /// Request type for "AbortFileUpload".
+            public typealias Input = Dieter_V1_FileUploadRequest
+            /// Response type for "AbortFileUpload".
+            public typealias Output = Dieter_V1_FileUpload
+            /// Descriptor for "AbortFileUpload".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.FileService"),
+                method: "AbortFileUpload",
+                type: .unary
+            )
+        }
+        /// Namespace for "DeleteTransferFile" metadata.
+        public enum DeleteTransferFile: Sendable {
+            /// Request type for "DeleteTransferFile".
+            public typealias Input = Dieter_V1_DeleteTransferFileRequest
+            /// Response type for "DeleteTransferFile".
+            public typealias Output = SwiftProtobuf.Google_Protobuf_Empty
+            /// Descriptor for "DeleteTransferFile".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.FileService"),
+                method: "DeleteTransferFile",
+                type: .unary
+            )
+        }
         /// Namespace for "ListFiles" metadata.
         public enum ListFiles: Sendable {
             /// Request type for "ListFiles".
@@ -101,6 +218,15 @@ public enum Dieter_V1_FileService: Sendable {
         }
         /// Descriptors for all methods in the "dieter.v1.FileService" service.
         public static let descriptors: [GRPCCore.MethodDescriptor] = [
+            StatTransferFile.descriptor,
+            ListTransferFiles.descriptor,
+            ReadFileChunk.descriptor,
+            BeginFileUpload.descriptor,
+            WriteFileChunk.descriptor,
+            GetFileUpload.descriptor,
+            CommitFileUpload.descriptor,
+            AbortFileUpload.descriptor,
+            DeleteTransferFile.descriptor,
             ListFiles.descriptor,
             ReadFile.descriptor,
             SaveFile.descriptor,
@@ -130,6 +256,177 @@ extension Dieter_V1_FileService {
     /// >
     /// > Project files.
     public protocol ClientProtocol: Sendable {
+        /// Call the "StatTransferFile" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_TransferPath` message.
+        ///   - serializer: A serializer for `Dieter_V1_TransferPath` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_TransferEntry` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func statTransferFile<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_TransferPath>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_TransferPath>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_TransferEntry>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_TransferEntry>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ListTransferFiles" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ListTransferFilesRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ListTransferFilesRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_TransferPage` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func listTransferFiles<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ListTransferFilesRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ListTransferFilesRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_TransferPage>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_TransferPage>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ReadFileChunk" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ReadFileChunkRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ReadFileChunkRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_FileChunk` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func readFileChunk<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ReadFileChunkRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ReadFileChunkRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_FileChunk>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileChunk>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "BeginFileUpload" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_BeginFileUploadRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_BeginFileUploadRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_FileUpload` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func beginFileUpload<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_BeginFileUploadRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_BeginFileUploadRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_FileUpload>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileUpload>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "WriteFileChunk" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_WriteFileChunkRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_WriteFileChunkRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_FileUpload` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func writeFileChunk<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_WriteFileChunkRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_WriteFileChunkRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_FileUpload>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileUpload>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "GetFileUpload" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_FileUploadRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_FileUploadRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_FileUpload` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func getFileUpload<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_FileUploadRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_FileUploadRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_FileUpload>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileUpload>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "CommitFileUpload" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_FileUploadRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_FileUploadRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_FileUpload` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func commitFileUpload<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_FileUploadRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_FileUploadRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_FileUpload>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileUpload>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "AbortFileUpload" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_FileUploadRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_FileUploadRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_FileUpload` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func abortFileUpload<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_FileUploadRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_FileUploadRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_FileUpload>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileUpload>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "DeleteTransferFile" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_DeleteTransferFileRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_DeleteTransferFileRequest` messages.
+        ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func deleteTransferFile<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_DeleteTransferFileRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_DeleteTransferFileRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
         /// Call the "ListFiles" method.
         ///
         /// - Parameters:
@@ -263,6 +560,276 @@ extension Dieter_V1_FileService {
         ///   - client: A `GRPCCore.GRPCClient` providing a communication channel to the service.
         public init(wrapping client: GRPCCore.GRPCClient<Transport>) {
             self.client = client
+        }
+
+        /// Call the "StatTransferFile" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_TransferPath` message.
+        ///   - serializer: A serializer for `Dieter_V1_TransferPath` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_TransferEntry` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func statTransferFile<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_TransferPath>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_TransferPath>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_TransferEntry>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_TransferEntry>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_FileService.Method.StatTransferFile.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ListTransferFiles" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ListTransferFilesRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ListTransferFilesRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_TransferPage` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func listTransferFiles<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ListTransferFilesRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ListTransferFilesRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_TransferPage>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_TransferPage>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_FileService.Method.ListTransferFiles.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ReadFileChunk" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ReadFileChunkRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ReadFileChunkRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_FileChunk` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func readFileChunk<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ReadFileChunkRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ReadFileChunkRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_FileChunk>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileChunk>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_FileService.Method.ReadFileChunk.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "BeginFileUpload" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_BeginFileUploadRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_BeginFileUploadRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_FileUpload` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func beginFileUpload<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_BeginFileUploadRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_BeginFileUploadRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_FileUpload>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileUpload>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_FileService.Method.BeginFileUpload.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "WriteFileChunk" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_WriteFileChunkRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_WriteFileChunkRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_FileUpload` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func writeFileChunk<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_WriteFileChunkRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_WriteFileChunkRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_FileUpload>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileUpload>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_FileService.Method.WriteFileChunk.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "GetFileUpload" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_FileUploadRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_FileUploadRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_FileUpload` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func getFileUpload<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_FileUploadRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_FileUploadRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_FileUpload>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileUpload>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_FileService.Method.GetFileUpload.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "CommitFileUpload" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_FileUploadRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_FileUploadRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_FileUpload` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func commitFileUpload<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_FileUploadRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_FileUploadRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_FileUpload>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileUpload>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_FileService.Method.CommitFileUpload.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "AbortFileUpload" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_FileUploadRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_FileUploadRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_FileUpload` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func abortFileUpload<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_FileUploadRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_FileUploadRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_FileUpload>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileUpload>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_FileService.Method.AbortFileUpload.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "DeleteTransferFile" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_DeleteTransferFileRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_DeleteTransferFileRequest` messages.
+        ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func deleteTransferFile<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_DeleteTransferFileRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_DeleteTransferFileRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_FileService.Method.DeleteTransferFile.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
         }
 
         /// Call the "ListFiles" method.
@@ -450,6 +1017,231 @@ extension Dieter_V1_FileService {
 // Helpers providing default arguments to 'ClientProtocol' methods.
 @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
 extension Dieter_V1_FileService.ClientProtocol {
+    /// Call the "StatTransferFile" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_TransferPath` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func statTransferFile<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_TransferPath>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_TransferEntry>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.statTransferFile(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_TransferPath>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_TransferEntry>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListTransferFiles" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_ListTransferFilesRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listTransferFiles<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ListTransferFilesRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_TransferPage>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.listTransferFiles(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ListTransferFilesRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_TransferPage>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ReadFileChunk" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_ReadFileChunkRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func readFileChunk<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ReadFileChunkRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileChunk>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.readFileChunk(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ReadFileChunkRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_FileChunk>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "BeginFileUpload" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_BeginFileUploadRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func beginFileUpload<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_BeginFileUploadRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileUpload>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.beginFileUpload(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_BeginFileUploadRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_FileUpload>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "WriteFileChunk" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_WriteFileChunkRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func writeFileChunk<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_WriteFileChunkRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileUpload>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.writeFileChunk(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_WriteFileChunkRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_FileUpload>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetFileUpload" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_FileUploadRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getFileUpload<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_FileUploadRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileUpload>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.getFileUpload(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_FileUploadRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_FileUpload>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "CommitFileUpload" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_FileUploadRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func commitFileUpload<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_FileUploadRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileUpload>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.commitFileUpload(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_FileUploadRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_FileUpload>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "AbortFileUpload" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_FileUploadRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func abortFileUpload<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_FileUploadRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileUpload>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.abortFileUpload(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_FileUploadRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_FileUpload>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "DeleteTransferFile" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_DeleteTransferFileRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func deleteTransferFile<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_DeleteTransferFileRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.deleteTransferFile(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_DeleteTransferFileRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<SwiftProtobuf.Google_Protobuf_Empty>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "ListFiles" method.
     ///
     /// - Parameters:
@@ -604,6 +1396,267 @@ extension Dieter_V1_FileService.ClientProtocol {
 // Helpers providing sugared APIs for 'ClientProtocol' methods.
 @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
 extension Dieter_V1_FileService.ClientProtocol {
+    /// Call the "StatTransferFile" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func statTransferFile<Result>(
+        _ message: Dieter_V1_TransferPath,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_TransferEntry>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_TransferPath>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.statTransferFile(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListTransferFiles" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listTransferFiles<Result>(
+        _ message: Dieter_V1_ListTransferFilesRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_TransferPage>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_ListTransferFilesRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.listTransferFiles(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ReadFileChunk" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func readFileChunk<Result>(
+        _ message: Dieter_V1_ReadFileChunkRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileChunk>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_ReadFileChunkRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.readFileChunk(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "BeginFileUpload" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func beginFileUpload<Result>(
+        _ message: Dieter_V1_BeginFileUploadRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileUpload>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_BeginFileUploadRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.beginFileUpload(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "WriteFileChunk" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func writeFileChunk<Result>(
+        _ message: Dieter_V1_WriteFileChunkRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileUpload>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_WriteFileChunkRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.writeFileChunk(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetFileUpload" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getFileUpload<Result>(
+        _ message: Dieter_V1_FileUploadRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileUpload>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_FileUploadRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.getFileUpload(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "CommitFileUpload" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func commitFileUpload<Result>(
+        _ message: Dieter_V1_FileUploadRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileUpload>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_FileUploadRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.commitFileUpload(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "AbortFileUpload" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func abortFileUpload<Result>(
+        _ message: Dieter_V1_FileUploadRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileUpload>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_FileUploadRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.abortFileUpload(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "DeleteTransferFile" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func deleteTransferFile<Result>(
+        _ message: Dieter_V1_DeleteTransferFileRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_DeleteTransferFileRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.deleteTransferFile(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "ListFiles" method.
     ///
     /// - Parameters:
