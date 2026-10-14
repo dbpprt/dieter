@@ -20,6 +20,11 @@ Every action accepts either --project PROJECT or --card CARD. A card scope uses
 that conversation's selected project directory or isolated worktree.
 
 Actions:
+  cp SOURCE DESTINATION       Copy binary files; remote: selects the daemon scope
+  sync SOURCE DESTINATION     One-way directory sync with optional --delete
+  stat PATH                   Transfer metadata and optional checksum
+  scan PATH                   Bounded transfer directory page
+  upload ACTION               Inspect, resume protocol, or abort an upload
   list [PATH]                 List a directory
   read PATH                   Read text or binary file content
   save PATH                   Revision-checked update of an existing text file
@@ -34,6 +39,10 @@ func (c *CLI) rpcFile(args []string) error {
 		return nil
 	}
 	switch args[0] {
+	case "cp", "sync":
+		return c.rpcFileTransfer(args[0], args[1:])
+	case "stat", "scan", "upload":
+		return c.rpcFileTransferProtocol(args[0], args[1:])
 	case "list", "ls":
 		return c.rpcFileList(args[1:])
 	case "read", "show":

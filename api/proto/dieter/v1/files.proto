@@ -10,6 +10,15 @@ import "google/protobuf/empty.proto";
 
 // Project files.
 service FileService {
+  rpc StatTransferFile(TransferPath) returns (TransferEntry);
+  rpc ListTransferFiles(ListTransferFilesRequest) returns (TransferPage);
+  rpc ReadFileChunk(ReadFileChunkRequest) returns (FileChunk);
+  rpc BeginFileUpload(BeginFileUploadRequest) returns (FileUpload);
+  rpc WriteFileChunk(WriteFileChunkRequest) returns (FileUpload);
+  rpc GetFileUpload(FileUploadRequest) returns (FileUpload);
+  rpc CommitFileUpload(FileUploadRequest) returns (FileUpload);
+  rpc AbortFileUpload(FileUploadRequest) returns (FileUpload);
+  rpc DeleteTransferFile(DeleteTransferFileRequest) returns (google.protobuf.Empty);
   rpc ListFiles(ListFilesRequest) returns (FileList);
   rpc ReadFile(ReadFileRequest) returns (FileDocument);
   rpc SaveFile(SaveFileRequest) returns (FileDocument);
@@ -97,4 +106,73 @@ message DeleteFileRequest {
   string path = 2;
   bool recursive = 3;
   string card_id = 4;
+}
+
+// Transfer paths are relative to one immutable owner checkout or conversation.
+message TransferPath {
+  string project_id = 1;
+  string checkout_id = 2;
+  string card_id = 3;
+  string path = 4;
+  bool checksum = 5;
+}
+message TransferEntry {
+  string path = 1;
+  string kind = 2;
+  int64 size = 3;
+  int64 modified_nanos = 4;
+  string revision = 5;
+  string sha256 = 6;
+  uint32 mode = 7;
+}
+message ListTransferFilesRequest {
+  TransferPath target = 1;
+  string after = 2;
+  string revision = 3;
+  int32 page_size = 4;
+}
+message TransferPage {
+  repeated TransferEntry entries = 1;
+  string next = 2;
+  string revision = 3;
+}
+message ReadFileChunkRequest {
+  TransferPath target = 1;
+  string revision = 2;
+  int64 offset = 3;
+  int32 length = 4;
+}
+message FileChunk {
+  bytes data = 1;
+  string sha256 = 2;
+}
+message BeginFileUploadRequest {
+  TransferPath target = 1;
+  string operation_id = 2;
+  // "missing" means create-only; otherwise an observed destination revision.
+  string expected_revision = 3;
+  int64 size = 4;
+  string sha256 = 5;
+  int64 modified_nanos = 6;
+  uint32 mode = 7;
+}
+message FileUploadRequest {
+  string id = 1;
+}
+message WriteFileChunkRequest {
+  string id = 1;
+  int64 offset = 2;
+  bytes data = 3;
+  string sha256 = 4;
+}
+message FileUpload {
+  string id = 1;
+  int64 offset = 2;
+  int64 size = 3;
+  string state = 4;
+  int64 expires_unix = 5;
+}
+message DeleteTransferFileRequest {
+  TransferPath target = 1;
+  string revision = 2;
 }

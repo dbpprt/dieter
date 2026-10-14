@@ -44,7 +44,7 @@ Commands:
   card         Create, edit, read, present files, merge, and manage board conversations
   chat         Manage standalone conversations and present files or URLs
   workspace    Inspect changes and run durable Git/SCM operations
-  file         Browse and edit project/workspace files with revision checks
+  file         Browse, edit, copy and sync project/workspace files
   terminal     Create, attach, control, and close daemon-host PTYs
   remote       Run resumable commands and native shells on a daemon host
   screen       Share screens/clipboard, configure virtual displays, inspect latency
@@ -1192,6 +1192,11 @@ Every action accepts either --project PROJECT or --card CARD. A card scope uses
 that conversation's selected project directory or isolated worktree.
 
 Actions:
+  cp SOURCE DESTINATION       Copy binary files; remote: selects the daemon scope
+  sync SOURCE DESTINATION     One-way directory sync with optional --delete
+  stat PATH                   Transfer metadata and optional checksum
+  scan PATH                   Bounded transfer directory page
+  upload ACTION               Inspect, resume protocol, or abort an upload
   list [PATH]                 List a directory
   read PATH                   Read text or binary file content
   save PATH                   Revision-checked update of an existing text file
@@ -1234,6 +1239,112 @@ Usage: dieter file move (--project PROJECT|--card CARD) [--checkout ID] SOURCE D
 
 ```text
 Usage: dieter file delete (--project PROJECT|--card CARD) [--checkout ID] [--recursive] PATH
+```
+
+### dieter file cp
+
+```text
+Usage: dieter file cp (--project PROJECT|--card CARD) [--checkout ID] [OPTIONS] SOURCE DESTINATION
+
+Exactly one endpoint must start with remote:; other paths are on this CLI machine.
+Remote paths are relative to the selected workspace. Directories copy their contents.
+Options: --recursive (cp), --dryrun, --delete (sync only), --checksum, --size-only,
+  --no-clobber, ordered --exclude GLOB / --include GLOB, --concurrency N (1..8),
+  --bandwidth-limit BYTES_PER_SECOND, --no-progress, --format text|jsonl.
+Sync compares size and modification time; --checksum compares SHA-256 instead.
+Hidden files are included; .git and transfer partials are protected. Symlinks and
+special files are unsupported. Empty directories are not copied. Delete runs only
+after a complete successful scan and copy phase; excluded files are protected.
+Rerun an interrupted command to resume. Uploads expire after 24 hours.
+```
+
+### dieter file sync
+
+```text
+Usage: dieter file sync (--project PROJECT|--card CARD) [--checkout ID] [OPTIONS] SOURCE DESTINATION
+
+Exactly one endpoint must start with remote:; other paths are on this CLI machine.
+Remote paths are relative to the selected workspace. Directories copy their contents.
+Options: --recursive (cp), --dryrun, --delete (sync only), --checksum, --size-only,
+  --no-clobber, ordered --exclude GLOB / --include GLOB, --concurrency N (1..8),
+  --bandwidth-limit BYTES_PER_SECOND, --no-progress, --format text|jsonl.
+Sync compares size and modification time; --checksum compares SHA-256 instead.
+Hidden files are included; .git and transfer partials are protected. Symlinks and
+special files are unsupported. Empty directories are not copied. Delete runs only
+after a complete successful scan and copy phase; excluded files are protected.
+Rerun an interrupted command to resume. Uploads expire after 24 hours.
+```
+
+### dieter file stat
+
+```text
+Usage: dieter file stat (--project PROJECT|--card CARD) [--checkout ID] [--checksum] PATH
+       dieter file scan (--project PROJECT|--card CARD) [--checkout ID] [--after NAME] [--revision REV] [--page-size N] PATH
+       dieter file upload <begin|chunk|show|commit|abort> [OPTIONS]
+
+stat and scan emit protobuf JSON. scan returns a bounded directory page; carry
+its revision and next name into the following request. Restart on conflict.
+
+Upload protocol commands (JSON output):
+  begin (--project PROJECT|--card CARD) [--checkout ID] --operation ID
+        --revision REV|missing --size BYTES --sha256 HASH --modified-nanos NS
+        [--mode 420] PATH
+  chunk --offset BYTES --file FILE UPLOAD_ID
+  show UPLOAD_ID
+  commit UPLOAD_ID
+  abort UPLOAD_ID
+
+Chunks are at most 1 MiB; offsets must be aligned except at the end of a file.
+Replay uses identical input and operation ID. Commit is idempotent. Sessions
+expire after 24 hours. Use cp/sync for automatic chunking, checksums and resume.
+```
+
+### dieter file scan
+
+```text
+Usage: dieter file stat (--project PROJECT|--card CARD) [--checkout ID] [--checksum] PATH
+       dieter file scan (--project PROJECT|--card CARD) [--checkout ID] [--after NAME] [--revision REV] [--page-size N] PATH
+       dieter file upload <begin|chunk|show|commit|abort> [OPTIONS]
+
+stat and scan emit protobuf JSON. scan returns a bounded directory page; carry
+its revision and next name into the following request. Restart on conflict.
+
+Upload protocol commands (JSON output):
+  begin (--project PROJECT|--card CARD) [--checkout ID] --operation ID
+        --revision REV|missing --size BYTES --sha256 HASH --modified-nanos NS
+        [--mode 420] PATH
+  chunk --offset BYTES --file FILE UPLOAD_ID
+  show UPLOAD_ID
+  commit UPLOAD_ID
+  abort UPLOAD_ID
+
+Chunks are at most 1 MiB; offsets must be aligned except at the end of a file.
+Replay uses identical input and operation ID. Commit is idempotent. Sessions
+expire after 24 hours. Use cp/sync for automatic chunking, checksums and resume.
+```
+
+### dieter file upload
+
+```text
+Usage: dieter file stat (--project PROJECT|--card CARD) [--checkout ID] [--checksum] PATH
+       dieter file scan (--project PROJECT|--card CARD) [--checkout ID] [--after NAME] [--revision REV] [--page-size N] PATH
+       dieter file upload <begin|chunk|show|commit|abort> [OPTIONS]
+
+stat and scan emit protobuf JSON. scan returns a bounded directory page; carry
+its revision and next name into the following request. Restart on conflict.
+
+Upload protocol commands (JSON output):
+  begin (--project PROJECT|--card CARD) [--checkout ID] --operation ID
+        --revision REV|missing --size BYTES --sha256 HASH --modified-nanos NS
+        [--mode 420] PATH
+  chunk --offset BYTES --file FILE UPLOAD_ID
+  show UPLOAD_ID
+  commit UPLOAD_ID
+  abort UPLOAD_ID
+
+Chunks are at most 1 MiB; offsets must be aligned except at the end of a file.
+Replay uses identical input and operation ID. Commit is idempotent. Sessions
+expire after 24 hours. Use cp/sync for automatic chunking, checksums and resume.
 ```
 
 ## dieter terminal (alias: terminals)
