@@ -134,7 +134,11 @@ func assertFileTransfers(t *testing.T, c *CLI, out *bytes.Buffer, repo, project 
 		t.Fatal("accepted overlapping trees")
 	}
 	// Copy uses the same chunk protocol and accepts a directory destination.
-	run(append(append([]string{"cp"}, common...), filepath.Join(src, "data.bin"), "remote:single.bin")...)
+	run(append(append([]string{"cp"}, common...), "--exclude", "*", filepath.Join(src, "data.bin"), "remote:single.bin")...)
+	if _, err = os.Stat(filepath.Join(repo, "single.bin")); !os.IsNotExist(err) {
+		t.Fatal("excluded single file was copied")
+	}
+	run(append(append([]string{"cp"}, common...), "--exclude", "*", "--include", "*.bin", filepath.Join(src, "data.bin"), "remote:single.bin")...)
 	downloaded := filepath.Join(t.TempDir(), "copied.bin")
 	run(append(append([]string{"cp"}, common...), "remote:single.bin", downloaded)...)
 	actual, err = os.ReadFile(downloaded)
@@ -161,6 +165,10 @@ func assertFileTransfers(t *testing.T, c *CLI, out *bytes.Buffer, repo, project 
 	}
 	if _, err = os.Stat(filepath.Join(repo, "transfers", "survivor")); err != nil {
 		t.Fatal("failed scan deleted destination")
+	}
+	run(syncArgs("--delete", "--exclude", "link", "--exclude", "*.secret", src, "remote:transfers/")...)
+	if _, err = os.Stat(filepath.Join(repo, "transfers", "survivor")); !os.IsNotExist(err) {
+		t.Fatal("excluded symlink blocked sync")
 	}
 	// Exercise all explicit session lifecycle commands across each route.
 	chunkPath := filepath.Join(t.TempDir(), "chunk")

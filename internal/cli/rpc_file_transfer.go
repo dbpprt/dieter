@@ -172,6 +172,13 @@ func (c *CLI) rpcFileTransfer(action string, args []string) error {
 		}
 	}
 	options := files.PlanOptions{Sync: action == "sync", Delete: *remove, Checksum: *checksum, SizeOnly: *sizeOnly, NoClobber: *noClobber, Rules: rules}
+	if !directory {
+		if !files.Included(path.Base(source.base), rules) {
+			return nil
+		}
+		// The single-file endpoint uses "." internally; filters use its filename.
+		options.Rules = nil
+	}
 	plan, err := files.Plan(sourceTree, destTree, options)
 	if err != nil {
 		return err

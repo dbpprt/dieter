@@ -47,7 +47,7 @@ be combined with `--checksum`. All copied content is verified with SHA-256,
 regardless of the comparison mode.
 
 Hidden files are included. `.git` and names beginning with `.dieter-transfer-`
-are protected and excluded from transfer and deletion. Symlinks and special
+are protected and excluded from transfer and deletion. Included symlinks and special
 files are unsupported and cause an explicit error. File/directory conflicts
 also fail instead of implicitly replacing an entire subtree.
 
@@ -61,7 +61,8 @@ writers when mirroring important data.
 
 ## Filters and deletion
 
-Filters match paths relative to the transferred directory. `*` can match across
+Filters match paths relative to the transferred directory, or the source
+filename for a single-file copy. `*` can match across
 slashes. Rules are applied in command-line order; the last match wins. Paths
 are included unless a matching rule excludes them.
 

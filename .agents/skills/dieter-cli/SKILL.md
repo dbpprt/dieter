@@ -445,7 +445,7 @@ All copied files receive final checksum verification. `--delete` removes only
 observed destination-only files after successful copies and a fresh source
 scan. Exclusions protect against deletion. Ordered `--exclude` / `--include`
 rules use last-match-wins globs. Hidden files are included; `.git` and transfer
-partials are protected. Symlinks, special files and type conflicts fail clearly.
+partials are protected. Included symlinks, special files and type conflicts fail clearly.
 No empty-directory, ACL, owner or extended-attribute preservation is provided.
 
 Use `--format jsonl --no-progress` for automation. Progress goes to stderr;

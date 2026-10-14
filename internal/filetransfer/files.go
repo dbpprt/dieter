@@ -230,6 +230,12 @@ func List(ctx context.Context, root, p, after, revision string, limit int) ([]En
 	entries := make([]Entry, 0, len(names))
 	for _, n := range names {
 		fd, e := unix.Openat(int(f.Fd()), n, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+		if errors.Is(e, unix.ELOOP) {
+			// Enumerate the link without following it. The planner can then exclude
+			// it; included unsupported entries still fail before any mutation.
+			entries = append(entries, Entry{Path: path.Join(p, n), Kind: "unsupported"})
+			continue
+		}
 		if e != nil {
 			return nil, "", "", fmt.Errorf("cannot enumerate %s: %w", path.Join(p, n), e)
 		}
