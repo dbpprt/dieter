@@ -22,8 +22,11 @@ import com.getdieter.core.platform.Tunnel
 import com.getdieter.core.platform.TunnelFactory
 import com.getdieter.core.runtime.CoreException
 import com.getdieter.core.runtime.CoreLogger
+import com.getdieter.core.runtime.Deadlines
 import com.getdieter.core.runtime.FailureKind
 import com.getdieter.core.runtime.Failures
+import com.getdieter.core.runtime.GATEWAY_SILENT
+import com.getdieter.core.runtime.withDeadline
 import com.getdieter.core.trust.RoutePin
 import com.getdieter.core.trust.RouteTrust
 import kotlin.coroutines.cancellation.CancellationException
@@ -73,18 +76,22 @@ class RouteSelector(
         daemonId: String,
     ): DataPlane {
         val pin = trust.pin(daemonId)
-        val route = gateway.ResolveDaemonRoute().execute(DaemonRef(daemon_id = daemonId))
-        // Daemon tokens are bound to this device's roster ID; the daemon accepts one only over TLS
-        // authenticated by this device's key.
+        // A connection that outlived sleep can remain silent without failing.
+        val route =
+            withDeadline(Deadlines.CALL, GATEWAY_SILENT) {
+                gateway.ResolveDaemonRoute().execute(DaemonRef(daemon_id = daemonId))
+            }
         val exchange = DaemonTokenExchange {
-            gateway
-                .ExchangeDaemonToken()
-                .execute(
-                    ExchangeDaemonTokenRequest(
-                        daemon_id = daemonId,
-                        client_key_thumbprint = pin.deviceId,
+            withDeadline(Deadlines.CALL, GATEWAY_SILENT) {
+                gateway
+                    .ExchangeDaemonToken()
+                    .execute(
+                        ExchangeDaemonTokenRequest(
+                            daemon_id = daemonId,
+                            client_key_thumbprint = pin.deviceId,
+                        )
                     )
-                )
+            }
         }
         val tokens = RenewingDaemonToken(exchange.exchange(), exchange, clock)
         val dial = Dial(access, daemonId, pin, tokens)

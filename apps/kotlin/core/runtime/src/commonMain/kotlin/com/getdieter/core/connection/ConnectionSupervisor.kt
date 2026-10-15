@@ -200,6 +200,22 @@ class ConnectionSupervisor(
         restarts.update { it + 1 }
     }
 
+    /**
+     * The device woke from sleep. Connections opened before it slept can be dead without having
+     * failed, and the watchdogs would take their time to notice, so a connected or connecting
+     * session starts over on new ones now. One that is off or waits for the person stays as it is.
+     */
+    fun systemWoke() {
+        when (state.value.phase) {
+            ConnectionPhase.CONNECTED,
+            ConnectionPhase.CONNECTING,
+            ConnectionPhase.RECONNECTING -> restart()
+            ConnectionPhase.DISCONNECTED,
+            ConnectionPhase.AUTH_REQUIRED,
+            ConnectionPhase.UPDATE_REQUIRED -> Unit
+        }
+    }
+
     private fun setMachines(machines: List<Machine>) {
         mutableMachines.value = MachineDirectory(machines, clock.now())
     }

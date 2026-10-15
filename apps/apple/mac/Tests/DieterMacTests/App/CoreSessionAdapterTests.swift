@@ -53,6 +53,14 @@ struct CoreSessionAdapterTests {
         #expect(sent() == [false])
     }
 
+    @Test func wakingFromSleepLetsTheCoreReopenItsConnections() async throws {
+        func woke() -> Int { commands { if case .systemWoke = $0 { true } else { nil } }.count }
+        store.systemDidWake()
+        for _ in 0..<100 where woke() == 0 { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(woke() == 1)
+        #expect(commands { if case .reconnect = $0 { true } else { nil } }.isEmpty, "a wake keeps a disconnect")
+    }
+
     @Test func pinningAChatIsACoreCommandShownFromTheWorkspace() async {
         var chat = Dieter_V1_Card()
         chat.id = "c_chat"

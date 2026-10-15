@@ -98,9 +98,9 @@ func commandTable() []command {
 		{
 			name:        "file",
 			aliases:     []string{"files"},
-			summary:     "Browse and edit project/workspace files with revision checks",
+			summary:     "Browse, edit, copy and sync project/workspace files",
 			run:         (*CLI).rpcFile,
-			subcommands: []string{"list", "read", "save", "create", "move", "delete"},
+			subcommands: []string{"list", "read", "save", "create", "move", "delete", "cp", "sync", "stat", "scan", "upload"},
 		},
 		{
 			name:        "terminal",

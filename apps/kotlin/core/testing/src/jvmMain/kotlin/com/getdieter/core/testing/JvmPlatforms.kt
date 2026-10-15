@@ -1,14 +1,21 @@
 package com.getdieter.core.testing
 
+import com.getdieter.core.platform.DaemonTokenSource
+import com.getdieter.core.platform.DeviceTlsIdentity
+import com.getdieter.core.platform.DirectTarget
+import com.getdieter.core.platform.GatewayAccess
 import com.getdieter.core.platform.GrpcTunnelFactory
 import com.getdieter.core.platform.OkHttpAuthHttp
 import com.getdieter.core.platform.OkHttpRpcTransport
 import com.getdieter.core.platform.Platform
+import com.getdieter.core.platform.RpcChannel
+import com.getdieter.core.platform.RpcTransport
 import com.getdieter.core.platform.SignatureVerifier
 import com.getdieter.core.platform.SoftwareDeviceKeys
 import com.getdieter.core.runtime.CoreLogger
 import java.nio.file.Files
 import kotlin.time.Clock
+import okhttp3.OkHttpClient
 import okio.FileSystem
 import okio.Path
 import okio.Path.Companion.toOkioPath
@@ -35,8 +42,8 @@ fun jvmTestPlatform(
     signatures: SignatureVerifier = JcaSignatureVerifier,
     deviceKeys: SoftwareDeviceKeys =
         SoftwareDeviceKeys(stateDirectory.resolve("device-key").toFile(), deviceName = "JVM test"),
+    transport: RpcTransport = OkHttpRpcTransport(deviceKeys),
 ): Platform {
-    val transport = OkHttpRpcTransport(deviceKeys)
     return Platform(
         transport = transport,
         tunnels = GrpcTunnelFactory(transport),
@@ -50,4 +57,25 @@ fun jvmTestPlatform(
         logger = PrintLogger,
         clock = clock,
     )
+}
+
+/**
+ * OkHttp with one connection per core channel, closed when the core retires the channel, as the
+ * Apple bridge does. [OkHttpRpcTransport] shares one pool, so it would reuse a silent connection.
+ */
+class ConnectionPerChannelTransport(private val identity: DeviceTlsIdentity) : RpcTransport {
+    private fun isolated(open: (OkHttpRpcTransport) -> RpcChannel): RpcChannel {
+        val http = OkHttpClient()
+        val channel = open(OkHttpRpcTransport(identity, http))
+        return RpcChannel(channel.client) {
+            channel.close()
+            http.connectionPool.evictAll()
+        }
+    }
+
+    override fun gateway(access: GatewayAccess) = isolated { it.gateway(access) }
+
+    override fun direct(target: DirectTarget, tokens: DaemonTokenSource) = isolated {
+        it.direct(target, tokens)
+    }
 }

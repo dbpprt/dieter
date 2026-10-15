@@ -102,6 +102,7 @@ message Command {
     SignOut sign_out = 78;
     Reconnect reconnect = 79;
     DevicesCommand devices = 81;
+    SystemWoke system_woke = 82;
   }
 }
 
@@ -140,6 +141,11 @@ message Reconnect {}
 
 // The app is in the foreground (keeps the streams live) or in the background.
 message SetForeground { bool foreground = 1; }
+
+// The device woke from sleep. Connections opened before it slept can be dead
+// without having failed, so a connected or connecting core reopens them now;
+// one that is disconnected or waits for sign-in or an update stays as it is.
+message SystemWoke {}
 
 // Queues a new task or chat: the core applies its defaults to `intent`,
 // validates it against the destination machine's catalog (failing with the

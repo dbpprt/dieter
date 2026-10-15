@@ -430,6 +430,40 @@ New board cards snapshot the board's configured remote and publish mode. The
 validated integration result to the configured base branch during
 `merge_local`. Existing conversations keep their snapshotted values.
 
+## Transfer and synchronize files
+
+Use `file cp` and `file sync` for binary files, large files and directory trees.
+Exactly one endpoint uses `remote:` (relative to the selected daemon workspace);
+the other is a path on the CLI machine. Global `--machine` selects the owner.
+Use `--project` with optional `--checkout`, or `--card` for a conversation.
+
+```sh
+dieter --machine MACHINE file cp --card CARD ./archive.tar remote:artifacts/archive.tar
+dieter --machine MACHINE file sync --project PROJECT --dryrun ./dist/ remote:dist/
+dieter --machine MACHINE file sync --project PROJECT --delete ./dist/ remote:dist/
+dieter --machine MACHINE file sync --card CARD remote:results/ ./results/
+```
+
+`cp --recursive` and `sync` copy directory contents. Sync compares size and
+mtime; `--checksum` compares SHA-256, `--size-only` compares size alone.
+All copied files receive final checksum verification. `--delete` removes only
+observed destination-only files after successful copies and a fresh source
+scan. Exclusions protect against deletion. Ordered `--exclude` / `--include`
+rules use last-match-wins globs. Hidden files are included; `.git` and transfer
+partials are protected. Included symlinks, special files and type conflicts fail clearly.
+No empty-directory, ACL, owner or extended-attribute preservation is provided.
+
+Use `--format jsonl --no-progress` for automation. Progress goes to stderr;
+errors return nonzero. Rerun an interrupted command to resume staged uploads or
+payload-only download partials. Uploads use durable IDs and commit receipts,
+expire after 24 hours, and are limited to 64 GiB per file, 256 GiB reserved
+staging and 4,096 retained sessions per daemon. Scans stop at 100,000 entries.
+Never delete central transfer metadata manually. `file upload show ID` inspects
+progress; `file upload abort ID` releases an uncommitted upload's payload but
+retains its receipt. `file stat --checksum` and `file scan` provide metadata and
+paged enumeration. See `file upload --help` for explicit begin/chunk/commit
+commands. This is one-way synchronization, not automatic project replication.
+
 ## Run commands on a daemon host
 
 Prefer `remote exec` for agent automation. It submits exact argv values without

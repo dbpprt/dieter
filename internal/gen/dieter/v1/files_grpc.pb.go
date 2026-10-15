@@ -20,12 +20,21 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	FileService_ListFiles_FullMethodName  = "/dieter.v1.FileService/ListFiles"
-	FileService_ReadFile_FullMethodName   = "/dieter.v1.FileService/ReadFile"
-	FileService_SaveFile_FullMethodName   = "/dieter.v1.FileService/SaveFile"
-	FileService_CreateFile_FullMethodName = "/dieter.v1.FileService/CreateFile"
-	FileService_MoveFile_FullMethodName   = "/dieter.v1.FileService/MoveFile"
-	FileService_DeleteFile_FullMethodName = "/dieter.v1.FileService/DeleteFile"
+	FileService_StatTransferFile_FullMethodName   = "/dieter.v1.FileService/StatTransferFile"
+	FileService_ListTransferFiles_FullMethodName  = "/dieter.v1.FileService/ListTransferFiles"
+	FileService_ReadFileChunk_FullMethodName      = "/dieter.v1.FileService/ReadFileChunk"
+	FileService_BeginFileUpload_FullMethodName    = "/dieter.v1.FileService/BeginFileUpload"
+	FileService_WriteFileChunk_FullMethodName     = "/dieter.v1.FileService/WriteFileChunk"
+	FileService_GetFileUpload_FullMethodName      = "/dieter.v1.FileService/GetFileUpload"
+	FileService_CommitFileUpload_FullMethodName   = "/dieter.v1.FileService/CommitFileUpload"
+	FileService_AbortFileUpload_FullMethodName    = "/dieter.v1.FileService/AbortFileUpload"
+	FileService_DeleteTransferFile_FullMethodName = "/dieter.v1.FileService/DeleteTransferFile"
+	FileService_ListFiles_FullMethodName          = "/dieter.v1.FileService/ListFiles"
+	FileService_ReadFile_FullMethodName           = "/dieter.v1.FileService/ReadFile"
+	FileService_SaveFile_FullMethodName           = "/dieter.v1.FileService/SaveFile"
+	FileService_CreateFile_FullMethodName         = "/dieter.v1.FileService/CreateFile"
+	FileService_MoveFile_FullMethodName           = "/dieter.v1.FileService/MoveFile"
+	FileService_DeleteFile_FullMethodName         = "/dieter.v1.FileService/DeleteFile"
 )
 
 // FileServiceClient is the client API for FileService service.
@@ -34,6 +43,15 @@ const (
 //
 // Project files.
 type FileServiceClient interface {
+	StatTransferFile(ctx context.Context, in *TransferPath, opts ...grpc.CallOption) (*TransferEntry, error)
+	ListTransferFiles(ctx context.Context, in *ListTransferFilesRequest, opts ...grpc.CallOption) (*TransferPage, error)
+	ReadFileChunk(ctx context.Context, in *ReadFileChunkRequest, opts ...grpc.CallOption) (*FileChunk, error)
+	BeginFileUpload(ctx context.Context, in *BeginFileUploadRequest, opts ...grpc.CallOption) (*FileUpload, error)
+	WriteFileChunk(ctx context.Context, in *WriteFileChunkRequest, opts ...grpc.CallOption) (*FileUpload, error)
+	GetFileUpload(ctx context.Context, in *FileUploadRequest, opts ...grpc.CallOption) (*FileUpload, error)
+	CommitFileUpload(ctx context.Context, in *FileUploadRequest, opts ...grpc.CallOption) (*FileUpload, error)
+	AbortFileUpload(ctx context.Context, in *FileUploadRequest, opts ...grpc.CallOption) (*FileUpload, error)
+	DeleteTransferFile(ctx context.Context, in *DeleteTransferFileRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*FileList, error)
 	ReadFile(ctx context.Context, in *ReadFileRequest, opts ...grpc.CallOption) (*FileDocument, error)
 	SaveFile(ctx context.Context, in *SaveFileRequest, opts ...grpc.CallOption) (*FileDocument, error)
@@ -48,6 +66,96 @@ type fileServiceClient struct {
 
 func NewFileServiceClient(cc grpc.ClientConnInterface) FileServiceClient {
 	return &fileServiceClient{cc}
+}
+
+func (c *fileServiceClient) StatTransferFile(ctx context.Context, in *TransferPath, opts ...grpc.CallOption) (*TransferEntry, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TransferEntry)
+	err := c.cc.Invoke(ctx, FileService_StatTransferFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fileServiceClient) ListTransferFiles(ctx context.Context, in *ListTransferFilesRequest, opts ...grpc.CallOption) (*TransferPage, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TransferPage)
+	err := c.cc.Invoke(ctx, FileService_ListTransferFiles_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fileServiceClient) ReadFileChunk(ctx context.Context, in *ReadFileChunkRequest, opts ...grpc.CallOption) (*FileChunk, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FileChunk)
+	err := c.cc.Invoke(ctx, FileService_ReadFileChunk_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fileServiceClient) BeginFileUpload(ctx context.Context, in *BeginFileUploadRequest, opts ...grpc.CallOption) (*FileUpload, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FileUpload)
+	err := c.cc.Invoke(ctx, FileService_BeginFileUpload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fileServiceClient) WriteFileChunk(ctx context.Context, in *WriteFileChunkRequest, opts ...grpc.CallOption) (*FileUpload, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FileUpload)
+	err := c.cc.Invoke(ctx, FileService_WriteFileChunk_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fileServiceClient) GetFileUpload(ctx context.Context, in *FileUploadRequest, opts ...grpc.CallOption) (*FileUpload, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FileUpload)
+	err := c.cc.Invoke(ctx, FileService_GetFileUpload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fileServiceClient) CommitFileUpload(ctx context.Context, in *FileUploadRequest, opts ...grpc.CallOption) (*FileUpload, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FileUpload)
+	err := c.cc.Invoke(ctx, FileService_CommitFileUpload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fileServiceClient) AbortFileUpload(ctx context.Context, in *FileUploadRequest, opts ...grpc.CallOption) (*FileUpload, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FileUpload)
+	err := c.cc.Invoke(ctx, FileService_AbortFileUpload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fileServiceClient) DeleteTransferFile(ctx context.Context, in *DeleteTransferFileRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, FileService_DeleteTransferFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *fileServiceClient) ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*FileList, error) {
@@ -116,6 +224,15 @@ func (c *fileServiceClient) DeleteFile(ctx context.Context, in *DeleteFileReques
 //
 // Project files.
 type FileServiceServer interface {
+	StatTransferFile(context.Context, *TransferPath) (*TransferEntry, error)
+	ListTransferFiles(context.Context, *ListTransferFilesRequest) (*TransferPage, error)
+	ReadFileChunk(context.Context, *ReadFileChunkRequest) (*FileChunk, error)
+	BeginFileUpload(context.Context, *BeginFileUploadRequest) (*FileUpload, error)
+	WriteFileChunk(context.Context, *WriteFileChunkRequest) (*FileUpload, error)
+	GetFileUpload(context.Context, *FileUploadRequest) (*FileUpload, error)
+	CommitFileUpload(context.Context, *FileUploadRequest) (*FileUpload, error)
+	AbortFileUpload(context.Context, *FileUploadRequest) (*FileUpload, error)
+	DeleteTransferFile(context.Context, *DeleteTransferFileRequest) (*emptypb.Empty, error)
 	ListFiles(context.Context, *ListFilesRequest) (*FileList, error)
 	ReadFile(context.Context, *ReadFileRequest) (*FileDocument, error)
 	SaveFile(context.Context, *SaveFileRequest) (*FileDocument, error)
@@ -132,6 +249,33 @@ type FileServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedFileServiceServer struct{}
 
+func (UnimplementedFileServiceServer) StatTransferFile(context.Context, *TransferPath) (*TransferEntry, error) {
+	return nil, status.Error(codes.Unimplemented, "method StatTransferFile not implemented")
+}
+func (UnimplementedFileServiceServer) ListTransferFiles(context.Context, *ListTransferFilesRequest) (*TransferPage, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListTransferFiles not implemented")
+}
+func (UnimplementedFileServiceServer) ReadFileChunk(context.Context, *ReadFileChunkRequest) (*FileChunk, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReadFileChunk not implemented")
+}
+func (UnimplementedFileServiceServer) BeginFileUpload(context.Context, *BeginFileUploadRequest) (*FileUpload, error) {
+	return nil, status.Error(codes.Unimplemented, "method BeginFileUpload not implemented")
+}
+func (UnimplementedFileServiceServer) WriteFileChunk(context.Context, *WriteFileChunkRequest) (*FileUpload, error) {
+	return nil, status.Error(codes.Unimplemented, "method WriteFileChunk not implemented")
+}
+func (UnimplementedFileServiceServer) GetFileUpload(context.Context, *FileUploadRequest) (*FileUpload, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetFileUpload not implemented")
+}
+func (UnimplementedFileServiceServer) CommitFileUpload(context.Context, *FileUploadRequest) (*FileUpload, error) {
+	return nil, status.Error(codes.Unimplemented, "method CommitFileUpload not implemented")
+}
+func (UnimplementedFileServiceServer) AbortFileUpload(context.Context, *FileUploadRequest) (*FileUpload, error) {
+	return nil, status.Error(codes.Unimplemented, "method AbortFileUpload not implemented")
+}
+func (UnimplementedFileServiceServer) DeleteTransferFile(context.Context, *DeleteTransferFileRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteTransferFile not implemented")
+}
 func (UnimplementedFileServiceServer) ListFiles(context.Context, *ListFilesRequest) (*FileList, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListFiles not implemented")
 }
@@ -169,6 +313,168 @@ func RegisterFileServiceServer(s grpc.ServiceRegistrar, srv FileServiceServer) {
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&FileService_ServiceDesc, srv)
+}
+
+func _FileService_StatTransferFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TransferPath)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FileServiceServer).StatTransferFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FileService_StatTransferFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FileServiceServer).StatTransferFile(ctx, req.(*TransferPath))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FileService_ListTransferFiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListTransferFilesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FileServiceServer).ListTransferFiles(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FileService_ListTransferFiles_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FileServiceServer).ListTransferFiles(ctx, req.(*ListTransferFilesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FileService_ReadFileChunk_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadFileChunkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FileServiceServer).ReadFileChunk(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FileService_ReadFileChunk_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FileServiceServer).ReadFileChunk(ctx, req.(*ReadFileChunkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FileService_BeginFileUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BeginFileUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FileServiceServer).BeginFileUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FileService_BeginFileUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FileServiceServer).BeginFileUpload(ctx, req.(*BeginFileUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FileService_WriteFileChunk_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WriteFileChunkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FileServiceServer).WriteFileChunk(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FileService_WriteFileChunk_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FileServiceServer).WriteFileChunk(ctx, req.(*WriteFileChunkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FileService_GetFileUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FileUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FileServiceServer).GetFileUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FileService_GetFileUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FileServiceServer).GetFileUpload(ctx, req.(*FileUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FileService_CommitFileUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FileUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FileServiceServer).CommitFileUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FileService_CommitFileUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FileServiceServer).CommitFileUpload(ctx, req.(*FileUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FileService_AbortFileUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FileUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FileServiceServer).AbortFileUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FileService_AbortFileUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FileServiceServer).AbortFileUpload(ctx, req.(*FileUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FileService_DeleteTransferFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteTransferFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FileServiceServer).DeleteTransferFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FileService_DeleteTransferFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FileServiceServer).DeleteTransferFile(ctx, req.(*DeleteTransferFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _FileService_ListFiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -286,6 +592,42 @@ var FileService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "dieter.v1.FileService",
 	HandlerType: (*FileServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "StatTransferFile",
+			Handler:    _FileService_StatTransferFile_Handler,
+		},
+		{
+			MethodName: "ListTransferFiles",
+			Handler:    _FileService_ListTransferFiles_Handler,
+		},
+		{
+			MethodName: "ReadFileChunk",
+			Handler:    _FileService_ReadFileChunk_Handler,
+		},
+		{
+			MethodName: "BeginFileUpload",
+			Handler:    _FileService_BeginFileUpload_Handler,
+		},
+		{
+			MethodName: "WriteFileChunk",
+			Handler:    _FileService_WriteFileChunk_Handler,
+		},
+		{
+			MethodName: "GetFileUpload",
+			Handler:    _FileService_GetFileUpload_Handler,
+		},
+		{
+			MethodName: "CommitFileUpload",
+			Handler:    _FileService_CommitFileUpload_Handler,
+		},
+		{
+			MethodName: "AbortFileUpload",
+			Handler:    _FileService_AbortFileUpload_Handler,
+		},
+		{
+			MethodName: "DeleteTransferFile",
+			Handler:    _FileService_DeleteTransferFile_Handler,
+		},
 		{
 			MethodName: "ListFiles",
 			Handler:    _FileService_ListFiles_Handler,

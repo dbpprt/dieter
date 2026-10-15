@@ -17,8 +17,10 @@ import com.getdieter.core.routing.DataPlane
 import com.getdieter.core.routing.RouteKind
 import com.getdieter.core.routing.RouteSelector
 import com.getdieter.core.runtime.CoreException
+import com.getdieter.core.runtime.Deadlines
 import com.getdieter.core.runtime.FailureKind
 import com.getdieter.core.runtime.Failures
+import com.getdieter.core.runtime.GATEWAY_SILENT
 import com.getdieter.core.runtime.withDeadline
 import com.squareup.wire.GrpcException
 import com.squareup.wire.GrpcStatus
@@ -110,10 +112,13 @@ class GatewaySession(
 
     fun close() = channel.close()
 
-    /** Gateway rejections that need user action become typed failures. */
+    /**
+     * Gateway rejections that need user action become typed failures. A connection that outlived a
+     * sleep can stay silent without failing, so an unanswered call ends as a transient failure.
+     */
     private suspend fun <T> classified(call: suspend () -> T): T =
         try {
-            call()
+            withDeadline(Deadlines.CALL, GATEWAY_SILENT) { call() }
         } catch (error: GrpcException) {
             when (error.grpcStatus) {
                 GrpcStatus.UNAUTHENTICATED ->

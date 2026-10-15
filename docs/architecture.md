@@ -160,6 +160,8 @@ internal/
                          key proofs), localauth/ (loopback API token), vault/ (vault
                          cryptography)
   git/                   exec, status, SCM; changeset/, operations/, workspace/
+  filetransfer/          bounded rooted file I/O, checksums and the pure one-way sync planner
+  host/filetransfer/     durable chunked upload sessions, quotas and commit receipts
   host/                  machine/ (telemetry, power, updates), terminal/, remoteexec/,
                          serviceruntime/ (signed executables at stable paths)
   remotedesktop/         screen sessions, WebRTC media, native helper IPC

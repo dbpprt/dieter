@@ -86,6 +86,7 @@ const (
 	gatewayReconnectInitialBackoff  = time.Second
 	gatewayReconnectMaximumBackoff  = 30 * time.Second
 	gatewayReconnectStableAfter     = 30 * time.Second
+	gatewayHostSleepTolerance       = 5 * time.Second
 	gatewayProviderQuotaCapability  = "provider_quota_v1"
 	gatewayProviderResetCapability  = "provider_quota_reset_v1"
 	maxGatewayProviderQuotaBytes    = 64 << 10
@@ -160,6 +161,13 @@ func gatewayReconnectBackoffWithin(current, connectedFor, initial, maximum, stab
 		next = maximum
 	}
 	return current, next
+}
+
+// gatewayHostSlept reports whether the host slept between two readings that
+// lie wall apart on the wall clock and monotonic apart on the monotonic clock,
+// which stops during sleep on macOS and Linux.
+func gatewayHostSlept(wall, monotonic time.Duration) bool {
+	return wall-monotonic > gatewayHostSleepTolerance
 }
 
 func supportsGatewayCapability(frame *gatewayv1.DaemonLinkFrame, capability string) bool {
@@ -499,8 +507,20 @@ func (c *GatewayClient) runLaneOnce(ctx context.Context, lane relay.Lane, sessio
 	}
 	var quotaCalls sync.Map
 	quotaProbes := make(chan struct{}, maxGatewayProviderQuotaProbes)
+	wakeCheck := time.NewTicker(time.Second)
+	defer wakeCheck.Stop()
+	lastCheck := time.Now()
 	for {
 		select {
+		case <-wakeCheck.C:
+			// A link that outlived a sleep has usually been dropped by the
+			// gateway, but the heartbeat timers paused with the host and would
+			// first wait out their remaining time; reconnect at once instead.
+			now := time.Now()
+			if gatewayHostSlept(now.Round(0).Sub(lastCheck.Round(0)), now.Sub(lastCheck)) {
+				return finish(errors.New("host resumed from sleep"))
+			}
+			lastCheck = now
 		case <-ctx.Done():
 			return finish(nil)
 		case err := <-sendErr:

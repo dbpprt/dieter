@@ -40,6 +40,8 @@ open class EndToEnd {
         pairingCode: String? = fixture.pairingCode,
         clientVersion: String = RELEASE,
         active: Boolean = true,
+        /** Where the runtime reaches [fixture], e.g. through a [StallingProxy]. */
+        gatewayUrl: String = fixture.url,
         configure: (RuntimeConfig) -> RuntimeConfig = { it },
     ): CoreRuntime {
         val config =
@@ -53,7 +55,7 @@ open class EndToEnd {
             )
         val runtime = CoreRuntime(platform, config)
         runtimes += runtime
-        val gateway = requireNotNull(Gateway.parse(fixture.url))
+        val gateway = requireNotNull(Gateway.parse(gatewayUrl))
         runtime.setGateways(listOf(gateway), gateway.origin)
         if (token != null) runtime.credentials.save(gateway, token)
         if (pairingCode != null) runtime.onCore { runtime.trust.usePairingCode(pairingCode) }

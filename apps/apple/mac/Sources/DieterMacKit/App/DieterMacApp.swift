@@ -166,6 +166,9 @@ public struct DieterMacApp: App {
                         store.applicationDidResignActive()
                     }
                 }
+                .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in
+                    store.systemDidWake()
+                }
                 .onChange(of: permissions.canUseApp) { _, canUseApp in
                     islandController.setEnabled(islandEnabled && canUseApp)
                     if !canUseApp { openWindow(id: "workspace") }

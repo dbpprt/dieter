@@ -138,6 +138,10 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
             runtime.reconnect()
             return done
         }
+        command.system_woke?.let {
+            runtime.systemWoke()
+            return done
+        }
         command.set_foreground?.let {
             runtime.setActive(it.foreground)
             return done
