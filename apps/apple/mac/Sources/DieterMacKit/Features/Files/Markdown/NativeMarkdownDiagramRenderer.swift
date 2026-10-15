@@ -360,7 +360,7 @@ private enum NativeMarkdownDiagramError: LocalizedError {
 }
 
 @MainActor
-private final class NativeMarkdownDiagramWebRenderer: NSObject, WKNavigationDelegate {
+final class NativeMarkdownDiagramWebRenderer: NSObject, WKNavigationDelegate {
     private let webView: WKWebView
     private let window: NSWindow
     private var loaded = false

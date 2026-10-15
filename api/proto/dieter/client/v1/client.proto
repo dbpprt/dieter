@@ -681,6 +681,12 @@ message FilesCommand {
     FilesDelete delete = 14;
     // Closes the open document; the folder stays.
     Step close = 15;
+    // Checks the selected file on its machine. Clean buffers take the new
+    // version; dirty buffers keep their edits and report a conflict.
+    FilesRefresh refresh = 16;
+    // Explicitly replaces the current disk version with the editor buffer.
+    // The read and save still use a revision check; concurrent writes fail.
+    FilesText overwrite = 17;
   }
 }
 
@@ -694,7 +700,16 @@ message FilesTarget {
 }
 
 message FilesPath { string path = 1; }
-message FilesText { string text = 1; }
+message FilesText {
+  string text = 1;
+  // The native buffer's base revision, including when an edit raced a refresh.
+  string revision = 2;
+}
+message FilesRefresh {
+  string document_key = 1;
+  string revision = 2;
+  bool dirty = 3;
+}
 
 message FilesCreate {
   string name = 1;
@@ -2219,7 +2234,7 @@ message FilesSlice {
   bool document_unchanged = 9;
   bool document_loading = 10;
   string document_error = 11;
-  // The last save met a newer version on disk.
+  // The disk version changed while the editor had unsaved changes.
   bool conflict = 12;
   bool saving = 13;
   bool can_go_back = 14;

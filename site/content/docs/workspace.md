@@ -50,6 +50,11 @@ Choose the checkout to browse, then open a file.
 Both use the same draft and a separate Save action. Saves check the file revision;
 a concurrent change preserves your edits and reports a conflict.
 
+While a Markdown file is visible in the active Mac app, Dieter checks for changes
+on its machine every two seconds. A clean editor reloads automatically. If you have unsaved edits,
+choose **Reload from Disk** to discard them and load the disk version, or
+**Overwrite Disk** to save your edits over it. This works for remote files too.
+
 Mermaid and Vega/Vega-Lite fences render locally. Click a diagram to edit its
 source, then leave the block to render it again. Rendering libraries are bundled;
 external datasets, scripts, and images are not fetched by the diagram renderer.

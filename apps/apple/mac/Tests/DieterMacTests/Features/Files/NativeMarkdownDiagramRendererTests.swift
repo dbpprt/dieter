@@ -202,3 +202,29 @@ private func diagramEventually(_ predicate: () -> Bool) async -> Bool {
     let completed = await diagramEventually { renderer.cachedCount == 24 }
     #expect(completed && calls == 24 && renderer.pendingCount == 0)
 }
+
+@Test @MainActor func nativeDiagramWebRendererRendersBundledMermaidWithoutNetwork() async throws {
+    _ = NSApplication.shared
+    let renderer = NativeMarkdownDiagramWebRenderer()
+    defer { renderer.dispose() }
+    for theme in ["light", "dark"] {
+        let result = try await renderer.render(
+            .init(
+                code: "flowchart LR\n  Capture --> Review", language: "mermaid", width: 620, theme: theme))
+        #expect(result.size.width > 0 && result.size.height > 0)
+        #expect(result.image.accessibilityDescription == "mermaid diagram. Click to edit source.")
+        let bitmap = try #require(result.image.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:)))
+        #expect(bitmap.pixelsWide > 0 && bitmap.pixelsHigh > 0)
+        // Rendering must produce visible diagram pixels rather than an empty snapshot.
+        var visible = false
+        for y in stride(from: 0, to: bitmap.pixelsHigh, by: 4) {
+            for x in stride(from: 0, to: bitmap.pixelsWide, by: 4) {
+                if let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB), color.alphaComponent > 0.5 {
+                    let brightness = (color.redComponent + color.greenComponent + color.blueComponent) / 3
+                    if theme == "dark" ? brightness > 0.4 : brightness < 0.7 { visible = true }
+                }
+            }
+        }
+        #expect(visible)
+    }
+}
