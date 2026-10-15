@@ -161,6 +161,10 @@ func commandTable() []command {
 			subcommands: []string{"show", "options", "update"},
 		},
 		{
+			name: "design", summary: "Sign in to Claude Design and allow it in Claude Code turns",
+			run: (*CLI).rpcDesign, subcommands: []string{"status", "login", "code", "access", "access on", "access off"},
+		},
+		{
 			name:        "prompt",
 			aliases:     []string{"prompts"},
 			summary:     "Inspect, update, scope, and preview prompt templates",

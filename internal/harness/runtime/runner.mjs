@@ -1,3 +1,8 @@
+import {
+  claudeDesignEnvironment,
+  claudeDesignInactiveTools,
+  claudeDesignInstructions,
+} from "./claude-design.mjs";
 import readline from "node:readline";
 import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -253,7 +258,10 @@ switch (adapter) {
     });
     break;
   case "claude-code":
-    harness = createLocalClaudeCode({ effort: request.effort || undefined });
+    harness = createLocalClaudeCode({
+      effort: request.effort || undefined,
+      env: claudeDesignEnvironment(request, adapter),
+    });
     break;
   case "pi":
     harness = createPi({
@@ -428,9 +436,11 @@ try {
     taskPlanInstructions,
     request.contentPresentationEnabled ? contentPresentationInstructions : "",
     processBridge ? backgroundProcessInstructions : "",
+    claudeDesignInstructions(request, adapter),
   ]
     .filter(Boolean)
     .join("\n\n");
+  const inactiveTools = claudeDesignInactiveTools(request, adapter);
   const createAgent = (candidateHarness, model) =>
     new HarnessAgent({
       harness: observeHarnessCapabilities(candidateHarness, capabilityCollector),
@@ -442,6 +452,7 @@ try {
         ...processTools,
         ...(adapter === "pi" ? { board_task_plan: piTaskPlanTool } : {}),
       },
+      ...(inactiveTools ? { inactiveTools } : {}),
       permissionMode: "allow-all",
       sandboxConfig: { workDir: sandboxWorkDir },
     });

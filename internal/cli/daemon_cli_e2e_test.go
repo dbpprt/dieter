@@ -357,6 +357,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	daemon := topology.StartDaemon(t, g, topology.DaemonOptions{
 		Identity: identity, Store: remoteStore, Direct: true, ControlWebRTC: withRTC, Logger: logger,
 		API: api.Options{
+			ClaudeDesign:  &cliDesignFixture{},
 			PrivacyDriver: &cliPrivacyFixture{},
 			PrivacyBootID: func(context.Context) (string, error) { return "cli-boot", nil },
 			RemoteDesktop: screenManager,
@@ -474,6 +475,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 		return
 	}
 	assertPrivacyCLI(t, first, &firstOutput)
+	assertDesignCLI(t, first, &firstOutput)
 	firstOutput.Reset()
 	if err := first.Run([]string{"machine", "info"}); err != nil || !strings.Contains(firstOutput.String(), `"daemonBuild"`) || !strings.Contains(firstOutput.String(), `"gpu"`) {
 		t.Fatalf("direct machine info output=%q err=%v", firstOutput.String(), err)
@@ -561,6 +563,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	}
 	assertChangesCLI(t, second, &secondOutput)
 	assertPrivacyCLI(t, second, &secondOutput)
+	assertDesignCLI(t, second, &secondOutput)
 	secondOutput.Reset()
 	if err := second.Run([]string{"machine", "info"}); err != nil || !strings.Contains(secondOutput.String(), `"daemonBuild"`) || !strings.Contains(secondOutput.String(), `"gpu"`) {
 		t.Fatalf("relay machine info output=%q err=%v", secondOutput.String(), err)

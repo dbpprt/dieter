@@ -41,7 +41,7 @@ func daemonCLIForTest(t *testing.T) (*CLI, *bytes.Buffer, *store.Store) {
 		t.Fatal(err)
 	}
 	// The static release catalog plus the mock harness: no provider discovery.
-	application := api.NewWithOptions(data, slog.New(slog.NewTextHandler(io.Discard, nil)), api.Options{Runner: newFakeRunner(), Catalog: testkit.MockCatalog(), PrivacyDriver: &cliPrivacyFixture{}, PrivacyBootID: func(context.Context) (string, error) { return "cli-boot", nil }})
+	application := api.NewWithOptions(data, slog.New(slog.NewTextHandler(io.Discard, nil)), api.Options{ClaudeDesign: &cliDesignFixture{}, Runner: newFakeRunner(), Catalog: testkit.MockCatalog(), PrivacyDriver: &cliPrivacyFixture{}, PrivacyBootID: func(context.Context) (string, error) { return "cli-boot", nil }})
 	host := testkit.HTTPServer(application.Handler())
 	t.Cleanup(host.Close)
 	if _, err := link.NewStatusWriter(root, link.RuntimeStatus{

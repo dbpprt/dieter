@@ -100,4 +100,19 @@ object LinkExports {
             LinkError.INVALID_WORKSPACE -> ContentLinkFailure.Kind.KIND_INVALID_WORKSPACE
             LinkError.OUTSIDE_WORKSPACE -> ContentLinkFailure.Kind.KIND_OUTSIDE_WORKSPACE
         }
+
+    /**
+     * Why [url] opens in the system browser regardless of the user's rules, e.g. Claude Design; ""
+     * when the embedded browser may show it.
+     */
+    fun systemBrowserNotice(url: String): String = BrowserRules.systemBrowserNotice(url).orEmpty()
+
+    /**
+     * Whether [url] is a Claude artifact or design, which a client with its own signed-in claude.ai
+     * browser session shows there.
+     */
+    fun isClaudeDesign(url: String): Boolean = BrowserRules.isClaudeDesign(url)
+
+    /** Whether [url] is a claude.ai page that such a claude.ai session may navigate to. */
+    fun isClaudeAccountPage(url: String): Boolean = BrowserRules.isClaudeAccountPage(url)
 }

@@ -118,6 +118,9 @@ type Request struct {
 	// Environment is added to the worker after the allowlist, so commands the
 	// agent runs inherit it. Values never enter the stdin request.
 	Environment map[string]string `json:"-"`
+	// ClaudeDesignEnabled allows Claude Code's native Claude Design tools in
+	// this turn. Without it the worker denies them before the turn starts.
+	ClaudeDesignEnabled bool `json:"claudeDesignEnabled,omitempty"`
 	// RuntimeDigest pins only this active turn to an immutable installed
 	// harness runtime. Completed conversations deliberately do not retain it:
 	// their next turn resolves the then-current runtime and resumes the opaque

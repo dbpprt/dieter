@@ -31,6 +31,7 @@ import com.getdieter.core.connection.SupervisorConfig
 import com.getdieter.core.conversation.ConversationConfig
 import com.getdieter.core.conversation.ConversationSession
 import com.getdieter.core.conversation.Conversations
+import com.getdieter.core.design.ClaudeDesign
 import com.getdieter.core.files.FileTree
 import com.getdieter.core.files.Files
 import com.getdieter.core.identity.AccountStore
@@ -198,6 +199,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
                 board.reset()
                 schedules.stop()
                 telemetry.reset()
+                claudeDesign.reset()
                 projectWorkspaces.reset()
                 quotas.reset()
                 gatewayListeners.forEach { it() }
@@ -227,6 +229,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
     val creation = CreationMemory(storage, platform.logger)
     val schedules = Schedules(sessions, workspace, choice, scope, metadata)
     val telemetry = MachineTelemetry(sessions, scope)
+    val claudeDesign = ClaudeDesign(sessions, scope)
     val projectWorkspaces = ProjectWorkspaces(sessions, workspace, choice)
     val quotas = ProviderQuotas(platform.logger)
     private var gatewayStorage: CoreStorage? = null

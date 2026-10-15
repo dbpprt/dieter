@@ -20,15 +20,19 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SettingsService_GetHarnesses_FullMethodName             = "/dieter.v1.SettingsService/GetHarnesses"
-	SettingsService_GetSettings_FullMethodName              = "/dieter.v1.SettingsService/GetSettings"
-	SettingsService_GetSettingsOptions_FullMethodName       = "/dieter.v1.SettingsService/GetSettingsOptions"
-	SettingsService_UpdateSettings_FullMethodName           = "/dieter.v1.SettingsService/UpdateSettings"
-	SettingsService_GetPromptSettings_FullMethodName        = "/dieter.v1.SettingsService/GetPromptSettings"
-	SettingsService_UpdatePromptSettings_FullMethodName     = "/dieter.v1.SettingsService/UpdatePromptSettings"
-	SettingsService_SetProjectPromptTemplate_FullMethodName = "/dieter.v1.SettingsService/SetProjectPromptTemplate"
-	SettingsService_SetBoardPromptTemplate_FullMethodName   = "/dieter.v1.SettingsService/SetBoardPromptTemplate"
-	SettingsService_PreviewPrompt_FullMethodName            = "/dieter.v1.SettingsService/PreviewPrompt"
+	SettingsService_GetClaudeDesignStatus_FullMethodName        = "/dieter.v1.SettingsService/GetClaudeDesignStatus"
+	SettingsService_SignInClaudeDesign_FullMethodName           = "/dieter.v1.SettingsService/SignInClaudeDesign"
+	SettingsService_SubmitClaudeDesignSignInCode_FullMethodName = "/dieter.v1.SettingsService/SubmitClaudeDesignSignInCode"
+	SettingsService_SetClaudeDesignAccess_FullMethodName        = "/dieter.v1.SettingsService/SetClaudeDesignAccess"
+	SettingsService_GetHarnesses_FullMethodName                 = "/dieter.v1.SettingsService/GetHarnesses"
+	SettingsService_GetSettings_FullMethodName                  = "/dieter.v1.SettingsService/GetSettings"
+	SettingsService_GetSettingsOptions_FullMethodName           = "/dieter.v1.SettingsService/GetSettingsOptions"
+	SettingsService_UpdateSettings_FullMethodName               = "/dieter.v1.SettingsService/UpdateSettings"
+	SettingsService_GetPromptSettings_FullMethodName            = "/dieter.v1.SettingsService/GetPromptSettings"
+	SettingsService_UpdatePromptSettings_FullMethodName         = "/dieter.v1.SettingsService/UpdatePromptSettings"
+	SettingsService_SetProjectPromptTemplate_FullMethodName     = "/dieter.v1.SettingsService/SetProjectPromptTemplate"
+	SettingsService_SetBoardPromptTemplate_FullMethodName       = "/dieter.v1.SettingsService/SetBoardPromptTemplate"
+	SettingsService_PreviewPrompt_FullMethodName                = "/dieter.v1.SettingsService/PreviewPrompt"
 )
 
 // SettingsServiceClient is the client API for SettingsService service.
@@ -37,6 +41,10 @@ const (
 //
 // Daemon settings, prompts and the harness catalog.
 type SettingsServiceClient interface {
+	GetClaudeDesignStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ClaudeDesignStatus, error)
+	SignInClaudeDesign(ctx context.Context, in *SignInClaudeDesignRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ClaudeDesignSignInEvent], error)
+	SubmitClaudeDesignSignInCode(ctx context.Context, in *SubmitClaudeDesignSignInCodeRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	SetClaudeDesignAccess(ctx context.Context, in *SetClaudeDesignAccessRequest, opts ...grpc.CallOption) (*ClaudeDesignStatus, error)
 	GetHarnesses(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*HarnessCatalog, error)
 	GetSettings(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Settings, error)
 	GetSettingsOptions(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*SettingsOptions, error)
@@ -54,6 +62,55 @@ type settingsServiceClient struct {
 
 func NewSettingsServiceClient(cc grpc.ClientConnInterface) SettingsServiceClient {
 	return &settingsServiceClient{cc}
+}
+
+func (c *settingsServiceClient) GetClaudeDesignStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ClaudeDesignStatus, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ClaudeDesignStatus)
+	err := c.cc.Invoke(ctx, SettingsService_GetClaudeDesignStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *settingsServiceClient) SignInClaudeDesign(ctx context.Context, in *SignInClaudeDesignRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ClaudeDesignSignInEvent], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &SettingsService_ServiceDesc.Streams[0], SettingsService_SignInClaudeDesign_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[SignInClaudeDesignRequest, ClaudeDesignSignInEvent]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type SettingsService_SignInClaudeDesignClient = grpc.ServerStreamingClient[ClaudeDesignSignInEvent]
+
+func (c *settingsServiceClient) SubmitClaudeDesignSignInCode(ctx context.Context, in *SubmitClaudeDesignSignInCodeRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, SettingsService_SubmitClaudeDesignSignInCode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *settingsServiceClient) SetClaudeDesignAccess(ctx context.Context, in *SetClaudeDesignAccessRequest, opts ...grpc.CallOption) (*ClaudeDesignStatus, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ClaudeDesignStatus)
+	err := c.cc.Invoke(ctx, SettingsService_SetClaudeDesignAccess_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *settingsServiceClient) GetHarnesses(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*HarnessCatalog, error) {
@@ -152,6 +209,10 @@ func (c *settingsServiceClient) PreviewPrompt(ctx context.Context, in *PreviewPr
 //
 // Daemon settings, prompts and the harness catalog.
 type SettingsServiceServer interface {
+	GetClaudeDesignStatus(context.Context, *emptypb.Empty) (*ClaudeDesignStatus, error)
+	SignInClaudeDesign(*SignInClaudeDesignRequest, grpc.ServerStreamingServer[ClaudeDesignSignInEvent]) error
+	SubmitClaudeDesignSignInCode(context.Context, *SubmitClaudeDesignSignInCodeRequest) (*emptypb.Empty, error)
+	SetClaudeDesignAccess(context.Context, *SetClaudeDesignAccessRequest) (*ClaudeDesignStatus, error)
 	GetHarnesses(context.Context, *emptypb.Empty) (*HarnessCatalog, error)
 	GetSettings(context.Context, *emptypb.Empty) (*Settings, error)
 	GetSettingsOptions(context.Context, *emptypb.Empty) (*SettingsOptions, error)
@@ -171,6 +232,18 @@ type SettingsServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedSettingsServiceServer struct{}
 
+func (UnimplementedSettingsServiceServer) GetClaudeDesignStatus(context.Context, *emptypb.Empty) (*ClaudeDesignStatus, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetClaudeDesignStatus not implemented")
+}
+func (UnimplementedSettingsServiceServer) SignInClaudeDesign(*SignInClaudeDesignRequest, grpc.ServerStreamingServer[ClaudeDesignSignInEvent]) error {
+	return status.Error(codes.Unimplemented, "method SignInClaudeDesign not implemented")
+}
+func (UnimplementedSettingsServiceServer) SubmitClaudeDesignSignInCode(context.Context, *SubmitClaudeDesignSignInCodeRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method SubmitClaudeDesignSignInCode not implemented")
+}
+func (UnimplementedSettingsServiceServer) SetClaudeDesignAccess(context.Context, *SetClaudeDesignAccessRequest) (*ClaudeDesignStatus, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetClaudeDesignAccess not implemented")
+}
 func (UnimplementedSettingsServiceServer) GetHarnesses(context.Context, *emptypb.Empty) (*HarnessCatalog, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetHarnesses not implemented")
 }
@@ -217,6 +290,71 @@ func RegisterSettingsServiceServer(s grpc.ServiceRegistrar, srv SettingsServiceS
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&SettingsService_ServiceDesc, srv)
+}
+
+func _SettingsService_GetClaudeDesignStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SettingsServiceServer).GetClaudeDesignStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SettingsService_GetClaudeDesignStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SettingsServiceServer).GetClaudeDesignStatus(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SettingsService_SignInClaudeDesign_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(SignInClaudeDesignRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(SettingsServiceServer).SignInClaudeDesign(m, &grpc.GenericServerStream[SignInClaudeDesignRequest, ClaudeDesignSignInEvent]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type SettingsService_SignInClaudeDesignServer = grpc.ServerStreamingServer[ClaudeDesignSignInEvent]
+
+func _SettingsService_SubmitClaudeDesignSignInCode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SubmitClaudeDesignSignInCodeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SettingsServiceServer).SubmitClaudeDesignSignInCode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SettingsService_SubmitClaudeDesignSignInCode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SettingsServiceServer).SubmitClaudeDesignSignInCode(ctx, req.(*SubmitClaudeDesignSignInCodeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SettingsService_SetClaudeDesignAccess_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetClaudeDesignAccessRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SettingsServiceServer).SetClaudeDesignAccess(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SettingsService_SetClaudeDesignAccess_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SettingsServiceServer).SetClaudeDesignAccess(ctx, req.(*SetClaudeDesignAccessRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _SettingsService_GetHarnesses_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -389,6 +527,18 @@ var SettingsService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*SettingsServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
+			MethodName: "GetClaudeDesignStatus",
+			Handler:    _SettingsService_GetClaudeDesignStatus_Handler,
+		},
+		{
+			MethodName: "SubmitClaudeDesignSignInCode",
+			Handler:    _SettingsService_SubmitClaudeDesignSignInCode_Handler,
+		},
+		{
+			MethodName: "SetClaudeDesignAccess",
+			Handler:    _SettingsService_SetClaudeDesignAccess_Handler,
+		},
+		{
 			MethodName: "GetHarnesses",
 			Handler:    _SettingsService_GetHarnesses_Handler,
 		},
@@ -425,6 +575,12 @@ var SettingsService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _SettingsService_PreviewPrompt_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "SignInClaudeDesign",
+			Handler:       _SettingsService_SignInClaudeDesign_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "dieter/v1/settings.proto",
 }

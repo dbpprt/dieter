@@ -158,9 +158,16 @@ struct FilesView: View {
                                     ConversationPDFDocumentRenderer(data: document.bytes) {
                                         unsupportedDocument(document)
                                     }
-                                case .markdown, .text:
+                                case .markdown, .text, .html:
                                     VStack(spacing: 0) {
-                                        if renderer == .markdown {
+                                        if renderer == .html {
+                                            HTMLFileView(
+                                                session: editorSession, documentKey: model.documentKey,
+                                                text: document.content, filename: document.name,
+                                                path: document.path, read: model.htmlPreviewRead
+                                            )
+                                            .id(model.documentKey)
+                                        } else if renderer == .markdown {
                                             MarkdownFileEditor(
                                                 session: editorSession, documentKey: model.documentKey,
                                                 text: document.content, filename: document.name

@@ -1078,6 +1078,378 @@ func (x *EffortOption) GetName() string {
 	return ""
 }
 
+type ClaudeDesignStatus struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Claude Design is enabled for the host's Claude account and Claude Code build.
+	Available bool `protobuf:"varint,1,opt,name=available,proto3" json:"available,omitempty"`
+	// Claude Design sign-in stored a design credential on the host.
+	SignedIn bool `protobuf:"varint,2,opt,name=signed_in,json=signedIn,proto3" json:"signed_in,omitempty"`
+	// This host can run the Claude Design sign-in.
+	CanSignIn bool `protobuf:"varint,3,opt,name=can_sign_in,json=canSignIn,proto3" json:"can_sign_in,omitempty"`
+	// Claude Code turns on this machine may use the Claude Design tools.
+	AccessEnabled   bool   `protobuf:"varint,4,opt,name=access_enabled,json=accessEnabled,proto3" json:"access_enabled,omitempty"`
+	AccessUpdatedAt string `protobuf:"bytes,5,opt,name=access_updated_at,json=accessUpdatedAt,proto3" json:"access_updated_at,omitempty"`
+	// Why Claude Design is unavailable or cannot sign in, when Claude Code says.
+	Reason string `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
+	// The pinned Claude Code release Dieter uses on this machine.
+	ClaudeCodeVersion string `protobuf:"bytes,7,opt,name=claude_code_version,json=claudeCodeVersion,proto3" json:"claude_code_version,omitempty"`
+	// False until the first sign-in or Claude Code turn installs that release.
+	RuntimeReady  bool `protobuf:"varint,8,opt,name=runtime_ready,json=runtimeReady,proto3" json:"runtime_ready,omitempty"`
+	SignInActive  bool `protobuf:"varint,9,opt,name=sign_in_active,json=signInActive,proto3" json:"sign_in_active,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClaudeDesignStatus) Reset() {
+	*x = ClaudeDesignStatus{}
+	mi := &file_dieter_v1_settings_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClaudeDesignStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClaudeDesignStatus) ProtoMessage() {}
+
+func (x *ClaudeDesignStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_settings_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClaudeDesignStatus.ProtoReflect.Descriptor instead.
+func (*ClaudeDesignStatus) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_settings_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ClaudeDesignStatus) GetAvailable() bool {
+	if x != nil {
+		return x.Available
+	}
+	return false
+}
+
+func (x *ClaudeDesignStatus) GetSignedIn() bool {
+	if x != nil {
+		return x.SignedIn
+	}
+	return false
+}
+
+func (x *ClaudeDesignStatus) GetCanSignIn() bool {
+	if x != nil {
+		return x.CanSignIn
+	}
+	return false
+}
+
+func (x *ClaudeDesignStatus) GetAccessEnabled() bool {
+	if x != nil {
+		return x.AccessEnabled
+	}
+	return false
+}
+
+func (x *ClaudeDesignStatus) GetAccessUpdatedAt() string {
+	if x != nil {
+		return x.AccessUpdatedAt
+	}
+	return ""
+}
+
+func (x *ClaudeDesignStatus) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *ClaudeDesignStatus) GetClaudeCodeVersion() string {
+	if x != nil {
+		return x.ClaudeCodeVersion
+	}
+	return ""
+}
+
+func (x *ClaudeDesignStatus) GetRuntimeReady() bool {
+	if x != nil {
+		return x.RuntimeReady
+	}
+	return false
+}
+
+func (x *ClaudeDesignStatus) GetSignInActive() bool {
+	if x != nil {
+		return x.SignInActive
+	}
+	return false
+}
+
+type SignInClaudeDesignRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SignInClaudeDesignRequest) Reset() {
+	*x = SignInClaudeDesignRequest{}
+	mi := &file_dieter_v1_settings_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SignInClaudeDesignRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SignInClaudeDesignRequest) ProtoMessage() {}
+
+func (x *SignInClaudeDesignRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_settings_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SignInClaudeDesignRequest.ProtoReflect.Descriptor instead.
+func (*SignInClaudeDesignRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_settings_proto_rawDescGZIP(), []int{17}
+}
+
+// The first event carries only sign_in_id. A preparing event reports that the
+// pinned Claude Code release is being installed. A pages event carries url,
+// which completes in a browser on the daemon host, and manual_url, whose page
+// shows an authorization code to submit with SubmitClaudeDesignSignInCode from
+// any client. The last event has done set and the refreshed status.
+type ClaudeDesignSignInEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SignInId      string                 `protobuf:"bytes,1,opt,name=sign_in_id,json=signInId,proto3" json:"sign_in_id,omitempty"`
+	Preparing     bool                   `protobuf:"varint,2,opt,name=preparing,proto3" json:"preparing,omitempty"`
+	Url           string                 `protobuf:"bytes,3,opt,name=url,proto3" json:"url,omitempty"`
+	ManualUrl     string                 `protobuf:"bytes,4,opt,name=manual_url,json=manualUrl,proto3" json:"manual_url,omitempty"`
+	ManualFirst   bool                   `protobuf:"varint,5,opt,name=manual_first,json=manualFirst,proto3" json:"manual_first,omitempty"`
+	Done          bool                   `protobuf:"varint,6,opt,name=done,proto3" json:"done,omitempty"`
+	Ok            bool                   `protobuf:"varint,7,opt,name=ok,proto3" json:"ok,omitempty"`
+	Message       string                 `protobuf:"bytes,8,opt,name=message,proto3" json:"message,omitempty"`
+	Status        *ClaudeDesignStatus    `protobuf:"bytes,9,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClaudeDesignSignInEvent) Reset() {
+	*x = ClaudeDesignSignInEvent{}
+	mi := &file_dieter_v1_settings_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClaudeDesignSignInEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClaudeDesignSignInEvent) ProtoMessage() {}
+
+func (x *ClaudeDesignSignInEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_settings_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClaudeDesignSignInEvent.ProtoReflect.Descriptor instead.
+func (*ClaudeDesignSignInEvent) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_settings_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ClaudeDesignSignInEvent) GetSignInId() string {
+	if x != nil {
+		return x.SignInId
+	}
+	return ""
+}
+
+func (x *ClaudeDesignSignInEvent) GetPreparing() bool {
+	if x != nil {
+		return x.Preparing
+	}
+	return false
+}
+
+func (x *ClaudeDesignSignInEvent) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *ClaudeDesignSignInEvent) GetManualUrl() string {
+	if x != nil {
+		return x.ManualUrl
+	}
+	return ""
+}
+
+func (x *ClaudeDesignSignInEvent) GetManualFirst() bool {
+	if x != nil {
+		return x.ManualFirst
+	}
+	return false
+}
+
+func (x *ClaudeDesignSignInEvent) GetDone() bool {
+	if x != nil {
+		return x.Done
+	}
+	return false
+}
+
+func (x *ClaudeDesignSignInEvent) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *ClaudeDesignSignInEvent) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *ClaudeDesignSignInEvent) GetStatus() *ClaudeDesignStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+type SubmitClaudeDesignSignInCodeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SignInId      string                 `protobuf:"bytes,1,opt,name=sign_in_id,json=signInId,proto3" json:"sign_in_id,omitempty"`
+	Code          string                 `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubmitClaudeDesignSignInCodeRequest) Reset() {
+	*x = SubmitClaudeDesignSignInCodeRequest{}
+	mi := &file_dieter_v1_settings_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitClaudeDesignSignInCodeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitClaudeDesignSignInCodeRequest) ProtoMessage() {}
+
+func (x *SubmitClaudeDesignSignInCodeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_settings_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitClaudeDesignSignInCodeRequest.ProtoReflect.Descriptor instead.
+func (*SubmitClaudeDesignSignInCodeRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_settings_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *SubmitClaudeDesignSignInCodeRequest) GetSignInId() string {
+	if x != nil {
+		return x.SignInId
+	}
+	return ""
+}
+
+func (x *SubmitClaudeDesignSignInCodeRequest) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+type SetClaudeDesignAccessRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Enabling also grants the Claude account's agent access to Design projects,
+	// which headless Claude Code turns cannot confirm interactively.
+	Enabled bool `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	// With enabled false, also revoke that account-wide grant. This affects every
+	// Claude Code session of the account, not only Dieter.
+	RevokeGrant   bool `protobuf:"varint,2,opt,name=revoke_grant,json=revokeGrant,proto3" json:"revoke_grant,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetClaudeDesignAccessRequest) Reset() {
+	*x = SetClaudeDesignAccessRequest{}
+	mi := &file_dieter_v1_settings_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetClaudeDesignAccessRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetClaudeDesignAccessRequest) ProtoMessage() {}
+
+func (x *SetClaudeDesignAccessRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_settings_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetClaudeDesignAccessRequest.ProtoReflect.Descriptor instead.
+func (*SetClaudeDesignAccessRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_settings_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *SetClaudeDesignAccessRequest) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+func (x *SetClaudeDesignAccessRequest) GetRevokeGrant() bool {
+	if x != nil {
+		return x.RevokeGrant
+	}
+	return false
+}
+
 var File_dieter_v1_settings_proto protoreflect.FileDescriptor
 
 const file_dieter_v1_settings_proto_rawDesc = "" +
@@ -1162,8 +1534,42 @@ const file_dieter_v1_settings_proto_rawDesc = "" +
 	"\x10estimated_tokens\x18\b \x01(\x05R\x0festimatedTokens\"2\n" +
 	"\fEffortOption\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name2\xc4\x05\n" +
-	"\x0fSettingsService\x12A\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\xd5\x02\n" +
+	"\x12ClaudeDesignStatus\x12\x1c\n" +
+	"\tavailable\x18\x01 \x01(\bR\tavailable\x12\x1b\n" +
+	"\tsigned_in\x18\x02 \x01(\bR\bsignedIn\x12\x1e\n" +
+	"\vcan_sign_in\x18\x03 \x01(\bR\tcanSignIn\x12%\n" +
+	"\x0eaccess_enabled\x18\x04 \x01(\bR\raccessEnabled\x12*\n" +
+	"\x11access_updated_at\x18\x05 \x01(\tR\x0faccessUpdatedAt\x12\x16\n" +
+	"\x06reason\x18\x06 \x01(\tR\x06reason\x12.\n" +
+	"\x13claude_code_version\x18\a \x01(\tR\x11claudeCodeVersion\x12#\n" +
+	"\rruntime_ready\x18\b \x01(\bR\fruntimeReady\x12$\n" +
+	"\x0esign_in_active\x18\t \x01(\bR\fsignInActive\"\x1b\n" +
+	"\x19SignInClaudeDesignRequest\"\x9e\x02\n" +
+	"\x17ClaudeDesignSignInEvent\x12\x1c\n" +
+	"\n" +
+	"sign_in_id\x18\x01 \x01(\tR\bsignInId\x12\x1c\n" +
+	"\tpreparing\x18\x02 \x01(\bR\tpreparing\x12\x10\n" +
+	"\x03url\x18\x03 \x01(\tR\x03url\x12\x1d\n" +
+	"\n" +
+	"manual_url\x18\x04 \x01(\tR\tmanualUrl\x12!\n" +
+	"\fmanual_first\x18\x05 \x01(\bR\vmanualFirst\x12\x12\n" +
+	"\x04done\x18\x06 \x01(\bR\x04done\x12\x0e\n" +
+	"\x02ok\x18\a \x01(\bR\x02ok\x12\x18\n" +
+	"\amessage\x18\b \x01(\tR\amessage\x125\n" +
+	"\x06status\x18\t \x01(\v2\x1d.dieter.v1.ClaudeDesignStatusR\x06status\"W\n" +
+	"#SubmitClaudeDesignSignInCodeRequest\x12\x1c\n" +
+	"\n" +
+	"sign_in_id\x18\x01 \x01(\tR\bsignInId\x12\x12\n" +
+	"\x04code\x18\x02 \x01(\tR\x04code\"[\n" +
+	"\x1cSetClaudeDesignAccessRequest\x12\x18\n" +
+	"\aenabled\x18\x01 \x01(\bR\aenabled\x12!\n" +
+	"\frevoke_grant\x18\x02 \x01(\bR\vrevokeGrant2\xbf\b\n" +
+	"\x0fSettingsService\x12N\n" +
+	"\x15GetClaudeDesignStatus\x12\x16.google.protobuf.Empty\x1a\x1d.dieter.v1.ClaudeDesignStatus\x12`\n" +
+	"\x12SignInClaudeDesign\x12$.dieter.v1.SignInClaudeDesignRequest\x1a\".dieter.v1.ClaudeDesignSignInEvent0\x01\x12f\n" +
+	"\x1cSubmitClaudeDesignSignInCode\x12..dieter.v1.SubmitClaudeDesignSignInCodeRequest\x1a\x16.google.protobuf.Empty\x12_\n" +
+	"\x15SetClaudeDesignAccess\x12'.dieter.v1.SetClaudeDesignAccessRequest\x1a\x1d.dieter.v1.ClaudeDesignStatus\x12A\n" +
 	"\fGetHarnesses\x12\x16.google.protobuf.Empty\x1a\x19.dieter.v1.HarnessCatalog\x12:\n" +
 	"\vGetSettings\x12\x16.google.protobuf.Empty\x1a\x13.dieter.v1.Settings\x12H\n" +
 	"\x12GetSettingsOptions\x12\x16.google.protobuf.Empty\x1a\x1a.dieter.v1.SettingsOptions\x12G\n" +
@@ -1187,28 +1593,33 @@ func file_dieter_v1_settings_proto_rawDescGZIP() []byte {
 	return file_dieter_v1_settings_proto_rawDescData
 }
 
-var file_dieter_v1_settings_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_dieter_v1_settings_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_dieter_v1_settings_proto_goTypes = []any{
-	(*HarnessCatalog)(nil),                 // 0: dieter.v1.HarnessCatalog
-	(*Harness)(nil),                        // 1: dieter.v1.Harness
-	(*ProviderOption)(nil),                 // 2: dieter.v1.ProviderOption
-	(*ProviderOptionChoice)(nil),           // 3: dieter.v1.ProviderOptionChoice
-	(*HarnessCapability)(nil),              // 4: dieter.v1.HarnessCapability
-	(*HarnessModel)(nil),                   // 5: dieter.v1.HarnessModel
-	(*EffortConfig)(nil),                   // 6: dieter.v1.EffortConfig
-	(*Settings)(nil),                       // 7: dieter.v1.Settings
-	(*SettingsOptions)(nil),                // 8: dieter.v1.SettingsOptions
-	(*UpdateSettingsRequest)(nil),          // 9: dieter.v1.UpdateSettingsRequest
-	(*PromptSettings)(nil),                 // 10: dieter.v1.PromptSettings
-	(*UpdatePromptSettingsRequest)(nil),    // 11: dieter.v1.UpdatePromptSettingsRequest
-	(*SetScopedPromptTemplateRequest)(nil), // 12: dieter.v1.SetScopedPromptTemplateRequest
-	(*PreviewPromptRequest)(nil),           // 13: dieter.v1.PreviewPromptRequest
-	(*PromptPreview)(nil),                  // 14: dieter.v1.PromptPreview
-	(*EffortOption)(nil),                   // 15: dieter.v1.EffortOption
-	(*Project)(nil),                        // 16: dieter.v1.Project
-	(*Board)(nil),                          // 17: dieter.v1.Board
-	(*Label)(nil),                          // 18: dieter.v1.Label
-	(*emptypb.Empty)(nil),                  // 19: google.protobuf.Empty
+	(*HarnessCatalog)(nil),                      // 0: dieter.v1.HarnessCatalog
+	(*Harness)(nil),                             // 1: dieter.v1.Harness
+	(*ProviderOption)(nil),                      // 2: dieter.v1.ProviderOption
+	(*ProviderOptionChoice)(nil),                // 3: dieter.v1.ProviderOptionChoice
+	(*HarnessCapability)(nil),                   // 4: dieter.v1.HarnessCapability
+	(*HarnessModel)(nil),                        // 5: dieter.v1.HarnessModel
+	(*EffortConfig)(nil),                        // 6: dieter.v1.EffortConfig
+	(*Settings)(nil),                            // 7: dieter.v1.Settings
+	(*SettingsOptions)(nil),                     // 8: dieter.v1.SettingsOptions
+	(*UpdateSettingsRequest)(nil),               // 9: dieter.v1.UpdateSettingsRequest
+	(*PromptSettings)(nil),                      // 10: dieter.v1.PromptSettings
+	(*UpdatePromptSettingsRequest)(nil),         // 11: dieter.v1.UpdatePromptSettingsRequest
+	(*SetScopedPromptTemplateRequest)(nil),      // 12: dieter.v1.SetScopedPromptTemplateRequest
+	(*PreviewPromptRequest)(nil),                // 13: dieter.v1.PreviewPromptRequest
+	(*PromptPreview)(nil),                       // 14: dieter.v1.PromptPreview
+	(*EffortOption)(nil),                        // 15: dieter.v1.EffortOption
+	(*ClaudeDesignStatus)(nil),                  // 16: dieter.v1.ClaudeDesignStatus
+	(*SignInClaudeDesignRequest)(nil),           // 17: dieter.v1.SignInClaudeDesignRequest
+	(*ClaudeDesignSignInEvent)(nil),             // 18: dieter.v1.ClaudeDesignSignInEvent
+	(*SubmitClaudeDesignSignInCodeRequest)(nil), // 19: dieter.v1.SubmitClaudeDesignSignInCodeRequest
+	(*SetClaudeDesignAccessRequest)(nil),        // 20: dieter.v1.SetClaudeDesignAccessRequest
+	(*Project)(nil),                             // 21: dieter.v1.Project
+	(*Board)(nil),                               // 22: dieter.v1.Board
+	(*Label)(nil),                               // 23: dieter.v1.Label
+	(*emptypb.Empty)(nil),                       // 24: google.protobuf.Empty
 }
 var file_dieter_v1_settings_proto_depIdxs = []int32{
 	1,  // 0: dieter.v1.HarnessCatalog.harnesses:type_name -> dieter.v1.Harness
@@ -1218,34 +1629,43 @@ var file_dieter_v1_settings_proto_depIdxs = []int32{
 	2,  // 4: dieter.v1.Harness.options:type_name -> dieter.v1.ProviderOption
 	3,  // 5: dieter.v1.ProviderOption.choices:type_name -> dieter.v1.ProviderOptionChoice
 	15, // 6: dieter.v1.EffortConfig.options:type_name -> dieter.v1.EffortOption
-	16, // 7: dieter.v1.SettingsOptions.projects:type_name -> dieter.v1.Project
-	17, // 8: dieter.v1.SettingsOptions.boards:type_name -> dieter.v1.Board
+	21, // 7: dieter.v1.SettingsOptions.projects:type_name -> dieter.v1.Project
+	22, // 8: dieter.v1.SettingsOptions.boards:type_name -> dieter.v1.Board
 	0,  // 9: dieter.v1.SettingsOptions.agents:type_name -> dieter.v1.HarnessCatalog
 	7,  // 10: dieter.v1.UpdateSettingsRequest.settings:type_name -> dieter.v1.Settings
-	18, // 11: dieter.v1.PromptPreview.applied_labels:type_name -> dieter.v1.Label
-	19, // 12: dieter.v1.SettingsService.GetHarnesses:input_type -> google.protobuf.Empty
-	19, // 13: dieter.v1.SettingsService.GetSettings:input_type -> google.protobuf.Empty
-	19, // 14: dieter.v1.SettingsService.GetSettingsOptions:input_type -> google.protobuf.Empty
-	9,  // 15: dieter.v1.SettingsService.UpdateSettings:input_type -> dieter.v1.UpdateSettingsRequest
-	19, // 16: dieter.v1.SettingsService.GetPromptSettings:input_type -> google.protobuf.Empty
-	11, // 17: dieter.v1.SettingsService.UpdatePromptSettings:input_type -> dieter.v1.UpdatePromptSettingsRequest
-	12, // 18: dieter.v1.SettingsService.SetProjectPromptTemplate:input_type -> dieter.v1.SetScopedPromptTemplateRequest
-	12, // 19: dieter.v1.SettingsService.SetBoardPromptTemplate:input_type -> dieter.v1.SetScopedPromptTemplateRequest
-	13, // 20: dieter.v1.SettingsService.PreviewPrompt:input_type -> dieter.v1.PreviewPromptRequest
-	0,  // 21: dieter.v1.SettingsService.GetHarnesses:output_type -> dieter.v1.HarnessCatalog
-	7,  // 22: dieter.v1.SettingsService.GetSettings:output_type -> dieter.v1.Settings
-	8,  // 23: dieter.v1.SettingsService.GetSettingsOptions:output_type -> dieter.v1.SettingsOptions
-	7,  // 24: dieter.v1.SettingsService.UpdateSettings:output_type -> dieter.v1.Settings
-	10, // 25: dieter.v1.SettingsService.GetPromptSettings:output_type -> dieter.v1.PromptSettings
-	10, // 26: dieter.v1.SettingsService.UpdatePromptSettings:output_type -> dieter.v1.PromptSettings
-	16, // 27: dieter.v1.SettingsService.SetProjectPromptTemplate:output_type -> dieter.v1.Project
-	17, // 28: dieter.v1.SettingsService.SetBoardPromptTemplate:output_type -> dieter.v1.Board
-	14, // 29: dieter.v1.SettingsService.PreviewPrompt:output_type -> dieter.v1.PromptPreview
-	21, // [21:30] is the sub-list for method output_type
-	12, // [12:21] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	23, // 11: dieter.v1.PromptPreview.applied_labels:type_name -> dieter.v1.Label
+	16, // 12: dieter.v1.ClaudeDesignSignInEvent.status:type_name -> dieter.v1.ClaudeDesignStatus
+	24, // 13: dieter.v1.SettingsService.GetClaudeDesignStatus:input_type -> google.protobuf.Empty
+	17, // 14: dieter.v1.SettingsService.SignInClaudeDesign:input_type -> dieter.v1.SignInClaudeDesignRequest
+	19, // 15: dieter.v1.SettingsService.SubmitClaudeDesignSignInCode:input_type -> dieter.v1.SubmitClaudeDesignSignInCodeRequest
+	20, // 16: dieter.v1.SettingsService.SetClaudeDesignAccess:input_type -> dieter.v1.SetClaudeDesignAccessRequest
+	24, // 17: dieter.v1.SettingsService.GetHarnesses:input_type -> google.protobuf.Empty
+	24, // 18: dieter.v1.SettingsService.GetSettings:input_type -> google.protobuf.Empty
+	24, // 19: dieter.v1.SettingsService.GetSettingsOptions:input_type -> google.protobuf.Empty
+	9,  // 20: dieter.v1.SettingsService.UpdateSettings:input_type -> dieter.v1.UpdateSettingsRequest
+	24, // 21: dieter.v1.SettingsService.GetPromptSettings:input_type -> google.protobuf.Empty
+	11, // 22: dieter.v1.SettingsService.UpdatePromptSettings:input_type -> dieter.v1.UpdatePromptSettingsRequest
+	12, // 23: dieter.v1.SettingsService.SetProjectPromptTemplate:input_type -> dieter.v1.SetScopedPromptTemplateRequest
+	12, // 24: dieter.v1.SettingsService.SetBoardPromptTemplate:input_type -> dieter.v1.SetScopedPromptTemplateRequest
+	13, // 25: dieter.v1.SettingsService.PreviewPrompt:input_type -> dieter.v1.PreviewPromptRequest
+	16, // 26: dieter.v1.SettingsService.GetClaudeDesignStatus:output_type -> dieter.v1.ClaudeDesignStatus
+	18, // 27: dieter.v1.SettingsService.SignInClaudeDesign:output_type -> dieter.v1.ClaudeDesignSignInEvent
+	24, // 28: dieter.v1.SettingsService.SubmitClaudeDesignSignInCode:output_type -> google.protobuf.Empty
+	16, // 29: dieter.v1.SettingsService.SetClaudeDesignAccess:output_type -> dieter.v1.ClaudeDesignStatus
+	0,  // 30: dieter.v1.SettingsService.GetHarnesses:output_type -> dieter.v1.HarnessCatalog
+	7,  // 31: dieter.v1.SettingsService.GetSettings:output_type -> dieter.v1.Settings
+	8,  // 32: dieter.v1.SettingsService.GetSettingsOptions:output_type -> dieter.v1.SettingsOptions
+	7,  // 33: dieter.v1.SettingsService.UpdateSettings:output_type -> dieter.v1.Settings
+	10, // 34: dieter.v1.SettingsService.GetPromptSettings:output_type -> dieter.v1.PromptSettings
+	10, // 35: dieter.v1.SettingsService.UpdatePromptSettings:output_type -> dieter.v1.PromptSettings
+	21, // 36: dieter.v1.SettingsService.SetProjectPromptTemplate:output_type -> dieter.v1.Project
+	22, // 37: dieter.v1.SettingsService.SetBoardPromptTemplate:output_type -> dieter.v1.Board
+	14, // 38: dieter.v1.SettingsService.PreviewPrompt:output_type -> dieter.v1.PromptPreview
+	26, // [26:39] is the sub-list for method output_type
+	13, // [13:26] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_dieter_v1_settings_proto_init() }
@@ -1260,7 +1680,7 @@ func file_dieter_v1_settings_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dieter_v1_settings_proto_rawDesc), len(file_dieter_v1_settings_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   16,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

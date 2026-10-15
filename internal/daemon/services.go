@@ -190,6 +190,7 @@ func (s *Services) Serve(ctx context.Context, listener net.Listener, activating 
 	s.Terminals.Shutdown(shutdownCtx)
 	s.Executions.Shutdown(shutdownCtx)
 	s.RemoteDesktop.Shutdown(shutdownCtx)
+	s.API.CloseClaudeDesign()
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		_ = httpServer.Close()
 	}

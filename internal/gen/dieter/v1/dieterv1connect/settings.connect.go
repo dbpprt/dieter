@@ -34,6 +34,18 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// SettingsServiceGetClaudeDesignStatusProcedure is the fully-qualified name of the
+	// SettingsService's GetClaudeDesignStatus RPC.
+	SettingsServiceGetClaudeDesignStatusProcedure = "/dieter.v1.SettingsService/GetClaudeDesignStatus"
+	// SettingsServiceSignInClaudeDesignProcedure is the fully-qualified name of the SettingsService's
+	// SignInClaudeDesign RPC.
+	SettingsServiceSignInClaudeDesignProcedure = "/dieter.v1.SettingsService/SignInClaudeDesign"
+	// SettingsServiceSubmitClaudeDesignSignInCodeProcedure is the fully-qualified name of the
+	// SettingsService's SubmitClaudeDesignSignInCode RPC.
+	SettingsServiceSubmitClaudeDesignSignInCodeProcedure = "/dieter.v1.SettingsService/SubmitClaudeDesignSignInCode"
+	// SettingsServiceSetClaudeDesignAccessProcedure is the fully-qualified name of the
+	// SettingsService's SetClaudeDesignAccess RPC.
+	SettingsServiceSetClaudeDesignAccessProcedure = "/dieter.v1.SettingsService/SetClaudeDesignAccess"
 	// SettingsServiceGetHarnessesProcedure is the fully-qualified name of the SettingsService's
 	// GetHarnesses RPC.
 	SettingsServiceGetHarnessesProcedure = "/dieter.v1.SettingsService/GetHarnesses"
@@ -65,6 +77,10 @@ const (
 
 // SettingsServiceClient is a client for the dieter.v1.SettingsService service.
 type SettingsServiceClient interface {
+	GetClaudeDesignStatus(context.Context, *emptypb.Empty) (*v1.ClaudeDesignStatus, error)
+	SignInClaudeDesign(context.Context, *v1.SignInClaudeDesignRequest) (*connect.ServerStreamForClient[v1.ClaudeDesignSignInEvent], error)
+	SubmitClaudeDesignSignInCode(context.Context, *v1.SubmitClaudeDesignSignInCodeRequest) (*emptypb.Empty, error)
+	SetClaudeDesignAccess(context.Context, *v1.SetClaudeDesignAccessRequest) (*v1.ClaudeDesignStatus, error)
 	GetHarnesses(context.Context, *emptypb.Empty) (*v1.HarnessCatalog, error)
 	GetSettings(context.Context, *emptypb.Empty) (*v1.Settings, error)
 	GetSettingsOptions(context.Context, *emptypb.Empty) (*v1.SettingsOptions, error)
@@ -87,6 +103,30 @@ func NewSettingsServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 	baseURL = strings.TrimRight(baseURL, "/")
 	settingsServiceMethods := v1.File_dieter_v1_settings_proto.Services().ByName("SettingsService").Methods()
 	return &settingsServiceClient{
+		getClaudeDesignStatus: connect.NewClient[emptypb.Empty, v1.ClaudeDesignStatus](
+			httpClient,
+			baseURL+SettingsServiceGetClaudeDesignStatusProcedure,
+			connect.WithSchema(settingsServiceMethods.ByName("GetClaudeDesignStatus")),
+			connect.WithClientOptions(opts...),
+		),
+		signInClaudeDesign: connect.NewClient[v1.SignInClaudeDesignRequest, v1.ClaudeDesignSignInEvent](
+			httpClient,
+			baseURL+SettingsServiceSignInClaudeDesignProcedure,
+			connect.WithSchema(settingsServiceMethods.ByName("SignInClaudeDesign")),
+			connect.WithClientOptions(opts...),
+		),
+		submitClaudeDesignSignInCode: connect.NewClient[v1.SubmitClaudeDesignSignInCodeRequest, emptypb.Empty](
+			httpClient,
+			baseURL+SettingsServiceSubmitClaudeDesignSignInCodeProcedure,
+			connect.WithSchema(settingsServiceMethods.ByName("SubmitClaudeDesignSignInCode")),
+			connect.WithClientOptions(opts...),
+		),
+		setClaudeDesignAccess: connect.NewClient[v1.SetClaudeDesignAccessRequest, v1.ClaudeDesignStatus](
+			httpClient,
+			baseURL+SettingsServiceSetClaudeDesignAccessProcedure,
+			connect.WithSchema(settingsServiceMethods.ByName("SetClaudeDesignAccess")),
+			connect.WithClientOptions(opts...),
+		),
 		getHarnesses: connect.NewClient[emptypb.Empty, v1.HarnessCatalog](
 			httpClient,
 			baseURL+SettingsServiceGetHarnessesProcedure,
@@ -146,15 +186,51 @@ func NewSettingsServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 
 // settingsServiceClient implements SettingsServiceClient.
 type settingsServiceClient struct {
-	getHarnesses             *connect.Client[emptypb.Empty, v1.HarnessCatalog]
-	getSettings              *connect.Client[emptypb.Empty, v1.Settings]
-	getSettingsOptions       *connect.Client[emptypb.Empty, v1.SettingsOptions]
-	updateSettings           *connect.Client[v1.UpdateSettingsRequest, v1.Settings]
-	getPromptSettings        *connect.Client[emptypb.Empty, v1.PromptSettings]
-	updatePromptSettings     *connect.Client[v1.UpdatePromptSettingsRequest, v1.PromptSettings]
-	setProjectPromptTemplate *connect.Client[v1.SetScopedPromptTemplateRequest, v1.Project]
-	setBoardPromptTemplate   *connect.Client[v1.SetScopedPromptTemplateRequest, v1.Board]
-	previewPrompt            *connect.Client[v1.PreviewPromptRequest, v1.PromptPreview]
+	getClaudeDesignStatus        *connect.Client[emptypb.Empty, v1.ClaudeDesignStatus]
+	signInClaudeDesign           *connect.Client[v1.SignInClaudeDesignRequest, v1.ClaudeDesignSignInEvent]
+	submitClaudeDesignSignInCode *connect.Client[v1.SubmitClaudeDesignSignInCodeRequest, emptypb.Empty]
+	setClaudeDesignAccess        *connect.Client[v1.SetClaudeDesignAccessRequest, v1.ClaudeDesignStatus]
+	getHarnesses                 *connect.Client[emptypb.Empty, v1.HarnessCatalog]
+	getSettings                  *connect.Client[emptypb.Empty, v1.Settings]
+	getSettingsOptions           *connect.Client[emptypb.Empty, v1.SettingsOptions]
+	updateSettings               *connect.Client[v1.UpdateSettingsRequest, v1.Settings]
+	getPromptSettings            *connect.Client[emptypb.Empty, v1.PromptSettings]
+	updatePromptSettings         *connect.Client[v1.UpdatePromptSettingsRequest, v1.PromptSettings]
+	setProjectPromptTemplate     *connect.Client[v1.SetScopedPromptTemplateRequest, v1.Project]
+	setBoardPromptTemplate       *connect.Client[v1.SetScopedPromptTemplateRequest, v1.Board]
+	previewPrompt                *connect.Client[v1.PreviewPromptRequest, v1.PromptPreview]
+}
+
+// GetClaudeDesignStatus calls dieter.v1.SettingsService.GetClaudeDesignStatus.
+func (c *settingsServiceClient) GetClaudeDesignStatus(ctx context.Context, req *emptypb.Empty) (*v1.ClaudeDesignStatus, error) {
+	response, err := c.getClaudeDesignStatus.CallUnary(ctx, connect.NewRequest(req))
+	if response != nil {
+		return response.Msg, err
+	}
+	return nil, err
+}
+
+// SignInClaudeDesign calls dieter.v1.SettingsService.SignInClaudeDesign.
+func (c *settingsServiceClient) SignInClaudeDesign(ctx context.Context, req *v1.SignInClaudeDesignRequest) (*connect.ServerStreamForClient[v1.ClaudeDesignSignInEvent], error) {
+	return c.signInClaudeDesign.CallServerStream(ctx, connect.NewRequest(req))
+}
+
+// SubmitClaudeDesignSignInCode calls dieter.v1.SettingsService.SubmitClaudeDesignSignInCode.
+func (c *settingsServiceClient) SubmitClaudeDesignSignInCode(ctx context.Context, req *v1.SubmitClaudeDesignSignInCodeRequest) (*emptypb.Empty, error) {
+	response, err := c.submitClaudeDesignSignInCode.CallUnary(ctx, connect.NewRequest(req))
+	if response != nil {
+		return response.Msg, err
+	}
+	return nil, err
+}
+
+// SetClaudeDesignAccess calls dieter.v1.SettingsService.SetClaudeDesignAccess.
+func (c *settingsServiceClient) SetClaudeDesignAccess(ctx context.Context, req *v1.SetClaudeDesignAccessRequest) (*v1.ClaudeDesignStatus, error) {
+	response, err := c.setClaudeDesignAccess.CallUnary(ctx, connect.NewRequest(req))
+	if response != nil {
+		return response.Msg, err
+	}
+	return nil, err
 }
 
 // GetHarnesses calls dieter.v1.SettingsService.GetHarnesses.
@@ -240,6 +316,10 @@ func (c *settingsServiceClient) PreviewPrompt(ctx context.Context, req *v1.Previ
 
 // SettingsServiceHandler is an implementation of the dieter.v1.SettingsService service.
 type SettingsServiceHandler interface {
+	GetClaudeDesignStatus(context.Context, *emptypb.Empty) (*v1.ClaudeDesignStatus, error)
+	SignInClaudeDesign(context.Context, *v1.SignInClaudeDesignRequest, *connect.ServerStream[v1.ClaudeDesignSignInEvent]) error
+	SubmitClaudeDesignSignInCode(context.Context, *v1.SubmitClaudeDesignSignInCodeRequest) (*emptypb.Empty, error)
+	SetClaudeDesignAccess(context.Context, *v1.SetClaudeDesignAccessRequest) (*v1.ClaudeDesignStatus, error)
 	GetHarnesses(context.Context, *emptypb.Empty) (*v1.HarnessCatalog, error)
 	GetSettings(context.Context, *emptypb.Empty) (*v1.Settings, error)
 	GetSettingsOptions(context.Context, *emptypb.Empty) (*v1.SettingsOptions, error)
@@ -258,6 +338,30 @@ type SettingsServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewSettingsServiceHandler(svc SettingsServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	settingsServiceMethods := v1.File_dieter_v1_settings_proto.Services().ByName("SettingsService").Methods()
+	settingsServiceGetClaudeDesignStatusHandler := connect.NewUnaryHandlerSimple(
+		SettingsServiceGetClaudeDesignStatusProcedure,
+		svc.GetClaudeDesignStatus,
+		connect.WithSchema(settingsServiceMethods.ByName("GetClaudeDesignStatus")),
+		connect.WithHandlerOptions(opts...),
+	)
+	settingsServiceSignInClaudeDesignHandler := connect.NewServerStreamHandlerSimple(
+		SettingsServiceSignInClaudeDesignProcedure,
+		svc.SignInClaudeDesign,
+		connect.WithSchema(settingsServiceMethods.ByName("SignInClaudeDesign")),
+		connect.WithHandlerOptions(opts...),
+	)
+	settingsServiceSubmitClaudeDesignSignInCodeHandler := connect.NewUnaryHandlerSimple(
+		SettingsServiceSubmitClaudeDesignSignInCodeProcedure,
+		svc.SubmitClaudeDesignSignInCode,
+		connect.WithSchema(settingsServiceMethods.ByName("SubmitClaudeDesignSignInCode")),
+		connect.WithHandlerOptions(opts...),
+	)
+	settingsServiceSetClaudeDesignAccessHandler := connect.NewUnaryHandlerSimple(
+		SettingsServiceSetClaudeDesignAccessProcedure,
+		svc.SetClaudeDesignAccess,
+		connect.WithSchema(settingsServiceMethods.ByName("SetClaudeDesignAccess")),
+		connect.WithHandlerOptions(opts...),
+	)
 	settingsServiceGetHarnessesHandler := connect.NewUnaryHandlerSimple(
 		SettingsServiceGetHarnessesProcedure,
 		svc.GetHarnesses,
@@ -314,6 +418,14 @@ func NewSettingsServiceHandler(svc SettingsServiceHandler, opts ...connect.Handl
 	)
 	return "/dieter.v1.SettingsService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case SettingsServiceGetClaudeDesignStatusProcedure:
+			settingsServiceGetClaudeDesignStatusHandler.ServeHTTP(w, r)
+		case SettingsServiceSignInClaudeDesignProcedure:
+			settingsServiceSignInClaudeDesignHandler.ServeHTTP(w, r)
+		case SettingsServiceSubmitClaudeDesignSignInCodeProcedure:
+			settingsServiceSubmitClaudeDesignSignInCodeHandler.ServeHTTP(w, r)
+		case SettingsServiceSetClaudeDesignAccessProcedure:
+			settingsServiceSetClaudeDesignAccessHandler.ServeHTTP(w, r)
 		case SettingsServiceGetHarnessesProcedure:
 			settingsServiceGetHarnessesHandler.ServeHTTP(w, r)
 		case SettingsServiceGetSettingsProcedure:
@@ -340,6 +452,22 @@ func NewSettingsServiceHandler(svc SettingsServiceHandler, opts ...connect.Handl
 
 // UnimplementedSettingsServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSettingsServiceHandler struct{}
+
+func (UnimplementedSettingsServiceHandler) GetClaudeDesignStatus(context.Context, *emptypb.Empty) (*v1.ClaudeDesignStatus, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.SettingsService.GetClaudeDesignStatus is not implemented"))
+}
+
+func (UnimplementedSettingsServiceHandler) SignInClaudeDesign(context.Context, *v1.SignInClaudeDesignRequest, *connect.ServerStream[v1.ClaudeDesignSignInEvent]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.SettingsService.SignInClaudeDesign is not implemented"))
+}
+
+func (UnimplementedSettingsServiceHandler) SubmitClaudeDesignSignInCode(context.Context, *v1.SubmitClaudeDesignSignInCodeRequest) (*emptypb.Empty, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.SettingsService.SubmitClaudeDesignSignInCode is not implemented"))
+}
+
+func (UnimplementedSettingsServiceHandler) SetClaudeDesignAccess(context.Context, *v1.SetClaudeDesignAccessRequest) (*v1.ClaudeDesignStatus, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.SettingsService.SetClaudeDesignAccess is not implemented"))
+}
 
 func (UnimplementedSettingsServiceHandler) GetHarnesses(context.Context, *emptypb.Empty) (*v1.HarnessCatalog, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.SettingsService.GetHarnesses is not implemented"))

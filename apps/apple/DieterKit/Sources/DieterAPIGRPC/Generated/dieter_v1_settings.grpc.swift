@@ -21,6 +21,58 @@ public enum Dieter_V1_SettingsService: Sendable {
     public static let descriptor = GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.SettingsService")
     /// Namespace for method metadata.
     public enum Method: Sendable {
+        /// Namespace for "GetClaudeDesignStatus" metadata.
+        public enum GetClaudeDesignStatus: Sendable {
+            /// Request type for "GetClaudeDesignStatus".
+            public typealias Input = SwiftProtobuf.Google_Protobuf_Empty
+            /// Response type for "GetClaudeDesignStatus".
+            public typealias Output = Dieter_V1_ClaudeDesignStatus
+            /// Descriptor for "GetClaudeDesignStatus".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.SettingsService"),
+                method: "GetClaudeDesignStatus",
+                type: .unary
+            )
+        }
+        /// Namespace for "SignInClaudeDesign" metadata.
+        public enum SignInClaudeDesign: Sendable {
+            /// Request type for "SignInClaudeDesign".
+            public typealias Input = Dieter_V1_SignInClaudeDesignRequest
+            /// Response type for "SignInClaudeDesign".
+            public typealias Output = Dieter_V1_ClaudeDesignSignInEvent
+            /// Descriptor for "SignInClaudeDesign".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.SettingsService"),
+                method: "SignInClaudeDesign",
+                type: .serverStreaming
+            )
+        }
+        /// Namespace for "SubmitClaudeDesignSignInCode" metadata.
+        public enum SubmitClaudeDesignSignInCode: Sendable {
+            /// Request type for "SubmitClaudeDesignSignInCode".
+            public typealias Input = Dieter_V1_SubmitClaudeDesignSignInCodeRequest
+            /// Response type for "SubmitClaudeDesignSignInCode".
+            public typealias Output = SwiftProtobuf.Google_Protobuf_Empty
+            /// Descriptor for "SubmitClaudeDesignSignInCode".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.SettingsService"),
+                method: "SubmitClaudeDesignSignInCode",
+                type: .unary
+            )
+        }
+        /// Namespace for "SetClaudeDesignAccess" metadata.
+        public enum SetClaudeDesignAccess: Sendable {
+            /// Request type for "SetClaudeDesignAccess".
+            public typealias Input = Dieter_V1_SetClaudeDesignAccessRequest
+            /// Response type for "SetClaudeDesignAccess".
+            public typealias Output = Dieter_V1_ClaudeDesignStatus
+            /// Descriptor for "SetClaudeDesignAccess".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.SettingsService"),
+                method: "SetClaudeDesignAccess",
+                type: .unary
+            )
+        }
         /// Namespace for "GetHarnesses" metadata.
         public enum GetHarnesses: Sendable {
             /// Request type for "GetHarnesses".
@@ -140,6 +192,10 @@ public enum Dieter_V1_SettingsService: Sendable {
         }
         /// Descriptors for all methods in the "dieter.v1.SettingsService" service.
         public static let descriptors: [GRPCCore.MethodDescriptor] = [
+            GetClaudeDesignStatus.descriptor,
+            SignInClaudeDesign.descriptor,
+            SubmitClaudeDesignSignInCode.descriptor,
+            SetClaudeDesignAccess.descriptor,
             GetHarnesses.descriptor,
             GetSettings.descriptor,
             GetSettingsOptions.descriptor,
@@ -172,6 +228,82 @@ extension Dieter_V1_SettingsService {
     /// >
     /// > Daemon settings, prompts and the harness catalog.
     public protocol ClientProtocol: Sendable {
+        /// Call the "GetClaudeDesignStatus" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
+        ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ClaudeDesignStatus` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func getClaudeDesignStatus<Result>(
+            request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
+            serializer: some GRPCCore.MessageSerializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ClaudeDesignStatus>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ClaudeDesignStatus>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "SignInClaudeDesign" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_SignInClaudeDesignRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_SignInClaudeDesignRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ClaudeDesignSignInEvent` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func signInClaudeDesign<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_SignInClaudeDesignRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_SignInClaudeDesignRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ClaudeDesignSignInEvent>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_ClaudeDesignSignInEvent>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "SubmitClaudeDesignSignInCode" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_SubmitClaudeDesignSignInCodeRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_SubmitClaudeDesignSignInCodeRequest` messages.
+        ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func submitClaudeDesignSignInCode<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_SubmitClaudeDesignSignInCodeRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_SubmitClaudeDesignSignInCodeRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "SetClaudeDesignAccess" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_SetClaudeDesignAccessRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_SetClaudeDesignAccessRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ClaudeDesignStatus` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func setClaudeDesignAccess<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_SetClaudeDesignAccessRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_SetClaudeDesignAccessRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ClaudeDesignStatus>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ClaudeDesignStatus>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
         /// Call the "GetHarnesses" method.
         ///
         /// - Parameters:
@@ -362,6 +494,124 @@ extension Dieter_V1_SettingsService {
         ///   - client: A `GRPCCore.GRPCClient` providing a communication channel to the service.
         public init(wrapping client: GRPCCore.GRPCClient<Transport>) {
             self.client = client
+        }
+
+        /// Call the "GetClaudeDesignStatus" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
+        ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ClaudeDesignStatus` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func getClaudeDesignStatus<Result>(
+            request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
+            serializer: some GRPCCore.MessageSerializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ClaudeDesignStatus>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ClaudeDesignStatus>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_SettingsService.Method.GetClaudeDesignStatus.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "SignInClaudeDesign" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_SignInClaudeDesignRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_SignInClaudeDesignRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ClaudeDesignSignInEvent` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func signInClaudeDesign<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_SignInClaudeDesignRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_SignInClaudeDesignRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ClaudeDesignSignInEvent>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_ClaudeDesignSignInEvent>) async throws -> Result
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.serverStreaming(
+                request: request,
+                descriptor: Dieter_V1_SettingsService.Method.SignInClaudeDesign.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "SubmitClaudeDesignSignInCode" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_SubmitClaudeDesignSignInCodeRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_SubmitClaudeDesignSignInCodeRequest` messages.
+        ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func submitClaudeDesignSignInCode<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_SubmitClaudeDesignSignInCodeRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_SubmitClaudeDesignSignInCodeRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_SettingsService.Method.SubmitClaudeDesignSignInCode.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "SetClaudeDesignAccess" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_SetClaudeDesignAccessRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_SetClaudeDesignAccessRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ClaudeDesignStatus` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func setClaudeDesignAccess<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_SetClaudeDesignAccessRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_SetClaudeDesignAccessRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ClaudeDesignStatus>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ClaudeDesignStatus>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_SettingsService.Method.SetClaudeDesignAccess.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
         }
 
         /// Call the "GetHarnesses" method.
@@ -639,6 +889,104 @@ extension Dieter_V1_SettingsService {
 // Helpers providing default arguments to 'ClientProtocol' methods.
 @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
 extension Dieter_V1_SettingsService.ClientProtocol {
+    /// Call the "GetClaudeDesignStatus" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getClaudeDesignStatus<Result>(
+        request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ClaudeDesignStatus>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.getClaudeDesignStatus(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<SwiftProtobuf.Google_Protobuf_Empty>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_ClaudeDesignStatus>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SignInClaudeDesign" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_SignInClaudeDesignRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func signInClaudeDesign<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_SignInClaudeDesignRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_ClaudeDesignSignInEvent>) async throws -> Result
+    ) async throws -> Result where Result: Sendable {
+        try await self.signInClaudeDesign(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_SignInClaudeDesignRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_ClaudeDesignSignInEvent>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SubmitClaudeDesignSignInCode" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_SubmitClaudeDesignSignInCodeRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func submitClaudeDesignSignInCode<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_SubmitClaudeDesignSignInCodeRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.submitClaudeDesignSignInCode(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_SubmitClaudeDesignSignInCodeRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<SwiftProtobuf.Google_Protobuf_Empty>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SetClaudeDesignAccess" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_SetClaudeDesignAccessRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func setClaudeDesignAccess<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_SetClaudeDesignAccessRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ClaudeDesignStatus>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.setClaudeDesignAccess(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_SetClaudeDesignAccessRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_ClaudeDesignStatus>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "GetHarnesses" method.
     ///
     /// - Parameters:
@@ -868,6 +1216,120 @@ extension Dieter_V1_SettingsService.ClientProtocol {
 // Helpers providing sugared APIs for 'ClientProtocol' methods.
 @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
 extension Dieter_V1_SettingsService.ClientProtocol {
+    /// Call the "GetClaudeDesignStatus" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getClaudeDesignStatus<Result>(
+        _ message: SwiftProtobuf.Google_Protobuf_Empty,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ClaudeDesignStatus>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.getClaudeDesignStatus(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SignInClaudeDesign" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func signInClaudeDesign<Result>(
+        _ message: Dieter_V1_SignInClaudeDesignRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_ClaudeDesignSignInEvent>) async throws -> Result
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_SignInClaudeDesignRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.signInClaudeDesign(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SubmitClaudeDesignSignInCode" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func submitClaudeDesignSignInCode<Result>(
+        _ message: Dieter_V1_SubmitClaudeDesignSignInCodeRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_SubmitClaudeDesignSignInCodeRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.submitClaudeDesignSignInCode(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SetClaudeDesignAccess" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func setClaudeDesignAccess<Result>(
+        _ message: Dieter_V1_SetClaudeDesignAccessRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ClaudeDesignStatus>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_SetClaudeDesignAccessRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.setClaudeDesignAccess(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "GetHarnesses" method.
     ///
     /// - Parameters:

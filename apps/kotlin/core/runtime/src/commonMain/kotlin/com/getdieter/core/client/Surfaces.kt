@@ -4,6 +4,7 @@ import com.getdieter.client.v1.Failure
 import com.getdieter.core.CoreRuntime
 import com.getdieter.core.admin.MachineTelemetry
 import com.getdieter.core.board.BoardViewSurface
+import com.getdieter.core.design.ClaudeDesign
 import com.getdieter.core.executions.Processes
 import com.getdieter.core.navigation.ChatsSurface
 import com.getdieter.core.schedules.Schedules
@@ -103,6 +104,8 @@ internal class ViewSurfaces(runtime: CoreRuntime, screenHost: ScreenHost?) {
         }
     val telemetry =
         Surfaces(MachineTelemetry::stop) { MachineTelemetry(runtime.sessions, runtime.scope) }
+    val claudeDesign =
+        Surfaces(ClaudeDesign::stop) { ClaudeDesign(runtime.sessions, runtime.scope) }
     val boardViews = Surfaces {
         BoardViewSurface(
             runtime.workspace.state,
@@ -129,6 +132,7 @@ internal class ViewSurfaces(runtime: CoreRuntime, screenHost: ScreenHost?) {
         projectWorkspaces.all.forEach(ProjectWorkspaces::reset)
         schedules.all.forEach(Schedules::stop)
         telemetry.all.forEach(MachineTelemetry::reset)
+        claudeDesign.all.forEach(ClaudeDesign::reset)
         chats.all.forEach(ChatsSurface::reset)
     }
 }

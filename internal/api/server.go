@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/dbpprt/dieter/internal/claudedesign"
 	"github.com/dbpprt/dieter/internal/engine"
 	"github.com/dbpprt/dieter/internal/engine/scheduler"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
@@ -62,6 +63,7 @@ type Server struct {
 	filesMu                 sync.RWMutex
 	terminals               *terminal.Manager
 	executions              *remoteexec.Manager
+	claudeDesign            *claudedesign.Manager
 	remoteDesktop           *remotedesktop.Manager
 	machine                 *machine.Collector
 	machineAction           func(context.Context, machine.Operation) error
@@ -82,6 +84,7 @@ type Server struct {
 // A static catalog retains release choices without running provider
 // discovery.
 type Options struct {
+	ClaudeDesign  claudedesign.Host
 	PrivacyDriver remotedesktop.PrivacyDriver
 	PrivacyBootID func(context.Context) (string, error)
 	ControlRTC    *controlrtc.Manager
@@ -179,6 +182,11 @@ func NewWithOptions(data *store.Store, logger *slog.Logger, options Options) *Se
 	if options.PrivacyBootID != nil {
 		s.privacyBootID = options.PrivacyBootID
 	}
+	host := options.ClaudeDesign
+	if host == nil {
+		host = claudeDesignHost(service.Runner, data.Root)
+	}
+	s.claudeDesign = claudedesign.New(host, data.Settings)
 	s.changesets = changeset.New(s.workspaces)
 	s.local = newLocalChanges(s)
 	service.BackgroundProcesses = s.backgroundProcess

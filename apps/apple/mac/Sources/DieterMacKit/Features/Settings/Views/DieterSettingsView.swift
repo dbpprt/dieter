@@ -11,9 +11,11 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
     case notifications = "Notifications"
     case island = "Island"
     case agents = "Agents"
+    case claudeDesign = "Claude Design"
     case experimental = "Experimental"
 
     var id: String { rawValue }
+    var identifier: String { "settings.\(rawValue.lowercased().replacingOccurrences(of: " ", with: "-"))" }
 
     var symbol: String {
         switch self {
@@ -26,6 +28,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .notifications: "bell"
         case .island: "capsule.tophalf.filled"
         case .agents: "person.2"
+        case .claudeDesign: "paintpalette"
         case .experimental: "flask"
         }
     }
@@ -41,6 +44,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .notifications: "macOS alerts for agent activity"
         case .island: "Live activity around the notch"
         case .agents: "Harness capabilities"
+        case .claudeDesign: "Sign in and allow Claude Design in Claude Code turns"
         case .experimental: "Preview features that are still being refined"
         }
     }
@@ -65,8 +69,8 @@ struct DieterSettingsView: View {
                                 SettingsNavigationRow(section: section, selected: section == store.settingsSection)
                             }
                             .buttonStyle(.plain)
-                            .accessibilityIdentifier("settings.\(section.rawValue.lowercased())")
-                            .e2eTarget("settings.\(section.rawValue.lowercased())")
+                            .accessibilityIdentifier(section.identifier)
+                            .e2eTarget(section.identifier)
                         }
                     }
                     .padding(8)
@@ -105,6 +109,7 @@ struct DieterSettingsView: View {
                         case .notifications: NotificationSettings()
                         case .island: IslandSettings()
                         case .agents: AgentSettings()
+                        case .claudeDesign: ClaudeDesignSettings()
                         case .experimental: ExperimentalSettings()
                         }
                     }

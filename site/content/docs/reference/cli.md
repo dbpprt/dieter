@@ -54,6 +54,7 @@ Commands:
   device       Pair, approve, revoke, and inspect the account's trusted devices
   peer         Inspect and edit account peer settings (leaderless sync)
   settings     Inspect and update prompt and daemon settings
+  design       Sign in to Claude Design and allow it in Claude Code turns
   prompt       Inspect, update, scope, and preview prompt templates
   watch        Stream this machine's change frames as JSON Lines
   storage      Print the target daemon's central storage path
@@ -2616,6 +2617,92 @@ Usage: dieter settings options
 
 ```text
 Usage: dieter settings update --file FILE
+```
+
+## dieter design
+
+```text
+Usage: dieter [--machine ID|NAME] design <action>
+
+Connect Claude Code turns on a daemon machine to Claude Design (claude.ai/design).
+Claude Code keeps the claude.ai login and the design credential in its own secure
+storage on that machine; Dieter never copies them or sends them to the gateway.
+
+Actions:
+  status                     Show availability, sign-in and access on the machine
+  login [--json]             Sign in to Claude Design on the machine
+  code SIGN_IN_ID CODE       Submit an authorization code to a running sign-in
+  access on|off [--revoke]   Allow or stop Claude Design in Claude Code turns
+
+Access is off until enabled. "access on" also grants the Claude account's agent
+access to Design projects, because headless turns cannot confirm it. "access off"
+only stops Dieter's turns; add --revoke to withdraw that account-wide grant, which
+affects every Claude Code session of the account.
+```
+
+### dieter design status
+
+```text
+Usage: dieter [--machine ID|NAME] design status
+
+Prints the target machine's Claude Design status as JSON.
+```
+
+### dieter design login
+
+```text
+Usage: dieter [--machine ID|NAME] design login [--json]
+
+Starts Claude Code's Claude Design sign-in on the target machine and follows it
+until it finishes or fails. The sign-in stays open on the machine for about five
+minutes even if this command is interrupted, so a code can still complete it with
+"dieter design code"; a newer sign-in replaces it.
+
+The first page completes in a browser on the target machine. The second page works
+from any device: it shows an authorization code, which you paste at the prompt.
+With --json, events are printed as JSON Lines and the prompt is skipped; submit the
+code with "dieter design code SIGN_IN_ID CODE" while the sign-in is running.
+```
+
+### dieter design code
+
+```text
+Usage: dieter [--machine ID|NAME] design code SIGN_IN_ID CODE
+
+Submits the authorization code shown by the sign-in page to the running sign-in.
+```
+
+### dieter design access
+
+```text
+Usage: dieter [--machine ID|NAME] design access on|off [--revoke]
+
+on   Allow Claude Code turns on the machine to use Claude Design. This also grants
+     the Claude account's agent access to Design projects.
+off  Stop Claude Code turns on the machine from using Claude Design. With --revoke,
+     also withdraw the account-wide agent access for every Claude Code session.
+```
+
+### dieter design access on
+
+```text
+Usage: dieter [--machine ID|NAME] design access on|off [--revoke]
+
+on   Allow Claude Code turns on the machine to use Claude Design. This also grants
+     the Claude account's agent access to Design projects.
+off  Stop Claude Code turns on the machine from using Claude Design. With --revoke,
+     also withdraw the account-wide agent access for every Claude Code session.
+```
+
+### dieter design access off
+
+```text
+Usage: dieter [--machine ID|NAME] design access on|off [--revoke]
+
+on   Allow Claude Code turns on the machine to use Claude Design. This also grants
+     the Claude account's agent access to Design projects.
+off  Stop Claude Code turns on the machine from using Claude Design. With --revoke,
+     also withdraw the account-wide agent access for every Claude Code session.
 ```
 
 ## dieter prompt (alias: prompts)

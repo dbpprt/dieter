@@ -1,6 +1,35 @@
 import { createClaudeCode } from "@ai-sdk/harness-claude-code";
 import { runtimeLinkedBootstrap } from "./runtime-packages.mjs";
 
+import { tool } from "ai";
+import { z } from "zod";
+
+// Claude Code adds a native ClaudeDesign tool once the host has signed in to
+// Claude Design. The adapter predates it, so declare it here: Dieter can then
+// display its calls and deny it together with DesignSync when access is off.
+const claudeDesignTool = {
+  ...tool({
+    description: "Create, edit, import or export Claude Design projects (claude.ai/design)",
+    inputSchema: z.looseObject({ operation: z.string().optional() }),
+  }),
+  toolUseKind: "edit",
+};
+
+// Claude Code's artifact tools (Claude Design's home since it moved into
+// Claude) are declared for the same reason.
+const claudeArtifactTools = Object.fromEntries(
+  ["Artifact", "ArtifactComments", "ArtifactData", "ArtifactCheck"].map((name) => [
+    name,
+    {
+      ...tool({
+        description: `Claude artifact operation (${name})`,
+        inputSchema: z.looseObject({}),
+      }),
+      toolUseKind: name === "Artifact" ? "edit" : "readonly",
+    },
+  ]),
+);
+
 // The adapter's bridge recipe pins its own Claude Agent SDK and installs it
 // with a package manager. Keep the adapter's transport and bridge, but link
 // the SDK Dieter's runtime ships (package-lock.json) instead. The SDK runs the
@@ -16,6 +45,11 @@ export function createLocalClaudeCode(settings = {}) {
   });
   return {
     ...harness,
+    builtinTools: {
+      ClaudeDesign: claudeDesignTool,
+      ...claudeArtifactTools,
+      ...harness.builtinTools,
+    },
     async getBootstrap(options) {
       return runtimeLinkedBootstrap(await harness.getBootstrap(options), {
         agent: "claude",

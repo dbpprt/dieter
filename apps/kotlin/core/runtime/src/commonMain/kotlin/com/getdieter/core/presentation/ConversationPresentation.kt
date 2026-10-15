@@ -12,6 +12,7 @@ import com.getdieter.api.v1.TaskPlan
 import com.getdieter.api.v1.TaskPlanItem
 import com.getdieter.api.v1.UiMessage
 import com.getdieter.client.v1.ConversationState
+import com.getdieter.client.v1.PresentedContentView
 import com.getdieter.core.board.CardOperation
 import com.getdieter.core.board.CardPolicy
 import com.getdieter.core.board.Cards
@@ -81,6 +82,7 @@ data class ConversationPresentation(
     private val pendingIds: Set<String>,
     private val acceptedIds: Set<String>,
     private val failedIds: Set<String>,
+    val presentedContent: PresentedContentView? = null,
 ) {
     val hasUnsentDraft: Boolean
         get() = unsentTask != null || draftAttachments.isNotEmpty()
@@ -205,6 +207,7 @@ object ConversationPresenter {
             pendingIds = outbox.pendingMessageIds,
             acceptedIds = outbox.acceptedIds,
             failedIds = outbox.failedIds,
+            presentedContent = PresentedContents.view(conversation?.presented_content),
         )
     }
 
@@ -261,6 +264,7 @@ object ConversationPresenter {
             can_halt = presented.canHalt,
             chat = presented.chat,
             show_reasoning = presented.showReasoning,
+            presented_content = presented.presentedContent,
         )
 
     const val CLAUDE_CODE = "claude-code"

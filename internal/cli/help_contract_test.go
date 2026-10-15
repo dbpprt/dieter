@@ -32,6 +32,7 @@ var rpcCommand = map[string]string{
 	"ConsolidateProject": "project consolidate",
 	"AttachCheckout":     "project attach", "DetachCheckout": "project detach", "ListCheckouts": "project checkouts",
 	"GetSettings": "settings show", "GetSettingsOptions": "settings options", "UpdateSettings": "settings update",
+	"GetClaudeDesignStatus": "design status", "SignInClaudeDesign": "design login", "SubmitClaudeDesignSignInCode": "design code", "SetClaudeDesignAccess": "design access",
 	"GetPromptSettings": "prompt show", "UpdatePromptSettings": "prompt update", "SetProjectPromptTemplate": "prompt project", "SetBoardPromptTemplate": "prompt board", "PreviewPrompt": "prompt preview",
 	"ListDirectories": "project directories", "CreateProject": "project open", "UpdateProject": "project update", "UpdateProjectWorkspaceSettings": "project workspace", "ArchiveProject": "project remove", "ListArchivedProjects": "project list",
 	"GetBoard": "board show", "ListRetiredBoards": "board list", "SetBoardRetired": "board retire", "CreateBoard": "board create", "RenameBoard": "board rename", "SetBoardArchivePolicy": "board retention", "UpdateBoardGitSettings": "board git", "ListArchivedCards": "card list", "CreateBoardLabel": "board label add", "UpdateBoardLabel": "board label update", "DeleteBoardLabel": "board label remove",
