@@ -9,12 +9,13 @@ slug: "screens"
 
 Screens gives you a view-and-control experience of an enrolled machine's
 display. Media and remote input travel between your client and the daemon, directly or
-through TURN. The gateway only brokers bounded signaling.
+through TURN. Signaling runs inside the end-to-end encrypted connection to the
+machine, so the gateway can relay it but cannot read it.
 
 Agents and terminals can run headless. Screen hosting additionally needs an active
 graphical session and the platform's capture and control permissions.
 
-{{< screenshot src="macos-screens.png" width="1380" height="870" alt="Native Mac screen-sharing viewer streaming an Orbit sample dashboard from Studio Mac" caption="Live screen sharing through the native viewer. The documentation fixture captures only its owned demo window; the shipped host shares a display." >}}
+{{< screenshot src="macos-screens.png" width="1380" height="870" alt="Native Mac screen-sharing viewer streaming an Orbit sample dashboard from Studio Mac" caption="Live screen sharing through the native viewer, captured in September 2026 with the earlier Mac design. That capture limited its source to an owned demo window; the shipped host shares a display." >}}
 
 ## Open a screen
 
@@ -24,8 +25,8 @@ handoff from another viewer, or **Release Control** to keep watching without inp
 Up to four viewers can connect; only one controls the machine at a time.
 
 On Mac, the expand action moves the same session into a separate native window.
-**Control–Command–F** toggles full screen. Closing that window returns the share
-to Dieter; closing the Screens tab disconnects it. **Command–Shift–Escape**
+**⌃⌘F** toggles full screen. Closing that window returns the share
+to Dieter; closing the Screens tab disconnects it. **⌘⇧Esc**
 releases held input and pauses pointer forwarding until you focus the viewer again.
 Inactivity disconnect is optional and disabled by default.
 
@@ -115,8 +116,11 @@ never through the Dieter gateway.
 
 Native clients verify an Ed25519 binding between the offer, daemon DTLS fingerprint,
 session, nonce, lease, control grant, display, and input epoch before applying
-the answer. Pointer motion uses an unordered no-retransmit DataChannel while
-keys, buttons, scrolling, and release-all use a reliable channel. The signed
+the answer. They check it with the machine's key from your account's
+[trusted devices](/docs/security/#trusted-devices), never with a key the gateway
+supplies, and a renegotiated answer carries a binding of its own. Pointer
+motion uses an unordered no-retransmit DataChannel while keys, buttons,
+scrolling, and release-all use a reliable channel. The signed
 macOS helper or release-verified Linux helper owns platform capture and input
 permission and releases every held input immediately on disconnect.
 

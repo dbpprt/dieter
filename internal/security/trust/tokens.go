@@ -2,7 +2,6 @@ package trust
 
 import (
 	"crypto/ed25519"
-	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -22,20 +21,10 @@ type DaemonTokenClaims struct {
 	NotBefore        int64  `json:"nbf"`
 	ExpiresAt        int64  `json:"exp"`
 	DaemonGeneration uint64 `json:"daemon_generation"`
-	ClientThumbprint string `json:"client_key_thumbprint,omitempty"`
-}
-
-type DelegationClaims struct {
-	Issuer      string `json:"iss"`
-	Audience    string `json:"aud"`
-	Subject     string `json:"sub"`
-	ID          string `json:"jti"`
-	RequestID   string `json:"request_id"`
-	Method      string `json:"method"`
-	PayloadHash string `json:"payload_hash"`
-	Generation  uint64 `json:"generation"`
-	IssuedAt    int64  `json:"iat"`
-	ExpiresAt   int64  `json:"exp"`
+	// ClientThumbprint is the roster device ID of the caller the token was
+	// issued to. A daemon accepts the token only over TLS authenticated by
+	// that device's key.
+	ClientThumbprint string `json:"client_key_thumbprint"`
 }
 
 // RTCConfigurationClaims binds short-lived ICE/TURN configuration to one
@@ -82,25 +71,9 @@ func ParseAndVerifyDaemonToken(public ed25519.PublicKey, token, issuer, daemonID
 	if claims.NotBefore <= 0 || claims.IssuedAt <= 0 || claims.NotBefore > unix+10 || claims.IssuedAt > unix+10 ||
 		claims.ExpiresAt <= unix-10 || claims.ExpiresAt <= claims.NotBefore || claims.ExpiresAt <= claims.IssuedAt ||
 		claims.ExpiresAt-claims.IssuedAt > int64((5*time.Minute)/time.Second) ||
-		!strings.HasPrefix(claims.ID, "dt_") || len(claims.ID) <= len("dt_") || !validGitHubSubject(claims.Subject) {
+		!strings.HasPrefix(claims.ID, "dt_") || len(claims.ID) <= len("dt_") || !validGitHubSubject(claims.Subject) ||
+		!ValidDeviceID(claims.ClientThumbprint) {
 		return claims, errors.New("daemon token is expired or invalid")
-	}
-	return claims, nil
-}
-
-func ParseAndVerifyDelegation(public ed25519.PublicKey, token, issuer, daemonID, requestID, method string, payload []byte, generation uint64, now time.Time) (DelegationClaims, error) {
-	var claims DelegationClaims
-	if err := verifyCompact(public, token, &claims); err != nil {
-		return claims, err
-	}
-	digest := sha256.Sum256(payload)
-	if claims.Issuer != strings.TrimRight(issuer, "/") || claims.Audience != "board-daemon:"+daemonID || claims.RequestID != requestID || claims.Method != method || claims.PayloadHash != base64.RawURLEncoding.EncodeToString(digest[:]) || claims.Generation != generation {
-		return claims, errors.New("relay assertion does not match the request")
-	}
-	unix := now.UTC().Unix()
-	if claims.IssuedAt <= 0 || claims.IssuedAt > unix+10 || claims.ExpiresAt <= unix-10 || claims.ExpiresAt <= claims.IssuedAt ||
-		claims.ExpiresAt-claims.IssuedAt > 30 || claims.ID == "" || !validGitHubSubject(claims.Subject) {
-		return claims, errors.New("relay assertion is expired or invalid")
 	}
 	return claims, nil
 }
@@ -124,6 +97,23 @@ func ParseAndVerifyRTCConfiguration(public ed25519.PublicKey, token, issuer, dae
 	}
 	return claims, nil
 }
+
+// ValidDeviceID reports whether id has the form of a roster device ID: "dv_"
+// and 26 lowercase Crockford base32 characters (16 bytes of a key hash).
+func ValidDeviceID(id string) bool {
+	value, found := strings.CutPrefix(id, "dv_")
+	if !found || len(value) != 26 {
+		return false
+	}
+	for _, char := range value {
+		if !strings.ContainsRune(deviceIDAlphabet, char) {
+			return false
+		}
+	}
+	return true
+}
+
+const deviceIDAlphabet = "0123456789abcdefghjkmnpqrstvwxyz"
 
 func validGitHubSubject(subject string) bool {
 	value, found := strings.CutPrefix(subject, "github:")

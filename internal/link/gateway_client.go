@@ -6,37 +6,33 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
+	"net"
 	"net/url"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/security/linkauth"
-	"github.com/dbpprt/dieter/internal/security/localauth"
 	"github.com/dbpprt/dieter/internal/security/trust"
 	"github.com/dbpprt/dieter/internal/transport/relay"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
 type GatewayClient struct {
-	ControlWebRTC         bool
-	Identity              *Identity
-	LocalTarget           string
-	LocalToken            string
+	ControlWebRTC bool
+	Identity      *Identity
+	// TunnelTarget is the daemon's loopback TLS endpoint (a DirectRoute) that
+	// relay tunnels connect to; empty refuses tunnels.
+	TunnelTarget          string
 	Version               string
 	Routes                []*gatewayv1.DirectCandidate
 	Log                   *slog.Logger
@@ -48,9 +44,12 @@ type GatewayClient struct {
 	OnUpdateRequired      func(*gatewayv1.CompatibilityPolicy) error
 	Timing                GatewayTiming
 
-	replayMu         sync.Mutex
-	relayProofs      map[string]int64
-	laneBudgets      [4]*relay.Budget
+	budgetMu    sync.Mutex
+	laneBudgets [4]*relay.Budget
+	// activeAt is when any lane last carried tunnel traffic. Clients reach
+	// the daemon through command-lane tunnels, while presence follows the
+	// control lane's heartbeat, so every lane's traffic keeps it active.
+	activeAt         atomic.Int64
 	controlReady     chan struct{}
 	controlReadyOnce sync.Once
 }
@@ -90,7 +89,6 @@ const (
 	gatewayHostSleepTolerance       = 5 * time.Second
 	gatewayProviderQuotaCapability  = "provider_quota_v1"
 	gatewayProviderResetCapability  = "provider_quota_reset_v1"
-	maxGatewayRelayProofs           = 16384
 	maxGatewayProviderQuotaBytes    = 64 << 10
 	maxGatewayProviderQuotaProbes   = 2
 	gatewayProviderDiscoveryTimeout = 75 * time.Second
@@ -281,8 +279,8 @@ func (c *GatewayClient) runLane(ctx context.Context, lane relay.Lane, sessionID 
 }
 
 func (c *GatewayClient) relayBudget(lane relay.Lane) *relay.Budget {
-	c.replayMu.Lock()
-	defer c.replayMu.Unlock()
+	c.budgetMu.Lock()
+	defer c.budgetMu.Unlock()
 	if c.laneBudgets[lane] == nil {
 		c.laneBudgets[lane] = relay.NewBudget(relay.BufferedBytes, nil)
 	}
@@ -374,40 +372,15 @@ func (c *GatewayClient) runLaneOnce(ctx context.Context, lane relay.Lane, sessio
 		c.OnAcknowledged(connectedAt)
 	}
 	finish := func(err error) (time.Duration, error) { return time.Since(connectedAt), err }
-	local, err := grpc.NewClient(c.LocalTarget, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithPerRPCCredentials(localauth.Credentials{Token: c.LocalToken}), grpc.WithDefaultCallOptions(grpc.ForceCodec(relay.RawCodec{}), grpc.MaxCallRecvMsgSize(16<<20), grpc.MaxCallSendMsgSize(16<<20)))
-	if err != nil {
-		return finish(err)
-	}
-	defer local.Close()
-	// Scope every local relayed RPC to this specific tunnel generation. A
-	// gateway disconnect previously returned from runOnce while its local
-	// StartRemoteDesktop stream stayed alive under the daemon-wide context,
-	// leaving capture reconciliation to the much slower session lease. Canceling
-	// the link scope tears all relays down immediately; a reconnected tunnel
-	// creates fresh streams explicitly.
+	// Tunnels belong to this link: a gateway disconnect closes their sockets
+	// immediately, while agents and RPCs inside the daemon keep running.
 	responseQueue := relay.NewQueue(c.relayBudget(lane))
 	defer responseQueue.Close()
-	assembler := relay.NewAssembler(c.relayBudget(lane), relay.Limit(lane))
-	defer assembler.Close()
-	controlSend := make(chan *gatewayv1.DaemonLinkFrame, 2*relay.Limit(lane)+4)
+	tunnels := newLinkTunnels()
+	defer tunnels.close()
+	controlSend := make(chan *gatewayv1.DaemonLinkFrame, 8)
 	quotaSend := make(chan *gatewayv1.DaemonLinkFrame, 16)
 	var relayActive atomic.Bool
-	enqueue := func(callCtx context.Context, frame *gatewayv1.DaemonLinkFrame, _ bool) bool {
-		relayActive.Store(true)
-		if callCtx.Err() != nil || linkCtx.Err() != nil {
-			return false
-		}
-		if err := responseQueue.AddWait(callCtx, frame); err != nil {
-			responseQueue.Cancel(frame.StreamId)
-			select {
-			case controlSend <- relayError(frame.StreamId, codes.ResourceExhausted, "relay response consumer is stalled"):
-			default:
-				cancelLink()
-			}
-			return false
-		}
-		return true
-	}
 	tryEnqueueControl := func(frame *gatewayv1.DaemonLinkFrame) bool {
 		select {
 		case <-linkCtx.Done():
@@ -481,8 +454,6 @@ func (c *GatewayClient) runLaneOnce(ctx context.Context, lane relay.Lane, sessio
 			}
 		}
 	}()
-	var calls sync.Map
-	activeRelays := make(chan struct{}, relay.Limit(lane))
 	heartbeatInterval := timing.HeartbeatActiveInterval
 	heartbeat := time.NewTimer(heartbeatInterval)
 	defer heartbeat.Stop()
@@ -536,12 +507,12 @@ func (c *GatewayClient) runLaneOnce(ctx context.Context, lane relay.Lane, sessio
 	}
 	var quotaCalls sync.Map
 	quotaProbes := make(chan struct{}, maxGatewayProviderQuotaProbes)
-	assemblyCheck := time.NewTicker(time.Second)
-	defer assemblyCheck.Stop()
+	wakeCheck := time.NewTicker(time.Second)
+	defer wakeCheck.Stop()
 	lastCheck := time.Now()
 	for {
 		select {
-		case <-assemblyCheck.C:
+		case <-wakeCheck.C:
 			// A link that outlived a sleep has usually been dropped by the
 			// gateway, but the heartbeat timers paused with the host and would
 			// first wait out their remaining time; reconnect at once instead.
@@ -550,11 +521,6 @@ func (c *GatewayClient) runLaneOnce(ctx context.Context, lane relay.Lane, sessio
 				return finish(errors.New("host resumed from sleep"))
 			}
 			lastCheck = now
-			for _, id := range assembler.Expired(now) {
-				if !tryEnqueueControl(relayError(id, codes.DeadlineExceeded, "relay payload assembly expired")) {
-					return finish(errors.New("gateway relay control queue is stalled"))
-				}
-			}
 		case <-ctx.Done():
 			return finish(nil)
 		case err := <-sendErr:
@@ -573,7 +539,8 @@ func (c *GatewayClient) runLaneOnce(ctx context.Context, lane relay.Lane, sessio
 					return finish(errors.New("gateway heartbeat control queue is stalled"))
 				}
 			}
-			heartbeatInterval = nextGatewayHeartbeatIntervalWithin(heartbeatInterval, relayActive.Swap(false), timing.HeartbeatActiveInterval, timing.HeartbeatIdleMaxInterval)
+			active := relayActive.Swap(false) || time.Since(time.Unix(0, c.activeAt.Load())) < heartbeatInterval
+			heartbeatInterval = nextGatewayHeartbeatIntervalWithin(heartbeatInterval, active, timing.HeartbeatActiveInterval, timing.HeartbeatIdleMaxInterval)
 			heartbeat.Reset(heartbeatInterval)
 		case frame := <-recv:
 			if len(frame.Payload) > relay.ChunkBytes || proto.Size(frame) > 2*relay.ChunkBytes {
@@ -584,6 +551,7 @@ func (c *GatewayClient) runLaneOnce(ctx context.Context, lane relay.Lane, sessio
 			// the five-second active heartbeat forever.
 			if gatewayFrameMarksRelayActivity(frame) {
 				relayActive.Store(true)
+				c.activeAt.Store(time.Now().UnixNano())
 			}
 			switch frame.GetKind() {
 			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_REQUEST:
@@ -685,60 +653,23 @@ func (c *GatewayClient) runLaneOnce(ctx context.Context, lane relay.Lane, sessio
 						})
 					}
 				}(frame.GetRequestId(), accountIndex, proto.Clone(request).(*gatewayv1.ProviderQuotaResetRequest))
-			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_OPEN_RPC:
-				if frame.PayloadOffset == 0 && relay.Method(frame.Method) != lane {
-					if !tryEnqueueControl(relayError(frame.StreamId, codes.InvalidArgument, "RPC belongs to another relay lane")) {
-						return finish(errors.New("gateway relay control queue is stalled"))
-					}
-					continue
+			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_TUNNEL_OPEN:
+				if err := c.openTunnel(linkCtx, lane, frame, tunnels, responseQueue); err != nil {
+					return finish(err)
 				}
-				assembled, release, err := assembler.Accept(frame)
-				if err != nil {
-					if !tryEnqueueControl(relayError(frame.StreamId, codes.ResourceExhausted, err.Error())) {
-						return finish(errors.New("gateway relay control queue is stalled"))
-					}
-					continue
+			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_TUNNEL_DATA:
+				// Frames of a tunnel that already ended are dropped: its CLOSE
+				// may cross them on the wire.
+				if t := tunnels.get(frame.GetStreamId()); t != nil {
+					t.deliver(frame.GetPayload())
 				}
-				if assembled == nil {
-					continue
+			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_TUNNEL_WINDOW:
+				if t := tunnels.get(frame.GetStreamId()); t != nil {
+					t.grant(frame.GetCredit())
 				}
-				frame = assembled
-				if frame.GetStreamId() == 0 {
-					release()
-					if !tryEnqueueControl(relayError(frame.GetStreamId(), codes.InvalidArgument, "relay stream ID is required")) {
-						return finish(errors.New("gateway relay control queue is stalled"))
-					}
-					continue
-				}
-				callCtx, cancel := context.WithCancel(linkCtx)
-				if _, loaded := calls.LoadOrStore(frame.GetStreamId(), cancel); loaded {
-					cancel()
-					release()
-					return finish(errors.New("gateway reused an active relay stream ID"))
-				}
-				select {
-				case activeRelays <- struct{}{}:
-				default:
-					calls.Delete(frame.GetStreamId())
-					cancel()
-					release()
-					if !tryEnqueueControl(relayError(frame.GetStreamId(), codes.ResourceExhausted, "daemon relay concurrency is exhausted")) {
-						return finish(errors.New("gateway relay control queue is stalled"))
-					}
-					continue
-				}
-				go func(frame *gatewayv1.DaemonLinkFrame) {
-					defer cancel()
-					defer release()
-					defer calls.Delete(frame.GetStreamId())
-					defer func() { <-activeRelays }()
-					c.relayLocal(callCtx, local, frame, enqueue)
-				}(frame)
-			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_CANCEL_RPC:
-				assembler.Cancel(frame.StreamId)
-				responseQueue.Cancel(frame.StreamId)
-				if value, ok := calls.Load(frame.GetStreamId()); ok {
-					value.(context.CancelFunc)()
+			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_TUNNEL_CLOSE:
+				if t := tunnels.get(frame.GetStreamId()); t != nil {
+					t.Close()
 				}
 			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PING:
 				if !tryEnqueueControl(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG, DaemonId: c.Identity.ID, RequestId: frame.GetRequestId()}) {
@@ -764,149 +695,69 @@ func (c *GatewayClient) runLaneOnce(ctx context.Context, lane relay.Lane, sessio
 	}
 }
 
-func (c *GatewayClient) relayLocal(ctx context.Context, local *grpc.ClientConn, frame *gatewayv1.DaemonLinkFrame, send func(context.Context, *gatewayv1.DaemonLinkFrame, bool) bool) {
-	started := time.Now()
-	priority := relayMethodPriority(frame.GetMethod())
-	defer func() {
-		c.Log.Debug("relayed Dieter RPC", "method", frame.GetMethod(), "stream_id", frame.GetStreamId(), "priority", priority, "elapsed", time.Since(started))
-	}()
-	emit := func(value *gatewayv1.DaemonLinkFrame) bool { return send(ctx, value, priority) }
-	if frame.GetDaemonId() != c.Identity.ID || frame.GetGeneration() != c.Identity.Generation || !relay.DaemonMethod(frame.GetMethod()) {
-		emit(relayError(frame.GetStreamId(), codes.Unauthenticated, "relay assertion target is invalid"))
-		return
+// openTunnel admits a client tunnel on this lane: it dials the daemon's own
+// TLS endpoint and splices bytes with end-to-end credits. Every frame of a
+// tunnel shares its ordered slot in the link's fair queue, so the gateway sees
+// OPENED before any byte and every byte before CLOSE, and the receive loop
+// never waits for the dial.
+func (c *GatewayClient) openTunnel(ctx context.Context, lane relay.Lane, frame *gatewayv1.DaemonLinkFrame, tunnels *linkTunnels, queue *relay.Queue) error {
+	id := frame.GetStreamId()
+	closeFrame := func(code codes.Code, message string) *gatewayv1.DaemonLinkFrame {
+		return &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_TUNNEL_CLOSE, StreamId: id, StatusCode: int32(code), StatusMessage: message}
 	}
-	public, err := trust.PublicKeyFromPEM(c.Identity.GatewaySigningPublicKey)
-	var operatorSubject string
-	var claims trust.DelegationClaims
-	if err == nil {
-		claims, err = trust.ParseAndVerifyDelegation(public, frame.GetDelegationAssertion(), c.Identity.Issuer(), c.Identity.ID, frame.GetRequestId(), frame.GetMethod(), frame.GetPayload(), c.Identity.Generation, time.Now().UTC())
-		operatorSubject = claims.Subject
+	if id == 0 {
+		return errors.New("gateway opened a tunnel without an ID")
 	}
-	if err != nil {
-		emit(relayError(frame.GetStreamId(), codes.Unauthenticated, "relay assertion is invalid"))
-		return
+	if frame.GetDaemonId() != c.Identity.ID || frame.GetLane() != lane {
+		return queue.Add(closeFrame(codes.InvalidArgument, "tunnel target is invalid"))
 	}
-	if err := c.consumeRelayProof(claims, time.Now()); err != nil {
-		emit(relayStatusError(frame.GetStreamId(), err))
-		return
+	admitted, duplicate := tunnels.reserve(id, relay.TunnelLimit(lane))
+	if duplicate {
+		return errors.New("gateway reused an active tunnel ID")
 	}
-	if deadline := frame.GetDeadlineUnixMillis(); deadline > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithDeadline(ctx, time.UnixMilli(deadline))
-		defer cancel()
+	if !admitted {
+		return queue.Add(closeFrame(codes.ResourceExhausted, "daemon tunnel capacity is exhausted"))
 	}
-	clientVersion := frame.GetMetadata()["x-dieter-client-version"]
-	// The route marks plaintext-visible gateway relay calls. Remote metadata is
-	// not forwarded, so a relay caller cannot remove or forge it.
-	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs(
-		"x-dieter-operator-subject", operatorSubject,
-		"x-dieter-client-version", clientVersion,
-		"x-dieter-route", "relay",
-	))
-	description := &grpc.StreamDesc{ServerStreams: true, ClientStreams: false}
-	call, err := local.NewStream(ctx, description, frame.GetMethod(), grpc.ForceCodec(relay.RawCodec{}))
-	if err != nil {
-		emit(relayStatusError(frame.GetStreamId(), err))
-		return
-	}
-	if err := call.SendMsg(&relay.RawMessage{Data: frame.GetPayload()}); err != nil {
-		emit(relayStatusError(frame.GetStreamId(), err))
-		return
-	}
-	if err := call.CloseSend(); err != nil {
-		emit(relayStatusError(frame.GetStreamId(), err))
-		return
-	}
-	if headers, err := call.Header(); err == nil {
-		if !emit(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_HEADER, StreamId: frame.GetStreamId(), Metadata: firstMetadata(headers)}) {
-			return
-		}
-	}
-	for {
-		var response relay.RawMessage
-		err := call.RecvMsg(&response)
-		if errors.Is(err, io.EOF) {
-			emit(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_END, StreamId: frame.GetStreamId(), StatusCode: int32(codes.OK), Metadata: firstMetadata(call.Trailer())})
-			return
+	go func() {
+		var socket net.Conn
+		err := errors.New("daemon endpoint is not configured")
+		if c.TunnelTarget != "" {
+			dialCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			var dialer net.Dialer
+			socket, err = dialer.DialContext(dialCtx, "tcp", c.TunnelTarget)
+			cancel()
 		}
 		if err != nil {
-			result := relayStatusError(frame.GetStreamId(), err)
-			trailers := firstMetadata(call.Trailer())
-			for key, value := range result.Metadata {
-				trailers[key] = value
+			tunnels.release(id)
+			_ = queue.Add(closeFrame(codes.Unavailable, "daemon endpoint is unavailable"))
+			return
+		}
+		send := func(frame tunnelFrame) error {
+			switch frame.kind {
+			case tunnelData:
+				return queue.Add(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_TUNNEL_DATA, StreamId: id, Payload: frame.data})
+			case tunnelWindow:
+				return queue.Add(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_TUNNEL_WINDOW, StreamId: id, Credit: frame.credit})
+			default:
+				return queue.Add(closeFrame(frame.code, frame.message))
 			}
-			result.Metadata = trailers
-			emit(result)
+		}
+		reset := func(code codes.Code, message string) {
+			queue.Cancel(id)
+			_ = queue.Add(closeFrame(code, message))
+		}
+		t := newTunnel(socket, send, reset, func() { tunnels.release(id) })
+		if !tunnels.activate(id, t) {
+			_ = socket.Close()
 			return
 		}
-		if len(response.Data) > 16<<20 {
-			emit(relayError(frame.GetStreamId(), codes.ResourceExhausted, "local response exceeds 16 MiB"))
+		if err := queue.Add(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_TUNNEL_OPENED, StreamId: id}); err != nil {
+			t.Close()
 			return
 		}
-		if !emit(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_MESSAGE, StreamId: frame.GetStreamId(), Payload: response.Data}) {
-			return
-		}
-	}
-}
-
-// Keep consumed proofs across reconnects for their entire accepted lifetime.
-// Admission is bounded and fails closed rather than evicting a live proof that
-// could then be replayed to dispatch a mutation a second time.
-func (c *GatewayClient) consumeRelayProof(claims trust.DelegationClaims, now time.Time) error {
-	c.replayMu.Lock()
-	defer c.replayMu.Unlock()
-	if c.relayProofs == nil {
-		c.relayProofs = make(map[string]int64)
-	}
-	unix := now.Unix()
-	for id, expires := range c.relayProofs {
-		if expires <= unix-10 {
-			delete(c.relayProofs, id)
-		}
-	}
-	if _, used := c.relayProofs[claims.ID]; used {
-		return status.Error(codes.Unauthenticated, "relay assertion was already used")
-	}
-	if len(c.relayProofs) >= maxGatewayRelayProofs {
-		return status.Error(codes.ResourceExhausted, "daemon relay assertion capacity is exhausted")
-	}
-	c.relayProofs[claims.ID] = claims.ExpiresAt
+		t.start()
+	}()
 	return nil
-}
-
-func relayMethodPriority(method string) bool {
-	return relay.Method(method) != relay.Subscription
-}
-
-func relayStatusError(streamID uint64, err error) *gatewayv1.DaemonLinkFrame {
-	value := status.Convert(err)
-	frame := relayError(streamID, value.Code(), value.Message())
-	if len(value.Proto().Details) > 0 {
-		if raw, err := proto.Marshal(value.Proto()); err == nil && len(raw) <= relay.ChunkBytes/2 {
-			frame.Metadata = map[string]string{"grpc-status-details-bin": base64.StdEncoding.EncodeToString(raw)}
-		}
-	}
-	return frame
-}
-
-func relayError(streamID uint64, code codes.Code, message string) *gatewayv1.DaemonLinkFrame {
-	return &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RPC_ERROR, StreamId: streamID, StatusCode: int32(code), StatusMessage: message}
-}
-
-func firstMetadata(values metadata.MD) map[string]string {
-	result := map[string]string{}
-	for key, items := range values {
-		key = strings.ToLower(strings.TrimSpace(key))
-		if len(items) > 0 && key != "" && key != "authorization" && key != "cookie" && !strings.HasPrefix(key, "x-dieter-") {
-			value := items[0]
-			// Protobuf map strings require UTF-8; binary gRPC metadata does not.
-			if strings.HasSuffix(key, "-bin") {
-				value = base64.StdEncoding.EncodeToString([]byte(value))
-			}
-			result[key] = value
-		}
-	}
-	return result
 }
 
 // DialGateway connects to the enrolled gateway, presenting the daemon

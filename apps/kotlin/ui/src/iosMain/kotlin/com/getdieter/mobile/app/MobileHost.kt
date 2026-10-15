@@ -33,6 +33,10 @@ class NativeNavigation(
     val tab: Int,
     val stacks: List<List<MobileRouteHandle>>,
     val modal: MobileRouteHandle?,
+    /**
+     * False shows [MobileHost.signInController]: sign-in, then pairing until this device is
+     * trusted.
+     */
     val signedIn: Boolean,
     val appearance: String,
     val attention: Int,
@@ -146,7 +150,7 @@ class MobileHost(private val shared: DieterShared, private val nativeViews: Mobi
             MobileTab.entries.map { tab -> routes.stacks.getValue(tab).map(::MobileRouteHandle) },
             routes.modal?.let(::MobileRouteHandle),
             !(store.session.slice.value.phase == SessionSlice.Phase.PHASE_AUTH_REQUIRED &&
-                !store.workspace.slice.value.loaded),
+                !store.workspace.slice.value.loaded) && !store.session.slice.value.pairing,
             store.theme.appearance.value,
             store.workspace.activity.value.summary?.attention ?: 0,
             if (palette == com.getdieter.mobile.settings.DieterPalette.MONOCHROME) 0L
@@ -223,8 +227,14 @@ class MobileHost(private val shared: DieterShared, private val nativeViews: Mobi
 
     fun setForeground(active: Boolean) = store.setForeground(active)
 
-    fun adoptFixture(url: String, token: String) = store.action {
-        store.core.dispatch(Command(adopt_session = AdoptSession(url, token, "Isolated journey")))
+    /** Maestro flows: the isolated fixture's session and the code its machine approves. */
+    fun adoptFixture(url: String, token: String, pairingCode: String) = store.action {
+        store.core.dispatch(
+            Command(
+                adopt_session =
+                    AdoptSession(url, token, "Isolated journey", pairing_code = pairingCode)
+            )
+        )
         store.creation.agentSelection = com.getdieter.api.v1.HarnessSelection("mock", "mock", "low")
     }
 

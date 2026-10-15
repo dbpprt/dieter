@@ -33,6 +33,8 @@ type ServiceOptions struct {
 	ControlRTC         *controlrtc.Manager
 	ProviderAccountKey func(string) string
 	DaemonState        *daemonstate.Store
+	// Trust is the enrolled daemon's device roster; nil when not enrolled.
+	Trust api.DeviceTrust
 }
 
 // Services is the wired daemon object graph over one central store.
@@ -85,6 +87,7 @@ func NewServices(data *store.Store, logger *slog.Logger, options ServiceOptions)
 		App: application, Schedules: services.Schedules, Terminals: services.Terminals,
 		Executions: services.Executions, Machine: machine.NewCollector(data.Root),
 		Catalog: catalog, MinimumFreeBytes: options.Env.MinimumFreeBytes, DaemonState: options.DaemonState,
+		Trust: options.Trust,
 	})
 	return services
 }

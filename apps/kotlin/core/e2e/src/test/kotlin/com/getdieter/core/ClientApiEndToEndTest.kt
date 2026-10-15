@@ -22,6 +22,7 @@ import com.getdieter.client.v1.CreationIntent
 import com.getdieter.client.v1.CreationPreview
 import com.getdieter.client.v1.CreationPreviewCommand
 import com.getdieter.client.v1.CreationSlice
+import com.getdieter.client.v1.DeviceTrust
 import com.getdieter.client.v1.EnsureMetadata
 import com.getdieter.client.v1.Failure
 import com.getdieter.client.v1.FileTreeCommand
@@ -146,7 +147,7 @@ class ClientApiEndToEndTest : EndToEnd() {
     @Test
     fun aByteOnlyUiSignsInCreatesAndRenames() = e2e {
         val fixture = fixture()
-        val runtime = runtime(fixture, token = null)
+        val runtime = runtime(fixture, token = null, pairingCode = null)
         val api = ClientApi(runtime)
         val mirror = Mirror()
         val subscriptions =
@@ -165,6 +166,7 @@ class ClientApiEndToEndTest : EndToEnd() {
                 )
             }
         assertEquals(Failure.Kind.KIND_INVALID, invalid.failure.kind)
+        // The fixture's machine approves the device that shows the fixture's pairing code.
         api.dispatch(
             Command(
                 adopt_session =
@@ -172,12 +174,14 @@ class ClientApiEndToEndTest : EndToEnd() {
                         gateway_url = fixture.url,
                         session_token = fixture.token,
                         name = "Isolated",
+                        pairing_code = fixture.pairingCode,
                     )
             )
         )
         val session =
             mirror.session.await(30.seconds, describe = { "connected: ${mirror.session.value}" }) {
                 it?.phase == SessionSlice.Phase.PHASE_CONNECTED &&
+                    it.device_trust == DeviceTrust.DEVICE_TRUST_TRUSTED &&
                     it.machines.any { machine ->
                         machine.id == fixture.daemonId &&
                             machine.sync_state == MachineSyncState.MACHINE_SYNC_STATE_LIVE

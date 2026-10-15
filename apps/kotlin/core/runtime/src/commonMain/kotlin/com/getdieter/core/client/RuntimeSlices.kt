@@ -48,6 +48,7 @@ import com.getdieter.core.outbox.DeliveryPhase
 import com.getdieter.core.routing.RouteKind
 import com.getdieter.core.session.MachineRoute
 import com.getdieter.core.store.WorkspaceView
+import com.getdieter.core.trust.TrustState
 import com.getdieter.core.v1.OutboxKind
 import com.getdieter.core.v1.OutboxState
 import kotlin.time.Instant
@@ -97,7 +98,8 @@ internal fun CoreRuntime.sessionSlices(): Flow<SessionSlice> =
         ),
         connection.gatewayInformation,
         workspace.state.map { it.loaded }.distinctUntilChanged(),
-    ) { inputs, sync, gateway, cached ->
+        trust.view.map { it.state to it.pairingCode }.distinctUntilChanged(),
+    ) { inputs, sync, gateway, cached, (trustState, pairingCode) ->
         val (state, machines, accounts, routes, showReasoning) = inputs
         val active = accounts.active
         val rows =
@@ -191,6 +193,8 @@ internal fun CoreRuntime.sessionSlices(): Flow<SessionSlice> =
             synced = connected && MachineSyncs.current(machines, sync.syncs),
             updated_at_millis = sync.updatedAt,
             show_reasoning = showReasoning,
+            device_trust = deviceTrust(trustState),
+            pairing_code = pairingCode.takeIf { trustState == TrustState.PENDING }.orEmpty(),
         )
     }
 

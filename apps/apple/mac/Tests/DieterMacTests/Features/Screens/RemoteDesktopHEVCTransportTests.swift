@@ -113,7 +113,8 @@ private func envRecovery(_ name: String) -> [String]? {
     request.maxWidth = 1920; request.maxHeight = 1080; request.maxFps = 60; request.maxBitrateKbps = 6000
     request.offer.type = "offer"; request.offer.sdp = try #require(peer.localDescription).sdp
     let signaling = HEVCTransportSignaling(
-        peer: peer, request: request, certificate: connection.certificate, pump: pump, channel: channel)
+        peer: peer, request: request, daemonPublicKey: screenFixtureDaemonPublicKey(connection.certificate),
+        pump: pump, channel: channel)
     let signalTask = Task {
         do { try await rpc.startRemoteDesktop(request) { try await signaling.receive($0) } } catch {
             signaling.failure = String(describing: error)
@@ -267,15 +268,15 @@ private final class HEVCFrameCount: @unchecked Sendable {
 @MainActor private final class HEVCTransportSignaling {
     let pump: HEVCTransportFeedback
     let channel: RTCDataChannel?
-    let peer: RTCPeerConnection, request: Dieter_V1_StartRemoteDesktopRequest, certificate: Data
+    let peer: RTCPeerConnection, request: Dieter_V1_StartRemoteDesktopRequest, daemonPublicKey: Data
     var binding: Dieter_V1_RemoteDesktopSessionBinding?, answer: String?, sessionID = "", codec = "", failure: String?
     var applied = false, candidates: [RTCIceCandidate] = []
     init(
-        peer: RTCPeerConnection, request: Dieter_V1_StartRemoteDesktopRequest, certificate: Data,
+        peer: RTCPeerConnection, request: Dieter_V1_StartRemoteDesktopRequest, daemonPublicKey: Data,
         pump: HEVCTransportFeedback, channel: RTCDataChannel?
     ) {
         self.pump = pump; self.channel = channel
-        self.peer = peer; self.request = request; self.certificate = certificate
+        self.peer = peer; self.request = request; self.daemonPublicKey = daemonPublicKey
     }
     func receive(_ signal: Dieter_V1_RemoteDesktopSignal) async throws {
         sessionID = signal.sessionID
@@ -294,7 +295,7 @@ private final class HEVCFrameCount: @unchecked Sendable {
             // The fixture daemon's answer must pass the core's own binding check.
             let problem = SharedRules.shared.screenBindingProblem(
                 binding: binding.rulesData, sessionId: sessionID, request: request.rulesData, answerSdp: answer,
-                certificatePem: String(decoding: certificate, as: UTF8.self), nowMillis: Date().epochMillis,
+                daemonPublicKey: daemonPublicKey, nowMillis: Date().epochMillis,
                 signatures: CoreCryptoKitSignatures())
             try #require(problem.isEmpty, Comment(rawValue: problem))
             try #require(!binding.controlGranted)

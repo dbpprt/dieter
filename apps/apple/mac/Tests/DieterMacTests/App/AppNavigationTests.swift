@@ -8,8 +8,8 @@ struct AppNavigationTests {
         #expect(AppSection.allCases.contains(.settings))
         #expect(
             DieterSettingsSection.allCases.map(\.rawValue) == [
-                "General", "Browser", "Connection", "Usage", "Prompts", "Notifications", "Island", "Agents",
-                "Experimental",
+                "General", "Browser", "Connection", "Devices", "Usage", "Prompts", "Notifications", "Island",
+                "Agents", "Experimental",
             ])
     }
 

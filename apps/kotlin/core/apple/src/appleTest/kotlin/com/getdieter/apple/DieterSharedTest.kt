@@ -31,10 +31,12 @@ class DieterSharedTest {
             ),
             SharedExtensions(
                 rpc = OfflineRpc,
+                tunnels = OfflineTunnels,
+                deviceKeys = FixedKeys,
                 secureStore = MemoryStore(),
                 settings = MemorySettings(),
                 http = OfflineHttp,
-                signatures = null,
+                signatures = RejectingSignatures,
                 logger = null,
                 notifications = null,
             ),
@@ -91,6 +93,43 @@ class DieterSharedTest {
         }
 
         override fun release(channelId: String) = Unit
+    }
+
+    private object OfflineTunnels : NativeTunnels {
+        override fun open(
+            url: String,
+            sessionToken: String,
+            clientVersion: String,
+            daemonId: String,
+            lane: Int,
+            completion: NativeTunnelCompletion,
+        ) = completion.completed(null, 14, "offline")
+    }
+
+    /** A P-256 public key that never signs: nothing in these tests connects. */
+    private object FixedKeys : NativeDeviceKeys {
+        override fun platform() = "macos"
+
+        override fun deviceName() = "Test"
+
+        override fun publicKey(): NSData =
+            ("3059301306072a8648ce3d020106082a8648ce3d03010703420004cad3b4907225676285dd6fac57e1" +
+                    "97fc1dad5282efe67fbefb13499298aa23b729bbc3605239971f5f4d152369700085ae58fec2de" +
+                    "1b590a03f76052d467969b")
+                .chunked(2)
+                .map { it.toInt(16).toByte() }
+                .toByteArray()
+                .toNSData()
+
+        override fun sign(message: NSData): NSData = NSData()
+
+        override fun reset() = Unit
+    }
+
+    private object RejectingSignatures : NativeSignatures {
+        override fun verifyEd25519(publicKey: NSData, message: NSData, signature: NSData) = false
+
+        override fun verifyEcdsaP256(publicKey: NSData, message: NSData, signature: NSData) = false
     }
 
     private object Cancelled : NativeRpcCancellable {

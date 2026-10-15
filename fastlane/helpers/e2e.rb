@@ -195,13 +195,16 @@ module Dieter
       @values =
         lines.filter_map { |line| line.match(/\A(DIETER_ISOLATED_[A-Z_]+)=(.*)\z/)&.captures }.to_h
       unless @values["DIETER_ISOLATED_ADDR"].to_s.match?(/\A127\.0\.0\.1:\d+\z/) &&
-               !@values["DIETER_ISOLATED_TOKEN"].to_s.empty?
+               !@values["DIETER_ISOLATED_TOKEN"].to_s.empty? &&
+               !@values["DIETER_ISOLATED_PAIRING_CODE"].to_s.empty?
         raise "Invalid fixture readiness"
       end
     end
 
     def address = values.fetch("DIETER_ISOLATED_ADDR")
     def token = values.fetch("DIETER_ISOLATED_TOKEN")
+    # The one-time code the fixture's machine approves; apps pair with it.
+    def pairing_code = values.fetch("DIETER_ISOLATED_PAIRING_CODE")
 
     def self.redact(path)
       return unless File.exist?(path)

@@ -15,6 +15,9 @@ import com.getdieter.core.session.GatewaySession
 import com.getdieter.core.session.MachineSessions
 import com.getdieter.core.storage.CoreStorage
 import com.getdieter.core.sync.AccountSync
+import com.getdieter.core.trust.DeviceTrust
+import com.getdieter.core.trust.GrpcRosterGateway
+import com.getdieter.core.trust.TrustState
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Duration
@@ -86,6 +89,7 @@ class ConnectionSupervisor(
     private val credentials: Credentials,
     private val sessions: MachineSessions,
     private val sync: AccountSync,
+    private val trust: DeviceTrust,
     private val storageFor: (Gateway) -> CoreStorage,
     private val transport: RpcTransport,
     private val config: SupervisorConfig,
@@ -259,8 +263,22 @@ class ConnectionSupervisor(
                 mutableSession.value = session
                 publish(ConnectionState(ConnectionPhase.CONNECTED, gateway))
                 coroutineScope {
+                    launch {
+                        trust.run(
+                            gateway.origin,
+                            session.account?.github_id ?: 0,
+                            GrpcRosterGateway(session.client),
+                        )
+                    }
                     launch { expirePresence() }
-                    launch { streams.run(machines) }
+                    // Machines answer only roster members: streams run while this device is
+                    // trusted.
+                    launch {
+                        trust.view
+                            .map { it.state == TrustState.TRUSTED }
+                            .distinctUntilChanged()
+                            .collectLatest { trusted -> if (trusted) streams.run(machines) }
+                    }
                     watchPresence(session)
                 }
             } catch (cancelled: CancellationException) {

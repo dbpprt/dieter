@@ -28,6 +28,12 @@
 
 ![Dieter on macOS: a shared project board with tasks running on two machines](site/static/images/screenshots/macos-board.png)
 
+<p align="center">
+  <img src="site/static/images/screenshots/ios-inbox.png" alt="iPhone Inbox with the replies that need you and the tasks still running" width="250">
+  <img src="site/static/images/screenshots/ios-conversation.png" alt="A running task on iPhone with its reply and plan progress" width="250">
+  <img src="site/static/images/screenshots/android-board.png" alt="An Android board with the running tasks and their machines" width="250">
+</p>
+
 Dieter is a workspace for coding agents (Codex, Claude Code, Pi, Oh My Pi and
 DeepSeek Harness) that run on your own machines. A small daemon starts each
 agent beside your Git checkout, with your tools and your provider accounts, and
@@ -42,8 +48,9 @@ and review the result from your phone.
   each conversation runs on the machine you choose.
 - **Review in place.** Files, Git changes, terminals, background processes and
   an authenticated remote screen, next to the conversation.
-- **Your infrastructure.** The relay gateway is self-hostable and never stores
-  code, transcripts or provider credentials.
+- **Your infrastructure.** The relay gateway is self-hostable, never stores
+  code, transcripts or provider credentials, and relays only end-to-end
+  encrypted connections between your devices.
 - **Automatable.** The `dieter` CLI does everything the apps do, locally or on
   any enrolled machine.
 
@@ -92,6 +99,10 @@ dieter project open ~/src/my-project
 open -a Dieter                                        # sign in to the same gateway
 ```
 
+The first machine starts your account's trusted devices and prints a recovery
+key; keep it offline. Each app or further machine then shows a one-time code:
+type it on a device you already trust (`dieter device approve CODE`).
+
 The [quick start guide](https://getdieter.com/docs/quickstart/) walks through
 the first task in the apps.
 
@@ -99,9 +110,9 @@ the first task in the apps.
 
 A Go daemon runs agents next to your checkouts and replicates shared project
 metadata with your other daemons; a Go gateway authenticates accounts and
-machines and relays traffic when no direct route exists; the native apps share
-one Kotlin core, with a Compose UI on Android and iOS and SwiftUI on macOS.
-Agents run unsandboxed with your user's permissions. Read the
+machines and relays end-to-end encrypted traffic when no direct route exists;
+the native apps share one Kotlin core, with a Compose UI on Android and iOS and
+SwiftUI on macOS. Agents run unsandboxed with your user's permissions. Read the
 [architecture](docs/architecture.md) and the
 [security model](https://getdieter.com/docs/security/).
 

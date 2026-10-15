@@ -14,10 +14,10 @@ host work, or install just a client when your agents run on another machine.
 
 | Role           | Apple Silicon macOS | Linux amd64 / arm64          | Android    | iPhone / iPad |
 | -------------- | ------------------- | ---------------------------- | ---------- | ------------- |
-| CLI and daemon | Yes                 | Yes                          | —          | —             |
-| Native client  | macOS 26+           | —                            | Android 8+ | iOS 18+, beta |
-| Screen host    | With OS permissions | Active X11 / Wayland desktop | —          | —             |
-| Gateway        | Source build        | Published image and binaries | —          | —             |
+| CLI and daemon | Yes                 | Yes                          | No         | No            |
+| Native client  | macOS 26+           | No                           | Android 8+ | iOS 18+, beta |
+| Screen host    | With OS permissions | Active X11 / Wayland desktop | No         | No            |
+| Gateway        | Source build        | Published image and binaries | No         | No            |
 
 Each daemon host needs **Node.js 22.19+**, **Git**, and a configured
 [harness account](/docs/harnesses/). Install **tmux** if terminals should survive
@@ -43,8 +43,9 @@ dieter project open ~/Development/my-project
 
 Setup defaults to `https://gateway.getdieter.com` (an allowed account is required).
 For self-hosting, pass `--gateway https://YOUR-GATEWAY`. Use an existing Git
-checkout. Setup enrolls the machine, starts the Homebrew service, and guides the daemon's Screen Recording
-and Accessibility grants. Unsupported screen hosting does not prevent agent work.
+checkout. Setup enrolls the machine, starts the Homebrew service, sets up
+[device trust](/docs/machines/#trusted-devices), and guides the daemon's Screen
+Recording and Accessibility grants. Unsupported screen hosting does not prevent agent work.
 
 Verify enrollment and the background service with `dieter daemon status`: the
 service should be `homebrew (started)` and the gateway `connected`. If setup finds
@@ -58,8 +59,9 @@ brew install --cask dbpprt/tap/dieter-app
 open -a Dieter
 ```
 
-The app signs in to your gateway. Its capture and browser-context features have
-separate app permissions; grant access to **Dieter.app** when its setup asks.
+The app signs in to your gateway and then shows a one-time code; type it on a
+[trusted device](/docs/machines/#pair-an-app). Its capture and browser-context
+features have separate app permissions; grant access to **Dieter.app** when its setup asks.
 Daemon capture permissions apply to the executable identified by the daemon's
 guide. Recheck the host with `dieter daemon permissions --check`.
 
@@ -92,8 +94,9 @@ Do not run the daemon as root.
 ## Android
 
 Download [Dieter-Android.apk from the latest release](https://github.com/dbpprt/dieter/releases/latest/download/Dieter-Android.apk).
-Allow installation from your download source when Android asks, install it, and
-sign in to your gateway. No daemon runs on the phone.
+Allow installation from your download source when Android asks, install it,
+sign in to your gateway, and [pair the app](/docs/machines/#pair-an-app) by
+typing the code it shows on a trusted device. No daemon runs on the phone.
 
 When it starts, the app checks the latest public release, verifies the
 asset's published SHA-256 digest, and hands installation to Android. You still
@@ -109,11 +112,12 @@ The iPhone and iPad app supports iOS 18+ and shares the Android app's
 interface: Inbox, projects and boards, chats, conversations with attachments,
 files, Git review, schedules, terminals, machine telemetry, and Screens. It
 connects to remote daemons and does not host agents. Sign-in opens your
-gateway in the browser and returns to the app. Its Share extension sends files
-from other apps into a new task or an existing task or chat.
+gateway in the browser and returns to the app, which then
+[pairs](/docs/machines/#pair-an-app) like the other apps. Its Share extension
+sends files from other apps into a new task or an existing task or chat.
 
-iOS distribution uses the manual TestFlight workflow. Availability depends on
-beta access; there is no App Store download promised here. You can also build
+iOS builds go to TestFlight with each dev release. Availability depends on beta
+access; there is no App Store listing yet. You can also build
 with Xcode using the [Apple apps guide](https://github.com/dbpprt/dieter/blob/main/apps/apple/README.md).
 
 ## Updates

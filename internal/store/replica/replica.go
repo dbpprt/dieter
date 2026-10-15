@@ -29,6 +29,7 @@ type Store struct {
 	peerReadDBs      map[string]*sql.DB
 	peerCacheData    PeerData
 	peerHooks        Hooks
+	ownerKeyCache    ownerKeyCache
 }
 
 // New returns the replica of dir.

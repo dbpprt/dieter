@@ -29,7 +29,7 @@ replica can still show shared project metadata.
 | Mode              | Where the agent works                                           | Where changes appear                |
 | ----------------- | --------------------------------------------------------------- | ----------------------------------- |
 | New worktree      | A daemon-managed Git branch and directory for the conversation  | That conversation's Changes surface |
-| Project directory | The registered checkout, including its current branch and edits | Project **Files → Changes**         |
+| Project directory | The registered checkout, including its current branch and edits | The project's **Changes**           |
 
 Project directory mode does not switch branches. Multiple conversations may use
 that same checkout concurrently, so use separate worktrees when their edits need
@@ -46,7 +46,7 @@ A **card** belongs to a board and moves through Todo, Running, Review, and Done.
 A **standalone chat** belongs to a project without becoming a board card. Both
 retain the transcript, attachments, model selection, and continuation state.
 
-Create a card with a title and request, or use **Quick Task** on Mac for a
+Create a card with a title and request, or use **Quick task** on Mac for a
 story-only draft. **Add task** saves it; **Run task** starts immediately. Quick
 Task can improve the title in the background without changing the task ID.
 
@@ -140,4 +140,4 @@ usage is marked partial instead of being shown as zero.
 
 ## See the board
 
-{{< screenshot src="macos-board.png" width="1380" height="870" alt="Orbit board with 17 labeled tasks and execution owners on Studio Mac and Build Mac" caption="A shared board brings work from two execution machines together, with the owner visible on each card." >}}
+{{< screenshot src="macos-board.png" width="1380" height="870" alt="Atlas API Roadmap board with fifteen labeled tasks and execution machines Home mini and Office mini" caption="A shared board brings work from two execution machines together, with the machine named on each card." >}}

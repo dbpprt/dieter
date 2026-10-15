@@ -6,6 +6,7 @@ import com.getdieter.client.v1.SystemWoke
 import com.getdieter.core.client.ClientApi
 import com.getdieter.core.connection.ConnectionPhase
 import com.getdieter.core.connection.SyncState
+import com.getdieter.core.platform.SoftwareDeviceKeys
 import com.getdieter.core.testing.ConnectionPerChannelTransport
 import com.getdieter.core.testing.EndToEnd
 import com.getdieter.core.testing.IsolatedGateway
@@ -13,6 +14,7 @@ import com.getdieter.core.testing.SharedGateway
 import com.getdieter.core.testing.StallingProxy
 import com.getdieter.core.testing.await
 import com.getdieter.core.testing.jvmTestPlatform
+import java.nio.file.Files
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -30,10 +32,19 @@ class ConnectionRecoveryEndToEndTest : EndToEnd() {
     @AfterTest fun tearDown() = tearDownRuntimes()
 
     private suspend fun connect(fixture: IsolatedGateway, proxy: StallingProxy): CoreRuntime {
+        val keys =
+            SoftwareDeviceKeys(
+                Files.createTempDirectory("wake-device").resolve("key").toFile(),
+                deviceName = "Wake test",
+            )
         val runtime =
             runtime(
                 fixture,
-                platform = jvmTestPlatform(transport = ConnectionPerChannelTransport()),
+                platform =
+                    jvmTestPlatform(
+                        deviceKeys = keys,
+                        transport = ConnectionPerChannelTransport(keys),
+                    ),
                 gatewayUrl = proxy.url,
             )
         runtime.awaitConnected()

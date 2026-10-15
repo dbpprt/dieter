@@ -48,7 +48,6 @@ func TestGatewayRejectsUnauthenticatedRPCBeforeReadingBody(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer server.APIGRPC.Stop()
-	defer server.RelayGRPC.Stop()
 	for _, headers := range [][]string{nil, {"Bearer invalid"}, {"Bearer one", "Bearer two"}} {
 		body := &repeatedBody{}
 		request := httptest.NewRequest(http.MethodPost, "https://gateway.example/dieter.gateway.v1.GatewayService/GetAccount", body)
@@ -77,7 +76,6 @@ func TestGatewayRejectsUnauthenticatedProviderQuotaRPCsBeforeReadingBody(t *test
 		t.Fatal(err)
 	}
 	defer server.APIGRPC.Stop()
-	defer server.RelayGRPC.Stop()
 	for _, method := range []string{"ListProviderQuotas", "WatchProviderQuotas", "RefreshProviderQuotas", "SetProviderQuotaSummaryInclusion", "ConsumeProviderQuotaReset"} {
 		t.Run(method, func(t *testing.T) {
 			body := &repeatedBody{}
@@ -105,7 +103,6 @@ func TestGatewayBoundsHTTP1BodiesBeforeRouting(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer server.APIGRPC.Stop()
-	defer server.RelayGRPC.Stop()
 	for _, upgrade := range []string{"h2c", "other, h2c"} {
 		t.Run(upgrade, func(t *testing.T) {
 			body := &repeatedBody{}
@@ -115,13 +112,13 @@ func TestGatewayBoundsHTTP1BodiesBeforeRouting(t *testing.T) {
 			request.Header.Set("HTTP2-Settings", "")
 			response := httptest.NewRecorder()
 			server.HTTPHandler.ServeHTTP(response, request)
-			if response.Code < 400 || body.read > maxRelayPayload+1 {
+			if response.Code < 400 || body.read > maxGatewayMessageBytes+1 {
 				t.Fatalf("status=%d read=%d; unbounded upgrade body", response.Code, body.read)
 			}
 		})
 	}
-	request := httptest.NewRequest(http.MethodPost, "http://localhost/healthz", io.LimitReader(&repeatedBody{}, maxRelayPayload+1))
-	request.ContentLength = maxRelayPayload + 1
+	request := httptest.NewRequest(http.MethodPost, "http://localhost/healthz", io.LimitReader(&repeatedBody{}, maxGatewayMessageBytes+1))
+	request.ContentLength = maxGatewayMessageBytes + 1
 	response := httptest.NewRecorder()
 	server.HTTPHandler.ServeHTTP(response, request)
 	if response.Code != http.StatusRequestEntityTooLarge {
@@ -257,7 +254,6 @@ func TestGatewaySecurityHeaders(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer server.APIGRPC.Stop()
-		defer server.RelayGRPC.Stop()
 		for _, path := range []string{"/", "/healthz", "/auth/github/callback?state=invalid"} {
 			response := httptest.NewRecorder()
 			server.HTTPHandler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, origin.String()+path, nil))
@@ -285,7 +281,6 @@ func securityTLSProxy(t *testing.T, config Config) (*Server, *httptest.Server) {
 		t.Fatal(err)
 	}
 	t.Cleanup(gateway.APIGRPC.Stop)
-	t.Cleanup(gateway.RelayGRPC.Stop)
 	// Production proxy mode: TLS terminates at the front end, with HTTP/2
 	// prior knowledge over a loopback-only connection to the gateway.
 	backend, err := gateway.httpServer()

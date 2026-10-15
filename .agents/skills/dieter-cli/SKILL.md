@@ -65,21 +65,26 @@ a connected gateway and a managed service before treating onboarding as complete
 
 Remote commands prefer the daemon's authenticated direct TLS route, then try
 a data-only WebRTC route when supported, with bounded gateway relay fallback.
-`status` reports `webrtc-direct` or `webrtc-turn` from the selected ICE pair.
-TURN still relays traffic; end-to-end daemon TLS and per-RPC authorization remain
-in force. WebRTC sessions are independent of screen sharing and expire after
-one hour; transport recovery must not replay mutations. State, sync, card, terminal, remote-execution,
+`status` reports `direct`, `webrtc-direct`, `webrtc-turn` or `relay`. Every route
+runs the same mutually authenticated TLS between this machine's roster device
+key and the target daemon's roster key (see "Device trust" below): the relay is
+an opaque tunnel and WebRTC signaling runs inside it, so the gateway and TURN
+relay only ciphertext. A remote command fails with "not a trusted device" until
+both machines are in the account's device roster. WebRTC sessions are
+independent of screen sharing and expire after one hour; transport recovery
+must not replay mutations. State, sync, card, terminal, remote-execution,
 and Git-operation watches renew direct credentials and resume from the last
 delivered sequence or complete sync projection. Transient failures allow five
 retries between delivered frames; revocation and permanent errors stop recovery.
 Mutations, process starts, and stdin writes are never replayed by this recovery.
-The gateway routes requests and stores only control-plane state plus normalized,
+The gateway relays opaque tunnels and stores only control-plane state, the
+signed device roster and short-lived pairing requests, plus normalized,
 credential-free provider quota snapshots. It does not store projects,
 transcripts, files, schedules, provider credentials, or harness credentials. Use
 `dieter machine show <machine-id>` and `dieter machine route <machine-id>` to
 inspect presence and advertised routes. Route JSON also includes `relay_lanes`:
 control (0), replication (1), command (2), and subscription (3), with connectivity,
-active calls/limit, buffered bytes, rejections, last response time, and writer
+open tunnels/limit, buffered bytes, rejections, last response time, and writer
 stall status. Presence alone does not prove every relay channel is ready. Each
 channel reconnects independently; a stalled watch cannot exhaust health or peer
 replication capacity. Directory output includes the daemon's
@@ -942,8 +947,9 @@ present a skipped/unavailable matrix cell as a pass.
 All commands support the normal local target or global `--machine ID|NAME`.
 `machine route` includes `controlWebrtc` when the connected daemon supports this
 transport. The gateway provides account authentication, discovery, ICE
-configuration, bootstrap signaling, and fallback; API payloads then use the
-selected peer or TURN path. Clients retain direct TLS preference.
+configuration and the relay tunnel that carries the signaling inside TLS; API
+payloads then use the selected peer or TURN path. Clients retain direct TLS
+preference.
 
 ```sh
 dieter machine rtc MACHINE
@@ -1000,8 +1006,9 @@ fixtures and the owned native privacy qualification.
 ### Account vault (passwords and TOTP)
 
 `dieter vault` holds account logins shared by the operator's machines. Items
-replicate as ciphertext only. Commands that return decrypted content refuse the
-gateway relay route, so run them on the machine (or a direct `--machine` route).
+replicate as ciphertext only, and every `--machine` route (including the relay
+tunnel) is TLS between roster devices, so decrypted content never reaches the
+gateway.
 
 ```sh
 dieter vault status                                  # state, members, your access
@@ -1038,6 +1045,40 @@ existing member after comparing the codes both machines print. `vault join
 --recovery-key-stdin` joins offline. `vault remove-member MEMBER` revokes and
 rotates; `vault rotate --recovery-key` replaces the recovery key. `vault audit`
 shows this machine's access log without secret values.
+
+### Device trust (pairing machines and apps)
+
+Every machine and app has its own key in the account's device roster, an
+append-only list that every device verifies. Daemons accept only roster devices
+and clients accept only the roster key of the machine they dial, so the gateway
+can neither read nor impersonate anything, nor add a device.
+
+```sh
+dieter device status [--format text|json]   # state, roster head, devices, pending code
+dieter device roster [--from SEQ]           # signed entries: who added or removed whom
+dieter device requests                      # devices waiting to join (names only)
+dieter device approve CODE                  # sign the device that shows CODE into the roster
+dieter device revoke DEVICE_ID              # remove a device (dv_…)
+dieter device sync                          # refresh from the gateway; with --machine also offer ours
+dieter device init [--replace]              # first machine only: start the roster, print a recovery key
+dieter device recover --recovery-key -      # rejoin with the recovery key (read from stdin)
+```
+
+States: `NO_ROSTER` (run `device init` on the account's first machine),
+`PENDING` (the machine shows a one-time code), `TRUSTED`, `REVOKED`, and
+`CONFLICT` (the gateway or a peer presented a different roster; remote calls are
+refused; never "fix" this by replacing the roster without asking the operator).
+`dieter setup` starts the roster on a first machine or prints the code of a new
+one. A person approves a new device by typing the code its own screen shows on
+a trusted device (the app's Devices screen or `dieter device approve CODE`);
+codes are never listed. `init` and `recover` run only on the machine itself;
+the others accept `--machine`. `dieter daemon unenroll` also removes the machine
+from the roster and deletes its key, so enrolling it again creates a new
+machine that must be approved; a `REVOKED` or `CONFLICT` machine rejoins only
+that way. Report a conflict to the operator instead of resetting anything.
+Agent turns cannot change device trust: every mutation fails while
+`DIETER_TURN_TOKEN` is set, also with `--machine`. Never ask for, print or store
+pairing codes or the recovery key in transcripts.
 
 ### Shared projects and peer storage
 

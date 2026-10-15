@@ -27,6 +27,7 @@ type (
 	vaultAPI         struct{ server *Server }
 	kvAPI            struct{ server *Server }
 	peerAPI          struct{ server *Server }
+	trustAPI         struct{ server *Server }
 )
 
 // service composes every domain handler: the whole daemon API, Dieter's only
@@ -51,6 +52,7 @@ type service struct {
 	*vaultAPI
 	*kvAPI
 	*peerAPI
+	*trustAPI
 }
 
 var (
@@ -71,6 +73,7 @@ var (
 	_ dieterv1connect.VaultServiceHandler        = (*vaultAPI)(nil)
 	_ dieterv1connect.KVServiceHandler           = (*kvAPI)(nil)
 	_ dieterv1connect.PeerServiceHandler         = (*peerAPI)(nil)
+	_ dieterv1connect.TrustServiceHandler        = (*trustAPI)(nil)
 )
 
 func newService(s *Server) *service {
@@ -80,7 +83,7 @@ func newService(s *Server) *service {
 		conversationsAPI: &conversationsAPI{s}, gitAPI: &gitAPI{s}, filesAPI: &filesAPI{s},
 		terminalsAPI: &terminalsAPI{s}, executionsAPI: &executionsAPI{s}, screensAPI: &screensAPI{s},
 		controlAPI: &controlAPI{s}, schedulesAPI: &schedulesAPI{s}, vaultAPI: &vaultAPI{s},
-		kvAPI: &kvAPI{s}, peerAPI: &peerAPI{s},
+		kvAPI: &kvAPI{s}, peerAPI: &peerAPI{s}, trustAPI: &trustAPI{s},
 	}
 }
 
@@ -105,6 +108,7 @@ func (svc *service) handlers(options ...connect.HandlerOption) map[string]http.H
 	add(dieterv1connect.NewVaultServiceHandler(svc.vaultAPI, options...))
 	add(dieterv1connect.NewKVServiceHandler(svc.kvAPI, options...))
 	add(dieterv1connect.NewPeerServiceHandler(svc.peerAPI, options...))
+	add(dieterv1connect.NewTrustServiceHandler(svc.trustAPI, options...))
 	return result
 }
 
@@ -116,16 +120,16 @@ func requestHeader(ctx context.Context, name string) string {
 	return ""
 }
 
-// operatorContext records the gateway-asserted operator subject. connect-go
+// operatorContext records the operator subject the DirectServer forwarded. connect-go
 // terminates the gRPC HTTP/2 request, so transport metadata is available as
 // headers rather than grpc/metadata on this boundary.
 func operatorContext(ctx context.Context) context.Context {
 	return context.WithValue(ctx, remoteDesktopOperatorKey{}, requestHeader(ctx, operatorSubjectMetadata))
 }
 
-// vaultContext records the route, operator, and agent turn of a vault call.
+// vaultContext records the operator, device, and agent turn of a vault call.
 func vaultContext(ctx context.Context) context.Context {
 	return context.WithValue(ctx, vaultHeadersKey{}, vaultHeaders{
-		route: requestHeader(ctx, routeMetadata), operator: requestHeader(ctx, operatorSubjectMetadata), token: requestHeader(ctx, turnTokenMetadata),
+		operator: requestHeader(ctx, operatorSubjectMetadata), device: requestHeader(ctx, deviceIDMetadata), token: requestHeader(ctx, turnTokenMetadata),
 	})
 }

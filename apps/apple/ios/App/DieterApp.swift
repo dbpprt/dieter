@@ -14,7 +14,8 @@ struct DieterApp: App {
                     #if DEBUG || targetEnvironment(simulator)
                         // Simulator flows also exercise the optimized Kotlin/Native framework.
                         if let url = launchArgument("fixture_url"), let token = launchArgument("fixture_token") {
-                            host.adoptFixture(url: url, token: token)
+                            host.adoptFixture(
+                                url: url, token: token, pairingCode: launchArgument("fixture_pairing_code") ?? "")
                         }
                         #if DEBUG
                             if let script = launchArgument("script") { host.runDebugScript(script) }

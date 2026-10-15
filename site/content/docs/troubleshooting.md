@@ -10,9 +10,12 @@ slug: "troubleshooting"
 ## The app cannot connect
 
 1. Confirm the app and daemon use the same HTTPS gateway origin and GitHub account.
-2. Run `dieter daemon status` on the host, then `dieter machine list`.
-3. Check the gateway's minimum client/daemon releases and each installed release.
-4. Check `dieter machine route MACHINE_ID` and `dieter --machine MACHINE_ID status`.
+2. Confirm that the app and the machine are trusted devices: open **Devices** in
+   the app and run `dieter device status` on the host. See
+   [a device is not trusted](#a-device-is-not-trusted).
+3. Run `dieter daemon status` on the host, then `dieter machine list`.
+4. Check the gateway's minimum client/daemon releases and each installed release.
+5. Check `dieter machine route MACHINE_ID` and `dieter --machine MACHINE_ID status`.
 
 A healthy local API can coexist with a reconnecting gateway tunnel. A recent
 `gatewayLastAcknowledgedAt` is bidirectional tunnel liveness evidence. A sync
@@ -46,6 +49,42 @@ and a connected gateway. If the service still fails, inspect `brew services list
 and `dieter daemon logs`. Agent work can run without screen sharing; remote desktop
 also requires the daemon's Screen Recording and Accessibility permissions. Run
 `dieter daemon permissions --check` to verify them.
+
+## A device is not trusted
+
+Machines answer only the devices in your account's device roster. Open
+**Devices** in an app (**Tools › Devices** on Android, iPhone and iPad,
+**Settings › Devices** on Mac), or run `dieter device status` on a machine, and
+act on its state:
+
+| State       | Meaning (app title)                                                                                           | What to do                                                                                                                                    |
+| ----------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NO_ROSTER` | Your account has no trusted devices yet ("Set up Dieter on a machine first")                                  | On your first machine, run `dieter device init` (or `dieter setup`) and store the recovery key                                                |
+| `PENDING`   | The device waits for approval and shows a one-time code ("Waiting for approval")                              | Type the code on a trusted device: **Devices → Add a device**, or `dieter device approve CODE`                                                |
+| `TRUSTED`   | The device is trusted ("This device is trusted")                                                              | If a machine still refuses it, run `dieter device sync` on that machine: it may not have seen the newest entries yet                          |
+| `REVOKED`   | Another device removed this one ("This device was removed")                                                   | In an app, choose **Reset this device** and pair again. On a machine, run `dieter daemon unenroll`, then `dieter setup`, and approve its code |
+| `CONFLICT`  | The device saw a history of your devices that contradicts the one it trusts ("Your trusted devices conflict") | See below; remote calls stay closed until you act                                                                                             |
+
+A waiting device keeps its code until it is approved, also across restarts, but
+other devices see its request only while it runs: keep the app open, or the
+daemon running. "No device is waiting with this code" means the code was
+mistyped, the new device is not running, or it has already joined. A remote
+command that fails with "not a trusted device" says which machine still needs
+approval.
+
+**Conflicts.** A conflict appears after someone started a new roster with
+`dieter device init --replace`, or when a gateway presents a forged or
+rewritten list. `dieter device status` shows where the histories differ. Do
+not reset anything until you know which it was.
+
+- If you started a new roster yourself, reset each app (**Reset this device**),
+  re-enroll each other machine (`dieter daemon unenroll`, then `dieter setup`),
+  and approve their codes on the machine with the new roster.
+- If nobody did, treat your gateway as compromised. Stop using it, tell its
+  operator, and keep the device in its conflict state as evidence.
+
+If every trusted device is lost, add a machine back with the recovery key; see
+[trusted devices](/docs/machines/#manage-devices).
 
 ## A project is missing or duplicated
 

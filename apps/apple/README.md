@@ -12,7 +12,7 @@ transcripts, and files; neither app starts a local daemon.
 | Path                                | Contents                                                                                                                                                                                                                                                                                                    |
 | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Frameworks/DieterCore.xcframework` | The Kotlin core, assembled from `apps/kotlin` (not tracked): the macOS slice from `:core:apple`, the iOS slices from `:ui`, which exports the same façade.                                                                                                                                                  |
-| `DieterKit/`                        | The Swift package both apps share (macOS 26, iOS 18): `DieterCore` and `WebRTC` binary targets; `DieterAPI` (generated SwiftProtobuf messages); `DieterAPIGRPC` (generated grpc-swift clients, used only by the Mac tests); `DieterTransport`; `DieterPlatform`; and `DieterPlatformTests`.                 |
+| `DieterKit/`                        | The Swift package both apps share (macOS 26, iOS 18): `DieterCore` and `WebRTC` binary targets; `DieterAPI` (generated SwiftProtobuf messages); `DieterAPIGRPC` (generated grpc-swift clients: the relay tunnel and the Mac tests); `DieterTransport`; `DieterPlatform`; and `DieterPlatformTests`.         |
 | `mac/`                              | The Mac package: the `DieterMacKit` library (all presentation, plus the Mac's adapters over the core in `Sources/DieterMacKit/Core`), the thin `DieterMac` executable, and `DieterMacTests`. `Resources/` holds the bundle inputs (Info.plist, icons); `MarkdownPreview/` the preview's JavaScript sources. |
 | `ios/`                              | `Dieter.xcodeproj` (the `Dieter` app and its `DieterShare` extension), `App/`, `Share/`, the generated `Identity.xcconfig`, and `Host/`, the iOS-only Swift package whose `DieterIOS` library hosts the Compose UI.                                                                                         |
 | `scripts/format-swift.sh`           | Checks (or, with `--write`, rewrites) the formatting of the hand-written Swift with `.swift-format`.                                                                                                                                                                                                        |
@@ -25,12 +25,17 @@ Related packages outside this directory: [`native/macos`](../../native/macos)
 
 ### DieterKit
 
-- `DieterTransport`: the native transport (the WebRTC control channel, daemon
-  certificate pinning, and gRPC resolver targets). It re-exports
+- `DieterTransport`: the native transport: the WebRTC control channel, relay
+  tunnels (`RelayTunnel`: `RelayService.OpenTunnel` bridged to a loopback
+  port), roster-pinned mutual TLS for daemon routes (`DaemonTLS`: the server
+  must present the daemon's roster key, the client presents its device
+  certificate), and gRPC resolver targets. It re-exports
   `RemoteDesktopProtocol` (the screen key map and clipboard content the
   capture helper also uses).
 - `DieterPlatform`: the apps' side of the core: the RPC bridge (`CoreRpcBridge`,
-  grpc-swift), the platform services, the Keychain store
+  grpc-swift), relay tunnels (`CoreRelayTunnels`), the device key
+  (`CoreDeviceKeys`: a Secure Enclave P-256 key where available, else a
+  software key), the platform services, the Keychain store
   (`CoreKeychainSecureStore`), the control channels, and the WebRTC screen
   engine, which draws through each app's renderer.
 - `DieterAPI`, `DieterAPIGRPC` and `DieterClientAPI` are generated from
@@ -49,12 +54,19 @@ and the VideoToolbox and Metal screen renderer stay native. `AppSession` owns
 the menu-bar lifetime and `WindowWorkspace` owns the workspace window.
 
 The app signs in to an HTTPS gateway using GitHub OAuth with PKCE and the
-`dieter-mac://oauth/callback` redirect. It keeps its Dieter session in a
-user-only file under `~/Library/Application Support/com.getdieter.mac` (`0700`
-directory, `0600` file); it does not use Keychain or retain the GitHub token.
-Routes prefer verified direct TLS, then data-only WebRTC, then the gateway
-relay; same-Mac access uses the discovered authenticated loopback TLS route.
-`--dieter-endpoint` supplies a transient endpoint for an isolated fixture.
+`dieter-mac://oauth/callback` redirect. It keeps its Dieter session
+(`gateway-sessions.json`) and its device key (`device-key.json`: the Secure
+Enclave key's opaque representation, or a software P-256 key where the Mac has
+no enclave) in user-only files under
+`~/Library/Application Support/com.getdieter.mac` (`0700` directory, `0600`
+files); it never creates Keychain items or retains the GitHub token. Until
+another device approves its pairing code, the window shows pairing instead of
+machines; Settings › Devices lists the account's devices, adds a device by the
+code it shows, and removes or resets devices. Every route (direct TLS, data-only
+WebRTC, or a gateway relay tunnel) runs mutual TLS 1.3 pinned to the machine's
+roster key; same-Mac access uses the discovered loopback TLS route.
+`--dieter-endpoint` supplies a transient endpoint for an isolated fixture, and
+`--dieter-pairing-code-file` its pairing code.
 
 The debug build includes the in-app Maestro flow runner
 (`Sources/DieterMacKit/Testing`, compiled with `DIETER_E2E`), which runs the
@@ -85,7 +97,8 @@ and is the base configuration of every build configuration:
 consistent), `DIETER_IOS_TEAM_ID`, and `DIETER_IOS_URL_SCHEME`. Sign-in returns
 through `dieter-ios://oauth/callback`; the gateway must list that redirect.
 Sessions live in device-only Keychain items of the `com.getdieter.ios.core`
-service, one per gateway origin, and the core's state under
+service, one per gateway origin, beside the device key (a Secure Enclave key's
+representation, or a software key on simulators), and the core's state under
 `Application Support/Dieter/core`. Debug builds accept the flows' isolated
 loopback fixture session; release builds do not. Signing settings
 (`DIETER_IOS_SIGN_IDENTITY`, `DIETER_IOS_SIGN_STYLE`,

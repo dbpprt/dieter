@@ -254,7 +254,7 @@ func TestSetupDoesNotRegisterCurrentGitProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := identity.SaveCredential("d_test", "test", []byte("certificate"), nil, nil, time.Now().Add(time.Hour).Format(time.RFC3339Nano), 1); err != nil {
+	if err := identity.SaveCredential("d_test", "test", []byte("certificate"), nil, time.Now().Add(time.Hour).Format(time.RFC3339Nano), 1); err != nil {
 		t.Fatal(err)
 	}
 

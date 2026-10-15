@@ -21,6 +21,8 @@ kotlin {
 }
 
 tasks.named<Test>("jvmTest") {
+    // Golden vectors shared with the Go implementation (tests/fixtures).
+    systemProperty("dieter.repository", rootProject.file("../..").absolutePath)
     testLogging {
         events("passed", "failed", "skipped")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL

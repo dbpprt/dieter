@@ -57,6 +57,7 @@ import com.getdieter.core.routing.RoutingPolicy
 import com.getdieter.core.routing.WebRtcCooldown
 import com.getdieter.core.runtime.CoreException
 import com.getdieter.core.runtime.FailureKind
+import com.getdieter.core.runtime.Failures
 import com.getdieter.core.schedules.Schedules
 import com.getdieter.core.screens.LocalClipboard
 import com.getdieter.core.screens.ScreenConfig
@@ -74,10 +75,13 @@ import com.getdieter.core.terminals.TerminalInputPumps
 import com.getdieter.core.terminals.TerminalOverview
 import com.getdieter.core.terminals.TerminalSelections
 import com.getdieter.core.terminals.Terminals
+import com.getdieter.core.trust.DeviceTrust
+import com.getdieter.core.trust.TrustState
 import com.getdieter.core.workspace.ProjectChanges
 import com.getdieter.core.workspace.ProjectWorkspaces
 import com.getdieter.core.workspace.WorkspaceReview
 import kotlin.concurrent.Volatile
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -122,17 +126,47 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
 
     /** The account view from every machine's change stream. */
     val accountSync = AccountSync(workspace, scope, platform.clock, platform.logger)
+
+    /**
+     * This device's membership in the account's device roster. Kept outside every account's
+     * namespace, so signing out keeps the device's key and pinned roster.
+     */
+    val trust =
+        DeviceTrust(
+            platform.deviceKeys,
+            platform.signatures,
+            storage.scope(TRUST_NAMESPACE),
+            platform.clock,
+            platform.logger,
+        )
     private val cooldown = WebRtcCooldown(platform.clock)
     private val routes =
         RouteSelector(
             platform.transport,
+            platform.tunnels,
             platform.controlChannels,
+            trust,
             RoutingPolicy(config.includeLoopbackRoutes),
             cooldown,
             platform.logger,
             platform.clock,
         )
-    val sessions = MachineSessions(routes, scope)
+    val sessions =
+        MachineSessions(routes, scope) { plane ->
+            // Every authenticated connection compares roster heads with its machine.
+            scope.launch {
+                try {
+                    trust.gossip(plane.daemonId, plane.client)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Throwable) {
+                    platform.logger.info(
+                        "DeviceTrust",
+                        "roster gossip with ${plane.daemonId} failed: ${Failures.message(error)}",
+                    )
+                }
+            }
+        }
     val clientId: String = ClientIdentity.load(storage, config.clientIdPrefix)
     val connection: ConnectionSupervisor =
         ConnectionSupervisor(
@@ -141,6 +175,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
             credentials,
             sessions,
             accountSync,
+            trust,
             ::storageFor,
             platform.transport,
             SupervisorConfig(config.clientVersion),
@@ -150,6 +185,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
                 // Overlays and pending results belong to the previous account; everything below
                 // rebinds.
                 workspace.clear()
+                trust.forget()
                 gatewayStorage = prepared
                 terminalSelections.reload()
                 terminalPumps.cancelAll()
@@ -226,6 +262,18 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
 
     fun start() {
         scope.launch { connection.start() }
+        // Connections exist only while this device is trusted, each pinned to its machine's
+        // current roster key.
+        scope.launch {
+            trust.view
+                .map { (it.state == TrustState.TRUSTED) to it.roster }
+                .distinctUntilChanged()
+                .collect { (trusted, _) ->
+                    if (!trusted) sessions.closeAll()
+                    else
+                        sessions.retainTrusted { daemonId, key -> trust.daemonKey(daemonId) == key }
+                }
+        }
         scope.launch { outbox.run(reachableMachines()) }
         scope.launch { workspace.revision.collect { outbox.reconcile() } }
         // An inline error goes with its card.
@@ -314,11 +362,14 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
      * device's first.
      */
     private fun reachableMachines(): Flow<List<String>> =
-        combine(connection.session, connection.machines, sessions.routes) {
-                session,
-                machines,
-                routes ->
-                if (session == null) emptyList() else MachineChoice.ordered(machines, routes)
+        combine(
+                connection.session,
+                connection.machines,
+                sessions.routes,
+                trust.view.map { it.state == TrustState.TRUSTED }.distinctUntilChanged(),
+            ) { session, machines, routes, trusted ->
+                if (session == null || !trusted) emptyList()
+                else MachineChoice.ordered(machines, routes)
             }
             .distinctUntilChanged()
 
@@ -341,13 +392,16 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
 
     /**
      * Uses a gateway session obtained elsewhere, such as an isolated test run's token, and connects
-     * to that gateway.
+     * to that gateway. An isolated fixture's [pairingCode] makes this device pair with that code,
+     * which the fixture's machine approves.
      */
-    suspend fun adoptSession(gateway: Gateway, token: String) = onCore {
-        require(token.isNotBlank()) { "The session token is empty." }
-        credentials.save(gateway, token.trim())
-        activate(gateway)
-    }
+    suspend fun adoptSession(gateway: Gateway, token: String, pairingCode: String? = null) =
+        onCore {
+            require(token.isNotBlank()) { "The session token is empty." }
+            pairingCode?.takeIf { it.isNotBlank() }?.let(trust::usePairingCode)
+            credentials.save(gateway, token.trim())
+            activate(gateway)
+        }
 
     private fun activate(gateway: Gateway) {
         if (accounts.state.value.gateways.none { it.origin == gateway.origin }) {
@@ -388,7 +442,26 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
         connection.unprepare()
         storageFor(gateway).clear()
         workspace.clear()
+        trust.forget()
         connection.restart()
+    }
+
+    /** Rereads the account's trusted devices and, while shown, the devices waiting to join. */
+    suspend fun refreshDevices() = onCore { trust.refresh() }
+
+    /** Signs the device that shows [code] into the account's device roster. */
+    suspend fun approveDevice(code: String) = onCore { trust.approve(code) }
+
+    /** Removes [deviceId] from the account's device roster. */
+    suspend fun revokeDevice(deviceId: String) = onCore { trust.revoke(deviceId) }
+
+    /**
+     * Forgets the pinned roster and this device's key, then asks to join again; used after a
+     * conflict or a revocation.
+     */
+    suspend fun resetTrust() = onCore {
+        sessions.closeAll()
+        trust.reset()
     }
 
     suspend fun selectGateway(origin: String) = onCore { accounts.select(origin) }
@@ -619,23 +692,16 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
         engines: ScreenMediaEngineFactory,
         config: ScreenConfig,
         clipboard: LocalClipboard? = null,
-    ): ScreenSession {
-        val verifier =
-            platform.signatures
-                ?: throw CoreException(
-                    FailureKind.PERMANENT,
-                    "Screen sharing is unavailable on this device.",
-                )
-        return ScreenSession(
+    ): ScreenSession =
+        ScreenSession(
             engines,
-            verifier,
+            platform.signatures,
             config,
             platform.clock,
             scope,
             platform.logger,
             clipboard,
         )
-    }
 
     fun screenRoutes(daemonId: String): ScreenRouteFactory = sessions.screenRoutes(daemonId)
 
@@ -774,5 +840,8 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
     private companion object {
         /** The shared navigation layout's KV namespace. */
         const val NAVIGATION_NAMESPACE = "navigation"
+
+        /** Device trust's directory, outside every account's namespace. */
+        const val TRUST_NAMESPACE = "trust"
     }
 }

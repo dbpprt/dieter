@@ -20,6 +20,7 @@ import (
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/link"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/platform/buildinfo"
@@ -335,10 +336,11 @@ Gateway URLs require HTTPS; HTTP is allowed only on literal loopback addresses.
 		credential, completeErr := link.CompleteEnrollment(ctx, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
 		if completeErr == nil {
 			identity.GatewayIssuer = credential.GetGatewayIssuer()
-			if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetDaemonCaPem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
+			if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
 				return err
 			}
 			fmt.Fprintf(c.Out, "Enrolled %s as %s.\n", credential.GetDaemonName(), credential.GetDaemonId())
+			fmt.Fprintln(c.Out, "Next: start the daemon (`dieter setup` installs the service), then run `dieter device status`. On the account's first machine, `dieter device init` starts the device roster; any other machine shows a one-time code to type on a trusted device.")
 			return nil
 		}
 		if status.Code(completeErr) != codes.FailedPrecondition {
@@ -417,7 +419,7 @@ verify the restored daemon before revoking the replacement ID.
 	if err := validateRecoveredCredential(identity, *oldID, state.GetRevokedGeneration(), credential); err != nil {
 		return fmt.Errorf("gateway returned invalid recovered credential (local credential unchanged): %w", err)
 	}
-	if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetDaemonCaPem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
+	if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
 		return fmt.Errorf("save recovered daemon credential: %w", err)
 	}
 	fmt.Fprintf(c.Out, "Recovered %s from replacement %s. Restart the daemon service manually, verify %s is connected and working, then use `dieter machine revoke %s` only after that verification. The replacement is still active until revoked.\n", *oldID, replacementID, *oldID, replacementID)
@@ -431,9 +433,8 @@ func validateRecoveredCredential(identity *link.Identity, oldID string, expected
 	if credential.GetGatewayIssuer() != identity.Issuer() {
 		return errors.New("gateway issuer does not match this enrollment")
 	}
-	if !bytes.Equal(credential.GetDaemonCaPem(), identity.DaemonCAPEM) ||
-		!bytes.Equal(credential.GetGatewaySigningPublicKey(), identity.GatewaySigningPublicKey) {
-		return errors.New("gateway trust anchors do not match this enrollment")
+	if !bytes.Equal(credential.GetGatewaySigningPublicKey(), identity.GatewaySigningPublicKey) {
+		return errors.New("gateway signing key does not match this enrollment")
 	}
 	block, rest := pem.Decode(credential.GetCertificatePem())
 	if block == nil || block.Type != "CERTIFICATE" || len(rest) != 0 {
@@ -443,17 +444,11 @@ func validateRecoveredCredential(identity *link.Identity, oldID string, expected
 	if err != nil {
 		return fmt.Errorf("parse recovered daemon certificate: %w", err)
 	}
+	// The enrollment certificate only authenticates this machine to the
+	// gateway; clients and peers trust the device roster instead.
 	public, ok := certificate.PublicKey.(ed25519.PublicKey)
-	if !ok || !public.Equal(identity.PublicKey) || certificate.Subject.CommonName != oldID ||
-		len(certificate.URIs) != 1 || certificate.URIs[0].String() != "spiffe://board/daemon/"+oldID {
+	if !ok || !public.Equal(identity.PublicKey) || certificate.Subject.CommonName != oldID {
 		return errors.New("recovered daemon certificate does not match the old ID and local key")
-	}
-	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM(identity.DaemonCAPEM) {
-		return errors.New("saved gateway daemon CA is invalid")
-	}
-	if _, err := certificate.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}); err != nil {
-		return fmt.Errorf("recovered daemon certificate is not valid under gateway CA: %w", err)
 	}
 	expires, err := time.Parse(time.RFC3339Nano, credential.GetExpiresAt())
 	if err != nil || !expires.Equal(certificate.NotAfter) || !expires.After(time.Now()) {
@@ -465,8 +460,10 @@ func validateRecoveredCredential(identity *link.Identity, oldID string, expected
 func (c *CLI) daemonUnenroll(args []string) error {
 	const usage = `Usage: dieter daemon unenroll
 
-Revoke this machine at its Dieter gateway and remove the local enrollment
-credential. Projects, conversations, schedules, and harness settings remain.
+Revoke this machine at its Dieter gateway, remove it from the account's
+trusted devices, and delete its enrollment key and credential. A later
+enrollment creates a new key that a trusted device approves again. Projects,
+conversations, schedules, and harness settings remain.
 `
 	set := flags("daemon unenroll")
 	help, err := parse(set, args, usage, c.Out)
@@ -486,14 +483,25 @@ credential. Projects, conversations, schedules, and harness settings remain.
 	if !identity.Enrolled() {
 		return errors.New("this daemon is not enrolled")
 	}
+	if c.env.TurnToken != "" {
+		return errors.New("agents cannot unenroll this machine; ask the operator")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	name, id := identity.Name, identity.ID
+	// Leave the device roster while the enrollment can still sign. A machine
+	// that is not a trusted device has nothing to remove.
+	if trust, err := link.OpenTrust(identity, nil); err == nil && trust.State() == dieterv1.TrustState_TRUST_STATE_TRUSTED {
+		if _, err := trust.Revoke(ctx, trust.DeviceID()); err != nil {
+			fmt.Fprintf(c.Err, "Could not remove this machine from the trusted devices (%v); revoke it from a trusted device with `dieter device revoke %s`.\n", err, trust.DeviceID())
+		}
+		trust.Close()
+	}
 	if err := link.Unenroll(ctx, identity); err != nil {
 		return fmt.Errorf("unenroll daemon: %w", err)
 	}
-	if err := identity.ClearCredential(); err != nil {
-		return fmt.Errorf("remove local daemon credential after gateway unenrollment: %w", err)
+	if err := identity.Forget(); err != nil {
+		return fmt.Errorf("remove the local enrollment after gateway unenrollment: %w", err)
 	}
 	fmt.Fprintf(c.Out, "Unenrolled %s (%s). Restart the daemon before enrolling it again.\n", name, id)
 	return nil

@@ -40,8 +40,10 @@ app. The iPhone and iPad app is in beta; see the
 distribution.
 
 **The gateway connects your devices.** It authenticates accounts and enrolled
-machines, advertises routes, and relays requests when needed. It stores control
-metadata and normalized quota snapshots, not your repositories or conversations.
+machines, advertises routes, and relays end-to-end encrypted connections when
+needed, without being able to read them. Your devices trust each other only
+after you pair them. The gateway stores control metadata and normalized quota
+snapshots, not your repositories or conversations.
 There is no browser-based Dieter application; this website is documentation.
 
 ## What stays where

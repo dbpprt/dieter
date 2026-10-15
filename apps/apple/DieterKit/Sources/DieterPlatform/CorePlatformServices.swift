@@ -87,10 +87,20 @@ public final class CoreURLSessionHttp: NSObject, NativeHttp, Sendable {
     }
 }
 
-/// Screen-session bindings are signed by the daemon's Ed25519 key.
+/// Roster entries and screen-session bindings: Ed25519 (daemons and recovery
+/// keys) and ECDSA P-256 over SHA-256 (apps).
 public final class CoreCryptoKitSignatures: NSObject, NativeSignatures, Sendable {
+    /// `publicKey` is the raw 32-byte key.
     public func verifyEd25519(publicKey: Data, message: Data, signature: Data) -> Bool {
         guard let key = try? Curve25519.Signing.PublicKey(rawRepresentation: publicKey) else { return false }
+        return key.isValidSignature(signature, for: message)
+    }
+
+    /// `publicKey` is a DER SubjectPublicKeyInfo and `signature` a DER ECDSA signature.
+    public func verifyEcdsaP256(publicKey: Data, message: Data, signature: Data) -> Bool {
+        guard let key = try? P256.Signing.PublicKey(derRepresentation: publicKey),
+            let signature = try? P256.Signing.ECDSASignature(derRepresentation: signature)
+        else { return false }
         return key.isValidSignature(signature, for: message)
     }
 }

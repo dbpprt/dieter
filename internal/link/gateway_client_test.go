@@ -61,29 +61,6 @@ func TestGatewayHostSleptOnlyWhenTheWallClockOutranTheMonotonicClock(t *testing.
 	}
 }
 
-func TestRelayMethodPriorityKeepsCommandsAheadOfStreams(t *testing.T) {
-	t.Parallel()
-	for _, method := range []string{
-		"/dieter.v1.CardService/StartCard",
-		"/dieter.v1.CardService/MoveCard",
-		"/dieter.v1.MachineService/Health",
-	} {
-		if !relayMethodPriority(method) {
-			t.Fatalf("%s should use the priority relay queue", method)
-		}
-	}
-	for _, method := range []string{
-		"/dieter.v1.StateService/WatchChanges",
-		"/dieter.v1.ConversationService/WatchConversation",
-		"/dieter.v1.TerminalService/WatchTerminal",
-		"/dieter.v1.ExecutionService/WatchExecution",
-	} {
-		if relayMethodPriority(method) {
-			t.Fatalf("%s should use the bounded streaming relay queue", method)
-		}
-	}
-}
-
 func TestGatewayHeartbeatAcknowledgementCorrelation(t *testing.T) {
 	t.Parallel()
 	valid := &gatewayv1.DaemonLinkFrame{
@@ -96,8 +73,8 @@ func TestGatewayHeartbeatAcknowledgementCorrelation(t *testing.T) {
 	if gatewayFrameMarksRelayActivity(valid) {
 		t.Fatal("heartbeat acknowledgement was counted as relay activity")
 	}
-	if !gatewayFrameMarksRelayActivity(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_OPEN_RPC}) {
-		t.Fatal("relayed RPC was not counted as activity")
+	if !gatewayFrameMarksRelayActivity(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_TUNNEL_DATA}) {
+		t.Fatal("tunnel data was not counted as activity")
 	}
 	for name, frame := range map[string]*gatewayv1.DaemonLinkFrame{
 		"empty outstanding request": valid,

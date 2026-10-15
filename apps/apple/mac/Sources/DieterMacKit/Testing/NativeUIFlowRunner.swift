@@ -288,8 +288,10 @@
 
         /// The fixture connection is live and the workspace window is key.
         private static func launch(store: DieterStore) async throws -> NSWindow {
-            guard try await NativeUIAccessibility.wait(timeout: 30, until: { store.workspaceIsLive }) else {
-                throw Failure("Fixture connection did not become live")
+            // The fixture's machine approves the launch's pairing code before
+            // any machine is reachable.
+            guard try await NativeUIAccessibility.wait(timeout: 60, until: { store.workspaceIsLive }) else {
+                throw Failure("Fixture connection did not become live (device trust \(store.session.deviceTrust))")
             }
             var window: NSWindow?
             guard

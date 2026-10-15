@@ -51,6 +51,7 @@ Commands:
   schedule     Create, preview, dispatch, pause, and inspect schedules
   kv           Shared portable JSON, ordering, and live account subscriptions
   vault        End-to-end encrypted passwords and TOTP shared by your machines
+  device       Pair, approve, revoke, and inspect the account's trusted devices
   peer         Inspect and edit account peer settings (leaderless sync)
   settings     Inspect and update prompt and daemon settings
   prompt       Inspect, update, scope, and preview prompt templates
@@ -2200,8 +2201,8 @@ Retry identical input and --operation only on that same daemon.
 Usage: dieter vault <action> [options]
 
 An account-wide password and TOTP vault shared by your machines. Items
-replicate end-to-end encrypted; the gateway relays only ciphertext and vault
-contents never cross the gateway relay route. Each machine joins once.
+replicate end-to-end encrypted, and every route to a machine is TLS between
+your devices, so the gateway relays only ciphertext. Each machine joins once.
 
 Setup and machines:
   status         Show vault state, members and this caller's access
@@ -2396,6 +2397,117 @@ Example:
 ```text
 Usage: dieter vault audit [--item ITEM] [--card CARD] [--limit N] [--format table|jsonl]
 Show this machine's vault access log, newest first. It never contains secret values.
+```
+
+## dieter device (alias: devices)
+
+```text
+Usage: dieter device <action> [options]
+
+The account's devices: a signed, append-only roster of device keys that every
+machine and app verifies itself. Remote calls run mutually authenticated TLS
+between roster devices, so the gateway relays bytes but can neither read them,
+impersonate a device, nor add one. A new device shows a one-time code; type
+that code on a trusted device to approve it. Never share a code you did not
+just see on your own new device.
+
+Actions:
+  status    Show trust state, roster head, pairing code and devices
+  roster    List the verified roster entries
+  sync      Refresh the roster from the gateway; offer ours with --machine
+  init      Start the account's roster on this machine; prints a recovery key
+  requests  List devices waiting for approval (names only, never codes)
+  approve   Approve the device that shows CODE
+  revoke    Remove a device from the roster
+  recover   Rejoin this machine with the recovery key
+
+status, roster, sync, requests, approve and revoke accept --machine ID|NAME.
+init and recover run only on the machine itself. Agent turns cannot change
+device trust.
+```
+
+### dieter device status
+
+```text
+Usage: dieter device status [--format text|json]
+
+Show the target machine's device trust: its state (NO_ROSTER, PENDING,
+TRUSTED, REVOKED or CONFLICT), the pinned roster's root and head, the
+devices of the account, and, while PENDING, the one-time code to type on a
+trusted device.
+```
+
+### dieter device roster
+
+```text
+Usage: dieter device roster [--from SEQUENCE] [--format text|json]
+
+List the entries of the target machine's verified device roster from
+SEQUENCE: who added or removed which device, signed by which member.
+```
+
+### dieter device sync
+
+```text
+Usage: dieter device sync [--format text|json]
+
+Refresh the target machine's roster from the gateway. With --machine, also
+offer this machine's pinned roster to the target, so it learns entries the
+gateway withholds; it adopts only entries that extend its own pinned chain.
+```
+
+### dieter device init
+
+```text
+Usage: dieter device init [--replace] [--format text|json]
+
+Start the account's device roster with this machine as its first device and
+print a one-time recovery key. Run it once, on the first machine. If other
+devices already use Dieter, do not run it: pair this machine instead. Without
+--replace it refuses an account that already has a roster; --replace starts a
+new roster that every previously paired device rejects: apps reset and pair
+again, other machines run `dieter daemon unenroll` and enroll again.
+```
+
+### dieter device requests
+
+```text
+Usage: dieter device requests [--format text|json]
+
+List the devices waiting to join the account, by name. Their codes are never
+listed: approve a device only with the code its own screen shows you.
+```
+
+### dieter device approve
+
+```text
+Usage: dieter device approve [--format text|json] CODE
+
+Approve the new device that shows CODE (16 characters, e.g. ABCD-EFGH-JKMN-PQRS;
+case, spaces and hyphens do not matter). The code proves which key the new
+device posted, so approving signs exactly that device into the roster. Only
+type a code you see on your own new device.
+```
+
+### dieter device revoke
+
+```text
+Usage: dieter device revoke [--format text|json] DEVICE_ID
+
+Remove DEVICE_ID (dv_…, see dieter device status) from the roster. Machines
+and apps stop accepting it as soon as they see the signed revocation; the last
+device that can connect cannot be removed. Revoking this machine is allowed.
+```
+
+### dieter device recover
+
+```text
+Usage: dieter device recover --recovery-key KEY|- [--format text|json]
+
+Add this machine to the roster with the recovery key printed by
+dieter device init, when no trusted device can approve it. "-" reads the key
+from stdin, which keeps it out of shell history. The key commits to the
+roster it was made for and never signs into another one.
 ```
 
 ## dieter peer
@@ -2707,8 +2819,10 @@ Gateway URLs require HTTPS; HTTP is allowed only on literal loopback addresses.
 ```text
 Usage: dieter daemon unenroll
 
-Revoke this machine at its Dieter gateway and remove the local enrollment
-credential. Projects, conversations, schedules, and harness settings remain.
+Revoke this machine at its Dieter gateway, remove it from the account's
+trusted devices, and delete its enrollment key and credential. A later
+enrollment creates a new key that a trusted device approves again. Projects,
+conversations, schedules, and harness settings remain.
 ```
 
 ### dieter daemon recover

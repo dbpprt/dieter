@@ -11,7 +11,8 @@ invariant, it is named; keep it passing rather than weakening it.
   gateway (`dieter-gateway`), and native macOS, iOS and Android clients. Every
   card and standalone chat is one durable local harness conversation.
 - Dieter has no web UI. The public gateway root is intentionally 404; only
-  OAuth completion pages, health, gateway gRPC and tunneled Dieter gRPC exist.
+  OAuth completion pages, health and gateway gRPC (including relay tunnels)
+  exist.
 - All three native clients are presentation-only clients of the shared Kotlin
   core (`apps/kotlin/core`). Rules belong in the core, never in an app or the
   shared Compose UI.
@@ -80,17 +81,39 @@ invariant, it is named; keep it passing rather than weakening it.
   advertises a separate authenticated loopback TLS route; remote access goes
   through the gateway tunnel or an explicitly enabled additional direct TLS
   route.
+- Every remote call is mutually authenticated TLS 1.3 between two devices of
+  the account's device roster, on every carrier: direct TCP, WebRTC data
+  channel and relay tunnel. The client accepts only the target daemon's roster
+  key; the daemon accepts only the key of an active member together with a
+  daemon token bound to that device (`internal/link/tls.go`,
+  `internal/link/direct.go`). Never derive trust from a CA, a host name or
+  anything the gateway supplies ([ADR 0002](adr/0002-end-to-end-encryption.md)).
+- The relay is an opaque byte tunnel. The gateway must never decode, sign or
+  terminate the calls inside it (`internal/gateway/relay.go`,
+  `internal/transport/relay`).
+- Every roster entry after the genesis is signed by an active member, and every
+  device verifies the chain itself (`internal/security/roster`, the Kotlin
+  core's `trust` package). Devices pin the root and adopt only extensions; a
+  member-signed fork is a conflict that refuses connections. A device pins a
+  roster only after the approver's pairing confirmation verifies. Never let the
+  gateway add a device or decide membership.
 - The gateway stores only account sessions, daemon identities, presence, route
-  metadata and normalized, credential-free provider quota snapshots. Never put
-  Dieter projects, transcripts, provider credentials, raw provider responses or
+  metadata, the signed device roster, short-lived pairing requests and
+  normalized, credential-free provider quota snapshots. Never put Dieter
+  projects, transcripts, provider credentials, raw provider responses or
   harness credentials on the gateway.
-- A daemon proves possession of its enrolled Ed25519 key on every tunnel
+- A daemon proves possession of its enrolled Ed25519 key on every gateway link
   connection (`internal/link/possession.go`, `internal/security/linkauth`).
   Never accept a daemon ID without cryptographic proof.
-- Client sessions have binary full access or no access. Do not add scopes.
-- Keep relay queues, messages and concurrent streams bounded
-  (`internal/transport/relay`). A canceled relay RPC cancels only that transport
-  RPC and must not implicitly stop an agent.
+- Agent turns never change device trust: `TrustService` mutations refuse a turn
+  token (`internal/api/trust.go`), and starting a roster or recovering with the
+  recovery key runs only on the local route.
+- Client sessions and roster devices have binary full access or no access. Do
+  not add scopes.
+- Keep relay tunnels, queues and messages bounded (`internal/transport/relay`:
+  `TunnelLimit` per daemon and lane, a `TunnelWindow` of `ChunkBytes` frames per
+  direction, byte budgets per lane, daemon, account and gateway). A canceled RPC
+  inside a tunnel cancels only that RPC and must not implicitly stop an agent.
 
 ## Automation surface (CLI)
 
