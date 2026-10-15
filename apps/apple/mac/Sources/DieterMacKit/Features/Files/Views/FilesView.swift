@@ -100,12 +100,12 @@ struct FilesView: View {
                             VStack(spacing: 0) {
                                 documentToolbar(document)
                                 Rectangle().fill(DieterTheme.hairline).frame(height: 1)
-                                if model.fileLoading || model.fileError != nil {
-                                    // A save conflict offers Reload above instead of retrying the read.
+                                if model.conflict {
+                                    FileDiskConflictBanner(files: model)
+                                } else if model.fileLoading || model.fileError != nil {
                                     LoadFeedback(
                                         title: "Refreshing \(document.name)…", error: model.fileError,
-                                        retry: model.conflict
-                                            ? nil : { Task { await model.openFile(path: document.path) } },
+                                        retry: { Task { await model.openFile(path: document.path) } },
                                         compact: true)
                                 }
                                 let renderer = FilePresentation.renderer(document)
@@ -124,6 +124,7 @@ struct FilesView: View {
                                                 text: document.content, filename: document.name
                                             )
                                             .id(model.documentKey)
+                                            .id(ObjectIdentifier(editorSession))
                                         } else {
                                             SyntaxHighlightedEditor(
                                                 session: editorSession,
@@ -160,6 +161,7 @@ struct FilesView: View {
                 await model.openFile(path: model.selectedFilePath)
             }
         }
+        .modifier(FileDiskRefresh(files: model))
         .task(id: externalActionKey) { await prepareExternalActions() }
         .background {
             FileLocalTransportObserver(endpointID: model.target.endpointID, local: $localTransport)
@@ -234,18 +236,11 @@ struct FilesView: View {
             FileDocumentActions(
                 files: model, identifierPrefix: "files", compact: true, resolveExternalActions: currentExternalActions)
             openMenu(document)
-            if model.conflict {
-                Button("Reload") { Task { await model.reloadDocument() } }
-                    .buttonStyle(DieterBarButtonStyle(size: 28))
-                    .help("Replace your edits with the version on disk")
-                    .accessibilityIdentifier("files.reload").e2eTarget("files.reload")
-                    .disabled(!model.isLive || model.saving)
-            }
             Button("Save") { Task { await model.saveCurrentDocument() } }
                 .buttonStyle(DieterBarButtonStyle(prominent: true, size: 28))
                 .keyboardShortcut("s", modifiers: .command)
                 .accessibilityIdentifier("files.save").e2eTarget("files.save")
-                .disabled(document.binary || !editorSession.isDirty || !model.isLive || model.saving)
+                .disabled(document.binary || !editorSession.isDirty || !model.isLive || model.saving || model.conflict)
         }
         .controlSize(.small)
         .padding(.horizontal, 10).frame(height: 38)

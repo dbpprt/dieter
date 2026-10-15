@@ -63,7 +63,7 @@ data class FilesView(
     val draft: String = "",
     val documentLoading: Boolean = false,
     val documentError: String? = null,
-    /** The last save hit a newer version on disk. */
+    /** The disk version changed while the editor had unsaved changes. */
     val conflict: Boolean = false,
     val saving: Boolean = false,
     val canGoBack: Boolean = false,
@@ -512,15 +512,25 @@ class Files(private val sessions: MachineSessions) {
      * [reload] fetches the disk version when the user chooses it. A second save while one runs is
      * ignored.
      */
-    suspend fun save(text: String = view.value.draft): FileDocument? {
+    suspend fun save(
+        text: String = view.value.draft,
+        revision: String = "",
+        overwrite: Boolean = false,
+    ): FileDocument? {
         val target = target()
         val state = view.value
         val document = state.document ?: return null
-        if (state.saving || document.binary) return null
+        if (state.saving || state.documentLoading || document.binary) return null
         val bound = scope
-        val read = reads
+        val read = ++reads
         mutableView.update { it.copy(saving = true, documentError = null, conflict = false) }
         try {
+            // Only the explicit overwrite action may adopt a newer disk revision.
+            // A writer racing this read still fails the atomic SaveFile check.
+            val baseRevision =
+                if (overwrite) readDocument(target, document.path).revision
+                else revision.ifEmpty { document.revision }
+            if (bound != scope || read != reads) return null
             val saved = call {
                 it.SaveFile()
                     .execute(
@@ -530,7 +540,7 @@ class Files(private val sessions: MachineSessions) {
                             card_id = target.cardId,
                             path = document.path,
                             content = text,
-                            revision = document.revision,
+                            revision = baseRevision,
                         )
                     )
             }
@@ -553,6 +563,56 @@ class Files(private val sessions: MachineSessions) {
             throw error
         } finally {
             if (bound == scope) mutableView.update { it.copy(saving = false) }
+        }
+    }
+
+    private suspend fun readDocument(target: FilesTarget, path: String): FileDocument = call {
+        it.ReadFile()
+            .execute(
+                ReadFileRequest(
+                    project_id = target.projectId,
+                    checkout_id = if (target.cardId.isEmpty()) target.checkoutId else "",
+                    card_id = target.cardId,
+                    path = path,
+                )
+            )
+    }
+
+    /** Checks on the owning machine; never discards a native buffer's unsaved edits. */
+    suspend fun refresh(documentKey: String, revision: String, dirty: Boolean) {
+        val state = view.value
+        val document = state.document ?: return
+        if (documentKey != state.documentKey || state.saving || state.documentLoading) return
+        val target = target()
+        val bound = scope
+        val read = reads
+        try {
+            val disk = readDocument(target, document.path)
+            if (bound != scope || read != reads || view.value.saving) return
+            if (disk.revision == revision) {
+                mutableView.update { it.copy(conflict = false, documentError = null) }
+            } else if (dirty) {
+                mutableView.update {
+                    it.copy(
+                        conflict = true,
+                        documentError =
+                            "“${document.name}” changed on disk. Reload from disk to discard your edits, or overwrite disk to save your copy.",
+                    )
+                }
+            } else {
+                mutableView.update {
+                    it.copy(
+                        document = disk,
+                        draft = disk.content,
+                        conflict = false,
+                        documentError = null,
+                    )
+                }
+            }
+        } catch (error: Throwable) {
+            if (error is CancellationException) throw error
+            if (bound == scope && read == reads)
+                mutableView.update { it.copy(documentError = Failures.message(error)) }
         }
     }
 

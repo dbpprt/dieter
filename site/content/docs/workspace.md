@@ -54,6 +54,11 @@ Large documents and files with unusually long lines open in Source automatically
 to keep the viewer responsive. The complete text remains available for editing
 and saving; rich formatting and diagram previews are disabled for these files.
 
+While a Markdown file is visible in the active Mac app, Dieter checks for changes
+on its machine every two seconds. A clean editor reloads automatically. If you have unsaved edits,
+choose **Reload from Disk** to discard them and load the disk version, or
+**Overwrite Disk** to save your edits over it. This works for remote files too.
+
 Mermaid and Vega/Vega-Lite fences render locally. Click a diagram to edit its
 source, then leave the block to render it again. Rendering libraries are bundled;
 external datasets, scripts, and images are not fetched by the diagram renderer.

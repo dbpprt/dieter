@@ -12,11 +12,15 @@ enum MarkdownPreviewResources {
         + "worker-src 'none'; base-uri 'none'; form-action 'none'"
 
     static var directory: URL? {
+        directory(in: .main)
+    }
+
+    static func directory(in application: Bundle) -> URL? {
         let bundle: Bundle?
-        if Bundle.main.bundleURL.pathExtension == "app" {
+        if application.bundleURL.pathExtension == "app" {
             // A packaged app must never depend on the development checkout's resource path.
-            bundle = Bundle.main.resourceURL
-                .flatMap { Bundle(url: $0.appendingPathComponent("DieterMac_DieterMac.bundle")) }
+            bundle = application.resourceURL
+                .flatMap { Bundle(url: $0.appendingPathComponent("DieterMac_DieterMacKit.bundle")) }
         } else {
             bundle = Bundle.module
         }
