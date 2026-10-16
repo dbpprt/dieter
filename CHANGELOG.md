@@ -10,6 +10,32 @@ copy the **Unreleased** notes into a section named after that exact version
 
 Nothing yet.
 
+## 0.6.413
+
+### Changed
+
+- New `dieter file cp` and `dieter file sync` commands copy files and
+  synchronize directories one way between your computer and a project checkout
+  or conversation workspace. They use the same authenticated routes as every
+  other CLI command, verify all content with SHA-256, and handle binary files of
+  up to 64 GiB.
+- The Mac app is faster throughout. Switching chats takes about 40% less work,
+  browsing changes about 30% and switching sections about 20%. Streaming
+  replies, typing, the board, the sidebar, the Inbox, terminals and the file
+  editor redraw only what changed.
+- The Changes view wraps every line to the pane, side by side too, so long
+  Markdown paragraphs and code lines no longer scroll sideways. Diffs of
+  thousands of lines open, scroll and resize smoothly.
+
+### Fixed
+
+- A Mac reconnects promptly after it wakes from sleep. It used to stay
+  "Connected" with every machine offline for minutes. A daemon likewise
+  reconnects to the gateway as soon as it notices a sleep, instead of waiting
+  about 45 seconds.
+- The Mac app's **Show reasoning** setting now follows changes to the
+  preference, for example from another device.
+
 ## 0.6.410
 
 End-to-end encryption between your devices. This release starts the 0.6 line
