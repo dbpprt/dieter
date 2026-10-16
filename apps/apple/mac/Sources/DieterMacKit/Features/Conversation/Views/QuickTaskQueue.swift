@@ -167,6 +167,7 @@ struct QueuedMessageTray: View {
                         onRemove: { await onRemove(message) },
                         onSteer: onSteer
                     )
+                    .equatable()
                 }
             }
         }
@@ -178,7 +179,10 @@ struct QueuedMessageTray: View {
     }
 }
 
-struct QueuedComposerMessage: View {
+/// One queued message. It is rendered again only when the message or its
+/// steering changes: each rendering serializes the message, attachments
+/// included, for the core's rules. Its actions act on the message as shown.
+struct QueuedComposerMessage: View, Equatable {
     enum Action { case edit, remove, steer }
 
     let message: Dieter_V1_QueuedMessage
@@ -188,14 +192,15 @@ struct QueuedComposerMessage: View {
     let onSteer: () async -> Void
     @State private var action: Action?
 
-    /// The message as an edit would restore it: its text and its attachments.
-    private var restored: Dieter_V1_QueuedMessage {
-        Dieter_V1_QueuedMessage(rules: SharedRules.shared.restoredDraft(message: message.rulesData, currentText: ""))
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.canSteer == rhs.canSteer && lhs.message == rhs.message
     }
 
-    private var summary: String { SharedRules.shared.queuedSummary(message: message.rulesData) }
-
     var body: some View {
+        // The message as an edit would restore it: its text and its attachments.
+        let restored = Dieter_V1_QueuedMessage(
+            rules: SharedRules.shared.restoredDraft(message: message.rulesData, currentText: ""))
+        let summary = SharedRules.shared.queuedSummary(message: message.rulesData)
         HStack(spacing: 11) {
             Image(systemName: "arrow.turn.down.right")
                 .font(.system(size: 13, weight: .medium))

@@ -223,7 +223,13 @@ struct AttachmentMarkupCanvas: NSViewRepresentable {
 }
 
 @MainActor final class AttachmentMarkupCanvasView: NSView {
-    var document: AttachmentMarkupDocument
+    var document: AttachmentMarkupDocument {
+        didSet { if document !== oldValue { displayed = nil } }
+    }
+    /// The image resampled once to the size it is drawn at. Drawing the
+    /// original resamples every one of its pixels, and a stroke redraws on
+    /// every pointer movement, so a large screenshot lagged behind the pointer.
+    private var displayed: (size: CGSize, scale: CGFloat, image: NSImage)?
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
     var imageRect: CGRect {
@@ -248,13 +254,35 @@ struct AttachmentMarkupCanvas: NSViewRepresentable {
 
     override func draw(_ dirtyRect: NSRect) {
         NSColor.controlBackgroundColor.setFill(); bounds.fill()
-        document.image.draw(
+        let imageRect = self.imageRect
+        displayedImage(in: imageRect).draw(
             in: imageRect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(rect: imageRect).addClip()
         for stroke in document.strokes { AttachmentMarkupDocument.draw(stroke, in: imageRect) }
         if let stroke = document.pendingStroke { AttachmentMarkupDocument.draw(stroke, in: imageRect) }
         NSGraphicsContext.restoreGraphicsState()
+    }
+
+    private func displayedImage(in rect: CGRect) -> NSImage {
+        let scale = window?.backingScaleFactor ?? 2
+        if let displayed, displayed.size == rect.size, displayed.scale == scale { return displayed.image }
+        let width = Int((rect.width * scale).rounded(.up))
+        let height = Int((rect.height * scale).rounded(.up))
+        // Only a reduced image is worth keeping; the original draws as is.
+        guard width > 0, height > 0, CGFloat(width) < document.pixelSize.width,
+            let source = document.image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+            let space = source.colorSpace?.model == .rgb ? source.colorSpace : CGColorSpace(name: CGColorSpace.sRGB),
+            let context = CGContext(
+                data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return document.image }
+        context.interpolationQuality = .high
+        context.draw(source, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let scaled = context.makeImage() else { return document.image }
+        let image = NSImage(cgImage: scaled, size: rect.size)
+        displayed = (rect.size, scale, image)
+        return image
     }
 
     override func mouseDown(with event: NSEvent) {

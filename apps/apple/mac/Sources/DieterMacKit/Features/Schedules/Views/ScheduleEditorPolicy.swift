@@ -52,6 +52,7 @@ struct TemplateVariableButtons: View {
 }
 
 /// Formats schedule times in the schedule's own time zone.
+@MainActor
 enum ScheduleDateFormatting {
     static func compact(_ value: String, timezone: String) -> String {
         format(value, timezone: timezone, pattern: "EEE, MMM d · HH:mm")
@@ -63,16 +64,27 @@ enum ScheduleDateFormatting {
 
     /// The "yyyy-MM-dd" day of `value` (else now) in `timezone`, for template examples.
     static func day(_ value: String?, timezone: String) -> String {
-        let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone(identifier: timezone) ?? .current
         let date = value.flatMap { Date(epochMillis: SharedRules.shared.epochMillis(value: $0)) }
-        return formatter.string(from: date ?? Date())
+        return formatter(pattern: "yyyy-MM-dd", timezone: timezone).string(from: date ?? Date())
     }
 
     private static func format(_ value: String, timezone: String, pattern: String) -> String {
         guard let date = Date(epochMillis: SharedRules.shared.epochMillis(value: value)) else { return value }
-        let formatter = DateFormatter(); formatter.dateFormat = pattern
-        formatter.timeZone = TimeZone(identifier: timezone) ?? .current
-        return formatter.string(from: date)
+        return formatter(pattern: pattern, timezone: timezone).string(from: date)
+    }
+
+    /// Formatters by pattern and time zone: lists format every row on each
+    /// redraw, and creating a formatter costs far more than using one.
+    private static var formatters: [String: DateFormatter] = [:]
+
+    private static func formatter(pattern: String, timezone: String) -> DateFormatter {
+        let key = pattern + "|" + timezone
+        if let formatter = formatters[key] { return formatter }
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.dateFormat = pattern
+        formatter.timeZone = TimeZone(identifier: timezone) ?? .autoupdatingCurrent
+        formatters[key] = formatter
+        return formatter
     }
 }

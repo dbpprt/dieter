@@ -165,7 +165,7 @@ extension DieterStore {
             return
         }
         terminalOverview.stop()
-        let card = synchronizedCardValues().first { $0.id == cardID } ?? chats.first { $0.id == cardID }
+        let card = synchronizedCard(id: cardID)
         let owner = card.flatMap { machine(for: $0) }
         terminalsModel.bind(
             target: WorkspaceTarget(endpointID: owner?.id ?? "", projectID: selectedProjectID, conversationID: cardID),

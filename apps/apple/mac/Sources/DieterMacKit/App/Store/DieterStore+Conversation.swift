@@ -76,7 +76,7 @@ extension DieterStore {
         // The core opens the conversation on the machine that runs it and
         // shows its cached transcript at once.
         bindConversation()
-        conversationModel.observe(cardID)
+        conversationModel.observe(cardID, chat: opensChat)
         await perform { $0.setVisibleConversation = .with { $0.cardID = cardID } }
     }
 

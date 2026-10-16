@@ -46,6 +46,11 @@ enum ChangeTree {
         return rows
     }
 
+    /// The paths as a flat list of files, in the order given.
+    static func list(paths: [String]) -> [ChangeTreeRow] {
+        paths.map { .init(kind: .file, path: $0, name: filename($0), depth: 0, fileCount: 1) }
+    }
+
     /// Every folder path in the tree, for collapsing or expanding all at once.
     static func folders(paths: [String]) -> Set<String> {
         Set(rows(paths: paths).filter { $0.kind == .folder }.map(\.path))
@@ -68,8 +73,9 @@ enum ChangeTree {
                 append(child, prefix: path, depth: depth + 1, collapsed: collapsed, into: &rows)
             }
         }
-        for path in node.files.sorted(by: { ordered(filename($0), filename($1)) }) {
-            rows.append(.init(kind: .file, path: path, name: filename(path), depth: depth, fileCount: 1))
+        let files = node.files.map { (name: filename($0), path: $0) }.sorted { ordered($0.name, $1.name) }
+        for file in files {
+            rows.append(.init(kind: .file, path: file.path, name: file.name, depth: depth, fileCount: 1))
         }
     }
 

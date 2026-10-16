@@ -15,6 +15,8 @@ package final class ChatsListModel {
     /// ones wait until then.
     @ObservationIgnored private var shown = false
     @ObservationIgnored private var waiting: [(inout ClientChatsCommand) -> Void] = []
+    /// The latest list the core delivered, until the burst it came in is folded.
+    @ObservationIgnored private var unfolded: ClientChatsSlice?
     @ObservationIgnored private var queued: Task<Void, Never>?
     @ObservationIgnored package private(set) var query = ""
     @ObservationIgnored package private(set) var archived = false
@@ -31,9 +33,17 @@ package final class ChatsListModel {
     package func attach(_ core: CoreClient) {
         guard subscription == nil else { return }
         self.core = core
-        subscription = SliceSubscription(client: core, slice: .chats, scope: scope) { [weak self] update in
+        subscription = SliceSubscription(
+            client: core, slice: .chats, scope: scope,
+            onSettled: { [weak self] in
+                guard let self, let value = self.unfolded else { return }
+                self.unfolded = nil
+                self.fold(value)
+            }
+        ) { [weak self] update in
             guard let self, case .chats(let value) = update.value else { return }
-            self.fold(value)
+            // Each update is the whole list: a burst folds only its latest.
+            self.unfolded = value
         }
     }
 

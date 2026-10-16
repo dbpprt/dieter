@@ -5,37 +5,45 @@ import SwiftUI
 
 /// One transcript row as the shared core groups it: a user message, an
 /// assistant message with its step groups, plans, and delegated agents, or a
-/// run of routine work behind one disclosure.
-struct ConversationTimelineItemView: View {
-    @Environment(ConversationContext.self) private var context
+/// run of routine work behind one disclosure. It renders only `row` and its
+/// resolved `content`, so it skips rendering while another message streams.
+struct ConversationTimelineItemView: View, Equatable {
     let row: ClientTimelineItem
-    var isLatest = false
+    let content: ConversationRowContent
+    let isLatest: Bool
     @State private var isHovered = false
 
-    private var footer: MessageFooterContent {
-        MessageFooterContent(row: row, messages: context.model.messages.timelineMessages(row))
+    init(row: ClientTimelineItem, content: ConversationRowContent, isLatest: Bool = false) {
+        self.row = row
+        self.content = content
+        self.isLatest = isLatest
+    }
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.isLatest == rhs.isLatest && lhs.row == rhs.row && lhs.content == rhs.content
     }
 
     private var footerMessageID: String { row.messageIds.last ?? row.id }
 
     var body: some View {
+        let footer = MessageFooterContent(row: row, messages: content.messages.timelineMessages(row))
         if row.activity {
             ConversationActivityDisclosure(
                 summary: row.summary, identifier: row.id, footer: footer, footerMessageID: footerMessageID,
                 isLatest: isLatest
             ) {
-                TimelineActivityStepsView(steps: row.groups.flatMap(\.steps), subagentIDs: row.subagentIds)
+                TimelineActivityStepsView(steps: row.groups.flatMap(\.steps), content: content)
             }
         } else {
             VStack(alignment: .leading, spacing: 3) {
                 VStack(alignment: .leading, spacing: 15) {
                     if row.user {
-                        UserMessageBubble(row: row)
+                        UserMessageBubble(row: row, messages: content.messages)
                     } else {
-                        TimelineStepGroupsView(row: row)
+                        TimelineStepGroupsView(row: row, content: content)
                     }
-                    ForEach(context.model.taskPlans(ids: row.planIds), id: \.id) {
-                        TaskPlanView(plan: $0)
+                    ForEach(content.plans, id: \.id) {
+                        TaskPlanView(plan: $0).equatable()
                     }
                 }
                 MessageFooter(
@@ -67,6 +75,7 @@ struct ConversationTimelineItemView: View {
 /// on request, and incoming tokens never move that boundary.
 struct TimelineStepGroupsView: View {
     let row: ClientTimelineItem
+    let content: ConversationRowContent
     @State private var firstVisibleID: String?
 
     var body: some View {
@@ -87,11 +96,15 @@ struct TimelineStepGroupsView: View {
             ForEach(groups.dropFirst(start), id: \.id) { group in
                 if group.activity {
                     ConversationActivityDisclosure(summary: group.summary, identifier: group.id) {
-                        TimelineActivityStepsView(steps: group.steps, subagentIDs: row.subagentIds)
+                        TimelineActivityStepsView(steps: group.steps, content: content)
                     }
                 } else {
                     ForEach(group.steps, id: \.id) { step in
-                        TimelineStepView(step: step, subagentIDs: row.subagentIds, inUserBubble: false)
+                        TimelineStepView(
+                            step: step, part: content.messages.part(for: step), subagents: content.subagents,
+                            inUserBubble: false
+                        )
+                        .equatable()
                     }
                 }
             }
@@ -107,21 +120,22 @@ struct TimelineStepGroupsView: View {
 
 /// Routine steps shown inside an expanded activity disclosure.
 struct TimelineActivityStepsView: View {
-    @Environment(ConversationContext.self) private var context
     let steps: [ClientTimelineStep]
-    var subagentIDs: [String] = []
+    let content: ConversationRowContent
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
             ForEach(steps, id: \.id) { step in
-                if step.kind == .reasoning, let part = context.model.part(for: step) {
+                let part = content.messages.part(for: step)
+                if step.kind == .reasoning, let part {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Reasoning").font(.caption2.weight(.medium)).foregroundStyle(DieterTheme.tertiary)
                         Text(part.text).font(.caption).foregroundStyle(DieterTheme.subtle).lineSpacing(3)
                     }
                     .padding(.horizontal, 8).padding(.vertical, 6)
                 } else {
-                    TimelineStepView(step: step, subagentIDs: subagentIDs, inUserBubble: false)
+                    TimelineStepView(step: step, part: part, subagents: content.subagents, inUserBubble: false)
+                        .equatable()
                 }
             }
         }
@@ -129,48 +143,11 @@ struct TimelineActivityStepsView: View {
     }
 }
 
-/// One step: prose, an attachment, a tool call, a diagnostic that needs
-/// attention, or the message's delegated agents.
-struct TimelineStepView: View {
-    @Environment(ConversationContext.self) private var context
-    let step: ClientTimelineStep
-    var subagentIDs: [String] = []
-    let inUserBubble: Bool
-
-    var body: some View {
-        if step.kind == .subagents {
-            let agents = context.model.subagents(ids: subagentIDs)
-            if !agents.isEmpty { SubagentTimelineGroup(agents: agents) }
-        } else if let part = context.model.part(for: step) {
-            switch step.kind {
-            case .tool:
-                ToolCallView(messageID: step.messageID, part: part, step: step)
-            case .attention:
-                VStack(alignment: .leading, spacing: 6) {
-                    if !part.text.isEmpty {
-                        ConversationMarkdownView(source: part.text, inUserBubble: inUserBubble)
-                    }
-                    if !part.errorText.isEmpty, part.errorText != part.text {
-                        Text(part.errorText).font(.caption).foregroundStyle(DieterTheme.failed)
-                    }
-                    if part.text.isEmpty && part.errorText.isEmpty {
-                        Text(
-                            part.state.isEmpty ? "Needs attention" : part.state.replacingOccurrences(of: "-", with: " ")
-                        )
-                        .font(.caption).foregroundStyle(DieterTheme.attention)
-                    }
-                }
-            default:
-                MessagePartView(messageID: step.messageID, part: part, inUserBubble: inUserBubble)
-            }
-        }
-    }
-}
-
 /// A user message: its visible steps in a bubble, with its delivery.
 struct UserMessageBubble: View {
     @Environment(ConversationContext.self) private var context
     let row: ClientTimelineItem
+    let messages: ConversationMessages
 
     private var messageID: String { row.messageIds.first ?? "" }
 
@@ -179,7 +156,8 @@ struct UserMessageBubble: View {
             Spacer(minLength: 70)
             VStack(alignment: .leading, spacing: 7) {
                 ForEach(row.groups.flatMap(\.steps), id: \.id) { step in
-                    TimelineStepView(step: step, inUserBubble: true)
+                    TimelineStepView(step: step, part: messages.part(for: step), inUserBubble: true)
+                        .equatable()
                 }
                 if row.delivery == .failed {
                     HStack(spacing: 8) {

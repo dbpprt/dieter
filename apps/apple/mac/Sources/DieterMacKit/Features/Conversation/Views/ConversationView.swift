@@ -16,16 +16,12 @@ struct ConversationView: View {
     var surfaceStyle: ConversationSurfaceStyle = .canvas
     var kanbanPresented = false
     var toggleKanban: (() -> Void)?
-    @State private var fileImportRequest: ConversationFileImportRequest?
+    @State private var links = ConversationLinkHandlers()
 
     private var conversationID: String { context.selectedCardID ?? context.selectedChatID ?? "" }
 
     /// A standalone chat, as the core reads the conversation.
-    private var standalone: Bool { context.model.state.chat }
-
-    /// A Start is in flight, from this device or still in the outbox.
-    private var startingCard: Bool { context.model.state.starting }
-    private var canStartCard: Bool { context.model.state.canStart }
+    private var standalone: Bool { context.model.chrome.chat }
 
     @ViewBuilder var body: some View {
         @Bindable var content = context.content
@@ -41,6 +37,7 @@ struct ConversationView: View {
             !content.splitMode && content.isOpen && content.conversationID == id
             && content.endpointID == (endpointID ?? "")
             && content.conversationTab == "Conversation" && content.selectedTabID != nil
+        let handlers = links.handlers(conversationID: id, endpointID: endpointID, content: context.content)
         Group {
             if compact || standalone {
                 ConversationPaneOwnedSplit(presented: workspacePresented, singleWorkspace: singleWorkspace) {
@@ -53,7 +50,7 @@ struct ConversationView: View {
                     )
                     .environment(context)
                 } chat: {
-                    conversationBody(workspacePresented: workspacePresented)
+                    ConversationChatColumn(workspacePresented: workspacePresented, surfaceStyle: surfaceStyle)
                 } workspaceBar: {
                     ConversationPaneWorkspaceBar(
                         model: context.content, kanbanPresented: kanbanPresented,
@@ -72,26 +69,17 @@ struct ConversationView: View {
                             model: context.content, role: workspacePresented ? .chatBesideWorkspace : .unified
                         )
                         .padding(.horizontal, ConversationPaneTitlebar<EmptyView>.horizontalInset)
-                        conversationBody(workspacePresented: workspacePresented)
+                        ConversationChatColumn(workspacePresented: workspacePresented, surfaceStyle: surfaceStyle)
                     }
                 } content: {
                     ConversationContentPane(model: context.content)
                 }
             }
         }
-        .environment(
-            \.conversationLinkExternalResolver,
-            { url in
-                guard !id.isEmpty, context.content.currentEndpointID(id) == endpointID else {
-                    return .unavailable("This conversation's machine is no longer selected.")
-                }
-                return await context.content.resolveExternalLink(url, id)
-            }
-        )
-        .environment(
-            \.conversationLinkHandler,
-            conversationLinkHandler(conversationID: id, endpointID: endpointID)
-        )
+        // The same values while the conversation and its machine stay the
+        // same: every message's text view reads them.
+        .environment(\.conversationLinkExternalResolver, stable: handlers.resolveExternal)
+        .environment(\.conversationLinkHandler, stable: handlers.open)
         .onChange(of: conversationID) { _, id in
             if context.content.conversationID != id { context.content.suspend() } else { context.content.resume() }
         }
@@ -100,21 +88,26 @@ struct ConversationView: View {
         }
         .onDisappear { context.content.suspend() }
     }
+}
 
-    private func conversationLinkHandler(conversationID id: String, endpointID: String?)
-        -> ConversationLinkHandler?
-    {
-        return { url in
-            guard !id.isEmpty, context.content.currentEndpointID(id) == endpointID else { return false }
-            context.content.requestOpen(url, conversationID: id)
-            return true
-        }
-    }
+/// The transcript with its composer. Its own view, so what only it shows
+/// (loading, errors, the selected surface, toasts) never re-evaluates the
+/// split around it.
+private struct ConversationChatColumn: View {
+    @Environment(ConversationContext.self) private var context
+    let workspacePresented: Bool
+    let surfaceStyle: ConversationSurfaceStyle
+    @State private var fileImportRequest: ConversationFileImportRequest?
 
-    private func conversationBody(workspacePresented: Bool) -> some View {
+    private var conversationID: String { context.selectedCardID ?? context.selectedChatID ?? "" }
+
+    /// A standalone chat, as the core reads the conversation.
+    private var standalone: Bool { context.model.chrome.chat }
+
+    var body: some View {
         @Bindable var content = context.content
         let tab = content.conversationTab
-        return VStack(spacing: 0) {
+        VStack(spacing: 0) {
             Group {
                 if context.conversationLoading {
                     ConversationLoadingView(standalone: standalone)
@@ -148,9 +141,7 @@ struct ConversationView: View {
                     // Let the transcript scroll behind the glass while its
                     // bottom anchor stays above the composer's measured height.
                     VStack(spacing: 0) {
-                        if let card = context.shownCard, canStartCard || startingCard {
-                            ConversationStartCardBanner(card: card, starting: startingCard)
-                        }
+                        ConversationStartCardSlot()
                         ConversationComposer(background: .clear) {
                             guard !conversationID.isEmpty else { return }
                             fileImportRequest = ConversationFileImportRequest(conversationID: conversationID)
@@ -202,6 +193,76 @@ struct ConversationView: View {
         .attachmentPasteCatcher { pasteboard in
             context.attachPasteboard(pasteboard)
         }
+    }
+}
+
+/// Offers to run a card's saved task above the composer.
+private struct ConversationStartCardSlot: View {
+    @Environment(ConversationContext.self) private var context
+
+    var body: some View {
+        let chrome = context.model.chrome
+        // A Start is in flight, from this device or still in the outbox.
+        if chrome.canStart || chrome.starting, let card = context.shownCard {
+            ConversationStartCardBanner(card: card, starting: chrome.starting)
+        }
+    }
+}
+
+/// The transcript's link handlers for one conversation on one machine. Every
+/// message's text view reads them from the environment, so they are rebuilt
+/// only when the conversation or its machine changes; a closure built in a
+/// view body is a new value on every evaluation and would update them all.
+@MainActor final class ConversationLinkHandlers {
+    private struct Key: Equatable {
+        let conversationID: String
+        let endpointID: String?
+    }
+
+    private var key: Key?
+    private var open = StableEnvironmentValue<ConversationLinkHandler?>(nil)
+    private var resolveExternal = StableEnvironmentValue<ConversationLinkExternalResolver?>(nil)
+
+    func handlers(
+        conversationID id: String, endpointID: String?, content: ConversationContentModel
+    ) -> (
+        open: StableEnvironmentValue<ConversationLinkHandler?>,
+        resolveExternal: StableEnvironmentValue<ConversationLinkExternalResolver?>
+    ) {
+        let next = Key(conversationID: id, endpointID: endpointID)
+        if key != next {
+            key = next
+            let handler: ConversationLinkHandler = { url in
+                guard !id.isEmpty, content.currentEndpointID(id) == endpointID else { return false }
+                content.requestOpen(url, conversationID: id)
+                return true
+            }
+            let resolver: ConversationLinkExternalResolver = { url in
+                guard !id.isEmpty, content.currentEndpointID(id) == endpointID else {
+                    return .unavailable("This conversation's machine is no longer selected.")
+                }
+                return await content.resolveExternalLink(url, id)
+            }
+            open = StableEnvironmentValue<ConversationLinkHandler?>(handler)
+            resolveExternal = StableEnvironmentValue<ConversationLinkExternalResolver?>(resolver)
+        }
+        return (open, resolveExternal)
+    }
+}
+
+/// An environment value SwiftUI receives unchanged on every evaluation.
+@MainActor final class StableEnvironmentValue<Value> {
+    let value: Value
+    init(_ value: Value) { self.value = value }
+}
+
+extension View {
+    /// Writes `stable`'s value. Passed through generically, a closure keeps its
+    /// identity, so views reading it update only when `stable` is replaced.
+    @MainActor func environment<Value>(
+        _ keyPath: WritableKeyPath<EnvironmentValues, Value>, stable: StableEnvironmentValue<Value>
+    ) -> some View {
+        environment(keyPath, stable.value)
     }
 }
 

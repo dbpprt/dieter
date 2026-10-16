@@ -40,7 +40,13 @@ package final class ScreenSessionModel {
     /// "2 viewers · Pixel controls", or empty.
     package private(set) var viewersLabel = ""
     package private(set) var capabilities = Dieter_V1_RemoteDesktopCapabilities()
+    /// The host's state, statistics included: it changes with every report,
+    /// so views read the fields below instead.
     package private(set) var sessionState = Dieter_V1_RemoteDesktopSessionState()
+    /// The host reports that this client controls it.
+    package private(set) var hostControlActive = false
+    /// The codec the host streams with; empty until it reports one.
+    package private(set) var codec = ""
     package private(set) var preferences = ClientScreenPreferences()
     /// The signaling route, e.g. "Gateway relay".
     package private(set) var routeLabel = ""
@@ -232,6 +238,8 @@ package final class ScreenSessionModel {
         set(\.viewersLabel, slice.viewersLabel)
         set(\.capabilities, slice.hasCapabilities ? slice.capabilities : .init())
         set(\.sessionState, slice.hasState ? slice.state : .init())
+        set(\.hostControlActive, slice.hasState && slice.state.controlActive)
+        set(\.codec, slice.hasState ? slice.state.codec : "")
         set(\.preferences, slice.preferences)
         set(\.routeLabel, slice.routeLabel)
         set(\.controlActive, slice.controlActive)

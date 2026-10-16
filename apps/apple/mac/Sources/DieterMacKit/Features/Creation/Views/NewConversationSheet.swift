@@ -66,7 +66,7 @@ struct NewConversationSheet: View {
                             .accessibilityIdentifier("new-card.attach")
                             .e2eTarget("new-card.attach")
                             Spacer()
-                            Text(SharedRules.shared.attachmentLimits()).font(.caption).foregroundStyle(.secondary)
+                            Text(CreationCopy.attachmentLimits).font(.caption).foregroundStyle(.secondary)
                         }
                         if !form.attachments.isEmpty {
                             AttachmentPreviewStrip(attachments: $form.attachments)
@@ -215,9 +215,7 @@ struct NewConversationSheet: View {
             form.attach(store.core)
             await form.refresh()
         }
-        .onChange(of: store.checkout(forProjectID: store.selectedProject?.id ?? "")?.id, initial: true) { _, id in
-            form.intent.checkoutID = id ?? ""
-        }
+        .background { CreationCheckoutBinder(projectID: store.selectedProject?.id ?? "", form: form) }
         .onChange(of: workspaceDraft, initial: true) { _, draft in draft.apply(to: &form.intent) }
     }
 
@@ -299,4 +297,27 @@ struct NewConversationSheet: View {
         _ = await form.create(using: store)
         submitting = false
     }
+}
+
+/// Keeps a creation form on its project's chosen checkout. Asking for it
+/// reads the project's checkouts through the core, so only this view does,
+/// and typing in the form does not.
+struct CreationCheckoutBinder: View {
+    @Environment(DieterStore.self) private var store
+    let projectID: String
+    let form: CreationFormModel
+
+    var body: some View {
+        Color.clear
+            .accessibilityHidden(true)
+            .onChange(of: store.checkout(forProjectID: projectID)?.id, initial: true) { _, id in
+                form.intent.checkoutID = id ?? ""
+            }
+    }
+}
+
+/// Fixed wording of the creation forms, read from the core once.
+@MainActor
+enum CreationCopy {
+    static let attachmentLimits = SharedRules.shared.attachmentLimits()
 }

@@ -143,10 +143,21 @@ enum WorkspaceReviewLayout {
 }
 
 extension ClientChangedFileLabel {
+    private struct Key: Hashable, Sendable {
+        let path: String
+        let status: String
+        let conflicted: Bool
+        let untracked: Bool
+    }
+
+    private static let memo = SharedRuleMemo<Key, ClientChangedFileLabel>()
+
     /// A changed file as lists show it: its badge, title, name, and folder.
     static func of(_ path: String, status: String = "", conflicted: Bool = false, untracked: Bool = false) -> Self {
-        Self(
-            rules: SharedRules.shared.changedFile(
-                path: path, status: status, conflicted: conflicted, untracked: untracked))
+        memo.value(Key(path: path, status: status, conflicted: conflicted, untracked: untracked)) {
+            Self(
+                rules: SharedRules.shared.changedFile(
+                    path: path, status: status, conflicted: conflicted, untracked: untracked))
+        }
     }
 }

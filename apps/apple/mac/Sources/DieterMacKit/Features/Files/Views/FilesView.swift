@@ -15,6 +15,9 @@ struct FilesView: View {
     @State private var externalActions: FileExternalActions?
     @State private var externalRootPath: String?
     @State private var externalPreparedKey = ""
+    /// Whether the files' machine is this Mac, mirrored from the session so
+    /// its other changes do not redraw the files surface.
+    @State private var localTransport = false
     private var editorSession: FileEditorSession { model.fileEditorSession }
 
     var body: some View {
@@ -53,52 +56,11 @@ struct FilesView: View {
                                 .listRowBackground(Color.clear)
                             }
                             ForEach(model.files, id: \.path) { entry in
-                                Button {
-                                    Task {
-                                        if entry.kind == "directory" {
-                                            await model.navigateFiles(to: entry.path)
-                                        } else {
-                                            await model.openFile(path: entry.path)
-                                        }
-                                    }
-                                } label: {
-                                    HStack(spacing: 9) {
-                                        Image(
-                                            systemName: FilePresentation.symbol(
-                                                name: entry.name, directory: entry.kind == "directory")
-                                        )
-                                        .foregroundStyle(
-                                            entry.kind == "directory" ? DieterTheme.shell : DieterTheme.tertiary
-                                        )
-                                        .frame(width: 15)
-                                        Text(entry.name).lineLimit(1)
-                                        Spacer()
-                                        if entry.kind != "directory" {
-                                            Text(SharedRules.shared.bytes(count: entry.size))
-                                                .font(.caption2).foregroundStyle(DieterTheme.tertiary)
-                                        }
-                                    }
-                                    .font(
-                                        .system(
-                                            size: 12,
-                                            weight: model.selectedFilePath == entry.path ? .semibold : .regular)
-                                    )
-                                    .padding(.horizontal, 8).frame(minHeight: 24)
-                                    .background(
-                                        model.selectedFilePath == entry.path ? DieterTheme.tileSelected : .clear,
-                                        in: RoundedRectangle(cornerRadius: DieterMetrics.rowRadius, style: .continuous)
-                                    )
-                                    .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityIdentifier("files.row.\(entry.path)")
-                                .e2eTarget("files.row.\(entry.path)")
-                                .disabled(entry.kind == "directory" && model.fileNavigationLoading)
-                                .listRowInsets(EdgeInsets(top: 0, leading: 6, bottom: 0, trailing: 6))
-                                .listRowSeparator(.hidden)
-                                .listRowBackground(Color.clear)
-                                .contextMenu {
-                                    Button(entry.kind == "directory" ? "Open Folder" : "Open") {
+                                FileListRow(
+                                    entry: entry, selected: model.selectedFilePath == entry.path,
+                                    navigationLoading: model.fileNavigationLoading,
+                                    changesAllowed: model.isLive && !model.saving,
+                                    open: {
                                         Task {
                                             if entry.kind == "directory" {
                                                 await model.navigateFiles(to: entry.path)
@@ -106,21 +68,21 @@ struct FilesView: View {
                                                 await model.openFile(path: entry.path)
                                             }
                                         }
-                                    }
-                                    Divider()
-                                    Button("Copy Path") { FileExternalActions.copy(entry.path) }
-                                    Button("Copy Name") { FileExternalActions.copy(entry.name) }
-                                    Divider()
-                                    Button("Move or rename…") {
+                                    },
+                                    move: {
                                         movingEntry = entry; moveDestination = entry.path
-                                    }.disabled(!model.isLive || model.saving)
-                                    Button("Delete", role: .destructive) {
+                                    },
+                                    delete: {
                                         Task {
                                             await model.deleteFile(
                                                 path: entry.path, recursive: entry.kind == "directory")
                                         }
-                                    }.disabled(!model.isLive || model.saving)
-                                }
+                                    }
+                                )
+                                .equatable()
+                                .listRowInsets(EdgeInsets(top: 0, leading: 6, bottom: 0, trailing: 6))
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
                             }
                         }
                         .listStyle(.plain)
@@ -149,14 +111,10 @@ struct FilesView: View {
                                 let renderer = FilePresentation.renderer(document)
                                 switch renderer {
                                 case .image:
-                                    if let image = NSImage(data: document.bytes) {
-                                        ProjectImagePreview(image: image)
-                                    } else {
-                                        unsupportedDocument(document)
-                                    }
+                                    FileImageDocument(document: document).equatable()
                                 case .pdf:
                                     ConversationPDFDocumentRenderer(data: document.bytes) {
-                                        unsupportedDocument(document)
+                                        Self.unsupportedDocument(document)
                                     }
                                 case .markdown, .text:
                                     VStack(spacing: 0) {
@@ -176,21 +134,10 @@ struct FilesView: View {
                                             .id(model.documentKey)
                                             .accessibilityIdentifier("files.editor")
                                         }
-                                        HStack(spacing: 12) {
-                                            Text(model.languageName)
-                                            Text("UTF-8")
-                                            Spacer()
-                                            Text("\(editorSession.lineCount) lines")
-                                        }
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(DieterTheme.tertiary)
-                                        .padding(.horizontal, 12).frame(height: 25)
-                                        .overlay(alignment: .top) {
-                                            Rectangle().fill(DieterTheme.hairline).frame(height: 1)
-                                        }
+                                        FileEditorStatusBar(session: editorSession, languageName: model.languageName)
                                     }
                                 default:
-                                    unsupportedDocument(document)
+                                    Self.unsupportedDocument(document)
                                 }
                             }
                         } else {
@@ -214,6 +161,9 @@ struct FilesView: View {
             }
         }
         .task(id: externalActionKey) { await prepareExternalActions() }
+        .background {
+            FileLocalTransportObserver(endpointID: model.target.endpointID, local: $localTransport)
+        }
         .sheet(isPresented: $createPresented) {
             VStack(alignment: .leading, spacing: 14) {
                 Text(newDirectory ? "New folder" : "New file").font(.title2.weight(.bold));
@@ -417,7 +367,7 @@ struct FilesView: View {
         }
     }
 
-    private func unsupportedDocument(_ document: Dieter_V1_FileDocument) -> some View {
+    fileprivate static func unsupportedDocument(_ document: Dieter_V1_FileDocument) -> some View {
         ContentUnavailableView(
             "No preview available", systemImage: "doc.badge.ellipsis",
             description: Text("\(SharedRules.shared.bytes(count: document.size)) • \(document.mimeType)"))
@@ -444,9 +394,7 @@ struct FilesView: View {
     }
 
     private var externalActionKey: String {
-        let local = store.isLocalMachine(model.target.endpointID)
-        return
-            "\(model.documentKey):\(model.fileScopeGeneration):\(model.projectPath):\(model.isLive):\(store.phase.isConnected):\(model.fileDocument?.revision ?? ""):\(local)"
+        "\(model.documentKey):\(model.fileScopeGeneration):\(model.projectPath):\(model.isLive):\(store.phase.isConnected):\(model.fileDocument?.revision ?? ""):\(localTransport)"
     }
 
     private var preparedExternalActions: FileExternalActions? {
@@ -454,7 +402,7 @@ struct FilesView: View {
     }
 
     private var verifiedLocalTransport: Bool {
-        model.isLive && store.isLocalMachine(model.target.endpointID)
+        model.isLive && localTransport
     }
 
     private func prepareExternalActions() async {
@@ -471,10 +419,17 @@ struct FilesView: View {
             rootPath = workspace.path
         }
         guard !Task.isCancelled, key == externalActionKey else { return }
-        var actions = FileExternalActions.resolve(
-            verifiedLocal: verifiedLocalTransport, rootPath: rootPath, relativePath: document.path)
-        actions.loadApplications()
-        externalRootPath = rootPath
+        let root = rootPath, verifiedLocal = verifiedLocalTransport, relativePath = document.path
+        // Resolving the path and asking Launch Services for the apps that
+        // open it read the disk, so they stay off the main actor.
+        let actions = await Task.detached(priority: .userInitiated) {
+            var actions = FileExternalActions.resolve(
+                verifiedLocal: verifiedLocal, rootPath: root, relativePath: relativePath)
+            actions.loadApplications()
+            return actions
+        }.value
+        guard !Task.isCancelled, key == externalActionKey else { return }
+        externalRootPath = root
         externalActions = actions
         externalPreparedKey = key
     }
@@ -571,6 +526,113 @@ struct FilesView: View {
 
     private func navigateToParent() {
         Task { await model.navigateToParent() }
+    }
+}
+
+/// One listing row. Rows compare by what they show, so a redraw of the files
+/// surface skips the rows whose entry and state are unchanged.
+private struct FileListRow: View, Equatable {
+    let entry: Dieter_V1_FileEntry
+    let selected: Bool
+    let navigationLoading: Bool
+    /// The files can be moved and deleted now.
+    let changesAllowed: Bool
+    let open: () -> Void
+    let move: () -> Void
+    let delete: () -> Void
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.entry == rhs.entry && lhs.selected == rhs.selected && lhs.navigationLoading == rhs.navigationLoading
+            && lhs.changesAllowed == rhs.changesAllowed
+    }
+
+    var body: some View {
+        let directory = entry.kind == "directory"
+        Button(action: open) {
+            HStack(spacing: 9) {
+                Image(systemName: FilePresentation.symbol(name: entry.name, directory: directory))
+                    .foregroundStyle(directory ? DieterTheme.shell : DieterTheme.tertiary)
+                    .frame(width: 15)
+                Text(entry.name).lineLimit(1)
+                Spacer()
+                if !directory {
+                    Text(SharedRules.shared.bytes(count: entry.size))
+                        .font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                }
+            }
+            .font(.system(size: 12, weight: selected ? .semibold : .regular))
+            .padding(.horizontal, 8).frame(minHeight: 24)
+            .background(
+                selected ? DieterTheme.tileSelected : .clear,
+                in: RoundedRectangle(cornerRadius: DieterMetrics.rowRadius, style: .continuous)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("files.row.\(entry.path)")
+        .e2eTarget("files.row.\(entry.path)")
+        .disabled(directory && navigationLoading)
+        .contextMenu {
+            Button(directory ? "Open Folder" : "Open", action: open)
+            Divider()
+            Button("Copy Path") { FileExternalActions.copy(entry.path) }
+            Button("Copy Name") { FileExternalActions.copy(entry.name) }
+            Divider()
+            Button("Move or rename…", action: move).disabled(!changesAllowed)
+            Button("Delete", role: .destructive, action: delete).disabled(!changesAllowed)
+        }
+    }
+}
+
+/// The open document's line count and language. Only this bar follows the
+/// count, so typing a new line does not redraw the files surface.
+private struct FileEditorStatusBar: View {
+    let session: FileEditorSession
+    let languageName: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(languageName)
+            Text("UTF-8")
+            Spacer()
+            Text("\(session.lineCount) lines")
+        }
+        .font(.system(size: 10))
+        .foregroundStyle(DieterTheme.tertiary)
+        .padding(.horizontal, 12).frame(height: 25)
+        .overlay(alignment: .top) {
+            Rectangle().fill(DieterTheme.hairline).frame(height: 1)
+        }
+    }
+}
+
+/// An image document, decoded when the document changes rather than on
+/// every redraw of the files surface.
+private struct FileImageDocument: View, Equatable {
+    let document: Dieter_V1_FileDocument
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool { lhs.document == rhs.document }
+
+    var body: some View {
+        if let image = NSImage(data: document.bytes) {
+            ProjectImagePreview(image: image)
+        } else {
+            FilesView.unsupportedDocument(document)
+        }
+    }
+}
+
+/// Mirrors whether the files' machine is this Mac into the files surface.
+/// The session changes often; only this view follows it.
+private struct FileLocalTransportObserver: View {
+    @Environment(DieterStore.self) private var store
+    let endpointID: String
+    @Binding var local: Bool
+
+    var body: some View {
+        Color.clear
+            .accessibilityHidden(true)
+            .onChange(of: store.isLocalMachine(endpointID), initial: true) { _, value in local = value }
     }
 }
 

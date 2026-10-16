@@ -30,7 +30,8 @@ struct ProjectContextSheet: View {
                     validationCommands: $draft.validationCommands, workspacesPresented: $workspacesPresented)
                 Section("Checkouts & machines") {
                     ProjectCheckoutMenu(projectID: store.selectedProjectID, size: 28)
-                    ForEach(store.selectedProject?.checkoutChoices ?? [], id: \.id) { checkout in
+                    let checkouts = store.selectedProject?.checkoutChoices ?? []
+                    ForEach(checkouts, id: \.id) { checkout in
                         HStack {
                             VStack(alignment: .leading) {
                                 Text(

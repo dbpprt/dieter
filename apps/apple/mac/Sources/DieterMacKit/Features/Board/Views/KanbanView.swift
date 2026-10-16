@@ -18,10 +18,12 @@ struct KanbanView: View {
                 HStack(alignment: .top, spacing: KanbanLaneSizing.spacing) {
                     ForEach(lanes, id: \.laneID) { lane in
                         LaneColumn(
+                            boardID: board.id,
                             lane: lane,
                             cards: projection.cardsByLane[lane.laneID] ?? [],
-                            onToggleSort: { store.toggleLaneSort(board: board.id, lane: lane) }
+                            flags: projection.flagsByLane[lane.laneID] ?? [:]
                         )
+                        .equatable()
                         .frame(width: laneWidth, height: max(0, geometry.size.height - 4))
                     }
                 }
@@ -35,12 +37,20 @@ struct KanbanView: View {
     }
 }
 
-struct LaneColumn: View {
+/// A lane and its cards. It takes values only, so an update to another
+/// lane's cards leaves it alone.
+struct LaneColumn: View, Equatable {
     @Environment(DieterStore.self) private var store
+    let boardID: String
     let lane: ClientBoardLaneView
     let cards: [Dieter_V1_Card]
-    let onToggleSort: () -> Void
+    /// What the board view shows for each of the lane's cards, by card ID.
+    let flags: [String: ClientBoardCardFlags]
     @State private var isDropTargeted = false
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.boardID == rhs.boardID && lhs.lane == rhs.lane && lhs.cards == rhs.cards && lhs.flags == rhs.flags
+    }
 
     private var sortDirection: BoardCardSortDirection { BoardCardSortDirection(descending: lane.descending) }
 
@@ -53,7 +63,9 @@ struct LaneColumn: View {
                 Text(lane.name).font(.system(size: 13.5, weight: .semibold)).lineLimit(1)
                 DieterCountBadge(count: cards.count)
                 Spacer(minLength: 4)
-                Button(action: onToggleSort) {
+                Button {
+                    store.toggleLaneSort(board: boardID, lane: lane)
+                } label: {
                     Image(systemName: sortDirection.systemImage)
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(DieterTheme.tertiary)
@@ -94,7 +106,7 @@ struct LaneColumn: View {
                         .strokeBorder(DieterTheme.tileRim, style: .init(lineWidth: 1, dash: [4, 4])))
                 Spacer(minLength: 0)
             } else {
-                BoardLaneList(laneID: lane.laneID, cards: cards, sortDirection: sortDirection)
+                BoardLaneList(laneID: lane.laneID, cards: cards, flags: flags, sortDirection: sortDirection)
             }
         }
         .padding(.horizontal, isDropTargeted ? 6 : 0).padding(.vertical, isDropTargeted ? 4 : 0)

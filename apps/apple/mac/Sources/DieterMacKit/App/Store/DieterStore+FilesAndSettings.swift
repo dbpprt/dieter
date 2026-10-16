@@ -20,7 +20,7 @@ extension DieterStore {
             machine =
                 filesModel.target.conversationID == cardID && !filesModel.target.endpointID.isEmpty
                 ? filesModel.target.endpointID
-                : synchronizedCardValues().first { $0.id == cardID }.map { endpointID(for: $0) } ?? ""
+                : synchronizedCard(id: cardID).map { endpointID(for: $0) } ?? ""
         } else {
             machine = projectMachine(forProjectID: selectedProjectID)?.id ?? ""
         }

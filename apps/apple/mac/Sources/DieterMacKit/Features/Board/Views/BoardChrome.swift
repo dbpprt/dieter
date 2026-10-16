@@ -12,14 +12,8 @@ struct BoardTopBar: View {
     @State private var quickTaskPresented = false
     @State private var deleteBoardPresented = false
 
-    private var workspacePresented: Bool {
-        guard let cardID = store.selectedCardID else { return false }
-        let content = store.conversationContext.content
-        return content.splitMode && content.isPresented(for: cardID)
-    }
-
-    /// The core's board view of the selected board.
-    private var view: ClientBoardViewSlice { store.boardProjection.view }
+    /// What the chrome shows of the core's view of the selected board.
+    private var view: BoardChromeSummary { store.boardViewModel.chrome }
 
     private var hasActiveFilters: Bool { store.stateFilter != .all || !store.machineFilter.isEmpty }
 
@@ -73,32 +67,8 @@ struct BoardTopBar: View {
     // MARK: Board picker
 
     private var boardPicker: some View {
-        let projectID = store.selectedProjectID
-        let boards = store.boards(for: projectID)
-        return Menu {
-            ForEach(boards, id: \.id) { board in
-                Button {
-                    store.openBoard(board.id, projectID: projectID)
-                } label: {
-                    let attention = Int(store.boardAttention[board.id] ?? 0)
-                    let title = attention > 0 ? "\(board.name)  ·  \(attention) need you" : board.name
-                    if board.id == store.selectedBoardID {
-                        Label(title, systemImage: "checkmark")
-                    } else {
-                        Text(title)
-                    }
-                }
-            }
-            if !boards.isEmpty { Divider() }
-            Button("New board…", systemImage: "plus") { store.presentNewBoard(projectID: projectID) }
-                .disabled(!store.projectIsAvailable(projectID))
-            if let board = store.selectedBoard {
-                Button("Rename board…", systemImage: "pencil") { store.presentRenameBoard(boardID: board.id) }
-                Button("New card…", systemImage: "rectangle.badge.plus") { store.createConversationPresented = true }
-                Divider()
-                Button("Delete board…", systemImage: "trash", role: .destructive) { deleteBoardPresented = true }
-                    .disabled(!store.projectIsAvailable(board.projectID))
-            }
+        Menu {
+            BoardPickerMenuItems { deleteBoardPresented = true }
         } label: {
             HStack(spacing: 7) {
                 Text(store.selectedBoard?.name ?? store.selectedProject?.name ?? "Board")
@@ -205,15 +175,7 @@ struct BoardTopBar: View {
     private var viewControls: some View {
         HStack(spacing: 0) {
             Menu {
-                stateFilterOptions
-                if view.machineIds.count > 1 || !store.machineFilter.isEmpty {
-                    Divider()
-                    machineFilterOptions
-                }
-                if !(store.selectedBoard?.labels ?? []).isEmpty {
-                    Divider()
-                    labelFilterOptions
-                }
+                BoardFilterMenuItems(chrome: view)
             } label: {
                 Image(systemName: "line.3.horizontal.decrease")
                     .font(.system(size: 13, weight: .medium))
@@ -250,62 +212,12 @@ struct BoardTopBar: View {
             .accessibilityLabel("Board settings")
             .accessibilityIdentifier("board.settings")
             .e2eTarget("board.settings")
-            if workspacePresented && store.kanbanPresentedAlongsideConversation {
-                Button {
-                    store.kanbanPresentedAlongsideConversation = false
-                } label: {
-                    Image(systemName: "rectangle.3.group")
-                        .font(.system(size: 13, weight: .medium))
-                        .frame(width: 34, height: DieterMetrics.capsuleHeight)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Hide Kanban")
-                .accessibilityLabel("Hide Kanban")
-                .accessibilityIdentifier("board.kanban-toggle")
-            }
+            BoardKanbanToggle()
         }
         .foregroundStyle(DieterTheme.text)
         .padding(.horizontal, 4)
         .dieterCapsuleChrome(interactive: false)
         .disabled(store.selectedBoard == nil)
-    }
-
-    private var stateFilterOptions: some View {
-        Picker(
-            "State", selection: Binding(get: { store.stateFilter }, set: { store.stateFilter = $0 })
-        ) {
-            ForEach(view.stateOptions, id: \.state) { option in
-                Text(option.title).tag(option.state)
-            }
-        }
-        .pickerStyle(.inline)
-        .accessibilityIdentifier("board.filter.state")
-    }
-
-    private var labelFilterOptions: some View {
-        Picker(
-            "Label", selection: Binding(get: { store.labelFilter }, set: { store.labelFilter = $0 })
-        ) {
-            Text("All cards").tag("")
-            ForEach(store.selectedBoard?.labels ?? [], id: \.id) { label in
-                Text(label.name).tag(label.id)
-            }
-        }
-        .pickerStyle(.inline)
-    }
-
-    private var machineFilterOptions: some View {
-        Picker(
-            "Machine", selection: Binding(get: { store.machineFilter }, set: { store.machineFilter = $0 })
-        ) {
-            Text("All machines").tag("")
-            ForEach(view.machineIds, id: \.self) { id in
-                Text(store.endpoints.first { $0.daemonID == id }?.name ?? id).tag(id)
-            }
-        }
-        .pickerStyle(.inline)
-        .accessibilityIdentifier("board.filter.machine")
     }
 
     private var quickTaskButton: some View {
@@ -327,6 +239,113 @@ struct BoardTopBar: View {
         .popover(isPresented: $quickTaskPresented, arrowEdge: .top) {
             QuickTaskPopover(isPresented: $quickTaskPresented, draft: store.quickTaskForm)
                 .environment(store)
+        }
+    }
+}
+
+/// The board picker's items. Their board attention and machine availability
+/// stay out of the top bar's observations.
+private struct BoardPickerMenuItems: View {
+    @Environment(DieterStore.self) private var store
+    let deleteBoard: () -> Void
+
+    var body: some View {
+        let projectID = store.selectedProjectID
+        let boards = store.boards(for: projectID)
+        ForEach(boards, id: \.id) { board in
+            Button {
+                store.openBoard(board.id, projectID: projectID)
+            } label: {
+                let attention = Int(store.boardAttention[board.id] ?? 0)
+                let title = attention > 0 ? "\(board.name)  ·  \(attention) need you" : board.name
+                if board.id == store.selectedBoardID {
+                    Label(title, systemImage: "checkmark")
+                } else {
+                    Text(title)
+                }
+            }
+        }
+        if !boards.isEmpty { Divider() }
+        Button("New board…", systemImage: "plus") { store.presentNewBoard(projectID: projectID) }
+            .disabled(!store.projectIsAvailable(projectID))
+        if let board = store.selectedBoard {
+            Button("Rename board…", systemImage: "pencil") { store.presentRenameBoard(boardID: board.id) }
+            Button("New card…", systemImage: "rectangle.badge.plus") { store.createConversationPresented = true }
+            Divider()
+            Button("Delete board…", systemImage: "trash", role: .destructive, action: deleteBoard)
+                .disabled(!store.projectIsAvailable(board.projectID))
+        }
+    }
+}
+
+/// The filter menu's state, machine, and label choices.
+private struct BoardFilterMenuItems: View {
+    @Environment(DieterStore.self) private var store
+    let chrome: BoardChromeSummary
+
+    var body: some View {
+        Picker(
+            "State", selection: Binding(get: { store.stateFilter }, set: { store.stateFilter = $0 })
+        ) {
+            ForEach(chrome.stateOptions, id: \.state) { option in
+                Text(option.title).tag(option.state)
+            }
+        }
+        .pickerStyle(.inline)
+        .accessibilityIdentifier("board.filter.state")
+        if chrome.machineIds.count > 1 || !store.machineFilter.isEmpty {
+            Divider()
+            Picker(
+                "Machine", selection: Binding(get: { store.machineFilter }, set: { store.machineFilter = $0 })
+            ) {
+                Text("All machines").tag("")
+                ForEach(chrome.machineIds, id: \.self) { id in
+                    Text(store.endpoints.first { $0.daemonID == id }?.name ?? id).tag(id)
+                }
+            }
+            .pickerStyle(.inline)
+            .accessibilityIdentifier("board.filter.machine")
+        }
+        if let labels = store.selectedBoard?.labels, !labels.isEmpty {
+            Divider()
+            Picker(
+                "Label", selection: Binding(get: { store.labelFilter }, set: { store.labelFilter = $0 })
+            ) {
+                Text("All cards").tag("")
+                ForEach(labels, id: \.id) { label in
+                    Text(label.name).tag(label.id)
+                }
+            }
+            .pickerStyle(.inline)
+        }
+    }
+}
+
+/// Hides Kanban beside a conversation whose workspace is open. It follows the
+/// selection on its own, so selecting a card leaves the top bar alone.
+private struct BoardKanbanToggle: View {
+    @Environment(DieterStore.self) private var store
+
+    private var workspacePresented: Bool {
+        guard let cardID = store.selectedCardID else { return false }
+        let content = store.conversationContext.content
+        return content.splitMode && content.isPresented(for: cardID)
+    }
+
+    var body: some View {
+        if workspacePresented && store.kanbanPresentedAlongsideConversation {
+            Button {
+                store.kanbanPresentedAlongsideConversation = false
+            } label: {
+                Image(systemName: "rectangle.3.group")
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 34, height: DieterMetrics.capsuleHeight)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Hide Kanban")
+            .accessibilityLabel("Hide Kanban")
+            .accessibilityIdentifier("board.kanban-toggle")
         }
     }
 }

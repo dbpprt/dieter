@@ -1,5 +1,6 @@
 import AppKit
 import DieterAPI
+import DieterClientAPI
 import Observation
 import SwiftUI
 
@@ -11,11 +12,14 @@ struct BoardLaneList: View {
     @Environment(\.boardRenderingActive) private var renderingActive
     let laneID: String
     let cards: [Dieter_V1_Card]
+    /// What the board view shows for each card, by card ID; a card without
+    /// flags asks the core's rules.
+    var flags: [String: ClientBoardCardFlags] = [:]
     let sortDirection: BoardCardSortDirection
 
     var body: some View {
         NativeBoardLaneList(
-            store: store, laneID: laneID, cards: cards, board: store.selectedBoard,
+            store: store, laneID: laneID, cards: cards, flags: flags, board: store.selectedBoard,
             renderingActive: renderingActive
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -30,6 +34,7 @@ private struct NativeBoardLaneList: NSViewRepresentable {
     let store: DieterStore
     let laneID: String
     let cards: [Dieter_V1_Card]
+    let flags: [String: ClientBoardCardFlags]
     let board: Dieter_V1_Board?
     let renderingActive: Bool
 
@@ -84,8 +89,11 @@ private struct NativeBoardLaneList: NSViewRepresentable {
         func update(to next: NativeBoardLaneList) {
             guard let table else { parent = next; return }
             let old = parent.cards
+            let oldFlags = parent.flags
             let boardChanged = parent.board != next.board
-            guard boardChanged || old != next.cards else { parent = next; return }
+            // Rows take their flags as values, so a flag change reaches only its card.
+            let flagsChanged = next.cards.contains { oldFlags[$0.id] != next.flags[$0.id] }
+            guard boardChanged || flagsChanged || old != next.cards else { parent = next; return }
             let anchor = viewportAnchor()
             parent = next
             let ids = next.cards.map(\.id)
@@ -96,7 +104,7 @@ private struct NativeBoardLaneList: NSViewRepresentable {
             let changed = IndexSet(
                 next.cards.indices.filter { index in
                     let card = next.cards[index]
-                    return boardChanged || oldByID[card.id] != card
+                    return boardChanged || oldByID[card.id] != card || oldFlags[card.id] != next.flags[card.id]
                         || (card.id == old.last?.id) != (index == next.cards.count - 1)
                 })
             NSAnimationContext.runAnimationGroup { context in
@@ -232,7 +240,7 @@ private struct NativeBoardLaneList: NSViewRepresentable {
                 content: AnyView(
                     BoardLaneRow(
                         card: parent.cards[row], laneID: parent.laneID, isLast: row == parent.cards.count - 1,
-                        board: parent.board
+                        board: parent.board, flags: parent.flags[cardID]
                     )
                     .id(cardID)
                     .environment(parent.store)
@@ -336,21 +344,31 @@ private struct BoardLaneCellContent: View {
 }
 
 struct BoardLaneRow: View {
-    @Environment(DieterStore.self) private var store
     let card: Dieter_V1_Card
     let laneID: String
     let isLast: Bool
     var board: Dieter_V1_Board? = nil
+    var flags: ClientBoardCardFlags? = nil
     var body: some View {
         VStack(spacing: 0) {
             LaneInsertionTarget(laneID: laneID, beforeCardID: card.id)
-            BoardCardView(card: card, board: board, laneID: laneID)
-                .opacity(store.movingCardIDs.contains(card.id) ? 0.48 : 1)
+            BoardCardView(card: card, board: board, laneID: laneID, flags: flags)
+                .modifier(BoardCardMovingFade(cardID: card.id))
             if isLast {
                 LaneInsertionTarget(laneID: laneID, beforeCardID: nil)
             }
         }
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .contain)
+    }
+}
+
+/// A card being moved fades; a move redraws only this, not the rich card.
+private struct BoardCardMovingFade: ViewModifier {
+    @Environment(DieterStore.self) private var store
+    let cardID: String
+
+    func body(content: Content) -> some View {
+        content.opacity(store.movingCardIDs.contains(cardID) ? 0.48 : 1)
     }
 }

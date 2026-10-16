@@ -34,7 +34,7 @@ struct ConversationPanelHeader: View {
     var kanbanPresented = false
     var toggleKanban: (() -> Void)?
 
-    private var standalone: Bool { context.model.state.chat }
+    private var standalone: Bool { context.model.chrome.chat }
 
     var body: some View {
         switch role {
@@ -77,7 +77,7 @@ struct ConversationTitleRow: View {
     @Bindable var model: ConversationContentModel
 
     /// The runtime to show, as the core presents the conversation.
-    private var status: String { context.model.state.runtime }
+    private var status: String { context.model.chrome.runtime }
 
     var body: some View {
         let card = context.shownCard

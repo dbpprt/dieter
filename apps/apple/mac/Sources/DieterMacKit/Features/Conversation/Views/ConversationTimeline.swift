@@ -71,11 +71,12 @@ struct ConversationTimeline: View {
         viewportMode == .followingLatest && renderedThroughLatest && !context.model.browsingEarlierHistory
     }
     private var projectionKey: ConversationPresentationKey {
-        ConversationPresentationKey(
+        let range = renderRange
+        return ConversationPresentationKey(
             conversationID: conversationID,
             revision: context.conversationPresentationRevision,
-            renderStart: renderRange.lowerBound,
-            renderCount: renderRange.count
+            renderStart: range.lowerBound,
+            renderCount: range.count
         )
     }
     private struct PreparationKey: Hashable {
@@ -145,10 +146,15 @@ struct ConversationTimeline: View {
                         standalone: state.chat, prompt: state.unsentTask, attachments: unsentAttachments)
                 }
 
+                // Each row gets only its own messages, plans and agents, and
+                // compares equal while another message streams.
+                let lastRowID = timelineRows.last?.id
                 ForEach(timelineRows, id: \.id) { row in
                     ConversationTimelineItemView(
-                        row: row, isLatest: renderedThroughLatest && row.id == timelineRows.last?.id
+                        row: row, content: context.model.content(for: row),
+                        isLatest: renderedThroughLatest && row.id == lastRowID
                     )
+                    .equatable()
                     .id(row.id)
                     .background {
                         ConversationScrollAnchorProbe(controller: scroller, messageIDs: row.messageIds)
@@ -156,7 +162,7 @@ struct ConversationTimeline: View {
                 }
 
                 ForEach(context.model.taskPlans(ids: context.model.unattachedPlanIDs), id: \.id) {
-                    TaskPlanView(plan: $0)
+                    TaskPlanView(plan: $0).equatable()
                 }
 
                 if !state.pendingToolsSummary.isEmpty {

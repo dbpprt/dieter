@@ -59,15 +59,19 @@ struct MachineEndpoint: Equatable, Hashable, Identifiable, Sendable {
         self.init(origin: SharedRules.shared.gatewayOrigin(address: address), name: name)
     }
 
+    /// The built-in gateway's origin and name, constants of the core; gateway
+    /// lists sort by them as they render.
+    static let defaultGatewayOrigin = SharedRules.shared.defaultGatewayOrigin()
+    static let defaultGatewayName = SharedRules.shared.defaultGatewayName()
+
     /// The built-in gateway, before the core reports the configured ones.
     static var defaultGateway: MachineEndpoint {
-        let origin = SharedRules.shared.defaultGatewayOrigin()
-        return MachineEndpoint(origin: origin, name: SharedRules.shared.defaultGatewayName())
-            ?? MachineEndpoint(name: SharedRules.shared.defaultGatewayName(), host: origin, port: 443, secure: true)
+        MachineEndpoint(origin: defaultGatewayOrigin, name: defaultGatewayName)
+            ?? MachineEndpoint(name: defaultGatewayName, host: defaultGatewayOrigin, port: 443, secure: true)
     }
 
     /// Whether this is the built-in gateway, which lists mark as primary.
-    var isPrimaryGateway: Bool { credentialID == SharedRules.shared.defaultGatewayOrigin() }
+    var isPrimaryGateway: Bool { credentialID == Self.defaultGatewayOrigin }
 }
 
 /// The connection as the Mac's views branch on it, folded from the core's

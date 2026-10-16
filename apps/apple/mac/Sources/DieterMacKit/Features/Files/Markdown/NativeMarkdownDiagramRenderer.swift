@@ -118,6 +118,13 @@ final class NativeMarkdownDiagramRenderer: RenderedCodeBlockRenderer {
     /// that also occurs in another block is safe and preserves shared previews.
     func synchronizeSource(_ source: String) {
         isDisposed = false
+        // A document without diagrams has nothing to prune: keep the source
+        // without comparing it, as the editor calls this on every update.
+        guard renderingKey != nil || !cache.isEmpty || !queue.isEmpty || !placeholders.isEmpty || !desired.isEmpty
+        else {
+            documentSource = source
+            return
+        }
         guard source != documentSource else { return }
         documentSource = source
         let obsoleteActive = renderingKey.map { !source.contains($0.code) } ?? false

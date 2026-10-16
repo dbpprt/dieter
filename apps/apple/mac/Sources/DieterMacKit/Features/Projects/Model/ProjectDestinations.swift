@@ -106,8 +106,22 @@ enum ProjectDestinationCatalog {
 }
 
 extension DieterStore {
-    /// The live projects' checkouts on the known machines.
+    /// The live projects' checkouts on the known machines. Views ask while
+    /// they render, e.g. on every keystroke in a composer, so the core lays
+    /// them out again only when the projects or machines changed.
     func projectDestinationGroups() -> [ProjectDestinationGroup] {
-        ProjectDestinationCatalog.groups(projects: projects.filter { !$0.archived }, endpoints: endpoints)
+        let live = projects.filter { !$0.archived }
+        if let kept = DestinationGroupsMemo.kept, kept.projects == live, kept.endpoints == endpoints {
+            return kept.groups
+        }
+        let groups = ProjectDestinationCatalog.groups(projects: live, endpoints: endpoints)
+        DestinationGroupsMemo.kept = (projects: live, endpoints: endpoints, groups: groups)
+        return groups
     }
+}
+
+/// The last destination layout and what it was laid out from.
+@MainActor
+private enum DestinationGroupsMemo {
+    static var kept: (projects: [Dieter_V1_Project], endpoints: [MachineEndpoint], groups: [ProjectDestinationGroup])?
 }

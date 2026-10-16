@@ -7,12 +7,10 @@ import Foundation
 
 // MARK: - Diff display rows
 
-/// A diff as the core laid it out for one view: its rows, widest code line,
-/// layout, and whether more of it can load.
+/// A diff as the core laid it out for one view: its rows, layout, and
+/// whether more of it can load.
 struct WorkspaceDiffLayout: Equatable, Sendable {
     var rows: [WorkspaceDiffRow] = []
-    /// The widest code line in columns, for the split layout's width.
-    var maxColumns = 0
     var split = false
     /// Another page of the diff can load.
     var more = false
@@ -20,20 +18,29 @@ struct WorkspaceDiffLayout: Equatable, Sendable {
     var note = ""
     /// Changes whenever the rows do, so a view can reset the folds it expanded.
     var revision = 0
+    /// The core's rows these were mapped from. Every checkout command answers
+    /// with the whole diff, so a repeat of them maps nothing.
+    private var source = Source()
+
+    /// Kept to recognize a repeat; it never makes two layouts differ.
+    private struct Source: Equatable, Sendable {
+        var rows: [ClientDiffDisplayRow] = []
+        static func == (_: Self, _: Self) -> Bool { true }
+    }
 
     /// This layout after an update; an unchanged one keeps the rows the view has.
     func folding(
-        rows: [ClientDiffDisplayRow], unchanged: Bool, maxColumns: Int32, split: Bool, more: Bool, note: String
+        rows: [ClientDiffDisplayRow], unchanged: Bool, split: Bool, more: Bool, note: String
     ) -> Self {
         var next = self
-        if !unchanged {
+        if !unchanged, rows != next.source.rows {
+            next.source.rows = rows
             let mapped = rows.compactMap(WorkspaceDiffRow.init)
             if mapped != next.rows {
                 next.rows = mapped
                 next.revision &+= 1
             }
         }
-        if !unchanged || maxColumns > 0 { next.maxColumns = Int(maxColumns) }
         next.split = split
         next.more = more
         next.note = note
@@ -44,15 +51,29 @@ struct WorkspaceDiffLayout: Equatable, Sendable {
 /// One unified line with the review comments on it.
 struct WorkspaceDiffLine: Identifiable, Equatable, Sendable {
     let line: UnifiedDiffLine
-    let comments: [Dieter_V1_ChangeComment]
+    let comments: [WorkspaceDiffComment]
     /// A review comment can attach to this line.
     let commentable: Bool
     var id: Int { line.id }
 
     init(_ value: ClientDiffDisplayLine) {
         line = UnifiedDiffLine(value.row)
-        comments = value.comments
+        comments = value.comments.map(WorkspaceDiffComment.init)
         commentable = value.commentable
+    }
+}
+
+/// A review comment as the diff shows it under its line.
+struct WorkspaceDiffComment: Identifiable, Equatable, Sendable {
+    let id: String
+    let body: String
+    /// Who wrote it and when, as one line.
+    let byline: String
+
+    init(_ comment: Dieter_V1_ChangeComment) {
+        id = comment.id
+        body = comment.body
+        byline = comment.author.isEmpty ? comment.createdAt : "\(comment.author) · \(comment.createdAt)"
     }
 }
 

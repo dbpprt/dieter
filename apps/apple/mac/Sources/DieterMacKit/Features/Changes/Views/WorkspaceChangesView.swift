@@ -2,6 +2,7 @@ import AppKit
 import DieterAPI
 import DieterClientAPI
 import DieterCore
+import Observation
 import SwiftUI
 
 /// A card's workspace badge as the shared core words it: compact on board
@@ -39,14 +40,35 @@ struct WorkspaceSummaryBadge: View {
 }
 
 enum WorkspaceBadge {
+    private struct Key: Hashable, Sendable {
+        let mode: String
+        let state: String
+        let branch: String
+        let changedFiles: Int32
+        let ahead: Int32
+        let behind: Int32
+        let cardMode: String
+        let cardBranch: String
+        let pullRequest: Int32
+    }
+
+    /// Board cards and chat rows ask for the same badges on every render.
+    private static let badges = SharedRuleMemo<Key, ClientWorkspaceBadgeView>(limit: 1_024)
+
     /// `card`'s workspace badge from the shared core.
     static func of(_ card: Dieter_V1_Card) -> ClientWorkspaceBadgeView {
         let summary = card.workspace
-        return ClientWorkspaceBadgeView(
-            rules: SharedRules.shared.workspaceBadge(
-                mode: summary.mode, state: summary.state, branch: summary.branch, changedFiles: summary.changedFiles,
-                ahead: summary.ahead, behind: summary.behind, cardMode: card.workspaceMode,
-                cardBranch: card.workspaceBranch, pullRequest: card.pullRequest.number))
+        let key = Key(
+            mode: summary.mode, state: summary.state, branch: summary.branch, changedFiles: summary.changedFiles,
+            ahead: summary.ahead, behind: summary.behind, cardMode: card.workspaceMode,
+            cardBranch: card.workspaceBranch, pullRequest: card.pullRequest.number)
+        return badges.value(key) {
+            ClientWorkspaceBadgeView(
+                rules: SharedRules.shared.workspaceBadge(
+                    mode: key.mode, state: key.state, branch: key.branch, changedFiles: key.changedFiles,
+                    ahead: key.ahead, behind: key.behind, cardMode: key.cardMode, cardBranch: key.cardBranch,
+                    pullRequest: key.pullRequest))
+        }
     }
 }
 
@@ -62,46 +84,49 @@ enum WorkspaceDiffViewMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+/// The review's own state: the sheet or comment it shows, the pane shown while
+/// compact, and the files marked viewed in the current revision.
+@MainActor @Observable
+private final class WorkspaceReviewState {
+    var operationKind: GitOperationKind?
+    var mergeSheetPresented = false
+    var selectedCommentLine: UnifiedDiffLine?
+    var commentBody = ""
+    var compactPane: WorkspaceCompactPane = .files
+    var viewedPaths: Set<String> = []
+    @ObservationIgnored private var viewedRevision = ""
+
+    /// Forgets the viewed files once the changes move to another revision.
+    func resetViewed(for revision: String) {
+        guard viewedRevision != revision else { return }
+        viewedRevision = revision
+        viewedPaths = []
+    }
+}
+
+/// A conversation workspace's review. The view is split so that a slice
+/// update, an operation's log, typing a comment, or a scroll re-renders only
+/// the part that shows it.
 struct WorkspaceChangesView: View {
     @Bindable var model: WorktreeChangesModel
     var background: Color = DieterTheme.background
     var active = true
-    @State private var operationKind: GitOperationKind?
-    @State private var mergeSheetPresented = false
-    @State private var selectedCommentLine: UnifiedDiffLine?
-    @State private var commentBody = ""
-    @State private var compactPane: WorkspaceCompactPane = .files
+    @State private var review = WorkspaceReviewState()
     @AppStorage("DieterDiffViewMode") private var diffModeRaw = WorkspaceDiffViewMode.inline.rawValue
-    @State private var viewedPaths: Set<String> = []
-    @State private var viewedRevision = ""
 
     private var diffMode: WorkspaceDiffViewMode {
         WorkspaceDiffViewMode(rawValue: diffModeRaw) ?? .inline
     }
-    private var card: Dieter_V1_Card? { model.card }
-    private var workspace: Dieter_V1_Workspace? { model.conversationWorkspace }
-    private var changes: Dieter_V1_Changeset? { model.conversationChangeset }
-    private var pullRequest: ClientPullRequestView? { model.pullRequest }
-    private var baseBranch: String {
-        let value = workspace?.baseBranch ?? card?.workspace.baseBranch ?? ""
-        return value.isEmpty ? "base" : value
-    }
-    private var selectedFile: Dieter_V1_ChangedFile? {
-        changes?.files.first { $0.path == model.selectedChangePath }
-    }
-    /// The operation strip shows the operation while it runs or after it failed.
-    private var visibleOperation: Dieter_V1_GitOperation? {
-        model.operationVisible ? model.gitOperation : nil
-    }
-    private var availability: WorkspaceActionAvailability { model.availability }
 
     var body: some View {
+        @Bindable var review = review
         GeometryReader { geometry in
             let compact = WorkspaceReviewLayout.isCompact(width: geometry.size.width)
             VStack(spacing: 0) {
-                workspaceToolbar(compact: compact, roomy: geometry.size.width >= 900)
+                WorkspaceReviewToolbar(
+                    model: model, review: review, compact: compact, roomy: geometry.size.width >= 900)
                 Rectangle().fill(DieterTheme.hairline).frame(height: 1)
-                workspaceContent(compact: compact)
+                WorkspaceReviewContent(model: model, review: review, compact: compact)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
@@ -110,81 +135,55 @@ struct WorkspaceChangesView: View {
             // The core refreshes an active review, idle checkouts included:
             // external edits and short turns can happen between two reads.
             model.active = active
-            guard active, let id = card?.id, SharedRules.shared.isServerBacked(conversationId: id) else { return }
+            guard active, let id = model.card?.id, SharedRules.shared.isServerBacked(conversationId: id) else {
+                return
+            }
             await model.loadWorkspaceSurface()
         }
         .onDisappear { model.active = false }
         .onChange(of: "\(model.bindingGeneration)|\(diffModeRaw)", initial: true) {
             model.setLayout(split: diffMode == .split)
         }
-        .onChange(of: changes?.revision) { _, revision in
-            guard viewedRevision != (revision ?? "") else { return }
-            viewedRevision = revision ?? ""
-            viewedPaths = []
+        .onChange(of: model.conversationChangeset?.revision) { _, revision in
+            review.resetViewed(for: revision ?? "")
         }
-        .sheet(item: $operationKind) { kind in
-            GitOperationSheet(model: model, kind: kind, spec: kind.form(card: card, baseBranch: baseBranch))
+        .sheet(item: $review.operationKind) { kind in
+            GitOperationSheet(model: model, kind: kind, spec: kind.form(card: model.card, baseBranch: model.baseBranch))
         }
-        .sheet(isPresented: $mergeSheetPresented) {
+        .sheet(isPresented: $review.mergeSheetPresented) {
             MergeIntoBaseSheet(
-                model: model, card: card,
-                availability: availability,
-                onCreatePullRequestInstead: { operationKind = .createPullRequest }
+                model: model, card: model.card,
+                availability: model.availability,
+                onCreatePullRequestInstead: { review.operationKind = .createPullRequest }
             )
 
         }
-        .popover(item: $selectedCommentLine) { line in commentPopover(line) }
-    }
-
-    @ViewBuilder private func workspaceContent(compact: Bool) -> some View {
-        if model.workspaceLoading && workspace == nil {
-            VStack(spacing: 10) {
-                ProgressView().controlSize(.small)
-                Text("Preparing the conversation workspace…").font(DieterFont.meta).foregroundStyle(
-                    DieterTheme.tertiary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let error = model.workspaceError, workspace == nil {
-            ContentUnavailableView(
-                "Workspace unavailable", systemImage: "exclamationmark.triangle", description: Text(error)
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let workspace {
-            VStack(spacing: 0) {
-                if model.conflicted { conflictBanner }
-                if let operation = visibleOperation { operationProgress(operation) }
-                if let error = model.workspaceError { workspaceErrorBanner(error) }
-                reviewLayout(workspace: workspace, compact: compact)
-            }
-        } else if let operation = model.gitOperation,
-            operation.status == "succeeded",
-            ["cleanup", "discard", "adopt"].contains(operation.kind)
-        {
-            ContentUnavailableView(
-                operation.kind == "adopt" ? "Workspace moved" : "Workspace removed",
-                systemImage: operation.kind == "adopt" ? "arrow.right.arrow.left" : "trash",
-                description: Text(
-                    operation.kind == "adopt"
-                        ? "The checkout and its history now belong to card \(operation.result)."
-                        : "The conversation workspace is no longer provisioned.")
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            ContentUnavailableView(
-                "No workspace", systemImage: "arrow.triangle.branch",
-                description: Text("Choose workspace settings before starting this conversation.")
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .popover(item: $review.selectedCommentLine) { line in
+            WorkspaceCommentPopover(model: model, review: review, line: line)
         }
     }
+}
 
-    // MARK: Toolbar
+// MARK: Toolbar
 
-    private func workspaceToolbar(compact: Bool, roomy: Bool) -> some View {
+private struct WorkspaceReviewToolbar: View {
+    let model: WorktreeChangesModel
+    let review: WorkspaceReviewState
+    let compact: Bool
+    let roomy: Bool
+    @AppStorage("DieterDiffViewMode") private var diffModeRaw = WorkspaceDiffViewMode.inline.rawValue
+
+    private var diffMode: WorkspaceDiffViewMode {
+        WorkspaceDiffViewMode(rawValue: diffModeRaw) ?? .inline
+    }
+    private var availability: WorkspaceActionAvailability { model.availability }
+
+    var body: some View {
+        let workspace = model.conversationWorkspace
         HStack(spacing: 8) {
             if workspace != nil {
                 viewModePicker
-                if roomy, let changes {
+                if roomy, let changes = model.conversationChangeset {
                     HStack(spacing: 6) {
                         WorkspaceDeltaLabel(additions: changes.additions, deletions: changes.deletions)
                         Text(
@@ -199,10 +198,10 @@ struct WorkspaceChangesView: View {
             }
             Spacer(minLength: 6)
             if workspace != nil {
-                toolbarActions(compact: compact, roomy: roomy)
+                toolbarActions
             }
             Menu {
-                operationMenu
+                operationMenu(workspace: workspace)
             } label: {
                 DieterMenuLabel(symbol: "ellipsis", size: 28)
             }
@@ -235,12 +234,13 @@ struct WorkspaceChangesView: View {
         .fixedSize()
     }
 
-    @ViewBuilder private func toolbarActions(compact: Bool, roomy: Bool) -> some View {
+    @ViewBuilder private var toolbarActions: some View {
         let mode = availability.workspaceMode
+        let baseBranch = model.baseBranch
         if mode == "project" && !availability.hasReviewBranch {
             if availability.allows(.commit) {
                 Button {
-                    operationKind = .commit
+                    review.operationKind = .commit
                 } label: {
                     Label(compact ? "Commit" : "Commit changes", systemImage: "checkmark.circle").lineLimit(1)
                 }
@@ -249,7 +249,7 @@ struct WorkspaceChangesView: View {
         } else {
             if !compact {
                 Button {
-                    operationKind = .update
+                    review.operationKind = .update
                 } label: {
                     Label(
                         roomy ? "Update from \(baseBranch)" : "Update",
@@ -262,15 +262,15 @@ struct WorkspaceChangesView: View {
                 .help("Rebase this workspace onto the latest \(baseBranch)")
 
                 if mode == "worktree" {
-                    Button("Discard…") { operationKind = .discard }
+                    Button("Discard…") { review.operationKind = .discard }
                         .buttonStyle(DieterBarButtonStyle(destructive: true, size: 30))
                         .disabled(!availability.allows(.discard))
                         .help("Remove the worktree and its branch")
                 }
 
-                if pullRequest == nil {
+                if model.pullRequest == nil {
                     Button {
-                        operationKind = .createPullRequest
+                        review.operationKind = .createPullRequest
                     } label: {
                         Label("Create PR…", systemImage: "arrow.triangle.pull").lineLimit(1).fixedSize()
                     }
@@ -280,7 +280,7 @@ struct WorkspaceChangesView: View {
             }
             if mode == "worktree" {
                 Button {
-                    mergeSheetPresented = true
+                    review.mergeSheetPresented = true
                 } label: {
                     Label(
                         !compact && roomy ? "Merge into \(baseBranch)…" : "Merge…",
@@ -293,7 +293,7 @@ struct WorkspaceChangesView: View {
                 .accessibilityIdentifier("changes.merge-into-base")
             } else if availability.allows(.commit) {
                 Button {
-                    operationKind = .commit
+                    review.operationKind = .commit
                 } label: {
                     Label(compact ? "Commit" : "Commit changes", systemImage: "checkmark.circle").lineLimit(1)
                 }
@@ -302,27 +302,28 @@ struct WorkspaceChangesView: View {
         }
     }
 
-    @ViewBuilder private var operationMenu: some View {
+    @ViewBuilder private func operationMenu(workspace: Dieter_V1_Workspace?) -> some View {
+        let pullRequest = model.pullRequest
         Section("Working copy") {
             Button(GitOperationKind.commit.title, systemImage: "checkmark.circle") {
-                operationKind = .commit
+                review.operationKind = .commit
             }
             .disabled(!availability.allows(.commit))
             Button(GitOperationKind.update.title, systemImage: "arrow.triangle.2.circlepath") {
-                operationKind = .update
+                review.operationKind = .update
             }
             .disabled(!availability.allows(.update))
             Button(GitOperationKind.validate.title, systemImage: "checkmark.seal") {
-                operationKind = .validate
+                review.operationKind = .validate
             }
             .disabled(!availability.allows(.validate))
-            Button(GitOperationKind.push.title, systemImage: "arrow.up.circle") { operationKind = .push }
+            Button(GitOperationKind.push.title, systemImage: "arrow.up.circle") { review.operationKind = .push }
                 .disabled(!availability.allows(.push))
         }
         Section("Review and integrate") {
             if pullRequest == nil {
                 Button(GitOperationKind.createPullRequest.title, systemImage: "arrow.triangle.pull") {
-                    operationKind = .createPullRequest
+                    review.operationKind = .createPullRequest
                 }
                 .disabled(!availability.allows(.createPullRequest))
             } else {
@@ -332,21 +333,21 @@ struct WorkspaceChangesView: View {
                     }
                 }
                 Button(GitOperationKind.refreshPullRequest.title, systemImage: "arrow.clockwise") {
-                    operationKind = .refreshPullRequest
+                    review.operationKind = .refreshPullRequest
                 }
                 .disabled(!availability.allows(.refreshPullRequest))
                 Button(GitOperationKind.mergePullRequest.title, systemImage: "arrow.triangle.merge") {
-                    operationKind = .mergePullRequest
+                    review.operationKind = .mergePullRequest
                 }
                 .disabled(!availability.allows(.mergePullRequest))
             }
-            Button("Merge into \(baseBranch)…", systemImage: "arrow.triangle.merge") {
-                mergeSheetPresented = true
+            Button("Merge into \(model.baseBranch)…", systemImage: "arrow.triangle.merge") {
+                review.mergeSheetPresented = true
             }
             .disabled(!availability.allowsMergeFlow)
         }
         Section("Workspace") {
-            if let card {
+            if let card = model.card {
                 Button("Open workspace in Files", systemImage: "folder") {
                     Task { await model.openWorkspaceFiles(card: card) }
                 }
@@ -360,41 +361,74 @@ struct WorkspaceChangesView: View {
                 }
             }
             Button(GitOperationKind.adopt.title + "…", systemImage: "arrow.right.arrow.left") {
-                operationKind = .adopt
+                review.operationKind = .adopt
             }
             .disabled(!availability.allows(.adopt))
-            Button(GitOperationKind.cleanup.title, systemImage: "trash") { operationKind = .cleanup }
+            Button(GitOperationKind.cleanup.title, systemImage: "trash") { review.operationKind = .cleanup }
                 .disabled(!availability.allows(.cleanup))
             Button(GitOperationKind.discard.title, systemImage: "trash.fill", role: .destructive) {
-                operationKind = .discard
+                review.operationKind = .discard
             }
             .disabled(!availability.allows(.discard))
         }
     }
+}
 
-    // MARK: Banners
+// MARK: Content
 
-    private var conflictBanner: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(DieterTheme.coral)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(model.conflictTitle).font(.system(size: 12, weight: .semibold))
-                Text("Merge is blocked until conflicts are resolved.")
-                    .font(DieterFont.subtitle).foregroundStyle(DieterTheme.tertiary).lineLimit(1)
+private struct WorkspaceReviewContent: View {
+    let model: WorktreeChangesModel
+    let review: WorkspaceReviewState
+    let compact: Bool
+
+    /// The operation strip shows the operation while it runs or after it failed.
+    private var visibleOperation: Dieter_V1_GitOperation? {
+        model.operationVisible ? model.gitOperation : nil
+    }
+
+    var body: some View {
+        if model.workspaceLoading && model.conversationWorkspace == nil {
+            VStack(spacing: 10) {
+                ProgressView().controlSize(.small)
+                Text("Preparing the conversation workspace…").font(DieterFont.meta).foregroundStyle(
+                    DieterTheme.tertiary)
             }
-            Spacer()
-            Button("Review conflicts…") { mergeSheetPresented = true }
-                .buttonStyle(DieterBarButtonStyle(prominent: true, tint: DieterTheme.coral, size: 30))
-                .disabled(!availability.allowsMergeFlow)
-        }
-        .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(DieterTheme.coral.opacity(0.08))
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(DieterTheme.coral.opacity(0.22)).frame(height: 1)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = model.workspaceError, model.conversationWorkspace == nil {
+            ContentUnavailableView(
+                "Workspace unavailable", systemImage: "exclamationmark.triangle", description: Text(error)
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let workspace = model.conversationWorkspace {
+            VStack(spacing: 0) {
+                if model.conflicted { WorkspaceConflictBanner(model: model, review: review) }
+                if let operation = visibleOperation { WorkspaceOperationProgress(model: model, operation: operation) }
+                if let error = model.workspaceError { errorBanner(error) }
+                reviewLayout(workspace: workspace)
+            }
+        } else if let operation = model.gitOperation,
+            operation.status == "succeeded",
+            ["cleanup", "discard", "adopt"].contains(operation.kind)
+        {
+            ContentUnavailableView(
+                operation.kind == "adopt" ? "Workspace moved" : "Workspace removed",
+                systemImage: operation.kind == "adopt" ? "arrow.right.arrow.left" : "trash",
+                description: Text(
+                    operation.kind == "adopt"
+                        ? "The checkout and its history now belong to card \(operation.result)."
+                        : "The conversation workspace is no longer provisioned.")
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ContentUnavailableView(
+                "No workspace", systemImage: "arrow.triangle.branch",
+                description: Text("Choose workspace settings before starting this conversation.")
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
-    private func workspaceErrorBanner(_ error: String) -> some View {
+    private func errorBanner(_ error: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.circle.fill").foregroundStyle(DieterTheme.amber)
             Text(error).font(DieterFont.meta).foregroundStyle(DieterTheme.subtle).lineLimit(2)
@@ -405,7 +439,96 @@ struct WorkspaceChangesView: View {
         .padding(.horizontal, 14).frame(minHeight: 34).background(DieterTheme.amber.opacity(0.08))
     }
 
-    @ViewBuilder private func operationProgress(_ operation: Dieter_V1_GitOperation) -> some View {
+    @ViewBuilder private func reviewLayout(workspace: Dieter_V1_Workspace) -> some View {
+        if compact {
+            VStack(spacing: 0) {
+                WorkspaceCompactPaneBar(model: model, review: review)
+                Divider().overlay(DieterTheme.border)
+                if review.compactPane == .files {
+                    WorkspaceReviewNavigator(model: model, review: review, workspace: workspace)
+                } else {
+                    WorkspaceReviewDiffPane(model: model, review: review, compact: true)
+                }
+            }
+        } else {
+            HSplitView {
+                WorkspaceReviewNavigator(model: model, review: review, workspace: workspace).frame(
+                    minWidth: 250, idealWidth: 300, maxWidth: 340)
+                WorkspaceReviewDiffPane(model: model, review: review, compact: false).frame(minWidth: 360)
+            }
+        }
+    }
+}
+
+private struct WorkspaceCompactPaneBar: View {
+    let model: WorktreeChangesModel
+    let review: WorkspaceReviewState
+
+    var body: some View {
+        let changes = model.conversationChangeset
+        HStack(spacing: 4) {
+            DieterSegmentTrack(height: 28) {
+                ForEach(WorkspaceCompactPane.allCases) { pane in
+                    Button {
+                        review.compactPane = pane
+                    } label: {
+                        HStack(spacing: 5) {
+                            Text(pane.rawValue)
+                            if pane == .files {
+                                Text("\((changes?.files.count ?? 0) + (changes?.commits.count ?? 0))")
+                                    .foregroundStyle(DieterTheme.tertiary)
+                            }
+                        }
+                    }
+                    .buttonStyle(DieterSegmentStyle(selected: review.compactPane == pane, height: 22))
+                }
+            }
+            .fixedSize()
+            Spacer()
+            if review.compactPane == .diff, !model.selectedChangePath.isEmpty {
+                Text(ClientChangedFileLabel.of(model.selectedChangePath).filename)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(
+                        DieterTheme.tertiary
+                    ).lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 10).frame(height: 38)
+    }
+}
+
+// MARK: Banners
+
+private struct WorkspaceConflictBanner: View {
+    let model: WorktreeChangesModel
+    let review: WorkspaceReviewState
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(DieterTheme.coral)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(model.conflictTitle).font(.system(size: 12, weight: .semibold))
+                Text("Merge is blocked until conflicts are resolved.")
+                    .font(DieterFont.subtitle).foregroundStyle(DieterTheme.tertiary).lineLimit(1)
+            }
+            Spacer()
+            Button("Review conflicts…") { review.mergeSheetPresented = true }
+                .buttonStyle(DieterBarButtonStyle(prominent: true, tint: DieterTheme.coral, size: 30))
+                .disabled(!model.availability.allowsMergeFlow)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .background(DieterTheme.coral.opacity(0.08))
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(DieterTheme.coral.opacity(0.22)).frame(height: 1)
+        }
+    }
+}
+
+/// A running or failed operation with its log; only it observes the log.
+private struct WorkspaceOperationProgress: View {
+    let model: WorktreeChangesModel
+    let operation: Dieter_V1_GitOperation
+
+    var body: some View {
         DisclosureGroup {
             VStack(alignment: .leading, spacing: 7) {
                 ForEach(model.gitOperationLogs, id: \.sequence) { entry in
@@ -445,77 +568,47 @@ struct WorkspaceChangesView: View {
         .padding(.horizontal, 14).padding(.vertical, 9).background(DieterTheme.tile)
         .overlay(alignment: .bottom) { Rectangle().fill(DieterTheme.border).frame(height: 1) }
     }
+}
 
-    // MARK: Review layout
+// MARK: Navigator
 
-    @ViewBuilder private func reviewLayout(workspace: Dieter_V1_Workspace, compact: Bool) -> some View {
-        if compact {
-            VStack(spacing: 0) {
-                HStack(spacing: 4) {
-                    DieterSegmentTrack(height: 28) {
-                        ForEach(WorkspaceCompactPane.allCases) { pane in
-                            Button {
-                                compactPane = pane
-                            } label: {
-                                HStack(spacing: 5) {
-                                    Text(pane.rawValue)
-                                    if pane == .files {
-                                        Text("\((changes?.files.count ?? 0) + (changes?.commits.count ?? 0))")
-                                            .foregroundStyle(DieterTheme.tertiary)
-                                    }
-                                }
-                            }
-                            .buttonStyle(DieterSegmentStyle(selected: compactPane == pane, height: 22))
-                        }
-                    }
-                    .fixedSize()
-                    Spacer()
-                    if compactPane == .diff, !model.selectedChangePath.isEmpty {
-                        Text(ClientChangedFileLabel.of(model.selectedChangePath).filename)
-                            .font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(
-                                DieterTheme.tertiary
-                            ).lineLimit(1)
-                    }
-                }
-                .padding(.horizontal, 10).frame(height: 38)
-                Divider().overlay(DieterTheme.border)
-                if compactPane == .files {
-                    reviewNavigator(workspace: workspace, compact: true)
-                } else {
-                    diffView(compact: true)
-                }
-            }
-        } else {
-            HSplitView {
-                reviewNavigator(workspace: workspace, compact: false).frame(
-                    minWidth: 250, idealWidth: 300, maxWidth: 340)
-                diffView(compact: false).frame(minWidth: 360)
-            }
-        }
-    }
+private struct WorkspaceReviewNavigator: View {
+    let model: WorktreeChangesModel
+    let review: WorkspaceReviewState
+    let workspace: Dieter_V1_Workspace
 
-    // MARK: Navigator
-
-    private func reviewNavigator(workspace: Dieter_V1_Workspace, compact: Bool) -> some View {
+    var body: some View {
         VStack(spacing: 0) {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 16) {
-                    if let pullRequest = model.pullRequest { pullRequestCard(pullRequest) }
-                    filesSection(compact: compact)
-                    if changes?.commits.isEmpty == false { commitsSection(compact: compact) }
-                    scmNotice
+                    if let pullRequest = model.pullRequest {
+                        WorkspacePullRequestCard(model: model, review: review, pr: pullRequest)
+                    }
+                    WorkspaceFilesSection(model: model, review: review)
+                    if model.conversationChangeset?.commits.isEmpty == false {
+                        WorkspaceCommitsSection(model: model, review: review)
+                    }
+                    WorkspaceSCMNotice(model: model)
                 }
                 .padding(.horizontal, 10).padding(.vertical, 12)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
             Divider().overlay(DieterTheme.border)
-            workspaceFooter(workspace)
+            WorkspaceReviewFooter(model: model, workspace: workspace)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(DieterTheme.sidebar)
     }
+}
 
-    private func pullRequestCard(_ pr: ClientPullRequestView) -> some View {
+private struct WorkspacePullRequestCard: View {
+    let model: WorktreeChangesModel
+    let review: WorkspaceReviewState
+    let pr: ClientPullRequestView
+
+    var body: some View {
+        let availability = model.availability
+        let workspace = model.conversationWorkspace
         VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 7) {
                 Image(systemName: "arrow.triangle.pull").font(.system(size: 11, weight: .semibold))
@@ -564,7 +657,7 @@ struct WorkspaceChangesView: View {
                     .buttonStyle(DieterBarButtonStyle(size: 30))
                 }
                 Button {
-                    operationKind = .mergePullRequest
+                    review.operationKind = .mergePullRequest
                 } label: {
                     Text(pr.mergeBlockedReason.isEmpty ? "Merge PR" : "Merge PR · \(pr.mergeBlockedReason)")
                         .frame(maxWidth: .infinity)
@@ -579,7 +672,7 @@ struct WorkspaceChangesView: View {
                 )
                 Spacer()
                 Button {
-                    operationKind = .refreshPullRequest
+                    review.operationKind = .refreshPullRequest
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
@@ -593,37 +686,52 @@ struct WorkspaceChangesView: View {
         .dieterTile(radius: 10)
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DieterTheme.border))
     }
+}
 
-    private func filesSection(compact: Bool) -> some View {
+private struct WorkspaceFilesSection: View {
+    let model: WorktreeChangesModel
+    let review: WorkspaceReviewState
+
+    var body: some View {
+        let changes = model.conversationChangeset
+        let files = changes?.files ?? []
+        let selectedPath = model.selectedCommitSHA.isEmpty ? model.selectedChangePath : nil
         VStack(alignment: .leading, spacing: 6) {
             WorkspaceSectionHeader(
-                title: "Local changes", count: changes?.files.count ?? 0, additions: changes?.additions,
+                title: "Local changes", count: files.count, additions: changes?.additions,
                 deletions: changes?.deletions)
-            if changes?.files.isEmpty != false {
+            if files.isEmpty {
                 WorkspaceEmptyRow(symbol: "checkmark.circle", title: "Working tree is clean")
             }
-            ForEach(changes?.files ?? [], id: \.path) { file in
+            ForEach(files, id: \.path) { file in
                 WorkspaceFileRow(
                     file: file,
-                    selected: model.selectedChangePath == file.path && model.selectedCommitSHA.isEmpty,
-                    viewed: viewedPaths.contains(file.path)
+                    selected: selectedPath == file.path,
+                    viewed: review.viewedPaths.contains(file.path)
                 ) {
-                    compactPane = .diff
+                    review.compactPane = .diff
                     Task { await model.loadConversationDiff(path: file.path) }
                 }
+                .equatable()
                 .accessibilityIdentifier("changes.file.\(file.path)")
                 .e2eTarget("changes.file.\(file.path)")
             }
         }
     }
+}
 
-    private func commitsSection(compact: Bool) -> some View {
-        let commits = changes?.commits ?? []
-        let branch = workspace?.branch ?? ""
-        return VStack(alignment: .leading, spacing: 0) {
+private struct WorkspaceCommitsSection: View {
+    let model: WorktreeChangesModel
+    let review: WorkspaceReviewState
+
+    var body: some View {
+        let commits = model.conversationChangeset?.commits ?? []
+        let branch = model.conversationWorkspace?.branch ?? ""
+        let baseBranch = model.baseBranch
+        VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Commits").font(.system(size: 12, weight: .semibold))
-                Text(commitsSubtitle(count: commits.count, branch: branch))
+                Text(subtitle(count: commits.count, branch: branch, baseBranch: baseBranch))
                     .font(.system(size: 9)).foregroundStyle(DieterTheme.tertiary).lineLimit(1).truncationMode(
                         .middle)
             }
@@ -637,7 +745,7 @@ struct WorkspaceChangesView: View {
                 VStack(spacing: 0) {
                     ForEach(commits, id: \.sha) { commit in
                         WorkspaceCommitRow(commit: commit, selected: model.selectedCommitSHA == commit.sha) {
-                            compactPane = .diff
+                            review.compactPane = .diff
                             Task { await model.loadConversationDiff(path: "", commitSHA: commit.sha) }
                         }
                         if commit.sha != commits.last?.sha {
@@ -666,14 +774,18 @@ struct WorkspaceChangesView: View {
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DieterTheme.border))
     }
 
-    private func commitsSubtitle(count: Int, branch: String) -> String {
+    private func subtitle(count: Int, branch: String, baseBranch: String) -> String {
         guard count > 0 else { return "Ahead of \(baseBranch)" }
         var subtitle = "\(count) on \(branch.isEmpty ? "the workspace branch" : branch)"
         if count > 1 { subtitle += " · squashed to one on merge" }
         return subtitle
     }
+}
 
-    @ViewBuilder private var scmNotice: some View {
+private struct WorkspaceSCMNotice: View {
+    let model: WorktreeChangesModel
+
+    var body: some View {
         if let capabilities = model.conversationSCMCapabilities,
             !capabilities.authenticated,
             !capabilities.unavailableReason.isEmpty
@@ -689,8 +801,13 @@ struct WorkspaceChangesView: View {
                 DieterTheme.amber.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
         }
     }
+}
 
-    private func workspaceFooter(_ workspace: Dieter_V1_Workspace) -> some View {
+private struct WorkspaceReviewFooter: View {
+    let model: WorktreeChangesModel
+    let workspace: Dieter_V1_Workspace
+
+    var body: some View {
         HStack(spacing: 7) {
             StatusPill(
                 text: model.workspaceState,
@@ -711,12 +828,18 @@ struct WorkspaceChangesView: View {
         .font(.system(size: 10, weight: .medium)).foregroundStyle(DieterTheme.tertiary)
         .padding(.horizontal, 10).frame(height: 42)
     }
+}
 
-    // MARK: Diff pane
+// MARK: Diff pane
 
-    private func diffView(compact: Bool) -> some View {
+private struct WorkspaceReviewDiffPane: View {
+    let model: WorktreeChangesModel
+    let review: WorkspaceReviewState
+    let compact: Bool
+
+    var body: some View {
         VStack(spacing: 0) {
-            diffHeader(compact: compact)
+            WorkspaceDiffHeader(model: model, review: review, compact: compact)
             Divider().overlay(DieterTheme.border)
             Group {
                 if let diff = model.conversationDiff {
@@ -729,7 +852,7 @@ struct WorkspaceChangesView: View {
                     } else {
                         WorkspaceDiffContent(
                             layout: model.diff,
-                            addComment: { line in selectedCommentLine = line },
+                            addComment: { line in review.selectedCommentLine = line },
                             loadMore: {
                                 Task {
                                     await model.loadConversationDiff(
@@ -738,6 +861,7 @@ struct WorkspaceChangesView: View {
                             },
                             loadingMore: model.conversationDiffLoading
                         )
+                        .equatable()
                         .id("\(model.selectedChangePath)|\(model.selectedCommitSHA)")
                     }
                 } else if model.conversationDiffLoading {
@@ -752,20 +876,33 @@ struct WorkspaceChangesView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider().overlay(DieterTheme.border)
-            diffFooter
+            WorkspaceDiffFooter(model: model, review: review)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(DieterTheme.background)
     }
+}
 
-    private func diffHeader(compact: Bool) -> some View {
+private struct WorkspaceDiffHeader: View {
+    let model: WorktreeChangesModel
+    let review: WorkspaceReviewState
+    let compact: Bool
+
+    private var title: String {
+        if !model.selectedCommitSHA.isEmpty { return "Commit \(model.selectedCommitSHA.prefix(10))" }
+        return model.selectedChangePath.isEmpty ? "Diff" : model.selectedChangePath
+    }
+
+    var body: some View {
+        let path = model.selectedChangePath
+        let file = model.conversationChangeset?.files.first(where: { $0.path == path })
         HStack(spacing: 9) {
             Image(systemName: model.selectedCommitSHA.isEmpty ? "doc.text" : "arrow.triangle.branch")
                 .foregroundStyle(DieterTheme.shell).frame(width: 18)
             VStack(alignment: .leading, spacing: 2) {
-                Text(diffTitle).font(.system(size: 11, weight: .semibold, design: .monospaced)).lineLimit(1)
+                Text(title).font(.system(size: 11, weight: .semibold, design: .monospaced)).lineLimit(1)
                     .truncationMode(.middle)
-                if !compact, let file = selectedFile {
+                if !compact, let file {
                     Text(
                         ClientChangedFileLabel.of(
                             file.path, status: file.status, conflicted: file.conflicted, untracked: file.untracked
@@ -775,18 +912,18 @@ struct WorkspaceChangesView: View {
                 }
             }
             Spacer(minLength: 8)
-            if let file = selectedFile {
+            if let file {
                 WorkspaceDeltaLabel(additions: file.additions, deletions: file.deletions)
             }
-            if !model.selectedChangePath.isEmpty {
+            if !path.isEmpty {
                 Button {
                     NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(model.selectedChangePath, forType: .string)
+                    NSPasteboard.general.setString(path, forType: .string)
                 } label: {
                     Image(systemName: "doc.on.doc")
                 }
                 .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28)).help("Copy file path")
-                if let card {
+                if let card = model.card {
                     Button {
                         Task { await model.openWorkspaceFiles(card: card, opening: model.selectedChangePath) }
                     } label: {
@@ -794,20 +931,19 @@ struct WorkspaceChangesView: View {
                     }
                     .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28)).help("Open file in workspace editor")
                 }
-                viewedToggle
+                viewedToggle(path: path)
             }
         }
         .padding(.horizontal, 12).frame(height: 46)
     }
 
-    private var viewedToggle: some View {
-        let path = model.selectedChangePath
-        let viewed = viewedPaths.contains(path)
+    private func viewedToggle(path: String) -> some View {
+        let viewed = review.viewedPaths.contains(path)
         return Button {
             if viewed {
-                viewedPaths.remove(path)
+                review.viewedPaths.remove(path)
             } else {
-                viewedPaths.insert(path)
+                review.viewedPaths.insert(path)
                 advanceToNextUnviewedFile(after: path)
             }
         } label: {
@@ -823,15 +959,21 @@ struct WorkspaceChangesView: View {
     }
 
     private func advanceToNextUnviewedFile(after path: String) {
-        guard let files = changes?.files,
+        guard let files = model.conversationChangeset?.files,
             let start = files.firstIndex(where: { $0.path == path })
         else { return }
         let wrapped = files[(start + 1)...] + files[..<start]
-        guard let next = wrapped.first(where: { !viewedPaths.contains($0.path) }) else { return }
+        guard let next = wrapped.first(where: { !review.viewedPaths.contains($0.path) }) else { return }
         Task { await model.loadConversationDiff(path: next.path) }
     }
+}
 
-    private var diffFooter: some View {
+private struct WorkspaceDiffFooter: View {
+    let model: WorktreeChangesModel
+    let review: WorkspaceReviewState
+
+    var body: some View {
+        let baseBranch = model.baseBranch
         HStack(spacing: 14) {
             if model.conflicted {
                 Label("Conflicts with \(baseBranch)", systemImage: "exclamationmark.triangle.fill")
@@ -850,9 +992,9 @@ struct WorkspaceChangesView: View {
                 .foregroundStyle(readiness.validationPassed ? DieterTheme.diffAddition : DieterTheme.coral)
             }
             Spacer()
-            if let files = changes?.files, !files.isEmpty {
+            if let files = model.conversationChangeset?.files, !files.isEmpty {
                 Text(
-                    "\(files.filter { viewedPaths.contains($0.path) }.count) of \(files.count) files viewed"
+                    "\(files.filter { review.viewedPaths.contains($0.path) }.count) of \(files.count) files viewed"
                 )
                 .foregroundStyle(DieterTheme.tertiary)
             }
@@ -862,15 +1004,16 @@ struct WorkspaceChangesView: View {
         .padding(.horizontal, 12).frame(height: 32)
         .background(DieterTheme.sidebar)
     }
+}
 
-    private var diffTitle: String {
-        if !model.selectedCommitSHA.isEmpty { return "Commit \(model.selectedCommitSHA.prefix(10))" }
-        return model.selectedChangePath.isEmpty ? "Diff" : model.selectedChangePath
-    }
+// MARK: Comments
 
-    // MARK: Comments
+private struct WorkspaceCommentPopover: View {
+    let model: WorktreeChangesModel
+    @Bindable var review: WorkspaceReviewState
+    let line: UnifiedDiffLine
 
-    private func commentPopover(_ line: UnifiedDiffLine) -> some View {
+    var body: some View {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
@@ -883,29 +1026,29 @@ struct WorkspaceChangesView: View {
                 Spacer()
             }
             .padding(16).background(DieterTheme.sidebar)
-            TextEditor(text: $commentBody)
+            TextEditor(text: $review.commentBody)
                 .font(DieterFont.body).scrollContentBackground(.hidden).padding(10).frame(height: 110)
                 .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8)).padding(16)
             HStack {
                 Spacer()
                 Button("Cancel") {
-                    selectedCommentLine = nil
-                    commentBody = ""
+                    review.selectedCommentLine = nil
+                    review.commentBody = ""
                 }.buttonStyle(DieterBarButtonStyle(size: 30))
-                Button("Add comment") { addComment(line) }.buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
-                    .disabled(commentBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button("Add comment") { addComment() }.buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
+                    .disabled(review.commentBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .padding(.horizontal, 16).padding(.bottom, 16)
         }
         .frame(width: 410).background(DieterTheme.background)
     }
 
-    private func addComment(_ line: UnifiedDiffLine) {
-        let body = commentBody
+    private func addComment() {
+        let text = review.commentBody
         Task {
-            if await model.addChangeComment(line: line, body: body) {
-                selectedCommentLine = nil
-                commentBody = ""
+            if await model.addChangeComment(line: line, body: text) {
+                review.selectedCommentLine = nil
+                review.commentBody = ""
             }
         }
     }

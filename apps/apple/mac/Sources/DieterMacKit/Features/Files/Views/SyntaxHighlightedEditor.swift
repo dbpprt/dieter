@@ -47,8 +47,8 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
         context.coordinator.parent = self
         guard context.coordinator.textView != nil else { return }
         context.coordinator.setActive(active)
-        container.textView.isEditable = editable
-        container.textView.allowsUndo = editable
+        if container.textView.isEditable != editable { container.textView.isEditable = editable }
+        if container.textView.allowsUndo != editable { container.textView.allowsUndo = editable }
         if session.documentKey != documentKey {
             context.coordinator.isApplyingUpdate = true
             session.prepare(documentKey: documentKey, text: text)
@@ -170,25 +170,26 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
 
         private func scheduleFullHighlight(delayNanoseconds: UInt64) {
             guard isActive else { return }
-            guard let storage = textView?.textStorage else { return }
+            guard textView?.textStorage != nil else { return }
             fullHighlightTask?.cancel()
-            // The core lexes at most the first 200,000 characters; only those cross over.
-            let source = storage.string as NSString
-            let range = NSRange(location: 0, length: min(source.length, FileSyntaxHighlightPlan.limit))
-            let text = source.substring(with: range)
             let filename = parent.filename
-            let revision = parent.session.revision
             let documentKey = parent.documentKey
             fullHighlightTask = Task { @MainActor [weak self] in
                 if delayNanoseconds > 0 {
                     try? await Task.sleep(nanoseconds: delayNanoseconds)
                 }
-                guard !Task.isCancelled, self?.isActive == true else { return }
+                guard !Task.isCancelled, let self, self.isActive, let snapshot = self.textView?.textStorage
+                else { return }
+                // The text is copied once typing pauses, not on every keystroke.
+                // The core lexes at most the first 200,000 characters; only those cross over.
+                let source = snapshot.string as NSString
+                let range = NSRange(location: 0, length: min(source.length, FileSyntaxHighlightPlan.limit))
+                let text = source.substring(with: range)
+                let revision = self.parent.session.revision
                 let plan = await Task.detached(priority: .userInitiated) {
                     FileSyntaxHighlightPlan.lex(text, path: filename, in: range)
                 }.value
                 guard !Task.isCancelled,
-                    let self,
                     self.isActive,
                     self.parent.documentKey == documentKey,
                     self.parent.session.documentKey == documentKey,
@@ -329,13 +330,13 @@ private enum FileSyntaxHighlighter {
     static let boldFont = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .semibold)
     static let foreground = NSColor.textColor
 
-    static var baseAttributes: [NSAttributedString.Key: Any] {
+    static let baseAttributes: [NSAttributedString.Key: Any] = {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 2
         paragraph.tabStops = []
         paragraph.defaultTabInterval = 28
-        return [.font: baseFont, .foregroundColor: foreground, .paragraphStyle: paragraph]
-    }
+        return [.font: baseFont, .foregroundColor: foreground, .paragraphStyle: paragraph.copy()]
+    }()
 
     static func apply(_ plan: FileSyntaxHighlightPlan, to storage: NSTextStorage) {
         let fullRange = NSRange(location: 0, length: storage.length)

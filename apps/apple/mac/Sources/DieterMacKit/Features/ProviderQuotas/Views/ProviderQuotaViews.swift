@@ -19,7 +19,7 @@ struct ProviderQuotaCompactView: View {
         store.quotas.providerQuotaRows.filter { !$0.accounts.isEmpty }
     }
 
-    private var accounts: [ProviderQuotaCompactAccount] {
+    private static func accounts(in groups: [ClientQuotaGroupRow]) -> [ProviderQuotaCompactAccount] {
         groups.flatMap { group in
             group.accounts.filter(\.included).map {
                 ProviderQuotaCompactAccount(provider: group.provider, account: $0)
@@ -28,6 +28,8 @@ struct ProviderQuotaCompactView: View {
     }
 
     var body: some View {
+        let groups = self.groups
+        let accounts = Self.accounts(in: groups)
         if !groups.isEmpty || store.quotas.providerQuotasLoading {
             Button {
                 presented.toggle()

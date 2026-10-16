@@ -13,30 +13,26 @@ enum SidebarSizing {
 }
 
 /// The navigation as a floating glass card: window controls, destinations,
-/// projects, then machines and quotas.
+/// projects, then machines and quotas. Each part observes what it shows, so
+/// chat, activity, and selection updates redraw only their own part.
 struct AppSidebar: View {
     @Environment(DieterStore.self) private var store
     @State private var folderEditor: NavigationFolderEditor?
-    @State private var unfiledDropTargeted = false
-    @State private var projectsHeaderHovering = false
-
-    /// The listed projects by ID; the core's layout names them in order.
-    private var projectsByID: [String: Dieter_V1_Project] {
-        Dictionary(
-            store.projects.filter { !$0.archived }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             topBand
-            primaryDestinations
+            SidebarPrimaryDestinations()
 
             GeometryReader { geometry in
                 ScrollView {
                     VStack(spacing: 0) {
-                        expandedProjects
+                        SidebarProjectsSection(folderEditor: $folderEditor)
                         Spacer(minLength: 0)
-                        sidebarStatus
+                        SidebarNavigationSyncStatus()
+                        SidebarStatusPanel()
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 8).padding(.top, 6).padding(.bottom, 4)
                     }
                     .frame(minHeight: geometry.size.height, alignment: .top)
                 }
@@ -44,7 +40,7 @@ struct AppSidebar: View {
             }
             .clipped()
             .e2eTarget("sidebar.scroll-region")
-            sidebarActions
+            SidebarActions()
                 .fixedSize(horizontal: false, vertical: true)
         }
         .dieterPanel(radius: DieterMetrics.sidebarCardRadius)
@@ -91,38 +87,48 @@ struct AppSidebar: View {
         .padding(.bottom, 6)
     }
 
-    @ViewBuilder private var primaryDestinations: some View {
-        let activeChats = store.chats.filter { !$0.archived }
-        let attention = Int(store.activity.summary.attention)
+    private func saveProjectFolder(editor: NavigationFolderEditor, name: String) {
+        if let folderID = editor.folderID {
+            store.renameFolder(.projects, folderID: folderID, name: name)
+        } else {
+            store.createFolder(.projects, name: name)
+        }
+    }
+}
+
+/// Inbox, Chats, Terminals, and Screens. Each count observes its own source.
+private struct SidebarPrimaryDestinations: View {
+    @Environment(DieterStore.self) private var store
+
+    var body: some View {
+        let section = store.section
         VStack(spacing: 1) {
-            DieterNavRow(title: "Inbox", symbol: "tray", selected: store.section == .inbox) {
-                if attention > 0 { DieterRowCount(count: attention, attention: true) }
+            DieterNavRow(title: "Inbox", symbol: "tray", selected: section == .inbox) {
+                SidebarInboxCount()
             } action: {
                 Task { await store.openInbox() }
             }
             .accessibilityIdentifier("sidebar.inbox").e2eTarget("sidebar.inbox")
 
-            DieterNavRow(title: "Chats", symbol: "bubble.left.and.bubble.right", selected: store.section == .chats) {
-                if !activeChats.isEmpty { DieterRowCount(count: activeChats.count) }
+            DieterNavRow(title: "Chats", symbol: "bubble.left.and.bubble.right", selected: section == .chats) {
+                SidebarChatsCount()
             } action: {
                 Task { await store.openChats() }
             }
             .accessibilityIdentifier("sidebar.all-chats").e2eTarget("sidebar.all-chats")
 
-            let runningTerminals = store.terminalsModel.terminals.filter { $0.status == "running" }.count
-            DieterNavRow(title: "Terminals", symbol: "terminal", selected: store.section == .terminals) {
-                if runningTerminals > 0 { DieterRowCount(count: runningTerminals) }
+            DieterNavRow(title: "Terminals", symbol: "terminal", selected: section == .terminals) {
+                SidebarTerminalsCount()
             } action: {
                 Task { await store.openTerminals() }
             }
             .accessibilityIdentifier("sidebar.terminals").e2eTarget("sidebar.terminals")
 
-            let screens = store.screensModel.connectedCount
             DieterNavRow(
                 title: "Screens", symbol: "rectangle.inset.filled.and.person.filled",
-                selected: store.section == .screens
+                selected: section == .screens
             ) {
-                if screens > 0 { DieterRowCount(count: screens) }
+                SidebarScreensCount()
             } action: {
                 store.openScreens()
             }
@@ -130,15 +136,70 @@ struct AppSidebar: View {
         }
         .padding(.horizontal, 8)
     }
+}
 
-    private var expandedProjects: some View {
+private struct SidebarInboxCount: View {
+    @Environment(DieterStore.self) private var store
+
+    var body: some View {
+        let attention = Int(store.activity.summary.attention)
+        if attention > 0 { DieterRowCount(count: attention, attention: true) }
+    }
+}
+
+private struct SidebarChatsCount: View {
+    @Environment(DieterStore.self) private var store
+
+    var body: some View {
+        let active = store.chats.count(where: { !$0.archived })
+        if active > 0 { DieterRowCount(count: active) }
+    }
+}
+
+private struct SidebarTerminalsCount: View {
+    @Environment(DieterStore.self) private var store
+
+    var body: some View {
+        let running = store.terminalsModel.terminals.count(where: { $0.status == "running" })
+        if running > 0 { DieterRowCount(count: running) }
+    }
+}
+
+private struct SidebarScreensCount: View {
+    @Environment(DieterStore.self) private var store
+
+    var body: some View {
+        let screens = store.screensModel.connectedCount
+        if screens > 0 { DieterRowCount(count: screens) }
+    }
+}
+
+/// The projects in the core's layout, in folders when there are any, with
+/// each project's active conversations. Rows take values, so an activity or
+/// selection change redraws only the rows it touches.
+private struct SidebarProjectsSection: View {
+    @Environment(DieterStore.self) private var store
+    @Binding var folderEditor: NavigationFolderEditor?
+    @State private var unfiledDropTargeted = false
+    @State private var projectsHeaderHovering = false
+
+    var body: some View {
         let layout = store.navigation.projects
-        let projectsByID = projectsByID
+        let projectsByID = Dictionary(
+            store.projects.filter { !$0.archived }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let projects = layout.order.compactMap { projectsByID[$0] }
         let folders = layout.folders
         let unfiledProjects = layout.unfiled.compactMap { projectsByID[$0] }
         let expanded = Set(layout.expanded), pinned = Set(layout.pinned)
         let activity = SidebarProjectActivity.group(store.inboxEntries)
+        let showsProject = [AppSection.board, .files, .changes, .schedules].contains(store.section)
+        let selectedProjectID: String? = showsProject ? store.selectedProjectID : nil
+        func row(_ project: Dieter_V1_Project, groupIDs: [String]) -> SidebarProjectNavigationRow {
+            SidebarProjectNavigationRow(
+                project: project, groupIDs: groupIDs, expanded: expanded.contains(project.id),
+                pinned: pinned.contains(project.id), selected: selectedProjectID == project.id,
+                activity: activity[project.id] ?? [])
+        }
         return VStack(alignment: .leading, spacing: 0) {
             DieterSectionHeader(title: "Projects") {
                 if projectsHeaderHovering {
@@ -182,9 +243,7 @@ struct AppSidebar: View {
 
             if folders.isEmpty {
                 ForEach(projects, id: \.id) { project in
-                    projectNavigationRow(
-                        project, groupIDs: layout.order, expanded: expanded.contains(project.id),
-                        pinned: pinned.contains(project.id), activity: activity[project.id] ?? [])
+                    row(project, groupIDs: layout.order)
                 }
             } else {
                 ForEach(folders, id: \.id) { folder in
@@ -200,27 +259,46 @@ struct AppSidebar: View {
                         delete: { store.deleteFolder(.projects, folderID: folder.id) }
                     ) {
                         ForEach(folderProjects, id: \.id) { project in
-                            projectNavigationRow(
-                                project, groupIDs: folder.itemIds, expanded: expanded.contains(project.id),
-                                pinned: pinned.contains(project.id), activity: activity[project.id] ?? [])
+                            row(project, groupIDs: folder.itemIds)
                         }
                     }
                 }
 
                 ForEach(unfiledProjects, id: \.id) { project in
-                    projectNavigationRow(
-                        project, groupIDs: layout.unfiled, expanded: expanded.contains(project.id),
-                        pinned: pinned.contains(project.id), activity: activity[project.id] ?? [])
+                    row(project, groupIDs: layout.unfiled)
                 }
             }
-            SidebarProjectInsertionTarget(beforeProjectID: nil) {
-                store.moveProject($0, before: nil, ungrouped: false)
-            }
+            SidebarProjectInsertionTarget(beforeProjectID: nil)
         }
         .padding(.horizontal, 8).padding(.top, 14).padding(.bottom, 10)
     }
+}
 
-    @ViewBuilder private var sidebarStatus: some View {
+/// A project row and the insertion target above it. A drop moves the project
+/// within `groupIDs`, the projects shown with it.
+private struct SidebarProjectNavigationRow: View {
+    let project: Dieter_V1_Project
+    let groupIDs: [String]
+    let expanded: Bool
+    let pinned: Bool
+    let selected: Bool
+    let activity: [InboxActivityEntry]
+
+    var body: some View {
+        SidebarProjectInsertionTarget(beforeProjectID: project.id)
+        SidebarProjectRow(
+            project: project, projectIDs: groupIDs, expanded: expanded, pinned: pinned, selected: selected,
+            activity: activity
+        )
+        .equatable()
+    }
+}
+
+/// Navigation edits waiting to sync, or why they cannot.
+private struct SidebarNavigationSyncStatus: View {
+    @Environment(DieterStore.self) private var store
+
+    var body: some View {
         if store.navigationPendingCount > 0 || store.navigationSyncError != nil {
             Text(
                 store.navigationPendingCount > 0
@@ -232,13 +310,14 @@ struct AppSidebar: View {
             )
             .accessibilityIdentifier("navigation.sync-status")
         }
-
-        SidebarStatusPanel()
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 8).padding(.top, 6).padding(.bottom, 4)
     }
+}
 
-    private var sidebarActions: some View {
+/// Add a Git project, and Settings, highlighted while Settings shows.
+private struct SidebarActions: View {
+    @Environment(DieterStore.self) private var store
+
+    var body: some View {
         HStack(spacing: 4) {
             Button {
                 store.createProjectPresented = true
@@ -266,35 +345,6 @@ struct AppSidebar: View {
             .accessibilityIdentifier("sidebar.settings").e2eTarget("sidebar.settings")
         }
         .padding(.horizontal, 8).padding(.bottom, 8).padding(.top, 2)
-    }
-
-    /// A project row and the insertion target above it. A drop moves the
-    /// project within `groupIDs`, the projects shown with it.
-    @ViewBuilder
-    private func projectNavigationRow(
-        _ project: Dieter_V1_Project, groupIDs: [String], expanded: Bool, pinned: Bool,
-        activity: [InboxActivityEntry]
-    ) -> some View {
-        SidebarProjectInsertionTarget(beforeProjectID: project.id) {
-            store.moveProject($0, before: project.id, ungrouped: false)
-        }
-        SidebarProjectRow(
-            project: project,
-            projectIDs: groupIDs,
-            expanded: expanded,
-            pinned: pinned,
-            activity: activity,
-            toggleExpanded: { store.setProjectExpanded(project.id, expanded: !expanded) },
-            moveProject: { store.moveProject($0, before: $1, ungrouped: false) }
-        )
-    }
-
-    private func saveProjectFolder(editor: NavigationFolderEditor, name: String) {
-        if let folderID = editor.folderID {
-            store.renameFolder(.projects, folderID: folderID, name: name)
-        } else {
-            store.createFolder(.projects, name: name)
-        }
     }
 }
 

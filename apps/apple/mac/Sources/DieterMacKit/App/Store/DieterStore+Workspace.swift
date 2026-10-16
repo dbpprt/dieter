@@ -34,7 +34,8 @@ extension DieterStore {
                 conversationID: selectedCardID ?? selectedChatID ?? ""),
             core: core, card: card
         )
-        worktreeChanges.authorName = NSFullUserName()
+        // Every selection change rebinds; the account's name is looked up once.
+        if worktreeChanges.authorName.isEmpty { worktreeChanges.authorName = NSFullUserName() }
         worktreeChanges.onOpenFiles = { [weak self] card, path in
             await self?.openWorkspaceFiles(card: card, opening: path)
         }

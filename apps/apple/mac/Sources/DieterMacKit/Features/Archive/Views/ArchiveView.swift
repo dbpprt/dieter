@@ -4,18 +4,19 @@ struct ArchiveView: View {
     @Environment(DieterStore.self) private var store
     @State private var scope = "Cards"
 
-    private var itemCount: Int {
+    private func itemCount(archivedChats: Int) -> Int {
         switch scope {
-        case "Chats": store.chats.filter(\.archived).count
+        case "Chats": archivedChats
         case "Projects": store.archivedProjects.count
         default: store.archivedCards.count
         }
     }
 
     var body: some View {
+        let archivedChats = store.chats.filter(\.archived)
         DieterSectionScaffold {
             DieterTitleCapsule(
-                title: "Archive", count: itemCount, symbol: "archivebox",
+                title: "Archive", count: itemCount(archivedChats: archivedChats.count), symbol: "archivebox",
                 detail: "archived \(scope.lowercased())")
             DieterSegmentTrack {
                 ForEach(["Cards", "Chats", "Projects"], id: \.self) { item in
@@ -50,7 +51,7 @@ struct ArchiveView: View {
                             }
                         }
                     } else if scope == "Chats" {
-                        ForEach(store.chats.filter(\.archived), id: \.id) { card in
+                        ForEach(archivedChats, id: \.id) { card in
                             ArchiveRow(title: card.title, detail: card.updatedAt) {
                                 Task {
                                     await store.archive(card, archived: false); await store.loadArchive()

@@ -241,10 +241,8 @@ struct ScheduleEditor: View {
             HStack {
                 Text("Timezone").font(.system(size: 12, weight: .semibold))
                 Spacer()
-                Picker("Timezone", selection: $draft.timezone) {
-                    ForEach(timezones, id: \.self) { Text($0).tag($0) }
-                }
-                .labelsHidden().frame(maxWidth: 230)
+                ScheduleTimezonePicker(selection: draft.timezone, timezones: timezones) { draft.timezone = $0 }
+                    .equatable()
             }
 
             Divider().overlay(DieterTheme.border)
@@ -410,5 +408,25 @@ struct ScheduleEditor: View {
         } else {
             saveError = model.errorMessage ?? ""
         }
+    }
+}
+
+/// Every known time zone, as a picker that typing elsewhere in the editor
+/// leaves alone: it redraws only when the choice or the list changes.
+private struct ScheduleTimezonePicker: View, Equatable {
+    let selection: String
+    let timezones: [String]
+    /// Always sets the editor's draft, so pickers compare by what they show.
+    let select: (String) -> Void
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.selection == rhs.selection && lhs.timezones == rhs.timezones
+    }
+
+    var body: some View {
+        Picker("Timezone", selection: Binding(get: { selection }, set: { select($0) })) {
+            ForEach(timezones, id: \.self) { Text($0).tag($0) }
+        }
+        .labelsHidden().frame(maxWidth: 230)
     }
 }

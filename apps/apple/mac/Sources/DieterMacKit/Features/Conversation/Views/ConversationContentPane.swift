@@ -23,7 +23,7 @@ struct ConversationContentPane: View {
     @Bindable var model: ConversationContentModel
 
     private var standalone: Bool {
-        context.model.state.chat
+        context.model.chrome.chat
     }
     private var fixedTabs: [ConversationFixedSidebarTab] {
         ConversationFixedSidebarTab.visible(standalone: standalone)
@@ -167,7 +167,7 @@ struct ConversationWorkspaceTabBar: View {
 
     private var fixedTabs: [ConversationFixedSidebarTab] {
         ConversationFixedSidebarTab.visible(
-            standalone: context.model.state.chat)
+            standalone: context.model.chrome.chat)
     }
 
     private var selectedFixedTab: ConversationFixedSidebarTab? {
@@ -264,7 +264,7 @@ struct ConversationWorkspaceTabBar: View {
         case .changes:
             Int((context.selectedCard ?? context.selectedDetail?.card)?.workspace.changedFiles ?? 0)
         case .subagents:
-            context.conversation?.conversation.subagents.count ?? 0
+            context.model.subagentCount
         }
     }
 

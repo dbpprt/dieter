@@ -144,12 +144,14 @@ struct CommandPalette: View {
     private func search() async {
         let query = query
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            hits = []
+            if !hits.isEmpty { hits = [] }
             return
         }
         guard let result = try? await store.core.dispatch({ $0.search = .with { $0.query = query } }),
             !Task.isCancelled, query == self.query
         else { return }
-        hits = result.searchResults.hits
+        // The catalog revision reruns the search on every workspace change;
+        // unchanged hits leave the list alone.
+        if hits != result.searchResults.hits { hits = result.searchResults.hits }
     }
 }

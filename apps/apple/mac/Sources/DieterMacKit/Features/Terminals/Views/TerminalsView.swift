@@ -16,9 +16,10 @@ struct TerminalsView: View {
     private var selected: Dieter_V1_Terminal? { model.selectedTerminal }
 
     var body: some View {
+        let entries = visibleEntries
         DieterSectionScaffold {
             DieterTitleCapsule(
-                title: "Terminals", count: visibleEntries.isEmpty ? nil : visibleEntries.count,
+                title: "Terminals", count: entries.isEmpty ? nil : entries.count,
                 detail: model.terminalScopeCardID == nil
                     ? store.terminalOverview.terminalOverviewStatus : model.terminalStatus)
         } trailing: {
@@ -39,19 +40,19 @@ struct TerminalsView: View {
             .accessibilityIdentifier("terminals.new").disabled(!model.isLive)
         } content: {
             VStack(spacing: 0) {
-                if !visibleEntries.isEmpty, visibleLoading || visibleError != nil {
+                if !entries.isEmpty, visibleLoading || visibleError != nil {
                     LoadFeedback(
                         title: "Refreshing terminals…", error: visibleError,
                         retry: { Task { await store.loadTerminals() } }, compact: true)
                 }
-                if !visibleEntries.isEmpty {
-                    terminalTabs
+                if !entries.isEmpty {
+                    terminalTabs(entries)
                     Rectangle().fill(DieterTheme.hairline).frame(height: 1)
                 }
 
-                if visibleLoading && visibleEntries.isEmpty {
+                if visibleLoading && entries.isEmpty {
                     LoadFeedback(title: "Loading persistent terminals…")
-                } else if let error = visibleError, visibleEntries.isEmpty {
+                } else if let error = visibleError, entries.isEmpty {
                     LoadFeedback(title: "Terminals", error: error, retry: { Task { await store.loadTerminals() } })
                 } else if let selected {
                     terminalWorkspace(selected)
@@ -122,11 +123,11 @@ struct TerminalsView: View {
         model.terminalScopeCardID == nil ? store.terminalOverview.terminalOverviewError : model.terminalError
     }
 
-    private var terminalTabs: some View {
+    private func terminalTabs(_ entries: [TerminalOverviewEntry]) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 DieterSegmentTrack {
-                    ForEach(visibleEntries) { entry in
+                    ForEach(entries) { entry in
                         TerminalTab(
                             terminal: entry.terminal,
                             row: entry.row,
@@ -165,11 +166,9 @@ struct TerminalsView: View {
 
     private func terminalWorkspace(_ terminal: Dieter_V1_Terminal) -> some View {
         VStack(spacing: 0) {
-            RemoteTerminalSurface(
-                terminalID: terminal.id,
-                initialColumns: Int(terminal.columns),
-                initialRows: Int(terminal.rows),
-                screen: model.terminalScreens[terminal.id] ?? TerminalScreenState(),
+            ObservedTerminalSurface(
+                model: model,
+                terminal: terminal,
                 acceptsInput: model.row(terminal).acceptsInput,
                 send: { model.sendTerminalInput(id: terminal.id, data: $0) },
                 resize: { columns, rows in
@@ -606,6 +605,30 @@ private struct NewTerminalSheet: View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
             .stroke(
                 focused ? DieterTheme.shellDeep.opacity(0.85) : DieterTheme.strongBorder, lineWidth: focused ? 1.5 : 1)
+    }
+}
+
+/// A terminal surface that alone observes its screen: output redraws the
+/// emulator without re-rendering the tabs, status bar, or pane around it.
+struct ObservedTerminalSurface: View {
+    let model: TerminalsModel
+    let terminal: Dieter_V1_Terminal
+    let acceptsInput: Bool
+    var active = true
+    let send: (Data) -> Void
+    let resize: (Int, Int) -> Void
+
+    var body: some View {
+        RemoteTerminalSurface(
+            terminalID: terminal.id,
+            initialColumns: Int(terminal.columns),
+            initialRows: Int(terminal.rows),
+            screen: model.terminalScreens[terminal.id] ?? TerminalScreenState(),
+            acceptsInput: acceptsInput,
+            send: send,
+            resize: resize,
+            active: active
+        )
     }
 }
 

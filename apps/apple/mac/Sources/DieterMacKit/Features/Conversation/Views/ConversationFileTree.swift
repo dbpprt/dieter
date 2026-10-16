@@ -135,6 +135,7 @@ struct ConversationFileNavigator: View {
     }
 
     var body: some View {
+        let rows = self.rows
         VStack(spacing: 0) {
             HStack {
                 Text("Files").font(.system(size: 12, weight: .semibold))

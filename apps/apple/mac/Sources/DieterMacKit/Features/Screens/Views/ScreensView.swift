@@ -133,57 +133,10 @@ struct ScreensView: View {
     }
 
     private func screenWorkspace(_ session: ScreenShareSession) -> some View {
-        let controller = session.controller
-        return VStack(spacing: 0) {
+        VStack(spacing: 0) {
             content(session)
             Divider().overlay(DieterTheme.border)
-            HStack(spacing: 8) {
-                Circle().fill(controller.session.tone.color).frame(width: 6, height: 6)
-                Text(controller.phaseLabel)
-                if !controller.routeLabel.isEmpty {
-                    Text("·")
-                    Text("\(controller.routeLabel) signaling")
-                }
-                Spacer()
-                Label(
-                    controller.session.controlLabel,
-                    systemImage: controller.controlActive ? "cursorarrow.motionlines" : "eye"
-                )
-                if controller.controlActive {
-                    Text("·")
-                    Text("⌘⇧Esc releases input")
-                } else if !controller.controlUnavailableReason.isEmpty {
-                    Text("·")
-                    Text(controller.controlUnavailableReason)
-                }
-                Text("·")
-                if !controller.session.viewersLabel.isEmpty {
-                    Text(controller.session.viewersLabel)
-                }
-                if !controller.controlTransferError.isEmpty {
-                    Text(controller.controlTransferError).foregroundStyle(.orange)
-                }
-                if !controller.clipboardError.isEmpty {
-                    Text("Clipboard: \(controller.clipboardError)").foregroundStyle(.orange).lineLimit(1)
-                        .help(controller.clipboardError)
-                }
-                if controller.session.streaming {
-                    Text(controller.session.metadata)
-                }
-                Text("·")
-                Text(controller.latencyLabel)
-                    .monospacedDigit()
-                    .fixedSize()
-                    .help(
-                        "Network round-trip latency to the remote Mac. Does not include capture, encoding, decoding or display delay. A dash means no current measurement is available."
-                    )
-                    .accessibilityLabel("Network round-trip latency: \(controller.latencyLabel)")
-                    .accessibilityIdentifier("screens.latency")
-            }
-            .font(.system(size: 10, weight: .medium))
-            .foregroundStyle(DieterTheme.tertiary)
-            .padding(.horizontal, 12)
-            .frame(height: 28)
+            ScreenSessionStatusBar(controller: session.controller)
         }
         .onAppear {
             session.recordActivity()
@@ -293,6 +246,62 @@ struct ScreensView: View {
         }
         .padding(28)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// The session's status line. It alone follows the host's latency and stream
+/// statistics, so their reports redraw this bar rather than the screen.
+private struct ScreenSessionStatusBar: View {
+    let controller: RemoteDesktopController
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle().fill(controller.session.tone.color).frame(width: 6, height: 6)
+            Text(controller.phaseLabel)
+            if !controller.routeLabel.isEmpty {
+                Text("·")
+                Text("\(controller.routeLabel) signaling")
+            }
+            Spacer()
+            Label(
+                controller.session.controlLabel,
+                systemImage: controller.controlActive ? "cursorarrow.motionlines" : "eye"
+            )
+            if controller.controlActive {
+                Text("·")
+                Text("⌘⇧Esc releases input")
+            } else if !controller.controlUnavailableReason.isEmpty {
+                Text("·")
+                Text(controller.controlUnavailableReason)
+            }
+            Text("·")
+            if !controller.session.viewersLabel.isEmpty {
+                Text(controller.session.viewersLabel)
+            }
+            if !controller.controlTransferError.isEmpty {
+                Text(controller.controlTransferError).foregroundStyle(.orange)
+            }
+            if !controller.clipboardError.isEmpty {
+                Text("Clipboard: \(controller.clipboardError)").foregroundStyle(.orange).lineLimit(1)
+                    .help(controller.clipboardError)
+            }
+            if controller.session.streaming {
+                Text(controller.session.metadata)
+            }
+            Text("·")
+            Text(controller.latencyLabel)
+                .monospacedDigit()
+                .fixedSize()
+                .help(
+                    "Network round-trip latency to the remote Mac. Does not include capture, encoding, decoding or display delay. A dash means no current measurement is available."
+                )
+                .accessibilityLabel("Network round-trip latency: \(controller.latencyLabel)")
+                .accessibilityIdentifier("screens.latency")
+        }
+        .font(.system(size: 10, weight: .medium))
+        .foregroundStyle(DieterTheme.tertiary)
+        .padding(.horizontal, 12)
+        .frame(height: 28)
     }
 }
 
@@ -429,8 +438,8 @@ struct ScreenShareOptions: View {
 
     @ViewBuilder var body: some View {
         if controller.canTransferControl {
-            Button(SharedRules.shared.screenControlAction(controlActive: controller.sessionState.controlActive)) {
-                controller.transferControl(take: !controller.sessionState.controlActive)
+            Button(SharedRules.shared.screenControlAction(controlActive: controller.hostControlActive)) {
+                controller.transferControl(take: !controller.hostControlActive)
             }
             .buttonStyle(DieterBarButtonStyle(size: size))
             .disabled(controller.controlTransferPending)
@@ -510,7 +519,7 @@ struct ScreenShareOptions: View {
                     Button(choice.label) { controller.selectCodec(choice.codec) }
                 }
             }
-            if !controller.sessionState.codec.isEmpty { Text("Codec: \(controller.sessionState.codec)") }
+            if !controller.codec.isEmpty { Text("Codec: \(controller.codec)") }
             if !controller.codecFallbackReason.isEmpty { Text(controller.codecFallbackReason) }
             Button("Refresh screen") { controller.configure(refresh: true) }
         } label: {

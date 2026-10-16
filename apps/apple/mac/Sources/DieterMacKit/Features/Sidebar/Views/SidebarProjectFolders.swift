@@ -92,9 +92,10 @@ struct SidebarProjectFolderGroup<Content: View>: View {
     }
 }
 
+/// Drops a project above `beforeProjectID`, else at the end of the list.
 struct SidebarProjectInsertionTarget: View {
+    @Environment(DieterStore.self) private var store
     let beforeProjectID: String?
-    let moveProject: (String) -> Void
     @State private var targeted = false
 
     var body: some View {
@@ -114,7 +115,7 @@ struct SidebarProjectInsertionTarget: View {
             guard let value = values.first, let payload = SidebarProjectDragPayload(value),
                 payload.projectID != beforeProjectID
             else { return false }
-            moveProject(payload.projectID)
+            store.moveProject(payload.projectID, before: beforeProjectID, ungrouped: false)
             return true
         } isTargeted: {
             targeted = $0

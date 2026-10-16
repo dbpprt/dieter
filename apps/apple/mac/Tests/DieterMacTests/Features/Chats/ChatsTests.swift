@@ -37,4 +37,20 @@ struct ChatsTests {
         #expect(store.selectedChatID == lastUsedChat.id)
         #expect(store.lastUsedChatID == lastUsedChat.id)
     }
+
+    @Test @MainActor func chatUnreadFollowsTheCardAcrossRepeatedReads() {
+        let store = DieterStore(liveEnvironment: false)
+        var chat = Dieter_V1_Card()
+        chat.id = "c_unread"
+        chat.scope = "chat"
+        chat.responseSeq = 2
+        chat.seenResponseSeq = 1
+        // Rows ask on every render; a kept answer must follow the card.
+        #expect(store.isChatUnread(chat))
+        #expect(store.isChatUnread(chat))
+        chat.seenResponseSeq = 2
+        #expect(!store.isChatUnread(chat))
+        chat.responseSeq = 3
+        #expect(store.isChatUnread(chat))
+    }
 }

@@ -3,10 +3,16 @@ import DieterClientAPI
 import DieterCore
 import Foundation
 
+private let checkoutChoicesRule = SharedRuleEntityMemo<Dieter_V1_Project, [Dieter_V1_Checkout]>()
+
 extension Dieter_V1_Project {
     /// The checkouts a destination picker offers: every attached one, in order.
+    /// Pickers and sidebar rows ask as they render; the answer is kept while
+    /// the project is unchanged.
     package var checkoutChoices: [Dieter_V1_Checkout] {
-        ClientCheckouts(rules: SharedRules.shared.checkoutChoices(project: rulesData)).checkouts
+        checkoutChoicesRule.value(id, input: self) {
+            ClientCheckouts(rules: SharedRules.shared.checkoutChoices(project: rulesData)).checkouts
+        }
     }
 }
 

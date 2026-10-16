@@ -1,4 +1,5 @@
 import DieterAPI
+import DieterCore
 import Foundation
 import Observation
 
@@ -43,6 +44,21 @@ final class WorkspaceReplica {
     var chatProjects: [Dieter_V1_Project] = []
     private(set) var commandSearchRevision: UInt64 = 0
     @ObservationIgnored private var sortedProjectsCache: [Dieter_V1_Project]?
+    /// The core's chat rule by a card's scope and board. Every workspace fold
+    /// asks it of every card, and few combinations exist.
+    private static let chatRule = SharedRuleMemo<ChatRuleInput, Bool>(limit: 1_024)
+
+    private struct ChatRuleInput: Hashable, Sendable {
+        let scope: String
+        let boardID: String
+    }
+
+    /// Whether `card` is an unfiled chat, as the core decides.
+    func isChat(_ card: Dieter_V1_Card) -> Bool {
+        Self.chatRule.value(ChatRuleInput(scope: card.scope, boardID: card.boardID)) {
+            SharedRules.shared.isChat(scope: card.scope, boardId: card.boardID)
+        }
+    }
 
     /// The core's order of the workspace's projects.
     var projectOrder: [String] = [] { didSet { if projectOrder != oldValue { sortedProjectsCache = nil } } }

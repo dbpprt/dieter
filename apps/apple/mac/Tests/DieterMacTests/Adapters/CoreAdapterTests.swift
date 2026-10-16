@@ -64,4 +64,28 @@ struct CoreAdapterTests {
         #expect(received.last == 1)
         subscription.close()
     }
+
+    @MainActor
+    @Test func aBurstOfUpdatesIsAppliedInOrderAndSettledOnce() {
+        let core = ScriptedCoreClient()
+        var received: [UInt64] = []
+        var settled: [[UInt64]] = []
+        var resets = 0
+        let subscription = SliceSubscription(
+            client: core, slice: .workspace, onReset: { resets += 1 }, onSettled: { settled.append(received) },
+            onUpdate: { received.append($0.sequence) })
+        core.emit(.workspace, latest: false) { $0.workspace = ClientWorkspaceSlice() }
+        core.emit(.workspace, latest: false) { $0.workspaceDelta = ClientWorkspaceDelta() }
+        #expect(received == [1, 2])
+        #expect(settled.isEmpty, "a queued update follows")
+        core.emit(.workspace) { $0.workspaceDelta = ClientWorkspaceDelta() }
+        #expect(settled == [[1, 2, 3]])
+        // A gap behind an unsettled update settles what was applied before the reset.
+        core.emit(.workspace, latest: false) { $0.workspaceDelta = ClientWorkspaceDelta() }
+        core.emit(.workspace, skipSequence: true) { $0.workspaceDelta = ClientWorkspaceDelta() }
+        #expect(received == [1, 2, 3, 4])
+        #expect(settled == [[1, 2, 3], [1, 2, 3, 4]])
+        #expect(resets == 1)
+        subscription.close()
+    }
 }

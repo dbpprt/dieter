@@ -5,8 +5,9 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// A project's section of the chats pane, as the core lays it out: a
-/// preview of its newest chats, or every one while it shows all.
-struct ChatProjectGroup: View {
+/// preview of its newest chats, or every one while it shows all. It takes
+/// values only, so an update to another project's chats leaves it alone.
+struct ChatProjectGroup: View, Equatable {
     @Environment(DieterStore.self) private var store
     let project: Dieter_V1_Project
     /// The projects the pane shows, in order, for drops between them.
@@ -14,11 +15,16 @@ struct ChatProjectGroup: View {
     let section: ClientChatProjectSection
     let chats: [Dieter_V1_Card]
     let showArchived: Bool
-    let toggleExpanded: () -> Void
-    let toggleCollapsed: () -> Void
-    let moveProject: (String, String?) -> Void
     @State private var pageIndex = 0
     @State private var dropTargeted = false
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.project == rhs.project && lhs.projectIDs == rhs.projectIDs && lhs.section == rhs.section
+            && lhs.chats == rhs.chats && lhs.showArchived == rhs.showArchived
+    }
+
+    private func toggleExpanded() { store.setChatsShowAll(project.id, showAll: !section.showAll) }
+    private func toggleCollapsed() { store.setChatSectionCollapsed(project.id, collapsed: !section.collapsed) }
 
     private var collapsed: Bool { !section.showChats }
 
@@ -89,7 +95,7 @@ struct ChatProjectGroup: View {
                 } else {
                     beforeProjectID = nil
                 }
-                moveProject(payload.projectID, beforeProjectID)
+                store.moveProject(payload.projectID, before: beforeProjectID, ungrouped: true)
                 return true
             } isTargeted: {
                 dropTargeted = $0
@@ -304,7 +310,7 @@ struct ChatGroupCard<Footer: View>: View {
                         movePinnedChat(draggedChatID, chat.id)
                     }
                 } else {
-                    ChatRow(card: chat)
+                    ChatRow(card: chat).equatable()
                 }
             }
             footer

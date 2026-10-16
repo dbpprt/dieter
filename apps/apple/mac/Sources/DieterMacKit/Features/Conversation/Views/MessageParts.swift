@@ -3,6 +3,59 @@ import DieterClientAPI
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// One step: prose, an attachment, a tool call, a diagnostic that needs
+/// attention, or the message's delegated agents. Its part is resolved by the
+/// row, so an unchanged step skips rendering while its message streams.
+struct TimelineStepView: View, Equatable {
+    let step: ClientTimelineStep
+    let part: Dieter_V1_MessagePart?
+    let subagents: [Dieter_V1_Subagent]
+    let inUserBubble: Bool
+
+    init(
+        step: ClientTimelineStep, part: Dieter_V1_MessagePart?, subagents: [Dieter_V1_Subagent] = [],
+        inUserBubble: Bool
+    ) {
+        self.step = step
+        self.part = part
+        self.subagents = subagents
+        self.inUserBubble = inUserBubble
+    }
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.inUserBubble == rhs.inUserBubble && lhs.step == rhs.step && lhs.part == rhs.part
+            && lhs.subagents == rhs.subagents
+    }
+
+    var body: some View {
+        if step.kind == .subagents {
+            if !subagents.isEmpty { SubagentTimelineGroup(agents: subagents) }
+        } else if let part {
+            switch step.kind {
+            case .tool:
+                ToolCallView(messageID: step.messageID, part: part, step: step)
+            case .attention:
+                VStack(alignment: .leading, spacing: 6) {
+                    if !part.text.isEmpty {
+                        ConversationMarkdownView(source: part.text, inUserBubble: inUserBubble)
+                    }
+                    if !part.errorText.isEmpty, part.errorText != part.text {
+                        Text(part.errorText).font(.caption).foregroundStyle(DieterTheme.failed)
+                    }
+                    if part.text.isEmpty && part.errorText.isEmpty {
+                        Text(
+                            part.state.isEmpty ? "Needs attention" : part.state.replacingOccurrences(of: "-", with: " ")
+                        )
+                        .font(.caption).foregroundStyle(DieterTheme.attention)
+                    }
+                }
+            default:
+                MessagePartView(messageID: step.messageID, part: part, inUserBubble: inUserBubble)
+            }
+        }
+    }
+}
+
 /// A prose, attachment, or other part of a message.
 struct MessagePartView: View {
     let messageID: String

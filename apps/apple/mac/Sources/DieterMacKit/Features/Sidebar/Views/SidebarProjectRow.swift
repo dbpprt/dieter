@@ -23,25 +23,31 @@ enum SidebarProjectActivity {
 
 /// A project: its name, a strip of its active conversations, and, while
 /// expanded, its destinations and the conversations that are running or wait.
-struct SidebarProjectRow: View {
+/// It takes values only, so it redraws when its own project, layout,
+/// selection, or activity changes.
+struct SidebarProjectRow: View, Equatable {
     @Environment(DieterStore.self) private var store
     let project: Dieter_V1_Project
     let projectIDs: [String]
     let expanded: Bool
     let pinned: Bool
+    /// The project shows in a project destination.
+    let selected: Bool
     let activity: [InboxActivityEntry]
-    let toggleExpanded: () -> Void
-    let moveProject: (String, String?) -> Void
     @State private var dropTargeted = false
     @State private var hovering = false
 
-    private var selected: Bool {
-        store.selectedProjectID == project.id && [.board, .files, .changes, .schedules].contains(store.section)
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.project == rhs.project && lhs.projectIDs == rhs.projectIDs && lhs.expanded == rhs.expanded
+            && lhs.pinned == rhs.pinned && lhs.selected == rhs.selected && lhs.activity == rhs.activity
     }
 
     private var accessibilityLabel: String {
-        "\(project.name), \(SharedRules.shared.count(count: Int32(project.checkoutChoices.count), noun: "checkout", plural: ""))"
+        let checkouts = Int32(project.checkoutChoices.count)
+        return "\(project.name), \(SharedRules.shared.count(count: checkouts, noun: "checkout", plural: ""))"
     }
+
+    private func toggleExpanded() { store.setProjectExpanded(project.id, expanded: !expanded) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -164,7 +170,7 @@ struct SidebarProjectRow: View {
                 } else {
                     beforeProjectID = nil
                 }
-                moveProject(payload.projectID, beforeProjectID)
+                store.moveProject(payload.projectID, before: beforeProjectID, ungrouped: false)
                 return true
             } isTargeted: {
                 dropTargeted = $0
@@ -219,6 +225,7 @@ private struct SidebarProjectTabs: View {
     private var current: Bool { store.selectedProjectID == project.id }
 
     var body: some View {
+        let projectIsUnavailable = projectIsUnavailable
         HStack(spacing: 2) {
             if let board {
                 tab(
@@ -370,49 +377,7 @@ private struct ProjectContextMenuModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .contextMenu {
-                let pinned = store.navigation.projects.pinned.contains(project.id)
-                Button(pinned ? "Unpin project" : "Pin project", systemImage: pinned ? "pin.slash" : "pin") {
-                    store.setProjectPinned(project.id, pinned: !pinned)
-                }
-                Divider()
-                Button("Rename project…", systemImage: "pencil") {
-                    store.presentRenameProject(projectID: project.id)
-                }
-                Button("Edit project…", systemImage: "slider.horizontal.3") {
-                    store.presentProjectEditor(projectID: project.id)
-                }
-                .disabled(!store.projectIsAvailable(project.id))
-                Button("New board…", systemImage: "plus") {
-                    store.presentNewBoard(projectID: project.id)
-                }
-                .disabled(!store.projectIsAvailable(project.id))
-                let folders = store.navigation.projects.folders
-                if !folders.isEmpty {
-                    Divider()
-                    Menu("Move to folder", systemImage: "folder") {
-                        ForEach(folders, id: \.id) { folder in
-                            Button {
-                                moveProject(to: folder.id)
-                            } label: {
-                                if folder.itemIds.contains(project.id) {
-                                    Label(folder.name, systemImage: "checkmark")
-                                } else {
-                                    Text(folder.name)
-                                }
-                            }
-                        }
-                        if folders.folder(containing: project.id) != nil {
-                            Divider()
-                            Button("No folder", systemImage: "arrow.up.backward") {
-                                moveProject(to: nil)
-                            }
-                        }
-                    }
-                }
-                Divider()
-                Button("Delete project…", systemImage: "trash", role: .destructive) {
-                    deleteConfirmationPresented = true
-                }
+                ProjectMenuItems(project: project) { deleteConfirmationPresented = true }
             }
             .confirmationDialog(
                 "Delete \(project.name) from Dieter?",
@@ -428,6 +393,58 @@ private struct ProjectContextMenuModifier: ViewModifier {
                     "This removes the project from the sidebar without deleting its Git working tree. You can restore it from Archive."
                 )
             }
+    }
+}
+
+/// A project's context menu. Its layout and availability reads belong to the
+/// menu, so they do not redraw every project row.
+private struct ProjectMenuItems: View {
+    @Environment(DieterStore.self) private var store
+    let project: Dieter_V1_Project
+    let delete: () -> Void
+
+    var body: some View {
+        let pinned = store.navigation.projects.pinned.contains(project.id)
+        Button(pinned ? "Unpin project" : "Pin project", systemImage: pinned ? "pin.slash" : "pin") {
+            store.setProjectPinned(project.id, pinned: !pinned)
+        }
+        Divider()
+        Button("Rename project…", systemImage: "pencil") {
+            store.presentRenameProject(projectID: project.id)
+        }
+        Button("Edit project…", systemImage: "slider.horizontal.3") {
+            store.presentProjectEditor(projectID: project.id)
+        }
+        .disabled(!store.projectIsAvailable(project.id))
+        Button("New board…", systemImage: "plus") {
+            store.presentNewBoard(projectID: project.id)
+        }
+        .disabled(!store.projectIsAvailable(project.id))
+        let folders = store.navigation.projects.folders
+        if !folders.isEmpty {
+            Divider()
+            Menu("Move to folder", systemImage: "folder") {
+                ForEach(folders, id: \.id) { folder in
+                    Button {
+                        moveProject(to: folder.id)
+                    } label: {
+                        if folder.itemIds.contains(project.id) {
+                            Label(folder.name, systemImage: "checkmark")
+                        } else {
+                            Text(folder.name)
+                        }
+                    }
+                }
+                if folders.folder(containing: project.id) != nil {
+                    Divider()
+                    Button("No folder", systemImage: "arrow.up.backward") {
+                        moveProject(to: nil)
+                    }
+                }
+            }
+        }
+        Divider()
+        Button("Delete project…", systemImage: "trash", role: .destructive, action: delete)
     }
 
     private func moveProject(to folderID: String?) {

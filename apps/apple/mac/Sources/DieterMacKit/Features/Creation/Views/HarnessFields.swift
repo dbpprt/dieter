@@ -43,9 +43,10 @@ struct AgentPickerFields: View {
 struct AgentControlFields: View {
     let catalog: Dieter_V1_HarnessCatalog
     @Binding var selection: Dieter_V1_HarnessSelection
+    @State private var resolved = AgentControlsMemo()
 
     var body: some View {
-        AgentPickerFields(controls: Self.controls(selection, catalog: catalog)) { choice in
+        AgentPickerFields(controls: resolved.controls(selection, catalog: catalog)) { choice in
             selection = Self.controls(selection, catalog: catalog, choice: choice).selection
         }
     }
@@ -59,6 +60,26 @@ struct AgentControlFields: View {
         return ClientAgentControlsState(
             rules: SharedRules.shared.agentControls(
                 selection: selection.rulesData, catalog: catalog.rulesData, locked: false, choice: choiceData))
+    }
+}
+
+/// The pickers last resolved for a selection and catalog. A form redraws its
+/// agent fields as other fields change; only a new selection or catalog asks
+/// the core again, rather than serializing the whole catalog on every keystroke.
+@MainActor
+private final class AgentControlsMemo {
+    private var selection: Dieter_V1_HarnessSelection?
+    private var catalog: Dieter_V1_HarnessCatalog?
+    private var value = ClientAgentControlsState()
+
+    func controls(
+        _ selection: Dieter_V1_HarnessSelection, catalog: Dieter_V1_HarnessCatalog
+    ) -> ClientAgentControlsState {
+        if selection == self.selection, catalog == self.catalog { return value }
+        value = AgentControlFields.controls(selection, catalog: catalog)
+        self.selection = selection
+        self.catalog = catalog
+        return value
     }
 }
 

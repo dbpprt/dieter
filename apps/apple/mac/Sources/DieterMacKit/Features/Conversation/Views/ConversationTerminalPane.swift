@@ -13,16 +13,17 @@ struct ConversationTerminalPane: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             if let terminal = model.terminal(id: tab.terminalID) {
-                RemoteTerminalSurface(
-                    terminalID: terminal.id,
-                    initialColumns: Int(terminal.columns), initialRows: Int(terminal.rows),
-                    screen: model.terminalScreens[terminal.id] ?? TerminalScreenState(),
+                // Only the surface observes the screen, so output redraws the
+                // emulator and not the pane around it.
+                ObservedTerminalSurface(
+                    model: model, terminal: terminal,
                     acceptsInput: model.active && terminal.status == "running" && model.terminalStreamConnected,
+                    active: model.active,
                     send: { model.sendTerminalInput(id: terminal.id, data: $0) },
                     resize: { columns, rows in
                         guard model.active else { return }
                         Task { await model.resizeTerminal(id: terminal.id, columns: columns, rows: rows) }
-                    }, active: model.active
+                    }
                 )
                 .id(terminal.id)
                 .background(DieterTheme.terminalBackground)

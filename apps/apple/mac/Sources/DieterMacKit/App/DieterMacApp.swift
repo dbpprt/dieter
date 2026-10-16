@@ -145,9 +145,7 @@ public struct DieterMacApp: App {
             }
             .environment(store)
         } label: {
-            Image(nsImage: MenuBarIcon.template)
-                .opacity(store.phase.isConnected ? 1 : 0.55)
-                .accessibilityLabel(store.phase.isConnected ? "Dieter connected" : "Dieter disconnected")
+            MenuBarStatusIcon(store: store)
                 .onAppear {
                     // MenuBarExtra survives when macOS restores Dieter without
                     // a workspace window, so it owns the island and sync
@@ -246,34 +244,32 @@ enum MenuBarIcon {
     }()
 }
 
+/// The menu bar glyph, dimmed while disconnected. It reads the phase itself,
+/// so a connection change redraws the glyph rather than the app's scenes.
+private struct MenuBarStatusIcon: View {
+    let store: DieterStore
+
+    var body: some View {
+        Image(nsImage: MenuBarIcon.template)
+            .opacity(store.phase.isConnected ? 1 : 0.55)
+            .accessibilityLabel(store.phase.isConnected ? "Dieter connected" : "Dieter disconnected")
+    }
+}
+
+/// The menu bar window. Each part reads only the session state it shows, so
+/// a sync or an activity change redraws that part alone.
 struct MenuBarContent: View {
     @Environment(DieterStore.self) private var store
-    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            header
-            endpointRows
-            chipRow
-            if !events.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(events) { EventRow(event: $0) }
-                }
-                .padding(.top, 2)
-            }
+            MenuBarHeader()
+            MenuBarEndpointRows()
+            MenuBarChipRow()
+            MenuBarEvents()
             Divider().overlay(DieterTheme.border)
-            HStack(spacing: 10) {
-                MenuBarActionButton(
-                    title: store.phase.isConnected ? "Disconnect" : "Connect", destructive: store.phase.isConnected
-                ) {
-                    if store.phase.isConnected { store.disconnect() } else { Task { await store.connect() } }
-                }
-                MenuBarActionButton(title: "Open Dieter", prominent: true) {
-                    openWindow(id: "workspace")
-                    NSApp.activate(ignoringOtherApps: true)
-                }
-            }
-            footer
+            MenuBarActions()
+            MenuBarFooter()
         }
         .padding(16)
         .frame(width: 384)
@@ -283,8 +279,12 @@ struct MenuBarContent: View {
             appearance: store.themeSelection.appearance
         )
     }
+}
 
-    private var header: some View {
+private struct MenuBarHeader: View {
+    @Environment(DieterStore.self) private var store
+
+    var body: some View {
         HStack(alignment: .center, spacing: 11) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -317,10 +317,14 @@ struct MenuBarContent: View {
     }
 
     private var phaseColor: Color { store.session.tone.color }
+}
 
-    /// Each machine with how current its part of the workspace is; the
-    /// gateways before any machine is listed.
-    @ViewBuilder private var endpointRows: some View {
+/// Each machine with how current its part of the workspace is; the gateways
+/// before any machine is listed.
+private struct MenuBarEndpointRows: View {
+    @Environment(DieterStore.self) private var store
+
+    var body: some View {
         let rows = store.machines.isEmpty ? store.gateways : store.machines
         if !rows.isEmpty {
             VStack(spacing: 6) {
@@ -348,8 +352,12 @@ struct MenuBarContent: View {
             }
         }
     }
+}
 
-    private var chipRow: some View {
+private struct MenuBarChipRow: View {
+    @Environment(DieterStore.self) private var store
+
+    var body: some View {
         HStack(spacing: 8) {
             MenuBarChip(text: boardCountLabel, color: DieterTheme.subtle)
             if reviewCount > 0 {
@@ -367,26 +375,6 @@ struct MenuBarContent: View {
         }
     }
 
-    private var footer: some View {
-        HStack {
-            Button {
-                openWindow(id: "workspace")
-                NSApp.activate(ignoringOtherApps: true)
-                store.openSettings()
-            } label: {
-                Text("Settings…  ⌘,")
-            }
-            .buttonStyle(.plain)
-            .keyboardShortcut(",", modifiers: .command)
-            Spacer()
-            Button("Quit Dieter  ⌘Q") { NSApp.terminate(nil) }
-                .buttonStyle(.plain)
-                .keyboardShortcut("q", modifiers: .command)
-        }
-        .font(.system(size: 11))
-        .foregroundStyle(DieterTheme.subtle)
-    }
-
     private var boardCountLabel: String {
         let count = store.state.boards.count
         return SharedRules.shared.count(count: Int32(clamping: count), noun: "board", plural: "")
@@ -395,9 +383,23 @@ struct MenuBarContent: View {
     private var reviewCount: Int { Int(store.activity.summary.review) }
 
     private var subagentCount: Int { Int(store.activity.summary.subagents) }
+}
 
-    /// The core's menu bar rows: what needs you or awaits review, then
-    /// failures and results from the last six hours.
+/// The core's menu bar rows: what needs you or awaits review, then failures
+/// and results from the last six hours.
+private struct MenuBarEvents: View {
+    @Environment(DieterStore.self) private var store
+
+    var body: some View {
+        let events = self.events
+        if !events.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(events) { EventRow(event: $0) }
+            }
+            .padding(.top, 2)
+        }
+    }
+
     private var events: [MenuBarEvent] {
         let rows = Dictionary(
             store.activity.rows.map { ($0.card.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -415,6 +417,50 @@ struct MenuBarContent: View {
                 subtitle: [row.title, row.boardName].filter { !$0.isEmpty }.joined(separator: " · "),
                 atMillis: row.atMillis, cardID: row.card.id)
         }
+    }
+}
+
+private struct MenuBarActions: View {
+    @Environment(DieterStore.self) private var store
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        HStack(spacing: 10) {
+            MenuBarActionButton(
+                title: store.phase.isConnected ? "Disconnect" : "Connect", destructive: store.phase.isConnected
+            ) {
+                if store.phase.isConnected { store.disconnect() } else { Task { await store.connect() } }
+            }
+            MenuBarActionButton(title: "Open Dieter", prominent: true) {
+                openWindow(id: "workspace")
+                NSApp.activate(ignoringOtherApps: true)
+            }
+        }
+    }
+}
+
+private struct MenuBarFooter: View {
+    @Environment(DieterStore.self) private var store
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        HStack {
+            Button {
+                openWindow(id: "workspace")
+                NSApp.activate(ignoringOtherApps: true)
+                store.openSettings()
+            } label: {
+                Text("Settings…  ⌘,")
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(",", modifiers: .command)
+            Spacer()
+            Button("Quit Dieter  ⌘Q") { NSApp.terminate(nil) }
+                .buttonStyle(.plain)
+                .keyboardShortcut("q", modifiers: .command)
+        }
+        .font(.system(size: 11))
+        .foregroundStyle(DieterTheme.subtle)
     }
 }
 

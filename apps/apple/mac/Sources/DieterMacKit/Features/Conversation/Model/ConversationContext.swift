@@ -57,9 +57,7 @@ final class ConversationContext {
     var selectedDetail: Dieter_V1_CardDetail? { model.selectedDetail }
     /// The composer's agent pickers as the core shows them; nil until the
     /// conversation's card and machine are known.
-    var agentControls: ClientAgentControlsState? {
-        return model.state.hasAgent ? model.state.agent : nil
-    }
+    var agentControls: ClientAgentControlsState? { model.chrome.agent }
     @ObservationIgnored var onChooseAgent: (ClientAgentChoice.OneOf_Choice) async -> Void = { _ in }
     /// Changes the composer's agent; the core checks the pickers allow it.
     func chooseAgent(_ choice: ClientAgentChoice.OneOf_Choice) async { await onChooseAgent(choice) }

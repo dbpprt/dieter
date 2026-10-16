@@ -45,12 +45,22 @@ final class AppSession {
     var machineEntries: [String: ClientMachineEntry] = [:] {
         didSet { if machineEntries != oldValue { refreshLiveFlags() } }
     }
+    /// The machines that are this Mac, by daemon ID; views that ask whether a
+    /// machine is local observe these rather than every session change.
+    var localDaemonIDs: Set<String> = []
+    /// Another device has yet to approve this one (the session's device
+    /// trust), kept apart so the window observes only a change of it.
+    var deviceNeedsPairing = false
 
     /// Surfaces can change what lives on a machine while that machine is available.
+    /// Every workspace fold asks; only a change reaches the surfaces' views.
     func refreshLiveFlags() {
-        filesModel.isLive = filesAreLive
-        schedulesModel.isLive = schedulesAreLive
-        terminalsModel.isLive = terminalsAreLive
+        let files = filesAreLive
+        if filesModel.isLive != files { filesModel.isLive = files }
+        let schedules = schedulesAreLive
+        if schedulesModel.isLive != schedules { schedulesModel.isLive = schedules }
+        let terminals = terminalsAreLive
+        if terminalsModel.isLive != terminals { terminalsModel.isLive = terminals }
     }
     /// The gateway this Mac signs in to; its machines come with the session.
     var activeGateway: MachineEndpoint
@@ -62,8 +72,17 @@ final class AppSession {
     @ObservationIgnored let coreHost: CoreHost?
     @ObservationIgnored var coreStart: Task<Void, Never>?
     @ObservationIgnored var coreSubscriptions: [SliceSubscription] = []
+    /// The latest slices the core delivered. A burst of updates is applied
+    /// here and folded into the observed state below once (`unfoldedSlices`).
+    @ObservationIgnored var coreSession = ClientSessionSlice()
     @ObservationIgnored var coreWorkspace = ClientWorkspaceSlice()
+    @ObservationIgnored var coreOutbox = ClientOutboxSlice()
     @ObservationIgnored var coreMetadata = ClientMetadataSlice()
+    @ObservationIgnored var coreActivity = ClientActivitySlice()
+    @ObservationIgnored var coreCreation = ClientCreationSlice()
+    @ObservationIgnored var coreNavigation = ClientNavigationSlice()
+    @ObservationIgnored var coreBoard = ClientBoardSlice()
+    @ObservationIgnored var unfoldedSlices: Set<ClientSlice> = []
     var session = ClientSessionSlice()
     var outboxState = ClientOutboxSlice()
     var boardState = ClientBoardSlice()
@@ -190,6 +209,21 @@ final class AppSession {
     var machineOutboxes: [ClientMachineOutbox] = []
     /// When some machine's view last changed, kept with the cached views.
     var lastSyncedAt: Date?
+    /// The selected card or chat, kept apart from the cards it is found in
+    /// (`refreshSelectedCard`), so its views skip every other card's change.
+    private(set) var selectedCard: Dieter_V1_Card?
+
+    /// Looks the selected card or chat up again after the selection, the
+    /// selected project's state, or the chats changed; views observe only a
+    /// change of the card itself.
+    func refreshSelectedCard() {
+        let id = selectedCardID ?? selectedChatID
+        let card =
+            id.flatMap { id in
+                state.cards.first { $0.id == id } ?? state.chats.first { $0.id == id } ?? chats.first { $0.id == id }
+            }
+        if selectedCard != card { selectedCard = card }
+    }
     var islandActivity = DieterIslandActivity.empty
     var boardProjection = BoardProjection.empty
 
@@ -306,7 +340,11 @@ final class AppSession {
         }
     }
 
+    /// Counts presentations, so a fold that already presented skips another.
+    @ObservationIgnored var replicaPresentations: UInt64 = 0
+
     func refreshReplicaPresentation() {
+        replicaPresentations &+= 1
         refreshBoardProjection()
     }
 

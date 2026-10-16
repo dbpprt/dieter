@@ -15,6 +15,10 @@ final class ConversationModel {
     var selectedChatID: String?
     var conversation: Dieter_V1_ConversationSnapshot? {
         didSet {
+            let queue = conversation?.conversation.queue ?? []
+            if self.queue != queue { self.queue = queue }
+            let subagentCount = conversation?.conversation.subagents.count ?? 0
+            if self.subagentCount != subagentCount { self.subagentCount = subagentCount }
             let invalidate =
                 conversation?.conversation.taskPlans != oldValue?.conversation.taskPlans
                 || conversation?.conversation.subagents != oldValue?.conversation.subagents
@@ -24,6 +28,11 @@ final class ConversationModel {
             }
         }
     }
+    /// The conversation's queued messages and its delegated agents' count.
+    /// `conversation` changes with every streamed step; the composer and the
+    /// tab track read these instead, so they stay still while a turn streams.
+    private(set) var queue: [Dieter_V1_QueuedMessage] = []
+    private(set) var subagentCount = 0
     var olderConversationMessages: [Dieter_V1_UiMessage] = [] {
         didSet { if olderConversationMessages != oldValue { refreshConversationPresentationState() } }
     }
@@ -55,7 +64,11 @@ final class ConversationModel {
     var turnFailure: ClientTurnFailure?
     /// What the conversation shows besides its transcript: work, live
     /// activity, and what can be done next, as the core presents it.
-    var state = ClientConversationState()
+    var state = ClientConversationState() {
+        didSet { refreshChrome() }
+    }
+    /// The part of `state` the header, tabs and composer show.
+    private(set) var chrome = ConversationChrome()
     @ObservationIgnored var core: CoreClient?
     @ObservationIgnored var onAccepted: @MainActor (Dieter_V1_ConversationSnapshot, Bool) -> Void = { _, _ in }
     @ObservationIgnored var onContentPresentation: @MainActor (Dieter_V1_ContentPresentation, String) -> Void = {
@@ -64,9 +77,14 @@ final class ConversationModel {
     @ObservationIgnored private var subscription: SliceSubscription?
     @ObservationIgnored private(set) var observedCardID: String?
     @ObservationIgnored private var slice: ClientConversationSlice?
+    /// `slice` changed since it was last presented: a streaming turn's burst
+    /// of deltas is folded one by one and presented once.
+    @ObservationIgnored private var unpresented = false
     @ObservationIgnored private var updates: UInt64 = 0
     @ObservationIgnored private var presentedContentIDs: Set<String> = []
     @ObservationIgnored private var presentationBaselineDaemons: Set<String> = []
+    /// Whether the conversation being opened is a chat, until the core's first update.
+    @ObservationIgnored private var presumedChat: Bool?
     @ObservationIgnored private let presentationDefaults: UserDefaults?
 
     init(presentationDefaults: UserDefaults? = nil) {
@@ -76,20 +94,26 @@ final class ConversationModel {
     @ObservationIgnored private var presenting = false
 
     /// Observes `cardID` through the core, which opens it on the machine that
-    /// runs it; nil stops observing. Cached messages show at once.
-    func observe(_ cardID: String?) {
+    /// runs it; nil stops observing. Cached messages show at once. `chat` is
+    /// whether it is known to be a standalone chat: the chrome shows it as one
+    /// until the core's first update, so opening a chat from another does not
+    /// lay the conversation pane out twice.
+    func observe(_ cardID: String?, chat: Bool = false) {
         guard cardID != observedCardID else { return }
         subscription?.close()
         subscription = nil
         slice = nil
+        unpresented = false
         presentationBaselineDaemons = []
+        presumedChat = cardID == nil ? nil : chat
         state = ClientConversationState()
         turnFailure = nil
         observedCardID = cardID
         guard let cardID, let core else { return }
         subscription = SliceSubscription(
             client: core, slice: .conversation, scope: cardID,
-            onReset: { [weak self] in self?.slice = nil }
+            onReset: { [weak self] in self?.slice = nil },
+            onSettled: { [weak self] in self?.presentFolded(cardID: cardID) }
         ) { [weak self] update in
             self?.fold(update, cardID: cardID)
         }
@@ -111,7 +135,14 @@ final class ConversationModel {
             return
         }
         updates &+= 1
-        if let slice { present(slice) }
+        unpresented = true
+    }
+
+    /// Presents the folded slice once the latest queued update is in.
+    private func presentFolded(cardID: String) {
+        guard observedCardID == cardID, unpresented, let slice else { return }
+        unpresented = false
+        present(slice)
     }
 
     private func present(_ slice: ClientConversationSlice) {
@@ -157,13 +188,21 @@ final class ConversationModel {
         if retrying != slice.retrying { retrying = slice.retrying }
         let failure = slice.hasTurnFailure ? slice.turnFailure : nil
         if turnFailure != failure { turnFailure = failure }
-        if state != slice.state { state = slice.state }
+        // The core now says what the conversation is.
+        presumedChat = nil
+        if state != slice.state { state = slice.state } else { refreshChrome() }
         if hasContent, slice.hasCard { onAccepted(snapshot, slice.state.chat) }
         if slice.hasConversation {
             presentContent(
                 from: slice.conversation, daemonID: slice.daemonID,
                 synchronized: slice.refreshedAtMillis > 0 && !slice.loading && !slice.syncing)
         }
+    }
+
+    private func refreshChrome() {
+        var chrome = ConversationChrome(state)
+        if let presumedChat { chrome.chat = presumedChat }
+        if self.chrome != chrome { self.chrome = chrome }
     }
 
     /// Loaded history followed by the live window, as the core lists them.
@@ -188,6 +227,7 @@ final class ConversationModel {
                         ).items
                 }
                 if let card = conversation?.detail.card {
+                    presumedChat = nil
                     state.chat = SharedRules.shared.isChat(scope: card.scope, boardId: card.boardID)
                     state.runtime =
                         conversation?.conversation.status.isEmpty == false
@@ -213,6 +253,14 @@ final class ConversationModel {
 
     /// The part a timeline step renders: its message's part, with coalesced prose as its text.
     func part(for step: ClientTimelineStep) -> Dieter_V1_MessagePart? { messages.part(for: step) }
+
+    /// Everything `row` renders besides the row itself, resolved here so the
+    /// row's views observe nothing else.
+    func content(for row: ClientTimelineItem) -> ConversationRowContent {
+        ConversationRowContent(
+            messages: messages.scoped(to: row), plans: taskPlans(ids: row.planIds),
+            subagents: subagents(ids: row.subagentIds))
+    }
 
     /// The latest reply is in view: the core marks it read once it is loaded
     /// and shown at the latest position.
@@ -295,5 +343,42 @@ final class ConversationModel {
         // Fresh requests after synchronization still present normally.
         if establishingBaseline, !presentation.url.isEmpty { return }
         onContentPresentation(presentation, selectedID)
+    }
+}
+
+/// One transcript row's messages, task plans and delegated agents. The
+/// transcript resolves them per row, so a row compares equal, and skips
+/// rendering, while another message streams.
+struct ConversationRowContent: Equatable, Sendable {
+    var messages = ConversationMessages()
+    var plans: [Dieter_V1_TaskPlan] = []
+    var subagents: [Dieter_V1_Subagent] = []
+}
+
+/// The part of the conversation's state its chrome shows: the header, the
+/// tabs and the composer. The rest of the state changes as a turn streams
+/// (live activity, pending tools, context usage); this changes far less.
+struct ConversationChrome: Equatable, Sendable {
+    var chat = false
+    var runtime = ""
+    var activeTurn = false
+    var canStart = false
+    var starting = false
+    var canHalt = false
+    var steerableID = ""
+    /// The composer's agent pickers; nil until the conversation's card and machine are known.
+    var agent: ClientAgentControlsState?
+
+    init() {}
+
+    init(_ state: ClientConversationState) {
+        chat = state.chat
+        runtime = state.runtime
+        activeTurn = state.activeTurn
+        canStart = state.canStart
+        starting = state.starting
+        canHalt = state.canHalt
+        steerableID = state.steerableID
+        agent = state.hasAgent ? state.agent : nil
     }
 }

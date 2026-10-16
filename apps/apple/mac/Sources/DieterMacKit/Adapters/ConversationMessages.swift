@@ -16,8 +16,32 @@ package struct ConversationMessages: Equatable, Sendable {
     /// The message a timeline step renders.
     package func message(for step: ClientTimelineStep) -> Dieter_V1_UiMessage? {
         if !step.messageID.isEmpty, let message = byKey[step.messageID] { return message }
-        let key = step.id.components(separatedBy: ":part:").first ?? ""
-        return byKey[key]
+        return byKey[Self.positionKey(step)]
+    }
+
+    /// The messages `row` renders: those it names and those its steps come
+    /// from, keyed as here. A row given only these does not change when
+    /// another message streams.
+    package func scoped(to row: ClientTimelineItem) -> ConversationMessages {
+        var scoped = ConversationMessages()
+        for id in row.messageIds {
+            if let message = byKey[id] { scoped.byKey[id] = message }
+        }
+        for group in row.groups {
+            for step in group.steps {
+                if !step.messageID.isEmpty, let message = byKey[step.messageID] {
+                    scoped.byKey[step.messageID] = message
+                    continue
+                }
+                let key = Self.positionKey(step)
+                if let message = byKey[key] { scoped.byKey[key] = message }
+            }
+        }
+        return scoped
+    }
+
+    private static func positionKey(_ step: ClientTimelineStep) -> String {
+        step.id.components(separatedBy: ":part:").first ?? ""
     }
 
     /// The part a timeline step renders: its message's part, with coalesced prose as its text.

@@ -227,20 +227,16 @@ private extension Color {
     }
 }
 
-private struct DieterThemeTokens {
-    let background: Color
-    let sidebar: Color
-    let surface: Color
-    let raised: Color
-    let elevated: Color
-    let input: Color
+/// One palette and appearance, resolved once. Views read several of these per
+/// row, so every color, including each transparency variant, is built here
+/// and a read is one reference rather than a copy of every token.
+private final class DieterThemeTokens {
     let border: Color
     let strongBorder: Color
     let paneSeparator: Color
     let text: Color
     let subtle: Color
     let tertiary: Color
-    let userMessageBackground: Color
     let userMessageForeground: Color
     let shellDeep: Color
     let shell: Color
@@ -249,34 +245,51 @@ private struct DieterThemeTokens {
     let amber: Color
     let coral: Color
     let selection: Color
+    let diffAddition: Color
     let terminalBackground: Color
     let terminalBackgroundColor: NSColor
     let terminalForegroundColor: NSColor
     let terminalCaretColor: NSColor
+    let opaqueSurface: Color
     let canvasSolid: Color
-    let canvasWash: Color
     let panelSolid: Color
     let panelTint: Color
+    let panelRim: Color
+    let tile: Color
+    let tileHover: Color
+    let tileSelected: Color
+    let tileRim: Color
+    let tileRimSelected: Color
+    let inset: Color
+    let insetRim: Color
+    let hairline: Color
+    let segmentThumb: Color
+    let controlSolid: Color
+    let controlRim: Color
+    /// The pane fills over the behind-window blur, and opaque.
+    let glass: DieterThemeFills
+    let solid: DieterThemeFills
 
     init(palette: DieterPalette, dark: Bool) {
         let colors = palette.spec
         canvasSolid = Color(rgb: dark ? colors.darkSurface : mix(colors.light, colors.darkBrand, amount: 0.07))
-        canvasWash = Color(rgb: dark ? colors.darkSurface : colors.light, alpha: dark ? 0.58 : 0.5)
+        let canvasWash = Color(rgb: dark ? colors.darkSurface : colors.light, alpha: dark ? 0.58 : 0.5)
         panelSolid = Color(rgb: dark ? colors.darkRaised : colors.lightSurface)
         panelTint = dark ? Color(rgb: colors.darkRaised, alpha: 0.34) : Color(rgb: 0xFFFFFF, alpha: 0.42)
-        background = Color(rgb: dark ? colors.darkBackground : colors.light)
-        sidebar = Color(rgb: dark ? colors.darkBrand : colors.lightSidebar)
-        surface = Color(rgb: dark ? colors.darkSurface : colors.lightSurface)
-        raised = Color(rgb: dark ? colors.darkRaised : colors.lightRaised)
-        elevated = Color(rgb: dark ? colors.darkElevated : colors.paneStart)
-        input = Color(rgb: dark ? colors.darkInput : colors.lightSurface)
+        let background = Color(rgb: dark ? colors.darkBackground : colors.light)
+        let sidebar = Color(rgb: dark ? colors.darkBrand : colors.lightSidebar)
+        let surface = Color(rgb: dark ? colors.darkSurface : colors.lightSurface)
+        let raised = Color(rgb: dark ? colors.darkRaised : colors.lightRaised)
+        let elevated = Color(rgb: dark ? colors.darkElevated : colors.paneStart)
+        let input = Color(rgb: dark ? colors.darkInput : colors.lightSurface)
+        let userMessageBackground = Color(rgb: dark ? colors.darkRaised : colors.lightRaised)
+        opaqueSurface = surface
         border = Color(rgb: dark ? colors.eyes : colors.darkBrand, alpha: dark ? 0.09 : 0.10)
         strongBorder = Color(rgb: dark ? colors.eyes : colors.darkBrand, alpha: dark ? 0.16 : 0.18)
         paneSeparator = Color(rgb: dark ? colors.eyes : colors.darkBrand, alpha: dark ? 0.18 : 0.22)
         text = Color(rgb: dark ? colors.light : colors.darkBrand)
         subtle = Color(rgb: dark ? colors.darkSubtle : colors.lightSubtle)
         tertiary = Color(rgb: dark ? colors.darkTertiary : colors.lightTertiary)
-        userMessageBackground = Color(rgb: dark ? colors.darkRaised : colors.lightRaised)
         userMessageForeground = Color(rgb: dark ? colors.light : colors.darkBrand)
         shellDeep = Color(rgb: colors.shellEnd)
         shell = Color(rgb: dark ? colors.shellStart : colors.shellEnd)
@@ -285,10 +298,57 @@ private struct DieterThemeTokens {
         amber = Color(rgb: dark ? 0xE8A33D : 0xA84C08)
         coral = Color(rgb: dark ? 0xF26D80 : 0xD52D4B)
         selection = Color(rgb: dark ? colors.shellStart : colors.shellEnd, alpha: dark ? 0.20 : 0.13)
+        diffAddition = Color(rgb: dark ? 0x85BD93 : 0x277642)
         terminalBackgroundColor = NSColor(rgb: colors.darkBackground)
         terminalBackground = Color(nsColor: terminalBackgroundColor)
         terminalForegroundColor = NSColor(rgb: colors.light)
         terminalCaretColor = NSColor(rgb: colors.shellStart)
+        panelRim = dark ? .white.opacity(0.11) : .black.opacity(0.08)
+        tile = dark ? .white.opacity(0.05) : .white.opacity(0.62)
+        tileHover = dark ? .white.opacity(0.08) : .white.opacity(0.82)
+        tileSelected = dark ? .white.opacity(0.11) : .white.opacity(0.96)
+        tileRim = dark ? .white.opacity(0.08) : .black.opacity(0.07)
+        tileRimSelected = dark ? .white.opacity(0.26) : .black.opacity(0.2)
+        inset = dark ? .black.opacity(0.24) : .black.opacity(0.045)
+        insetRim = dark ? .white.opacity(0.05) : .black.opacity(0.05)
+        hairline = dark ? .white.opacity(0.08) : .black.opacity(0.08)
+        segmentThumb = dark ? .white.opacity(0.15) : .white
+        controlSolid = dark ? .white.opacity(0.1) : .white
+        controlRim = dark ? .white.opacity(0.1) : .black.opacity(0.07)
+        glass = DieterThemeFills(
+            background: .clear, sidebar: .clear, surface: surface.opacity(0.12), raised: raised.opacity(0.38),
+            elevated: elevated.opacity(0.55), input: input.opacity(0.25),
+            userMessageBackground: userMessageBackground.opacity(0.55), canvas: canvasWash)
+        solid = DieterThemeFills(
+            background: background, sidebar: sidebar, surface: surface.opacity(1), raised: raised.opacity(1),
+            elevated: elevated.opacity(1), input: input.opacity(1),
+            userMessageBackground: userMessageBackground.opacity(1), canvas: canvasSolid)
+    }
+}
+
+/// The fills that differ between the translucent and the opaque window.
+private final class DieterThemeFills {
+    let background: Color
+    let sidebar: Color
+    let surface: Color
+    let raised: Color
+    let elevated: Color
+    let input: Color
+    let userMessageBackground: Color
+    let canvas: Color
+
+    init(
+        background: Color, sidebar: Color, surface: Color, raised: Color, elevated: Color, input: Color,
+        userMessageBackground: Color, canvas: Color
+    ) {
+        self.background = background
+        self.sidebar = sidebar
+        self.surface = surface
+        self.raised = raised
+        self.elevated = elevated
+        self.input = input
+        self.userMessageBackground = userMessageBackground
+        self.canvas = canvas
     }
 }
 
@@ -377,15 +437,17 @@ enum DieterTheme {
     static func transparencyAccessibilityDidChange() { install(selection: state.selection) }
 
     static var usesTransparency: Bool { state.transparencyEnabled }
-    static var opaqueSurface: Color { state.colors.surface }
+    /// The pane fills for the current transparency.
+    private static var fills: DieterThemeFills { usesTransparency ? state.colors.glass : state.colors.solid }
+    static var opaqueSurface: Color { state.colors.opaqueSurface }
     // One native backdrop supplies blur. Low-opacity pane tints preserve that
     // continuous canvas rather than stacking independent material effects.
-    static var background: Color { usesTransparency ? .clear : state.colors.background }
-    static var sidebar: Color { usesTransparency ? .clear : state.colors.sidebar }
-    static var surface: Color { state.colors.surface.opacity(usesTransparency ? 0.12 : 1) }
-    static var raised: Color { state.colors.raised.opacity(usesTransparency ? 0.38 : 1) }
-    static var elevated: Color { state.colors.elevated.opacity(usesTransparency ? 0.55 : 1) }
-    static var input: Color { state.colors.input.opacity(usesTransparency ? 0.25 : 1) }
+    static var background: Color { fills.background }
+    static var sidebar: Color { fills.sidebar }
+    static var surface: Color { fills.surface }
+    static var raised: Color { fills.raised }
+    static var elevated: Color { fills.elevated }
+    static var input: Color { fills.input }
     static var border: Color { state.colors.border }
     static var strongBorder: Color { state.colors.strongBorder }
     /// Crisp 1px seam separating the three primary panes (nav · workspace · conversation).
@@ -394,7 +456,7 @@ enum DieterTheme {
     static var subtle: Color { state.colors.subtle }
     static var tertiary: Color { state.colors.tertiary }
     /// A restrained outgoing-message surface that stays legible in every palette.
-    static var userMessageBackground: Color { state.colors.userMessageBackground.opacity(usesTransparency ? 0.55 : 1) }
+    static var userMessageBackground: Color { fills.userMessageBackground }
     static var userMessageForeground: Color { state.colors.userMessageForeground }
     static var shellDeep: Color { state.colors.shellDeep }
     static var shell: Color { state.colors.shell }
@@ -403,16 +465,16 @@ enum DieterTheme {
     static var amber: Color { state.colors.amber }
     static var coral: Color { state.colors.coral }
     /// OpenAI account quota bars stay blue across every decorative palette.
-    static var openAIQuota: Color { Color(rgb: 0x2588F5) }
+    static let openAIQuota = Color(rgb: 0x2588F5)
 
     /// Machine reachability must remain immediately recognizable in every
     /// decorative palette and appearance.
-    static var machineOnline: Color { Color(nsColor: .systemGreen) }
-    static var machineOffline: Color { Color(nsColor: .systemRed) }
+    static let machineOnline = Color(nsColor: .systemGreen)
+    static let machineOffline = Color(nsColor: .systemRed)
 
     /// Git additions remain green regardless of the decorative app palette.
-    static var diffAddition: Color { Color(rgb: state.installedKey.dark ? 0x85BD93 : 0x277642) }
-    static var reviewAccent: Color { Color(rgb: 0xF28B7A) }
+    static var diffAddition: Color { state.colors.diffAddition }
+    static let reviewAccent = Color(rgb: 0xF28B7A)
 
     /// Background for the selected navigation or list row.
     static var selection: Color { state.colors.selection }
@@ -426,31 +488,31 @@ enum DieterTheme {
 
     static var isDark: Bool { state.installedKey.dark }
     /// The window canvas: a wash over the behind-window blur, or the opaque window.
-    static var canvas: Color { usesTransparency ? state.colors.canvasWash : state.colors.canvasSolid }
+    static var canvas: Color { fills.canvas }
     static var canvasSolid: Color { state.colors.canvasSolid }
     /// The opaque fill of a floating panel when glass is unavailable.
     static var panelSolid: Color { state.colors.panelSolid }
     /// The palette tint carried by a glass panel.
     static var panelTint: Color { state.colors.panelTint }
-    static var panelRim: Color { isDark ? .white.opacity(0.11) : .black.opacity(0.08) }
-    static var tile: Color { isDark ? .white.opacity(0.05) : .white.opacity(0.62) }
-    static var tileHover: Color { isDark ? .white.opacity(0.08) : .white.opacity(0.82) }
-    static var tileSelected: Color { isDark ? .white.opacity(0.11) : .white.opacity(0.96) }
-    static var tileRim: Color { isDark ? .white.opacity(0.08) : .black.opacity(0.07) }
-    static var tileRimSelected: Color { isDark ? .white.opacity(0.26) : .black.opacity(0.2) }
-    static var inset: Color { isDark ? .black.opacity(0.24) : .black.opacity(0.045) }
-    static var insetRim: Color { isDark ? .white.opacity(0.05) : .black.opacity(0.05) }
-    static var hairline: Color { isDark ? .white.opacity(0.08) : .black.opacity(0.08) }
-    static var segmentThumb: Color { isDark ? .white.opacity(0.15) : .white }
+    static var panelRim: Color { state.colors.panelRim }
+    static var tile: Color { state.colors.tile }
+    static var tileHover: Color { state.colors.tileHover }
+    static var tileSelected: Color { state.colors.tileSelected }
+    static var tileRim: Color { state.colors.tileRim }
+    static var tileRimSelected: Color { state.colors.tileRimSelected }
+    static var inset: Color { state.colors.inset }
+    static var insetRim: Color { state.colors.insetRim }
+    static var hairline: Color { state.colors.hairline }
+    static var segmentThumb: Color { state.colors.segmentThumb }
     /// Solid controls lift off both the canvas and a panel.
-    static var controlSolid: Color { isDark ? .white.opacity(0.1) : .white }
-    static var controlRim: Color { isDark ? .white.opacity(0.1) : .black.opacity(0.07) }
+    static var controlSolid: Color { state.colors.controlSolid }
+    static var controlRim: Color { state.colors.controlRim }
 
     /// Status colors stay fixed across decorative palettes.
-    static var running: Color { Color(nsColor: .systemGreen) }
+    static let running = Color(nsColor: .systemGreen)
     static var attention: Color { amber }
     static var failed: Color { coral }
-    static var action: Color { Color(nsColor: .systemBlue) }
+    static let action = Color(nsColor: .systemBlue)
     static var diffDeletion: Color { coral }
 
     // SwiftTerm also derives inverse-video colors from this background. Keep
@@ -610,7 +672,7 @@ struct StatusPill: View {
 
     /// A raw runtime, worded and coloured as the shared core classifies it.
     init(runtime: String, showsDot: Bool = true) {
-        text = SharedRules.shared.runtimeLabel(runtime: runtime)
+        text = RuntimeRules.label(runtime)
         color = runtimeColor(runtime)
         self.showsDot = showsDot
     }
@@ -732,7 +794,25 @@ func toneColor(_ tone: ClientRuntimeTone) -> Color {
 /// The colour of a raw runtime, as the shared core classifies it.
 @MainActor
 func runtimeColor(_ runtime: String) -> Color {
-    toneColor(ClientRuntimeTone(rawValue: Int(SharedRules.shared.runtimeTone(runtime: runtime))) ?? .idle)
+    toneColor(RuntimeRules.tone(runtime))
+}
+
+/// The core's wording and tone of a raw runtime. Rows ask for every card each
+/// time they render and few runtimes exist, so each is asked of the core once.
+enum RuntimeRules {
+    private static let labels = SharedRuleMemo<String, String>(limit: 256)
+    private static let tones = SharedRuleMemo<String, ClientRuntimeTone>(limit: 256)
+
+    /// "Running", "Starting…", "Waiting for you", "Failed", "Idle", …
+    static func label(_ runtime: String) -> String {
+        labels.value(runtime) { SharedRules.shared.runtimeLabel(runtime: runtime) }
+    }
+
+    static func tone(_ runtime: String) -> ClientRuntimeTone {
+        tones.value(runtime) {
+            ClientRuntimeTone(rawValue: Int(SharedRules.shared.runtimeTone(runtime: runtime))) ?? .idle
+        }
+    }
 }
 
 extension ClientTone {

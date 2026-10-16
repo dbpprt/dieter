@@ -26,11 +26,10 @@ package actor TerminalOutputAccumulator {
         current: TerminalScreenState,
         publish: @escaping Publish
     ) async {
-        let next = TerminalScreenReducer.applying(
-            data: data,
-            screenReset: screenReset,
-            to: screens[terminalID] ?? current
-        )
+        // Taken out of the table, the replay buffer is uniquely held and grows
+        // in place; only a copy published to the main actor shares it.
+        var next = screens.removeValue(forKey: terminalID) ?? current
+        TerminalScreenReducer.apply(data: data, screenReset: screenReset, to: &next)
         screens[terminalID] = next
 
         if screenReset {
@@ -137,17 +136,26 @@ package enum TerminalScreenReducer {
         limit: Int = terminalClientBufferLimit
     ) -> TerminalScreenState {
         var result = current
-        if screenReset {
-            result.replace(with: data)
-            result.resetRevision += 1
-        } else {
-            if result.append(data, limit: limit) { result.resetRevision += 1 }
-        }
-        if screenReset, result.byteCount > limit {
-            result.data = Data(result.data.suffix(limit))
-            result.resetRevision += 1
-        }
-        result.revision += 1
+        apply(data: data, screenReset: screenReset, to: &result, limit: limit)
         return result
+    }
+
+    package static func apply(
+        data: Data,
+        screenReset: Bool,
+        to state: inout TerminalScreenState,
+        limit: Int = terminalClientBufferLimit
+    ) {
+        if screenReset {
+            state.replace(with: data)
+            state.resetRevision += 1
+        } else {
+            if state.append(data, limit: limit) { state.resetRevision += 1 }
+        }
+        if screenReset, state.byteCount > limit {
+            state.data = Data(state.data.suffix(limit))
+            state.resetRevision += 1
+        }
+        state.revision += 1
     }
 }

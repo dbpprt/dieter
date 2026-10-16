@@ -47,6 +47,8 @@ final class WorktreeChangesModel {
     private(set) var pullRequest: ClientPullRequestView?
     private(set) var mergeReadiness = ClientMergeReadiness()
     @ObservationIgnored private var operationActive = false
+    /// The layout last asked of the core.
+    @ObservationIgnored private var requestedSplit: Bool?
     /// Visible and foregrounded: the core refreshes the review periodically.
     var active = false {
         didSet {
@@ -70,6 +72,12 @@ final class WorktreeChangesModel {
     @ObservationIgnored private var bound = ClientReviewTarget()
     @ObservationIgnored private var queued: Task<Void, Never>?
     @ObservationIgnored private var shownToast = ""
+
+    /// The branch the workspace merges into; "base" until it is known.
+    var baseBranch: String {
+        let value = conversationWorkspace?.baseBranch ?? card?.workspace.baseBranch ?? ""
+        return value.isEmpty ? "base" : value
+    }
 
     func openWorkspaceFiles(card: Dieter_V1_Card, opening path: String? = nil) async { await onOpenFiles(card, path) }
     func openWorkspaceTerminal(card: Dieter_V1_Card) async { await onOpenTerminal(card) }
@@ -121,8 +129,12 @@ final class WorktreeChangesModel {
         mergeReadiness = ClientMergeReadiness()
     }
 
-    /// Lays the diff out side by side or in one column; the core keeps the choice.
+    /// Lays the diff out side by side or in one column; the core keeps the
+    /// choice. The view asks each time it appears; the core is asked only for
+    /// a layout it does not have, as its answer carries the whole diff.
     func setLayout(split: Bool) {
+        guard requestedSplit != split || diff.split != split else { return }
+        requestedSplit = split
         send { $0.layout = .with { $0.split = split } }
     }
 
@@ -144,7 +156,7 @@ final class WorktreeChangesModel {
         let fileDiff = slice.hasDiff ? slice.diff : nil
         if conversationDiff != fileDiff { conversationDiff = fileDiff }
         let layout = diff.folding(
-            rows: slice.displayRows, unchanged: slice.diffUnchanged, maxColumns: slice.diffMaxColumns,
+            rows: slice.displayRows, unchanged: slice.diffUnchanged,
             split: slice.split, more: slice.diffMore, note: slice.diffTooLarge ? slice.diffNote : "")
         if diff != layout { diff = layout }
         if conversationDiffLoading != slice.diffLoading { conversationDiffLoading = slice.diffLoading }

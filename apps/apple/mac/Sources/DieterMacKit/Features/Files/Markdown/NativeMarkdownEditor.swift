@@ -122,6 +122,8 @@ final class NativeMarkdownTextContainer: NSView {
     private var suspendedContent: AnyView?
     private var hostConstraints: [NSLayoutConstraint] = []
     private weak var scrollCoordinator: MarkdownScrollCoordinator?
+    /// The engine's text view, found once rather than on every update and layout.
+    private weak var editor: NSTextView?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -152,7 +154,7 @@ final class NativeMarkdownTextContainer: NSView {
         // SwiftUI remains the authority for editability. Freeze the same
         // wrapper once, otherwise an internal update can re-enable the editor.
         if let suspendedContent { host.rootView = suspendedContent }
-        if let editor = textView(in: host) { controls?.attach(editor, active: false) }
+        if let editor = hostedEditor() { controls?.attach(editor, active: false) }
         // Retain the editor and undo stack at their last size. A zero-opacity
         // view otherwise still receives width changes and regenerates diagrams.
         host.isHidden = true
@@ -172,7 +174,7 @@ final class NativeMarkdownTextContainer: NSView {
         host.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate(hostConstraints)
         host.isHidden = false
-        if let previous = self.generation, previous != generation, let editor = textView(in: host) {
+        if let previous = self.generation, previous != generation, let editor = hostedEditor() {
             // External source changes bypass the engine's range-based undo
             // registration. Old native actions would target unrelated text.
             editor.breakUndoCoalescing()
@@ -192,9 +194,15 @@ final class NativeMarkdownTextContainer: NSView {
 
     private func reconcileEditor() {
         guard active else { return }
-        guard let editor = textView(in: host) else { return }
+        guard let editor = hostedEditor() else { return }
         controls?.attach(editor, active: active)
         if let scroll = editor.enclosingScrollView { scrollCoordinator?.attachRich(scroll) }
+    }
+
+    private func hostedEditor() -> NSTextView? {
+        if let editor, editor.isDescendant(of: host) { return editor }
+        editor = textView(in: host)
+        return editor
     }
 
     private func textView(in view: NSView) -> NSTextView? {
@@ -230,7 +238,7 @@ final class NativeMarkdownControls {
     func attach(_ editor: NSTextView, active: Bool) {
         textView = editor
         self.active = active
-        editor.isEditable = active
+        if editor.isEditable != active { editor.isEditable = active }
         if active { diagrams.updateAppearance(editor.effectiveAppearance) }
         if !active, editor.window?.firstResponder === editor {
             editor.window?.makeFirstResponder(nil)
@@ -241,7 +249,8 @@ final class NativeMarkdownControls {
         .init("Dieter.Markdown.\(identity).\(command.rawValue)")
     }
 
-    var configuration: MarkdownEditorConfiguration {
+    /// Built once: every update hands the engine the same services and command bus.
+    private(set) lazy var configuration: MarkdownEditorConfiguration = {
         var configuration = MarkdownEditorConfiguration.default
         configuration.textInsets = TextInsets(horizontal: 18, vertical: 16)
         configuration.extensions = [StrikethroughExtension()]
@@ -254,7 +263,7 @@ final class NativeMarkdownControls {
                 applyBlockquoteRequest: notification(.quote), applyUnorderedListRequest: notification(.bullet),
                 applyOrderedListRequest: notification(.numbered), applyCodeBlockRequest: notification(.code)))
         return configuration
-    }
+    }()
 
     func send(_ command: Command, level: Int? = nil) {
         guard active else { return }

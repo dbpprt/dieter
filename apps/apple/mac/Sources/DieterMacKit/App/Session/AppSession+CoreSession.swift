@@ -44,51 +44,101 @@ extension AppSession {
     private func subscribeCore() {
         guard coreSubscriptions.isEmpty else { return }
         coreSubscriptions = [
-            SliceSubscription(client: core, slice: .session) { [weak self] update in
-                guard let self, case .session(let value) = update.value else { return }
-                self.session = value
-                if !self.coreFoldsHeld { self.foldSession(value) }
+            subscribe(.session, fold: { $0.settleSession() }) { owner, update in
+                guard case .session(let value) = update.value else { return false }
+                owner.coreSession = value
+                return true
             },
-            SliceSubscription(client: core, slice: .workspace) { [weak self] update in
-                guard let self else { return }
+            subscribe(.workspace, fold: { if !$0.coreFoldsHeld { $0.foldWorkspace($0.coreWorkspace) } }) {
+                owner, update in
                 switch update.value {
-                case .workspace(let value): self.coreWorkspace = value
-                case .workspaceDelta(let delta): self.coreWorkspace = self.coreWorkspace.applying(delta)
-                default: return
+                case .workspace(let value): owner.coreWorkspace = value
+                case .workspaceDelta(let delta): owner.coreWorkspace = owner.coreWorkspace.applying(delta)
+                default: return false
                 }
-                if !self.coreFoldsHeld { self.foldWorkspace(self.coreWorkspace) }
+                return true
             },
-            SliceSubscription(client: core, slice: .outbox) { [weak self] update in
-                guard let self, case .outbox(let value) = update.value else { return }
-                self.outboxState = value
-                if !self.coreFoldsHeld { self.foldOutbox(value) }
+            subscribe(.outbox, fold: { $0.settleOutbox() }) { owner, update in
+                guard case .outbox(let value) = update.value else { return false }
+                owner.coreOutbox = value
+                return true
             },
-            SliceSubscription(client: core, slice: .metadata) { [weak self] update in
-                guard let self, case .metadata(let value) = update.value else { return }
-                self.coreMetadata = value
-                if !self.coreFoldsHeld { self.foldMetadata(value) }
+            subscribe(.metadata, fold: { if !$0.coreFoldsHeld { $0.foldMetadata($0.coreMetadata) } }) {
+                owner, update in
+                guard case .metadata(let value) = update.value else { return false }
+                owner.coreMetadata = value
+                return true
             },
-            SliceSubscription(client: core, slice: .activity) { [weak self] update in
-                guard let self, case .activity(let value) = update.value else { return }
-                if self.activity != value { self.activity = value }
+            subscribe(.activity, fold: { if $0.activity != $0.coreActivity { $0.activity = $0.coreActivity } }) {
+                owner, update in
+                guard case .activity(let value) = update.value else { return false }
+                owner.coreActivity = value
+                return true
             },
-            SliceSubscription(client: core, slice: .creation) { [weak self] update in
-                guard let self, case .creation(let value) = update.value else { return }
-                self.foldCreation(value)
+            subscribe(.creation, fold: { $0.foldCreation($0.coreCreation) }) { owner, update in
+                guard case .creation(let value) = update.value else { return false }
+                owner.coreCreation = value
+                return true
             },
             // Layout edits made by fixtures and other devices always apply.
-            SliceSubscription(client: core, slice: .navigation) { [weak self] update in
-                guard let self, case .navigation(let value) = update.value else { return }
-                self.foldNavigation(value)
+            subscribe(.navigation, fold: { $0.foldNavigation($0.coreNavigation) }) { owner, update in
+                guard case .navigation(let value) = update.value else { return false }
+                owner.coreNavigation = value
+                return true
             },
-            SliceSubscription(client: core, slice: .board) { [weak self] update in
-                guard let self, case .board(let value) = update.value else { return }
-                self.boardState = value
-                if !self.coreFoldsHeld { self.foldBoard(value) }
+            subscribe(.board, fold: { $0.settleBoard() }) { owner, update in
+                guard case .board(let value) = update.value else { return false }
+                owner.coreBoard = value
+                return true
             },
         ]
         boardViewModel.onChange = { [weak self] in self?.refreshBoardProjection() }
         boardViewModel.attach(core)
+    }
+
+    /// Observes an app-wide slice. `apply` keeps each update that carries the
+    /// slice (deltas fold onto the kept base at once); `fold` presents what was
+    /// kept once the latest queued update is applied, so a burst presents once.
+    private func subscribe(
+        _ slice: ClientSlice, fold: @escaping @MainActor (AppSession) -> Void,
+        apply: @escaping @MainActor (AppSession, ClientUpdate) -> Bool
+    ) -> SliceSubscription {
+        SliceSubscription(
+            client: core, slice: slice,
+            onSettled: { [weak self] in
+                guard let self, self.unfoldedSlices.remove(slice) != nil else { return }
+                fold(self)
+            }
+        ) { [weak self] update in
+            guard let self, apply(self, update) else { return }
+            self.unfoldedSlices.insert(slice)
+        }
+    }
+
+    /// Fixtures that hold the folds still see the core's session, outbox, and
+    /// board operations as they arrive.
+    private func settleSession() {
+        if coreFoldsHeld {
+            if session != coreSession { session = coreSession }
+        } else {
+            foldSession(coreSession)
+        }
+    }
+
+    private func settleOutbox() {
+        if coreFoldsHeld {
+            if outboxState != coreOutbox { outboxState = coreOutbox }
+        } else {
+            foldOutbox(coreOutbox)
+        }
+    }
+
+    private func settleBoard() {
+        if coreFoldsHeld {
+            if boardState != coreBoard { boardState = coreBoard }
+        } else {
+            foldBoard(coreBoard)
+        }
     }
 
     /// Applies the slices that arrived while folds were held.
@@ -105,7 +155,7 @@ extension AppSession {
     func foldSession(_ slice: ClientSessionSlice) {
         // Only a change the core reports wins over a toggle still on its way to it.
         let reasoningChanged = slice.showReasoning != session.showReasoning
-        session = slice
+        if session != slice { session = slice }
         if reasoningChanged, showReasoning != slice.showReasoning {
             foldingShowReasoning = true
             showReasoning = slice.showReasoning
@@ -123,6 +173,9 @@ extension AppSession {
         var entries: [String: ClientMachineEntry] = [:]
         for (entry, machine) in zip(slice.machines, machines) { entries[machine.id] = entry }
         if machineEntries != entries { machineEntries = entries }
+        let local = Set(slice.machines.filter(\.local).map(\.id))
+        if localDaemonIDs != local { localDaemonIDs = local }
+        if deviceNeedsPairing != slice.deviceTrust.needsPairing { deviceNeedsPairing = slice.deviceTrust.needsPairing }
         if slice.hasGatewayBuild {
             let build = Dieter_Gateway_V1_GatewayInformation.with {
                 $0.releaseVersion = slice.gatewayBuild.releaseVersion
@@ -156,7 +209,7 @@ extension AppSession {
 
     nonisolated static func gatewayEndpoint(_ slice: ClientSessionSlice) -> MachineEndpoint {
         let name =
-            slice.gateways.first { $0.origin == slice.gatewayOrigin }?.name ?? SharedRules.shared.defaultGatewayName()
+            slice.gateways.first { $0.origin == slice.gatewayOrigin }?.name ?? MachineEndpoint.defaultGatewayName
         return MachineEndpoint(origin: slice.gatewayOrigin, name: name) ?? MachineEndpoint.defaultGateway
     }
 
@@ -190,10 +243,14 @@ extension AppSession {
     func foldWorkspace(_ slice: ClientWorkspaceSlice) {
         coreWorkspace = slice
         replica.acceptCore(slice, archivedChats: archivedChats)
+        refreshSelectedCard()
         if boardAttention != slice.boardAttention { boardAttention = slice.boardAttention }
         refreshPendingCards()
+        let presentations = replicaPresentations
         updateSelectedState()
-        refreshReplicaPresentation()
+        // A changed selected state was presented as it was published, after
+        // the replica above; only an unchanged one still needs it.
+        if replicaPresentations == presentations { refreshReplicaPresentation() }
         // A project's host can change with the workspace.
         refreshLiveFlags()
         // A conversation opened before its card arrived gets its draft now.
@@ -207,7 +264,7 @@ extension AppSession {
     // MARK: - Outbox
 
     func foldOutbox(_ slice: ClientOutboxSlice) {
-        outboxState = slice
+        if outboxState != slice { outboxState = slice }
         let messages = Set(slice.pendingMessageIds)
         if pendingMessageIDs != messages { pendingMessageIDs = messages }
         let accepted = Set(slice.acceptedIds)
@@ -253,7 +310,7 @@ extension AppSession {
     }
 
     func foldBoard(_ slice: ClientBoardSlice) {
-        boardState = slice
+        if boardState != slice { boardState = slice }
         let moving = Set(slice.moves.map(\.cardID)).union(slice.operations.filter { $0.value == "MOVING" }.keys)
         if movingCardIDs != moving { movingCardIDs = moving }
         let labeling = Set(slice.operations.filter { $0.value == "LABELING" }.keys)
@@ -345,7 +402,7 @@ extension WorkspaceReplica {
         var cards: [String: [Dieter_V1_Card]] = [:]
         var chats: [Dieter_V1_Card] = []
         for card in slice.cards {
-            if SharedRules.shared.isChat(scope: card.scope, boardId: card.boardID) {
+            if isChat(card) {
                 chats.append(card)
             } else {
                 cards[card.projectID, default: []].append(card)
@@ -371,7 +428,6 @@ extension AppSession {
     /// so its workspace paths open locally (the core reports the route).
     func isLocalMachine(_ endpointID: String) -> Bool {
         let daemonID = WorkspaceTarget(endpointID: endpointID, projectID: "").daemonID
-        return phase.isConnected && !daemonID.isEmpty
-            && session.machines.contains { $0.id == daemonID && $0.local }
+        return phase.isConnected && !daemonID.isEmpty && localDaemonIDs.contains(daemonID)
     }
 }

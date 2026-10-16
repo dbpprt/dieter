@@ -10,7 +10,7 @@ package final class ScriptedCoreClient: CoreClient {
     private struct Observer {
         let slice: ClientSlice
         let scope: String
-        let deliver: @MainActor (ClientUpdate) -> Void
+        let deliver: @MainActor (ClientUpdate, Bool) -> Void
         var sequence: UInt64 = 0
     }
 
@@ -37,7 +37,7 @@ package final class ScriptedCoreClient: CoreClient {
     }
 
     package func observe(
-        _ slice: ClientSlice, scope: String, onUpdate: @escaping @MainActor (ClientUpdate) -> Void
+        _ slice: ClientSlice, scope: String, onUpdate: @escaping @MainActor (ClientUpdate, Bool) -> Void
     ) -> CoreObservation {
         let id = nextObserver
         nextObserver += 1
@@ -57,9 +57,11 @@ package final class ScriptedCoreClient: CoreClient {
     }
 
     /// Sends `value` to every observer of `slice` in `scope`, numbering it per
-    /// subscription. `skipSequence` simulates a lost update.
+    /// subscription. `skipSequence` simulates a lost update; `latest: false`
+    /// one that a later queued update of the observation follows.
     package func emit(
-        _ slice: ClientSlice, scope: String = "", skipSequence: Bool = false, _ value: (inout ClientUpdate) -> Void
+        _ slice: ClientSlice, scope: String = "", skipSequence: Bool = false, latest: Bool = true,
+        _ value: (inout ClientUpdate) -> Void
     ) {
         for id in observers.keys.sorted() {
             guard var observer = observers[id], observer.slice == slice, observer.scope == scope else { continue }
@@ -70,7 +72,7 @@ package final class ScriptedCoreClient: CoreClient {
             update.scope = scope
             update.sequence = observer.sequence
             value(&update)
-            observer.deliver(update)
+            observer.deliver(update, latest)
         }
     }
 }
