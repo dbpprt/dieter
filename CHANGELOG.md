@@ -10,6 +10,16 @@ copy the **Unreleased** notes into a section named after that exact version
 
 Nothing yet.
 
+## 0.6.416
+
+### Fixed
+
+- Screen sharing on Mac and Android recovers automatically when the initial
+  signaling connection is interrupted, without requiring a second Connect.
+- Connecting to a Mac desktop gives a cold capture helper enough time to wake
+  the display before reporting a startup error.
+- Active screen sharing keeps its video connection while signaling reconnects.
+
 ## 0.6.415
 
 ### Fixed
