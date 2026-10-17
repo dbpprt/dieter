@@ -84,6 +84,9 @@ internal constructor(
                     ensureActive()
                     if (response != null) {
                         preview.value = response
+                        // Once the user chooses, subsequent forms follow the core's saved
+                        // preference instead of an externally supplied initial agent.
+                        if (choices.isNotEmpty()) agentSelection = null
                         // Previews leave attachments out; the form keeps its own.
                         this@CreationModel.intent.value =
                             (response.intent ?: intent).copy(attachments = intent.attachments)

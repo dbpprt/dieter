@@ -191,6 +191,8 @@ class MobileStoreTest {
         }
         val store = store(core)
         try {
+            store.creation.agentSelection =
+                com.getdieter.api.v1.HarnessSelection("mock", "mock", "low")
             store.creation.update(
                 CreationIntent(prompt = "Fix it"),
                 AgentChoice(model = "new-model"),
@@ -205,6 +207,10 @@ class MobileStoreTest {
             assertEquals("created", submission.await())
             val sent = core.sentOf { it.create_conversation }.single().intent!!
             assertEquals(chosen, sent.selection)
+            assertNull(
+                store.creation.initialIntent().selection,
+                "The initial agent must not override the saved user choice on reopening",
+            )
             assertEquals("todo", sent.lane)
             assertEquals("Fix it", sent.prompt)
         } finally {
