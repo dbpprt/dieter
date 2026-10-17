@@ -17,6 +17,8 @@ package protocol FileEditorBuffer: AnyObject {
     init()
     /// Advances with every edit and every prepared document.
     var revision: Int { get }
+    /// Whether the buffer has unsaved edits, without copying its text.
+    var isDirty: Bool { get }
     /// Shows `text` as `documentKey`'s content unless it is that document with unsaved edits.
     func prepare(documentKey: String, text: String)
     /// Marks the buffer clean when `submittedText` is still what it holds at `editRevision`.
@@ -65,7 +67,7 @@ package final class FilesSurfaceModel<Editor: FileEditorBuffer> {
             send { $0.showHidden = .with { $0.on = on } }
         }
     }
-    /// The last save met a newer version on disk; the edits stay in the editor.
+    /// The file changed on disk; unsaved edits stay in the editor.
     package private(set) var conflict = false
     package private(set) var saving = false
     package private(set) var fileScopeGeneration: UInt64 = 0
@@ -138,8 +140,14 @@ package final class FilesSurfaceModel<Editor: FileEditorBuffer> {
         if selectedFilePath != slice.selectedPath { selectedFilePath = slice.selectedPath }
         if !slice.documentUnchanged {
             let document = slice.hasDocument ? slice.document : nil
-            if fileDocument != document { fileDocument = document }
-            if let document, !document.binary {
+            // The user may have typed while a clean-buffer refresh was reading.
+            // Keep that buffer's base revision so a save still checks the right
+            // version and the next refresh can report the conflict.
+            let preserveDraft =
+                fileEditorSession.isDirty && fileDocument != nil
+                && fileDocument?.path == document?.path && fileDocument?.revision != document?.revision
+            if !preserveDraft, fileDocument != document { fileDocument = document }
+            if let document, !document.binary, !preserveDraft {
                 let signpost = OSSignpostID(log: editorSignposts)
                 os_signpost(.begin, log: editorSignposts, name: "Prepare file editor", signpostID: signpost)
                 fileEditorSession.prepare(documentKey: documentKey, text: document.content)
@@ -169,10 +177,12 @@ package final class FilesSurfaceModel<Editor: FileEditorBuffer> {
     /// for document commands; a save conflict keeps the editor's text.
     @discardableResult
     private func run(
-        document: Bool = false, afterQueued: Bool = true, _ build: (inout ClientFilesCommand) -> Void
+        document: Bool = false, afterQueued: Bool = true, expectedDocumentKey: String? = nil,
+        _ build: (inout ClientFilesCommand) -> Void
     ) async -> ClientResult? {
         guard let core else { return nil }
         if afterQueued, let queued { await queued.value }
+        if let expectedDocumentKey, expectedDocumentKey != documentKey { return nil }
         var files = ClientFilesCommand()
         files.scope = scope
         build(&files)
@@ -251,14 +261,20 @@ package final class FilesSurfaceModel<Editor: FileEditorBuffer> {
     }
 
     @discardableResult
-    package func saveFile(content: String) async -> Dieter_V1_FileDocument? {
+    package func saveFile(content: String, overwrite: Bool = false) async -> Dieter_V1_FileDocument? {
         guard isLive, fileDocument != nil, !saving else { return nil }
         let key = documentKey
         let generation = fileScopeGeneration
         let editor = fileEditorSession
         let editRevision = editor.revision
         // A save that returns after the surface moved on belongs to another document.
-        let result = await run(document: true) { command in command.save = .with { $0.text = content } }
+        let revision = fileDocument?.revision ?? ""
+        let result = await run(document: true, expectedDocumentKey: key) { command in
+            let text = ClientFilesText.with {
+                $0.text = content; $0.revision = revision
+            }
+            if overwrite { command.overwrite = text } else { command.save = text }
+        }
         guard case .fileDocument(let saved)? = result?.result, generation == fileScopeGeneration, key == documentKey
         else { return nil }
         editor.markSaved(documentKey: key, submittedText: content, editRevision: editRevision)
@@ -275,13 +291,35 @@ package final class FilesSurfaceModel<Editor: FileEditorBuffer> {
     package func reloadDocument() async {
         let key = documentKey
         let generation = fileScopeGeneration
-        guard await run(document: true, { $0.reload = ClientStep() }) != nil,
-            generation == fileScopeGeneration, key == documentKey, let document = fileDocument
+        guard let result = await run(document: true, { $0.reload = ClientStep() }),
+            generation == fileScopeGeneration, key == documentKey,
+            case .files(let slice) = result.result, slice.hasDocument, slice.documentError.isEmpty
         else { return }
+        let document = slice.document
+        fileDocument = document
         // The editor keeps unsaved text across folds; a fresh session takes the disk version.
         let editor = Editor()
         if !document.binary { editor.prepare(documentKey: key, text: document.content) }
         fileEditorSession = editor
+    }
+
+    /// A visible Markdown editor checks its owning machine, including remote files.
+    package func refreshCurrentDocument() async {
+        guard isLive, !saving, !fileLoading, let document = fileDocument,
+            FilePresentation.renderer(document) == .markdown
+        else { return }
+        let key = documentKey
+        let revision = document.revision
+        let dirty = fileEditorSession.isDirty
+        await run(document: true) { command in
+            command.refresh = .with {
+                $0.documentKey = key; $0.revision = revision; $0.dirty = dirty
+            }
+        }
+    }
+
+    package func overwriteCurrentDocument() async {
+        _ = await saveFile(content: fileEditorSession.currentText(), overwrite: true)
     }
 
     /// Creates `name` in the current folder; the core joins the path.

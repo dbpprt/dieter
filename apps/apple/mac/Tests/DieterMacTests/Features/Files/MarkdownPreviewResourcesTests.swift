@@ -2,6 +2,32 @@ import AppKit
 import Testing
 @testable import DieterMacKit
 
+@Test func markdownPreviewResourcesResolveInsidePackagedAppWithoutCheckoutFallback() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let app = root.appendingPathComponent("Dieter.app")
+    let contents = app.appendingPathComponent("Contents")
+    let resources = contents.appendingPathComponent("Resources")
+    try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+    let info: [String: String] = ["CFBundleIdentifier": "com.getdieter.export-test", "CFBundlePackageType": "APPL"]
+    try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+        .write(to: contents.appendingPathComponent("Info.plist"))
+    let application = try #require(Bundle(url: app))
+    #expect(MarkdownPreviewResources.directory(in: application) == nil)
+
+    let bundled = resources.appendingPathComponent("DieterMac_DieterMacKit.bundle")
+    let preview = bundled.appendingPathComponent("MarkdownPreview")
+    try FileManager.default.createDirectory(at: preview, withIntermediateDirectories: true)
+    let source = try #require(MarkdownPreviewResources.directory)
+    for filename in ["index.html", "app.js", "app.css", "LICENSES.txt"] {
+        try FileManager.default.copyItem(
+            at: source.appendingPathComponent(filename), to: preview.appendingPathComponent(filename))
+    }
+    let resolved = try #require(MarkdownPreviewResources.directory(in: application))
+    #expect(resolved.resolvingSymlinksInPath() == preview.resolvingSymlinksInPath())
+    #expect(try Data(contentsOf: resolved.appendingPathComponent("app.js")).isEmpty == false)
+}
+
 @Test func markdownPreviewResourcesAreBundledAndRestrictAssetReads() throws {
     let directory = try #require(MarkdownPreviewResources.directory)
     for filename in ["index.html", "app.js", "app.css", "LICENSES.txt"] {
