@@ -29,10 +29,10 @@ tags: [smoke]
           id: picker-effort
           waitToSettleTimeoutMs: 500
       - assertVisible:
-          id: picker-effort-high
+          text: "High"
       - takeScreenshot: task-effort-picker
       - tapOn:
-          id: picker-effort-high
+          text: "High"
           waitToSettleTimeoutMs: 500
       - tapOn:
           id: chrome-cancel-creation
