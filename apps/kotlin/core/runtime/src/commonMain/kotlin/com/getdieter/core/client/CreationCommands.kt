@@ -16,6 +16,7 @@ import com.getdieter.core.CoreRuntime
 import com.getdieter.core.composition.CatalogState
 import com.getdieter.core.composition.Creation
 import com.getdieter.core.composition.CreationInput
+import com.getdieter.core.composition.CreationMemory
 import com.getdieter.core.composition.CreationPlan
 import com.getdieter.core.composition.DraftKey
 import com.getdieter.core.composition.WorkspaceMode
@@ -77,7 +78,12 @@ internal fun creationSlice(
  */
 internal fun CoreRuntime.creationInput(intent: CreationIntent, chat: Boolean): CreationInput {
     val view = workspace.state.value
-    val project = view.project(intent.project_id) ?: Project()
+    val project =
+        if (intent.project_id.isNotEmpty()) view.project(intent.project_id) ?: Project()
+        else
+            view.project(creation.state.value.project_id)
+                ?: view.projects.firstOrNull()
+                ?: Project()
     val destinations = creationDestinations()
     val checkoutId =
         intent.checkout_id.ifEmpty {
@@ -199,6 +205,9 @@ internal class CreationPreviewSurface(private val runtime: CoreRuntime) {
             val input = runtime.creationInput(intent, command.chat)
             intent = intent.copy(selection = runtime.planCreation(input).controls.choosing(choice))
         }
+        // Persist explicit form choices, even when the user closes without submitting.
+        // Unset fields keep following defaults; a loading catalog must not replace them.
+        runtime.creation.rememberChoices(intent, command.chat)
         val bound = Form(intent, command.chat)
         form.value = bound
         return preview(bound)
@@ -206,6 +215,17 @@ internal class CreationPreviewSurface(private val runtime: CoreRuntime) {
 
     private suspend fun preview(form: Form): CreationPreview =
         creationPreview(runtime.planCreation(runtime.creationInput(form.intent, form.chat)))
+}
+
+/** Remember only chosen fields; an unresolved preview must not erase saved defaults. */
+internal fun CreationMemory.rememberChoices(intent: CreationIntent, chat: Boolean) {
+    remember(
+        selection = intent.selection?.takeIf { it.provider.isNotEmpty() },
+        workspaceMode = intent.workspace_mode.takeIf { it.isNotEmpty() }?.let(WorkspaceMode::parse),
+        projectId = intent.project_id.ifEmpty { null },
+        boardId = intent.board_id.takeIf { !chat && it.isNotEmpty() },
+        checkoutId = intent.checkout_id.ifEmpty { null },
+    )
 }
 
 /** What a creation form shows for [plan]. */

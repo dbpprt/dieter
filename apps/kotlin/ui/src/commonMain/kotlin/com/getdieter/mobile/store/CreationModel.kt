@@ -49,12 +49,7 @@ internal constructor(
         this.chat.value = chat
     }
 
-    internal fun initialIntent() =
-        CreationIntent(
-            project_id = boards.currentProjectId(),
-            board_id = boards.selectedBoard.value,
-            selection = agentSelection,
-        )
+    internal fun initialIntent() = CreationIntent(selection = agentSelection)
 
     /** Takes the form's [intent] and previews it with the core, applying [choice] once. */
     fun update(intent: CreationIntent, choice: AgentChoice? = null) {
@@ -104,15 +99,18 @@ internal constructor(
             }
     }
 
-    suspend fun submit(intent: CreationIntent): String =
-        context.core
+    suspend fun submit(intent: CreationIntent): String {
+        previewJob?.join()
+        val resolved = this.intent.value.copy(lane = intent.lane)
+        return context.core
             .dispatch(
                 Command(
-                    create_conversation = CreateConversation(chat = chat.value, intent = intent)
+                    create_conversation = CreateConversation(chat = chat.value, intent = resolved)
                 )
             )
             .card
             ?.id ?: error("The core returned no conversation.")
+    }
 
     /** Creates a task on the selected board, or the first one. */
     suspend fun create(title: String, prompt: String, run: Boolean): String {

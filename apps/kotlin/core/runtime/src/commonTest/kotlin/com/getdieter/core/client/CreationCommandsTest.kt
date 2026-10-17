@@ -34,6 +34,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import okio.ByteString.Companion.encodeUtf8
+import okio.Path.Companion.toPath
 
 /** Creation, creation previews, and agent pickers as the client contract carries them. */
 class CreationCommandsTest {
@@ -81,6 +82,47 @@ class CreationCommandsTest {
             project_id = "p",
             lanes = listOf(Lane("todo", "Todo"), Lane("running", "Running"), Lane("done", "Done")),
         )
+
+    @Test
+    fun formChoicesSurviveClosingAndReloadingWithoutSubmission() {
+        val storage =
+            com.getdieter.core.storage.CoreStorage(
+                okio.fakefilesystem.FakeFileSystem(),
+                "/creation-test".toPath(),
+            )
+        val memory =
+            com.getdieter.core.composition.CreationMemory(
+                storage,
+                com.getdieter.core.runtime.SilentLogger,
+            )
+        val chosen = HarnessSelection("codex", "sol", "high", mapOf("fast_mode" to "true"))
+        memory.rememberChoices(
+            com.getdieter.client.v1.CreationIntent(
+                project_id = "p",
+                board_id = "b",
+                checkout_id = "k1",
+                workspace_mode = "project",
+                selection = chosen,
+            ),
+            false,
+        )
+        memory.rememberChoices(com.getdieter.client.v1.CreationIntent(), false)
+        memory.rememberChoices(
+            com.getdieter.client.v1.CreationIntent(project_id = "p", board_id = "other"),
+            true,
+        )
+        val restored =
+            com.getdieter.core.composition.CreationMemory(
+                storage,
+                com.getdieter.core.runtime.SilentLogger,
+            )
+        assertEquals("p", restored.state.value.project_id)
+        assertEquals("b", restored.state.value.boards["p"])
+        assertEquals("k1", restored.state.value.checkouts["p"])
+        assertEquals(WorkspaceMode.PROJECT, restored.workspaceMode)
+        assertEquals("high", restored.selection(listOf(codex))?.effort)
+        assertEquals("true", restored.selection(listOf(codex))?.provider_options?.get("fast_mode"))
+    }
 
     @Test
     fun theCreationSliceResolvesEachLoadedProjectsBoardAndCheckout() {

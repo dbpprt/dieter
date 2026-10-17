@@ -6,6 +6,7 @@ import com.getdieter.client.v1.*
 import com.getdieter.mobile.navigation.*
 import kotlin.test.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.*
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -157,10 +158,55 @@ class MobileStoreTest {
             val preview = core.sentOf { it.creation_preview }.single()
             assertEquals(MobileStore.FORM_SCOPE, preview.scope)
             assertTrue(preview.chat)
-            assertEquals("project", preview.intent?.project_id)
-            assertEquals("board", preview.intent?.board_id)
+            assertEquals(
+                "",
+                preview.intent?.project_id,
+                "Let the core restore the last chosen project",
+            )
+            assertEquals("", preview.intent?.board_id, "Let the core restore that project's board")
             assertEquals("Hi", preview.intent?.prompt)
             assertEquals("Hi", store.creation.preview.value.intent?.prompt)
+        } finally {
+            store.close()
+        }
+    }
+
+    @Test
+    fun submittingWaitsForTheLastAgentChoice() = runTest {
+        val chosen = com.getdieter.api.v1.HarnessSelection("codex", "new-model", "high")
+        val core = FakeMobileCore { command ->
+            when {
+                command.creation_preview != null ->
+                    Result(
+                        creation_preview =
+                            CreationPreview(
+                                intent =
+                                    command.creation_preview!!.intent!!.copy(selection = chosen)
+                            )
+                    )
+                command.create_conversation != null ->
+                    Result(card = com.getdieter.api.v1.Card(id = "created"))
+                else -> Result(done = Done())
+            }
+        }
+        val store = store(core)
+        try {
+            store.creation.update(
+                CreationIntent(prompt = "Fix it"),
+                AgentChoice(model = "new-model"),
+            )
+            val submission = async {
+                store.creation.submit(store.creation.intent.value.copy(lane = "todo"))
+            }
+            runCurrent()
+            assertTrue(core.sentOf { it.create_conversation }.isEmpty())
+            advanceTimeBy(100)
+            runCurrent()
+            assertEquals("created", submission.await())
+            val sent = core.sentOf { it.create_conversation }.single().intent!!
+            assertEquals(chosen, sent.selection)
+            assertEquals("todo", sent.lane)
+            assertEquals("Fix it", sent.prompt)
         } finally {
             store.close()
         }

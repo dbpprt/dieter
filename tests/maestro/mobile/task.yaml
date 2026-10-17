@@ -16,6 +16,39 @@ tags: [smoke]
 - tapOn:
     id: chrome-new-task
     waitToSettleTimeoutMs: 500
+# Android choice dialogs stay readable and selections survive closing the form.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - scrollUntilVisible:
+          element:
+            id: picker-effort
+          direction: DOWN
+      - tapOn:
+          id: picker-effort
+          waitToSettleTimeoutMs: 500
+      - assertVisible:
+          id: picker-effort-high
+      - takeScreenshot: task-effort-picker
+      - tapOn:
+          id: picker-effort-high
+          waitToSettleTimeoutMs: 500
+      - tapOn:
+          id: chrome-cancel-creation
+          waitToSettleTimeoutMs: 500
+      - tapOn:
+          id: chrome-new-task
+          waitToSettleTimeoutMs: 500
+      - scrollUntilVisible:
+          element:
+            id: picker-effort
+          direction: DOWN
+      - assertVisible: "High"
+      - scrollUntilVisible:
+          element:
+            id: task-title
+          direction: UP
 - tapOn:
     id: task-title
     waitToSettleTimeoutMs: 500
