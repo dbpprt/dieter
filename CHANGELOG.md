@@ -10,6 +10,17 @@ copy the **Unreleased** notes into a section named after that exact version
 
 Nothing yet.
 
+## 0.6.415
+
+### Fixed
+
+- Task creation remembers your project, board, workspace, checkout and agent
+  choices, including when you close the form without creating a task. Submitting
+  immediately after changing an option uses the latest selection, and an explicit
+  Default effort stays selected.
+- Android option pickers use readable, scrollable dialogs that mark the current
+  selection instead of narrow dropdown menus.
+
 ## 0.6.413
 
 ### Changed
