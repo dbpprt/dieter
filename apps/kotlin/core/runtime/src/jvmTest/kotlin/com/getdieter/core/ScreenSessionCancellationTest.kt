@@ -1,5 +1,6 @@
 package com.getdieter.core
 
+import com.getdieter.api.v1.RemoteDesktopSignal
 import com.getdieter.core.screens.ScreenPhase
 import com.squareup.wire.GrpcException
 import com.squareup.wire.GrpcStatus
@@ -26,7 +27,15 @@ class ScreenSessionCancellationTest : ScreenSessionHarness() {
         assertEquals(1, daemon.starts.distinct().size)
         assertEquals(1, engines.created.size)
         assertFalse(engines.created.single().closed)
-        assertEquals(ScreenPhase.Connecting, session.view.value.phase)
+        val engine = engines.created.single()
+        engine.connect()
+        daemon.signals.send(
+            RemoteDesktopSignal(session_id = daemon.sessionId, state = daemon.state(1, 1000))
+        )
+        runCurrent()
+        engine.events.presented(1200u)
+        runCurrent()
+        assertEquals(ScreenPhase.Streaming, session.view.value.phase)
         session.disconnect()
         advanceTimeBy(30.seconds)
         runCurrent()
