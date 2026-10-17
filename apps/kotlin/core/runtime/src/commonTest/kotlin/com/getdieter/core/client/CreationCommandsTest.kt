@@ -125,6 +125,15 @@ class CreationCommandsTest {
     }
 
     @Test
+    fun restoringAnExplicitDefaultEffortDoesNotReplaceItWithTheModelsEffort() {
+        val saved = HarnessSelection("codex", "sol", "default")
+        assertEquals(
+            saved.effort,
+            com.getdieter.core.selection.Selections.resolve(saved, listOf(codex))?.effort,
+        )
+    }
+
+    @Test
     fun theCreationSliceResolvesEachLoadedProjectsBoardAndCheckout() {
         val many =
             Project(
