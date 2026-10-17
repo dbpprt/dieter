@@ -54,6 +54,9 @@ class ScreenRecovery {
 object ScreenFailures {
     private val retryableCodes =
         setOf(
+            // Server-side stream cancellation can be a dropped route. Local
+            // coroutine cancellation is handled separately and never retried.
+            GrpcStatus.CANCELLED,
             GrpcStatus.NOT_FOUND,
             GrpcStatus.UNAVAILABLE,
             GrpcStatus.DEADLINE_EXCEEDED,
