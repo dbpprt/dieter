@@ -10,6 +10,14 @@ copy the **Unreleased** notes into a section named after that exact version
 
 Nothing yet.
 
+## 0.6.418
+
+### Fixed
+
+- Large Markdown files on Mac open as fully editable source, avoiding expensive rich layout and keeping multi-megabyte documents usable in Files and conversation tabs.
+- Syntax highlighting limits work for large files and unusually long lines, cancels stale requests, and avoids repeated work when switching tabs.
+- File navigation preserves selection and undo history; reloaded files refresh their highlighting. Opening a Markdown context menu no longer renders rich clipboard content unnecessarily.
+
 ## 0.6.416
 
 ### Fixed
