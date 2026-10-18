@@ -3,9 +3,9 @@ module github.com/dbpprt/dieter
 go 1.26.9
 
 require (
-	connectrpc.com/connect v1.21.0
+	connectrpc.com/connect v1.21.1
 	github.com/creack/pty v1.1.24
-	github.com/ebitengine/purego v0.11.1
+	github.com/ebitengine/purego v0.11.2
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/pion/ice/v4 v4.4.7
 	github.com/pion/interceptor v0.1.49
@@ -20,7 +20,7 @@ require (
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/shirou/gopsutil/v4 v4.26.9
 	golang.org/x/sys v0.49.0
-	golang.org/x/text v0.42.0
+	golang.org/x/text v0.43.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800
 	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.12
