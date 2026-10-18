@@ -207,20 +207,26 @@ struct InboxFeed: View {
 
     @ViewBuilder
     private func section(_ title: String, id: String, entries: [InboxActivityEntry]) -> some View {
-        if !entries.isEmpty {
-            HStack {
-                Text(title).font(.system(size: 11.5, weight: .semibold))
-                Spacer()
-                Text("\(entries.count)").font(DieterFont.monoSmall)
-            }
-            .foregroundStyle(DieterTheme.tertiary).padding(.horizontal, 4).padding(.top, 12).padding(.bottom, 2)
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("inbox.section.\(id)").e2eTarget("inbox.section.\(id)")
+        Section {
             ForEach(entries.prefix(visibleLimit)) { entry in
                 InboxActivityRow(entry: entry, onOpen: onOpen).equatable()
             }
             if entries.count > visibleLimit { showMore }
+        } header: {
+            if !entries.isEmpty {
+                HStack {
+                    Text(title).font(.system(size: 11.5, weight: .semibold))
+                    Spacer()
+                    Text("\(entries.count)").font(DieterFont.monoSmall)
+                }
+                .foregroundStyle(DieterTheme.tertiary).padding(.horizontal, 4).padding(.top, 12).padding(.bottom, 2)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("inbox.section.\(id)").e2eTarget("inbox.section.\(id)")
+            }
         }
+        // Scope the lazy container's identity, including its header and rows. A row
+        // moving sections must not retain the old section's rendered content.
+        .id(id)
     }
 
     private var showMore: some View {
@@ -306,6 +312,9 @@ private struct InboxActivityRow: View, Equatable {
                         HStack(spacing: 5) {
                             Image(systemName: statusSymbol(entry.kind)).font(.system(size: 9, weight: .semibold))
                             Text(entry.row.kindLabel).font(.system(size: 10, weight: .medium))
+                                .e2eTarget(
+                                    "inbox.status.\(entry.id).\(entry.row.kind)",
+                                    text: "\(entry.row.title) · \(entry.row.kindLabel)")
                             Spacer(minLength: 4)
                             InboxActivityAge(atMillis: entry.row.shownAtMillis)
                                 .font(.system(size: 9, design: .monospaced)).foregroundStyle(DieterTheme.tertiary)

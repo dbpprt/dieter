@@ -155,8 +155,13 @@ class ConnectionSupervisor(
         }
     }
 
-    /** Foreground, or a background window the platform allows. */
+    /**
+     * Foreground, or a background window the platform allows. Desktop clients keep running while
+     * inactive; a repeated foreground signal must still recover connections that became silent
+     * while away. Preserve an explicit disconnect and authentication/update failures.
+     */
     fun setRunning(value: Boolean) {
+        if (value && running.value) systemWoke()
         running.value = value
     }
 
