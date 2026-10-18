@@ -50,6 +50,10 @@ Choose the checkout to browse, then open a file.
 Both use the same draft and a separate Save action. Saves check the file revision;
 a concurrent change preserves your edits and reports a conflict.
 
+Large documents and files with unusually long lines open in Source automatically
+to keep the viewer responsive. The complete text remains available for editing
+and saving; rich formatting and diagram previews are disabled for these files.
+
 Mermaid and Vega/Vega-Lite fences render locally. Click a diagram to edit its
 source, then leave the block to render it again. Rendering libraries are bundled;
 external datasets, scripts, and images are not fetched by the diagram renderer.

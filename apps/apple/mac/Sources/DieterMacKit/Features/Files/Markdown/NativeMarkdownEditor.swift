@@ -283,15 +283,18 @@ final class NativeMarkdownControls {
     }
 
     func contextMenu(_ menu: NSMenu, source: String, selection: NSRange) -> NSMenu {
-        let selected = Self.selectedMarkdown(source: source, displaySelection: selection)
-        let html = MarkdownHTMLRenderer.html(from: selected, extensions: [StrikethroughExtension()])
-        guard let payload = MarkdownClipboardPayload(body: ["markdown": selected, "text": selected, "html": html])
-        else { return menu }
         menu.insertItem(.separator(), at: 0)
         for (title, rich) in [("Copy as Markdown", false), ("Copy as Rich Text", true)] {
             menu.insertItem(
                 MarkdownCopyMenuItem(title: title) {
-                    payload.write(to: .general, richText: rich)
+                    // Opening a context menu must not render the whole document.
+                    // Generate only the representation the user actually copies.
+                    let selected = Self.selectedMarkdown(source: source, displaySelection: selection)
+                    let html =
+                        rich
+                        ? MarkdownHTMLRenderer.html(from: selected, extensions: [StrikethroughExtension()]) : ""
+                    MarkdownClipboardPayload(body: ["markdown": selected, "text": selected, "html": html])?
+                        .write(to: .general, richText: rich)
                 }, at: 0)
         }
         return menu

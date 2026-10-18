@@ -63,6 +63,44 @@ struct NativeMarkdownEditorTests {
         #expect(session.isDirty)
     }
 
+    @Test func crossingTheLargeDocumentBudgetRetainsSourceUndoAndSelection() async throws {
+        let source = "# Small document\n"
+        let session = FileEditorSession()
+        session.prepare(documentKey: "growing", text: source)
+        let host = NSHostingView(
+            rootView: MarkdownFileEditor(
+                session: session, documentKey: "growing", text: source, filename: "growing.md"))
+        host.sizingOptions = []
+        let window = NSWindow(
+            contentRect: .init(x: -3000, y: -3000, width: 900, height: 650),
+            styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.setContentSize(.init(width: 900, height: 650))
+        window.orderFrontRegardless()
+        window.makeKey()
+        defer { window.close() }
+        host.layoutSubtreeIfNeeded()
+        try await settle { allTextViews(in: host).contains { $0.textLayoutManager != nil } }
+        try selectMode(.source, in: host)
+        try await settle { allTextViews(in: host).contains { $0 is SyntaxEditorTextView } }
+        let editor = try #require(allTextViews(in: host).first { $0 is SyntaxEditorTextView })
+        window.makeFirstResponder(editor)
+        let appended = String(repeating: "paragraph\n", count: 21_000)
+        editor.insertText(appended, replacementRange: .init(location: (source as NSString).length, length: 0))
+        editor.breakUndoCoalescing()
+        let selection = editor.selectedRange()
+        try await settle { session.usesLargeDocumentMode && allTextViews(in: host).count == 1 }
+        #expect(allTextViews(in: host).first === editor)
+        #expect(editor.selectedRange() == selection)
+        #expect(editor.undoManager?.canUndo == true)
+        editor.undoManager?.undo()
+        #expect(session.currentText() == source)
+        #expect(session.usesLargeDocumentMode)
+        editor.undoManager?.redo()
+        #expect(session.currentText() == source + appended)
+    }
+
     @Test func nativeFormattingPreservesDiagramFencesAndUndo() async throws {
         let source =
             "# Heading\n\nA **bold** word.\n\n```mermaid\ngraph LR\n A-->B\n```\n\n```vega-lite\n{\"data\":{\"values\":[{\"x\":3}]},\"mark\":\"point\"}\n```\n"
