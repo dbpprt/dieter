@@ -153,6 +153,34 @@ struct SyntaxHighlightedEditorActivityTests {
         }
     }
 
+    @Test func sameKeyReloadRefreshesHighlightingButUnchangedTabResumeDoesNot() async throws {
+        let session = FileEditorSession()
+        let editor = HighlightActivityTextView()
+        let coordinator = SyntaxHighlightedEditor(
+            session: session, documentKey: "reload", text: "plain", filename: "README.md"
+        ).makeCoordinator()
+        coordinator.textView = editor
+        editor.delegate = coordinator
+        session.attach(editor, documentKey: "reload", initialText: "plain")
+        defer { coordinator.setActive(false) }
+        coordinator.highlight(force: true)
+        // Prepare models an external reload with the same file identity.
+        session.prepare(documentKey: "reload", text: "# Reloaded")
+        coordinator.highlight(force: false)
+        for _ in 0..<100 {
+            if headingColor(in: editor) == .systemPurple { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(headingColor(in: editor) == .systemPurple)
+        editor.textStorage?.addAttribute(
+            .foregroundColor, value: NSColor.systemRed, range: .init(location: 0, length: 1))
+        coordinator.setActive(false)
+        coordinator.setActive(true)
+        for _ in 0..<30 { await Task.yield() }
+        #expect(headingColor(in: editor) == .systemRed, "Unchanged tab activation should reuse completed highlighting")
+        #expect(!session.isDirty)
+    }
+
     private func headingColor(in editor: NSTextView) -> NSColor? {
         editor.textStorage?.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
     }

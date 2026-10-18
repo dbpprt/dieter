@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/dbpprt/dieter/internal/model"
 	boardstore "github.com/dbpprt/dieter/internal/store"
@@ -21,6 +22,11 @@ func seedE2EFixture(data *boardstore.Store, project model.Project, board model.B
 		}
 	}
 	if err = os.WriteFile(filepath.Join(project.Path, "README.md"), []byte("# Mobile workspace\n\nOne durable conversation across Android and iOS.\n\n- Shared Kotlin client rules\n- Adaptive Compose screens\n- Native glass, terminal and GPU surfaces\n"), 0o644); err != nil {
+		return err
+	}
+	// Exercise the real file RPC and native editor with a multi-megabyte document.
+	largeMarkdown := strings.Repeat("# Large file viewer\n\nA **formatted** paragraph with a [link](https://example.com).\n\n", 33000)
+	if err = os.WriteFile(filepath.Join(project.Path, "large-viewer.md"), []byte(largeMarkdown), 0o644); err != nil {
 		return err
 	}
 	fixtures := []struct{ title, prompt, summary, lane string }{

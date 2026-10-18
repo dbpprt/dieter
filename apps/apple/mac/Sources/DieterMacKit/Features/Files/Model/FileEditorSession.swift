@@ -13,6 +13,8 @@ final class FileEditorSession {
     private(set) var documentKey = ""
     private(set) var isDirty = false
     private(set) var lineCount = 1
+    /// Native rich layout is whole-document; source mode preserves large drafts.
+    private(set) var usesLargeDocumentMode = false
     private(set) var revision = 0
     /// Native rich-text undo records ranges in its own buffer. A source edit
     /// invalidates those ranges; mirrored rich edits do not.
@@ -31,6 +33,7 @@ final class FileEditorSession {
         detachedText = initialText
         isDirty = false
         lineCount = Self.countLines(in: initialText)
+        updatePresentationBudget(length: (initialText as NSString).length, openedText: initialText)
         revision &+= 1
         sourceEditGeneration &+= 1
     }
@@ -42,6 +45,7 @@ final class FileEditorSession {
         if textView?.string != text { textView?.string = text }
         isDirty = false
         lineCount = Self.countLines(in: text)
+        updatePresentationBudget(length: (text as NSString).length, openedText: text)
         revision &+= 1
         sourceEditGeneration &+= 1
     }
@@ -49,8 +53,23 @@ final class FileEditorSession {
     func didEdit(lineDelta: Int) {
         if !isDirty { isDirty = true }
         if lineDelta != 0 { lineCount = max(1, lineCount + lineDelta) }
+        updatePresentationBudget(length: textView?.textStorage?.length ?? (detachedText as NSString).length)
         revision &+= 1
         if replacementDepth == 0 { sourceEditGeneration &+= 1 }
+    }
+
+    private func updatePresentationBudget(length: Int, openedText: String? = nil) {
+        // Stay in source mode after shrinking a draft: replacing the editor
+        // while typing would throw away its selection and undo history.
+        var large = length > FileSyntaxHighlightPlan.limit || lineCount > 4_000
+        if !large, let openedText {
+            var lineLength = 0
+            for unit in openedText.utf16 {
+                lineLength = unit == 10 || unit == 13 ? 0 : lineLength + 1
+                if lineLength > FileSyntaxHighlightPlan.lineLimit { large = true; break }
+            }
+        }
+        usesLargeDocumentMode = large || (openedText == nil && usesLargeDocumentMode)
     }
 
     func currentText() -> String {
