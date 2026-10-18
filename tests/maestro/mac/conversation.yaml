@@ -42,6 +42,30 @@ tags: [smoke]
     id: conversation.composer
 - inputText: "Ping from the Mac"
 - pressKey: Enter
+# Observe admission before completion so the previous turn cannot satisfy the check.
+- extendedWaitUntil:
+    visible:
+      id: conversation.stop
+    timeout: 30000
+# The Inbox must receive completion while the conversation is not open.
+- tapOn:
+    id: sidebar.inbox
+- extendedWaitUntil:
+    visible:
+      id: 'inbox\.status\..+\.RUNNING'
+      text: "Design the mobile workspace · Running"
+    timeout: 30000
+- extendedWaitUntil:
+    visible:
+      id: 'inbox\.status\..+\.(RECENT|REVIEW|UNREAD)'
+      text: "Design the mobile workspace · (Recent|Review|Unread reply)"
+    timeout: 300000
+- assertNotVisible:
+    id: 'inbox\.status\..+\.RUNNING'
+    text: "Design the mobile workspace · Running"
+- takeScreenshot: mac-inbox-completed
+- tapOn:
+    id: 'inbox\.title\..+\.Design the mobile workspace'
 # The seeded card is a fork, so the mock echoes its context before the message.
 - extendedWaitUntil:
     visible: "Mock harness received: .*Ping from the Mac.*"

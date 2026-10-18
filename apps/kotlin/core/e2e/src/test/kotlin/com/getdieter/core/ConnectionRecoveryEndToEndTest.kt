@@ -1,7 +1,9 @@
 package com.getdieter.core
 
+import com.getdieter.api.v1.CreateConversationRequest
 import com.getdieter.client.v1.Command
 import com.getdieter.client.v1.SetConnected
+import com.getdieter.client.v1.SetForeground
 import com.getdieter.client.v1.SystemWoke
 import com.getdieter.core.client.ClientApi
 import com.getdieter.core.connection.ConnectionPhase
@@ -75,12 +77,40 @@ class ConnectionRecoveryEndToEndTest : EndToEnd() {
 
     @Test
     fun aWakeReopensSilentConnectionsAtOnce() = e2e {
+        verifyImmediateRecovery(Command(system_woke = SystemWoke()))
+    }
+
+    @Test
+    fun desktopActivationReopensSilentBackgroundConnectionsAtOnce() = e2e {
+        verifyImmediateRecovery(Command(set_foreground = SetForeground(foreground = true)))
+    }
+
+    private suspend fun verifyImmediateRecovery(command: Command) {
         val fixture = shared.acquire()
         StallingProxy(fixture.address).use { proxy ->
             val runtime = connect(fixture, proxy)
+            val actor = runtime(fixture)
+            actor.awaitLoaded(fixture)
+            val card =
+                actor.onMachine(fixture.daemonId) {
+                    it.CreateCard()
+                        .execute(
+                            CreateConversationRequest(
+                                project_id = fixture.projectId,
+                                board_id = fixture.boardId,
+                                lane = "todo",
+                                title = "Changed while the desktop was away",
+                                workspace_mode = "project",
+                            )
+                        )
+                }
+            actor.awaitSynced(card.id)
+            runtime.awaitSynced(card.id)
             val silent = runtime.connection.session.value
             proxy.stall()
-            ClientApi(runtime).dispatch(Command(system_woke = SystemWoke()))
+            actor.onBoard { archive(card.id) }
+            assertTrue(runtime.workspace.state.value.card(card.id) != null)
+            ClientApi(runtime).dispatch(command)
             // Well before the silent stream would have turned the machine's view stale.
             runtime.connection.session.await(
                 10.seconds,
@@ -94,6 +124,8 @@ class ConnectionRecoveryEndToEndTest : EndToEnd() {
             ) {
                 it[fixture.daemonId]?.current == true
             }
+            // Current is a barrier for the full account projection, not just a healthy socket.
+            assertEquals(null, runtime.workspace.state.value.card(card.id))
         }
     }
 
@@ -106,6 +138,7 @@ class ConnectionRecoveryEndToEndTest : EndToEnd() {
         api.dispatch(Command(set_connected = SetConnected(connected = false)))
         runtime.connection.state.await(30.seconds) { it.phase == ConnectionPhase.DISCONNECTED }
         api.dispatch(Command(system_woke = SystemWoke()))
+        api.dispatch(Command(set_foreground = SetForeground(foreground = true)))
         delay(2.seconds)
         assertEquals(ConnectionPhase.DISCONNECTED, runtime.connection.state.value.phase)
         assertEquals(null, runtime.connection.session.value)
