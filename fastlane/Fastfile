@@ -118,6 +118,7 @@ def build_mac(configuration:, e2e: false, evidence:)
       "DIETER_MAC_URL_SCHEME=dieter-mac-e2e"
     ] if e2e
     derived = Dieter.path("apps/apple/mac/.build/DerivedData")
+    Dieter::Swift.prepare_xcode_webrtc_cache(derived)
     build_mac_app(
       project: MAC_PROJECT,
       scheme: "Dieter",
@@ -139,6 +140,7 @@ def build_ios_simulator(configuration:, evidence:)
   Dieter::Lease.hold("apple-build") do
     build_framework(configuration, ["ios-simulator"])
     derived = Dieter.path("apps/apple/ios/.build/DerivedData")
+    Dieter::Swift.prepare_xcode_webrtc_cache(derived)
     settings = [
       "ARCHS=arm64",
       "CODE_SIGNING_ALLOWED=YES",
@@ -578,6 +580,7 @@ platform :ios do
       "DIETER_IOS_PROFILE_SPECIFIER=#{profiles[ids["ios"]]}",
       "DIETER_IOS_SHARE_PROFILE_SPECIFIER=#{profiles[ids["ios_share"]]}"
     ]
+    Dieter::Swift.prepare_xcode_webrtc_cache(Dieter.path("apps/apple/ios/.build/DerivedData"))
     ipa =
       build_app(
         project: IOS_PROJECT,
@@ -837,6 +840,7 @@ platform :mac do
       "DIETER_MAC_SIGN_IDENTITY=Developer ID Application",
       "OTHER_CODE_SIGN_FLAGS=--timestamp"
     ]
+    Dieter::Swift.prepare_xcode_webrtc_cache(Dieter.path("apps/apple/mac/.build/DerivedData"))
     build_mac_app(
       project: MAC_PROJECT,
       scheme: "Dieter",

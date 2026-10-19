@@ -15,6 +15,25 @@ module Dieter
 
     module_function
 
+    # Xcode can restore an explicit WebRTC module built against an older binary
+    # artifact, then reject it after SwiftPM replaces the framework headers.
+    # Invalidate only that generated module when its declared artifact changes.
+    def prepare_xcode_webrtc_cache(
+      derived,
+      manifest: Dieter.path("apps/apple/DieterKit/Package.swift")
+    )
+      artifact = File.read(manifest)[/\.binaryTarget\(\s*name: "WebRTC",.*?\n\s*\)/m]
+      raise "WebRTC binary target not found in #{manifest}" unless artifact
+      identity = Digest::SHA256.hexdigest(artifact)
+      stamp = File.join(derived, ".dieter-webrtc-module-identity")
+      return if File.file?(stamp) && File.read(stamp) == identity
+
+      modules = File.join(derived, "Build/Intermediates.noindex/SwiftExplicitPrecompiledModules")
+      Dir.glob(File.join(modules, "WebRTC-*.pcm")).each { |file| FileUtils.rm(file) }
+      FileUtils.mkdir_p(derived)
+      File.write(stamp, identity)
+    end
+
     # Tests reported by swift-testing's summary and XCTest's totals.
     def count(output)
       testing = output.scan(/Test run with (\d+) tests?\b.*?(?:passed|failed)/).sum { |(n)| n.to_i }
