@@ -1132,10 +1132,15 @@ Never stop or replace the operator's daemon as part of testing or implementation
 Use `kv get`, `kv list`, `kv put`, `kv delete`, `kv move`, and `kv watch` for
 account-scoped portable JSON. All use the daemon API and global `--machine`.
 Folders, membership, project ordering, pinned-project membership/order,
-pinned-chat ordering, disclosure, and lane sort direction share the `navigation`
+pinned-chat ordering, inbox pins, disclosure, and lane sort direction share the `navigation`
 namespace across native clients. See
 `apps/kotlin/core/runtime/src/commonMain/kotlin/com/getdieter/core/navigation/SharedKv.kt`
 for keys and projection rules.
+
+Inbox pins use `inbox-pin.<card-id>.pinned` in `navigation`, with JSON `true`
+or `false`. Read the current revision with `kv get` before changing it through
+`kv put`; these pins are independent of chat pins and sync across Mac, Android,
+and iOS.
 
 `kv put --namespace NS --key KEY --file value.json --revision REV` replaces the
 observed local revision (omit revision only for creation). `kv move` accepts

@@ -104,6 +104,9 @@ private const val CHATS_DISCLOSURE = "chats-disclosure"
  * machine may be offline); views filter them against what is available.
  */
 class NavigationLayout(private val values: Map<String, ByteString>) {
+    fun inboxPins(): Set<String> =
+        ids("inbox-pin", "pinned").filter { bool("inbox-pin.$it.pinned") == true }.toSet()
+
     fun ids(prefix: String, field: String): List<String> {
         val head = "$prefix."
         val tail = ".$field"
@@ -302,6 +305,11 @@ class NavigationLayout(private val values: Map<String, ByteString>) {
 class NavigationEditor(private val kv: SharedKv) {
     private val layout
         get() = NavigationLayout(kv.values.value)
+
+    fun pinInboxCard(cardId: String, pinned: Boolean) {
+        if (cardId.isBlank()) return
+        kv.enqueue(listOf(put("inbox-pin.$cardId.pinned", JsonPrimitive(pinned))))
+    }
 
     fun setProjectOrder(next: List<String>) =
         kv.enqueue(order(layout.ordered(PROJECTS_ORDER), next, PROJECTS_ORDER, ""))

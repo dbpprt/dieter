@@ -372,6 +372,7 @@ message NavigationCommand {
     DeleteFolder delete_folder = 6;
     SetFolderExpanded set_folder_expanded = 7;
     MoveToFolder move_to_folder = 8;
+    PinInboxCard pin_inbox_card = 9;
   }
 }
 
@@ -385,6 +386,12 @@ message MoveProject {
   string project_id = 1;
   string before_project_id = 2;
   bool ungrouped = 3;
+}
+
+// Inbox membership is independent of chat pins and stored in shared navigation KV.
+message PinInboxCard {
+  string card_id = 1;
+  bool pinned = 2;
 }
 
 // Pins a project after the pinned ones, or unpins it; a project already
@@ -1598,6 +1605,7 @@ message ActivityRow {
   // Why what its machine reports may be old, e.g. "Studio is offline"; empty
   // while current.
   string stale = 16;
+  bool pinned = 17;
 }
 
 // Where an activity row sits on the Inbox timeline, as fractions of the

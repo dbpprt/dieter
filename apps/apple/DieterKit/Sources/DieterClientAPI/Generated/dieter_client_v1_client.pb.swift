@@ -2780,6 +2780,14 @@ public nonisolated struct ClientNavigationCommand: Sendable {
     set {action = .moveToFolder(newValue)}
   }
 
+  public var pinInboxCard: ClientPinInboxCard {
+    get {
+      if case .pinInboxCard(let v)? = action {return v}
+      return ClientPinInboxCard()
+    }
+    set {action = .pinInboxCard(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Action: Equatable, Sendable {
@@ -2791,6 +2799,7 @@ public nonisolated struct ClientNavigationCommand: Sendable {
     case deleteFolder(ClientDeleteFolder)
     case setFolderExpanded(ClientSetFolderExpanded)
     case moveToFolder(ClientMoveToFolder)
+    case pinInboxCard(ClientPinInboxCard)
 
   }
 
@@ -2813,6 +2822,21 @@ public nonisolated struct ClientMoveProject: Sendable {
   public var beforeProjectID: String = String()
 
   public var ungrouped: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// Inbox membership is independent of chat pins and stored in shared navigation KV.
+public nonisolated struct ClientPinInboxCard: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var cardID: String = String()
+
+  public var pinned: Bool = false
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -6618,62 +6642,112 @@ public nonisolated struct ClientActivitySummary: Sendable {
   public init() {}
 }
 
-public nonisolated struct ClientActivityRow: Sendable {
+public nonisolated struct ClientActivityRow: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
   public var card: DieterAPI.Dieter_V1_Card {
-    get {_card ?? DieterAPI.Dieter_V1_Card()}
-    set {_card = newValue}
+    get {_storage._card ?? DieterAPI.Dieter_V1_Card()}
+    set {_uniqueStorage()._card = newValue}
   }
   /// Returns true if `card` has been explicitly set.
-  public var hasCard: Bool {self._card != nil}
+  public var hasCard: Bool {_storage._card != nil}
   /// Clears the value of `card`. Subsequent reads from it will return its default value.
-  public mutating func clearCard() {self._card = nil}
+  public mutating func clearCard() {_uniqueStorage()._card = nil}
 
   /// The core's ActivityKind name: "ANSWER", "RUNNING", "UNREAD", "REVIEW",
   /// "FAILED", or "RECENT".
-  public var kind: String = String()
+  public var kind: String {
+    get {_storage._kind}
+    set {_uniqueStorage()._kind = newValue}
+  }
 
-  public var section: ClientActivityRow.Section = .attention
+  public var section: ClientActivityRow.Section {
+    get {_storage._section}
+    set {_uniqueStorage()._section = newValue}
+  }
 
-  public var detail: String = String()
+  public var detail: String {
+    get {_storage._detail}
+    set {_uniqueStorage()._detail = newValue}
+  }
 
-  public var atMillis: Int64 = 0
+  public var atMillis: Int64 {
+    get {_storage._atMillis}
+    set {_uniqueStorage()._atMillis = newValue}
+  }
 
-  public var startedAtMillis: Int64 = 0
+  public var startedAtMillis: Int64 {
+    get {_storage._startedAtMillis}
+    set {_uniqueStorage()._startedAtMillis = newValue}
+  }
 
-  public var projectName: String = String()
+  public var projectName: String {
+    get {_storage._projectName}
+    set {_uniqueStorage()._projectName = newValue}
+  }
 
-  public var boardName: String = String()
+  public var boardName: String {
+    get {_storage._boardName}
+    set {_uniqueStorage()._boardName = newValue}
+  }
 
   /// An unfiled chat; a chat filed on a board is a card.
-  public var chat: Bool = false
+  public var chat: Bool {
+    get {_storage._chat}
+    set {_uniqueStorage()._chat = newValue}
+  }
 
   /// Waits for the user: an answer or an unread reply.
-  public var needsYou: Bool = false
+  public var needsYou: Bool {
+    get {_storage._needsYou}
+    set {_uniqueStorage()._needsYou = newValue}
+  }
 
   /// Inbox "Finish": a board card waiting in a review lane.
-  public var canFinish: Bool = false
+  public var canFinish: Bool {
+    get {_storage._canFinish}
+    set {_uniqueStorage()._canFinish = newValue}
+  }
 
   /// "Answer", "Running", "Unread reply", "Review", "Failed", "Recent".
-  public var kindLabel: String = String()
+  public var kindLabel: String {
+    get {_storage._kindLabel}
+    set {_uniqueStorage()._kindLabel = newValue}
+  }
 
   /// The card's title, or "Untitled chat" / "Untitled card".
-  public var title: String = String()
+  public var title: String {
+    get {_storage._title}
+    set {_uniqueStorage()._title = newValue}
+  }
 
   /// The time the row shows: when a running turn started, else the latest
   /// activity; 0 when unknown.
-  public var shownAtMillis: Int64 = 0
+  public var shownAtMillis: Int64 {
+    get {_storage._shownAtMillis}
+    set {_uniqueStorage()._shownAtMillis = newValue}
+  }
 
   /// The menu bar's line: "Needs you", "Unread reply", "Ready for review",
   /// "Failed", or "Finished".
-  public var menuBarTitle: String = String()
+  public var menuBarTitle: String {
+    get {_storage._menuBarTitle}
+    set {_uniqueStorage()._menuBarTitle = newValue}
+  }
 
   /// Why what its machine reports may be old, e.g. "Studio is offline"; empty
   /// while current.
-  public var stale: String = String()
+  public var stale: String {
+    get {_storage._stale}
+    set {_uniqueStorage()._stale = newValue}
+  }
+
+  public var pinned: Bool {
+    get {_storage._pinned}
+    set {_uniqueStorage()._pinned = newValue}
+  }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -6717,7 +6791,7 @@ public nonisolated struct ClientActivityRow: Sendable {
 
   public init() {}
 
-  fileprivate var _card: DieterAPI.Dieter_V1_Card? = nil
+  fileprivate var _storage = _StorageClass.defaultInstance
 }
 
 /// Where an activity row sits on the Inbox timeline, as fractions of the
@@ -15853,7 +15927,7 @@ nonisolated extension ClientSetFolders: SwiftProtobuf.Message, SwiftProtobuf._Me
 
 nonisolated extension ClientNavigationCommand: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".NavigationCommand"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}move_project\0\u{3}pin_project\0\u{3}move_pinned_chat\0\u{3}create_folder\0\u{3}rename_folder\0\u{3}delete_folder\0\u{3}set_folder_expanded\0\u{3}move_to_folder\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}move_project\0\u{3}pin_project\0\u{3}move_pinned_chat\0\u{3}create_folder\0\u{3}rename_folder\0\u{3}delete_folder\0\u{3}set_folder_expanded\0\u{3}move_to_folder\0\u{3}pin_inbox_card\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -15965,6 +16039,19 @@ nonisolated extension ClientNavigationCommand: SwiftProtobuf.Message, SwiftProto
           self.action = .moveToFolder(v)
         }
       }()
+      case 9: try {
+        var v: ClientPinInboxCard?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .pinInboxCard(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .pinInboxCard(v)
+        }
+      }()
       default: break
       }
     }
@@ -16007,6 +16094,10 @@ nonisolated extension ClientNavigationCommand: SwiftProtobuf.Message, SwiftProto
     case .moveToFolder?: try {
       guard case .moveToFolder(let v)? = self.action else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 8)
+    }()
+    case .pinInboxCard?: try {
+      guard case .pinInboxCard(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 9)
     }()
     case nil: break
     }
@@ -16055,6 +16146,41 @@ nonisolated extension ClientMoveProject: SwiftProtobuf.Message, SwiftProtobuf._M
     if lhs.projectID != rhs.projectID {return false}
     if lhs.beforeProjectID != rhs.beforeProjectID {return false}
     if lhs.ungrouped != rhs.ungrouped {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientPinInboxCard: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".PinInboxCard"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{1}pinned\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.cardID) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.pinned) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.cardID.isEmpty {
+      try visitor.visitSingularStringField(value: self.cardID, fieldNumber: 1)
+    }
+    if self.pinned != false {
+      try visitor.visitSingularBoolField(value: self.pinned, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientPinInboxCard, rhs: ClientPinInboxCard) -> Bool {
+    if lhs.cardID != rhs.cardID {return false}
+    if lhs.pinned != rhs.pinned {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -22606,108 +22732,181 @@ nonisolated extension ClientActivitySummary: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension ClientActivityRow: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ActivityRow"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}card\0\u{1}kind\0\u{1}section\0\u{1}detail\0\u{3}at_millis\0\u{3}started_at_millis\0\u{3}project_name\0\u{3}board_name\0\u{1}chat\0\u{3}needs_you\0\u{3}can_finish\0\u{3}kind_label\0\u{1}title\0\u{3}shown_at_millis\0\u{3}menu_bar_title\0\u{1}stale\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}card\0\u{1}kind\0\u{1}section\0\u{1}detail\0\u{3}at_millis\0\u{3}started_at_millis\0\u{3}project_name\0\u{3}board_name\0\u{1}chat\0\u{3}needs_you\0\u{3}can_finish\0\u{3}kind_label\0\u{1}title\0\u{3}shown_at_millis\0\u{3}menu_bar_title\0\u{1}stale\0\u{1}pinned\0")
+
+  fileprivate class _StorageClass {
+    var _card: DieterAPI.Dieter_V1_Card? = nil
+    var _kind: String = String()
+    var _section: ClientActivityRow.Section = .attention
+    var _detail: String = String()
+    var _atMillis: Int64 = 0
+    var _startedAtMillis: Int64 = 0
+    var _projectName: String = String()
+    var _boardName: String = String()
+    var _chat: Bool = false
+    var _needsYou: Bool = false
+    var _canFinish: Bool = false
+    var _kindLabel: String = String()
+    var _title: String = String()
+    var _shownAtMillis: Int64 = 0
+    var _menuBarTitle: String = String()
+    var _stale: String = String()
+    var _pinned: Bool = false
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _card = source._card
+      _kind = source._kind
+      _section = source._section
+      _detail = source._detail
+      _atMillis = source._atMillis
+      _startedAtMillis = source._startedAtMillis
+      _projectName = source._projectName
+      _boardName = source._boardName
+      _chat = source._chat
+      _needsYou = source._needsYou
+      _canFinish = source._canFinish
+      _kindLabel = source._kindLabel
+      _title = source._title
+      _shownAtMillis = source._shownAtMillis
+      _menuBarTitle = source._menuBarTitle
+      _stale = source._stale
+      _pinned = source._pinned
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularMessageField(value: &self._card) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.kind) }()
-      case 3: try { try decoder.decodeSingularEnumField(value: &self.section) }()
-      case 4: try { try decoder.decodeSingularStringField(value: &self.detail) }()
-      case 5: try { try decoder.decodeSingularInt64Field(value: &self.atMillis) }()
-      case 6: try { try decoder.decodeSingularInt64Field(value: &self.startedAtMillis) }()
-      case 7: try { try decoder.decodeSingularStringField(value: &self.projectName) }()
-      case 8: try { try decoder.decodeSingularStringField(value: &self.boardName) }()
-      case 9: try { try decoder.decodeSingularBoolField(value: &self.chat) }()
-      case 10: try { try decoder.decodeSingularBoolField(value: &self.needsYou) }()
-      case 11: try { try decoder.decodeSingularBoolField(value: &self.canFinish) }()
-      case 12: try { try decoder.decodeSingularStringField(value: &self.kindLabel) }()
-      case 13: try { try decoder.decodeSingularStringField(value: &self.title) }()
-      case 14: try { try decoder.decodeSingularInt64Field(value: &self.shownAtMillis) }()
-      case 15: try { try decoder.decodeSingularStringField(value: &self.menuBarTitle) }()
-      case 16: try { try decoder.decodeSingularStringField(value: &self.stale) }()
-      default: break
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularMessageField(value: &_storage._card) }()
+        case 2: try { try decoder.decodeSingularStringField(value: &_storage._kind) }()
+        case 3: try { try decoder.decodeSingularEnumField(value: &_storage._section) }()
+        case 4: try { try decoder.decodeSingularStringField(value: &_storage._detail) }()
+        case 5: try { try decoder.decodeSingularInt64Field(value: &_storage._atMillis) }()
+        case 6: try { try decoder.decodeSingularInt64Field(value: &_storage._startedAtMillis) }()
+        case 7: try { try decoder.decodeSingularStringField(value: &_storage._projectName) }()
+        case 8: try { try decoder.decodeSingularStringField(value: &_storage._boardName) }()
+        case 9: try { try decoder.decodeSingularBoolField(value: &_storage._chat) }()
+        case 10: try { try decoder.decodeSingularBoolField(value: &_storage._needsYou) }()
+        case 11: try { try decoder.decodeSingularBoolField(value: &_storage._canFinish) }()
+        case 12: try { try decoder.decodeSingularStringField(value: &_storage._kindLabel) }()
+        case 13: try { try decoder.decodeSingularStringField(value: &_storage._title) }()
+        case 14: try { try decoder.decodeSingularInt64Field(value: &_storage._shownAtMillis) }()
+        case 15: try { try decoder.decodeSingularStringField(value: &_storage._menuBarTitle) }()
+        case 16: try { try decoder.decodeSingularStringField(value: &_storage._stale) }()
+        case 17: try { try decoder.decodeSingularBoolField(value: &_storage._pinned) }()
+        default: break
+        }
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    // The use of inline closures is to circumvent an issue where the compiler
-    // allocates stack space for every if/case branch local when no optimizations
-    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
-    // https://github.com/apple/swift-protobuf/issues/1182
-    try { if let v = self._card {
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
-    } }()
-    if !self.kind.isEmpty {
-      try visitor.visitSingularStringField(value: self.kind, fieldNumber: 2)
-    }
-    if self.section != .attention {
-      try visitor.visitSingularEnumField(value: self.section, fieldNumber: 3)
-    }
-    if !self.detail.isEmpty {
-      try visitor.visitSingularStringField(value: self.detail, fieldNumber: 4)
-    }
-    if self.atMillis != 0 {
-      try visitor.visitSingularInt64Field(value: self.atMillis, fieldNumber: 5)
-    }
-    if self.startedAtMillis != 0 {
-      try visitor.visitSingularInt64Field(value: self.startedAtMillis, fieldNumber: 6)
-    }
-    if !self.projectName.isEmpty {
-      try visitor.visitSingularStringField(value: self.projectName, fieldNumber: 7)
-    }
-    if !self.boardName.isEmpty {
-      try visitor.visitSingularStringField(value: self.boardName, fieldNumber: 8)
-    }
-    if self.chat != false {
-      try visitor.visitSingularBoolField(value: self.chat, fieldNumber: 9)
-    }
-    if self.needsYou != false {
-      try visitor.visitSingularBoolField(value: self.needsYou, fieldNumber: 10)
-    }
-    if self.canFinish != false {
-      try visitor.visitSingularBoolField(value: self.canFinish, fieldNumber: 11)
-    }
-    if !self.kindLabel.isEmpty {
-      try visitor.visitSingularStringField(value: self.kindLabel, fieldNumber: 12)
-    }
-    if !self.title.isEmpty {
-      try visitor.visitSingularStringField(value: self.title, fieldNumber: 13)
-    }
-    if self.shownAtMillis != 0 {
-      try visitor.visitSingularInt64Field(value: self.shownAtMillis, fieldNumber: 14)
-    }
-    if !self.menuBarTitle.isEmpty {
-      try visitor.visitSingularStringField(value: self.menuBarTitle, fieldNumber: 15)
-    }
-    if !self.stale.isEmpty {
-      try visitor.visitSingularStringField(value: self.stale, fieldNumber: 16)
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      try { if let v = _storage._card {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+      } }()
+      if !_storage._kind.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._kind, fieldNumber: 2)
+      }
+      if _storage._section != .attention {
+        try visitor.visitSingularEnumField(value: _storage._section, fieldNumber: 3)
+      }
+      if !_storage._detail.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._detail, fieldNumber: 4)
+      }
+      if _storage._atMillis != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._atMillis, fieldNumber: 5)
+      }
+      if _storage._startedAtMillis != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._startedAtMillis, fieldNumber: 6)
+      }
+      if !_storage._projectName.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._projectName, fieldNumber: 7)
+      }
+      if !_storage._boardName.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._boardName, fieldNumber: 8)
+      }
+      if _storage._chat != false {
+        try visitor.visitSingularBoolField(value: _storage._chat, fieldNumber: 9)
+      }
+      if _storage._needsYou != false {
+        try visitor.visitSingularBoolField(value: _storage._needsYou, fieldNumber: 10)
+      }
+      if _storage._canFinish != false {
+        try visitor.visitSingularBoolField(value: _storage._canFinish, fieldNumber: 11)
+      }
+      if !_storage._kindLabel.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._kindLabel, fieldNumber: 12)
+      }
+      if !_storage._title.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._title, fieldNumber: 13)
+      }
+      if _storage._shownAtMillis != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._shownAtMillis, fieldNumber: 14)
+      }
+      if !_storage._menuBarTitle.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._menuBarTitle, fieldNumber: 15)
+      }
+      if !_storage._stale.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._stale, fieldNumber: 16)
+      }
+      if _storage._pinned != false {
+        try visitor.visitSingularBoolField(value: _storage._pinned, fieldNumber: 17)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: ClientActivityRow, rhs: ClientActivityRow) -> Bool {
-    if lhs._card != rhs._card {return false}
-    if lhs.kind != rhs.kind {return false}
-    if lhs.section != rhs.section {return false}
-    if lhs.detail != rhs.detail {return false}
-    if lhs.atMillis != rhs.atMillis {return false}
-    if lhs.startedAtMillis != rhs.startedAtMillis {return false}
-    if lhs.projectName != rhs.projectName {return false}
-    if lhs.boardName != rhs.boardName {return false}
-    if lhs.chat != rhs.chat {return false}
-    if lhs.needsYou != rhs.needsYou {return false}
-    if lhs.canFinish != rhs.canFinish {return false}
-    if lhs.kindLabel != rhs.kindLabel {return false}
-    if lhs.title != rhs.title {return false}
-    if lhs.shownAtMillis != rhs.shownAtMillis {return false}
-    if lhs.menuBarTitle != rhs.menuBarTitle {return false}
-    if lhs.stale != rhs.stale {return false}
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._card != rhs_storage._card {return false}
+        if _storage._kind != rhs_storage._kind {return false}
+        if _storage._section != rhs_storage._section {return false}
+        if _storage._detail != rhs_storage._detail {return false}
+        if _storage._atMillis != rhs_storage._atMillis {return false}
+        if _storage._startedAtMillis != rhs_storage._startedAtMillis {return false}
+        if _storage._projectName != rhs_storage._projectName {return false}
+        if _storage._boardName != rhs_storage._boardName {return false}
+        if _storage._chat != rhs_storage._chat {return false}
+        if _storage._needsYou != rhs_storage._needsYou {return false}
+        if _storage._canFinish != rhs_storage._canFinish {return false}
+        if _storage._kindLabel != rhs_storage._kindLabel {return false}
+        if _storage._title != rhs_storage._title {return false}
+        if _storage._shownAtMillis != rhs_storage._shownAtMillis {return false}
+        if _storage._menuBarTitle != rhs_storage._menuBarTitle {return false}
+        if _storage._stale != rhs_storage._stale {return false}
+        if _storage._pinned != rhs_storage._pinned {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

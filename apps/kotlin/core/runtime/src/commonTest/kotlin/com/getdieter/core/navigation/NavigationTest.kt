@@ -35,6 +35,33 @@ class NavigationTest {
         SharedKv.encodePosition(KvPosition(parent, rank))
 
     @Test
+    fun inboxPinsPersistIndependentlyAndUnpinWithoutChangingOtherCards() {
+        val kv = offlineKv()
+        val editor = NavigationEditor(kv)
+        editor.pinInboxCard("c1", true)
+        editor.pinInboxCard("c2", true)
+        assertEquals(setOf("c1", "c2"), layout(kv).inboxPins())
+        editor.pinInboxCard("c1", false)
+        assertEquals(setOf("c2"), layout(kv).inboxPins())
+        val restored = offlineKv()
+        assertEquals(setOf("c2"), layout(restored).inboxPins())
+        assertTrue(layout(restored).savedPinnedChatOrder().isEmpty())
+    }
+
+    @Test
+    fun inboxPinsReadSharedValuesAndIgnoreInvalidValues() {
+        val layout =
+            NavigationLayout(
+                mapOf(
+                    "inbox-pin.remote.pinned" to "true".encodeUtf8(),
+                    "inbox-pin.removed.pinned" to "false".encodeUtf8(),
+                    "inbox-pin.invalid.pinned" to "invalid".encodeUtf8(),
+                )
+            )
+        assertEquals(setOf("remote"), layout.inboxPins())
+    }
+
+    @Test
     fun foldersKeepSingleMembershipAndDeletionOnlyUnfiles() {
         val kv = offlineKv()
         val editor = NavigationEditor(kv)

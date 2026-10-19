@@ -83,6 +83,10 @@ internal fun CoreRuntime.applyNavigation(command: NavigationCommand): Result {
         )
         return done
     }
+    command.pin_inbox_card?.let {
+        navigation.pinInboxCard(it.card_id, it.pinned)
+        return done
+    }
     command.pin_project?.let {
         navigation.pinProject(it.project_id, it.pinned)
         return done

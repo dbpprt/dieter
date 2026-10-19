@@ -204,6 +204,31 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	if e != nil || !schema.SelectedKV(shared.Records["kv.navigation/projects-folder.fixture.name"]).Deleted {
 		t.Fatal(shared, e)
 	}
+	// Inbox pins use the same public KV command over the selected route.
+	for _, value := range []string{"true", "false"} {
+		if err = os.WriteFile(file, []byte(value), 0600); err != nil {
+			t.Fatal(err)
+		}
+		output.Reset()
+		args := []string{"kv", "put", "--namespace", "navigation", "--key", "inbox-pin.fixture.pinned", "--file", file, "--operation", "inbox-pin-" + value}
+		if value == "false" {
+			args = append(args, "--revision", entry.Revision)
+		}
+		if err = client.Run(args); err != nil {
+			t.Fatal(err)
+		}
+		entry.Reset()
+		if err = protojson.Unmarshal(output.Bytes(), &entry); err != nil {
+			t.Fatal(err)
+		}
+		if err = runner.Round(ctx); err != nil {
+			t.Fatal(err)
+		}
+		shared, e = sa.Replica.PeerData(scope)
+		if e != nil || string(schema.SelectedKV(shared.Records["kv.navigation/inbox-pin.fixture.pinned"]).Value) != value {
+			t.Fatal(shared, e)
+		}
+	}
 	// Real raw local API, with only the local token, has the same record view.
 	local, err := grpc.NewClient(daemonB.Address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithPerRPCCredentials(localauth.FileCredentials{Root: sb.Root}))
 	if err != nil {

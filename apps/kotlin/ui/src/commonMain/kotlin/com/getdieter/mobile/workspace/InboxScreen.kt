@@ -27,6 +27,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -206,12 +208,17 @@ internal fun InboxScreen(store: MobileStore) {
                             Modifier.padding(top = 32.dp),
                         )
                     }
-                ActivityRow.Section.entries.forEach { section ->
-                    val sectionRows = rows.filter { it.section == section && it.card != null }
+                (listOf<ActivityRow.Section?>(null) + ActivityRow.Section.entries).forEach { section
+                    ->
+                    val sectionRows = rows.filter {
+                        it.card != null &&
+                            if (section == null) it.pinned else !it.pinned && it.section == section
+                    }
                     if (sectionRows.isNotEmpty()) {
                         item("header-$section") {
                             SectionHeader(
                                 when (section) {
+                                    null -> "Pinned"
                                     ActivityRow.Section.SECTION_ATTENTION -> "Needs you"
                                     ActivityRow.Section.SECTION_RUNNING -> "Running"
                                     else -> "Recent"
@@ -288,6 +295,7 @@ private fun InboxRow(
                 onOpen = { store.openConversation(card.id) },
                 onMenu = { menu.show(cardMenuSections(store, card, row.can_finish)) },
                 onFinish = { store.command(Command(finish_card = FinishCard(card.id))) },
+                onPin = { store.pinInbox(row) },
             )
             return@MenuAnchor
         }
@@ -334,6 +342,7 @@ private fun InboxRow(
                             style = type.footnote,
                             color = palette.secondaryLabel,
                         )
+                        InboxPin(row) { store.pinInbox(row) }
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (row.chat) {
@@ -397,6 +406,7 @@ private fun MaterialInboxRow(
     onOpen: () -> Unit,
     onMenu: () -> Unit,
     onFinish: () -> Unit,
+    onPin: () -> Unit,
 ) {
     val card = row.card ?: return
     val shape = RoundedCornerShape(20.dp)
@@ -463,6 +473,7 @@ private fun MaterialInboxRow(
                             else type.footnote,
                         color = if (row.needs_you) statusColor else palette.secondaryLabel,
                     )
+                    InboxPin(row, onPin)
                 }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -738,5 +749,35 @@ private fun ActivityTimeline(rows: List<ActivityRow>, now: Instant, onOpen: (Str
                 }
             }
         }
+    }
+}
+
+private fun MobileStore.pinInbox(row: ActivityRow) {
+    val card = row.card ?: return
+    command(
+        Command(navigation = NavigationCommand(pin_inbox_card = PinInboxCard(card.id, !row.pinned)))
+    )
+}
+
+/** A compact pin toggle in a row's top trailing corner; a pinned row shows it in the accent. */
+@Composable
+private fun InboxPin(row: ActivityRow, onClick: () -> Unit) {
+    val label = if (row.pinned) "Unpin from inbox" else "Pin in inbox"
+    Box(
+        Modifier.padding(start = 2.dp)
+            .offset(x = 6.dp, y = (-4).dp)
+            .size(28.dp)
+            .clip(CircleShape)
+            .pressable(onClick = onClick)
+            .semantics { contentDescription = label }
+            .testTag("inbox-pin-${row.card?.id}"),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            Glyph.PIN,
+            null,
+            tint = if (row.pinned) palette.accent else palette.tertiaryLabel,
+            size = 16.dp,
+        )
     }
 }

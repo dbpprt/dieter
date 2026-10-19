@@ -45,6 +45,15 @@ extension AppSession {
         }
     }
 
+    func setInboxCardPinned(_ cardID: String, pinned: Bool) {
+        navigate {
+            $0.pinInboxCard = .with {
+                $0.cardID = cardID
+                $0.pinned = pinned
+            }
+        }
+    }
+
     func setProjectPinned(_ projectID: String, pinned: Bool) {
         navigate {
             $0.pinProject = .with {

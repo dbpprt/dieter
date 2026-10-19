@@ -32,11 +32,16 @@ struct InboxFeed: View {
                         if filtered.isEmpty {
                             emptyState(filtered: !query.isEmpty || !selectedProject.isEmpty)
                         } else {
-                            section("Running", id: "running", entries: filtered.filter { $0.section == .running })
+                            section("Pinned", id: "pinned", entries: filtered.filter { $0.row.pinned })
+                            section(
+                                "Running", id: "running",
+                                entries: filtered.filter { $0.section == .running && !$0.row.pinned })
                             section(
                                 "Needs attention", id: "needs-you",
-                                entries: filtered.filter { $0.section == .attention })
-                            section("Recent", id: "recent", entries: filtered.filter { $0.section == .recent })
+                                entries: filtered.filter { $0.section == .attention && !$0.row.pinned })
+                            section(
+                                "Recent", id: "recent",
+                                entries: filtered.filter { $0.section == .recent && !$0.row.pinned })
                         }
                     }
                     .padding(.leading, 14).padding(.trailing, 6).padding(.vertical, 6)
@@ -209,7 +214,8 @@ struct InboxFeed: View {
     private func section(_ title: String, id: String, entries: [InboxActivityEntry]) -> some View {
         Section {
             ForEach(entries.prefix(visibleLimit)) { entry in
-                InboxActivityRow(entry: entry, onOpen: onOpen).equatable()
+                // Pinning moves a row between sections; a new identity renders its new state.
+                InboxActivityRow(entry: entry, onOpen: onOpen).equatable().id("\(entry.id).\(entry.row.pinned)")
             }
             if entries.count > visibleLimit { showMore }
         } header: {
@@ -295,6 +301,7 @@ private struct InboxActivityRow: View, Equatable {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(entry.row.title)
                             .e2eTarget("inbox.title.\(entry.id).\(entry.row.title)")
+                            .padding(.trailing, 22)
                             .font(.system(size: 13, weight: .semibold)).lineLimit(2)
                             .foregroundStyle(DieterTheme.text)
                             .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
@@ -310,6 +317,10 @@ private struct InboxActivityRow: View, Equatable {
                                 .font(.system(size: 10)).foregroundStyle(DieterTheme.amber).lineLimit(1)
                         }
                         HStack(spacing: 5) {
+                            if entry.row.pinned {
+                                Image(systemName: "pin.fill").font(.system(size: 9))
+                                    .accessibilityLabel("Pinned in inbox")
+                            }
                             Image(systemName: statusSymbol(entry.kind)).font(.system(size: 9, weight: .semibold))
                             Text(entry.row.kindLabel).font(.system(size: 10, weight: .medium))
                                 .e2eTarget(
@@ -336,6 +347,20 @@ private struct InboxActivityRow: View, Equatable {
             if entry.canFinish {
                 InboxFinishButton(entry: entry)
             }
+        }
+        .overlay(alignment: .topTrailing) {
+            Button {
+                store.setInboxCardPinned(entry.id, pinned: !entry.row.pinned)
+            } label: {
+                Image(systemName: entry.row.pinned ? "pin.fill" : "pin")
+                    .font(.system(size: 11))
+            }
+            .buttonStyle(.plain)
+            .help(entry.row.pinned ? "Unpin from inbox" : "Pin in inbox")
+            .accessibilityLabel(entry.row.pinned ? "Unpin from inbox" : "Pin in inbox")
+            .accessibilityIdentifier("inbox.pin.\(entry.id)")
+            .e2eTarget("inbox.pin.\(entry.id)", text: entry.row.pinned ? "Unpin from inbox" : "Pin in inbox")
+            .padding(10)
         }
         .accessibilityElement(children: .contain)
     }

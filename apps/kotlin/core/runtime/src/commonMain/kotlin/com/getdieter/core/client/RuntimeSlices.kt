@@ -376,45 +376,55 @@ internal fun operationLabel(kind: OutboxKind): String =
 /** The activity feed; sent again when a menu bar row leaves its six-hour window. */
 @OptIn(ExperimentalCoroutinesApi::class)
 internal fun CoreRuntime.activitySlices(): Flow<ActivitySlice> =
-    activity().transformLatest { items ->
-        while (true) {
-            val now = platform.clock.now()
-            emit(activitySlice(items, now))
-            val next = MenuBar.nextChange(items, now) ?: break
-            delay(next - now)
+    combine(activity(), navigationKv.values) { items, values ->
+            items to NavigationLayout(values).inboxPins()
         }
-    }
+        .transformLatest { (items, pins) ->
+            while (true) {
+                val now = platform.clock.now()
+                emit(activitySlice(items, now, pins))
+                val next = MenuBar.nextChange(items, now) ?: break
+                delay(next - now)
+            }
+        }
 
-internal fun activitySlice(items: List<ActivityItem>, now: Instant): ActivitySlice {
+internal fun activitySlice(
+    items: List<ActivityItem>,
+    now: Instant,
+    pins: Set<String> = emptySet(),
+): ActivitySlice {
     val counts = ActivityCounts.of(items)
     val island = IslandModel.build(items)
     return ActivitySlice(
         rows =
-            items.map { item ->
-                ActivityRow(
-                    card = item.card,
-                    kind = item.kind.name,
-                    section =
-                        when (item.section) {
-                            ActivitySection.ATTENTION -> ActivityRow.Section.SECTION_ATTENTION
-                            ActivitySection.RUNNING -> ActivityRow.Section.SECTION_RUNNING
-                            ActivitySection.RECENT -> ActivityRow.Section.SECTION_RECENT
-                        },
-                    detail = item.detail,
-                    at_millis = item.at?.toEpochMilliseconds() ?: 0,
-                    started_at_millis = item.start?.toEpochMilliseconds() ?: 0,
-                    project_name = item.projectName.orEmpty(),
-                    board_name = item.boardName.orEmpty(),
-                    chat = item.chat,
-                    needs_you = item.needsYou,
-                    can_finish = item.canFinish,
-                    kind_label = item.kind.label,
-                    title = item.title,
-                    shown_at_millis = item.shownAt?.toEpochMilliseconds() ?: 0,
-                    menu_bar_title = MenuBar.title(item.kind),
-                    stale = item.stale.orEmpty(),
-                )
-            },
+            items
+                .sortedByDescending { it.id in pins }
+                .map { item ->
+                    ActivityRow(
+                        card = item.card,
+                        kind = item.kind.name,
+                        section =
+                            when (item.section) {
+                                ActivitySection.ATTENTION -> ActivityRow.Section.SECTION_ATTENTION
+                                ActivitySection.RUNNING -> ActivityRow.Section.SECTION_RUNNING
+                                ActivitySection.RECENT -> ActivityRow.Section.SECTION_RECENT
+                            },
+                        detail = item.detail,
+                        at_millis = item.at?.toEpochMilliseconds() ?: 0,
+                        started_at_millis = item.start?.toEpochMilliseconds() ?: 0,
+                        project_name = item.projectName.orEmpty(),
+                        board_name = item.boardName.orEmpty(),
+                        chat = item.chat,
+                        needs_you = item.needsYou,
+                        can_finish = item.canFinish,
+                        kind_label = item.kind.label,
+                        title = item.title,
+                        shown_at_millis = item.shownAt?.toEpochMilliseconds() ?: 0,
+                        menu_bar_title = MenuBar.title(item.kind),
+                        stale = item.stale.orEmpty(),
+                        pinned = item.id in pins,
+                    )
+                },
         summary =
             ActivitySummary(
                 running = counts.running,

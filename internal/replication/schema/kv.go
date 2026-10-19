@@ -68,10 +68,10 @@ func ValidateKV(r crdt.Record) error {
 			if json.Unmarshal(v.Value, &value) != nil || strings.TrimSpace(value) == "" || len(value) > 256 {
 				return fault.New(fault.Invalid, "invalid folder name")
 			}
-		case "expanded":
+		case "expanded", "pinned":
 			var value bool
 			if string(v.Value) == "null" || json.Unmarshal(v.Value, &value) != nil {
-				return fault.New(fault.Invalid, "invalid expansion state")
+				return fault.New(fault.Invalid, "invalid navigation boolean")
 			}
 		case "sort":
 			var value string

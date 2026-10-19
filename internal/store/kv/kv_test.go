@@ -42,6 +42,11 @@ func TestKVReplicationReceiptsAndDeletion(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
+	pin := write(0, "inbox-pin.c1.pinned", "", `true`, "pin", false)
+	join(0, 1)
+	join(0, 2)
+	write(1, "inbox-pin.c1.pinned", pin.Revision(), `false`, "unpin", false)
+	write(2, "inbox-pin.c2.pinned", "", `true`, "pin-other", false)
 	original := write(0, "projects-folder.f.name", "", `"Research"`, "create", false)
 	join(0, 1)
 	join(0, 2)
@@ -61,6 +66,11 @@ func TestKVReplicationReceiptsAndDeletion(t *testing.T) {
 		r := data.Records["kv.navigation/projects-folder.f.name"]
 		if len(r.Versions) != 2 || !schema.SelectedKV(r).Deleted {
 			t.Fatal(r)
+		}
+		for key, want := range map[string]string{"inbox-pin.c1.pinned": "false", "inbox-pin.c2.pinned": "true"} {
+			if got := string(schema.SelectedKV(data.Records["kv.navigation/"+key]).Value); got != want {
+				t.Fatalf("replica %d: %s = %s, want %s", i, key, got, want)
+			}
 		}
 		next := crdt.Revision(data.State)
 		if hash != "" && hash != next {

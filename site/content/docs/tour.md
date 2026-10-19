@@ -93,6 +93,11 @@ Completed replies that you have not viewed appear under **Needs you**. Opening
 the latest reply clears that state across clients; questions waiting for your
 answer continue to need attention.
 
+Use the small pin button on an Inbox card to keep it in the **Pinned** section
+at the top on Mac, Android, and iOS. Tap it again to unpin. Pins sync across
+your account through shared KV; offline edits sync when a machine is available.
+Search and project filters still apply to pinned cards.
+
 {{< shots >}}
 {{< screenshot src="ios-inbox.png" kind="phone" width="1206" height="2622" alt="iPhone Inbox with four replies that need you, provider quotas, and running tasks" caption="Inbox on iPhone." >}}
 {{< screenshot src="android-board.png" kind="phone" width="1080" height="2400" alt="Android Atlas API Roadmap board filtered to its four running tasks, each with its machine, branch, and agent" caption="A board on Android." >}}
