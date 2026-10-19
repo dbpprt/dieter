@@ -6,7 +6,7 @@
 // Source: dieter/v1/files.proto
 //
 // For information on using the generated types, please see the documentation:
-//   https://github.com/grpc/grpc-swift
+//   https://github.com/grpc/grpc-swift-2
 
 import GRPCCore
 import GRPCProtobuf
@@ -263,9 +263,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_TransferPath` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_TransferEntry` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func statTransferFile<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_TransferPath>,
@@ -282,9 +282,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_ListTransferFilesRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_TransferPage` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func listTransferFiles<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ListTransferFilesRequest>,
@@ -301,9 +301,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_ReadFileChunkRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_FileChunk` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func readFileChunk<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ReadFileChunkRequest>,
@@ -320,9 +320,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_BeginFileUploadRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_FileUpload` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func beginFileUpload<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_BeginFileUploadRequest>,
@@ -339,9 +339,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_WriteFileChunkRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_FileUpload` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func writeFileChunk<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_WriteFileChunkRequest>,
@@ -358,9 +358,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_FileUploadRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_FileUpload` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func getFileUpload<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_FileUploadRequest>,
@@ -377,9 +377,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_FileUploadRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_FileUpload` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func commitFileUpload<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_FileUploadRequest>,
@@ -396,9 +396,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_FileUploadRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_FileUpload` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func abortFileUpload<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_FileUploadRequest>,
@@ -415,9 +415,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_DeleteTransferFileRequest` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func deleteTransferFile<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_DeleteTransferFileRequest>,
@@ -434,9 +434,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_ListFilesRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_FileList` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func listFiles<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ListFilesRequest>,
@@ -453,9 +453,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_ReadFileRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_FileDocument` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func readFile<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ReadFileRequest>,
@@ -472,9 +472,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_SaveFileRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_FileDocument` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func saveFile<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_SaveFileRequest>,
@@ -491,9 +491,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_CreateFileRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_FileEntry` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func createFile<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_CreateFileRequest>,
@@ -510,9 +510,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_MoveFileRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_MoveFileResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func moveFile<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_MoveFileRequest>,
@@ -529,9 +529,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_DeleteFileRequest` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func deleteFile<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_DeleteFileRequest>,
@@ -569,9 +569,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_TransferPath` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_TransferEntry` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func statTransferFile<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_TransferPath>,
@@ -599,9 +599,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_ListTransferFilesRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_TransferPage` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func listTransferFiles<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ListTransferFilesRequest>,
@@ -629,9 +629,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_ReadFileChunkRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_FileChunk` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func readFileChunk<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ReadFileChunkRequest>,
@@ -659,9 +659,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_BeginFileUploadRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_FileUpload` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func beginFileUpload<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_BeginFileUploadRequest>,
@@ -689,9 +689,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_WriteFileChunkRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_FileUpload` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func writeFileChunk<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_WriteFileChunkRequest>,
@@ -719,9 +719,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_FileUploadRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_FileUpload` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func getFileUpload<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_FileUploadRequest>,
@@ -749,9 +749,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_FileUploadRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_FileUpload` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func commitFileUpload<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_FileUploadRequest>,
@@ -779,9 +779,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_FileUploadRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_FileUpload` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func abortFileUpload<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_FileUploadRequest>,
@@ -809,9 +809,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_DeleteTransferFileRequest` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func deleteTransferFile<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_DeleteTransferFileRequest>,
@@ -839,9 +839,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_ListFilesRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_FileList` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func listFiles<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ListFilesRequest>,
@@ -869,9 +869,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_ReadFileRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_FileDocument` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func readFile<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ReadFileRequest>,
@@ -899,9 +899,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_SaveFileRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_FileDocument` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func saveFile<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_SaveFileRequest>,
@@ -929,9 +929,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_CreateFileRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_FileEntry` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func createFile<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_CreateFileRequest>,
@@ -959,9 +959,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_MoveFileRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_MoveFileResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func moveFile<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_MoveFileRequest>,
@@ -989,9 +989,9 @@ extension Dieter_V1_FileService {
         ///   - serializer: A serializer for `Dieter_V1_DeleteFileRequest` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func deleteFile<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_DeleteFileRequest>,
@@ -1022,9 +1022,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_TransferPath` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func statTransferFile<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_TransferPath>,
@@ -1047,9 +1047,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ListTransferFilesRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listTransferFiles<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ListTransferFilesRequest>,
@@ -1072,9 +1072,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ReadFileChunkRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func readFileChunk<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ReadFileChunkRequest>,
@@ -1097,9 +1097,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_BeginFileUploadRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func beginFileUpload<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_BeginFileUploadRequest>,
@@ -1122,9 +1122,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_WriteFileChunkRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func writeFileChunk<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_WriteFileChunkRequest>,
@@ -1147,9 +1147,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_FileUploadRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getFileUpload<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_FileUploadRequest>,
@@ -1172,9 +1172,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_FileUploadRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func commitFileUpload<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_FileUploadRequest>,
@@ -1197,9 +1197,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_FileUploadRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func abortFileUpload<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_FileUploadRequest>,
@@ -1222,9 +1222,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_DeleteTransferFileRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func deleteTransferFile<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_DeleteTransferFileRequest>,
@@ -1247,9 +1247,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ListFilesRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listFiles<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ListFilesRequest>,
@@ -1272,9 +1272,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ReadFileRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func readFile<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ReadFileRequest>,
@@ -1297,9 +1297,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_SaveFileRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func saveFile<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_SaveFileRequest>,
@@ -1322,9 +1322,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_CreateFileRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func createFile<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_CreateFileRequest>,
@@ -1347,9 +1347,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_MoveFileRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func moveFile<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_MoveFileRequest>,
@@ -1372,9 +1372,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_DeleteFileRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func deleteFile<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_DeleteFileRequest>,
@@ -1402,9 +1402,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func statTransferFile<Result>(
         _ message: Dieter_V1_TransferPath,
@@ -1431,9 +1431,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listTransferFiles<Result>(
         _ message: Dieter_V1_ListTransferFilesRequest,
@@ -1460,9 +1460,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func readFileChunk<Result>(
         _ message: Dieter_V1_ReadFileChunkRequest,
@@ -1489,9 +1489,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func beginFileUpload<Result>(
         _ message: Dieter_V1_BeginFileUploadRequest,
@@ -1518,9 +1518,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func writeFileChunk<Result>(
         _ message: Dieter_V1_WriteFileChunkRequest,
@@ -1547,9 +1547,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getFileUpload<Result>(
         _ message: Dieter_V1_FileUploadRequest,
@@ -1576,9 +1576,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func commitFileUpload<Result>(
         _ message: Dieter_V1_FileUploadRequest,
@@ -1605,9 +1605,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func abortFileUpload<Result>(
         _ message: Dieter_V1_FileUploadRequest,
@@ -1634,9 +1634,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func deleteTransferFile<Result>(
         _ message: Dieter_V1_DeleteTransferFileRequest,
@@ -1663,9 +1663,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listFiles<Result>(
         _ message: Dieter_V1_ListFilesRequest,
@@ -1692,9 +1692,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func readFile<Result>(
         _ message: Dieter_V1_ReadFileRequest,
@@ -1721,9 +1721,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func saveFile<Result>(
         _ message: Dieter_V1_SaveFileRequest,
@@ -1750,9 +1750,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func createFile<Result>(
         _ message: Dieter_V1_CreateFileRequest,
@@ -1779,9 +1779,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func moveFile<Result>(
         _ message: Dieter_V1_MoveFileRequest,
@@ -1808,9 +1808,9 @@ extension Dieter_V1_FileService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func deleteFile<Result>(
         _ message: Dieter_V1_DeleteFileRequest,

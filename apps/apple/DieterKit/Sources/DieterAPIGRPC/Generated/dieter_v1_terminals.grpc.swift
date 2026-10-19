@@ -6,7 +6,7 @@
 // Source: dieter/v1/terminals.proto
 //
 // For information on using the generated types, please see the documentation:
-//   https://github.com/grpc/grpc-swift
+//   https://github.com/grpc/grpc-swift-2
 
 import GRPCCore
 import GRPCProtobuf
@@ -157,9 +157,9 @@ extension Dieter_V1_TerminalService {
         ///   - serializer: A serializer for `Dieter_V1_ListTerminalsRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_TerminalsResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func listTerminals<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ListTerminalsRequest>,
@@ -176,9 +176,9 @@ extension Dieter_V1_TerminalService {
         ///   - serializer: A serializer for `Dieter_V1_CreateTerminalRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Terminal` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func createTerminal<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_CreateTerminalRequest>,
@@ -195,9 +195,9 @@ extension Dieter_V1_TerminalService {
         ///   - serializer: A serializer for `Dieter_V1_WatchTerminalRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_TerminalFrame` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func watchTerminal<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_WatchTerminalRequest>,
@@ -214,9 +214,9 @@ extension Dieter_V1_TerminalService {
         ///   - serializer: A serializer for `Dieter_V1_TerminalInputRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Terminal` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func writeTerminal<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_TerminalInputRequest>,
@@ -233,9 +233,9 @@ extension Dieter_V1_TerminalService {
         ///   - serializer: A serializer for `Dieter_V1_ResizeTerminalRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Terminal` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func resizeTerminal<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ResizeTerminalRequest>,
@@ -252,9 +252,9 @@ extension Dieter_V1_TerminalService {
         ///   - serializer: A serializer for `Dieter_V1_RenameTerminalRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Terminal` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func renameTerminal<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RenameTerminalRequest>,
@@ -271,9 +271,9 @@ extension Dieter_V1_TerminalService {
         ///   - serializer: A serializer for `Dieter_V1_TerminalRef` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func closeTerminal<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_TerminalRef>,
@@ -317,9 +317,9 @@ extension Dieter_V1_TerminalService {
         ///   - serializer: A serializer for `Dieter_V1_ListTerminalsRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_TerminalsResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func listTerminals<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ListTerminalsRequest>,
@@ -347,9 +347,9 @@ extension Dieter_V1_TerminalService {
         ///   - serializer: A serializer for `Dieter_V1_CreateTerminalRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Terminal` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func createTerminal<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_CreateTerminalRequest>,
@@ -377,9 +377,9 @@ extension Dieter_V1_TerminalService {
         ///   - serializer: A serializer for `Dieter_V1_WatchTerminalRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_TerminalFrame` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func watchTerminal<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_WatchTerminalRequest>,
@@ -405,9 +405,9 @@ extension Dieter_V1_TerminalService {
         ///   - serializer: A serializer for `Dieter_V1_TerminalInputRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Terminal` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func writeTerminal<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_TerminalInputRequest>,
@@ -435,9 +435,9 @@ extension Dieter_V1_TerminalService {
         ///   - serializer: A serializer for `Dieter_V1_ResizeTerminalRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Terminal` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func resizeTerminal<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ResizeTerminalRequest>,
@@ -465,9 +465,9 @@ extension Dieter_V1_TerminalService {
         ///   - serializer: A serializer for `Dieter_V1_RenameTerminalRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Terminal` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func renameTerminal<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RenameTerminalRequest>,
@@ -495,9 +495,9 @@ extension Dieter_V1_TerminalService {
         ///   - serializer: A serializer for `Dieter_V1_TerminalRef` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func closeTerminal<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_TerminalRef>,
@@ -534,9 +534,9 @@ extension Dieter_V1_TerminalService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ListTerminalsRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listTerminals<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ListTerminalsRequest>,
@@ -559,9 +559,9 @@ extension Dieter_V1_TerminalService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_CreateTerminalRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func createTerminal<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_CreateTerminalRequest>,
@@ -584,9 +584,9 @@ extension Dieter_V1_TerminalService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_WatchTerminalRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func watchTerminal<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_WatchTerminalRequest>,
@@ -607,9 +607,9 @@ extension Dieter_V1_TerminalService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_TerminalInputRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func writeTerminal<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_TerminalInputRequest>,
@@ -632,9 +632,9 @@ extension Dieter_V1_TerminalService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ResizeTerminalRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func resizeTerminal<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ResizeTerminalRequest>,
@@ -657,9 +657,9 @@ extension Dieter_V1_TerminalService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_RenameTerminalRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func renameTerminal<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_RenameTerminalRequest>,
@@ -682,9 +682,9 @@ extension Dieter_V1_TerminalService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_TerminalRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func closeTerminal<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_TerminalRef>,
@@ -718,9 +718,9 @@ extension Dieter_V1_TerminalService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listTerminals<Result>(
         _ message: Dieter_V1_ListTerminalsRequest,
@@ -747,9 +747,9 @@ extension Dieter_V1_TerminalService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func createTerminal<Result>(
         _ message: Dieter_V1_CreateTerminalRequest,
@@ -776,9 +776,9 @@ extension Dieter_V1_TerminalService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func watchTerminal<Result>(
         _ message: Dieter_V1_WatchTerminalRequest,
@@ -803,9 +803,9 @@ extension Dieter_V1_TerminalService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func writeTerminal<Result>(
         _ message: Dieter_V1_TerminalInputRequest,
@@ -832,9 +832,9 @@ extension Dieter_V1_TerminalService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func resizeTerminal<Result>(
         _ message: Dieter_V1_ResizeTerminalRequest,
@@ -861,9 +861,9 @@ extension Dieter_V1_TerminalService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func renameTerminal<Result>(
         _ message: Dieter_V1_RenameTerminalRequest,
@@ -890,9 +890,9 @@ extension Dieter_V1_TerminalService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func closeTerminal<Result>(
         _ message: Dieter_V1_TerminalRef,

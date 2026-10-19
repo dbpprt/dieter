@@ -6,7 +6,7 @@
 // Source: dieter/v1/peer.proto
 //
 // For information on using the generated types, please see the documentation:
-//   https://github.com/grpc/grpc-swift
+//   https://github.com/grpc/grpc-swift-2
 
 import GRPCCore
 import GRPCProtobuf
@@ -137,9 +137,9 @@ extension Dieter_V1_PeerService {
         ///   - serializer: A serializer for `Dieter_V1_PeerChangesRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_PeerChangesResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func getPeerChanges<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_PeerChangesRequest>,
@@ -156,9 +156,9 @@ extension Dieter_V1_PeerService {
         ///   - serializer: A serializer for `Dieter_V1_PeerRecordRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_PeerRecord` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func getPeerRecord<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_PeerRecordRef>,
@@ -175,9 +175,9 @@ extension Dieter_V1_PeerService {
         ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_PeerStoreStatus` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func getPeerStoreStatus<Result>(
             request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -194,9 +194,9 @@ extension Dieter_V1_PeerService {
         ///   - serializer: A serializer for `Dieter_V1_PeerSnapshotRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_PeerSnapshot` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func listPeerRecords<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_PeerSnapshotRequest>,
@@ -213,9 +213,9 @@ extension Dieter_V1_PeerService {
         ///   - serializer: A serializer for `Dieter_V1_PutPeerRecordRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_PeerRecord` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func putPeerRecord<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_PutPeerRecordRequest>,
@@ -232,9 +232,9 @@ extension Dieter_V1_PeerService {
         ///   - serializer: A serializer for `Dieter_V1_MergePeerRecordsRequest` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func mergePeerRecords<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_MergePeerRecordsRequest>,
@@ -272,9 +272,9 @@ extension Dieter_V1_PeerService {
         ///   - serializer: A serializer for `Dieter_V1_PeerChangesRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_PeerChangesResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func getPeerChanges<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_PeerChangesRequest>,
@@ -302,9 +302,9 @@ extension Dieter_V1_PeerService {
         ///   - serializer: A serializer for `Dieter_V1_PeerRecordRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_PeerRecord` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func getPeerRecord<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_PeerRecordRef>,
@@ -332,9 +332,9 @@ extension Dieter_V1_PeerService {
         ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_PeerStoreStatus` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func getPeerStoreStatus<Result>(
             request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -362,9 +362,9 @@ extension Dieter_V1_PeerService {
         ///   - serializer: A serializer for `Dieter_V1_PeerSnapshotRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_PeerSnapshot` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func listPeerRecords<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_PeerSnapshotRequest>,
@@ -392,9 +392,9 @@ extension Dieter_V1_PeerService {
         ///   - serializer: A serializer for `Dieter_V1_PutPeerRecordRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_PeerRecord` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func putPeerRecord<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_PutPeerRecordRequest>,
@@ -422,9 +422,9 @@ extension Dieter_V1_PeerService {
         ///   - serializer: A serializer for `Dieter_V1_MergePeerRecordsRequest` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func mergePeerRecords<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_MergePeerRecordsRequest>,
@@ -455,9 +455,9 @@ extension Dieter_V1_PeerService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_PeerChangesRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getPeerChanges<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_PeerChangesRequest>,
@@ -480,9 +480,9 @@ extension Dieter_V1_PeerService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_PeerRecordRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getPeerRecord<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_PeerRecordRef>,
@@ -505,9 +505,9 @@ extension Dieter_V1_PeerService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getPeerStoreStatus<Result>(
         request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -530,9 +530,9 @@ extension Dieter_V1_PeerService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_PeerSnapshotRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listPeerRecords<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_PeerSnapshotRequest>,
@@ -555,9 +555,9 @@ extension Dieter_V1_PeerService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_PutPeerRecordRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func putPeerRecord<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_PutPeerRecordRequest>,
@@ -580,9 +580,9 @@ extension Dieter_V1_PeerService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_MergePeerRecordsRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func mergePeerRecords<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_MergePeerRecordsRequest>,
@@ -610,9 +610,9 @@ extension Dieter_V1_PeerService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getPeerChanges<Result>(
         _ message: Dieter_V1_PeerChangesRequest,
@@ -639,9 +639,9 @@ extension Dieter_V1_PeerService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getPeerRecord<Result>(
         _ message: Dieter_V1_PeerRecordRef,
@@ -668,9 +668,9 @@ extension Dieter_V1_PeerService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getPeerStoreStatus<Result>(
         _ message: SwiftProtobuf.Google_Protobuf_Empty,
@@ -697,9 +697,9 @@ extension Dieter_V1_PeerService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listPeerRecords<Result>(
         _ message: Dieter_V1_PeerSnapshotRequest,
@@ -726,9 +726,9 @@ extension Dieter_V1_PeerService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func putPeerRecord<Result>(
         _ message: Dieter_V1_PutPeerRecordRequest,
@@ -755,9 +755,9 @@ extension Dieter_V1_PeerService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func mergePeerRecords<Result>(
         _ message: Dieter_V1_MergePeerRecordsRequest,

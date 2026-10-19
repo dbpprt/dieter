@@ -6,7 +6,7 @@
 // Source: dieter/v1/control.proto
 //
 // For information on using the generated types, please see the documentation:
-//   https://github.com/grpc/grpc-swift
+//   https://github.com/grpc/grpc-swift-2
 
 import GRPCCore
 import GRPCProtobuf
@@ -100,9 +100,9 @@ extension Dieter_V1_ControlService {
         ///   - serializer: A serializer for `Dieter_V1_StartControlConnectionRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ControlConnection` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func startControlConnection<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_StartControlConnectionRequest>,
@@ -119,9 +119,9 @@ extension Dieter_V1_ControlService {
         ///   - serializer: A serializer for `Dieter_V1_ControlConnectionRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ControlConnection` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func getControlConnection<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ControlConnectionRef>,
@@ -138,9 +138,9 @@ extension Dieter_V1_ControlService {
         ///   - serializer: A serializer for `Dieter_V1_ControlConnectionRef` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func closeControlConnection<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ControlConnectionRef>,
@@ -183,9 +183,9 @@ extension Dieter_V1_ControlService {
         ///   - serializer: A serializer for `Dieter_V1_StartControlConnectionRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ControlConnection` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func startControlConnection<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_StartControlConnectionRequest>,
@@ -213,9 +213,9 @@ extension Dieter_V1_ControlService {
         ///   - serializer: A serializer for `Dieter_V1_ControlConnectionRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ControlConnection` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func getControlConnection<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ControlConnectionRef>,
@@ -243,9 +243,9 @@ extension Dieter_V1_ControlService {
         ///   - serializer: A serializer for `Dieter_V1_ControlConnectionRef` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func closeControlConnection<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ControlConnectionRef>,
@@ -281,9 +281,9 @@ extension Dieter_V1_ControlService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_StartControlConnectionRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func startControlConnection<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_StartControlConnectionRequest>,
@@ -306,9 +306,9 @@ extension Dieter_V1_ControlService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ControlConnectionRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getControlConnection<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ControlConnectionRef>,
@@ -331,9 +331,9 @@ extension Dieter_V1_ControlService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ControlConnectionRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func closeControlConnection<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ControlConnectionRef>,
@@ -366,9 +366,9 @@ extension Dieter_V1_ControlService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func startControlConnection<Result>(
         _ message: Dieter_V1_StartControlConnectionRequest,
@@ -395,9 +395,9 @@ extension Dieter_V1_ControlService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getControlConnection<Result>(
         _ message: Dieter_V1_ControlConnectionRef,
@@ -424,9 +424,9 @@ extension Dieter_V1_ControlService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func closeControlConnection<Result>(
         _ message: Dieter_V1_ControlConnectionRef,
