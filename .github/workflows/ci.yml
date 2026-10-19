@@ -331,7 +331,9 @@ jobs:
     needs: plan
     if: needs.plan.outputs.ios == 'true'
     runs-on: macos-26
-    timeout-minutes: 100
+    # A cold Release framework build can take 85 minutes; retain the full
+    # 25-minute Maestro deadline plus setup, evidence upload, and cleanup.
+    timeout-minutes: 130
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.5.app/Contents/Developer
     steps:
