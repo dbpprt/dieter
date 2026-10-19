@@ -47,14 +47,16 @@ tags: [smoke]
     visible:
       id: conversation.stop
     timeout: 30000
-# The Inbox must receive completion while the conversation is not open.
+# The Inbox must receive completion while the conversation is not open. The
+# mock turn can finish within a second, before the Inbox could show it running;
+# nothing needs attention in the seeded Inbox, so the unread reply is what
+# brings this section up.
 - tapOn:
     id: sidebar.inbox
 - extendedWaitUntil:
     visible:
-      id: 'inbox\.status\..+\.RUNNING'
-      text: "Design the mobile workspace · Running"
-    timeout: 30000
+      id: inbox.section.needs-you
+    timeout: 300000
 - extendedWaitUntil:
     visible:
       id: 'inbox\.status\..+\.(RECENT|REVIEW|UNREAD)'
