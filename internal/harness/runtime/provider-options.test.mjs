@@ -67,7 +67,7 @@ eval:
 });
 
 test("builds a pinned DSH ACP launch without overriding DSH configuration", () => {
-  assert.equal(dshPackageVersion, "0.1.2-rc.1");
+  assert.equal(dshPackageVersion, "0.2.0-rc.2");
   assert.deepEqual(dshACPArgs(), ["--profile", "acp"]);
   assert.deepEqual(dshACPArgs("--patch", "/runtime/discovery.patch.yml"), [
     "--profile",

@@ -15,7 +15,7 @@ import (
 	"golang.org/x/sys/cpu"
 )
 
-const managedBunVersion = "1.3.14"
+const managedBunVersion = "1.4.3"
 
 func (e Environment) ompHarnessEnvironment(runtimePaths ...string) []string {
 	environment := e.harnessEnvironment(runtimePaths...)

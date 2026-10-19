@@ -21,27 +21,24 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../../../native/macos"),
-        .package(url: "https://github.com/apple/swift-certificates.git", from: "1.14.0"),
-        .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.3.0"),
-        // Vendored from 2.9.0 with duration-based Task.sleep calls replaced by
+        .package(url: "https://github.com/apple/swift-certificates.git", from: "1.21.0"),
+        .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.4.4"),
+        // Vendored from 2.11.0 with duration-based Task.sleep calls replaced by
         // nanosecond sleeps to avoid Swift #81771 (see its PATCHES.md).
         .package(path: "../../../third_party/grpc-swift-nio-transport"),
-        .package(url: "https://github.com/grpc/grpc-swift-protobuf.git", from: "2.4.0"),
-        .package(url: "https://github.com/apple/swift-nio.git", from: "2.101.0"),
-        .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.37.0"),
-        .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.38.0"),
+        .package(url: "https://github.com/grpc/grpc-swift-protobuf.git", from: "2.5.0"),
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.104.0"),
+        .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.37.5"),
+        .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.39.0"),
     ],
     targets: [
         // Assembled from apps/kotlin by `gradlew link…Framework…` and
         // `xcodebuild -create-xcframework` (see apps/apple/README.md).
         .binaryTarget(name: "DieterCore", path: "../Frameworks/DieterCore.xcframework"),
-        // The upstream 151.0.0 and 151.0.1 tags share a manifest whose
-        // 151.0.0 asset URL was removed. Pin the surviving, byte-identical
-        // 151.0.1 release asset directly so clean SwiftPM builds stay valid.
         .binaryTarget(
             name: "WebRTC",
-            url: "https://github.com/stasel/WebRTC/releases/download/151.0.1/WebRTC-M151.xcframework.zip",
-            checksum: "6f3f5693383ce65763190c46ca9f2c4325c34b83681acb9db30f01488e15f1e0"
+            url: "https://github.com/stasel/WebRTC/releases/download/155.0.0/WebRTC-M155.xcframework.zip",
+            checksum: "cb9adacf2d6bbf598d1d9e3e6c16d8fb97ca987b5b697746891828f9dc068ffe"
         ),
         // The network API's generated SwiftProtobuf messages (dieter.v1 and
         // the gateway; scripts/generate-swift-proto.sh).

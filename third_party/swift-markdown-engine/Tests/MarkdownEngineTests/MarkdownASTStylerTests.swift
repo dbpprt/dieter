@@ -17,6 +17,117 @@ struct MarkdownASTStylerTests {
     private let base: CGFloat = 14
     private var fontName: String { NSFont.systemFont(ofSize: 14).fontName }
 
+    @MainActor
+    @Test("a task item keeps its box with list helpers off (#1031)")
+    func taskCheckboxSurvivesHelpersOff() {
+        _ = NSApplication.shared
+        var config = MarkdownEditorConfiguration.default
+        config.lists.helpersEnabled = false
+        let attrs = MarkdownASTStyler.styleAttributes(
+            text: "- [ ] todo\n- plain\n",
+            fontName: fontName,
+            fontSize: base,
+            configuration: config
+        )
+        // The attribute IS the checkbox: drawing, hit test and toggle all read
+        // it, so without it the feature does not exist.
+        #expect(attrs.contains { $0.attributes[.taskCheckbox] != nil })
+        // `- ` → `•` is an editing helper by the setting's own promise and
+        // stays off — this fix is about the box, not about re-rendering lists.
+        #expect(!attrs.contains { $0.attributes[.bulletMarker] != nil })
+        let font = NSFont(name: fontName, size: base) ?? .systemFont(ofSize: base)
+        let boxSize = TaskCheckboxGeometry.size(for: font)
+        let markerWidth = ("- " as NSString).size(withAttributes: [.font: font]).width
+        let para = attrs.compactMap { $0.attributes[.paragraphStyle] as? NSParagraphStyle }.first
+        #expect(para != nil)
+        // The box is drawn to the LEFT of the content, so the line owes it
+        // exactly that much room — measured: without it the box sat at x ≈ -9.
+        #expect((para?.firstLineHeadIndent ?? 0) + markerWidth >= boxSize + TaskCheckboxGeometry.gap - 0.5)
+        // …and not a point more: helpers off means no list indent.
+        #expect((para?.firstLineHeadIndent ?? 0) < config.lists.indentPerLevel)
+        // A paragraph style replaces the base one wholesale, so the line
+        // metrics have to be carried over with it. Left unpinned, the line fell
+        // back to the font's natural height and the document height flipped
+        // 26 ↔ 24 as the line crossed into being a task item — the text below
+        // jumped by those 2pt while the raw syntax was still on screen.
+        let expectedLineHeight = ceil(font.ascender - font.descender + font.leading)
+            + config.paragraph.lineHeightExtraSpacing
+        #expect(para?.minimumLineHeight == expectedLineHeight)
+    }
+
+    @MainActor
+    @Test("scoped styling of a continuous list emits only intersecting ranges")
+    func scopedContinuousListEmitsOnlyIntersectingRanges() {
+        _ = NSApplication.shared
+        let text = String(
+            repeating: "- [x] **fast** `native` [link](relative.md)\n",
+            count: 2_000
+        )
+        let ns = text as NSString
+        let target = ns.lineRange(
+            for: ns.range(of: "- [x] **fast**", options: .backwards)
+        )
+
+        let attrs = MarkdownASTStyler.styleAttributes(
+            text: text,
+            fontName: fontName,
+            fontSize: base,
+            scopedRanges: [target]
+        )
+
+        #expect(!attrs.isEmpty)
+        #expect(attrs.allSatisfy {
+            NSIntersectionRange($0.range, target).length > 0
+        })
+    }
+
+    @MainActor
+    @Test("scoped list styling matches full effective attribute values")
+    func scopedListMatchesFullEffectiveAttributeValues() {
+        _ = NSApplication.shared
+        let text = "- plain *one*\n- [x] **done** `code`\n- [ ] [link](a.md)\n- final _four_\n"
+        let ns = text as NSString
+        let second = ns.lineRange(for: ns.range(of: "- [x]"))
+        let fourth = ns.lineRange(for: ns.range(of: "- final"))
+        let scope = [fourth, second]
+        let caret = second.location + 3
+        let full = MarkdownASTStyler.styleAttributes(
+            text: text,
+            fontName: fontName,
+            fontSize: base,
+            caretLocation: caret
+        )
+        let scoped = MarkdownASTStyler.styleAttributes(
+            text: text,
+            fontName: fontName,
+            fontSize: base,
+            caretLocation: caret,
+            scopedRanges: scope
+        )
+        let fullStorage = NSMutableAttributedString(string: text)
+        let scopedStorage = NSMutableAttributedString(string: text)
+        TextStylingService.applyStyledRanges(
+            full,
+            paragraphs: scope,
+            baseAttributes: [:],
+            to: fullStorage
+        )
+        TextStylingService.applyStyledRanges(
+            scoped,
+            paragraphs: scope,
+            baseAttributes: [:],
+            to: scopedStorage
+        )
+
+        for range in scope {
+            #expect(
+                fullStorage.attributedSubstring(from: range).isEqual(
+                    to: scopedStorage.attributedSubstring(from: range)
+                )
+            )
+        }
+    }
+
     /// Effective font at `pos`: the last styled range covering it that sets `.font`.
     private func font(in attrs: [StyledRange], at pos: Int) -> NSFont? {
         var result: NSFont?
@@ -117,6 +228,22 @@ struct MarkdownASTStylerTests {
         #expect(attrs.contains { range, attributes in
             NSLocationInRange(codeContentLocation, range) && attributes[.link] != nil
         })
+    }
+
+    @Test("a revealed link target is muted like its brackets")
+    func activeLinkTargetIsMuted() {
+        //          0123456789012345678901
+        let attrs = MarkdownASTStyler.styleAttributes(
+            text: "see [Nodes](nodes.app) now",
+            fontName: fontName,
+            fontSize: base,
+            caretLocation: 6
+        )
+        let muted = MarkdownEditorTheme.default.mutedText
+
+        #expect(color(in: attrs, at: 13) == muted)   // inside `nodes.app`
+        #expect(color(in: attrs, at: 11) == muted)   // the `(` beside it
+        #expect(color(in: attrs, at: 5) != muted)    // the label keeps the link ink
     }
 
     /// Effective color at `pos`: the last styled range covering it that sets `.foregroundColor`.

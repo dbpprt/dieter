@@ -6,7 +6,7 @@ def extensionSource = buildscript.sourceFile.parentFile
 def sdkArtifact = configurations.create('screenWebRTCArtifact') { transitive = false }
 dependencies.add(sdkArtifact.name, 'io.github.webrtc-sdk:android:150.7871.01')
 def annotations = configurations.create('screenWebRTCAnnotations') { transitive = false }
-dependencies.add(annotations.name, 'androidx.annotation:annotation-jvm:1.10.0')
+dependencies.add(annotations.name, 'androidx.annotation:annotation-jvm:1.11.0')
 def expected = '0a1627b1a48c2bc17d9a40d62fc47bd45166f44a311e95917f147c402de379b0'
 def stamp = layout.buildDirectory.file('screen-webrtc/verified.sha256')
 def verify = tasks.register('verifyScreenWebRTC') {

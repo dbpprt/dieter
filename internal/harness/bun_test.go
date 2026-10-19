@@ -17,7 +17,7 @@ func TestEnsureManagedBunPublishesAndReusesExactVersion(t *testing.T) {
 set -eu
 printf 'install\n' >>"$DIETER_TEST_BUN_TRACE"
 mkdir -p node_modules/bun/bin node_modules/.bin
-printf '#!/bin/sh\nprintf "1.3.14\\n"\n' >node_modules/bun/bin/bun.exe
+printf '#!/bin/sh\nprintf "1.4.3\\n"\n' >node_modules/bun/bin/bun.exe
 chmod 700 node_modules/bun/bin/bun.exe
 ln -s ../bun/bin/bun.exe node_modules/.bin/bun
 : >node_modules/bun/install.js

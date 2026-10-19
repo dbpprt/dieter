@@ -737,9 +737,8 @@ struct RemoteTerminalSurface: NSViewRepresentable {
     }
 }
 
-/// Keeps SwiftTerm's emulator grid aligned with the AppKit view under Auto
-/// Layout. AppKit can resize an NSView through `setFrameSize`, which otherwise
-/// stretches the surface without resizing the terminal buffer.
+/// Adds Dieter's input policy and native selection behavior to SwiftTerm.
+/// SwiftTerm owns emulator resizing and exposes copied state for inspection.
 @MainActor
 final class RemoteTerminalView: SwiftTerm.TerminalView {
     private final class MonitorBox: @unchecked Sendable {
@@ -785,11 +784,6 @@ final class RemoteTerminalView: SwiftTerm.TerminalView {
         }
     }
 
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        synchronizeGridToBounds()
-    }
-
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         selectionAnchorEvent = event.clickCount == 1 && usesTextSelection(for: event) ? event : nil
@@ -819,10 +813,6 @@ final class RemoteTerminalView: SwiftTerm.TerminalView {
         }
     }
 
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        performStandardEditCommand(for: event) || super.performKeyEquivalent(with: event)
-    }
-
     override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
         if item.action == #selector(paste(_:)) {
             return acceptsRemoteInput && NSPasteboard.general.string(forType: .string) != nil
@@ -847,13 +837,13 @@ final class RemoteTerminalView: SwiftTerm.TerminalView {
     }
 
     func prepareForReplay(columns: Int, rows: Int) {
-        terminal.resize(cols: max(2, columns), rows: max(1, rows))
+        resize(cols: max(2, columns), rows: max(1, rows))
     }
 
     private func usesTextSelection(for event: NSEvent) -> Bool {
         if event.modifierFlags.contains(.shift) { return true }
         guard allowMouseReporting else { return true }
-        switch terminal.mouseMode {
+        switch currentMouseMode {
         case .off: return true
         default: return false
         }
@@ -895,26 +885,6 @@ final class RemoteTerminalView: SwiftTerm.TerminalView {
         return item
     }
 
-    private func synchronizeGridToBounds() {
-        guard terminal != nil, bounds.width > 0, bounds.height > 0 else { return }
-        let cellSize = caretFrame.size
-        guard cellSize.width > 0, cellSize.height > 0 else { return }
-
-        // SwiftTerm reserves a legacy scroller beside the terminal cells. Its
-        // public optimal-frame calculation lets us recover that inset without
-        // reaching into the dependency's private view state.
-        let optimalWidth = getOptimalFrameSize().width
-        let cellsWidth = cellSize.width * CGFloat(terminal.cols)
-        let scrollerWidth = max(0, optimalWidth - cellsWidth)
-        let columns = max(2, Int((bounds.width - scrollerWidth) / cellSize.width))
-        let rows = max(1, Int(bounds.height / cellSize.height))
-        guard columns != terminal.cols || rows != terminal.rows else { return }
-
-        terminal.resize(cols: columns, rows: rows)
-        let empty = [UInt8]()
-        feed(byteArray: empty[...])
-        terminalDelegate?.sizeChanged(source: self, newCols: columns, newRows: rows)
-    }
 }
 
 /// Applies replayable daemon output through SwiftTerm's view-level feed path.
@@ -931,7 +901,7 @@ final class RemoteTerminalScreenRenderer {
     func apply(_ screen: TerminalScreenState, to view: SwiftTerm.TerminalView) {
         let needsReset = resetRevision != screen.resetRevision || consumedBytes > screen.byteCount
         if needsReset {
-            view.terminal.resetToInitialState()
+            view.resetToInitialState()
             consumedBytes = 0
             resetRevision = screen.resetRevision
         }

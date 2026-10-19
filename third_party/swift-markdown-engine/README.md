@@ -25,7 +25,6 @@ checkboxes.
 ## Features
 
 - **Live Markdown styling** — bold, italic, headings, lists, blockquotes, GFM tables, code, links, task checkboxes, horizontal rules
-- **Extensions** — opt-in constructs beyond CommonMark (`==highlight==`, `~~strikethrough~~`, …); add your own via [`MarkdownExtension`](#extensions)
 - **Wiki-style linking** with two-form storage / display roundtripping
   (`[[Name|<id>]]` ↔ `[[Name]]`)
 - **Image embeds** — both `![[Name]]` (Obsidian-style, embedder supplies the                           
@@ -44,6 +43,8 @@ checkboxes.
   edge while typing
 - **Drag-select autoscroll boost** for long documents
 - **Spelling & grammar** with code/LaTeX/wiki-link suppression
+- **Extensions** — opt-in constructs defined by a *delimiter pair* (`==highlight==`, `~~strikethrough~~`, …); add your own via [`MarkdownExtension`](#extensions)
+- **Directives** — opt-in constructs defined by a *name and typed arguments*, for what a delimiter pair can't express (`@font(size: 18){text}`); add your own via [`MarkdownDirective`](#directives)
 
 ## Installation
 
@@ -123,23 +124,6 @@ configuration.services = MarkdownEditorServices(
 ```
 
 Each protocol and its no-op default are documented in DocC.
-
-### Extensions
-
-The core engine parses pure markdown. Extra constructs like `==highlight==`,
-`~~strikethrough~~`, and `::: … :::` container blocks are opt-in extensions:
-
-```swift
-var config = MarkdownEditorConfiguration()
-config.extensions = [HighlightExtension(), StrikethroughExtension(), ContainerExtension()]
-```
-
-Unregistered syntax stays literal text. An extension contributes an inline
-form (`InlineSyntax`), a fenced block form (`BlockSyntax`), or both — plus the
-attributes for its content and an HTML wrapper for rich copy. The parser owns
-all geometry, marker/fence hiding, caret reveal, and incremental restyling, so
-extensions behave identically to built-ins and cannot affect neighboring
-constructs. Conform to `MarkdownExtension` to add your own.
 
 ### Code Blocks
 
@@ -293,11 +277,115 @@ content an explicit height so it doesn't clip at the band's bottom. Composes
 with `readingWidth`; an optional `placeholder:` shows ghost text while empty;
 `header: nil` (default) adds nothing. The demo's **Header** toggle shows it.
 
+### Extensions
+
+An extension is **a pair of delimiters** plus how to style what sits between
+them — that is the whole shape, and what distinguishes it from a
+[directive](#directives). The core engine parses pure markdown; constructs like
+`==highlight==`, `~~strikethrough~~`, and `::: … :::` container blocks are
+opt-in extensions:
+
+```swift
+var config = MarkdownEditorConfiguration()
+config.extensions = [HighlightExtension(), StrikethroughExtension(), ContainerExtension()]
+```
+
+Unregistered syntax stays literal text. An extension contributes an inline
+form (`InlineSyntax`), a fenced block form (`BlockSyntax`), or both — plus the
+attributes for its content and an HTML wrapper for rich copy. The parser owns
+all geometry, marker/fence hiding, caret reveal, and incremental restyling, so
+extensions behave identically to built-ins and cannot affect neighboring
+constructs. Conform to `MarkdownExtension` to add your own.
+
+### Directives
+
+The second opt-in seam, for constructs that need a NAME and TYPED ARGUMENTS
+rather than delimiters:
+
+```swift
+var config = MarkdownEditorConfiguration()
+config.directives = [FontDirective(), ColorDirective()]
+```
+
+```markdown
+@font(size: 18){eighteen point}, @font(size: 1.5em){half again}, @color(red){tinted}
+```
+
+Two forms: **container** (`@font(size: 18){text}`) and **self-contained**
+(`@pagebreak`). A container's font transform composes over the font inherited
+at that point in the tree, so `@font(size: 18){**bold**}` is bold *and* 18pt,
+and the same call inside a heading keeps the heading's weight. There is no
+"applies to everything after me" form — a directive's effect is scoped to its
+own node, which is what keeps per-keystroke restyling block-local.
+
+A self-contained call draws a GLYPH in place of its own source, sized to the
+surrounding text: an SF Symbol, replacement text, or an image, chosen by the
+directive's `presentation`. The source is never removed — it collapses to zero
+width, the same mechanism inline LaTeX uses — so selection, find, copy, and
+undo still see the real characters, and the caret entering the call reveals
+them.
+
+The marker defaults to `@` and is configurable per registry
+(`config.directiveSettings`) and per directive, and several markers can be
+registered at once. An unregistered name stays literal text, and a directive
+only opens at a non-word character — so `name@example.com` is never a
+directive. If your app already uses `@` to trigger mentions, give directives
+their own marker instead of disambiguating at the keystroke; the
+registered-names-only rule keeps `@alice` literal, but the trigger itself is
+still shared.
+
+Two limits worth knowing before you author one. A body holding a span claimed
+by an *earlier* parse pass — an inline code span, or a backslash escape —
+leaves the whole construct literal rather than producing a directive around it:
+
+```markdown
+@font(size: 18){this has `code` in it}   ← not a directive, stays as typed
+@font(size: 18){this has *emphasis*}     ← fine, composes normally
+```
+
+Constructs claimed in the same pass or later (`$…$`, links, emphasis, nesting)
+work inside a body.
+
+**Autocomplete** covers both directive names and argument values. The engine
+detects the trigger, ranks the candidates, and routes ↑/↓/↵/Esc; you draw the
+list (the demo's picker is ~60 lines):
+
+```swift
+NativeTextViewWrapper(
+    text: $text,
+    configuration: config,
+    onCaretRectChange: { anchor = $0 },          // where to put the list
+    onInlinePreviewKey: handleKey,               // ↑/↓/↵/Esc → your list
+    onDirectiveCompletion: { completion = $0 },  // what to offer, or nil
+    pendingDirectiveCompletion: $pick            // commit a choice
+)
+```
+
+Value candidates come from `MarkdownDirective.valueCompletions(for:prefix:)`,
+whose default already answers anything the schema declares (closed keyword
+sets, booleans). Implement it only when the domain is dynamic or too large to
+declare. The demo's `@flag` offers every ISO region that way, matching on code
+or localised country name, with no shipped dataset.
+
+Conform to `MarkdownDirective` to add your own; a typical one is about 30
+lines, including its argument schema and HTML. `FontDirective` and
+`ColorDirective` are reference implementations meant to be read — they are not
+registered unless you register them. Directives carrying curated data or
+document policy belong to your app; `Demo/` has `@icon`, `@flag`, `@emoji`,
+and `@pagebreak` as worked examples, 30–60 lines each.
+
 ## Demo
 
 A runnable SwiftUI demo lives in [`Demo/`](Demo/MarkdownEngineDemo.xcodeproj).
 Open it in Xcode and hit **Run** — the demo references the package via
 a local path, so any engine edit rebuilds into the demo on the next run.
+
+Its sample document is ordered by where each construct comes from rather than
+by feature: core markdown first, then the optional bridge products, then the
+two opt-in seams. The toolbar's **Opt-in seams** toggle unregisters the
+extensions and directives at runtime, so that last part collapses into literal
+text while the rest doesn't move a pixel — the fastest way to see what the core
+grammar actually knows.
 
 > If you're seeing a "missing package product" error, it's almost always
 > stale package cache. Use **File → Packages → Reset Package Caches**

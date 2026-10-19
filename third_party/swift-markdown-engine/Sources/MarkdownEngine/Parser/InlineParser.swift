@@ -41,6 +41,19 @@ import Foundation
 
 enum EmphasisKind: Equatable { case italic, bold, boldItalic }
 
+/// What the claimed-range and containment scans did during one parse.
+///
+/// Both quantities were quadratic in the spans per region before the ordered
+/// walk, and both are a pure function of the input — which is the point. The
+/// span-density tests assert on these instead of on elapsed time, so they mean
+/// the same thing on a laptop and on a loaded CI runner.
+struct InlineParseCost: Equatable {
+    /// Claimed ranges inspected by `ClaimedIndex` across every pass.
+    var claimedProbes = 0
+    /// Span-in-region containment tests performed while building the tree.
+    var containmentTests = 0
+}
+
 /// A node in the inline AST.
 indirect enum InlineNode: Equatable {
     case text(NSRange)
@@ -94,15 +107,38 @@ enum InlineParser {
     // MARK: - Entry point
 
     static func parse(_ text: String, registry: ExtensionRegistry = .empty) -> [InlineNode] {
+        var cost = InlineParseCost()
+        return parse(text, registry: registry, cost: &cost)
+    }
+
+    /// Parse, reporting the work the claimed-range and containment scans did.
+    ///
+    /// The counts are what the span-density tests assert on. A wall-clock ratio
+    /// looked like the natural measure and isn't portable — the same parser
+    /// reads 5.3x on an idle laptop and 10.9x on a contended CI runner, which
+    /// is above the pre-rewrite floor, so no threshold separates them. These
+    /// counts are a pure function of the input: identical everywhere, and
+    /// quadratic vs. linear differ by orders of magnitude rather than by 1.4x.
+    static func parse(_ text: String, registry: ExtensionRegistry = .empty,
+                      cost: inout InlineParseCost) -> [InlineNode] {
         let ns = text as NSString
         let len = ns.length
         guard len > 0 else { return [] }
 
         var claimed = scanCodeSpans(ns, len: len)
-        claimed += scanEscapes(ns, len: len, claimed: ClaimedIndex(claimed))
-        claimed += scanLinkFamily(ns, len: len, claimed: ClaimedIndex(claimed), registry: registry)
-        let emphasis = resolveEmphasis(ns, len: len, claimed: ClaimedIndex(claimed))
-        return buildTree(region: NSRange(location: 0, length: len), spans: claimed + emphasis, ns: ns, registry: registry)
+
+        var escapeIndex = ClaimedIndex(claimed)
+        claimed += scanEscapes(ns, len: len, claimed: &escapeIndex)
+
+        var linkIndex = ClaimedIndex(claimed)
+        claimed += scanLinkFamily(ns, len: len, claimed: &linkIndex, registry: registry)
+
+        var emphasisIndex = ClaimedIndex(claimed)
+        let emphasis = resolveEmphasis(ns, len: len, claimed: &emphasisIndex)
+
+        cost.claimedProbes += escapeIndex.probes + linkIndex.probes + emphasisIndex.probes
+        return buildTree(region: NSRange(location: 0, length: len), spans: claimed + emphasis,
+                         ns: ns, registry: registry, cost: &cost)
     }
 
     /// Parse the inline content of `range` within `ns`, returning nodes in absolute document coordinates.
@@ -154,23 +190,37 @@ enum InlineParser {
         private let ranges: [NSRange]
         private var cursor = 0
 
+        /// How many claimed ranges the queries have inspected. The scans that
+        /// used to be quadratic all ran through here, so this is the number
+        /// `InlineSpanDensityTests` holds to a linear budget. An `Int` bumped
+        /// beside comparisons the loop already does — cheap enough to leave in
+        /// release, where the alternative is a global the tests race on.
+        private(set) var probes = 0
+
         init(_ spans: [Span]) {
             ranges = spans.map(\.fullRange).sorted { $0.location < $1.location }
         }
 
         /// Discard ranges that end at or before `idx`. `idx` must not move backwards.
         private mutating func advance(to idx: Int) {
-            while cursor < ranges.count, NSMaxRange(ranges[cursor]) <= idx { cursor += 1 }
+            while cursor < ranges.count, NSMaxRange(ranges[cursor]) <= idx {
+                cursor += 1
+                probes += 1
+            }
         }
 
         mutating func contains(_ idx: Int) -> Bool {
             advance(to: idx)
-            return cursor < ranges.count && NSLocationInRange(idx, ranges[cursor])
+            guard cursor < ranges.count else { return false }
+            probes += 1
+            return NSLocationInRange(idx, ranges[cursor])
         }
 
         mutating func overlaps(_ range: NSRange) -> Bool {
             advance(to: range.location)
-            return cursor < ranges.count && ranges[cursor].location < NSMaxRange(range)
+            guard cursor < ranges.count else { return false }
+            probes += 1
+            return ranges[cursor].location < NSMaxRange(range)
         }
 
         /// Every claimed range overlapping `range`. Peeks forward from the
@@ -183,6 +233,7 @@ enum InlineParser {
             while k < ranges.count, ranges[k].location < NSMaxRange(range) {
                 if NSIntersectionRange(ranges[k], range).length > 0 { out.append(ranges[k]) }
                 k += 1
+                probes += 1
             }
             return out
         }
@@ -236,8 +287,7 @@ enum InlineParser {
 
     // MARK: - 2. Backslash escapes (claimed → escaped chars are inert everywhere)
 
-    private static func scanEscapes(_ ns: NSString, len: Int, claimed: ClaimedIndex) -> [Span] {
-        var claimed = claimed
+    private static func scanEscapes(_ ns: NSString, len: Int, claimed: inout ClaimedIndex) -> [Span] {
         var spans: [Span] = []
         var i = 0
         while i < len - 1 {
@@ -257,8 +307,7 @@ enum InlineParser {
 
     // MARK: - 3. Link family / inline LaTeX / extension spans
 
-    private static func scanLinkFamily(_ ns: NSString, len: Int, claimed: ClaimedIndex, registry: ExtensionRegistry) -> [Span] {
-        var claimed = claimed
+    private static func scanLinkFamily(_ ns: NSString, len: Int, claimed: inout ClaimedIndex, registry: ExtensionRegistry) -> [Span] {
         // A candidate overlapping a claimed span is rejected, except for spans
         // wholly nested inside a Markdown link's label (#118). Only that case
         // needs the full overlap list; everything else short-circuits on the
@@ -286,6 +335,34 @@ enum InlineParser {
 
     private static func matchClaimedSpan(_ ns: NSString, _ len: Int, at i: Int, registry: ExtensionRegistry) -> Span? {
         if let span = matchBuiltIn(ns, len, at: i) { return span }
+        // Directives (`@font(size: 18){…}`) match after every built-in and
+        // BEFORE the extension loop below, on the same terms as extension
+        // spans: registered names only, and a rejection leaves the candidate
+        // literal. The ordering is deliberate — a directive is a named
+        // construct with a boundary rule, so it can't be ambiguous with an
+        // extension's delimiters unless an extension opens with the directive
+        // marker, in which case the directive wins. They project into the AST
+        // as extension-shaped nodes under a reserved id namespace, so marker
+        // shrink, caret reveal, token projection, and rich copy all apply
+        // unchanged.
+        //
+        // A directive candidate overlapping an ALREADY-CLAIMED span is
+        // rejected outright, so a code span or a backslash escape in the body
+        // keeps the whole directive literal — see the known limitation in
+        // `DirectiveScanner`.
+        //
+        // The emptiness test is HOISTED here rather than left to the identical
+        // guard inside `match`. This runs per unclaimed character, and `match`
+        // is too large to inline: the call, the indirect return buffer for a
+        // ~200-byte `DirectiveMatch?` and an outlined ARC helper all execute
+        // before the callee's own guard is reached. Measured on a release
+        // build, that cost a document registering NO directives 12-19% of its
+        // parse stage for a feature it never turned on.
+        if !registry.directives.isEmpty,
+           let match = DirectiveScanner.match(ns, len: len, at: i, registry: registry.directives) {
+            return .ext(id: match.nodeID, range: match.range, contentRange: match.contentRange,
+                        markers: match.markers, parsesContent: match.parsesContent)
+        }
         // Extensions match after every built-in, in registration order. A
         // built-in trigger that matched-and-FAILED (e.g. `$50$` rejected by
         // the math heuristic) falls through here, so an extension sharing a
@@ -566,8 +643,8 @@ enum InlineParser {
         var remaining: Int { rightEdge - leftEdge }
     }
 
-    private static func resolveEmphasis(_ ns: NSString, len: Int, claimed: ClaimedIndex) -> [Span] {
-        var runs = collectDelimiterRuns(ns, len: len, claimed: claimed)
+    private static func resolveEmphasis(_ ns: NSString, len: Int, claimed: inout ClaimedIndex) -> [Span] {
+        var runs = collectDelimiterRuns(ns, len: len, claimed: &claimed)
         guard !runs.isEmpty else { return [] }
         var stack: [Int] = []
         var spans: [Span] = []
@@ -582,8 +659,7 @@ enum InlineParser {
         return spans
     }
 
-    private static func collectDelimiterRuns(_ ns: NSString, len: Int, claimed: ClaimedIndex) -> [DelimRun] {
-        var claimed = claimed
+    private static func collectDelimiterRuns(_ ns: NSString, len: Int, claimed: inout ClaimedIndex) -> [DelimRun] {
         var runs: [DelimRun] = []
         var lineIdx = 0
         var i = 0
@@ -661,12 +737,14 @@ enum InlineParser {
 
     // MARK: - 5. Containment tree
 
-    private static func buildTree(region: NSRange, spans: [Span], ns: NSString, registry: ExtensionRegistry) -> [InlineNode] {
+    private static func buildTree(region: NSRange, spans: [Span], ns: NSString,
+                                  registry: ExtensionRegistry, cost: inout InlineParseCost) -> [InlineNode] {
         // Spans are non-overlapping or properly nested (each pass claims only
         // inside regions no earlier pass took), so ordering by start ascending
         // and length descending puts every span immediately after the one that
         // contains it. Containment then falls out of a single ordered walk,
         // instead of testing each span against every other span.
+        cost.containmentTests += spans.count
         let ordered = spans
             .filter { rangeContains(region, $0.fullRange) }
             .sorted { a, b in
@@ -674,13 +752,15 @@ enum InlineParser {
                 return x.location == y.location ? x.length > y.length : x.location < y.location
             }
         var cursor = 0
-        return buildTree(region: region, ordered: ordered, cursor: &cursor, ns: ns, registry: registry)
+        return buildTree(region: region, ordered: ordered, cursor: &cursor,
+                         ns: ns, registry: registry, cost: &cost)
     }
 
     /// Consumes spans from `cursor` for as long as they fall inside `region`,
     /// leaving `cursor` on the first span that doesn't.
     private static func buildTree(
-        region: NSRange, ordered: [Span], cursor: inout Int, ns: NSString, registry: ExtensionRegistry
+        region: NSRange, ordered: [Span], cursor: inout Int, ns: NSString,
+        registry: ExtensionRegistry, cost: inout InlineParseCost
     ) -> [InlineNode] {
         var result: [InlineNode] = []
         var textStart = region.location
@@ -688,6 +768,7 @@ enum InlineParser {
         while cursor < ordered.count {
             let span = ordered[cursor]
             let fr = span.fullRange
+            cost.containmentTests += 1
             guard rangeContains(region, fr) else { break }
             cursor += 1
 
@@ -701,10 +782,11 @@ enum InlineParser {
                 let content = NSRange(location: NSMaxRange(open), length: close.location - NSMaxRange(open))
                 result.append(.emphasis(kind, range: range, markers: [open, close],
                                         children: buildTree(region: content, ordered: ordered,
-                                                            cursor: &cursor, ns: ns, registry: registry)))
+                                                            cursor: &cursor, ns: ns,
+                                                            registry: registry, cost: &cost)))
             case .link(let range, let textRange, let url, let markers):
                 result.append(.link(range: range, textRange: textRange, url: url, markers: markers,
-                                     children: reparse(textRange, ns: ns, registry: registry)))
+                                     children: reparse(textRange, ns: ns, registry: registry, cost: &cost)))
             case .image(let range, let alt, let url, let markers):
                 result.append(.image(range: range, alt: alt, url: url, markers: markers))
             case .wikiLink(let range, let name, let id, let markers):
@@ -718,13 +800,17 @@ enum InlineParser {
             case .ext(let id, let range, let contentRange, let markers, let parsesContent):
                 result.append(.ext(ExtensionInlineNode(
                     extensionID: id, range: range, contentRange: contentRange, markers: markers,
-                    children: parsesContent ? reparse(contentRange, ns: ns, registry: registry) : []
+                    children: parsesContent ? reparse(contentRange, ns: ns, registry: registry, cost: &cost) : []
                 )))
             }
             // Every span but emphasis is opaque, so nothing should remain
             // inside one. Skipping keeps the walk well-formed if that ever
             // changes, rather than emitting a node past the cursor.
-            while cursor < ordered.count, rangeContains(fr, ordered[cursor].fullRange) { cursor += 1 }
+            while cursor < ordered.count, rangeContains(fr, ordered[cursor].fullRange) {
+                cursor += 1
+                cost.containmentTests += 1
+            }
+            cost.containmentTests += 1
             textStart = NSMaxRange(fr)
         }
         if textStart < NSMaxRange(region) {
@@ -734,8 +820,9 @@ enum InlineParser {
     }
 
     /// Recursively parse a sub-range's content, offset back to absolute coordinates.
-    private static func reparse(_ range: NSRange, ns: NSString, registry: ExtensionRegistry) -> [InlineNode] {
-        offsetNodes(parse(ns.substring(with: range), registry: registry), by: range.location)
+    private static func reparse(_ range: NSRange, ns: NSString, registry: ExtensionRegistry,
+                                cost: inout InlineParseCost) -> [InlineNode] {
+        offsetNodes(parse(ns.substring(with: range), registry: registry, cost: &cost), by: range.location)
     }
 
     // MARK: - Helpers
