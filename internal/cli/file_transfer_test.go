@@ -10,10 +10,42 @@ import (
 	files "github.com/dbpprt/dieter/internal/filetransfer"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/transport/dieterclient"
+	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+func TestDownloadPartialReleasesLockWithInheritedDescriptor(t *testing.T) {
+	t.Parallel()
+	dir, err := os.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dir.Close()
+	f, err := openTransferPartial(dir, "partial")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Dup retains the same open file description as a child between fork and
+	// exec. Closing only the parent's descriptor would leave its flock held.
+	inherited, err := unix.Dup(int(f.Fd()))
+	if err != nil {
+		_ = closeTransferPartial(f)
+		t.Fatal(err)
+	}
+	defer func() { _ = unix.Close(inherited) }()
+	if err := closeTransferPartial(f); err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := openTransferPartial(dir, "partial")
+	if err != nil {
+		t.Fatalf("resume while the child still holds its inherited descriptor: %v", err)
+	}
+	if err := closeTransferPartial(resumed); err != nil {
+		t.Fatal(err)
+	}
+}
 
 type interruptedDownload struct {
 	dieterclient.Client

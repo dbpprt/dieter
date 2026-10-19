@@ -318,6 +318,15 @@ func openTransferPartial(dir *os.File, name string) (*os.File, error) {
 	}
 	return f, nil
 }
+
+// A concurrently forked child can retain the open file description until exec,
+// even with O_CLOEXEC. Release the lock explicitly before closing so an immediate
+// resume does not contend with that inherited descriptor.
+func closeTransferPartial(f *os.File) error {
+	err := unix.Flock(int(f.Fd()), unix.LOCK_UN)
+	return errors.Join(err, f.Close())
+}
+
 func removeTransferPartial(dir *os.File, name string) error {
 	if err := unix.Unlinkat(int(dir.Fd()), name, 0); err != nil {
 		return err
