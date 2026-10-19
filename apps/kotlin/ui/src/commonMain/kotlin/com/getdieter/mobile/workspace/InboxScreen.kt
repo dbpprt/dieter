@@ -2,6 +2,11 @@
 
 package com.getdieter.mobile.workspace
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -18,12 +23,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.getdieter.client.v1.*
 import com.getdieter.core.activity.Activity
@@ -288,22 +294,22 @@ private fun InboxRow(
         GroupItem(
             position,
             Modifier.testTag("activity-row-${card.id}"),
-            separatorInset = 36.dp,
+            separatorInset = 62.dp,
             onClick = { store.openConversation(card.id) },
             onLongClick = { menu.show(cardMenuSections(store, card, row.can_finish)) },
             selected = selected,
         ) {
             Row(
                 Modifier.fillMaxWidth()
-                    .padding(start = 14.dp, end = 14.dp, top = 11.dp, bottom = 11.dp)
+                    .padding(start = 14.dp, end = 14.dp, top = 11.dp, bottom = 11.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Box(
-                    Modifier.width(22.dp).padding(top = 5.dp),
-                    contentAlignment = Alignment.TopCenter,
-                ) {
-                    if (row.kind == "RUNNING") LiveDot(tint, size = 10.dp)
-                    else Box(Modifier.size(9.dp).background(tint, CircleShape))
-                }
+                InboxAvatar(
+                    row,
+                    tint,
+                    if (selected) palette.accentContainer else palette.cell,
+                    size = 34.dp,
+                )
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Row(verticalAlignment = Alignment.Top) {
                         Text(
@@ -379,7 +385,7 @@ private fun InboxRow(
     }
 }
 
-/** Compact, individual activity cards with a status edge and no empty leading gutter. */
+/** An activity card: the project's avatar with a status badge, a status wash and a live sweep. */
 @Composable
 private fun MaterialInboxRow(
     row: ActivityRow,
@@ -393,119 +399,242 @@ private fun MaterialInboxRow(
     onFinish: () -> Unit,
 ) {
     val card = row.card ?: return
-    val shape = RoundedCornerShape(16.dp)
-    val background = if (selected) palette.accentContainer else lerp(palette.cell, tint, .035f)
-    val statusColor = tint.readableOn(background)
+    val shape = RoundedCornerShape(20.dp)
+    // Work that is live or waits for the user carries its status color; finished work stays calm.
+    val active = row.kind != "RECENT" && !selected
+    val surface = if (selected) palette.accentContainer else palette.cell
+    val wash = if (active) lerp(surface, tint, if (palette.dark) .16f else .09f) else surface
+    val statusColor = tint.readableOn(wash)
     Box(
         Modifier.fillMaxWidth()
             .padding(horizontal = ScreenMargin)
-            .padding(top = if (position.isFirst) 0.dp else 6.dp)
+            .padding(top = if (position.isFirst) 0.dp else 8.dp)
             .testTag("activity-row-${card.id}")
             .clip(shape)
-            .background(background)
-            .drawBehind {
-                drawRect(tint.copy(alpha = .7f), size = Size(3.dp.toPx(), size.height))
-            }
+            .background(surface)
+            .then(
+                if (active)
+                    Modifier.background(Brush.horizontalGradient(0f to wash, .7f to surface))
+                else Modifier
+            )
             .border(
-                if (selected) 1.dp else .5.dp,
-                if (selected) palette.accent else palette.separator.copy(alpha = .28f),
+                if (selected) 1.dp else .75.dp,
+                when {
+                    selected -> palette.accent
+                    active -> tint.copy(alpha = .3f)
+                    else -> palette.separator.copy(alpha = .28f)
+                },
                 shape,
             )
             .pressable(onClick = onOpen, onLongClick = onMenu, highlight = true)
     ) {
-        Column(
+        Row(
             Modifier.fillMaxWidth()
-                .padding(start = 15.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+                .padding(start = 12.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(verticalAlignment = Alignment.Top) {
-                Text(
-                    row.title,
-                    Modifier.weight(1f),
-                    style = type.bodyEmphasized.copy(fontWeight = FontWeight.SemiBold),
-                    color = palette.label,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    Activity.age(
-                        row.shown_at_millis.takeIf { it > 0 }?.let(Instant::fromEpochMilliseconds),
-                        now,
-                        suffix = false,
-                    ),
-                    Modifier.padding(start = 8.dp, top = 3.dp),
-                    style = type.footnote,
-                    color = palette.secondaryLabel,
-                )
-            }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
-            ) {
-                Icon(
-                    if (row.chat) Glyph.CHAT else Glyph.FOLDER,
-                    if (row.chat) "Chat" else null,
-                    tint = palette.secondaryLabel,
-                    size = 13.dp,
-                )
-                Text(
-                    listOfNotNull(
-                            row.project_name.ifEmpty { null },
-                            row.board_name.ifEmpty { null },
-                            machine,
-                        )
-                        .joinToString(" · "),
-                    style = type.subheadline,
-                    color = palette.secondaryLabel,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            val detail = row.detail.ifEmpty { row.kind_label }
-            if (detail.isNotEmpty())
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    if (row.kind == "RUNNING") LiveDot(statusColor, size = 8.dp)
-                    else
-                        Icon(
-                            when {
-                                row.kind == "FAILED" -> Glyph.WARNING
-                                row.needs_you -> Glyph.CHAT
-                                row.kind == "REVIEW" -> Glyph.EYE
-                                else -> Glyph.CHECK
-                            },
-                            null,
-                            tint = statusColor,
-                            size = 14.dp,
-                        )
+            InboxAvatar(row, tint, wash)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(verticalAlignment = Alignment.Top) {
                     Text(
-                        detail,
-                        style = type.subheadline,
-                        color =
-                            if (row.needs_you || row.kind == "FAILED") statusColor
-                            else palette.secondaryLabel,
+                        row.title,
+                        Modifier.weight(1f),
+                        style =
+                            type.bodyEmphasized.copy(
+                                fontWeight =
+                                    if (row.kind == "RECENT") FontWeight.Medium
+                                    else FontWeight.SemiBold
+                            ),
+                        color = palette.label,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    Text(
+                        Activity.age(
+                            row.shown_at_millis
+                                .takeIf { it > 0 }
+                                ?.let(Instant::fromEpochMilliseconds),
+                            now,
+                            suffix = false,
+                        ),
+                        Modifier.padding(start = 8.dp, top = 3.dp),
+                        style =
+                            if (row.needs_you) type.footnote.copy(fontWeight = FontWeight.SemiBold)
+                            else type.footnote,
+                        color = if (row.needs_you) statusColor else palette.secondaryLabel,
+                    )
                 }
-            if (row.stale.isNotEmpty())
-                Text(
-                    row.stale,
-                    style = type.footnote,
-                    color = palette.warning.readableOn(background),
-                )
-            if (row.can_finish)
-                DButton(
-                    "Mark done",
-                    onFinish,
-                    Modifier.padding(top = 6.dp).testTag("finish-${card.id}"),
-                    kind = ButtonKind.TONAL,
-                    glyph = Glyph.CHECK,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    if (row.chat)
+                        Icon(Glyph.CHAT, "Chat", tint = palette.secondaryLabel, size = 13.dp)
+                    Text(
+                        listOfNotNull(
+                                row.project_name.ifEmpty { null },
+                                row.board_name.ifEmpty { null },
+                                machine,
+                            )
+                            .joinToString(" · "),
+                        style = type.subheadline,
+                        color = palette.secondaryLabel,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                val detail = row.detail.ifEmpty { row.kind_label }
+                if (detail.isNotEmpty() || row.can_finish)
+                    Row(
+                        Modifier.padding(top = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Box(Modifier.weight(1f)) {
+                            when {
+                                detail.isEmpty() -> {}
+                                row.kind == "RUNNING" ->
+                                    Text(
+                                        detail,
+                                        style = type.subheadline,
+                                        color = palette.label.copy(alpha = .78f),
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                active -> StatusPill(row.statusGlyph, detail, statusColor)
+                                else ->
+                                    Text(
+                                        detail,
+                                        style = type.subheadline,
+                                        color = palette.secondaryLabel,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                            }
+                        }
+                        if (row.can_finish)
+                            FinishChip(onFinish, Modifier.testTag("finish-${card.id}"))
+                    }
+                if (row.stale.isNotEmpty())
+                    Row(
+                        Modifier.padding(top = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        val color = palette.warning.readableOn(surface)
+                        Icon(Glyph.OFFLINE, null, tint = color, size = 13.dp)
+                        Text(row.stale, style = type.footnote, color = color)
+                    }
+            }
+        }
+        if (row.kind == "RUNNING") RunningSweep(tint)
+    }
+}
+
+private val ActivityRow.statusGlyph: Glyph
+    get() =
+        when {
+            kind == "FAILED" -> Glyph.WARNING
+            needs_you -> Glyph.CHAT
+            kind == "REVIEW" -> Glyph.EYE
+            else -> Glyph.CHECK
+        }
+
+/** The project's avatar, or a chat bubble for an unfiled chat, with the row's status badge. */
+@Composable
+private fun InboxAvatar(row: ActivityRow, tint: Color, ring: Color, size: Dp = 40.dp) {
+    val card = row.card ?: return
+    Box(Modifier.size(size + 3.dp)) {
+        if (row.project_name.isEmpty())
+            Box(
+                Modifier.size(size).clip(RoundedCornerShape(size * .28f)).background(palette.fill),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Glyph.CHAT, null, tint = palette.secondaryLabel, size = size * .5f)
+            }
+        else ProjectAvatar(card.project_id, row.project_name, size)
+        Box(
+            Modifier.align(Alignment.BottomEnd).size(18.dp).background(ring, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (row.kind == "RUNNING") LiveDot(tint, size = 14.dp)
+            else
+                Box(
+                    Modifier.size(13.dp).background(tint, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    when {
+                        row.kind == "FAILED" -> Glyph.CLOSE
+                        row.needs_you -> null
+                        row.kind == "REVIEW" -> Glyph.EYE
+                        else -> Glyph.CHECK
+                    }?.let { Icon(it, null, tint = ring, size = 9.dp, weight = GlyphWeight.BOLD) }
+                }
         }
     }
+}
+
+/** A tinted capsule naming what the row waits for. */
+@Composable
+private fun StatusPill(glyph: Glyph, text: String, tint: Color) {
+    Row(
+        Modifier.clip(CircleShape)
+            .background(tint.copy(alpha = if (palette.dark) .16f else .11f))
+            .padding(start = 8.dp, end = 10.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Icon(glyph, null, tint = tint, size = 14.dp, weight = GlyphWeight.SEMIBOLD)
+        Text(
+            text,
+            style = type.footnote.copy(fontWeight = FontWeight.SemiBold),
+            color = tint,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun FinishChip(onFinish: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier
+            .clip(CircleShape)
+            .background(palette.fill)
+            .pressable(onClick = onFinish, highlight = true)
+            .padding(start = 9.dp, end = 12.dp, top = 7.dp, bottom = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Icon(Glyph.CHECK, null, tint = palette.label, size = 15.dp, weight = GlyphWeight.SEMIBOLD)
+        Text(
+            "Mark done",
+            style = type.footnote.copy(fontWeight = FontWeight.SemiBold),
+            color = palette.label,
+            maxLines = 1,
+        )
+    }
+}
+
+/** A light sweeping along the bottom edge while the agent works. */
+@Composable
+private fun BoxScope.RunningSweep(tint: Color) {
+    val progress =
+        rememberInfiniteTransition()
+            .animateFloat(0f, 1f, infiniteRepeatable(tween(1800, easing = LinearEasing)))
+    Box(
+        Modifier.align(Alignment.BottomStart).fillMaxWidth().height(2.dp).drawBehind {
+            val band = size.width * .45f
+            val start = -band + (size.width + band) * progress.value
+            drawRect(
+                Brush.horizontalGradient(
+                    listOf(Color.Transparent, tint, Color.Transparent),
+                    startX = start,
+                    endX = start + band,
+                )
+            )
+        }
+    )
 }
 
 @Composable
