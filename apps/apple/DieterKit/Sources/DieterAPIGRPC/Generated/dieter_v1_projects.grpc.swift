@@ -6,7 +6,7 @@
 // Source: dieter/v1/projects.proto
 //
 // For information on using the generated types, please see the documentation:
-//   https://github.com/grpc/grpc-swift
+//   https://github.com/grpc/grpc-swift-2
 
 import GRPCCore
 import GRPCProtobuf
@@ -193,9 +193,9 @@ extension Dieter_V1_ProjectService {
         ///   - serializer: A serializer for `Dieter_V1_ListDirectoriesRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_DirectoryListing` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func listDirectories<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ListDirectoriesRequest>,
@@ -212,9 +212,9 @@ extension Dieter_V1_ProjectService {
         ///   - serializer: A serializer for `Dieter_V1_ConsolidateProjectRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Project` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func consolidateProject<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ConsolidateProjectRequest>,
@@ -231,9 +231,9 @@ extension Dieter_V1_ProjectService {
         ///   - serializer: A serializer for `Dieter_V1_AttachCheckoutRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Checkout` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func attachCheckout<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_AttachCheckoutRequest>,
@@ -250,9 +250,9 @@ extension Dieter_V1_ProjectService {
         ///   - serializer: A serializer for `Dieter_V1_CheckoutRef` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func detachCheckout<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_CheckoutRef>,
@@ -269,9 +269,9 @@ extension Dieter_V1_ProjectService {
         ///   - serializer: A serializer for `Dieter_V1_ProjectRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_CheckoutsResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func listCheckouts<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ProjectRef>,
@@ -288,9 +288,9 @@ extension Dieter_V1_ProjectService {
         ///   - serializer: A serializer for `Dieter_V1_CreateProjectRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_CreateProjectResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func createProject<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_CreateProjectRequest>,
@@ -307,9 +307,9 @@ extension Dieter_V1_ProjectService {
         ///   - serializer: A serializer for `Dieter_V1_UpdateProjectRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Project` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func updateProject<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_UpdateProjectRequest>,
@@ -326,9 +326,9 @@ extension Dieter_V1_ProjectService {
         ///   - serializer: A serializer for `Dieter_V1_UpdateProjectWorkspaceSettingsRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Project` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func updateProjectWorkspaceSettings<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_UpdateProjectWorkspaceSettingsRequest>,
@@ -345,9 +345,9 @@ extension Dieter_V1_ProjectService {
         ///   - serializer: A serializer for `Dieter_V1_ArchiveProjectRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Project` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func archiveProject<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ArchiveProjectRequest>,
@@ -364,9 +364,9 @@ extension Dieter_V1_ProjectService {
         ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ProjectsResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func listArchivedProjects<Result>(
             request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -404,9 +404,9 @@ extension Dieter_V1_ProjectService {
         ///   - serializer: A serializer for `Dieter_V1_ListDirectoriesRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_DirectoryListing` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func listDirectories<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ListDirectoriesRequest>,
@@ -434,9 +434,9 @@ extension Dieter_V1_ProjectService {
         ///   - serializer: A serializer for `Dieter_V1_ConsolidateProjectRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Project` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func consolidateProject<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ConsolidateProjectRequest>,
@@ -464,9 +464,9 @@ extension Dieter_V1_ProjectService {
         ///   - serializer: A serializer for `Dieter_V1_AttachCheckoutRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Checkout` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func attachCheckout<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_AttachCheckoutRequest>,
@@ -494,9 +494,9 @@ extension Dieter_V1_ProjectService {
         ///   - serializer: A serializer for `Dieter_V1_CheckoutRef` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func detachCheckout<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_CheckoutRef>,
@@ -524,9 +524,9 @@ extension Dieter_V1_ProjectService {
         ///   - serializer: A serializer for `Dieter_V1_ProjectRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_CheckoutsResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func listCheckouts<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ProjectRef>,
@@ -554,9 +554,9 @@ extension Dieter_V1_ProjectService {
         ///   - serializer: A serializer for `Dieter_V1_CreateProjectRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_CreateProjectResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func createProject<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_CreateProjectRequest>,
@@ -584,9 +584,9 @@ extension Dieter_V1_ProjectService {
         ///   - serializer: A serializer for `Dieter_V1_UpdateProjectRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Project` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func updateProject<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_UpdateProjectRequest>,
@@ -614,9 +614,9 @@ extension Dieter_V1_ProjectService {
         ///   - serializer: A serializer for `Dieter_V1_UpdateProjectWorkspaceSettingsRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Project` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func updateProjectWorkspaceSettings<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_UpdateProjectWorkspaceSettingsRequest>,
@@ -644,9 +644,9 @@ extension Dieter_V1_ProjectService {
         ///   - serializer: A serializer for `Dieter_V1_ArchiveProjectRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Project` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func archiveProject<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ArchiveProjectRequest>,
@@ -674,9 +674,9 @@ extension Dieter_V1_ProjectService {
         ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ProjectsResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func listArchivedProjects<Result>(
             request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -707,9 +707,9 @@ extension Dieter_V1_ProjectService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ListDirectoriesRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listDirectories<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ListDirectoriesRequest>,
@@ -732,9 +732,9 @@ extension Dieter_V1_ProjectService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ConsolidateProjectRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func consolidateProject<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ConsolidateProjectRequest>,
@@ -757,9 +757,9 @@ extension Dieter_V1_ProjectService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_AttachCheckoutRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func attachCheckout<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_AttachCheckoutRequest>,
@@ -782,9 +782,9 @@ extension Dieter_V1_ProjectService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_CheckoutRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func detachCheckout<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_CheckoutRef>,
@@ -807,9 +807,9 @@ extension Dieter_V1_ProjectService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ProjectRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listCheckouts<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ProjectRef>,
@@ -832,9 +832,9 @@ extension Dieter_V1_ProjectService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_CreateProjectRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func createProject<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_CreateProjectRequest>,
@@ -857,9 +857,9 @@ extension Dieter_V1_ProjectService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_UpdateProjectRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func updateProject<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_UpdateProjectRequest>,
@@ -882,9 +882,9 @@ extension Dieter_V1_ProjectService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_UpdateProjectWorkspaceSettingsRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func updateProjectWorkspaceSettings<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_UpdateProjectWorkspaceSettingsRequest>,
@@ -907,9 +907,9 @@ extension Dieter_V1_ProjectService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ArchiveProjectRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func archiveProject<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ArchiveProjectRequest>,
@@ -932,9 +932,9 @@ extension Dieter_V1_ProjectService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listArchivedProjects<Result>(
         request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -962,9 +962,9 @@ extension Dieter_V1_ProjectService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listDirectories<Result>(
         _ message: Dieter_V1_ListDirectoriesRequest,
@@ -991,9 +991,9 @@ extension Dieter_V1_ProjectService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func consolidateProject<Result>(
         _ message: Dieter_V1_ConsolidateProjectRequest,
@@ -1020,9 +1020,9 @@ extension Dieter_V1_ProjectService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func attachCheckout<Result>(
         _ message: Dieter_V1_AttachCheckoutRequest,
@@ -1049,9 +1049,9 @@ extension Dieter_V1_ProjectService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func detachCheckout<Result>(
         _ message: Dieter_V1_CheckoutRef,
@@ -1078,9 +1078,9 @@ extension Dieter_V1_ProjectService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listCheckouts<Result>(
         _ message: Dieter_V1_ProjectRef,
@@ -1107,9 +1107,9 @@ extension Dieter_V1_ProjectService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func createProject<Result>(
         _ message: Dieter_V1_CreateProjectRequest,
@@ -1136,9 +1136,9 @@ extension Dieter_V1_ProjectService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func updateProject<Result>(
         _ message: Dieter_V1_UpdateProjectRequest,
@@ -1165,9 +1165,9 @@ extension Dieter_V1_ProjectService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func updateProjectWorkspaceSettings<Result>(
         _ message: Dieter_V1_UpdateProjectWorkspaceSettingsRequest,
@@ -1194,9 +1194,9 @@ extension Dieter_V1_ProjectService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func archiveProject<Result>(
         _ message: Dieter_V1_ArchiveProjectRequest,
@@ -1223,9 +1223,9 @@ extension Dieter_V1_ProjectService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listArchivedProjects<Result>(
         _ message: SwiftProtobuf.Google_Protobuf_Empty,

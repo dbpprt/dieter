@@ -6,7 +6,7 @@
 // Source: dieter/v1/state.proto
 //
 // For information on using the generated types, please see the documentation:
-//   https://github.com/grpc/grpc-swift
+//   https://github.com/grpc/grpc-swift-2
 
 import GRPCCore
 import GRPCProtobuf
@@ -80,9 +80,9 @@ extension Dieter_V1_StateService {
         ///   - serializer: A serializer for `Dieter_V1_GetStateRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_State` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func getState<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_GetStateRequest>,
@@ -107,9 +107,9 @@ extension Dieter_V1_StateService {
         ///   - serializer: A serializer for `Dieter_V1_ChangesRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ChangesFrame` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func watchChanges<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ChangesRequest>,
@@ -147,9 +147,9 @@ extension Dieter_V1_StateService {
         ///   - serializer: A serializer for `Dieter_V1_GetStateRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_State` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func getState<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_GetStateRequest>,
@@ -185,9 +185,9 @@ extension Dieter_V1_StateService {
         ///   - serializer: A serializer for `Dieter_V1_ChangesRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ChangesFrame` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func watchChanges<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ChangesRequest>,
@@ -216,9 +216,9 @@ extension Dieter_V1_StateService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_GetStateRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getState<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_GetStateRequest>,
@@ -249,9 +249,9 @@ extension Dieter_V1_StateService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ChangesRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func watchChanges<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ChangesRequest>,
@@ -277,9 +277,9 @@ extension Dieter_V1_StateService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getState<Result>(
         _ message: Dieter_V1_GetStateRequest,
@@ -314,9 +314,9 @@ extension Dieter_V1_StateService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func watchChanges<Result>(
         _ message: Dieter_V1_ChangesRequest,

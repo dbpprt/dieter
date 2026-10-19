@@ -6,7 +6,7 @@
 // Source: dieter/v1/trust.proto
 //
 // For information on using the generated types, please see the documentation:
-//   https://github.com/grpc/grpc-swift
+//   https://github.com/grpc/grpc-swift-2
 
 import GRPCCore
 import GRPCProtobuf
@@ -170,9 +170,9 @@ extension Dieter_V1_TrustService {
         ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_TrustStatus` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func getTrustStatus<Result>(
             request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -193,9 +193,9 @@ extension Dieter_V1_TrustService {
         ///   - serializer: A serializer for `DieterAPI.Dieter_Gateway_V1_GetDeviceRosterRequest` messages.
         ///   - deserializer: A deserializer for `DieterAPI.Dieter_Gateway_V1_DeviceRoster` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func getDeviceRoster<Result>(
             request: GRPCCore.ClientRequest<DieterAPI.Dieter_Gateway_V1_GetDeviceRosterRequest>,
@@ -218,9 +218,9 @@ extension Dieter_V1_TrustService {
         ///   - serializer: A serializer for `Dieter_V1_SyncDeviceRosterRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_TrustStatus` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func syncDeviceRoster<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_SyncDeviceRosterRequest>,
@@ -243,9 +243,9 @@ extension Dieter_V1_TrustService {
         ///   - serializer: A serializer for `Dieter_V1_InitializeDeviceRosterRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_InitializeDeviceRosterResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func initializeDeviceRoster<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_InitializeDeviceRosterRequest>,
@@ -267,9 +267,9 @@ extension Dieter_V1_TrustService {
         ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ListPairingRequestsResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func listPairingRequests<Result>(
             request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -290,9 +290,9 @@ extension Dieter_V1_TrustService {
         ///   - serializer: A serializer for `Dieter_V1_ApproveDeviceRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_TrustStatus` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func approveDevice<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ApproveDeviceRequest>,
@@ -309,9 +309,9 @@ extension Dieter_V1_TrustService {
         ///   - serializer: A serializer for `Dieter_V1_RevokeDeviceRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_TrustStatus` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func revokeDevice<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RevokeDeviceRequest>,
@@ -335,9 +335,9 @@ extension Dieter_V1_TrustService {
         ///   - serializer: A serializer for `Dieter_V1_RecoverDeviceTrustRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_TrustStatus` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func recoverDeviceTrust<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RecoverDeviceTrustRequest>,
@@ -379,9 +379,9 @@ extension Dieter_V1_TrustService {
         ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_TrustStatus` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func getTrustStatus<Result>(
             request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -413,9 +413,9 @@ extension Dieter_V1_TrustService {
         ///   - serializer: A serializer for `DieterAPI.Dieter_Gateway_V1_GetDeviceRosterRequest` messages.
         ///   - deserializer: A deserializer for `DieterAPI.Dieter_Gateway_V1_DeviceRoster` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func getDeviceRoster<Result>(
             request: GRPCCore.ClientRequest<DieterAPI.Dieter_Gateway_V1_GetDeviceRosterRequest>,
@@ -449,9 +449,9 @@ extension Dieter_V1_TrustService {
         ///   - serializer: A serializer for `Dieter_V1_SyncDeviceRosterRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_TrustStatus` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func syncDeviceRoster<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_SyncDeviceRosterRequest>,
@@ -485,9 +485,9 @@ extension Dieter_V1_TrustService {
         ///   - serializer: A serializer for `Dieter_V1_InitializeDeviceRosterRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_InitializeDeviceRosterResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func initializeDeviceRoster<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_InitializeDeviceRosterRequest>,
@@ -520,9 +520,9 @@ extension Dieter_V1_TrustService {
         ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ListPairingRequestsResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func listPairingRequests<Result>(
             request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -554,9 +554,9 @@ extension Dieter_V1_TrustService {
         ///   - serializer: A serializer for `Dieter_V1_ApproveDeviceRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_TrustStatus` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func approveDevice<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ApproveDeviceRequest>,
@@ -584,9 +584,9 @@ extension Dieter_V1_TrustService {
         ///   - serializer: A serializer for `Dieter_V1_RevokeDeviceRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_TrustStatus` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func revokeDevice<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RevokeDeviceRequest>,
@@ -621,9 +621,9 @@ extension Dieter_V1_TrustService {
         ///   - serializer: A serializer for `Dieter_V1_RecoverDeviceTrustRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_TrustStatus` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func recoverDeviceTrust<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RecoverDeviceTrustRequest>,
@@ -654,9 +654,9 @@ extension Dieter_V1_TrustService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getTrustStatus<Result>(
         request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -683,9 +683,9 @@ extension Dieter_V1_TrustService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `DieterAPI.Dieter_Gateway_V1_GetDeviceRosterRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getDeviceRoster<Result>(
         request: GRPCCore.ClientRequest<DieterAPI.Dieter_Gateway_V1_GetDeviceRosterRequest>,
@@ -714,9 +714,9 @@ extension Dieter_V1_TrustService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_SyncDeviceRosterRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func syncDeviceRoster<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_SyncDeviceRosterRequest>,
@@ -745,9 +745,9 @@ extension Dieter_V1_TrustService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_InitializeDeviceRosterRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func initializeDeviceRoster<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_InitializeDeviceRosterRequest>,
@@ -775,9 +775,9 @@ extension Dieter_V1_TrustService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listPairingRequests<Result>(
         request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -804,9 +804,9 @@ extension Dieter_V1_TrustService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ApproveDeviceRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func approveDevice<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ApproveDeviceRequest>,
@@ -829,9 +829,9 @@ extension Dieter_V1_TrustService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_RevokeDeviceRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func revokeDevice<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_RevokeDeviceRequest>,
@@ -861,9 +861,9 @@ extension Dieter_V1_TrustService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_RecoverDeviceTrustRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func recoverDeviceTrust<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_RecoverDeviceTrustRequest>,
@@ -891,9 +891,9 @@ extension Dieter_V1_TrustService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getTrustStatus<Result>(
         _ message: SwiftProtobuf.Google_Protobuf_Empty,
@@ -924,9 +924,9 @@ extension Dieter_V1_TrustService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getDeviceRoster<Result>(
         _ message: DieterAPI.Dieter_Gateway_V1_GetDeviceRosterRequest,
@@ -959,9 +959,9 @@ extension Dieter_V1_TrustService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func syncDeviceRoster<Result>(
         _ message: Dieter_V1_SyncDeviceRosterRequest,
@@ -994,9 +994,9 @@ extension Dieter_V1_TrustService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func initializeDeviceRoster<Result>(
         _ message: Dieter_V1_InitializeDeviceRosterRequest,
@@ -1028,9 +1028,9 @@ extension Dieter_V1_TrustService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listPairingRequests<Result>(
         _ message: SwiftProtobuf.Google_Protobuf_Empty,
@@ -1061,9 +1061,9 @@ extension Dieter_V1_TrustService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func approveDevice<Result>(
         _ message: Dieter_V1_ApproveDeviceRequest,
@@ -1090,9 +1090,9 @@ extension Dieter_V1_TrustService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func revokeDevice<Result>(
         _ message: Dieter_V1_RevokeDeviceRequest,
@@ -1126,9 +1126,9 @@ extension Dieter_V1_TrustService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func recoverDeviceTrust<Result>(
         _ message: Dieter_V1_RecoverDeviceTrustRequest,

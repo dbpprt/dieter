@@ -6,7 +6,7 @@
 // Source: dieter/v1/screens.proto
 //
 // For information on using the generated types, please see the documentation:
-//   https://github.com/grpc/grpc-swift
+//   https://github.com/grpc/grpc-swift-2
 
 import GRPCCore
 import GRPCProtobuf
@@ -291,9 +291,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopCapabilities` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func getRemoteDesktopCapabilities<Result>(
             request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -310,9 +310,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopDisplayModes` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func listRemoteDesktopDisplayModes<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
@@ -329,9 +329,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_SetRemoteDesktopDisplayModeRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopDisplayModes` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func setRemoteDesktopDisplayMode<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_SetRemoteDesktopDisplayModeRequest>,
@@ -348,9 +348,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopDisplayModes` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func restoreRemoteDesktopDisplayMode<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
@@ -367,9 +367,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopVirtualDisplay` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func getRemoteDesktopVirtualDisplay<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
@@ -386,9 +386,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_SetRemoteDesktopVirtualDisplayRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopVirtualDisplay` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func setRemoteDesktopVirtualDisplay<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_SetRemoteDesktopVirtualDisplayRequest>,
@@ -405,9 +405,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_ConfirmRemoteDesktopVirtualDisplayRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopVirtualDisplay` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func confirmRemoteDesktopVirtualDisplay<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ConfirmRemoteDesktopVirtualDisplayRequest>,
@@ -424,9 +424,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopVirtualDisplay` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func restoreRemoteDesktopVirtualDisplay<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
@@ -448,9 +448,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_ProbeRemoteDesktopPermissionsRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopPermissionProbe` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func probeRemoteDesktopPermissions<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ProbeRemoteDesktopPermissionsRequest>,
@@ -467,9 +467,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_StartRemoteDesktopRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopSignal` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func startRemoteDesktop<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_StartRemoteDesktopRequest>,
@@ -486,9 +486,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopSignal` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func sendRemoteDesktopSignal<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopSignal>,
@@ -505,9 +505,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopSessionState` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func getRemoteDesktopSession<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
@@ -524,9 +524,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopSessions` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func listRemoteDesktopSessions<Result>(
             request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -543,9 +543,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopControlRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopSessionState` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func setRemoteDesktopControl<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopControlRequest>,
@@ -562,9 +562,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_UpdateRemoteDesktopSessionRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopSessionState` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func updateRemoteDesktopSession<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_UpdateRemoteDesktopSessionRequest>,
@@ -581,9 +581,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopClipboardRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopClipboardResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func exchangeRemoteDesktopClipboard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopClipboardRequest>,
@@ -600,9 +600,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopRef` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func closeRemoteDesktop<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
@@ -640,9 +640,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopCapabilities` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func getRemoteDesktopCapabilities<Result>(
             request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -670,9 +670,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopDisplayModes` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func listRemoteDesktopDisplayModes<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
@@ -700,9 +700,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_SetRemoteDesktopDisplayModeRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopDisplayModes` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func setRemoteDesktopDisplayMode<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_SetRemoteDesktopDisplayModeRequest>,
@@ -730,9 +730,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopDisplayModes` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func restoreRemoteDesktopDisplayMode<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
@@ -760,9 +760,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopVirtualDisplay` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func getRemoteDesktopVirtualDisplay<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
@@ -790,9 +790,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_SetRemoteDesktopVirtualDisplayRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopVirtualDisplay` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func setRemoteDesktopVirtualDisplay<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_SetRemoteDesktopVirtualDisplayRequest>,
@@ -820,9 +820,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_ConfirmRemoteDesktopVirtualDisplayRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopVirtualDisplay` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func confirmRemoteDesktopVirtualDisplay<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ConfirmRemoteDesktopVirtualDisplayRequest>,
@@ -850,9 +850,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopVirtualDisplay` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func restoreRemoteDesktopVirtualDisplay<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
@@ -885,9 +885,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_ProbeRemoteDesktopPermissionsRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopPermissionProbe` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func probeRemoteDesktopPermissions<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ProbeRemoteDesktopPermissionsRequest>,
@@ -915,9 +915,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_StartRemoteDesktopRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopSignal` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func startRemoteDesktop<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_StartRemoteDesktopRequest>,
@@ -943,9 +943,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopSignal` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func sendRemoteDesktopSignal<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopSignal>,
@@ -973,9 +973,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopSessionState` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func getRemoteDesktopSession<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
@@ -1003,9 +1003,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopSessions` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func listRemoteDesktopSessions<Result>(
             request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -1033,9 +1033,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopControlRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopSessionState` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func setRemoteDesktopControl<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopControlRequest>,
@@ -1063,9 +1063,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_UpdateRemoteDesktopSessionRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopSessionState` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func updateRemoteDesktopSession<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_UpdateRemoteDesktopSessionRequest>,
@@ -1093,9 +1093,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopClipboardRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopClipboardResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func exchangeRemoteDesktopClipboard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopClipboardRequest>,
@@ -1123,9 +1123,9 @@ extension Dieter_V1_ScreenService {
         ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopRef` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func closeRemoteDesktop<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
@@ -1156,9 +1156,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getRemoteDesktopCapabilities<Result>(
         request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -1181,9 +1181,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_RemoteDesktopRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listRemoteDesktopDisplayModes<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
@@ -1206,9 +1206,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_SetRemoteDesktopDisplayModeRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func setRemoteDesktopDisplayMode<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_SetRemoteDesktopDisplayModeRequest>,
@@ -1231,9 +1231,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_RemoteDesktopRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func restoreRemoteDesktopDisplayMode<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
@@ -1256,9 +1256,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_RemoteDesktopRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getRemoteDesktopVirtualDisplay<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
@@ -1281,9 +1281,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_SetRemoteDesktopVirtualDisplayRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func setRemoteDesktopVirtualDisplay<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_SetRemoteDesktopVirtualDisplayRequest>,
@@ -1306,9 +1306,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ConfirmRemoteDesktopVirtualDisplayRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func confirmRemoteDesktopVirtualDisplay<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ConfirmRemoteDesktopVirtualDisplayRequest>,
@@ -1331,9 +1331,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_RemoteDesktopRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func restoreRemoteDesktopVirtualDisplay<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
@@ -1361,9 +1361,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ProbeRemoteDesktopPermissionsRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func probeRemoteDesktopPermissions<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ProbeRemoteDesktopPermissionsRequest>,
@@ -1386,9 +1386,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_StartRemoteDesktopRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func startRemoteDesktop<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_StartRemoteDesktopRequest>,
@@ -1409,9 +1409,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_RemoteDesktopSignal` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func sendRemoteDesktopSignal<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopSignal>,
@@ -1434,9 +1434,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_RemoteDesktopRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getRemoteDesktopSession<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
@@ -1459,9 +1459,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listRemoteDesktopSessions<Result>(
         request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -1484,9 +1484,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_RemoteDesktopControlRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func setRemoteDesktopControl<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopControlRequest>,
@@ -1509,9 +1509,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_UpdateRemoteDesktopSessionRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func updateRemoteDesktopSession<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_UpdateRemoteDesktopSessionRequest>,
@@ -1534,9 +1534,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_RemoteDesktopClipboardRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func exchangeRemoteDesktopClipboard<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopClipboardRequest>,
@@ -1559,9 +1559,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_RemoteDesktopRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func closeRemoteDesktop<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
@@ -1589,9 +1589,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getRemoteDesktopCapabilities<Result>(
         _ message: SwiftProtobuf.Google_Protobuf_Empty,
@@ -1618,9 +1618,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listRemoteDesktopDisplayModes<Result>(
         _ message: Dieter_V1_RemoteDesktopRef,
@@ -1647,9 +1647,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func setRemoteDesktopDisplayMode<Result>(
         _ message: Dieter_V1_SetRemoteDesktopDisplayModeRequest,
@@ -1676,9 +1676,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func restoreRemoteDesktopDisplayMode<Result>(
         _ message: Dieter_V1_RemoteDesktopRef,
@@ -1705,9 +1705,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getRemoteDesktopVirtualDisplay<Result>(
         _ message: Dieter_V1_RemoteDesktopRef,
@@ -1734,9 +1734,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func setRemoteDesktopVirtualDisplay<Result>(
         _ message: Dieter_V1_SetRemoteDesktopVirtualDisplayRequest,
@@ -1763,9 +1763,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func confirmRemoteDesktopVirtualDisplay<Result>(
         _ message: Dieter_V1_ConfirmRemoteDesktopVirtualDisplayRequest,
@@ -1792,9 +1792,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func restoreRemoteDesktopVirtualDisplay<Result>(
         _ message: Dieter_V1_RemoteDesktopRef,
@@ -1826,9 +1826,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func probeRemoteDesktopPermissions<Result>(
         _ message: Dieter_V1_ProbeRemoteDesktopPermissionsRequest,
@@ -1855,9 +1855,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func startRemoteDesktop<Result>(
         _ message: Dieter_V1_StartRemoteDesktopRequest,
@@ -1882,9 +1882,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func sendRemoteDesktopSignal<Result>(
         _ message: Dieter_V1_RemoteDesktopSignal,
@@ -1911,9 +1911,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getRemoteDesktopSession<Result>(
         _ message: Dieter_V1_RemoteDesktopRef,
@@ -1940,9 +1940,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listRemoteDesktopSessions<Result>(
         _ message: SwiftProtobuf.Google_Protobuf_Empty,
@@ -1969,9 +1969,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func setRemoteDesktopControl<Result>(
         _ message: Dieter_V1_RemoteDesktopControlRequest,
@@ -1998,9 +1998,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func updateRemoteDesktopSession<Result>(
         _ message: Dieter_V1_UpdateRemoteDesktopSessionRequest,
@@ -2027,9 +2027,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func exchangeRemoteDesktopClipboard<Result>(
         _ message: Dieter_V1_RemoteDesktopClipboardRequest,
@@ -2056,9 +2056,9 @@ extension Dieter_V1_ScreenService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func closeRemoteDesktop<Result>(
         _ message: Dieter_V1_RemoteDesktopRef,

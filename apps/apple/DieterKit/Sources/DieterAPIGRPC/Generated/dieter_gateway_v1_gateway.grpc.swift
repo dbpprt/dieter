@@ -6,7 +6,7 @@
 // Source: dieter/gateway/v1/gateway.proto
 //
 // For information on using the generated types, please see the documentation:
-//   https://github.com/grpc/grpc-swift
+//   https://github.com/grpc/grpc-swift-2
 
 import GRPCCore
 import GRPCProtobuf
@@ -427,9 +427,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_CompatibilityRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_CompatibilityResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func getCompatibility<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_CompatibilityRequest>,
@@ -446,9 +446,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_Account` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func getAccount<Result>(
             request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -465,9 +465,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_ListDaemonsResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func listDaemons<Result>(
             request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -484,9 +484,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_WatchDaemonsRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DaemonPresenceUpdate` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func watchDaemons<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_WatchDaemonsRequest>,
@@ -503,9 +503,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_BeginDaemonEnrollmentRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DaemonEnrollment` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func beginDaemonEnrollment<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_BeginDaemonEnrollmentRequest>,
@@ -522,9 +522,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_CompleteDaemonEnrollmentRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DaemonCredential` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func completeDaemonEnrollment<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_CompleteDaemonEnrollmentRequest>,
@@ -541,9 +541,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_UnenrollDaemonRequest` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func unenrollDaemon<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_UnenrollDaemonRequest>,
@@ -560,9 +560,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_RenameDaemonRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_Daemon` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func renameDaemon<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_RenameDaemonRequest>,
@@ -579,9 +579,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_DaemonRef` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func revokeDaemon<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_DaemonRef>,
@@ -605,9 +605,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_DaemonRecoveryRef` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DaemonRecoveryState` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func inspectDaemonRecovery<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_DaemonRecoveryRef>,
@@ -624,9 +624,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_RecoverDaemonRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DaemonCredential` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func recoverDaemon<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_RecoverDaemonRequest>,
@@ -643,9 +643,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_ExchangeDaemonTokenRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DaemonAccessToken` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func exchangeDaemonToken<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_ExchangeDaemonTokenRequest>,
@@ -662,9 +662,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_DaemonRef` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DaemonRoute` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func resolveDaemonRoute<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_DaemonRef>,
@@ -687,9 +687,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_DaemonRef` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_RTCConfiguration` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func getRTCConfiguration<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_DaemonRef>,
@@ -706,9 +706,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_ListProviderQuotasRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_ListProviderQuotasResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func listProviderQuotas<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_ListProviderQuotasRequest>,
@@ -725,9 +725,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_WatchProviderQuotasRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_ProviderQuotaUpdate` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func watchProviderQuotas<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_WatchProviderQuotasRequest>,
@@ -744,9 +744,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_RefreshProviderQuotasRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_RefreshProviderQuotasResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func refreshProviderQuotas<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_RefreshProviderQuotasRequest>,
@@ -763,9 +763,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func setProviderQuotaSummaryInclusion<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest>,
@@ -782,9 +782,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_ConsumeProviderQuotaResetResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func consumeProviderQuotaReset<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest>,
@@ -807,9 +807,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_GetDeviceRosterRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DeviceRoster` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func getDeviceRoster<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_GetDeviceRosterRequest>,
@@ -830,9 +830,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_GetDeviceRosterRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DeviceRoster` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func watchDeviceRoster<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_GetDeviceRosterRequest>,
@@ -855,9 +855,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_AppendDeviceRosterRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DeviceRoster` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func appendDeviceRoster<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_AppendDeviceRosterRequest>,
@@ -882,9 +882,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_PostPairingRequestRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_PairingRequest` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func postPairingRequest<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_PostPairingRequestRequest>,
@@ -901,9 +901,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_ListPairingRequestsResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func listPairingRequests<Result>(
             request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -920,9 +920,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_ConfirmPairingRequestRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_PairingRequest` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func confirmPairingRequest<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_ConfirmPairingRequestRequest>,
@@ -939,9 +939,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_PairingRequestRef` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func deletePairingRequest<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_PairingRequestRef>,
@@ -989,9 +989,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_CompatibilityRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_CompatibilityResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func getCompatibility<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_CompatibilityRequest>,
@@ -1019,9 +1019,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_Account` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func getAccount<Result>(
             request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -1049,9 +1049,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_ListDaemonsResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func listDaemons<Result>(
             request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -1079,9 +1079,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_WatchDaemonsRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DaemonPresenceUpdate` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func watchDaemons<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_WatchDaemonsRequest>,
@@ -1107,9 +1107,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_BeginDaemonEnrollmentRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DaemonEnrollment` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func beginDaemonEnrollment<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_BeginDaemonEnrollmentRequest>,
@@ -1137,9 +1137,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_CompleteDaemonEnrollmentRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DaemonCredential` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func completeDaemonEnrollment<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_CompleteDaemonEnrollmentRequest>,
@@ -1167,9 +1167,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_UnenrollDaemonRequest` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func unenrollDaemon<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_UnenrollDaemonRequest>,
@@ -1197,9 +1197,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_RenameDaemonRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_Daemon` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func renameDaemon<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_RenameDaemonRequest>,
@@ -1227,9 +1227,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_DaemonRef` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func revokeDaemon<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_DaemonRef>,
@@ -1264,9 +1264,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_DaemonRecoveryRef` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DaemonRecoveryState` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func inspectDaemonRecovery<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_DaemonRecoveryRef>,
@@ -1294,9 +1294,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_RecoverDaemonRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DaemonCredential` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func recoverDaemon<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_RecoverDaemonRequest>,
@@ -1324,9 +1324,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_ExchangeDaemonTokenRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DaemonAccessToken` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func exchangeDaemonToken<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_ExchangeDaemonTokenRequest>,
@@ -1354,9 +1354,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_DaemonRef` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DaemonRoute` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func resolveDaemonRoute<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_DaemonRef>,
@@ -1390,9 +1390,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_DaemonRef` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_RTCConfiguration` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func getRTCConfiguration<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_DaemonRef>,
@@ -1420,9 +1420,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_ListProviderQuotasRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_ListProviderQuotasResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func listProviderQuotas<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_ListProviderQuotasRequest>,
@@ -1450,9 +1450,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_WatchProviderQuotasRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_ProviderQuotaUpdate` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func watchProviderQuotas<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_WatchProviderQuotasRequest>,
@@ -1478,9 +1478,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_RefreshProviderQuotasRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_RefreshProviderQuotasResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func refreshProviderQuotas<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_RefreshProviderQuotasRequest>,
@@ -1508,9 +1508,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func setProviderQuotaSummaryInclusion<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest>,
@@ -1538,9 +1538,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_ConsumeProviderQuotaResetResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func consumeProviderQuotaReset<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest>,
@@ -1574,9 +1574,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_GetDeviceRosterRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DeviceRoster` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func getDeviceRoster<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_GetDeviceRosterRequest>,
@@ -1608,9 +1608,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_GetDeviceRosterRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DeviceRoster` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func watchDeviceRoster<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_GetDeviceRosterRequest>,
@@ -1642,9 +1642,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_AppendDeviceRosterRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DeviceRoster` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func appendDeviceRoster<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_AppendDeviceRosterRequest>,
@@ -1680,9 +1680,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_PostPairingRequestRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_PairingRequest` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func postPairingRequest<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_PostPairingRequestRequest>,
@@ -1710,9 +1710,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_ListPairingRequestsResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func listPairingRequests<Result>(
             request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -1740,9 +1740,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_ConfirmPairingRequestRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_PairingRequest` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func confirmPairingRequest<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_ConfirmPairingRequestRequest>,
@@ -1770,9 +1770,9 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_PairingRequestRef` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func deletePairingRequest<Result>(
             request: GRPCCore.ClientRequest<Dieter_Gateway_V1_PairingRequestRef>,
@@ -1808,9 +1808,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_Gateway_V1_CompatibilityRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getCompatibility<Result>(
         request: GRPCCore.ClientRequest<Dieter_Gateway_V1_CompatibilityRequest>,
@@ -1833,9 +1833,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getAccount<Result>(
         request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -1858,9 +1858,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listDaemons<Result>(
         request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -1883,9 +1883,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_Gateway_V1_WatchDaemonsRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func watchDaemons<Result>(
         request: GRPCCore.ClientRequest<Dieter_Gateway_V1_WatchDaemonsRequest>,
@@ -1906,9 +1906,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_Gateway_V1_BeginDaemonEnrollmentRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func beginDaemonEnrollment<Result>(
         request: GRPCCore.ClientRequest<Dieter_Gateway_V1_BeginDaemonEnrollmentRequest>,
@@ -1931,9 +1931,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_Gateway_V1_CompleteDaemonEnrollmentRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func completeDaemonEnrollment<Result>(
         request: GRPCCore.ClientRequest<Dieter_Gateway_V1_CompleteDaemonEnrollmentRequest>,
@@ -1956,9 +1956,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_Gateway_V1_UnenrollDaemonRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func unenrollDaemon<Result>(
         request: GRPCCore.ClientRequest<Dieter_Gateway_V1_UnenrollDaemonRequest>,
@@ -1981,9 +1981,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_Gateway_V1_RenameDaemonRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func renameDaemon<Result>(
         request: GRPCCore.ClientRequest<Dieter_Gateway_V1_RenameDaemonRequest>,
@@ -2006,9 +2006,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_Gateway_V1_DaemonRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func revokeDaemon<Result>(
         request: GRPCCore.ClientRequest<Dieter_Gateway_V1_DaemonRef>,
@@ -2038,9 +2038,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_Gateway_V1_DaemonRecoveryRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func inspectDaemonRecovery<Result>(
         request: GRPCCore.ClientRequest<Dieter_Gateway_V1_DaemonRecoveryRef>,
@@ -2063,9 +2063,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_Gateway_V1_RecoverDaemonRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func recoverDaemon<Result>(
         request: GRPCCore.ClientRequest<Dieter_Gateway_V1_RecoverDaemonRequest>,
@@ -2088,9 +2088,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_Gateway_V1_ExchangeDaemonTokenRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func exchangeDaemonToken<Result>(
         request: GRPCCore.ClientRequest<Dieter_Gateway_V1_ExchangeDaemonTokenRequest>,
@@ -2113,9 +2113,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_Gateway_V1_DaemonRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func resolveDaemonRoute<Result>(
         request: GRPCCore.ClientRequest<Dieter_Gateway_V1_DaemonRef>,
@@ -2144,9 +2144,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_Gateway_V1_DaemonRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getRTCConfiguration<Result>(
         request: GRPCCore.ClientRequest<Dieter_Gateway_V1_DaemonRef>,
@@ -2169,9 +2169,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_Gateway_V1_ListProviderQuotasRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listProviderQuotas<Result>(
         request: GRPCCore.ClientRequest<Dieter_Gateway_V1_ListProviderQuotasRequest>,
@@ -2194,9 +2194,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_Gateway_V1_WatchProviderQuotasRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func watchProviderQuotas<Result>(
         request: GRPCCore.ClientRequest<Dieter_Gateway_V1_WatchProviderQuotasRequest>,
@@ -2217,9 +2217,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_Gateway_V1_RefreshProviderQuotasRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func refreshProviderQuotas<Result>(
         request: GRPCCore.ClientRequest<Dieter_Gateway_V1_RefreshProviderQuotasRequest>,
@@ -2242,9 +2242,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func setProviderQuotaSummaryInclusion<Result>(
         request: GRPCCore.ClientRequest<Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest>,
@@ -2267,9 +2267,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func consumeProviderQuotaReset<Result>(
         request: GRPCCore.ClientRequest<Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest>,
@@ -2298,9 +2298,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_Gateway_V1_GetDeviceRosterRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getDeviceRoster<Result>(
         request: GRPCCore.ClientRequest<Dieter_Gateway_V1_GetDeviceRosterRequest>,
@@ -2327,9 +2327,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_Gateway_V1_GetDeviceRosterRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func watchDeviceRoster<Result>(
         request: GRPCCore.ClientRequest<Dieter_Gateway_V1_GetDeviceRosterRequest>,
@@ -2356,9 +2356,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_Gateway_V1_AppendDeviceRosterRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func appendDeviceRoster<Result>(
         request: GRPCCore.ClientRequest<Dieter_Gateway_V1_AppendDeviceRosterRequest>,
@@ -2389,9 +2389,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_Gateway_V1_PostPairingRequestRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func postPairingRequest<Result>(
         request: GRPCCore.ClientRequest<Dieter_Gateway_V1_PostPairingRequestRequest>,
@@ -2414,9 +2414,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listPairingRequests<Result>(
         request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -2439,9 +2439,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_Gateway_V1_ConfirmPairingRequestRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func confirmPairingRequest<Result>(
         request: GRPCCore.ClientRequest<Dieter_Gateway_V1_ConfirmPairingRequestRequest>,
@@ -2464,9 +2464,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_Gateway_V1_PairingRequestRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func deletePairingRequest<Result>(
         request: GRPCCore.ClientRequest<Dieter_Gateway_V1_PairingRequestRef>,
@@ -2499,9 +2499,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getCompatibility<Result>(
         _ message: Dieter_Gateway_V1_CompatibilityRequest,
@@ -2528,9 +2528,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getAccount<Result>(
         _ message: SwiftProtobuf.Google_Protobuf_Empty,
@@ -2557,9 +2557,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listDaemons<Result>(
         _ message: SwiftProtobuf.Google_Protobuf_Empty,
@@ -2586,9 +2586,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func watchDaemons<Result>(
         _ message: Dieter_Gateway_V1_WatchDaemonsRequest,
@@ -2613,9 +2613,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func beginDaemonEnrollment<Result>(
         _ message: Dieter_Gateway_V1_BeginDaemonEnrollmentRequest,
@@ -2642,9 +2642,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func completeDaemonEnrollment<Result>(
         _ message: Dieter_Gateway_V1_CompleteDaemonEnrollmentRequest,
@@ -2671,9 +2671,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func unenrollDaemon<Result>(
         _ message: Dieter_Gateway_V1_UnenrollDaemonRequest,
@@ -2700,9 +2700,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func renameDaemon<Result>(
         _ message: Dieter_Gateway_V1_RenameDaemonRequest,
@@ -2729,9 +2729,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func revokeDaemon<Result>(
         _ message: Dieter_Gateway_V1_DaemonRef,
@@ -2765,9 +2765,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func inspectDaemonRecovery<Result>(
         _ message: Dieter_Gateway_V1_DaemonRecoveryRef,
@@ -2794,9 +2794,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func recoverDaemon<Result>(
         _ message: Dieter_Gateway_V1_RecoverDaemonRequest,
@@ -2823,9 +2823,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func exchangeDaemonToken<Result>(
         _ message: Dieter_Gateway_V1_ExchangeDaemonTokenRequest,
@@ -2852,9 +2852,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func resolveDaemonRoute<Result>(
         _ message: Dieter_Gateway_V1_DaemonRef,
@@ -2887,9 +2887,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getRTCConfiguration<Result>(
         _ message: Dieter_Gateway_V1_DaemonRef,
@@ -2916,9 +2916,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listProviderQuotas<Result>(
         _ message: Dieter_Gateway_V1_ListProviderQuotasRequest,
@@ -2945,9 +2945,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func watchProviderQuotas<Result>(
         _ message: Dieter_Gateway_V1_WatchProviderQuotasRequest,
@@ -2972,9 +2972,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func refreshProviderQuotas<Result>(
         _ message: Dieter_Gateway_V1_RefreshProviderQuotasRequest,
@@ -3001,9 +3001,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func setProviderQuotaSummaryInclusion<Result>(
         _ message: Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest,
@@ -3030,9 +3030,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func consumeProviderQuotaReset<Result>(
         _ message: Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest,
@@ -3065,9 +3065,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getDeviceRoster<Result>(
         _ message: Dieter_Gateway_V1_GetDeviceRosterRequest,
@@ -3098,9 +3098,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func watchDeviceRoster<Result>(
         _ message: Dieter_Gateway_V1_GetDeviceRosterRequest,
@@ -3131,9 +3131,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func appendDeviceRoster<Result>(
         _ message: Dieter_Gateway_V1_AppendDeviceRosterRequest,
@@ -3168,9 +3168,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func postPairingRequest<Result>(
         _ message: Dieter_Gateway_V1_PostPairingRequestRequest,
@@ -3197,9 +3197,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listPairingRequests<Result>(
         _ message: SwiftProtobuf.Google_Protobuf_Empty,
@@ -3226,9 +3226,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func confirmPairingRequest<Result>(
         _ message: Dieter_Gateway_V1_ConfirmPairingRequestRequest,
@@ -3255,9 +3255,9 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func deletePairingRequest<Result>(
         _ message: Dieter_Gateway_V1_PairingRequestRef,
@@ -3337,9 +3337,9 @@ extension Dieter_Gateway_V1_RelayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_TunnelFrame` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_TunnelFrame` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func openTunnel<Result>(
             request: GRPCCore.StreamingClientRequest<Dieter_Gateway_V1_TunnelFrame>,
@@ -3380,9 +3380,9 @@ extension Dieter_Gateway_V1_RelayService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_TunnelFrame` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_TunnelFrame` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func openTunnel<Result>(
             request: GRPCCore.StreamingClientRequest<Dieter_Gateway_V1_TunnelFrame>,
@@ -3411,9 +3411,9 @@ extension Dieter_Gateway_V1_RelayService.ClientProtocol {
     /// - Parameters:
     ///   - request: A streaming request producing `Dieter_Gateway_V1_TunnelFrame` messages.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func openTunnel<Result>(
         request: GRPCCore.StreamingClientRequest<Dieter_Gateway_V1_TunnelFrame>,
@@ -3438,11 +3438,11 @@ extension Dieter_Gateway_V1_RelayService.ClientProtocol {
     /// - Parameters:
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - producer: A closure producing request messages to send to the server. The request
-    ///       stream is closed when the closure returns.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - producer: A closure producing request messages to send to the server. Returning
+    ///       from the closure closes the request stream.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func openTunnel<Result>(
         metadata: GRPCCore.Metadata = [:],
@@ -3519,9 +3519,9 @@ extension Dieter_Gateway_V1_DaemonLinkService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_DaemonLinkFrame` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DaemonLinkFrame` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func connect<Result>(
             request: GRPCCore.StreamingClientRequest<Dieter_Gateway_V1_DaemonLinkFrame>,
@@ -3561,9 +3561,9 @@ extension Dieter_Gateway_V1_DaemonLinkService {
         ///   - serializer: A serializer for `Dieter_Gateway_V1_DaemonLinkFrame` messages.
         ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DaemonLinkFrame` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func connect<Result>(
             request: GRPCCore.StreamingClientRequest<Dieter_Gateway_V1_DaemonLinkFrame>,
@@ -3592,9 +3592,9 @@ extension Dieter_Gateway_V1_DaemonLinkService.ClientProtocol {
     /// - Parameters:
     ///   - request: A streaming request producing `Dieter_Gateway_V1_DaemonLinkFrame` messages.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func connect<Result>(
         request: GRPCCore.StreamingClientRequest<Dieter_Gateway_V1_DaemonLinkFrame>,
@@ -3619,11 +3619,11 @@ extension Dieter_Gateway_V1_DaemonLinkService.ClientProtocol {
     /// - Parameters:
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - producer: A closure producing request messages to send to the server. The request
-    ///       stream is closed when the closure returns.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - producer: A closure producing request messages to send to the server. Returning
+    ///       from the closure closes the request stream.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func connect<Result>(
         metadata: GRPCCore.Metadata = [:],

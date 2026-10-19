@@ -6,7 +6,7 @@
 // Source: dieter/v1/conversations.proto
 //
 // For information on using the generated types, please see the documentation:
-//   https://github.com/grpc/grpc-swift
+//   https://github.com/grpc/grpc-swift-2
 
 import GRPCCore
 import GRPCProtobuf
@@ -178,9 +178,9 @@ extension Dieter_V1_ConversationService {
         ///   - serializer: A serializer for `Dieter_V1_GetConversationRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ConversationSnapshot` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func getConversation<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_GetConversationRequest>,
@@ -197,9 +197,9 @@ extension Dieter_V1_ConversationService {
         ///   - serializer: A serializer for `Dieter_V1_PollConversationRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ConversationUpdate` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func pollConversation<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_PollConversationRequest>,
@@ -216,9 +216,9 @@ extension Dieter_V1_ConversationService {
         ///   - serializer: A serializer for `Dieter_V1_WatchConversationRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ConversationUpdate` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func watchConversation<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_WatchConversationRequest>,
@@ -235,9 +235,9 @@ extension Dieter_V1_ConversationService {
         ///   - serializer: A serializer for `Dieter_V1_GetToolOutputRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ToolOutput` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func getToolOutput<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_GetToolOutputRequest>,
@@ -259,9 +259,9 @@ extension Dieter_V1_ConversationService {
         ///   - serializer: A serializer for `Dieter_V1_PresentConversationContentRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ContentPresentation` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func presentConversationContent<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_PresentConversationContentRequest>,
@@ -278,9 +278,9 @@ extension Dieter_V1_ConversationService {
         ///   - serializer: A serializer for `Dieter_V1_SendMessageRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_SendMessageResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func sendMessage<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_SendMessageRequest>,
@@ -303,9 +303,9 @@ extension Dieter_V1_ConversationService {
         ///   - serializer: A serializer for `Dieter_V1_RemoveQueuedMessageRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_QueuedMessage` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func removeQueuedMessage<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RemoveQueuedMessageRequest>,
@@ -322,9 +322,9 @@ extension Dieter_V1_ConversationService {
         ///   - serializer: A serializer for `Dieter_V1_MarkConversationReadRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func markConversationRead<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_MarkConversationReadRequest>,
@@ -345,9 +345,9 @@ extension Dieter_V1_ConversationService {
         ///   - serializer: A serializer for `Dieter_V1_UpdateConversationWorkspaceRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func updateConversationWorkspace<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_UpdateConversationWorkspaceRequest>,
@@ -385,9 +385,9 @@ extension Dieter_V1_ConversationService {
         ///   - serializer: A serializer for `Dieter_V1_GetConversationRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ConversationSnapshot` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func getConversation<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_GetConversationRequest>,
@@ -415,9 +415,9 @@ extension Dieter_V1_ConversationService {
         ///   - serializer: A serializer for `Dieter_V1_PollConversationRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ConversationUpdate` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func pollConversation<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_PollConversationRequest>,
@@ -445,9 +445,9 @@ extension Dieter_V1_ConversationService {
         ///   - serializer: A serializer for `Dieter_V1_WatchConversationRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ConversationUpdate` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func watchConversation<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_WatchConversationRequest>,
@@ -473,9 +473,9 @@ extension Dieter_V1_ConversationService {
         ///   - serializer: A serializer for `Dieter_V1_GetToolOutputRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ToolOutput` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func getToolOutput<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_GetToolOutputRequest>,
@@ -508,9 +508,9 @@ extension Dieter_V1_ConversationService {
         ///   - serializer: A serializer for `Dieter_V1_PresentConversationContentRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ContentPresentation` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func presentConversationContent<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_PresentConversationContentRequest>,
@@ -538,9 +538,9 @@ extension Dieter_V1_ConversationService {
         ///   - serializer: A serializer for `Dieter_V1_SendMessageRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_SendMessageResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func sendMessage<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_SendMessageRequest>,
@@ -574,9 +574,9 @@ extension Dieter_V1_ConversationService {
         ///   - serializer: A serializer for `Dieter_V1_RemoveQueuedMessageRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_QueuedMessage` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func removeQueuedMessage<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RemoveQueuedMessageRequest>,
@@ -604,9 +604,9 @@ extension Dieter_V1_ConversationService {
         ///   - serializer: A serializer for `Dieter_V1_MarkConversationReadRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func markConversationRead<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_MarkConversationReadRequest>,
@@ -638,9 +638,9 @@ extension Dieter_V1_ConversationService {
         ///   - serializer: A serializer for `Dieter_V1_UpdateConversationWorkspaceRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func updateConversationWorkspace<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_UpdateConversationWorkspaceRequest>,
@@ -671,9 +671,9 @@ extension Dieter_V1_ConversationService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_GetConversationRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getConversation<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_GetConversationRequest>,
@@ -696,9 +696,9 @@ extension Dieter_V1_ConversationService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_PollConversationRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func pollConversation<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_PollConversationRequest>,
@@ -721,9 +721,9 @@ extension Dieter_V1_ConversationService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_WatchConversationRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func watchConversation<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_WatchConversationRequest>,
@@ -744,9 +744,9 @@ extension Dieter_V1_ConversationService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_GetToolOutputRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getToolOutput<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_GetToolOutputRequest>,
@@ -774,9 +774,9 @@ extension Dieter_V1_ConversationService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_PresentConversationContentRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func presentConversationContent<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_PresentConversationContentRequest>,
@@ -799,9 +799,9 @@ extension Dieter_V1_ConversationService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_SendMessageRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func sendMessage<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_SendMessageRequest>,
@@ -830,9 +830,9 @@ extension Dieter_V1_ConversationService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_RemoveQueuedMessageRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func removeQueuedMessage<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_RemoveQueuedMessageRequest>,
@@ -855,9 +855,9 @@ extension Dieter_V1_ConversationService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_MarkConversationReadRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func markConversationRead<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_MarkConversationReadRequest>,
@@ -884,9 +884,9 @@ extension Dieter_V1_ConversationService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_UpdateConversationWorkspaceRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func updateConversationWorkspace<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_UpdateConversationWorkspaceRequest>,
@@ -914,9 +914,9 @@ extension Dieter_V1_ConversationService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getConversation<Result>(
         _ message: Dieter_V1_GetConversationRequest,
@@ -943,9 +943,9 @@ extension Dieter_V1_ConversationService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func pollConversation<Result>(
         _ message: Dieter_V1_PollConversationRequest,
@@ -972,9 +972,9 @@ extension Dieter_V1_ConversationService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func watchConversation<Result>(
         _ message: Dieter_V1_WatchConversationRequest,
@@ -999,9 +999,9 @@ extension Dieter_V1_ConversationService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getToolOutput<Result>(
         _ message: Dieter_V1_GetToolOutputRequest,
@@ -1033,9 +1033,9 @@ extension Dieter_V1_ConversationService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func presentConversationContent<Result>(
         _ message: Dieter_V1_PresentConversationContentRequest,
@@ -1062,9 +1062,9 @@ extension Dieter_V1_ConversationService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func sendMessage<Result>(
         _ message: Dieter_V1_SendMessageRequest,
@@ -1097,9 +1097,9 @@ extension Dieter_V1_ConversationService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func removeQueuedMessage<Result>(
         _ message: Dieter_V1_RemoveQueuedMessageRequest,
@@ -1126,9 +1126,9 @@ extension Dieter_V1_ConversationService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func markConversationRead<Result>(
         _ message: Dieter_V1_MarkConversationReadRequest,
@@ -1159,9 +1159,9 @@ extension Dieter_V1_ConversationService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func updateConversationWorkspace<Result>(
         _ message: Dieter_V1_UpdateConversationWorkspaceRequest,

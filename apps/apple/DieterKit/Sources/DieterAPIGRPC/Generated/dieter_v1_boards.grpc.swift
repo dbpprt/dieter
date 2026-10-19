@@ -6,7 +6,7 @@
 // Source: dieter/v1/boards.proto
 //
 // For information on using the generated types, please see the documentation:
-//   https://github.com/grpc/grpc-swift
+//   https://github.com/grpc/grpc-swift-2
 
 import GRPCCore
 import GRPCProtobuf
@@ -206,9 +206,9 @@ extension Dieter_V1_BoardService {
         ///   - serializer: A serializer for `Dieter_V1_CreateBoardRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func createBoard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_CreateBoardRequest>,
@@ -225,9 +225,9 @@ extension Dieter_V1_BoardService {
         ///   - serializer: A serializer for `Dieter_V1_BoardRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func getBoard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_BoardRef>,
@@ -244,9 +244,9 @@ extension Dieter_V1_BoardService {
         ///   - serializer: A serializer for `Dieter_V1_ListRetiredBoardsRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ListRetiredBoardsResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func listRetiredBoards<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ListRetiredBoardsRequest>,
@@ -263,9 +263,9 @@ extension Dieter_V1_BoardService {
         ///   - serializer: A serializer for `Dieter_V1_SetBoardRetiredRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func setBoardRetired<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_SetBoardRetiredRequest>,
@@ -282,9 +282,9 @@ extension Dieter_V1_BoardService {
         ///   - serializer: A serializer for `Dieter_V1_RenameBoardRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func renameBoard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RenameBoardRequest>,
@@ -301,9 +301,9 @@ extension Dieter_V1_BoardService {
         ///   - serializer: A serializer for `Dieter_V1_SetBoardArchivePolicyRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func setBoardArchivePolicy<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_SetBoardArchivePolicyRequest>,
@@ -320,9 +320,9 @@ extension Dieter_V1_BoardService {
         ///   - serializer: A serializer for `Dieter_V1_UpdateBoardHostnamesRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func updateBoardHostnames<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_UpdateBoardHostnamesRequest>,
@@ -339,9 +339,9 @@ extension Dieter_V1_BoardService {
         ///   - serializer: A serializer for `Dieter_V1_UpdateBoardGitSettingsRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func updateBoardGitSettings<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_UpdateBoardGitSettingsRequest>,
@@ -358,9 +358,9 @@ extension Dieter_V1_BoardService {
         ///   - serializer: A serializer for `Dieter_V1_CreateBoardLabelRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func createBoardLabel<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_CreateBoardLabelRequest>,
@@ -377,9 +377,9 @@ extension Dieter_V1_BoardService {
         ///   - serializer: A serializer for `Dieter_V1_UpdateBoardLabelRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func updateBoardLabel<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_UpdateBoardLabelRequest>,
@@ -396,9 +396,9 @@ extension Dieter_V1_BoardService {
         ///   - serializer: A serializer for `Dieter_V1_DeleteBoardLabelRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func deleteBoardLabel<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_DeleteBoardLabelRequest>,
@@ -436,9 +436,9 @@ extension Dieter_V1_BoardService {
         ///   - serializer: A serializer for `Dieter_V1_CreateBoardRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func createBoard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_CreateBoardRequest>,
@@ -466,9 +466,9 @@ extension Dieter_V1_BoardService {
         ///   - serializer: A serializer for `Dieter_V1_BoardRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func getBoard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_BoardRef>,
@@ -496,9 +496,9 @@ extension Dieter_V1_BoardService {
         ///   - serializer: A serializer for `Dieter_V1_ListRetiredBoardsRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ListRetiredBoardsResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func listRetiredBoards<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ListRetiredBoardsRequest>,
@@ -526,9 +526,9 @@ extension Dieter_V1_BoardService {
         ///   - serializer: A serializer for `Dieter_V1_SetBoardRetiredRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func setBoardRetired<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_SetBoardRetiredRequest>,
@@ -556,9 +556,9 @@ extension Dieter_V1_BoardService {
         ///   - serializer: A serializer for `Dieter_V1_RenameBoardRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func renameBoard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RenameBoardRequest>,
@@ -586,9 +586,9 @@ extension Dieter_V1_BoardService {
         ///   - serializer: A serializer for `Dieter_V1_SetBoardArchivePolicyRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func setBoardArchivePolicy<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_SetBoardArchivePolicyRequest>,
@@ -616,9 +616,9 @@ extension Dieter_V1_BoardService {
         ///   - serializer: A serializer for `Dieter_V1_UpdateBoardHostnamesRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func updateBoardHostnames<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_UpdateBoardHostnamesRequest>,
@@ -646,9 +646,9 @@ extension Dieter_V1_BoardService {
         ///   - serializer: A serializer for `Dieter_V1_UpdateBoardGitSettingsRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func updateBoardGitSettings<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_UpdateBoardGitSettingsRequest>,
@@ -676,9 +676,9 @@ extension Dieter_V1_BoardService {
         ///   - serializer: A serializer for `Dieter_V1_CreateBoardLabelRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func createBoardLabel<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_CreateBoardLabelRequest>,
@@ -706,9 +706,9 @@ extension Dieter_V1_BoardService {
         ///   - serializer: A serializer for `Dieter_V1_UpdateBoardLabelRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func updateBoardLabel<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_UpdateBoardLabelRequest>,
@@ -736,9 +736,9 @@ extension Dieter_V1_BoardService {
         ///   - serializer: A serializer for `Dieter_V1_DeleteBoardLabelRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func deleteBoardLabel<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_DeleteBoardLabelRequest>,
@@ -769,9 +769,9 @@ extension Dieter_V1_BoardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_CreateBoardRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func createBoard<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_CreateBoardRequest>,
@@ -794,9 +794,9 @@ extension Dieter_V1_BoardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_BoardRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getBoard<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_BoardRef>,
@@ -819,9 +819,9 @@ extension Dieter_V1_BoardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ListRetiredBoardsRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listRetiredBoards<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ListRetiredBoardsRequest>,
@@ -844,9 +844,9 @@ extension Dieter_V1_BoardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_SetBoardRetiredRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func setBoardRetired<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_SetBoardRetiredRequest>,
@@ -869,9 +869,9 @@ extension Dieter_V1_BoardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_RenameBoardRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func renameBoard<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_RenameBoardRequest>,
@@ -894,9 +894,9 @@ extension Dieter_V1_BoardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_SetBoardArchivePolicyRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func setBoardArchivePolicy<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_SetBoardArchivePolicyRequest>,
@@ -919,9 +919,9 @@ extension Dieter_V1_BoardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_UpdateBoardHostnamesRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func updateBoardHostnames<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_UpdateBoardHostnamesRequest>,
@@ -944,9 +944,9 @@ extension Dieter_V1_BoardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_UpdateBoardGitSettingsRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func updateBoardGitSettings<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_UpdateBoardGitSettingsRequest>,
@@ -969,9 +969,9 @@ extension Dieter_V1_BoardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_CreateBoardLabelRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func createBoardLabel<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_CreateBoardLabelRequest>,
@@ -994,9 +994,9 @@ extension Dieter_V1_BoardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_UpdateBoardLabelRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func updateBoardLabel<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_UpdateBoardLabelRequest>,
@@ -1019,9 +1019,9 @@ extension Dieter_V1_BoardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_DeleteBoardLabelRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func deleteBoardLabel<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_DeleteBoardLabelRequest>,
@@ -1049,9 +1049,9 @@ extension Dieter_V1_BoardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func createBoard<Result>(
         _ message: Dieter_V1_CreateBoardRequest,
@@ -1078,9 +1078,9 @@ extension Dieter_V1_BoardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getBoard<Result>(
         _ message: Dieter_V1_BoardRef,
@@ -1107,9 +1107,9 @@ extension Dieter_V1_BoardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listRetiredBoards<Result>(
         _ message: Dieter_V1_ListRetiredBoardsRequest,
@@ -1136,9 +1136,9 @@ extension Dieter_V1_BoardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func setBoardRetired<Result>(
         _ message: Dieter_V1_SetBoardRetiredRequest,
@@ -1165,9 +1165,9 @@ extension Dieter_V1_BoardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func renameBoard<Result>(
         _ message: Dieter_V1_RenameBoardRequest,
@@ -1194,9 +1194,9 @@ extension Dieter_V1_BoardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func setBoardArchivePolicy<Result>(
         _ message: Dieter_V1_SetBoardArchivePolicyRequest,
@@ -1223,9 +1223,9 @@ extension Dieter_V1_BoardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func updateBoardHostnames<Result>(
         _ message: Dieter_V1_UpdateBoardHostnamesRequest,
@@ -1252,9 +1252,9 @@ extension Dieter_V1_BoardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func updateBoardGitSettings<Result>(
         _ message: Dieter_V1_UpdateBoardGitSettingsRequest,
@@ -1281,9 +1281,9 @@ extension Dieter_V1_BoardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func createBoardLabel<Result>(
         _ message: Dieter_V1_CreateBoardLabelRequest,
@@ -1310,9 +1310,9 @@ extension Dieter_V1_BoardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func updateBoardLabel<Result>(
         _ message: Dieter_V1_UpdateBoardLabelRequest,
@@ -1339,9 +1339,9 @@ extension Dieter_V1_BoardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func deleteBoardLabel<Result>(
         _ message: Dieter_V1_DeleteBoardLabelRequest,
