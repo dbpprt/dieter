@@ -424,3 +424,33 @@ class WorkflowContractTest < Minitest::Test
       end
   end
 end
+
+class SwiftWebRTCCacheTest < Minitest::Test
+  def test_only_invalidates_webrtc_modules_when_the_binary_artifact_changes
+    Dir.mktmpdir do |directory|
+      manifest = File.join(directory, "Package.swift")
+      artifact = ->(version) do
+        %(.binaryTarget(\n    name: "WebRTC",\n    url: "https://example.com/#{version}.zip",\n    checksum: "#{version}"\n))
+      end
+      File.write(manifest, artifact.call("old"))
+      modules = File.join(directory, "Intermediates.noindex/SwiftExplicitPrecompiledModules")
+      FileUtils.mkdir_p(modules)
+      webrtc = File.join(modules, "WebRTC-cached.pcm")
+      unrelated = File.join(modules, "AppKit-cached.pcm")
+      File.write(webrtc, "old module")
+      File.write(unrelated, "keep")
+
+      Dieter::Swift.prepare_webrtc_module_cache(directory, manifest: manifest)
+      refute File.exist?(webrtc)
+      assert_equal "keep", File.read(unrelated)
+      File.write(webrtc, "current module")
+      Dieter::Swift.prepare_webrtc_module_cache(directory, manifest: manifest)
+      assert_equal "current module", File.read(webrtc)
+
+      File.write(manifest, artifact.call("new"))
+      Dieter::Swift.prepare_webrtc_module_cache(directory, manifest: manifest)
+      refute File.exist?(webrtc)
+      assert_equal "keep", File.read(unrelated)
+    end
+  end
+end
