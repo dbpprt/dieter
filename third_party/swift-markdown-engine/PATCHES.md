@@ -1,7 +1,7 @@
 # Dieter patches
 
-Vendored from nodes-app/swift-markdown-engine tag 0.12.0.
-Upstream: https://github.com/nodes-app/swift-markdown-engine/tree/0.12.0
+Vendored from nodes-app/swift-markdown-engine tag 0.14.0.
+Upstream: https://github.com/nodes-app/swift-markdown-engine/tree/0.14.0
 License: Apache-2.0 (see `LICENSE`).
 
 Used by `apps/apple/mac` as a local package; it depends on the sibling
@@ -37,3 +37,6 @@ default URL handling.
 The styled link also retains its original Markdown destination, so the optional
 callback receives relative paths and fragments before external-browser URL
 normalization. Native workspace resolution therefore uses the document's path.
+
+On 0.14.0, rendered-code resizing runs alongside the upstream table-only width
+refresh so diagram widths still update without restyling unrelated paragraphs.

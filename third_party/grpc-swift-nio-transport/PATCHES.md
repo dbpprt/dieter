@@ -1,7 +1,7 @@
 # Dieter patches
 
-Vendored from grpc/grpc-swift-nio-transport 2.9.0 at commit `2ca31f0`.
-Upstream: https://github.com/grpc/grpc-swift-nio-transport/tree/2.9.0
+Vendored from grpc/grpc-swift-nio-transport 2.11.0 at tag `2.11.0`.
+Upstream: https://github.com/grpc/grpc-swift-nio-transport/tree/2.11.0
 License: Apache-2.0 (see `LICENSE` and `NOTICES.txt`; keep both when updating
 the snapshot).
 

@@ -19,12 +19,25 @@ public enum MarkdownHTMLRenderer {
     /// Render `markdown` to an HTML fragment (block elements joined by newlines).
     /// `extensions` render their spans (e.g. `<mark>` for highlight); an
     /// unregistered extension's syntax stays literal text.
-    public static func html(from markdown: String, extensions: [any MarkdownExtension] = []) -> String {
+    public static func html(
+        from markdown: String,
+        extensions: [any MarkdownExtension] = [],
+        directives: [any MarkdownDirective] = [],
+        directiveSettings: DirectiveRegistrySettings = .default
+    ) -> String {
         let ns = markdown as NSString
-        let env = Env(registry: ExtensionRegistry(extensions: extensions),
+        let env = Env(registry: ExtensionRegistry(
+                          extensions: extensions,
+                          directives: DirectiveRegistry(directives: directives, settings: directiveSettings)
+                      ),
                       byID: {
                           var out: [String: any MarkdownExtension] = [:]
                           for ext in extensions { out[ext.id] = ext }
+                          return out
+                      }(),
+                      directivesByID: {
+                          var out: [String: any MarkdownDirective] = [:]
+                          for directive in directives { out[directive.id] = directive }
                           return out
                       }())
         let blocks = DocumentAST.parse(markdown, registry: env.registry)
@@ -36,7 +49,32 @@ public enum MarkdownHTMLRenderer {
     private struct Env {
         let registry: ExtensionRegistry
         let byID: [String: any MarkdownExtension]
+        var directivesByID: [String: any MarkdownDirective] = [:]
         static let empty = Env(registry: .empty, byID: [:])
+
+        /// The directive behind an AST node id, or nil when the node is an
+        /// ordinary extension span.
+        func directive(forNodeID nodeID: String) -> (any MarkdownDirective)? {
+            DirectiveRegistry.directiveID(forNodeID: nodeID).flatMap { directivesByID[$0] }
+        }
+    }
+
+    /// Render a directive node: arguments are recovered from the prefix marker,
+    /// exactly as the styler does, so HTML and on-screen styling can never
+    /// disagree about what was passed.
+    private static func directiveHTML(
+        _ directive: any MarkdownDirective,
+        node: ExtensionInlineNode,
+        bodyHTML: String,
+        ns: NSString
+    ) -> String {
+        let prefix = node.markers.first ?? node.range
+        let arguments = DirectiveArguments(
+            parsing: DirectiveScanner.argumentsRange(inPrefix: prefix, of: ns),
+            in: ns,
+            schema: directive.syntax.parameters
+        )
+        return directive.html(arguments: arguments, bodyHTML: bodyHTML)
     }
 
     // MARK: - Blocks
@@ -110,9 +148,24 @@ public enum MarkdownHTMLRenderer {
         return String(s)
     }
 
-    /// Emit `<ul>`/`<ol>` groups, switching container when ordered-ness flips.
-    /// Nesting is flattened to a single level for v1 (see deviations).
+    /// Emit `<ul>`/`<ol>` groups, switching container when ordered-ness flips
+    /// and opening a nested list inside the preceding `<li>` when an item is
+    /// indented deeper.
     private static func renderList(items: [ListItem], ns: NSString, env: Env) -> String {
+        var index = 0
+        // The shallowest item is the outer level: starting at the FIRST item's
+        // indent dropped every shallower item after it (a copy opening on a sub-item).
+        return renderListLevel(items, &index, indent: items.map(\.indent).min() ?? 0, ns: ns, env: env)
+    }
+
+    /// One nesting level, consuming items until one is shallower than `indent`.
+    ///
+    /// `ListItem.indent` counts raw leading space/tab CHARACTERS, not levels,
+    /// so depth is read as a stack (deeper pushes, shallower pops) instead of
+    /// divided by a fixed unit — a tab-indented, a 2-space and a 4-space list
+    /// then all nest the same way.
+    private static func renderListLevel(_ items: [ListItem], _ index: inout Int,
+                                        indent: Int, ns: NSString, env: Env) -> String {
         var out: [String] = []
         var currentOrdered: Bool?
         var buffer: [String] = []
@@ -124,12 +177,28 @@ public enum MarkdownHTMLRenderer {
             buffer.removeAll()
         }
 
-        for item in items {
+        while index < items.count {
+            let item = items[index]
+            if item.indent < indent { break }
+            if item.indent > indent {
+                let sub = renderListLevel(items, &index, indent: item.indent, ns: ns, env: env)
+                // The sublist belongs INSIDE the item it hangs under, before
+                // that item's `</li>`. A deeper item with nothing above it
+                // (a document opening on an indented bullet) stands alone.
+                if let last = buffer.last, last.hasSuffix("</li>") {
+                    buffer[buffer.count - 1] = String(last.dropLast(5)) + "\n" + sub + "\n</li>"
+                } else {
+                    flush()
+                    out.append(sub)
+                }
+                continue
+            }
             if currentOrdered != item.ordered {
                 flush()
                 currentOrdered = item.ordered
             }
             buffer.append(listItem(item, ns: ns, env: env))
+            index += 1
         }
         flush()
         return out.joined(separator: "\n")
@@ -231,6 +300,16 @@ public enum MarkdownHTMLRenderer {
             return "<img src=\"\(t)\" alt=\"\(t)\">"
 
         case .ext(let node):
+            // A self-contained directive has no body; a container's body is
+            // its content range.
+            if let directive = env.directive(forNodeID: node.extensionID) {
+                let inner = node.markers.isEmpty
+                    ? ""
+                    : (node.children.isEmpty
+                        ? escape(ns.substring(with: node.contentRange))
+                        : renderInlines(node.children, ns: ns, env: env))
+                return directiveHTML(directive, node: node, bodyHTML: inner, ns: ns)
+            }
             guard let ext = env.byID[node.extensionID] else {
                 return escape(ns.substring(with: node.range))   // unknown id → literal
             }

@@ -29,6 +29,7 @@ extension HTTP2ClientTransport {
 
 @available(gRPCSwiftNIOTransport 2.0, *)
 extension HTTP2ClientTransport.Config {
+  /// Compression configuration for the client transport.
   public struct Compression: Sendable, Hashable {
     /// The default algorithm used for compressing outbound messages.
     ///
@@ -40,7 +41,7 @@ extension HTTP2ClientTransport.Config {
     /// - Note: `CompressionAlgorithm.none` is always supported, even if it isn't set here.
     public var enabledAlgorithms: CompressionAlgorithmSet
 
-    /// Creates a new compression configuration.
+    /// Creates a compression configuration.
     ///
     /// - SeeAlso: ``defaults``.
     public init(algorithm: CompressionAlgorithm, enabledAlgorithms: CompressionAlgorithmSet) {
@@ -54,6 +55,7 @@ extension HTTP2ClientTransport.Config {
     }
   }
 
+  /// Keepalive configuration for the client transport.
   public struct Keepalive: Sendable, Hashable {
     /// The amount of time to wait after reading data before sending a keepalive ping.
     ///
@@ -67,7 +69,7 @@ extension HTTP2ClientTransport.Config {
     /// Whether the client sends keepalive pings when there are no calls in progress.
     public var allowWithoutCalls: Bool
 
-    /// Creates a new keepalive configuration.
+    /// Creates a keepalive configuration.
     public init(time: Duration, timeout: Duration, allowWithoutCalls: Bool) {
       self.time = time
       self.timeout = timeout
@@ -75,6 +77,7 @@ extension HTTP2ClientTransport.Config {
     }
   }
 
+  /// Connection management configuration for the client transport.
   public struct Connection: Sendable, Hashable {
     /// The maximum amount of time a connection may be idle before it's closed.
     ///
@@ -127,6 +130,7 @@ extension HTTP2ClientTransport.Config {
     }
   }
 
+  /// Configuration for the backoff used between connection attempts.
   public struct Backoff: Sendable, Hashable {
     /// The initial duration to wait before reattempting to establish a connection.
     public var initial: Duration
@@ -144,7 +148,7 @@ extension HTTP2ClientTransport.Config {
     /// The resulting backoff will therefore be between 8 seconds and 12 seconds.
     public var jitter: Double
 
-    /// Creates a new backoff configuration.
+    /// Creates a backoff configuration.
     public init(initial: Duration, max: Duration, multiplier: Double, jitter: Double) {
       self.initial = initial
       self.max = max
@@ -152,19 +156,34 @@ extension HTTP2ClientTransport.Config {
       self.jitter = jitter
     }
 
-    /// Default values, initial backoff is one second and maximum back off is two minutes. The
-    /// multiplier is `1.6` and the jitter is set to `0.2`.
+    /// Default values for backoff.
+    ///
+    /// The initial backoff is one second, the maximum backoff is two minutes, the multiplier
+    /// is `1.6`, and the jitter is `0.2`.
     public static var defaults: Self {
       Self(initial: .seconds(1), max: .seconds(120), multiplier: 1.6, jitter: 0.2)
     }
   }
 
+  /// HTTP/2-level configuration for the client transport.
   public struct HTTP2: Sendable, Hashable {
     /// The max frame size, in bytes.
     ///
     /// The actual value used is clamped to `(1 << 14) ... (1 << 24) - 1` (the min and max values
     /// allowed by RFC 9113 § 6.5.2).
     public var maxFrameSize: Int
+
+    /// The maximum size of a received HTTP/2 header list, in bytes.
+    ///
+    /// This limit applies separately to each set of headers or trailers. The size is calculated
+    /// using the uncompressed names and values, plus 32 bytes of overhead per header, including
+    /// HTTP/2 pseudoheaders and gRPC protocol headers. Binary metadata is measured after Base64
+    /// encoding.
+    ///
+    /// The default is 16 KiB. The value is clamped to `0 ... (1 << 32) - 1` and advertised to the
+    /// peer using `SETTINGS_MAX_HEADER_LIST_SIZE`. It does not change the peer's receive limit.
+    @available(gRPCSwiftNIOTransport 2.10, *)
+    public var maxHeaderListSize: Int
 
     /// The target flow control window size, in bytes.
     ///
@@ -175,18 +194,36 @@ extension HTTP2ClientTransport.Config {
     ///
     /// Any value set here will unconditionally override any value derived from the target address.
     ///
-    /// The server authority is used in the ":authority" pseudoheader and in the TLS SNI
+    /// The server authority is used in the `:authority` pseudo-header and in the TLS SNI
     /// extension, if applicable.
     public var authority: String?
 
-    /// Creates a new HTTP/2 configuration.
+    /// Creates an HTTP/2 configuration.
     public init(maxFrameSize: Int, targetWindowSize: Int, authority: String?) {
+      self.init(
+        maxFrameSize: maxFrameSize,
+        targetWindowSize: targetWindowSize,
+        authority: authority,
+        maxHeaderListSize: 16 * 1024
+      )
+    }
+
+    /// Creates an HTTP/2 configuration with a receive header list size limit.
+    @available(gRPCSwiftNIOTransport 2.10, *)
+    public init(
+      maxFrameSize: Int,
+      targetWindowSize: Int,
+      authority: String?,
+      maxHeaderListSize: Int
+    ) {
       self.maxFrameSize = maxFrameSize
+      self.maxHeaderListSize = maxHeaderListSize
       self.targetWindowSize = targetWindowSize
       self.authority = authority
     }
 
-    /// Default values, max frame size is 16KiB, and the target window size is 8MiB.
+    /// Default values, max frame size and max header list size are 16KiB, and the target window
+    /// size is 8MiB.
     public static var defaults: Self {
       Self(maxFrameSize: 1 << 14, targetWindowSize: 8 * 1024 * 1024, authority: nil)
     }
@@ -206,6 +243,7 @@ extension HTTP2ClientTransport.Config {
     /// A callback invoked with each new HTTP/2 stream.
     public var onCreateHTTP2Stream: (@Sendable (_ channel: any Channel) -> EventLoopFuture<Void>)?
 
+    /// Creates a set of channel debugging callbacks.
     public init(
       onCreateTCPConnection: (@Sendable (_ channel: any Channel) -> EventLoopFuture<Void>)?,
       onCreateHTTP2Stream: (@Sendable (_ channel: any Channel) -> EventLoopFuture<Void>)?
@@ -229,7 +267,7 @@ extension HTTP2ClientTransport.Config.Connection {
   /// until one of the following conditions is met:
   /// 1. ``maxFlushDelay`` has elapsed since a flush was first requested,
   /// 2. At least ``maxBytes`` bytes have been written since the previous flush, or
-  /// 3. The channel becomes unwritable (i.e. the outbound buffer has hit the high-water mark).
+  /// 3. The channel becomes unwritable (that is, the outbound buffer has hit the high-water mark).
   ///
   /// This means that under high load, writes naturally accumulate and are flushed together in
   /// fewer, larger batches. This reduces per-write overhead and typically improves both throughput
@@ -250,7 +288,7 @@ extension HTTP2ClientTransport.Config.Connection {
     /// The number of bytes to buffer before a flush is emitted, regardless of the delay.
     public var maxBytes: Int
 
-    /// Creates a new flush coalescing configuration.
+    /// Creates a flush coalescing configuration.
     ///
     /// - SeeAlso: ``defaults``.
     public init(maxFlushDelay: Duration, maxBytes: Int) {
@@ -258,7 +296,9 @@ extension HTTP2ClientTransport.Config.Connection {
       self.maxBytes = maxBytes
     }
 
-    /// Default values. The max flush delay is 100μs and the max bytes is 64KiB.
+    /// The default flush delay and byte count for the client transport.
+    ///
+    /// The max flush delay is 100μs and the max bytes is 64KiB.
     public static var defaults: Self {
       Self(maxFlushDelay: .microseconds(100), maxBytes: 64 * 1024)
     }
