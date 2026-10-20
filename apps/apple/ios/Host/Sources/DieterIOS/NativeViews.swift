@@ -168,10 +168,19 @@ private final class ComposeTerminal: SwiftTerm.TerminalView, @preconcurrency Mob
     required init?(coder: NSCoder) { nil }
     func key(value: Int32) {
         guard acceptsInput else { return }
-        input.send(
-            data: SharedRules.shared.terminalKey(
-                key: value, shift: false, alt: false, control: false, applicationCursor: getTerminal().applicationCursor
-            ))
+        // SwiftTerm keeps the cursor key mode private and applies it when it sends these keys.
+        switch ClientTerminalKey(rawValue: Int(value)) {
+        case .up: sendKeyUp()
+        case .down: sendKeyDown()
+        case .right: sendKeyRight()
+        case .left: sendKeyLeft()
+        case .home: sendKeyHome()
+        case .end: sendKeyEnd()
+        default:
+            input.send(
+                data: SharedRules.shared.terminalKey(
+                    key: value, shift: false, alt: false, control: false, applicationCursor: false))
+        }
     }
     func reset() { let reset: [UInt8] = [0x1b, 0x63]; feed(byteArray: reset[...]) }
     func feed(data: Data) { let bytes = [UInt8](data); feed(byteArray: bytes[...]) }
