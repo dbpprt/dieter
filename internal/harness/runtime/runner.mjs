@@ -214,7 +214,14 @@ const [
   { createContentPresentationTool, contentPresentationInstructions },
   { createBackgroundProcessTools, backgroundProcessInstructions },
   { createMessageMetadataTracker },
-  { createClaudeTurnSummary, observeClaudeTurnChunk, retryEmptyClaudeResume },
+  {
+    claudeAuthFailureMessage,
+    claudeAuthFailureText,
+    createClaudeTurnSummary,
+    observeClaudeTurnChunk,
+    retryClaudeAuthFailure,
+    retryEmptyClaudeResume,
+  },
   {
     createOMPLaunchCandidates,
     createOMPSessionWithCompatibility,
@@ -492,6 +499,7 @@ try {
     (adapter === "codex" ? await codexContextWindow(request.model) : undefined);
   let claudeDelegationSeen = false;
   let claudeFinalTextSeen = false;
+  let claudeAuthRetried = false;
   async function streamResult(result, summary, diagnosticTurn) {
     const messageMetadata = createMessageMetadataTracker({
       createdAt,
@@ -504,13 +512,23 @@ try {
       generateMessageId: () => request.responseMessageId,
       messageMetadata,
     });
-    for await (const chunk of stream) {
+    for await (let chunk of stream) {
       // The Go host owns the semantic distinction between a user interrupt
       // and a process-restart suspension. Suppress the SDK's local abort frame
       // here; Dieter appends one for a real cancel, while a restart preserves
       // the in-flight message, task plan, and subagents for continuation.
       if (controller.signal.aborted && chunk.type === "abort") continue;
       if (adapter === "claude-code") {
+        const authFailure = claudeAuthFailureText(chunk);
+        if (authFailure && !controller.signal.aborted) {
+          if (!claudeAuthRetried) {
+            // Hold the error: a fresh Claude process usually reads renewed
+            // credentials, so resume the durable session once before failing.
+            summary.authFailure = authFailure;
+            continue;
+          }
+          chunk = { ...chunk, errorText: claudeAuthFailureMessage(authFailure) };
+        }
         if (observeClaudeTurnChunk(summary, chunk))
           claudeDiagnostics.observeActivity(diagnosticTurn);
         if (
@@ -552,6 +570,18 @@ try {
     );
   } else {
     primarySummary = await streamPrompt(runtimePrompt);
+  }
+  if (primarySummary.authFailure && !controller.signal.aborted) {
+    claudeAuthRetried = true;
+    console.error(
+      `claude-code authentication failed; resuming the session once: ${primarySummary.authFailure}`,
+    );
+    primarySummary =
+      (await retryClaudeAuthFailure({
+        adapter,
+        authFailure: primarySummary.authFailure,
+        retry: streamPrompt,
+      })) ?? primarySummary;
   }
   await retryEmptyClaudeResume({
     adapter,

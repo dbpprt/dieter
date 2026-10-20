@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  claudeAuthFailureMessage,
+  claudeAuthFailureText,
+  claudeAuthResumePrompt,
   createClaudeDiagnosticTracker,
   createClaudeTurnSummary,
   emptyClaudeResumePrompt,
   isCompletelyEmptyClaudeTurn,
   observeClaudeTurnChunk,
+  retryClaudeAuthFailure,
   retryEmptyClaudeResume,
 } from './claude-resilience.mjs';
 
@@ -94,4 +98,34 @@ test('clears an exhausted retry when Claude subsequently produces activity', () 
   tracker.observeStderr('[harness:claude-code:warn] Claude Code API retry: attempt 10/10; HTTP 529\n');
   tracker.observeActivity(turn);
   assert.equal(tracker.endTurn(turn), undefined);
+});
+
+test('recognizes Claude authentication failures only in error chunks', () => {
+  for (const errorText of [
+    'HTTP 401: authentication_failed',
+    'Agent terminated early due to an API error: Failed to authenticate. API Error: 401 OAuth access token has been revoked.',
+    'API Error: 401 OAuth access token has expired. Re-authenticate to continue.',
+  ]) {
+    assert.equal(claudeAuthFailureText({ type: 'error', errorText }), errorText);
+  }
+  assert.equal(claudeAuthFailureText({ type: 'error', errorText: 'HTTP 429: rate_limit_error' }), undefined);
+  assert.equal(claudeAuthFailureText({ type: 'text-delta', delta: 'HTTP 401: authentication_failed' }), undefined);
+});
+
+test('retries an authentication failure once with the resume prompt, for Claude only', async () => {
+  const prompts = [];
+  const retry = async prompt => {
+    prompts.push(prompt);
+    return 'recovered';
+  };
+  assert.equal(await retryClaudeAuthFailure({ adapter: 'claude-code', authFailure: 'HTTP 401', retry, delayMs: 0 }), 'recovered');
+  assert.equal(await retryClaudeAuthFailure({ adapter: 'codex', authFailure: 'HTTP 401', retry, delayMs: 0 }), undefined);
+  assert.equal(await retryClaudeAuthFailure({ adapter: 'claude-code', authFailure: undefined, retry, delayMs: 0 }), undefined);
+  assert.deepEqual(prompts, [claudeAuthResumePrompt]);
+});
+
+test('the final authentication message leads with the action and keeps the provider text', () => {
+  const [first, second] = claudeAuthFailureMessage('HTTP 401: authentication_failed').split('\n');
+  assert.match(first, /claude auth login/);
+  assert.equal(second, 'HTTP 401: authentication_failed');
 });

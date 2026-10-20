@@ -49,6 +49,40 @@ export async function retryEmptyClaudeResume({ adapter, hasResumeSession, contin
   return retriedSummary;
 }
 
+// Claude Code's OAuth login is one rotating refresh-token chain per profile,
+// shared with every other Claude Code process on the host. A process that
+// outlives the 8-hour access token (or loses a refresh race) ends its turn with
+// a terminal 401, while a fresh process started a moment later reads the
+// current credentials and works. Recorded history: 26 of 30 such failures were
+// followed by a turn that ran fine, usually within minutes.
+const claudeAuthFailurePattern = /authentication_failed|\bHTTP 401\b|Failed to authenticate|OAuth (?:access )?token (?:has )?(?:expired|been revoked)/i;
+
+export const claudeAuthRetryDelayMs = 2000;
+
+export const claudeAuthResumePrompt = 'The previous continuation was interrupted by a temporary authentication error, and the sign-in has since been renewed. Continue from the current session state and respond to the user\'s latest message now. Inspect the current state before repeating any action that may already have completed.';
+
+export function claudeAuthFailureText(chunk) {
+  if (chunk?.type !== 'error') return undefined;
+  const text = String(chunk.errorText || '').trim();
+  return claudeAuthFailurePattern.test(text) ? text : undefined;
+}
+
+// The provider text is often only "HTTP 401: authentication_failed". Clients
+// summarize a failure by its first line, so lead with what to do about it.
+export function claudeAuthFailureMessage(detail) {
+  return [
+    'Claude Code sign-in was rejected, even after retrying. Run `claude auth login` on the host that runs this agent, then retry.',
+    detail,
+  ].filter(Boolean).join('\n');
+}
+
+export async function retryClaudeAuthFailure({ adapter, authFailure, retry, delayMs = claudeAuthRetryDelayMs }) {
+  if (adapter !== 'claude-code' || !authFailure) return undefined;
+  // Give a process that is mid-refresh time to persist the rotated credentials.
+  if (delayMs > 0) await new Promise(resolve => setTimeout(resolve, delayMs));
+  return retry(claudeAuthResumePrompt);
+}
+
 function chunkText(chunk, encoding) {
   if (typeof chunk === 'string') return chunk;
   try {
