@@ -9,6 +9,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.getdieter.client.v1.*
+import com.getdieter.core.admin.PromptTemplates
 import com.getdieter.mobile.app.*
 import com.getdieter.mobile.design.*
 import com.getdieter.mobile.design.Tone
@@ -145,12 +146,24 @@ private fun ProjectSettingsSheet(
     var summary by remember(project.id) { mutableStateOf(project.summary) }
     var remote by remember(project.id) { mutableStateOf(project.base_remote) }
     var branch by remember(project.id) { mutableStateOf(project.base_branch) }
-    var prompt by remember(project.id) { mutableStateOf(project.prompt_template) }
+    var instructions by remember(project.id) { mutableStateOf(project.prompt) }
+    var template by remember(project.id) { mutableStateOf(project.prompt_template) }
+    val templateProblem =
+        template.takeIf { it.isNotBlank() }?.let { PromptTemplates.validate(it, context = true) }
+    val gitChanged = remote != project.base_remote || branch != project.base_branch
     Sheet(
         "Edit Project",
         dismiss,
         confirm =
-            ChromeAction("save-project", "Save", Glyph.CHECK, enabled = name.isNotBlank()) {
+            ChromeAction(
+                "save-project",
+                "Save",
+                Glyph.CHECK,
+                enabled =
+                    name.isNotBlank() &&
+                        templateProblem == null &&
+                        (!gitChanged || branch.isNotBlank()),
+            ) {
                 store.action {
                     store.core.dispatch(
                         Command(
@@ -161,32 +174,38 @@ private fun ProjectSettingsSheet(
                                             project_id = project.id,
                                             name = name,
                                             summary = summary,
+                                            prompt = instructions,
                                         )
                                 )
                         )
                     )
-                    store.core.dispatch(
-                        Command(
-                            admin =
-                                AdminCommand(
-                                    workspace_settings =
-                                        AdminWorkspaceSettings(
-                                            project_id = project.id,
-                                            base_remote = remote,
-                                            base_branch = branch,
-                                        )
-                                )
+                    if (gitChanged)
+                        store.core.dispatch(
+                            Command(
+                                admin =
+                                    AdminCommand(
+                                        workspace_settings =
+                                            AdminWorkspaceSettings(
+                                                project_id = project.id,
+                                                base_remote = remote,
+                                                base_branch = branch,
+                                            )
+                                    )
+                            )
                         )
-                    )
-                    store.core.dispatch(
-                        Command(
-                            admin =
-                                AdminCommand(
-                                    set_project_prompt =
-                                        AdminScopedPrompt(scope_id = project.id, template = prompt)
-                                )
+                    if (template != project.prompt_template)
+                        store.core.dispatch(
+                            Command(
+                                admin =
+                                    AdminCommand(
+                                        set_project_prompt =
+                                            AdminScopedPrompt(
+                                                scope_id = project.id,
+                                                template = template.takeIf { it.isNotBlank() },
+                                            )
+                                    )
+                            )
                         )
-                    )
                     dismiss()
                 }
             },
@@ -230,14 +249,35 @@ private fun ProjectSettingsSheet(
         SectionHeader("Agent instructions")
         FormColumn {
             MobileTextField(
-                prompt,
-                { prompt = it },
+                instructions,
+                { instructions = it },
                 Modifier.fillMaxWidth(),
-                label = { Text("Project prompt") },
+                label = { Text("Project instructions") },
                 placeholder = { Text("Instructions added to every task in this project") },
                 minLines = 4,
             )
         }
+        SectionFooter(
+            "Shared by every board in this project and by all your devices.",
+            Modifier.padding(horizontal = 20.dp),
+        )
+        SectionHeader("Prompt template override")
+        FormColumn {
+            MobileTextField(
+                template,
+                { template = it },
+                Modifier.fillMaxWidth(),
+                label = { Text("Template") },
+                placeholder = { Text("Empty inherits the global template") },
+                minLines = 3,
+            )
+        }
+        SectionFooter(
+            templateProblem
+                ?: "Replaces the whole agent prompt for this project. It must place " +
+                    "{{project.instructions_block}} and {{labels.instructions_block}} once.",
+            Modifier.padding(horizontal = 20.dp),
+        )
     }
 }
 

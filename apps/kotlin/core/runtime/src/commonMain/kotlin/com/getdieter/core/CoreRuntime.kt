@@ -8,6 +8,8 @@ import com.getdieter.api.v1.HarnessSelection
 import com.getdieter.api.v1.MessagePart
 import com.getdieter.core.activity.Activity
 import com.getdieter.core.activity.ActivityItem
+import com.getdieter.core.activity.FilteredActivity
+import com.getdieter.core.activity.InboxFilter
 import com.getdieter.core.admin.Administration
 import com.getdieter.core.admin.BackgroundPolicy
 import com.getdieter.core.admin.MachineAdmin
@@ -96,6 +98,7 @@ import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import okio.ByteString
 
 data class RuntimeConfig(
     /** The canonical Dieter release of the app. */
@@ -716,19 +719,45 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
             terminals(),
         )
 
-    /** The account-wide activity feed: needs-you, running, and recent conversations. */
+    /**
+     * The account-wide activity feed: needs-you, running, and recent conversations that the
+     * account's Inbox rules show.
+     */
     fun activity(): Flow<List<ActivityItem>> =
-        combine(workspace.state, outbox.view, connection.syncs, connection.machines, ::activity)
+        filteredActivity().map { it.items }.distinctUntilChanged()
+
+    /** [activity] with how many conversations the Inbox rules hide. */
+    internal fun filteredActivity(): Flow<FilteredActivity> =
+        combine(
+                combine(
+                        workspace.state,
+                        outbox.view,
+                        connection.syncs,
+                        connection.machines,
+                        ::activity,
+                    )
+                    .distinctUntilChanged(),
+                navigationKv.values,
+            ) { items, values ->
+                filtered(items, values)
+            }
             .distinctUntilChanged()
 
     /** The activity projection now, e.g. for a widget rendered outside the app. */
     fun currentActivity(): List<ActivityItem> =
-        activity(
-            workspace.state.value,
-            outbox.view.value,
-            connection.syncs.value,
-            connection.machines.value,
-        )
+        filtered(
+                activity(
+                    workspace.state.value,
+                    outbox.view.value,
+                    connection.syncs.value,
+                    connection.machines.value,
+                ),
+                navigationKv.values.value,
+            )
+            .items
+
+    private fun filtered(items: List<ActivityItem>, values: Map<String, ByteString>) =
+        InboxFilter(NavigationLayout(values).inboxRules()).apply(items)
 
     private fun activity(
         view: WorkspaceView,

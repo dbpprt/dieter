@@ -15,6 +15,7 @@ import com.getdieter.client.v1.AdminPreviewPrompt
 import com.getdieter.client.v1.AdminReadFile
 import com.getdieter.client.v1.AdminRenameBoard
 import com.getdieter.client.v1.AdminUpdateProject
+import com.getdieter.client.v1.AdminWorkspaceSettings
 import com.getdieter.client.v1.Command
 import com.getdieter.client.v1.QuotasCommand
 import com.getdieter.client.v1.QuotasLoad
@@ -158,6 +159,37 @@ class ClientApiAdminEndToEndTest : EndToEnd() {
                 .project!!
         assertEquals("Isolated", project.summary)
         assertEquals(listOf("localhost:3000"), project.hostnames)
+        // The Mac project sheet saves workspace defaults, then name, summary and instructions.
+        val projectCheckout = project.checkouts.first()
+        admin(
+            "workspace settings",
+            AdminCommand(
+                workspace_settings =
+                    AdminWorkspaceSettings(
+                        project_id = fixture.projectId,
+                        base_remote = "origin",
+                        base_branch = "main",
+                        checkout_id = projectCheckout.id,
+                    )
+            ),
+        )
+        assertEquals(
+            "Keep it accessible.",
+            admin(
+                    "project instructions",
+                    AdminCommand(
+                        update_project =
+                            AdminUpdateProject(
+                                project_id = fixture.projectId,
+                                name = project.name,
+                                summary = project.summary,
+                                prompt = "Keep it accessible.",
+                            )
+                    ),
+                )
+                .project!!
+                .prompt,
+        )
         val prompts =
             admin("prompt settings", AdminCommand(prompt_settings = AdminMachine(fixture.daemonId)))
                 .prompt_settings!!
@@ -202,7 +234,7 @@ class ClientApiAdminEndToEndTest : EndToEnd() {
                             AdminReadFile(
                                 daemon_id = fixture.daemonId,
                                 project_id = fixture.projectId,
-                                checkout_id = checkout.id,
+                                checkout_id = projectCheckout.id,
                                 path = "admin-notes.txt",
                             )
                     ),

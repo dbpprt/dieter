@@ -2,6 +2,7 @@ package com.getdieter.core.navigation
 
 import com.getdieter.api.v1.Card
 import com.getdieter.api.v1.Project
+import com.getdieter.core.activity.InboxRule
 import com.getdieter.core.runtime.CoreException
 import com.getdieter.core.runtime.FailureKind
 import com.getdieter.core.v1.KvDelete
@@ -10,6 +11,7 @@ import com.getdieter.core.v1.KvMove
 import com.getdieter.core.v1.KvPut
 import kotlin.uuid.Uuid
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
@@ -92,6 +94,7 @@ data class ChatLayout(
 
 // Key prefixes in the `navigation` namespace.
 private const val PROJECTS_ORDER = "projects-order"
+private const val INBOX_RULE = "inbox-rule"
 private const val PROJECTS_PINNED = "projects-pinned"
 private const val PINNED_ORDER = "pinned-order"
 private const val PROJECTS_DISCLOSURE = "projects-disclosure"
@@ -106,6 +109,14 @@ private const val CHATS_DISCLOSURE = "chats-disclosure"
 class NavigationLayout(private val values: Map<String, ByteString>) {
     fun inboxPins(): Set<String> =
         ids("inbox-pin", "pinned").filter { bool("inbox-pin.$it.pinned") == true }.toSet()
+
+    /** The saved Inbox rules, oldest first; an entry that is not a rule is ignored. */
+    fun inboxRules(): List<InboxRule> =
+        ids(INBOX_RULE, "rule")
+            .mapNotNull { id ->
+                values["$INBOX_RULE.$id.rule"]?.let { InboxRule.parse(id, it.utf8()) }
+            }
+            .sortedWith(compareBy({ it.created }, { it.id }))
 
     fun ids(prefix: String, field: String): List<String> {
         val head = "$prefix."
@@ -309,6 +320,29 @@ class NavigationEditor(private val kv: SharedKv) {
     fun pinInboxCard(cardId: String, pinned: Boolean) {
         if (cardId.isBlank()) return
         kv.enqueue(listOf(put("inbox-pin.$cardId.pinned", JsonPrimitive(pinned))))
+    }
+
+    /**
+     * Saves [rule] as the account's Inbox rule with its ID; one without an ID is a new rule.
+     * Returns the rule's ID.
+     */
+    fun saveInboxRule(rule: InboxRule, nowMillis: Long): String {
+        if (rule.projects.isEmpty() && rule.labels.isEmpty())
+            throw CoreException(FailureKind.PERMANENT, "Choose at least one project or label.")
+        val id = rule.id.ifBlank { Uuid.random().toString() }
+        val created =
+            layout.inboxRules().firstOrNull { it.id == id }?.created
+                ?: rule.created.takeIf { it > 0 }
+                ?: nowMillis
+        kv.enqueue(
+            listOf(put("$INBOX_RULE.$id.rule", rule.copy(id = id, created = created).toJson()))
+        )
+        return id
+    }
+
+    fun deleteInboxRule(id: String) {
+        if (id.isBlank()) return
+        kv.enqueue(listOf(delete("$INBOX_RULE.$id.rule")))
     }
 
     fun setProjectOrder(next: List<String>) =
@@ -641,7 +675,7 @@ class NavigationEditor(private val kv: SharedKv) {
             return result.reversed()
         }
 
-        private fun put(key: String, value: JsonPrimitive, requiresExisting: Boolean = false) =
+        private fun put(key: String, value: JsonElement, requiresExisting: Boolean = false) =
             KvIntent(
                 id = Uuid.random().toString(),
                 key = key,

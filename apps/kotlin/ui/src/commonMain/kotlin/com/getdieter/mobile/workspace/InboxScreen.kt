@@ -62,6 +62,7 @@ internal fun InboxScreen(store: MobileStore) {
     var project by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf(InboxFilter.ALL) }
     var timeline by rememberSaveable { mutableStateOf(false) }
+    var rulesOpen by rememberSaveable { mutableStateOf(false) }
     val now = rememberNow()
     val scoped =
         view.rows.filter { row ->
@@ -121,6 +122,9 @@ internal fun InboxScreen(store: MobileStore) {
                                 ),
                                 MenuSection(
                                     listOf(
+                                        ChromeAction("inbox-rules", "Inbox rules…", Glyph.FILTER) {
+                                            rulesOpen = true
+                                        },
                                         ChromeAction(
                                             "timeline",
                                             "Activity timeline",
@@ -128,7 +132,7 @@ internal fun InboxScreen(store: MobileStore) {
                                             checked = timeline,
                                         ) {
                                             timeline = !timeline
-                                        }
+                                        },
                                     )
                                 ),
                             ),
@@ -178,6 +182,20 @@ internal fun InboxScreen(store: MobileStore) {
                         }
                     }
                 }
+                val hidden = view.summary?.hidden ?: 0
+                if (hidden > 0)
+                    item("hidden") {
+                        Group(listOf(hidden)) { count, position ->
+                            ListRow(
+                                "$count hidden by Inbox rules",
+                                position = position,
+                                glyph = Glyph.FILTER,
+                                accessory = Accessory.CHEVRON,
+                                onClick = { rulesOpen = true },
+                                modifier = Modifier.testTag("inbox-hidden"),
+                            )
+                        }
+                    }
                 if (quotas.group_rows.any { it.lowest_remaining >= 0 })
                     item("usage") {
                         UsageStrip(quotas) {
@@ -254,6 +272,7 @@ internal fun InboxScreen(store: MobileStore) {
             }
         }
     }
+    if (rulesOpen) InboxRulesSheet(store) { rulesOpen = false }
 }
 
 private fun ActivityRow.matches(filter: InboxFilter) =

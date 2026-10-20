@@ -10,6 +10,7 @@ struct InboxFeed: View {
     @State private var hours = 1
     @State private var visibleLimit = 20
     @State private var newTaskPresented = false
+    @State private var rulesPresented = false
 
     var body: some View {
         let entries = store.inboxEntries
@@ -53,6 +54,7 @@ struct InboxFeed: View {
         }
         .foregroundStyle(DieterTheme.text)
         .ignoresSafeArea(.container, edges: .top)
+        .sheet(isPresented: $rulesPresented) { InboxRulesSheet().environment(store) }
         .onChange(of: query) { _, _ in visibleLimit = 20 }
         .onChange(of: projectID) { _, _ in visibleLimit = 20 }
         .onChange(of: hours) { _, _ in visibleLimit = 20 }
@@ -160,6 +162,32 @@ struct InboxFeed: View {
                     .dieterMenuChrome()
                     .accessibilityLabel("Filter by project")
                     .accessibilityIdentifier("inbox.project-filter").e2eTarget("inbox.project-filter")
+                    Button {
+                        rulesPresented = true
+                    } label: {
+                        Image(
+                            systemName: store.navigation.inboxRules.contains(where: \.enabled)
+                                ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle"
+                        )
+                        .font(.system(size: 14))
+                        .foregroundStyle(DieterTheme.subtle)
+                        .frame(width: 30, height: 30)
+                        .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Inbox rules: show or hide projects and labels")
+                    .accessibilityLabel("Inbox rules")
+                    .accessibilityIdentifier("inbox.rules").e2eTarget("inbox.rules")
+                }
+                if store.activity.summary.hidden > 0 {
+                    Button {
+                        rulesPresented = true
+                    } label: {
+                        Text("\(store.activity.summary.hidden) hidden by Inbox rules")
+                            .font(DieterFont.meta).foregroundStyle(DieterTheme.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("inbox.hidden")
                 }
             }
             .padding(.leading, 14).padding(.trailing, 6)

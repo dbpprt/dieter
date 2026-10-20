@@ -98,6 +98,15 @@ at the top on Mac, Android, and iOS. Tap it again to unpin. Pins sync across
 your account through shared KV; offline edits sync when a machine is available.
 Search and project filters still apply to pinned cards.
 
+Inbox rules decide which conversations the Inbox lists. Open **Inbox rules**
+from the filter button on the Mac or the filter menu on Android and iOS, then
+add a rule that hides or shows only the conversations of some projects and
+labels. A rule can require a project and a label together or accept either, and
+you can keep several rules and switch each on or off. A conversation matching
+any hiding rule is left out; while a showing rule is on, only conversations
+matching one are listed. Rules sync across your account like pins, and the
+Inbox says how many conversations they hide.
+
 {{< shots >}}
 {{< screenshot src="ios-inbox.png" kind="phone" width="1206" height="2622" alt="iPhone Inbox with four replies that need you, provider quotas, and running tasks" caption="Inbox on iPhone." >}}
 {{< screenshot src="android-board.png" kind="phone" width="1080" height="2400" alt="Android Atlas API Roadmap board filtered to its four running tasks, each with its machine, branch, and agent" caption="A board on Android." >}}

@@ -185,9 +185,16 @@ struct PromptSettingsEditor: View {
                 .padding(7).frame(height: 90).disabled(disabled || inherits.wrappedValue)
                 .background(
                     DieterTheme.input.opacity(inherits.wrappedValue ? 0.45 : 1), in: RoundedRectangle(cornerRadius: 8))
+            // A scoped template replaces the whole prompt, so the daemon checks its placeholders.
+            let problem =
+                inherits.wrappedValue ? "" : SharedRules.shared.promptTemplateProblem(template: template.wrappedValue)
+            if !problem.isEmpty {
+                Text(problem).font(.caption2).foregroundStyle(DieterTheme.coral)
+            }
             HStack {
                 Spacer()
-                Button("Save", action: save).buttonStyle(DieterBarButtonStyle(size: 28)).disabled(disabled || saving)
+                Button("Save", action: save).buttonStyle(DieterBarButtonStyle(size: 28))
+                    .disabled(disabled || saving || !problem.isEmpty)
             }
         }.promptPanel().frame(maxWidth: .infinity)
     }

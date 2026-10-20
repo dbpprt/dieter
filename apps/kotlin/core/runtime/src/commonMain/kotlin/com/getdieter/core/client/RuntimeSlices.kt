@@ -9,6 +9,7 @@ import com.getdieter.client.v1.BoardSlice
 import com.getdieter.client.v1.FailedOperation
 import com.getdieter.client.v1.GatewayBuild
 import com.getdieter.client.v1.GatewayEntry
+import com.getdieter.client.v1.InboxRule as ClientInboxRule
 import com.getdieter.client.v1.MachineEntry
 import com.getdieter.client.v1.MachineMetadata
 import com.getdieter.client.v1.MachineOutbox
@@ -26,6 +27,7 @@ import com.getdieter.core.CoreRuntime
 import com.getdieter.core.activity.ActivityCounts
 import com.getdieter.core.activity.ActivityItem
 import com.getdieter.core.activity.ActivitySection
+import com.getdieter.core.activity.InboxRule
 import com.getdieter.core.activity.IslandModel
 import com.getdieter.core.activity.MenuBar
 import com.getdieter.core.board.CardOperation
@@ -250,6 +252,7 @@ internal fun CoreRuntime.navigationSlices(): Flow<NavigationSlice> =
             }
         val sidebar = layout.sidebarProjects(available)
         NavigationSlice(
+            inbox_rules = layout.inboxRules().map(::clientInboxRule),
             projects =
                 ProjectNavigation(
                     order = sidebar.order,
@@ -274,6 +277,18 @@ internal fun CoreRuntime.navigationSlices(): Flow<NavigationSlice> =
             caught_up = status.caughtUp,
         )
     }
+
+internal fun clientInboxRule(rule: InboxRule) =
+    ClientInboxRule(
+        id = rule.id,
+        name = rule.name,
+        hide = rule.hide,
+        match_all = rule.matchAll,
+        project_ids = rule.projects.sorted(),
+        label_ids = rule.labels.sorted(),
+        enabled = rule.enabled,
+        created_millis = rule.created,
+    )
 
 /** [view] as the workspace slice, with each project's host ([MachineChoice.checkout]). */
 internal fun CoreRuntime.workspaceSlice(view: WorkspaceView): WorkspaceSlice =
@@ -376,13 +391,14 @@ internal fun operationLabel(kind: OutboxKind): String =
 /** The activity feed; sent again when a menu bar row leaves its six-hour window. */
 @OptIn(ExperimentalCoroutinesApi::class)
 internal fun CoreRuntime.activitySlices(): Flow<ActivitySlice> =
-    combine(activity(), navigationKv.values) { items, values ->
-            items to NavigationLayout(values).inboxPins()
+    combine(filteredActivity(), navigationKv.values) { feed, values ->
+            feed to NavigationLayout(values).inboxPins()
         }
-        .transformLatest { (items, pins) ->
+        .transformLatest { (feed, pins) ->
+            val items = feed.items
             while (true) {
                 val now = platform.clock.now()
-                emit(activitySlice(items, now, pins))
+                emit(activitySlice(items, now, pins, feed.hidden))
                 val next = MenuBar.nextChange(items, now) ?: break
                 delay(next - now)
             }
@@ -392,6 +408,7 @@ internal fun activitySlice(
     items: List<ActivityItem>,
     now: Instant,
     pins: Set<String> = emptySet(),
+    hidden: Int = 0,
 ): ActivitySlice {
     val counts = ActivityCounts.of(items)
     val island = IslandModel.build(items)
@@ -432,6 +449,7 @@ internal fun activitySlice(
                 recent = counts.recent,
                 review = counts.review,
                 subagents = counts.subagents,
+                hidden = hidden,
             ),
         island_ids = island.items.map { it.id },
         menu_bar_ids = MenuBar.items(items, now).map { it.id },

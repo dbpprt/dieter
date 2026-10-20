@@ -1,8 +1,10 @@
 package schema
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/dbpprt/dieter/internal/platform/fault"
 	"github.com/dbpprt/dieter/internal/replication/crdt"
@@ -78,6 +80,10 @@ func ValidateKV(r crdt.Record) error {
 			if json.Unmarshal(v.Value, &value) != nil || (value != "ascending" && value != "descending") {
 				return fault.New(fault.Invalid, "invalid sort direction")
 			}
+		case "rule":
+			if err := validateInboxRule(parts[0], v.Value); err != nil {
+				return err
+			}
 		case "position":
 			var value KVPosition
 			if json.Unmarshal(v.Value, &value) != nil || !ValidPosition(value) {
@@ -100,4 +106,41 @@ func ValidPosition(p KVPosition) bool {
 		}
 	}
 	return true
+}
+
+// validateInboxRule checks an Inbox rule: `inbox-rule.<id>.rule` holds an object that shows or
+// hides the cards of some projects and labels.
+func validateInboxRule(prefix string, raw json.RawMessage) error {
+	if prefix != "inbox-rule" {
+		return fault.New(fault.Invalid, "unsupported navigation field")
+	}
+	var value struct {
+		Name     string   `json:"name"`
+		Effect   string   `json:"effect"`
+		Match    string   `json:"match"`
+		Projects []string `json:"projects"`
+		Labels   []string `json:"labels"`
+		Enabled  *bool    `json:"enabled"`
+		Created  *int64   `json:"created"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&value) != nil || utf8.RuneCountInString(value.Name) > 120 {
+		return fault.New(fault.Invalid, "invalid inbox rule")
+	}
+	if value.Effect != "show" && value.Effect != "hide" || value.Match != "any" && value.Match != "all" {
+		return fault.New(fault.Invalid, "invalid inbox rule effect or match")
+	}
+	if value.Enabled == nil || value.Created == nil || *value.Created < 0 {
+		return fault.New(fault.Invalid, "invalid inbox rule state")
+	}
+	if len(value.Projects) == 0 && len(value.Labels) == 0 || len(value.Projects) > 64 || len(value.Labels) > 64 {
+		return fault.New(fault.Invalid, "an inbox rule names 1 to 64 projects and labels each")
+	}
+	for _, id := range append(append([]string{}, value.Projects...), value.Labels...) {
+		if !crdt.ValidID(id) {
+			return fault.New(fault.Invalid, "invalid inbox rule project or label")
+		}
+	}
+	return nil
 }

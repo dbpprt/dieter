@@ -1132,7 +1132,7 @@ Never stop or replace the operator's daemon as part of testing or implementation
 Use `kv get`, `kv list`, `kv put`, `kv delete`, `kv move`, and `kv watch` for
 account-scoped portable JSON. All use the daemon API and global `--machine`.
 Folders, membership, project ordering, pinned-project membership/order,
-pinned-chat ordering, inbox pins, disclosure, and lane sort direction share the `navigation`
+pinned-chat ordering, inbox pins, inbox rules, disclosure, and lane sort direction share the `navigation`
 namespace across native clients. See
 `apps/kotlin/core/runtime/src/commonMain/kotlin/com/getdieter/core/navigation/SharedKv.kt`
 for keys and projection rules.
@@ -1141,6 +1141,15 @@ Inbox pins use `inbox-pin.<card-id>.pinned` in `navigation`, with JSON `true`
 or `false`. Read the current revision with `kv get` before changing it through
 `kv put`; these pins are independent of chat pins and sync across Mac, Android,
 and iOS.
+
+Inbox rules use `inbox-rule.<rule-id>.rule` in `navigation` (the ID has no dots).
+The JSON value is
+`{"name","effect":"hide"|"show","match":"any"|"all","projects":[ids],"labels":[ids],"enabled","created"}`
+with 1-64 project or label IDs. A card matching an enabled hiding rule is left
+out of the Inbox; while an enabled showing rule exists, a card must match one.
+`match: "all"` needs one of the projects and one of the labels. Daemons reject
+other shapes. Prefer the clients' Inbox rules sheet; use `kv put` only for
+recovery.
 
 `kv put --namespace NS --key KEY --file value.json --revision REV` replaces the
 observed local revision (omit revision only for creation). `kv move` accepts

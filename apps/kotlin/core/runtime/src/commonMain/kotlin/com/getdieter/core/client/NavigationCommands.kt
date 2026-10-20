@@ -9,6 +9,7 @@ import com.getdieter.client.v1.FolderScope as ClientFolderScope
 import com.getdieter.client.v1.NavigationCommand
 import com.getdieter.client.v1.Result
 import com.getdieter.core.CoreRuntime
+import com.getdieter.core.activity.InboxRule
 import com.getdieter.core.navigation.ChatLists
 import com.getdieter.core.navigation.ChatsSurface
 import com.getdieter.core.navigation.ChatsView
@@ -85,6 +86,25 @@ internal fun CoreRuntime.applyNavigation(command: NavigationCommand): Result {
     }
     command.pin_inbox_card?.let {
         navigation.pinInboxCard(it.card_id, it.pinned)
+        return done
+    }
+    command.save_inbox_rule?.let {
+        navigation.saveInboxRule(
+            InboxRule(
+                id = it.id,
+                name = it.name,
+                hide = it.hide,
+                matchAll = it.match_all,
+                projects = it.project_ids.toSet(),
+                labels = it.label_ids.toSet(),
+                enabled = it.enabled,
+            ),
+            platform.clock.now().toEpochMilliseconds(),
+        )
+        return done
+    }
+    command.delete_inbox_rule?.let {
+        navigation.deleteInboxRule(it.rule_id)
         return done
     }
     command.pin_project?.let {

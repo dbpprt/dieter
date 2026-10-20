@@ -3,6 +3,7 @@ package com.getdieter.core.client.rules
 import com.getdieter.api.v1.Card
 import com.getdieter.client.v1.ActivityTimelineBar
 import com.getdieter.core.activity.Activity
+import com.getdieter.core.activity.InboxRuleText
 import kotlin.time.Instant
 
 /**
@@ -26,6 +27,14 @@ object ActivityExports {
      */
     fun conversationTitle(title: String, scope: String, boardId: String): String =
         Activity.title(Card(title = title, scope = scope, board_id = boardId))
+
+    /** What an Inbox rule does in words, e.g. "Hide project dieter or label urgent". */
+    fun inboxRuleSummary(
+        hide: Boolean,
+        matchAll: Boolean,
+        projectNames: List<String>,
+        labelNames: List<String>,
+    ): String = InboxRuleText.summary(hide, matchAll, projectNames, labelNames)
 
     /** The timeline windows the range menu offers, in hours. */
     fun timelineHours(): List<Int> = Activity.TIMELINE_HOURS

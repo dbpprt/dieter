@@ -3,6 +3,7 @@ package com.getdieter.core.navigation
 import com.getdieter.api.v1.Card
 import com.getdieter.api.v1.KVEntry
 import com.getdieter.api.v1.PeerVersion
+import com.getdieter.core.activity.InboxRule
 import com.getdieter.core.runtime.CoreException
 import com.getdieter.core.runtime.SilentLogger
 import com.getdieter.core.storage.CoreStorage
@@ -59,6 +60,34 @@ class NavigationTest {
                 )
             )
         assertEquals(setOf("remote"), layout.inboxPins())
+    }
+
+    @Test
+    fun inboxRulesSaveEditDeleteAndRestoreInTheOrderTheyWereMade() {
+        val kv = offlineKv()
+        val editor = NavigationEditor(kv)
+        val quiet = editor.saveInboxRule(InboxRule("", name = "Quiet", projects = setOf("p1")), 10)
+        val urgent =
+            editor.saveInboxRule(
+                InboxRule("", hide = false, labels = setOf("l1"), matchAll = true),
+                20,
+            )
+        assertEquals(listOf(quiet, urgent), layout(kv).inboxRules().map { it.id })
+        // An edit keeps the rule's place.
+        editor.saveInboxRule(
+            InboxRule(quiet, name = "Quieter", projects = setOf("p1", "p2"), created = 99),
+            30,
+        )
+        val rules = layout(kv).inboxRules()
+        assertEquals(listOf(quiet, urgent), rules.map { it.id })
+        assertEquals(10, rules.first().created)
+        assertEquals(setOf("p1", "p2"), rules.first().projects)
+        assertFalse(rules.last().hide)
+        assertEquals(rules, layout(offlineKv()).inboxRules())
+        editor.deleteInboxRule(quiet)
+        assertEquals(listOf(urgent), layout(kv).inboxRules().map { it.id })
+        assertTrue(layout(kv).inboxPins().isEmpty())
+        assertFailsWith<CoreException> { editor.saveInboxRule(InboxRule("", name = "Empty"), 40) }
     }
 
     @Test

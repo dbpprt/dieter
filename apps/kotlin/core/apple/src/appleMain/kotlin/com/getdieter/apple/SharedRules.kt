@@ -717,6 +717,13 @@ object SharedRules {
     fun conversationTitle(title: String, scope: String, boardId: String): String =
         ActivityExports.conversationTitle(title, scope, boardId)
 
+    fun inboxRuleSummary(
+        hide: Boolean,
+        matchAll: Boolean,
+        projectNames: List<String>,
+        labelNames: List<String>,
+    ): String = ActivityExports.inboxRuleSummary(hide, matchAll, projectNames, labelNames)
+
     fun timelineHours(): List<Int> = ActivityExports.timelineHours()
 
     fun timelineRangeTitle(hours: Int): String = ActivityExports.timelineRangeTitle(hours)
@@ -820,6 +827,9 @@ object SharedRules {
         )
 
     /** [drafts] is an encoded `ValidationDrafts`. */
+    fun promptTemplateProblem(template: String): String =
+        AdminExports.promptTemplateProblem(template)
+
     fun canSaveProject(name: String, baseBranch: String, drafts: NSData): Boolean =
         AdminExports.canSaveProject(
             name,

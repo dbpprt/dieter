@@ -54,6 +54,15 @@ extension AppSession {
         }
     }
 
+    /// Saves an Inbox rule; one without an ID is new. The core syncs it to every device.
+    func saveInboxRule(_ rule: ClientInboxRule) {
+        navigate { $0.saveInboxRule = rule }
+    }
+
+    func deleteInboxRule(_ ruleID: String) {
+        navigate { $0.deleteInboxRule = .with { $0.ruleID = ruleID } }
+    }
+
     func setProjectPinned(_ projectID: String, pinned: Bool) {
         navigate {
             $0.pinProject = .with {

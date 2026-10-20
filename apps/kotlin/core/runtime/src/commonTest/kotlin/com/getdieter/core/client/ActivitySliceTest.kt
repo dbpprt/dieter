@@ -26,4 +26,20 @@ class ActivitySliceTest {
         assertEquals(unpinned.summary, pinned.summary)
         assertEquals(unpinned.island_ids, pinned.island_ids)
     }
+
+    @Test
+    fun hiddenCountsReportWhatTheInboxRulesLeftOut() {
+        val items =
+            Activity.project(
+                listOf(Card(id = "x", runtime = "running")),
+                emptyMap(),
+                emptyList(),
+                emptyList(),
+            )
+        assertEquals(0, activitySlice(items, Instant.parse("2026-10-16T13:00:00Z")).summary?.hidden)
+        assertEquals(
+            3,
+            activitySlice(items, Instant.parse("2026-10-16T13:00:00Z"), hidden = 3).summary?.hidden,
+        )
+    }
 }

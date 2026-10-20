@@ -373,6 +373,8 @@ message NavigationCommand {
     SetFolderExpanded set_folder_expanded = 7;
     MoveToFolder move_to_folder = 8;
     PinInboxCard pin_inbox_card = 9;
+    InboxRule save_inbox_rule = 10;
+    DeleteInboxRule delete_inbox_rule = 11;
   }
 }
 
@@ -392,6 +394,31 @@ message MoveProject {
 message PinInboxCard {
   string card_id = 1;
   bool pinned = 2;
+}
+
+// A saved Inbox rule that shows or hides the cards of some projects and labels.
+// A card matching any enabled hiding rule is hidden; while an enabled showing
+// rule exists, a card must also match one of them. Rules live in the shared
+// navigation KV as `inbox-rule.<id>.rule`, so every client applies the same ones.
+message InboxRule {
+  // Empty when saving a new rule.
+  string id = 1;
+  // Optional label for the rule list.
+  string name = 2;
+  // Hide the matching cards; false shows only the matching cards.
+  bool hide = 3;
+  // A card must be in one of the projects and carry one of the labels; false
+  // accepts either. A condition without entries is left out of the match.
+  bool match_all = 4;
+  repeated string project_ids = 5;
+  repeated string label_ids = 6;
+  bool enabled = 7;
+  // Epoch milliseconds; rules list in the order they were made.
+  int64 created_millis = 8;
+}
+
+message DeleteInboxRule {
+  string rule_id = 1;
 }
 
 // Pins a project after the pinned ones, or unpins it; a project already
@@ -1568,6 +1595,8 @@ message ActivitySummary {
   int32 review = 4;
   // Delegated agents at work across every row.
   int32 subagents = 5;
+  // Conversations the Inbox rules hide; not in the rows or the counts above.
+  int32 hidden = 6;
 }
 
 message ActivityRow {
@@ -2104,6 +2133,8 @@ message NavigationSlice {
   bool caught_up = 12;
   // The sidebar's projects as it shows them.
   ProjectNavigation projects = 13;
+  // The account's Inbox rules, oldest first.
+  repeated InboxRule inbox_rules = 14;
 }
 
 // The sidebar's projects: listed, unarchived projects only (the saved orders
