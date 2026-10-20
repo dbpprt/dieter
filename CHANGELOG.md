@@ -10,6 +10,28 @@ copy the **Unreleased** notes into a section named after that exact version
 
 Nothing yet.
 
+## 0.6.420
+
+### Changed
+
+- Inbox cards on Android and iOS lead with their project's color and
+  initial and carry a status badge: a pulsing dot while the agent works, a
+  dot for replies, an eye for review, a check for finished work and a cross
+  for failures. Cards that need you, are running or wait for review are
+  tinted in their status color, and **Mark done** is a compact chip beside
+  the status.
+- Pin Inbox cards to keep them in a **Pinned** section at the top on Mac,
+  Android and iOS. Pins follow your account through shared KV and sync once
+  a machine is reachable; search and project filters still apply.
+- Updated the bundled agent tools (Claude Agent SDK, Codex, Oh My Pi and the
+  AI SDK harnesses), WebRTC M155 on Apple and Android, and the Go, Swift,
+  Kotlin, npm and Ruby dependencies.
+
+### Fixed
+
+- The Mac app refreshes its sync when you switch back to it, and Inbox rows
+  no longer keep stale content after they move to another section.
+
 ## 0.6.418
 
 ### Fixed
