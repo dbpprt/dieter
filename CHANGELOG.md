@@ -10,6 +10,32 @@ copy the **Unreleased** notes into a section named after that exact version
 
 Nothing yet.
 
+## 0.6.421
+
+### Added
+
+- Inbox rules show or hide conversations by project and label. Open **Inbox
+  rules** from the filter button on the Mac or the filter menu on Android and
+  iOS. A rule hides the matching conversations or shows only them, can require
+  a project and a label together or accept either, and can be switched off
+  without deleting it. A conversation matching any hiding rule is left out;
+  while a showing rule is on, only matching conversations are listed. Rules
+  sync across your account, apply to the Inbox, widgets, island and menu bar,
+  and the Inbox says how many conversations they hide.
+
+### Fixed
+
+- Saving a project or board on Android no longer fails: the project sheet now
+  edits the project's agent instructions (it showed the template override
+  before), and the prompt template override is a separate, validated field
+  that is sent only when you change it.
+- On the Mac, the project context sheet saves your instructions without
+  waiting on workspace settings you did not change and shows a failed save in
+  the sheet. Project and board prompt overrides in Settings explain what the
+  daemon rejects before you save.
+- Claude turns that stop on an expired sign-in resume once after the token
+  refreshes instead of failing.
+
 ## 0.6.420
 
 ### Changed
