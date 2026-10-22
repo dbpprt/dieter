@@ -463,6 +463,7 @@ private struct ConversationWorkspaceTabView: View {
                 }
             }
         }
+        .modifier(FileDiskRefresh(files: tab.files, active: active))
         .task(id: "\(active):\(tab.transportRevision)") {
             // A newer link or connection replacement may cancel this tab's
             // first read. Selecting it again resumes that read without retrying
@@ -492,18 +493,11 @@ private struct ConversationWorkspaceTabView: View {
                 )
                 .fixedSize()
             }
-            if tab.files.conflict {
-                Button("Reload") { Task { await tab.files.reloadDocument() } }
-                    .buttonStyle(DieterBarButtonStyle(size: 28))
-                    .disabled(tab.files.saving || !active || !tab.files.isLive)
-                    .help("Replace your edits with the version on disk")
-                    .accessibilityIdentifier("conversation.content.reload").e2eTarget("conversation.content.reload")
-            }
             if tab.dirty {
                 Button("Save") { Task { await tab.files.saveCurrentDocument() } }
                     .keyboardShortcut("s", modifiers: .command)
                     .buttonStyle(DieterBarButtonStyle(prominent: true, size: 28))
-                    .disabled(tab.files.saving || !active || !tab.files.isLive)
+                    .disabled(tab.files.saving || !active || !tab.files.isLive || tab.files.conflict)
                     .accessibilityIdentifier("conversation.content.save").e2eTarget("conversation.content.save")
             }
             Button {
@@ -542,11 +536,12 @@ private struct ConversationWorkspaceTabView: View {
                 if let error = tab.error {
                     Text(error).font(.caption).foregroundStyle(.secondary).padding(12)
                 }
-                if let error = tab.files.fileError {
-                    // A save conflict offers Reload in the header instead of retrying the read.
+                if tab.files.conflict {
+                    FileDiskConflictBanner(files: tab.files, active: active)
+                } else if let error = tab.files.fileError {
                     LoadFeedback(
                         title: "File", error: error,
-                        retry: tab.files.conflict ? nil : { model.openFile(path, from: tab) },
+                        retry: { model.openFile(path, from: tab) },
                         compact: tab.files.fileDocument != nil)
                 }
                 if tab.files.fileDocument != nil {

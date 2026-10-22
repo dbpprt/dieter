@@ -259,7 +259,7 @@ func localTransferEndpoint(p string) (transferEndpoint, error) {
 
 // Keep the partial file descriptor open throughout; never follow a replacement
 // symlink when resuming or publishing. The destination parent is pinned too.
-func downloadTransfer(ctx context.Context, source, destination transferEndpoint, p string, s, d files.Entry, limit int64, progress func(int64)) error {
+func downloadTransfer(ctx context.Context, source, destination transferEndpoint, p string, s, d files.Entry, limit int64, progress func(int64)) (resultErr error) {
 	dir, name, err := files.Parent(destination.root, path.Join(destination.base, p), true)
 	if err != nil {
 		return err
@@ -270,7 +270,7 @@ func downloadTransfer(ctx context.Context, source, destination transferEndpoint,
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { resultErr = errors.Join(resultErr, closeTransferPartial(f)) }()
 	info, err := f.Stat()
 	if err != nil {
 		return err

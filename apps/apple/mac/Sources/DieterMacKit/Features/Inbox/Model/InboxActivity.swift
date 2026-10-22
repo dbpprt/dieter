@@ -26,6 +26,9 @@ struct InboxActivityEntry: Identifiable, Equatable {
     let kind: InboxActivityKind
 
     var id: String { row.card.id }
+    /// Lazy sections flatten their children. Status or pin changes must replace
+    /// the rendered row when the same conversation moves between sections.
+    var rowIdentity: String { "\(id).\(row.kind).\(row.pinned)" }
     var running: Bool { kind == .running }
     var needsYou: Bool { row.needsYou }
     var canFinish: Bool { row.canFinish }

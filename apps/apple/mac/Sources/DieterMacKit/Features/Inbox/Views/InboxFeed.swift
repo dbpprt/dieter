@@ -241,9 +241,8 @@ struct InboxFeed: View {
     @ViewBuilder
     private func section(_ title: String, id: String, entries: [InboxActivityEntry]) -> some View {
         Section {
-            ForEach(entries.prefix(visibleLimit)) { entry in
-                // Pinning moves a row between sections; a new identity renders its new state.
-                InboxActivityRow(entry: entry, onOpen: onOpen).equatable().id("\(entry.id).\(entry.row.pinned)")
+            ForEach(entries.prefix(visibleLimit), id: \.rowIdentity) { entry in
+                InboxActivityRow(entry: entry, onOpen: onOpen).equatable()
             }
             if entries.count > visibleLimit { showMore }
         } header: {

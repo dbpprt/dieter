@@ -198,6 +198,11 @@ class InboxSyncEndToEndTest : EndToEnd() {
                 apple.await { slice ->
                     slice != null && slice.rows.none { it.card?.id == created.id }
                 }
+                // The widget lease closes asynchronously; finish that window before waiting
+                // for the foreground session, so its old CONNECTED state cannot satisfy the wait.
+                observer.connection.state.await(describe = { "widget refresh window closed" }) {
+                    it.phase == ConnectionPhase.DISCONNECTED
+                }
                 observer.setActive(true)
                 observer.awaitConnected()
             }

@@ -3705,6 +3705,26 @@ public nonisolated struct ClientFilesCommand: Sendable {
     set {action = .close(newValue)}
   }
 
+  /// Checks the selected file on its machine. Clean buffers take the new
+  /// version; dirty buffers keep their edits and report a conflict.
+  public var refresh: ClientFilesRefresh {
+    get {
+      if case .refresh(let v)? = action {return v}
+      return ClientFilesRefresh()
+    }
+    set {action = .refresh(newValue)}
+  }
+
+  /// Explicitly replaces the current disk version with the editor buffer.
+  /// The read and save still use a revision check; concurrent writes fail.
+  public var overwrite: ClientFilesText {
+    get {
+      if case .overwrite(let v)? = action {return v}
+      return ClientFilesText()
+    }
+    set {action = .overwrite(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Action: Equatable, Sendable {
@@ -3730,6 +3750,12 @@ public nonisolated struct ClientFilesCommand: Sendable {
     case delete(ClientFilesDelete)
     /// Closes the open document; the folder stays.
     case close(ClientStep)
+    /// Checks the selected file on its machine. Clean buffers take the new
+    /// version; dirty buffers keep their edits and report a conflict.
+    case refresh(ClientFilesRefresh)
+    /// Explicitly replaces the current disk version with the editor buffer.
+    /// The read and save still use a revision check; concurrent writes fail.
+    case overwrite(ClientFilesText)
 
   }
 
@@ -3774,6 +3800,25 @@ public nonisolated struct ClientFilesText: Sendable {
   // methods supported on all messages.
 
   public var text: String = String()
+
+  /// The native buffer's base revision, including when an edit raced a refresh.
+  public var revision: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct ClientFilesRefresh: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var documentKey: String = String()
+
+  public var revision: String = String()
+
+  public var dirty: Bool = false
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -8289,7 +8334,7 @@ public nonisolated struct ClientFilesSlice: @unchecked Sendable {
     set {_uniqueStorage()._documentError = newValue}
   }
 
-  /// The last save met a newer version on disk.
+  /// The disk version changed while the editor had unsaved changes.
   public var conflict: Bool {
     get {_storage._conflict}
     set {_uniqueStorage()._conflict = newValue}
@@ -17551,7 +17596,7 @@ nonisolated extension ClientAgentControlsState: SwiftProtobuf.Message, SwiftProt
 
 nonisolated extension ClientFilesCommand: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".FilesCommand"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}scope\0\u{1}bind\0\u{1}load\0\u{1}navigate\0\u{1}back\0\u{1}forward\0\u{1}parent\0\u{3}show_hidden\0\u{1}open\0\u{1}save\0\u{1}reload\0\u{1}create\0\u{1}move\0\u{1}delete\0\u{1}close\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}scope\0\u{1}bind\0\u{1}load\0\u{1}navigate\0\u{1}back\0\u{1}forward\0\u{1}parent\0\u{3}show_hidden\0\u{1}open\0\u{1}save\0\u{1}reload\0\u{1}create\0\u{1}move\0\u{1}delete\0\u{1}close\0\u{1}refresh\0\u{1}overwrite\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -17742,6 +17787,32 @@ nonisolated extension ClientFilesCommand: SwiftProtobuf.Message, SwiftProtobuf._
           self.action = .close(v)
         }
       }()
+      case 16: try {
+        var v: ClientFilesRefresh?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .refresh(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .refresh(v)
+        }
+      }()
+      case 17: try {
+        var v: ClientFilesText?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .overwrite(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .overwrite(v)
+        }
+      }()
       default: break
       }
     }
@@ -17811,6 +17882,14 @@ nonisolated extension ClientFilesCommand: SwiftProtobuf.Message, SwiftProtobuf._
     case .close?: try {
       guard case .close(let v)? = self.action else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 15)
+    }()
+    case .refresh?: try {
+      guard case .refresh(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 16)
+    }()
+    case .overwrite?: try {
+      guard case .overwrite(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 17)
     }()
     case nil: break
     }
@@ -17902,7 +17981,7 @@ nonisolated extension ClientFilesPath: SwiftProtobuf.Message, SwiftProtobuf._Mes
 
 nonisolated extension ClientFilesText: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".FilesText"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}text\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}text\0\u{1}revision\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -17911,6 +17990,7 @@ nonisolated extension ClientFilesText: SwiftProtobuf.Message, SwiftProtobuf._Mes
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.text) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.revision) }()
       default: break
       }
     }
@@ -17920,11 +18000,55 @@ nonisolated extension ClientFilesText: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if !self.text.isEmpty {
       try visitor.visitSingularStringField(value: self.text, fieldNumber: 1)
     }
+    if !self.revision.isEmpty {
+      try visitor.visitSingularStringField(value: self.revision, fieldNumber: 2)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: ClientFilesText, rhs: ClientFilesText) -> Bool {
     if lhs.text != rhs.text {return false}
+    if lhs.revision != rhs.revision {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientFilesRefresh: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".FilesRefresh"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}document_key\0\u{1}revision\0\u{1}dirty\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.documentKey) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.revision) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self.dirty) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.documentKey.isEmpty {
+      try visitor.visitSingularStringField(value: self.documentKey, fieldNumber: 1)
+    }
+    if !self.revision.isEmpty {
+      try visitor.visitSingularStringField(value: self.revision, fieldNumber: 2)
+    }
+    if self.dirty != false {
+      try visitor.visitSingularBoolField(value: self.dirty, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientFilesRefresh, rhs: ClientFilesRefresh) -> Bool {
+    if lhs.documentKey != rhs.documentKey {return false}
+    if lhs.revision != rhs.revision {return false}
+    if lhs.dirty != rhs.dirty {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

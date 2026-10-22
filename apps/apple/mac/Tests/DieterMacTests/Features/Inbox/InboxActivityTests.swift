@@ -1,4 +1,5 @@
 import DieterAPI
+import DieterClientAPI
 import Foundation
 import Testing
 @testable import DieterMacKit
@@ -58,5 +59,32 @@ struct InboxActivityTests {
         // The Inbox lists each entry where the core places it, with the core's names.
         #expect(entries.map(\.section) == [.attention, .running, .recent])
         #expect(entries[0].row.projectName == "Dieter" && entries[0].row.boardName == "Release")
+    }
+
+    @Test func statusChangesReplaceTheRenderedRowButKeepTheConversationIdentity() {
+        let store = DieterStore(liveEnvironment: false)
+        func entry(_ kind: String, section: ClientActivityRow.Section, pinned: Bool = false) -> InboxActivityEntry {
+            store.activity.rows = [
+                .with {
+                    $0.card = card("same-card", runtime: "idle")
+                    $0.kind = kind
+                    $0.section = section
+                    $0.pinned = pinned
+                }
+            ]
+            return store.inboxEntries[0]
+        }
+        let recent = entry("RECENT", section: .recent)
+        let running = entry("RUNNING", section: .running)
+        let unread = entry("UNREAD", section: .attention)
+        let read = entry("RECENT", section: .recent)
+        let pinned = entry("RECENT", section: .recent, pinned: true)
+        #expect(recent.id == running.id && running.id == unread.id)
+        #expect(recent.rowIdentity != running.rowIdentity)
+        #expect(running.rowIdentity != unread.rowIdentity)
+        #expect(unread.rowIdentity != read.rowIdentity)
+        #expect(recent.rowIdentity == read.rowIdentity)
+        #expect(read.id == pinned.id)
+        #expect(read.rowIdentity != pinned.rowIdentity)
     }
 }

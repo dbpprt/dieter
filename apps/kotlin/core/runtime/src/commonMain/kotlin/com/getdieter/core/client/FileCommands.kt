@@ -10,10 +10,16 @@ import com.getdieter.core.files.Files
 internal suspend fun Files.execute(command: FilesCommand): Result {
     // A save while one runs, or without a text document, is ignored.
     command.save?.let { request ->
-        save(request.text)?.let {
+        save(request.text, revision = request.revision)?.let {
             return Result(file_document = it)
         }
     }
+    command.overwrite?.let { request ->
+        save(request.text, overwrite = true)?.let {
+            return Result(file_document = it)
+        }
+    }
+    command.refresh?.let { refresh(it.document_key, it.revision, it.dirty) }
     command.bind?.let { bind(filesTarget(it)) }
     command.load?.let { load(it.path.ifEmpty { view.value.directory }) }
     command.navigate?.let { navigate(it.path) }
