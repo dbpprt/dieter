@@ -174,7 +174,19 @@ class MobileStore(
         context.scope.launch { runDebugScript(script) }
     }
 
-    fun setForeground(active: Boolean) = action {
+    private var foreground: Boolean? = null
+
+    /**
+     * The app came to or left the screen. Only a change counts: a repeated foreground signal would
+     * make the core start over on new connections, as after a sleep.
+     */
+    fun setForeground(active: Boolean) {
+        if (foreground == active) return
+        foreground = active
+        applyForeground(active)
+    }
+
+    private fun applyForeground(active: Boolean) = action {
         if (!active) conversation.flushDrafts()
         core.dispatch(Command(set_foreground = SetForeground(active)))
         screens.foreground(active)

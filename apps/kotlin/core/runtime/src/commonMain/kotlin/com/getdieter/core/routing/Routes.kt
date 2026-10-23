@@ -7,12 +7,18 @@ import com.getdieter.core.platform.DaemonTokenSource
 import com.getdieter.core.runtime.CoreException
 import com.getdieter.core.runtime.FailureKind
 import com.getdieter.core.runtime.Timestamps
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.pow
 import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import okio.ByteString
@@ -41,12 +47,33 @@ internal constructor(
     val daemonKey: ByteString,
     private val onClose: () -> Unit,
 ) {
-    private var closed = false
+    private val closed = CompletableDeferred<Unit>()
 
     fun close() {
-        if (closed) return
-        closed = true
+        if (!closed.complete(Unit)) return
         onClose()
+    }
+
+    /**
+     * Runs [block] on [client] until this plane closes. Closing does not end every transport's
+     * calls (an OkHttp channel's pooled connection outlives it), so a call still running then is
+     * cancelled and fails as transient, for its caller to retry on the next plane.
+     */
+    suspend fun <T> call(block: suspend (DaemonApi) -> T): T = coroutineScope {
+        val work = async { block(client) }
+        val watch = launch { closed.await().also { work.cancel() } }
+        try {
+            work.await()
+        } catch (cancelled: CancellationException) {
+            ensureActive()
+            if (!closed.isCompleted) throw cancelled
+            throw CoreException(
+                FailureKind.TRANSIENT,
+                "The connection to the machine was replaced.",
+            )
+        } finally {
+            watch.cancel()
+        }
     }
 }
 

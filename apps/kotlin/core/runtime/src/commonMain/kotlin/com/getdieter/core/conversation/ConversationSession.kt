@@ -50,11 +50,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class ConversationConfig(
     /** Messages per unary read and history page. */
@@ -206,6 +208,8 @@ internal constructor(
             if (requireSnapshot) scope.launch { hedgedRead(owner, id) { delivered } } else null
         while (true) {
             var received = false
+            // Disconnected, there is nothing to retry: subscribe once a gateway session exists.
+            val gateway = sessions.gateways.filterNotNull().first()
             try {
                 val after = if (requireSnapshot) 0L else transcript.lastSeq
                 sessions.call(owner) { client ->
@@ -256,7 +260,13 @@ internal constructor(
             }
             failures = if (received) 1 else failures + 1
             mutableView.update { it.copy(syncing = true) }
-            delay(resubscribeDelay(failures))
+            // A new session, e.g. back in the foreground, resubscribes at once.
+            val replaced =
+                withTimeoutOrNull(resubscribeDelay(failures)) {
+                    sessions.gateways.first { it !== gateway }
+                    true
+                } == true
+            if (replaced) failures = 0
         }
     }
 

@@ -20,6 +20,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -135,10 +137,17 @@ class MachineStreams(
     private val streams = HashMap<String, Job>()
 
     /**
+     * When the running session's streams started; null while there is none. Only a running session
+     * can tell that a machine stopped answering, so grace periods count from here.
+     */
+    private val resumedAt = MutableStateFlow<Instant?>(null)
+
+    /**
      * Keeps a stream open to every online, compatible machine in [directory] for one gateway
      * session, until cancelled, and accounts for the others.
      */
     suspend fun run(directory: StateFlow<MachineDirectory>): Nothing = coroutineScope {
+        resumedAt.value = clock.now()
         try {
             directory.collect { machines ->
                 val wanted =
@@ -172,7 +181,9 @@ class MachineStreams(
         } finally {
             streams.values.forEach(Job::cancel)
             streams.clear()
-            // The session ended, not the machines: their streams are interrupted, within grace.
+            resumedAt.value = null
+            // The session ended, not the machines: their streams are interrupted, and their grace
+            // periods wait for the next session ([expire]).
             val now = clock.now()
             mutableSyncs.update { current ->
                 current.mapValues { (_, sync) -> sync.interrupted(now, null) }
@@ -243,19 +254,24 @@ class MachineStreams(
         }
     }
 
-    /** Turns streams broken longer than the grace period stale. Runs for the core's lifetime. */
+    /**
+     * Turns streams broken longer than the grace period stale. Runs for the core's lifetime, but
+     * counts only while a session runs: a stream this app ended, e.g. in the background or while it
+     * reconnects, blames no machine, and gets its grace again from when the next session starts.
+     */
     suspend fun expire(): Nothing {
         while (true) {
+            val resumed = resumedAt.filterNotNull().first()
             val now = clock.now()
-            val next =
-                mutableSyncs.value.values
-                    .mapNotNull { it.interruptedAt?.plus(config.grace) }
-                    .minOrNull()
+            fun expiry(sync: MachineSync) =
+                sync.interruptedAt?.let { maxOf(it, resumed) + config.grace }
+            val next = mutableSyncs.value.values.mapNotNull(::expiry).minOrNull()
             if (next != null && next <= now) {
                 mutableSyncs.update { current ->
                     current.mapValues { (_, sync) ->
                         val interrupted = sync.interruptedAt
-                        if (interrupted != null && interrupted + config.grace <= now) {
+                        val expires = expiry(sync)
+                        if (interrupted != null && expires != null && expires <= now) {
                             MachineSync(
                                 SyncState.STALE,
                                 since =
@@ -269,7 +285,8 @@ class MachineStreams(
                 }
                 continue
             }
-            delay(next?.let { (it - now).coerceAtLeast(Duration.ZERO) } ?: config.grace)
+            val wait = next?.let { (it - now).coerceAtLeast(Duration.ZERO) } ?: config.grace
+            withTimeoutOrNull(wait) { resumedAt.first { it != resumed } }
         }
     }
 

@@ -31,6 +31,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -152,9 +154,15 @@ class MachineSessions(
     private val scope: CoroutineScope,
     private val onPlane: (DataPlane) -> Unit = {},
 ) {
-    private var gateway: GatewaySession? = null
+    private val attached = MutableStateFlow<GatewaySession?>(null)
+    private val gateway: GatewaySession?
+        get() = attached.value
+
     val gatewaySession: GatewaySession?
         get() = gateway
+
+    /** The gateway session machine calls go through; null while disconnected. */
+    val gateways: StateFlow<GatewaySession?> = attached.asStateFlow()
 
     private val planes = mutableMapOf<String, DataPlane>()
     private val selecting = mutableMapOf<String, Deferred<DataPlane>>()
@@ -165,7 +173,7 @@ class MachineSessions(
     fun attach(session: GatewaySession?) {
         if (session === gateway) return
         closeAll()
-        gateway = session
+        attached.value = session
     }
 
     suspend fun plane(daemonId: String): DataPlane {
@@ -181,6 +189,10 @@ class MachineSessions(
         val plane =
             try {
                 pending.await()
+            } catch (cancelled: CancellationException) {
+                // A new gateway session cancelled the shared selection, not this caller.
+                currentCoroutineContext().ensureActive()
+                throw CoreException(FailureKind.TRANSIENT, "The gateway changed while connecting.")
             } finally {
                 if (selecting[daemonId] === pending) selecting.remove(daemonId)
             }
@@ -209,13 +221,14 @@ class MachineSessions(
     }
 
     /**
-     * Runs [block] against [daemonId]. A transport failure retires the plane so the next call
-     * selects a route again; the call itself is not replayed.
+     * Runs [block] against [daemonId] until its plane closes ([DataPlane.call]). A transport
+     * failure retires the plane so the next call selects a route again; the call itself is not
+     * replayed.
      */
     suspend fun <T> call(daemonId: String, block: suspend (DaemonApi) -> T): T {
         val plane = plane(daemonId)
         return try {
-            block(plane.client)
+            plane.call(block)
         } catch (error: Throwable) {
             if (isTransportFailure(error)) invalidate(daemonId, plane)
             throw error

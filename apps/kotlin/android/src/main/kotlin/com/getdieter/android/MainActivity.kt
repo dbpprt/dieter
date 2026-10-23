@@ -97,7 +97,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
-        if (::session.isInitialized) store.setForeground(false)
+        // Recreation (rotation, dark mode) keeps the app on screen and its connection open.
+        if (::session.isInitialized && !isChangingConfigurations) store.setForeground(false)
         super.onStop()
     }
 }

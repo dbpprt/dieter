@@ -23,7 +23,9 @@ struct DieterApp: App {
                     #endif
                 }
                 .onOpenURL { host.completeSignIn(url: $0.absoluteString) }
-                .onChange(of: scenePhase) { _, phase in host.setForeground(phase == .active) }
+                // Inactive is still on screen (Control Center, the app switcher, system prompts):
+                // only the background ends the connection.
+                .onChange(of: scenePhase) { _, phase in host.setForeground(phase != .background) }
         }
     }
 }
