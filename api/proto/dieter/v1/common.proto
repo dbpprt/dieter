@@ -349,6 +349,8 @@ message MessagePart {
   string input_preview = 17;
   string output_preview = 18;
   string payload_revision = 19;
+  // JSON payload of a "data-*" part, e.g. a data-peer-notice from agent channels.
+  bytes data_json = 20;
 }
 
 message PendingTool {

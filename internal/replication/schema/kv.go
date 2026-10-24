@@ -55,6 +55,12 @@ func ValidateKV(r crdt.Record) error {
 		if len(v.Value) > crdt.MaxValueBytes || !json.Valid(v.Value) {
 			return fault.New(fault.Invalid, "invalid KV JSON value")
 		}
+		if ns == ExperimentalNamespace {
+			if err := validateExperimental(r.ID, v.Value); err != nil {
+				return err
+			}
+			continue
+		}
 		// Navigation is a registered portable consumer of the general JSON store.
 		if ns != "navigation" {
 			continue
@@ -143,4 +149,41 @@ func validateInboxRule(prefix string, raw json.RawMessage) error {
 		}
 	}
 	return nil
+}
+
+// ExperimentalNamespace holds account-wide switches of preview features. Keys:
+//
+//	channels                   true or false: agent channels for every project
+//	channels.project.<id>      "on" or "off": a project override (absent inherits)
+//	channels.board.<id>        "on" or "off": a board override (absent inherits)
+const ExperimentalNamespace = "experimental"
+
+// Experimental channel keys.
+const (
+	ChannelsKey             = "channels"
+	ChannelsProjectKeyStart = "channels.project."
+	ChannelsBoardKeyStart   = "channels.board."
+)
+
+func validateExperimental(key string, raw json.RawMessage) error {
+	switch {
+	case key == ChannelsKey:
+		var value bool
+		if string(raw) == "null" || json.Unmarshal(raw, &value) != nil {
+			return fault.New(fault.Invalid, "experimental channels must be a boolean")
+		}
+		return nil
+	case strings.HasPrefix(key, ChannelsProjectKeyStart), strings.HasPrefix(key, ChannelsBoardKeyStart):
+		id := strings.TrimPrefix(strings.TrimPrefix(key, ChannelsProjectKeyStart), ChannelsBoardKeyStart)
+		if !crdt.ValidID(id) || strings.Contains(id, ".") {
+			return fault.New(fault.Invalid, "invalid channel override ID")
+		}
+		var value string
+		if json.Unmarshal(raw, &value) != nil || value != "on" && value != "off" {
+			return fault.New(fault.Invalid, `a channel override is "on" or "off"`)
+		}
+		return nil
+	default:
+		return fault.New(fault.Invalid, "unsupported experimental key")
+	}
 }

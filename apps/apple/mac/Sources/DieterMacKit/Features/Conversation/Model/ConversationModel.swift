@@ -77,6 +77,8 @@ final class ConversationModel {
     @ObservationIgnored private var subscription: SliceSubscription?
     @ObservationIgnored private(set) var observedCardID: String?
     @ObservationIgnored private var slice: ClientConversationSlice?
+    /// The machine that runs the shown conversation, as the core routes to it.
+    @ObservationIgnored private(set) var daemonID = ""
     /// `slice` changed since it was last presented: a streaming turn's burst
     /// of deltas is folded one by one and presented once.
     @ObservationIgnored private var unpresented = false
@@ -177,6 +179,7 @@ final class ConversationModel {
             if conversationPresentationRevision == revision { conversationPresentationRevision &+= 1 }
         }
         if unattachedPlanIDs != slice.unattachedPlanIds { unattachedPlanIDs = slice.unattachedPlanIds }
+        if !slice.daemonID.isEmpty { daemonID = slice.daemonID }
         let error = slice.error.isEmpty ? nil : slice.error
         if conversationError != error { conversationError = error }
         let loading = slice.loading && !hasContent

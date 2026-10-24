@@ -62,12 +62,64 @@ function harnessErrorMessage(error) {
   return getHarnessErrorMessage(error);
 }
 const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
-const line = await new Promise((resolve) => input.once("line", resolve));
+// Readline emits every line of a chunk synchronously: keep the lines that
+// follow the request (an early steer frame) until their listener exists.
+const pendingLines = [];
+const bufferLine = (value) => pendingLines.push(value);
+const line = await new Promise((resolve) =>
+  input.once("line", (first) => {
+    input.on("line", bufferLine);
+    resolve(first);
+  }),
+);
 const request = JSON.parse(line);
 const processBridge = request.backgroundProcessesEnabled
   ? (await import("./background-processes.mjs")).createProcessHostBridge(input, send)
   : undefined;
-if (!processBridge) input.close();
+// Agent channels: the daemon writes {"type":"steer","id","text"} lines while
+// a turn runs; each is offered to the running turn and answered with a
+// steer-result. The holder is declared before the SDK session exists.
+// Frames that arrive while the worker is still starting wait for the session.
+const steerTarget = { session: undefined, closed: false, mock: undefined, early: [] };
+const steerFailureReason = (error) => {
+  if (error?.name === "HarnessCapabilityUnsupportedError") return "unsupported";
+  return /no running turn|no longer has the running turn/i.test(String(error?.message ?? ""))
+    ? "no-running-turn"
+    : "error";
+};
+const steerLine = (raw) => {
+  let message;
+  try {
+    message = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  if (message?.type !== "steer" || typeof message.id !== "string") return;
+  const reply = (accepted, reason) =>
+    send({ type: "steer-result", id: message.id, accepted, ...(reason ? { reason } : {}) });
+  deliverSteer(String(message.text ?? ""), reply);
+};
+input.off("line", bufferLine);
+if (request.steerEnabled === true) {
+  input.on("line", steerLine);
+  for (const value of pendingLines.splice(0)) steerLine(value);
+}
+function deliverSteer(text, reply) {
+  if (steerTarget.closed) return reply(false, "no-running-turn");
+  if (steerTarget.mock) return void steerTarget.mock(text, reply);
+  const current = steerTarget.session;
+  if (!current) return void steerTarget.early.push([text, reply]);
+  current.experimental_steerTurn(text).then(
+    () => reply(true),
+    (error) => reply(false, steerFailureReason(error)),
+  );
+}
+// Offers frames that arrived during startup once the session (or the mock
+// harness) can take them.
+function flushEarlySteers() {
+  for (const [text, reply] of steerTarget.early.splice(0)) deliverSteer(text, reply);
+}
+if (!processBridge && request.steerEnabled !== true) input.close();
 const adapter = request.adapter || request.harness;
 if (typeof request.sessionId !== "string" || !/^[A-Za-z0-9._-]+$/.test(request.sessionId)) {
   throw new Error("invalid harness session ID");
@@ -125,6 +177,35 @@ if (request.harness === "mock") {
   const createdAt = new Date().toISOString();
   console.log("mock bootstrap diagnostic");
   protocolWrite("\nmock package installer diagnostic\n");
+  let mockSteered;
+  if (runtimePrompt.includes("mock-channel-steer") && request.steerEnabled === true) {
+    // Deterministic steering for daemon tests: accept the first steer frame.
+    mockSteered = new Promise((resolveSteer) => {
+      steerTarget.mock = (text, reply) => {
+        reply(true);
+        steerTarget.mock = (_, again) => again(false, "no-running-turn");
+        resolveSteer(text);
+      };
+    });
+    flushEarlySteers();
+    send({
+      type: "chunk",
+      chunk: { type: "start", messageId: responseId, messageMetadata: { createdAt } },
+    });
+    const steered = await Promise.race([
+      mockSteered,
+      new Promise((resolveDelay) => setTimeout(() => resolveDelay(""), 15_000)),
+    ]);
+    for (const chunk of [
+      { type: "text-start", id: "text-steer" },
+      { type: "text-delta", id: "text-steer", delta: `Mock steered: ${steered}` },
+      { type: "text-end", id: "text-steer" },
+      { type: "finish", finishReason: "stop", messageMetadata: { createdAt } },
+    ])
+      send({ type: "chunk", chunk });
+    send({ type: "session", state: { type: "resume-session", data: { mock: true } } });
+    await exitWorker(0);
+  }
   if (runtimePrompt === "mock-concurrent-workspace-write") {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 200));
     await sandboxSession.writeTextFile({
@@ -361,6 +442,8 @@ const workerSettled = new Promise((resolve) => {
 });
 let forcedExitTimer;
 const closeSession = async () => {
+  steerTarget.closed = true;
+  flushEarlySteers();
   if (!session) return;
   const current = session;
   session = undefined;
@@ -382,6 +465,8 @@ const interrupt = (exitCode) => {
   void workerSettled.finally(() => exitWorker(exitCode));
 };
 const suspend = async () => {
+  steerTarget.closed = true;
+  flushEarlySteers();
   if (session) {
     try {
       const state = await session.detach();
@@ -493,6 +578,8 @@ try {
   } else {
     session = await agent.createSession(sessionOptions);
   }
+  steerTarget.session = session;
+  flushEarlySteers();
   const createdAt = new Date().toISOString();
   const contextWindowTokens =
     request.contextWindow ||

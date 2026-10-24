@@ -1,0 +1,45 @@
+{
+  "messages": [
+    {
+      "id": "m_9b397b8ecee9",
+      "projectId": "p_07d24b56dab9",
+      "seq": "1",
+      "kind": "request",
+      "author": {
+        "kind": "dieter"
+      },
+      "toCardIds": ["c_3134412087e4019b3328cd2c"],
+      "body": "Agent c_7df880004f7c9474e477ed24 ('Probe module2') wants to change src/module2.js, which you are changing. Finish your work on it; Dieter releases it to them when your turn ends.",
+      "files": ["src/module2.js"],
+      "createdAt": "2026-10-24T13:41:11.876643Z",
+      "deliveries": [
+        {
+          "cardId": "c_3134412087e4019b3328cd2c",
+          "mode": "steered",
+          "at": "2026-10-24T13:41:13.143747Z"
+        }
+      ]
+    },
+    {
+      "id": "m_d4e977976e53",
+      "projectId": "p_07d24b56dab9",
+      "seq": "2",
+      "kind": "release",
+      "author": {
+        "kind": "dieter"
+      },
+      "toCardIds": ["c_7df880004f7c9474e477ed24"],
+      "body": "src/module2.js is free now: agent c_3134412087e4019b3328cd2c ('Hold module2') finished: Appended `// hold` to `src/module2.js` and the sleep finished, so `held` printed. Another agent (`c_7df880004f7c9474e477ed24`) is waiting on that file; my edit is complete, so Dieter can release it wh",
+      "files": ["src/module2.js"],
+      "createdAt": "2026-10-24T13:41:31.366987Z",
+      "deliveries": [
+        {
+          "cardId": "c_7df880004f7c9474e477ed24",
+          "mode": "woke",
+          "at": "2026-10-24T13:41:31.426475Z"
+        }
+      ]
+    }
+  ],
+  "lastSeq": "2"
+}

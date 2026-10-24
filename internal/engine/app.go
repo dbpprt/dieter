@@ -24,6 +24,11 @@ type Service struct {
 	Workspaces          *workspace.Manager
 	BackgroundProcesses func(context.Context, string, harness.ProcessCall) (json.RawMessage, error)
 	ProviderAccountKey  func(string) string
+	// ChannelHookExecutable is the dieter binary harness hooks run for agent
+	// channel file claims (DaemonExecutable in a daemon); empty disables them.
+	ChannelHookExecutable string
+
+	channels channelHub
 
 	mu               sync.Mutex
 	active           map[string]*activeTurn
@@ -54,6 +59,8 @@ type activeTurn struct {
 	// vaultSecrets are values revealed to this turn; stored transcript chunks
 	// redact them.
 	vaultSecrets []string
+	// channel is set while agent channels are on for this turn.
+	channel *activeChannel
 }
 
 type TurnUpdate struct {

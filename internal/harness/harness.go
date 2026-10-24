@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -115,6 +116,14 @@ type Request struct {
 	ContentPresentationEnabled bool              `json:"contentPresentationEnabled,omitempty"`
 	BackgroundProcessesEnabled bool              `json:"backgroundProcessesEnabled,omitempty"`
 	BackgroundProcess          ProcessHandler    `json:"-"`
+	// SteerEnabled keeps the worker's stdin open for steer frames: Steer
+	// delivers agent channel messages into the running turn, and the worker
+	// answers each with a steer-result Output.
+	SteerEnabled bool             `json:"steerEnabled,omitempty"`
+	Steer        <-chan SteerCall `json:"-"`
+	// ChannelHookCommand is the shell command a harness runs as its pre-write
+	// hook (agent channels file claims); empty disables the hook.
+	ChannelHookCommand string `json:"channelHookCommand,omitempty"`
 	// Environment is added to the worker after the allowlist, so commands the
 	// agent runs inherit it. Values never enter the stdin request.
 	Environment map[string]string `json:"-"`
@@ -124,6 +133,19 @@ type Request struct {
 	// provider session with the newer adapter implementation.
 	RuntimeDigest string `json:"-"`
 }
+
+// SteerCall asks a running worker to add Text to its active turn.
+type SteerCall struct {
+	ID   string
+	Text string
+}
+
+// Steer-result reasons.
+const (
+	SteerNoRunningTurn = "no-running-turn"
+	SteerUnsupported   = "unsupported"
+	SteerError         = "error"
+)
 
 type Attachment struct {
 	MediaType string `json:"mediaType"`
@@ -139,6 +161,10 @@ type Output struct {
 	Presentation json.RawMessage `json:"presentation,omitempty"`
 	Message      string          `json:"error,omitempty"`
 	ProcessCall  *ProcessCall    `json:"processCall,omitempty"`
+	// ID, Accepted and Reason answer a SteerCall (type steer-result).
+	ID       string `json:"id,omitempty"`
+	Accepted bool   `json:"accepted,omitempty"`
+	Reason   string `json:"reason,omitempty"`
 }
 
 type Runner interface {
@@ -398,8 +424,34 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 		}
 		return fmt.Errorf("start harness worker: %s", message)
 	}
-	if !request.BackgroundProcessesEnabled {
+	// Host replies and steer frames share the worker's stdin; one line per write.
+	host := &lockedWriter{writer: stdin}
+	if !request.BackgroundProcessesEnabled && !request.SteerEnabled {
 		_ = stdin.Close()
+	}
+	steering := make(chan struct{})
+	defer close(steering)
+	if request.SteerEnabled && request.Steer != nil {
+		go func() {
+			for {
+				select {
+				case call, ok := <-request.Steer:
+					if !ok {
+						return
+					}
+					line, _ := json.Marshal(struct {
+						Type string `json:"type"`
+						ID   string `json:"id"`
+						Text string `json:"text"`
+					}{"steer", call.ID, call.Text})
+					_, _ = host.Write(append(line, '\n'))
+				case <-steering:
+					return
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
 	}
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 8<<20)
@@ -428,7 +480,7 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 			workerError = output.Message
 		}
 		if output.Type == "background-process" {
-			if err := replyProcessCall(ctx, stdin, request.BackgroundProcess, output.ProcessCall); err != nil {
+			if err := replyProcessCall(ctx, host, request.BackgroundProcess, output.ProcessCall); err != nil {
 				return err
 			}
 			continue
@@ -732,3 +784,15 @@ func harnessPath(current, home string, runtimePaths ...string) string {
 // runtimeSourceFile reports whether an embedded runtime file belongs to the
 // installed runtime. Node tests ship in the same directory but are excluded.
 func runtimeSourceFile(name string) bool { return !strings.HasSuffix(name, ".test.mjs") }
+
+// lockedWriter serializes whole-line writes of concurrent stdin writers.
+type lockedWriter struct {
+	mu     sync.Mutex
+	writer io.Writer
+}
+
+func (w *lockedWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.writer.Write(p)
+}

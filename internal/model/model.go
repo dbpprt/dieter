@@ -729,6 +729,8 @@ type UIMessagePart struct {
 	Input      json.RawMessage `json:"input,omitempty"`
 	Output     json.RawMessage `json:"output,omitempty"`
 	ErrorText  string          `json:"errorText,omitempty"`
+	// Data is the JSON payload of a "data-*" part (data-peer-notice).
+	Data json.RawMessage `json:"data,omitempty"`
 }
 
 type PendingTool struct {

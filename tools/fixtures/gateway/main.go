@@ -72,19 +72,20 @@ func main() {
 	e2eFixture := flag.Bool("e2e-fixture", false, "seed the small persisted workspace that every Maestro flow uses")
 	usageFixture := flag.Bool("usage-fixture", false, "publish deterministic provider usage without provider credentials")
 	showcaseFixture := flag.Bool("showcase-fixture", false, "seed the multi-machine workspace with live agent turns used for documentation screenshots")
+	channelsFixture := flag.Bool("channels-fixture", false, "turn agent channels on and seed the project channel with a two-agent coordination")
 	directRoute := flag.String("direct-route", "", `advertise a loopback direct TLS route for the primary daemon: "live" serves it, "dead" advertises a closed port`)
 	flag.Parse()
 	if *directRoute != "" && *directRoute != "live" && *directRoute != "dead" {
 		fmt.Fprintln(os.Stderr, `error: -direct-route must be "live" or "dead"`)
 		os.Exit(2)
 	}
-	if err := run(*address, *home, *offlineTrigger, *daemonRestartTrigger, *directRoute, *inboxFixture, *usageFixture, *e2eFixture, *showcaseFixture); err != nil {
+	if err := run(*address, *home, *offlineTrigger, *daemonRestartTrigger, *directRoute, *inboxFixture, *usageFixture, *e2eFixture, *showcaseFixture, *channelsFixture); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
-func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string, inboxFixture, usageFixture, e2eFixture, showcaseFixture bool) error {
+func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string, inboxFixture, usageFixture, e2eFixture, showcaseFixture, channelsFixture bool) error {
 	if home == "" {
 		var err error
 		home, err = os.MkdirTemp("", "dieter-isolated-*")
@@ -203,6 +204,11 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 	}
 	if e2eFixture {
 		if err := seedE2EFixture(data, project, board); err != nil {
+			return err
+		}
+	}
+	if channelsFixture {
+		if err := seedChannelsFixture(data, project, board); err != nil {
 			return err
 		}
 	}

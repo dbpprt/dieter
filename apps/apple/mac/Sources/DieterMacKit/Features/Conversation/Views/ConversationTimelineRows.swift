@@ -155,6 +155,13 @@ struct UserMessageBubble: View {
         HStack {
             Spacer(minLength: 70)
             VStack(alignment: .leading, spacing: 7) {
+                if !row.originLabel.isEmpty {
+                    // A turn an agent channel message started, not the user.
+                    Label(row.originLabel, systemImage: "number")
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(DieterTheme.action)
+                        .accessibilityIdentifier("conversation.message.origin.\(messageID)")
+                }
                 ForEach(row.groups.flatMap(\.steps), id: \.id) { step in
                     TimelineStepView(step: step, part: messages.part(for: step), inUserBubble: true)
                         .equatable()

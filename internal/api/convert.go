@@ -367,6 +367,9 @@ func protoMessagePart(value model.UIMessagePart, previews *payloadPreviewCache) 
 		InputSize: inputSize, OutputSize: outputSize, InputPreview: inputPreview,
 		OutputPreview: outputPreview, PayloadRevision: toolPayloadRevision(value),
 	}
+	if strings.HasPrefix(value.Type, "data-") && len(value.Data) > 0 {
+		result.DataJson = append([]byte(nil), value.Data...)
+	}
 	if value.Type == "file" {
 		prefix := "data:" + value.MediaType + ";base64,"
 		if encoded, found := strings.CutPrefix(value.URL, prefix); found {

@@ -30,6 +30,8 @@ struct TimelineStepView: View, Equatable {
     var body: some View {
         if step.kind == .subagents {
             if !subagents.isEmpty { SubagentTimelineGroup(agents: subagents) }
+        } else if step.kind == .peerNotice {
+            PeerNoticeChip(notice: step.peerNotice)
         } else if let part {
             switch step.kind {
             case .tool:

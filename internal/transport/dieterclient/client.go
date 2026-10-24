@@ -30,6 +30,7 @@ type Client interface {
 	dieterv1.KVServiceClient
 	dieterv1.PeerServiceClient
 	dieterv1.TrustServiceClient
+	dieterv1.ChannelServiceClient
 }
 
 type client struct {
@@ -51,6 +52,7 @@ type client struct {
 	dieterv1.KVServiceClient
 	dieterv1.PeerServiceClient
 	dieterv1.TrustServiceClient
+	dieterv1.ChannelServiceClient
 }
 
 // New returns the gRPC clients of every dieter.v1 service sharing conn.
@@ -74,6 +76,7 @@ func New(conn grpc.ClientConnInterface) Client {
 		KVServiceClient:           dieterv1.NewKVServiceClient(conn),
 		PeerServiceClient:         dieterv1.NewPeerServiceClient(conn),
 		TrustServiceClient:        dieterv1.NewTrustServiceClient(conn),
+		ChannelServiceClient:      dieterv1.NewChannelServiceClient(conn),
 	}
 }
 
@@ -97,6 +100,7 @@ type ConnectClient interface {
 	dieterv1connect.KVServiceClient
 	dieterv1connect.PeerServiceClient
 	dieterv1connect.TrustServiceClient
+	dieterv1connect.ChannelServiceClient
 }
 
 type connectClient struct {
@@ -118,6 +122,7 @@ type connectClient struct {
 	dieterv1connect.KVServiceClient
 	dieterv1connect.PeerServiceClient
 	dieterv1connect.TrustServiceClient
+	dieterv1connect.ChannelServiceClient
 }
 
 // NewConnect returns the Connect clients of every dieter.v1 service at baseURL.
@@ -141,5 +146,6 @@ func NewConnect(httpClient connect.HTTPClient, baseURL string, options ...connec
 		KVServiceClient:           dieterv1connect.NewKVServiceClient(httpClient, baseURL, options...),
 		PeerServiceClient:         dieterv1connect.NewPeerServiceClient(httpClient, baseURL, options...),
 		TrustServiceClient:        dieterv1connect.NewTrustServiceClient(httpClient, baseURL, options...),
+		ChannelServiceClient:      dieterv1connect.NewChannelServiceClient(httpClient, baseURL, options...),
 	}
 }

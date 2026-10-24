@@ -2,6 +2,7 @@ package com.getdieter.core.api
 
 import com.getdieter.api.v1.BoardServiceClient
 import com.getdieter.api.v1.CardServiceClient
+import com.getdieter.api.v1.ChannelServiceClient
 import com.getdieter.api.v1.ControlServiceClient
 import com.getdieter.api.v1.ConversationServiceClient
 import com.getdieter.api.v1.ExecutionServiceClient
@@ -9,6 +10,7 @@ import com.getdieter.api.v1.FileServiceClient
 import com.getdieter.api.v1.GitServiceClient
 import com.getdieter.api.v1.GrpcBoardServiceClient
 import com.getdieter.api.v1.GrpcCardServiceClient
+import com.getdieter.api.v1.GrpcChannelServiceClient
 import com.getdieter.api.v1.GrpcControlServiceClient
 import com.getdieter.api.v1.GrpcConversationServiceClient
 import com.getdieter.api.v1.GrpcExecutionServiceClient
@@ -60,7 +62,8 @@ interface DaemonApi :
     VaultServiceClient,
     KVServiceClient,
     PeerServiceClient,
-    TrustServiceClient
+    TrustServiceClient,
+    ChannelServiceClient
 
 /** [DaemonApi] over Wire's generated clients, all sharing [client]'s channel. */
 class GrpcDaemonApi(client: GrpcClient) :
@@ -82,4 +85,5 @@ class GrpcDaemonApi(client: GrpcClient) :
     VaultServiceClient by GrpcVaultServiceClient(client),
     KVServiceClient by GrpcKVServiceClient(client),
     PeerServiceClient by GrpcPeerServiceClient(client),
-    TrustServiceClient by GrpcTrustServiceClient(client)
+    TrustServiceClient by GrpcTrustServiceClient(client),
+    ChannelServiceClient by GrpcChannelServiceClient(client)

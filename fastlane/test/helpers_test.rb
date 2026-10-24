@@ -6,6 +6,7 @@ require "tmpdir"
 require_relative "../helpers/dieter"
 require_relative "../helpers/changes"
 require_relative "../helpers/e2e"
+require_relative "../helpers/format"
 require_relative "../helpers/release"
 require_relative "../helpers/swift"
 
@@ -451,6 +452,19 @@ class SwiftWebRTCCacheTest < Minitest::Test
       Dieter::Swift.prepare_webrtc_module_cache(directory, manifest: manifest)
       refute File.exist?(webrtc)
       assert_equal "keep", File.read(unrelated)
+    end
+  end
+end
+
+class FormatTest < Minitest::Test
+  def test_integrity_accepts_empty_files_and_reports_text_defects
+    Dir.mktmpdir do |tree|
+      File.write(File.join(tree, "empty.md"), "")
+      File.write(File.join(tree, "binary.png"), "\x89PNG\0 \n")
+      File.write(File.join(tree, "open.md"), "no newline")
+      File.write(File.join(tree, "trail.rb"), "ok\nbad \n")
+      problems = Dieter::Format.integrity(tree, %w[empty.md binary.png open.md trail.rb])
+      assert_equal ["open.md: missing final newline", "trail.rb:2: trailing whitespace"], problems
     end
   end
 end

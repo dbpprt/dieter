@@ -110,6 +110,13 @@ private struct SidebarPrimaryDestinations: View {
             }
             .accessibilityIdentifier("sidebar.inbox").e2eTarget("sidebar.inbox")
 
+            DieterNavRow(title: "Channels", symbol: "number", selected: section == .channels) {
+                SidebarChannelsCount()
+            } action: {
+                store.openChannels()
+            }
+            .accessibilityIdentifier("sidebar.channels").e2eTarget("sidebar.channels")
+
             DieterNavRow(title: "Chats", symbol: "bubble.left.and.bubble.right", selected: section == .chats) {
                 SidebarChatsCount()
             } action: {
@@ -144,6 +151,19 @@ private struct SidebarInboxCount: View {
     var body: some View {
         let attention = Int(store.activity.summary.attention)
         if attention > 0 { DieterRowCount(count: attention, attention: true) }
+    }
+}
+
+/// Unread agent channel messages, as the core counts them.
+private struct SidebarChannelsCount: View {
+    @Environment(DieterStore.self) private var store
+
+    var body: some View {
+        let unread = store.channelsModel.unread
+        if unread > 0 {
+            DieterCountBadge(count: unread, tint: DieterTheme.coral)
+                .accessibilityLabel("\(store.channelsModel.slice.unreadLabel) unread")
+        }
     }
 }
 

@@ -514,6 +514,8 @@ enum DieterTheme {
     static var failed: Color { coral }
     static let action = Color(nsColor: .systemBlue)
     static var diffDeletion: Color { coral }
+    /// Decisions agents pinned or were told in agent channels.
+    static let decision = Color(nsColor: .systemPurple)
 
     // SwiftTerm also derives inverse-video colors from this background. Keep
     // its canvas opaque so terminal applications retain readable reverse text.

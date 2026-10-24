@@ -61,3 +61,26 @@ func manyIDs(n int) string {
 	}
 	return string(out)
 }
+
+func TestExperimentalChannelKeys(t *testing.T) {
+	record := func(id, value string) crdt.Record {
+		return crdt.Record{Kind: "kv.experimental", ID: id, Versions: []crdt.Version{{Clock: crdt.Clock{"a": 1}, Value: json.RawMessage(value)}}}
+	}
+	for _, valid := range []crdt.Record{
+		record("channels", "true"), record("channels", "false"),
+		record("channels.project.p_0123456789ab", `"on"`), record("channels.board.b_0123456789ab", `"off"`),
+		{Kind: "kv.experimental", ID: "channels.board.b_1", Versions: []crdt.Version{{Clock: crdt.Clock{"a": 2}, Deleted: true}}},
+	} {
+		if err := Validate(valid); err != nil {
+			t.Fatalf("%s=%s rejected: %v", valid.ID, valid.Versions[0].Value, err)
+		}
+	}
+	for _, invalid := range []crdt.Record{
+		record("channels", `"on"`), record("channels", "null"), record("channels.project.p_1", `"inherit"`),
+		record("channels.project.p_1", "true"), record("channels.project.a.b", `"on"`), record("other", "true"),
+	} {
+		if err := Validate(invalid); err == nil {
+			t.Fatalf("%s=%s accepted", invalid.ID, invalid.Versions[0].Value)
+		}
+	}
+}

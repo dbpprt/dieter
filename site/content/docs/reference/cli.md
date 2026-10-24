@@ -50,6 +50,7 @@ Commands:
   screen       Share screens/clipboard, configure virtual displays, inspect latency
   schedule     Create, preview, dispatch, pause, and inspect schedules
   kv           Shared portable JSON, ordering, and live account subscriptions
+  channel      Agent channels (experimental): messages, claims and decisions between agents
   vault        End-to-end encrypted passwords and TOTP shared by your machines
   device       Pair, approve, revoke, and inspect the account's trusted devices
   peer         Inspect and edit account peer settings (leaderless sync)
@@ -2193,6 +2194,125 @@ Usage: dieter kv watch [--namespace NS] [--prefix PREFIX] [--epoch EPOCH --seque
 Watch until canceled or count frames. Reset replaces the cache; publish at caughtUp.
 Mutations may pass --account ID --daemon ID to pin an uncertain retry.
 Retry identical input and --operation only on that same daemon.
+```
+
+## dieter channel (alias: channels)
+
+```text
+Usage: dieter channel <list|messages|post|inbox|check|claims|release|pin|read|settings|watch|hook> [options]
+
+Agent channels (experimental): one message channel per project on each
+daemon, direct messages to cards, threads, pinned decisions and file claims
+that keep agents sharing a checkout from overwriting each other. Inside an
+agent turn (DIETER_TURN_TOKEN) the caller is that card's agent; otherwise you
+act as a human. Channels are off until switched on with "channel settings".
+
+  list      List this daemon's project channels with unread counts and members
+  messages  Page a project channel or one thread
+  post      Post to the project channel, a thread, or directly to cards
+  inbox     Read a card's undelivered messages (an agent's own by default)
+  check     Show who else is changing files, pinned decisions and recent notes
+  claims    List live file claims
+  release   Release a card's file claims
+  pin       Pin a message as a decision, or remove the pin with --off
+  read      Mark a project channel read for humans
+  settings  Show or change the experimental switch (global, project, board)
+  watch     Stream a project channel as JSON Lines
+  hook      Harness hook adapter: reads hook JSON on stdin, prints the decision
+```
+
+### dieter channel list
+
+```text
+Usage: dieter channel list [--format table|json]
+List this daemon's project channels: enabled state, unread count, live claims and members.
+```
+
+### dieter channel messages
+
+```text
+Usage: dieter channel messages --project PROJECT [--thread ID] [--after SEQ] [--before SEQ] [--limit N] [--format table|json]
+Page a project channel in sequence order (default: the newest 50 messages).
+```
+
+### dieter channel post
+
+```text
+Usage: dieter channel post [--project PROJECT] [--to CARD]... [--thread ID] [--kind note|request|done|decision] [--file PATH]... [--wake] [--operation ID] [--stdin] TEXT...
+Post at most 4096 bytes. Agents post to their own project; --to sends a direct message.
+--wake starts a turn for idle direct recipients within their wake budget. A decision is pinned.
+```
+
+### dieter channel inbox
+
+```text
+Usage: dieter channel inbox [--card CARD] [--peek] [--format text|json]
+Print a card's undelivered messages and mark them delivered (--peek keeps them).
+Agents read their own inbox; humans name --card.
+```
+
+### dieter channel check
+
+```text
+Usage: dieter channel check [--card CARD] [--intent TEXT] [--format text|json] FILE...
+Show live claims by other cards on FILEs (relative to the card's workspace), pinned decisions
+and recent notes that mention them. An agent whose files are held is woken when they are free.
+```
+
+### dieter channel claims
+
+```text
+Usage: dieter channel claims [--project PROJECT] [--format table|json]
+List live file claims: path, holder card, since when, and waiting cards.
+```
+
+### dieter channel release
+
+```text
+Usage: dieter channel release [--card CARD] [PATH...]
+Release a card's claims (all without PATHs). Agents release their own; humans name --card.
+```
+
+### dieter channel pin
+
+```text
+Usage: dieter channel pin --project PROJECT [--off] MESSAGE_ID
+Pin a message as a decision that check returns for the files it mentions, or unpin it.
+```
+
+### dieter channel read
+
+```text
+Usage: dieter channel read --project PROJECT [--seq N]
+Mark the project channel read for humans up to N (default: the newest message).
+```
+
+### dieter channel settings
+
+```text
+Usage: dieter channel settings [--global on|off | --project PROJECT --set on|off|inherit | --board BOARD --set on|off|inherit]
+Show or change the replicated experimental switch. A board overrides its project, a project
+overrides the global switch. Agents cannot change settings.
+```
+
+### dieter channel watch
+
+```text
+Usage: dieter channel watch --project PROJECT [--after SEQ] [--count N]
+Stream the project channel as JSON Lines: a reset frame with the newest page, then new and
+changed messages, claims and the summary.
+Read subscriptions renew credentials and resume from their last delivered checkpoint
+after transient failures (up to five retries between frames). Revocation stops
+recovery. Mutations, process starts, and stdin writes are never replayed.
+```
+
+### dieter channel hook
+
+```text
+Usage: dieter channel hook
+Harness hook adapter for agent channel file claims. Reads one hook JSON object (Claude Code or
+Codex PreToolUse format, at most 1 MiB) on stdin, prints the hook decision and exits 0.
+Prints nothing (no opinion) outside an agent turn or when the daemon is unavailable.
 ```
 
 ## dieter vault

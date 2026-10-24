@@ -46,6 +46,12 @@ struct ProjectContextSheet: View {
                     }
                     Text("Attach another checkout from Add project by choosing this existing project.").font(.caption)
                 }
+                Section("Experimental") {
+                    ChannelSettingPicker(
+                        model: store.channelsModel, scope: .project,
+                        row: store.channelsModel.projectSetting(store.selectedProjectID),
+                        identifier: "project.context.channels")
+                }
                 Section("Consolidate projects") {
                     Picker("Destination", selection: $destinationID) {
                         Text("Choose project").tag("")

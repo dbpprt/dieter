@@ -61,6 +61,12 @@ struct ArchivePolicySheet: View {
                                 }
                             }
                         }
+                        Section("Experimental") {
+                            ChannelSettingPicker(
+                                model: store.channelsModel, scope: .board,
+                                row: store.channelsModel.boardSetting(store.selectedBoardID),
+                                identifier: "board.settings.channels")
+                        }
                     }
                     .formStyle(.grouped)
                     .scrollContentBackground(.hidden)

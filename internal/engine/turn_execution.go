@@ -1,17 +1,20 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/store/conversations"
 	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/store/leases"
 )
@@ -77,12 +80,14 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 			return s.BackgroundProcesses(ctx, detail.Card.ID, call)
 		}
 	}
+	s.channelTurnBegin(detail, turnID, &request)
 	finished := false
 	finish := func(startQueued bool, finalCache kanban.CardCacheInput) error {
 		if finished {
 			return nil
 		}
 		finished = true
+		releaseClaims := s.turnHasChannel(detail.Card.ID, turnID) && !s.turnIsSuspending(detail.Card.ID, turnID)
 		refreshCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		_, _ = s.Workspaces.Refresh(refreshCtx, detail.Card.ID, false)
@@ -93,6 +98,14 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 			_, err := s.Store.Kanban.UpdateCardCache(detail.Card.ID, finalCache)
 			return err
 		})
+		if releaseClaims {
+			// Waiters may be woken, which starts turns; never under this turn's state.
+			s.channels.work.Add(1)
+			go func() {
+				defer s.channels.work.Add(-1)
+				s.channelTurnEnd(detail.Card.ID)
+			}()
+		}
 		if startQueued {
 			s.startNextQueued(detail.Card.ID)
 		}
@@ -127,6 +140,13 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 		}
 		if conversation.Status == "failed" {
 			streamFailed = true
+		}
+		if request.SteerEnabled {
+			for _, chunk := range chunks {
+				if bytes.Contains(chunk, []byte(`"tool-input-available"`)) {
+					s.channelObservedWrite(detail.Card.ID, chunk)
+				}
+			}
 		}
 		runtimeStatus := conversation.Status
 		switch {
@@ -179,6 +199,8 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 				_, _, err := s.Store.Conversations.AppendCapability(detail.Card.ID, turnID, output.Capability)
 				return err
 			})
+		case "steer-result":
+			return s.completeSteer(detail.Card.ID, turnID, request.ResponseMessageID, output)
 		case "present-content":
 			var presentation model.ContentPresentation
 			if err := json.Unmarshal(output.Presentation, &presentation); err != nil {
@@ -312,6 +334,13 @@ func emptyHarnessResponseMessage(request harness.Request) string {
 	return fmt.Sprintf("%s completed without a response; verify that the local harness is authenticated and that model %q is available", request.Harness, request.ConfiguredModel)
 }
 
+func (s *Service) turnHasChannel(cardID, turnID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current := s.active[cardID]
+	return current != nil && current.turnID == turnID && current.channel != nil
+}
+
 func (s *Service) turnIsSuspending(cardID, turnID string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -356,7 +385,13 @@ func assistantResponseEmpty(conversation model.Conversation) bool {
 		return true
 	}
 	last := conversation.Messages[len(conversation.Messages)-1]
-	return last.Role == "assistant" && len(last.Parts) == 0
+	if last.Role != "assistant" {
+		return false
+	}
+	// A channel message that joined the turn is not part of the reply.
+	return !slices.ContainsFunc(last.Parts, func(part model.UIMessagePart) bool {
+		return part.Type != conversations.PeerNoticePartType
+	})
 }
 
 func drainTurnUpdates(updates <-chan TurnUpdate) {

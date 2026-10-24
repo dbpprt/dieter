@@ -86,6 +86,23 @@ extension DieterStore {
         section = .inbox
     }
 
+    /// The agent channels of every machine (experimental).
+    func openChannels() {
+        guard section != .channels else { return }
+        stopTerminalWatch()
+        closeConversation()
+        section = .channels
+    }
+
+    /// Opens `projectID`'s channel on the machine that runs the shown
+    /// conversation, e.g. from a peer notice in its transcript.
+    func openChannel(projectID: String) {
+        let daemonID = conversationModel.daemonID
+        openChannels()
+        guard !daemonID.isEmpty, !projectID.isEmpty else { return }
+        Task { await channelsModel.select(daemonID: daemonID, projectID: projectID) }
+    }
+
     func openChats() async {
         // Reselecting the current destination must not tear down its transcript.
         guard section != .chats else { return }

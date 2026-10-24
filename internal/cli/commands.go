@@ -136,6 +136,13 @@ func commandTable() []command {
 			subcommands: []string{"get", "list", "put", "delete", "move", "watch"},
 		},
 		{
+			name:        "channel",
+			aliases:     []string{"channels"},
+			summary:     "Agent channels (experimental): messages, claims and decisions between agents",
+			run:         (*CLI).rpcChannel,
+			subcommands: []string{"list", "messages", "post", "inbox", "check", "claims", "release", "pin", "read", "settings", "watch", "hook"},
+		},
+		{
 			name:        "vault",
 			summary:     "End-to-end encrypted passwords and TOTP shared by your machines",
 			run:         (*CLI).rpcVault,

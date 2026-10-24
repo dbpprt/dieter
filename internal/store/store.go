@@ -11,6 +11,7 @@
 //	kv             replicated client key-value records (home, replica)
 //	settings       settings.yaml (home)
 //	commands       idempotent command results (home)
+//	channels       agent channel messages, deliveries and read state (home)
 //	kanban         the shared work directory: projects, checkouts, boards,
 //	               labels, cards and chats, turn admission (home, replica, leases)
 //	workspaces     workspaces, Git operations, pull requests, change comments
@@ -38,6 +39,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/dbpprt/dieter/internal/store/channels"
 	"github.com/dbpprt/dieter/internal/store/commands"
 	"github.com/dbpprt/dieter/internal/store/conversations"
 	"github.com/dbpprt/dieter/internal/store/home"
@@ -64,6 +66,7 @@ type Store struct {
 	KV            *kv.Store
 	Settings      *settings.Store
 	Commands      *commands.Store
+	Channels      *channels.Store
 }
 
 // New opens the central store rooted at the absolute DIETER_HOME root. The
@@ -77,7 +80,8 @@ func New(root string) *Store {
 		Workspaces:    workspaces.New(dir, board, turns),
 		Conversations: conversations.New(dir, peers, board, turns),
 		Schedules:     schedules.New(dir, peers, board),
-		KV:            kv.New(dir, peers), Settings: settings.New(dir), Commands: commands.New(dir)}
+		KV:            kv.New(dir, peers), Settings: settings.New(dir), Commands: commands.New(dir),
+		Channels: channels.New(dir)}
 	s.SetHooks(home.Hooks{
 		BeforeCommit: func() {
 			if err := s.Schedules.FlushOutbox(); err != nil {

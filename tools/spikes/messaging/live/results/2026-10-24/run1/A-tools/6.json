@@ -1,0 +1,10 @@
+{
+  "cardId": "c_7fae999b1d26961dcd8ceb5b",
+  "messageId": "msg_2d90eb691a7fc48f9b",
+  "toolCallId": "toolu_014Z4fmLX7ibrVpcn4Javo7a",
+  "toolName": "bash",
+  "state": "output-available",
+  "inputJson": "eyJjb21tYW5kIjoiZ2l0IGFkZCBzcmMvbW9kdWxlMy5qcyBzcmMvbW9kdWxlNC5qcyBzcmMvbW9kdWxlNi5qcyBzcmMvbW9kdWxlNy5qcyBcdTAwMjZcdTAwMjYgZ2l0IGNvbW1pdCAtcSAtbSBcIkE6IHJldmlldyBoZWFkZXJzXG5cbkNvLUF1dGhvcmVkLUJ5OiBDbGF1ZGUgU29ubmV0IDUuNSBcdTAwM2Nub3JlcGx5QGFudGhyb3BpYy5jb21cdTAwM2VcIiBcdTAwMjZcdTAwMjYgZ2l0IGxvZyAtLW9uZWxpbmUgLTEifQ==",
+  "outputJson": "eyJzdGRvdXQiOiI2Yjg0NWZlIEE6IHJldmlldyBoZWFkZXJzIiwic3RkZXJyIjoiIiwiaW50ZXJydXB0ZWQiOmZhbHNlLCJpc0ltYWdlIjpmYWxzZSwibm9PdXRwdXRFeHBlY3RlZCI6ZmFsc2V9",
+  "revision": "dc5ec6917112d1dc3cbd071d"
+}

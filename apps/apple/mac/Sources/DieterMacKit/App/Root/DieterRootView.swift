@@ -14,7 +14,7 @@ struct DieterRootView: View {
 
     private var showsSynchronizedWorkspace: Bool {
         switch store.section {
-        case .inbox, .board, .chats, .files, .changes, .schedules, .archive: true
+        case .inbox, .channels, .board, .chats, .files, .changes, .schedules, .archive: true
         case .terminals, .screens, .settings: false
         }
     }
@@ -206,6 +206,7 @@ private struct DieterSectionContent: View {
         case .board:
             Color.clear.allowsHitTesting(false)
         case .chats: Color.clear.allowsHitTesting(false)
+        case .channels: ChannelsView()
         case .terminals:
             TerminalsView(model: store.terminalsModel, showAll: { await store.showAllTerminals() })
         case .screens:

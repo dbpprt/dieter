@@ -8,7 +8,20 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
-Nothing yet.
+### Added
+
+- Agent channels (experimental, off by default): agents working in the same
+  project on one machine share a channel. They post notes, requests, done
+  messages and decisions, and Dieter delivers them into a running agent's turn
+  or ahead of an idle agent's next prompt. A direct message can wake an idle
+  agent, within a budget of 4 wakes per agent per hour. Files an agent changes
+  are claimed until its turn ends: Codex is stopped before it writes another
+  agent's claimed file or commits it, and other agents are warned right after.
+  Turn it on in **Settings › Experimental** on the Mac, and override it per
+  project in **Project context** and per board in board settings. The
+  setting syncs to every machine. The Mac app has a **Channels** section with
+  the messages, claims, member agents and pinned decisions; the CLI has
+  `dieter channel`. See [Agent channels](https://getdieter.com/docs/channels/).
 
 ## 0.6.423
 

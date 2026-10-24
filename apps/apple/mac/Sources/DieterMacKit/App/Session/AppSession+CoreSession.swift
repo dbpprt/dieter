@@ -94,6 +94,7 @@ extension AppSession {
         ]
         boardViewModel.onChange = { [weak self] in self?.refreshBoardProjection() }
         boardViewModel.attach(core)
+        channelsModel.attach(core)
     }
 
     /// Observes an app-wide slice. `apply` keeps each update that carries the

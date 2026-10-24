@@ -103,6 +103,8 @@ message Command {
     Reconnect reconnect = 79;
     DevicesCommand devices = 81;
     SystemWoke system_woke = 82;
+    // Agent channels (experimental); see ChannelsCommand.
+    ChannelsCommand channels = 83;
   }
 }
 
@@ -1239,6 +1241,8 @@ message Result {
     dieter.v1.ScheduleDraft schedule_draft = 43;
     // A creation form as the core checks it (CreationPreviewCommand).
     CreationPreview creation_preview = 45;
+    // The channels surface after a channels command.
+    ChannelsSlice channels = 46;
   }
 }
 
@@ -1310,6 +1314,10 @@ enum Slice {
   SLICE_CREATION_PREVIEW = 24;
   // This device's trust and the account's trusted devices.
   SLICE_DEVICES = 25;
+  // Agent channels across machines. Scoped by the view's surface key.
+  SLICE_CHANNELS = 26;
+  // The replicated agent channels settings.
+  SLICE_CHANNEL_SETTINGS = 27;
 }
 
 message Update {
@@ -1345,6 +1353,8 @@ message Update {
     ChatsSlice chats = 34;
     CreationPreview creation_preview = 35;
     DevicesSlice devices = 36;
+    ChannelsSlice channels = 37;
+    ChannelSettingsSlice channel_settings = 38;
     // The view's surface could not open, e.g. screen sharing on a device
     // without it. Sent once; nothing follows.
     Failure failure = 9;
@@ -1786,6 +1796,10 @@ message TimelineItem {
   // "Accepted by daemon", "Queued for the next turn", "Synced", or "Send
   // failed; retry or remove this message"; empty for other rows.
   string delivery_label = 13;
+  // A user message that an agent channel wake started, not the user.
+  bool channel_wake = 14;
+  // Who such a message is from, e.g. "From agent channels"; empty otherwise.
+  string origin_label = 15;
 }
 
 // Consecutive routine steps of one message form a group; every other step
@@ -1820,6 +1834,8 @@ message TimelineStep {
   string tool_status_label = 9;
   // A TOOL step that failed, awaits approval, or was denied.
   bool tool_attention = 10;
+  // A PEER_NOTICE step's channel message.
+  TimelinePeerNotice peer_notice = 11;
 }
 
 enum TimelineStepKind {
@@ -1833,6 +1849,8 @@ enum TimelineStepKind {
   TIMELINE_STEP_KIND_OTHER = 6;
   // The message's delegated agents, where its first delegating call was.
   TIMELINE_STEP_KIND_SUBAGENTS = 7;
+  // An agent channel message that joined the running turn. Never routine.
+  TIMELINE_STEP_KIND_PEER_NOTICE = 8;
 }
 
 enum ToolCallStatus {
@@ -3896,4 +3914,380 @@ message PairingEntry {
 message DeviceNotice {
   uint64 sequence = 1;
   string text = 2;
+}
+
+// ---------------------------------------------------------------------------
+// Agent channels (experimental): each machine hosts one channel per project
+// it has a checkout of. Agents (cards) and the user post notes, requests,
+// done reports and decisions; Dieter adds coordination events (claims, holds,
+// releases). The feature is off unless the account's settings switch it on
+// globally, per project or per board.
+
+// Commands of a channels surface (SLICE_CHANNELS, scoped by the view's
+// surface key; an empty scope reaches the unscoped surface). A setting change
+// needs no surface.
+message ChannelsCommand {
+  string scope = 1;
+  oneof action {
+    // Shows a channel's stream and inspector; an empty ref shows none.
+    ChannelRef select = 2;
+    // The stream is on screen: it is watched and the list refreshes often.
+    // Off, the list refreshes slowly for the unread badge only.
+    Toggle active = 3;
+    // Reads every machine's channels again.
+    Step refresh = 4;
+    // Posts to the selected channel as the user.
+    ChannelPost post = 5;
+    ChannelPin pin = 6;
+    // The selected channel's newest message is visible: marks it read.
+    Step mark_read = 7;
+    ChannelClaimRelease release_claim = 8;
+    // Sets the global switch or a project or board override on a reachable
+    // machine; the account's settings replicate it everywhere.
+    ChannelSettingChange set_setting = 9;
+  }
+}
+
+// A project's channel on the machine that hosts it.
+message ChannelRef {
+  string daemon_id = 1;
+  string project_id = 2;
+}
+
+message ChannelPost {
+  // 1 to 4096 bytes after trimming.
+  string body = 1;
+  // Direct recipients (the channel's member cards); empty posts to the
+  // whole channel.
+  repeated string to_card_ids = 2;
+  // NOTE, REQUEST, DONE or DECISION; a decision is pinned.
+  ChannelMessageKind kind = 3;
+  // Starts a turn for idle direct recipients within their wake budget.
+  bool wake = 4;
+  // Replies in a thread: the root message's ID.
+  string thread_id = 5;
+}
+
+message ChannelPin {
+  string message_id = 1;
+  bool pinned = 2;
+}
+
+// Releases a card's claim on `path` in the selected channel; an empty path
+// releases every claim of the card.
+message ChannelClaimRelease {
+  string card_id = 1;
+  string path = 2;
+}
+
+message ChannelSettingChange {
+  ChannelSettingScope scope = 1;
+  // The project or board ID; empty for the global switch.
+  string id = 2;
+  // The global switch takes ON or OFF; an override also INHERIT, which
+  // removes it.
+  ChannelSettingMode mode = 3;
+}
+
+enum ChannelSettingScope {
+  CHANNEL_SETTING_SCOPE_UNSPECIFIED = 0;
+  CHANNEL_SETTING_SCOPE_GLOBAL = 1;
+  CHANNEL_SETTING_SCOPE_PROJECT = 2;
+  CHANNEL_SETTING_SCOPE_BOARD = 3;
+}
+
+enum ChannelSettingMode {
+  CHANNEL_SETTING_MODE_INHERIT = 0;
+  CHANNEL_SETTING_MODE_ON = 1;
+  CHANNEL_SETTING_MODE_OFF = 2;
+}
+
+enum ChannelMessageKind {
+  CHANNEL_MESSAGE_KIND_NOTE = 0;
+  CHANNEL_MESSAGE_KIND_REQUEST = 1;
+  CHANNEL_MESSAGE_KIND_DONE = 2;
+  CHANNEL_MESSAGE_KIND_DECISION = 3;
+  // Coordination events Dieter writes.
+  CHANNEL_MESSAGE_KIND_CLAIM = 4;
+  CHANNEL_MESSAGE_KIND_HOLD = 5;
+  CHANNEL_MESSAGE_KIND_RELEASE = 6;
+}
+
+enum ChannelAuthorKind {
+  CHANNEL_AUTHOR_KIND_AGENT = 0;
+  CHANNEL_AUTHOR_KIND_HUMAN = 1;
+  // Dieter's coordination events.
+  CHANNEL_AUTHOR_KIND_DIETER = 2;
+}
+
+// A member card's presence, from its runtime.
+enum ChannelPresence {
+  CHANNEL_PRESENCE_IDLE = 0;
+  CHANNEL_PRESENCE_RUNNING = 1;
+  // Waits for files another card claimed.
+  CHANNEL_PRESENCE_WAITING = 2;
+  CHANNEL_PRESENCE_FAILED = 3;
+}
+
+message ChannelsSlice {
+  // Machines with channels, this device's first, then by name.
+  repeated ChannelMachineSection machines = 1;
+  // Unread messages in channels that are on, for the sidebar badge.
+  int32 unread = 2;
+  // "3", or "99+"; empty with nothing unread.
+  string unread_label = 3;
+  // Agent channels are on somewhere: globally, for a project or a board.
+  bool enabled = 4;
+  // Machines are being read and nothing is listed yet.
+  bool loading = 5;
+  // What the list says when it lists nothing, e.g. how to turn the feature
+  // on in Settings > Experimental.
+  string empty_title = 6;
+  string empty_detail = 7;
+  // The selected channel; absent when none is selected.
+  ChannelStreamView stream = 8;
+}
+
+message ChannelMachineSection {
+  string daemon_id = 1;
+  string name = 2;
+  // Why this machine's channels could not be read; its last list stays.
+  string error = 3;
+  // Its project channels by name.
+  repeated ChannelListRow channels = 4;
+}
+
+message ChannelListRow {
+  // "<daemon ID>/<project ID>".
+  string id = 1;
+  string daemon_id = 2;
+  string project_id = 3;
+  // The project's name, e.g. "pricing".
+  string name = 4;
+  // On for the project or one of its boards. A channel that is off but has
+  // messages is listed read-only.
+  bool enabled = 5;
+  int32 unread = 6;
+  // Live file claims.
+  int32 claims = 7;
+  int32 members = 8;
+  int32 running = 9;
+  // "4 agents · 1 running · 2 claims", or "Off".
+  string detail = 10;
+  bool selected = 11;
+  // When the newest message was written; 0 when it has none.
+  int64 last_message_at_millis = 12;
+}
+
+// The selected channel: its stream, inspector and composer.
+message ChannelStreamView {
+  ChannelRef channel = 1;
+  // "#pricing".
+  string title = 2;
+  // "Project channel on mbp-office".
+  string subtitle = 3;
+  bool enabled = 4;
+  // The first frame has not arrived yet.
+  bool loading = 5;
+  // Why the stream is reconnecting; empty while it is live.
+  string error = 6;
+  // "1 live claim · 1 waiting"; empty without claims.
+  string claims_summary = 7;
+  // Messages oldest first; coordination events are compact rows.
+  repeated ChannelStreamRow rows = 8;
+  // The first row after the read position, where a "New" divider goes;
+  // empty when everything is read.
+  string first_unread_row_id = 9;
+  int32 unread = 10;
+  repeated ChannelClaimRow claims = 11;
+  repeated ChannelMemberRow members = 12;
+  // Pinned messages, newest first.
+  repeated ChannelPinRow pins = 13;
+  ChannelComposerState composer = 14;
+  // Inspector tab titles: "Claims", "Claims · 2", "Members · 4", "Pins · 1".
+  string claims_tab = 15;
+  string members_tab = 16;
+  string pins_tab = 17;
+  // Why the last command on this channel failed.
+  string action_error = 18;
+}
+
+message ChannelStreamRow {
+  // The message ID.
+  string id = 1;
+  int64 seq = 2;
+  ChannelMessageKind kind = 3;
+  // A compact coordination event (Dieter's claim, hold, release or request).
+  bool event = 4;
+  // Continues the previous row's author group (the same author within five
+  // minutes): no avatar or name line.
+  bool continued = 5;
+  ChannelAuthorView author = 6;
+  // "REQUEST", "DONE" or "DECISION"; empty for a note and events.
+  string kind_label = 7;
+  string body = 8;
+  repeated string files = 9;
+  // "to Fix checkout tests"; empty for a channel post.
+  string recipients = 10;
+  bool direct = 11;
+  bool pinned = 12;
+  int32 reply_count = 13;
+  // "1 reply", "3 replies"; empty without replies.
+  string replies_label = 14;
+  // How it reached its recipients, e.g. "Review headers: steered into turn ·
+  // Fix checkout tests: in next turn"; empty before any delivery.
+  string receipt = 15;
+  // The name line's details, e.g. "codex · gpt-5" or "you".
+  string meta = 16;
+  int64 created_at_millis = 17;
+  string thread_id = 18;
+}
+
+message ChannelAuthorView {
+  ChannelAuthorKind kind = 1;
+  // The card's title, "You", or "Dieter".
+  string name = 2;
+  // The avatar's letters, e.g. "RH".
+  string initials = 3;
+  // The harness mark, e.g. "claude" or "codex"; empty for people and Dieter.
+  string harness = 4;
+  string model = 5;
+  string card_id = 6;
+  // A stable avatar colour of the card, 0 to 7.
+  int32 color_index = 7;
+}
+
+message ChannelClaimRow {
+  // "<card ID>:<path>".
+  string id = 1;
+  string path = 2;
+  string card_id = 3;
+  // The holder's card title.
+  string holder = 4;
+  string holder_initials = 5;
+  int32 holder_color_index = 6;
+  // When the claim began; 0 when unknown.
+  int64 since_millis = 7;
+  // "held 2 min"; empty when unknown.
+  string held_label = 8;
+  // "Add MAX_TIER_3 waiting"; empty without waiters.
+  string waiting_label = 9;
+  int32 waiting = 10;
+}
+
+message ChannelMemberRow {
+  string card_id = 1;
+  string title = 2;
+  string initials = 3;
+  int32 color_index = 4;
+  string harness = 5;
+  string model = 6;
+  ChannelPresence presence = 7;
+  // "Running", "Waiting on src/x.ts", "Idle" or "Failed".
+  string presence_label = 8;
+  // "codex · gpt-5 · holds 2 files".
+  string detail = 9;
+  repeated string holds = 10;
+  repeated string waiting_on = 11;
+  // The card's own setting is on; a member listed only for a claim is not.
+  bool enabled = 12;
+  string board_id = 13;
+}
+
+message ChannelPinRow {
+  string message_id = 1;
+  string body = 2;
+  // The author's name.
+  string author = 3;
+  int64 created_at_millis = 4;
+  ChannelMessageKind kind = 5;
+}
+
+message ChannelComposerState {
+  // The channel takes posts now.
+  bool can_post = 1;
+  // "Message #pricing".
+  string placeholder = 2;
+  // Why it cannot, e.g. "Agent channels are off for this project.".
+  string disabled_reason = 3;
+  // The members a direct message can go to.
+  repeated ChannelRecipientOption recipients = 4;
+  // The kinds the user may post.
+  repeated ChannelKindOption kinds = 5;
+  // What waking does; waking needs direct recipients.
+  string wake_hint = 6;
+  int32 max_body_bytes = 7;
+  // A post is in flight.
+  bool sending = 8;
+}
+
+message ChannelRecipientOption {
+  string card_id = 1;
+  string title = 2;
+  ChannelPresence presence = 3;
+}
+
+message ChannelKindOption {
+  ChannelMessageKind kind = 1;
+  // "Note", "Request", "Done" or "Decision".
+  string label = 2;
+  string detail = 3;
+}
+
+// The account's agent channels settings (the replicated "experimental" KV
+// namespace) with this device's unconfirmed changes applied.
+message ChannelSettingsSlice {
+  bool global = 1;
+  // Every project, by name.
+  repeated ChannelSettingRow projects = 2;
+  // Every board, by project and name.
+  repeated ChannelSettingRow boards = 3;
+  // A change is being written.
+  bool saving = 4;
+  // Why the last change failed.
+  string error = 5;
+}
+
+message ChannelSettingRow {
+  // The project or board ID.
+  string id = 1;
+  string name = 2;
+  // A board's project; the project itself for a project row.
+  string project_id = 3;
+  ChannelSettingMode mode = 4;
+  // On after resolving: the board's override, the project's, then global.
+  bool effective = 5;
+  // The chosen mode as the picker shows it: "Inherit (On)", "On" or "Off".
+  string label = 6;
+  // The picker's choices, INHERIT first.
+  repeated ChannelSettingOption options = 7;
+  // Where the effective value comes from, e.g. "Inherits On from the
+  // project.".
+  string detail = 8;
+}
+
+message ChannelSettingOption {
+  ChannelSettingMode mode = 1;
+  string label = 2;
+}
+
+// An agent channel message steered into the conversation's running turn.
+message TimelinePeerNotice {
+  string message_id = 1;
+  string project_id = 2;
+  // The channel's (project's) name, e.g. "pricing".
+  string channel = 3;
+  ChannelAuthorView author = 4;
+  ChannelMessageKind kind = 5;
+  // "REQUEST", "DONE" or "DECISION"; empty for a note.
+  string kind_label = 6;
+  string body = 7;
+  repeated string files = 8;
+  // Sent to this card directly rather than to the whole channel.
+  bool direct = 9;
+  // "Review headers in #pricing", or "Review headers to you in #pricing".
+  string title = 10;
+  // "Open in #pricing".
+  string open_label = 11;
+  int64 created_at_millis = 12;
 }

@@ -2733,8 +2733,10 @@ type MessagePart struct {
 	InputPreview    string                 `protobuf:"bytes,17,opt,name=input_preview,json=inputPreview,proto3" json:"input_preview,omitempty"`
 	OutputPreview   string                 `protobuf:"bytes,18,opt,name=output_preview,json=outputPreview,proto3" json:"output_preview,omitempty"`
 	PayloadRevision string                 `protobuf:"bytes,19,opt,name=payload_revision,json=payloadRevision,proto3" json:"payload_revision,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// JSON payload of a "data-*" part, e.g. a data-peer-notice from agent channels.
+	DataJson      []byte `protobuf:"bytes,20,opt,name=data_json,json=dataJson,proto3" json:"data_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *MessagePart) Reset() {
@@ -2898,6 +2900,13 @@ func (x *MessagePart) GetPayloadRevision() string {
 		return x.PayloadRevision
 	}
 	return ""
+}
+
+func (x *MessagePart) GetDataJson() []byte {
+	if x != nil {
+		return x.DataJson
+	}
+	return nil
 }
 
 type PendingTool struct {
@@ -5351,7 +5360,7 @@ const file_dieter_v1_common_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04role\x18\x02 \x01(\tR\x04role\x12#\n" +
 	"\rmetadata_json\x18\x03 \x01(\fR\fmetadataJson\x12,\n" +
-	"\x05parts\x18\x04 \x03(\v2\x16.dieter.v1.MessagePartR\x05parts\"\xbd\x04\n" +
+	"\x05parts\x18\x04 \x03(\v2\x16.dieter.v1.MessagePartR\x05parts\"\xda\x04\n" +
 	"\vMessagePart\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x12\n" +
 	"\x04text\x18\x02 \x01(\tR\x04text\x12\x1d\n" +
@@ -5380,7 +5389,8 @@ const file_dieter_v1_common_proto_rawDesc = "" +
 	"outputSize\x12#\n" +
 	"\rinput_preview\x18\x11 \x01(\tR\finputPreview\x12%\n" +
 	"\x0eoutput_preview\x18\x12 \x01(\tR\routputPreview\x12)\n" +
-	"\x10payload_revision\x18\x13 \x01(\tR\x0fpayloadRevision\"\x87\x02\n" +
+	"\x10payload_revision\x18\x13 \x01(\tR\x0fpayloadRevision\x12\x1b\n" +
+	"\tdata_json\x18\x14 \x01(\fR\bdataJson\"\x87\x02\n" +
 	"\vPendingTool\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12 \n" +
 	"\ftool_call_id\x18\x02 \x01(\tR\n" +

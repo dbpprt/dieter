@@ -37,6 +37,7 @@ type Server struct {
 	privacySnapshot *dieterv1.MachinePrivacy
 	privacyReadAt   time.Time
 	kvWatches       atomic.Int32
+	channelWatches  atomic.Int32
 	changeStreams   atomic.Int32
 	local           *localChanges
 	previews        *payloadPreviewCache

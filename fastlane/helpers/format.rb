@@ -136,7 +136,8 @@ module Dieter
       paths.filter_map do |path|
         file = File.join(tree, path)
         next "#{path}: exceeds 5 MiB; keep build output out of Git" if File.size(file) > MAX_BYTES
-        next if path.match?(EXCLUDED) || File.binread(file, 8000).include?("\0")
+        # An empty file reads as nil; it has nothing to check.
+        next if path.match?(EXCLUDED) || File.binread(file, 8000).to_s.include?("\0")
         text = File.binread(file)
         next "#{path}: merge conflict marker" if text.match?(/^(?:<{7}|>{7}) /)
         next "#{path}: missing final newline" unless text.empty? || text.end_with?("\n")

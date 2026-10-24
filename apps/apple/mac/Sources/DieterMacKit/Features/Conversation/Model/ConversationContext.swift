@@ -69,6 +69,9 @@ final class ConversationContext {
         get { composer.draft.attachments }
         set { composer.draft.attachments = newValue }
     }
+    /// Opens the agent channel of `projectID` on the conversation's machine.
+    @ObservationIgnored var onOpenChannel: (String) -> Void = { _ in }
+    func openChannel(projectID: String) { onOpenChannel(projectID) }
     @ObservationIgnored var onAddAttachments: ([URL]) -> Void = { _ in }
     func addAttachments(_ urls: [URL]) { onAddAttachments(urls) }
     @ObservationIgnored var onAddPastedAttachments: ([NSItemProvider]) -> Void = { _ in }

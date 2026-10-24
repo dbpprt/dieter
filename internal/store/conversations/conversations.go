@@ -446,9 +446,19 @@ func (s *Store) SetDraftAttachments(cardRef string, parts []model.UIMessagePart)
 	return conversation, err
 }
 
+// userMessageMetadata is a user message's metadata. A message a channel wake
+// started carries origin "channel" so clients do not attribute it to a human.
+func userMessageMetadata(messageID string) json.RawMessage {
+	metadata := map[string]string{"createdAt": home.Timestamp()}
+	if model.IsChannelWakeMessage(messageID) {
+		metadata["origin"] = "channel"
+	}
+	raw, _ := json.Marshal(metadata)
+	return raw
+}
+
 func (s *Store) StartTurnParts(cardRef, turnID, messageID string, parts []model.UIMessagePart) (model.Conversation, error) {
-	createdAt := home.Timestamp()
-	metadata, _ := json.Marshal(map[string]string{"createdAt": createdAt})
+	metadata := userMessageMetadata(messageID)
 	message := model.UIMessage{ID: messageID, Role: "user", Metadata: metadata, Parts: parts}
 	_, conversation, err := s.Append(cardRef, "user-message", turnID, messageID, message)
 	return conversation, err
@@ -471,8 +481,7 @@ func (s *Store) StartQueuedTurnParts(cardRef, turnID, messageID, queueID string,
 	if !slices.ContainsFunc(conversation.Queue, func(item model.QueuedMessage) bool { return item.ID == queueID }) {
 		return model.Conversation{}, fmt.Errorf("%w: queued message %q", home.ErrNotFound, queueID)
 	}
-	createdAt := home.Timestamp()
-	metadata, _ := json.Marshal(map[string]string{"createdAt": createdAt})
+	metadata := userMessageMetadata(messageID)
 	data := struct {
 		QueueID string          `json:"queueId"`
 		Message model.UIMessage `json:"message"`
@@ -570,6 +579,19 @@ func (s *Store) SetStatus(cardRef, turnID, status string) (model.Conversation, e
 
 func (s *Store) AppendUIChunk(cardRef, turnID string, chunk json.RawMessage) (model.ConversationEvent, model.Conversation, error) {
 	return s.Append(cardRef, "ui-chunk", turnID, "", chunk)
+}
+
+// PeerNoticePartType is the message part of a channel message that joined a
+// running turn (agent channels).
+const PeerNoticePartType = "data-peer-notice"
+
+// AppendPeerNotice records a channel message that the harness accepted into
+// the running turn: a data-peer-notice part of the turn's assistant message
+// (responseMessageID), at the position the steer-result reached the stream.
+func (s *Store) AppendPeerNotice(cardRef, turnID, responseMessageID string, part model.UIMessagePart) (model.Conversation, error) {
+	part.Type = PeerNoticePartType
+	_, conversation, err := s.Append(cardRef, "peer-notice", turnID, responseMessageID, part)
+	return conversation, err
 }
 
 func (s *Store) AppendCapability(cardRef, turnID string, capability json.RawMessage) (model.ConversationEvent, model.Conversation, error) {
@@ -702,11 +724,33 @@ func reduceConversation(conversation *model.Conversation, event model.Conversati
 		if json.Unmarshal(event.Data, &raw) == nil {
 			reduceCapability(conversation, raw)
 		}
+	case "peer-notice":
+		var part model.UIMessagePart
+		if json.Unmarshal(event.Data, &part) == nil && part.Type == PeerNoticePartType {
+			reducePeerNotice(conversation, event.MessageID, part, event.CreatedAt)
+		}
 	}
 	// Provider connectivity only describes a running turn.
 	if conversation.Status != "running" {
 		conversation.ProviderStatus = nil
 	}
+}
+
+// reducePeerNotice appends the notice to the turn's assistant message,
+// creating it under the response ID the stream's start chunk reuses later.
+func reducePeerNotice(conversation *model.Conversation, messageID string, part model.UIMessagePart, createdAt string) {
+	if len(conversation.Messages) > 0 {
+		last := &conversation.Messages[len(conversation.Messages)-1]
+		if last.Role == "assistant" && (messageID == "" || last.ID == messageID) {
+			last.Parts = append(last.Parts, part)
+			return
+		}
+	}
+	if messageID == "" {
+		messageID = home.NewID("msg_")
+	}
+	metadata, _ := json.Marshal(map[string]string{"createdAt": createdAt})
+	conversation.Messages = append(conversation.Messages, model.UIMessage{ID: messageID, Role: "assistant", Metadata: metadata, Parts: []model.UIMessagePart{part}})
 }
 
 func reduceCapability(conversation *model.Conversation, raw json.RawMessage) {

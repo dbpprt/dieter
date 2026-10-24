@@ -190,6 +190,12 @@ struct ExperimentalSettings: View {
         SettingsPage {
             VStack(spacing: 14) {
                 SettingsPanel(
+                    title: "Agent channels",
+                    subtitle: "Let agents of one project coordinate in a shared channel."
+                ) {
+                    ChannelsGlobalSetting(model: store.channelsModel)
+                }
+                SettingsPanel(
                     title: "Screen sharing resolution",
                     subtitle: "Match the remote desktop to your fullscreen display."
                 ) {

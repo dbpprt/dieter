@@ -137,6 +137,8 @@ final class AppSession {
     /// The selected project's conversation workspaces, as the core lists them.
     var projectWorkspaces: [ClientProjectWorkspaceRow] = []
     let schedulesModel = SchedulesModel()
+    /// Agent channels (experimental) across machines, and their settings.
+    let channelsModel = ChannelsModel()
     let terminalsModel: TerminalsModel
     let screensModel: ScreensModel
     @ObservationIgnored lazy var terminalOverview = TerminalOverviewModel(

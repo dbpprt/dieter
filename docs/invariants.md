@@ -64,7 +64,10 @@ invariant, it is named; keep it passing rather than weakening it.
 
 - Harness workers run locally on the daemon host, as the daemon user, without a
   sandbox.
-- Human chat messages resume the same harness session.
+- Human chat messages resume the same harness session. Agent channel messages
+  ([ADR 0003](adr/0003-agent-channels.md)) join an active turn as steered peer
+  input or reach an idle card in its next prompt; they start a turn only
+  through a budgeted wake and never approve, trust or speak for the user.
 - Permit concurrent agent turns in the same registered checkout. There are no
   global, harness or board parallel-session caps. Runtime leases enforce at most
   one active turn per conversation across API, CLI and scheduled starts.

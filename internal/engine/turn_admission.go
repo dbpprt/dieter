@@ -154,6 +154,8 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 	if strings.TrimSpace(messageID) == "" {
 		messageID = newRuntimeID("msg_")
 	}
+	channelPlan := s.planChannelTurn(detail, messageID)
+	resolution.Instructions = channelPlan.instructions(resolution.Instructions)
 	var startErr error
 	if queueID == "" {
 		_, startErr = s.Store.Conversations.StartTurnParts(detail.Card.ID, turnID, messageID, parts)
@@ -217,7 +219,8 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 		ContentPresentationEnabled: true,
 		Environment:                s.agentEnvironment(detail.Card.ID, turnID),
 	}
-	request.Prompt = harnessPrompt
+	request.Prompt = channelPlan.prompt(harnessPrompt)
+	s.commitChannelTurn(detail.Card.ID, channelPlan, &request)
 	go s.runTurn(ctx, detail, turnID, request, updates, done)
 	return updates, nil
 }

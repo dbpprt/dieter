@@ -1305,6 +1305,12 @@ public nonisolated struct Dieter_V1_MessagePart: @unchecked Sendable {
     set {_uniqueStorage()._payloadRevision = newValue}
   }
 
+  /// JSON payload of a "data-*" part, e.g. a data-peer-notice from agent channels.
+  public var dataJson: Data {
+    get {_storage._dataJson}
+    set {_uniqueStorage()._dataJson = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -4188,7 +4194,7 @@ nonisolated extension Dieter_V1_UiMessage: SwiftProtobuf.Message, SwiftProtobuf.
 
 nonisolated extension Dieter_V1_MessagePart: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".MessagePart"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}type\0\u{1}text\0\u{3}media_type\0\u{1}filename\0\u{1}url\0\u{1}state\0\u{3}tool_call_id\0\u{3}tool_name\0\u{3}input_json\0\u{3}output_json\0\u{3}error_text\0\u{1}data\0\u{3}has_input\0\u{3}has_output\0\u{3}input_size\0\u{3}output_size\0\u{3}input_preview\0\u{3}output_preview\0\u{3}payload_revision\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}type\0\u{1}text\0\u{3}media_type\0\u{1}filename\0\u{1}url\0\u{1}state\0\u{3}tool_call_id\0\u{3}tool_name\0\u{3}input_json\0\u{3}output_json\0\u{3}error_text\0\u{1}data\0\u{3}has_input\0\u{3}has_output\0\u{3}input_size\0\u{3}output_size\0\u{3}input_preview\0\u{3}output_preview\0\u{3}payload_revision\0\u{3}data_json\0")
 
   fileprivate class _StorageClass {
     var _type: String = String()
@@ -4210,6 +4216,7 @@ nonisolated extension Dieter_V1_MessagePart: SwiftProtobuf.Message, SwiftProtobu
     var _inputPreview: String = String()
     var _outputPreview: String = String()
     var _payloadRevision: String = String()
+    var _dataJson: Data = Data()
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -4239,6 +4246,7 @@ nonisolated extension Dieter_V1_MessagePart: SwiftProtobuf.Message, SwiftProtobu
       _inputPreview = source._inputPreview
       _outputPreview = source._outputPreview
       _payloadRevision = source._payloadRevision
+      _dataJson = source._dataJson
     }
   }
 
@@ -4276,6 +4284,7 @@ nonisolated extension Dieter_V1_MessagePart: SwiftProtobuf.Message, SwiftProtobu
         case 17: try { try decoder.decodeSingularStringField(value: &_storage._inputPreview) }()
         case 18: try { try decoder.decodeSingularStringField(value: &_storage._outputPreview) }()
         case 19: try { try decoder.decodeSingularStringField(value: &_storage._payloadRevision) }()
+        case 20: try { try decoder.decodeSingularBytesField(value: &_storage._dataJson) }()
         default: break
         }
       }
@@ -4341,6 +4350,9 @@ nonisolated extension Dieter_V1_MessagePart: SwiftProtobuf.Message, SwiftProtobu
       if !_storage._payloadRevision.isEmpty {
         try visitor.visitSingularStringField(value: _storage._payloadRevision, fieldNumber: 19)
       }
+      if !_storage._dataJson.isEmpty {
+        try visitor.visitSingularBytesField(value: _storage._dataJson, fieldNumber: 20)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -4369,6 +4381,7 @@ nonisolated extension Dieter_V1_MessagePart: SwiftProtobuf.Message, SwiftProtobu
         if _storage._inputPreview != rhs_storage._inputPreview {return false}
         if _storage._outputPreview != rhs_storage._outputPreview {return false}
         if _storage._payloadRevision != rhs_storage._payloadRevision {return false}
+        if _storage._dataJson != rhs_storage._dataJson {return false}
         return true
       }
       if !storagesAreEqual {return false}

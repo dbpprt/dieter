@@ -542,6 +542,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	assertContentPresentationCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	assertConversationReadCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	assertBackgroundProcessCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
+	assertChannelCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	first.Close()
 
 	directRoute.Server.Stop()
@@ -606,6 +607,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	assertContentPresentationCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertConversationReadCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertBackgroundProcessCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
+	assertChannelCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 
 }
 

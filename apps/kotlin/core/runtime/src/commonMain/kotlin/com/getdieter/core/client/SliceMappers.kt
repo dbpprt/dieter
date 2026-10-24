@@ -49,6 +49,7 @@ import com.getdieter.client.v1.TurnFailure as ClientTurnFailure
 import com.getdieter.client.v1.WorkspaceAvailability as ClientWorkspaceAvailability
 import com.getdieter.core.admin.MachineOperations
 import com.getdieter.core.admin.TelemetryView
+import com.getdieter.core.channels.PeerNotices
 import com.getdieter.core.client.rules.WorkspaceExports
 import com.getdieter.core.conversation.ConversationView
 import com.getdieter.core.executions.ProcessesView
@@ -709,6 +710,7 @@ internal fun timelineItem(
     when (item) {
         is TimelineItem.Message -> {
             val state = if (item.user) delivery(item.message.id) else null
+            val wake = item.user && PeerNotices.isChannelWake(item.message)
             ClientTimelineItem(
                 id = item.id,
                 message_ids = item.messageIds,
@@ -722,6 +724,8 @@ internal fun timelineItem(
                     state?.let(::messageDelivery) ?: MessageDelivery.MESSAGE_DELIVERY_UNSPECIFIED,
                 unconfirmed = item.user && unconfirmed(item.message.id),
                 delivery_label = state?.let(Delivery::label).orEmpty(),
+                channel_wake = wake,
+                origin_label = if (wake) PeerNotices.WAKE_LABEL else "",
             )
         }
         is TimelineItem.Activity -> {
@@ -771,6 +775,7 @@ private fun timelineStep(step: TimelineStep): ClientTimelineStep {
         tool_title = if (tool) Tools.displayName(step.part) else "",
         tool_status_label = status?.let(Tools::statusText).orEmpty(),
         tool_attention = status != null && Tools.needsAttention(status),
+        peer_notice = step.peerNotice,
     )
 }
 
@@ -783,6 +788,7 @@ private fun timelineStepKind(kind: StepKind): TimelineStepKind =
         StepKind.ATTACHMENT -> TimelineStepKind.TIMELINE_STEP_KIND_ATTACHMENT
         StepKind.OTHER -> TimelineStepKind.TIMELINE_STEP_KIND_OTHER
         StepKind.SUBAGENTS -> TimelineStepKind.TIMELINE_STEP_KIND_SUBAGENTS
+        StepKind.PEER_NOTICE -> TimelineStepKind.TIMELINE_STEP_KIND_PEER_NOTICE
     }
 
 private fun toolCallStatus(status: ToolStatus): ToolCallStatus =
