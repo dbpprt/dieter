@@ -10,6 +10,26 @@ copy the **Unreleased** notes into a section named after that exact version
 
 Nothing yet.
 
+## 0.6.423
+
+### Fixed
+
+- Returning to the Android or iOS app no longer marks every Inbox row's
+  machine as not responding while the app reconnects. A machine is only
+  reported offline or not responding for what happens while the app is
+  connected.
+- An open conversation keeps updating across reconnects. Before, it could
+  stop refreshing without saying so after the app returned from the
+  background, until you reopened it.
+- Android keeps its connection when the screen rotates or the theme changes,
+  and iOS keeps it while Control Center, the app switcher or a system prompt
+  covers the app.
+- The Mac app exports Markdown to PDF and renders Mermaid and Vega diagrams
+  again. Markdown files open in Files and conversation tabs reload when they
+  change on disk; unsaved edits stay and offer **Reload from Disk** or
+  **Overwrite Disk**.
+- Go 1.26.10 fixes GO-2026-6809 in `crypto/x509`.
+
 ## 0.6.421
 
 ### Added
