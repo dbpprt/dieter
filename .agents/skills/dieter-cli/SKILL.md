@@ -206,6 +206,13 @@ only for interactive discovery, then retain returned IDs for mutation.
 
 ## Work inside a card
 
+A turn's instructions name the daemon's own `dieter` binary by absolute path,
+because an older `dieter` can come first on a login shell's `PATH` (macOS
+`path_helper`). Run Dieter commands with that path and discover the rest with
+`--help` at any level. `dieter prompt preview --card CARD` shows a
+conversation's exact instructions; `dieter prompt update --reset board-skill`
+restores a replaced default.
+
 Load bounded context before acting:
 
 ```sh

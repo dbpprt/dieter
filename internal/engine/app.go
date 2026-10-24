@@ -24,9 +24,12 @@ type Service struct {
 	Workspaces          *workspace.Manager
 	BackgroundProcesses func(context.Context, string, harness.ProcessCall) (json.RawMessage, error)
 	ProviderAccountKey  func(string) string
-	// ChannelHookExecutable is the dieter binary harness hooks run for agent
-	// channel file claims (DaemonExecutable in a daemon); empty disables them.
-	ChannelHookExecutable string
+	// CLIExecutable is the dieter binary that turn instructions tell agents to
+	// run and that channel file-claim hooks run (DaemonExecutable in a daemon).
+	// Naming the daemon's own binary keeps an older dieter earlier on a login
+	// shell's PATH (macOS path_helper) from shadowing it. Empty means "dieter"
+	// from PATH and no channel hooks.
+	CLIExecutable string
 
 	channels channelHub
 

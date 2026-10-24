@@ -518,8 +518,8 @@ try {
   const instructions = [
     request.instructions,
     taskPlanInstructions,
-    request.contentPresentationEnabled ? contentPresentationInstructions : "",
-    processBridge ? backgroundProcessInstructions : "",
+    request.contentPresentationEnabled ? contentPresentationInstructions(request) : "",
+    processBridge ? backgroundProcessInstructions(request) : "",
   ]
     .filter(Boolean)
     .join("\n\n");

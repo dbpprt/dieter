@@ -75,7 +75,7 @@ func TestResolveForWorkspaceMakesAssignedWorktreeAuthoritative(t *testing.T) {
 		Mode: model.WorkspaceModeWorktree, Path: "/dieter/worktrees/c_one", Branch: "dieter/c-one",
 		BaseBranch: "main", BaseRemote: "private", BaseSHA: "abc123", RemotePublishMode: model.RemotePublishPullRequest,
 	}
-	resolved, err := ResolveForWorkspace(NormalizeSettings(model.Settings{}), detail, detail.Card.LabelIDs, workspace)
+	resolved, err := ResolveForWorkspace(NormalizeSettings(model.Settings{}), detail, detail.Card.LabelIDs, workspace, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,6 +85,7 @@ func TestResolveForWorkspaceMakesAssignedWorktreeAuthoritative(t *testing.T) {
 		workspaceBoundaryHeader,
 		"Authoritative working tree: /dieter/worktrees/c_one",
 		"Assigned branch: dieter/c-one",
+		"Base branch: main",
 		"Configured base remote: private",
 		"Remote publish mode: pull_request",
 		"registered checkout is outside this conversation's workspace",
@@ -102,5 +103,61 @@ func TestBindWorkspaceUpgradesPersistedInstructionsOnce(t *testing.T) {
 	boundAgain := BindWorkspace(bound, "/main", workspace)
 	if bound != boundAgain || strings.Count(bound, workspaceBoundaryHeader) != 1 || !strings.Contains(bound, "Ignore any earlier instruction") {
 		t.Fatalf("bound instructions=%q", boundAgain)
+	}
+}
+
+func TestDefaultInstructionsRunTheDaemonsCLI(t *testing.T) {
+	t.Parallel()
+	detail := promptDetail()
+	detail.Card.VaultAccess = true
+	workspace := model.Workspace{Mode: model.WorkspaceModeProject, Path: "/work/atlas"}
+	cli := CLIWord("/opt/homebrew/var/dieter/service/bin/dieter")
+	resolved, err := ResolveForWorkspace(NormalizeSettings(model.Settings{}), detail, detail.Card.LabelIDs, workspace, cli)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"This conversation is card c_one on board Delivery.",
+		cli + " --help lists every command",
+		cli + " card context c_one",
+		cli + " card move c_one --lane review",
+		cli + " card create --project p_one --board b_one --workspace project --title",
+		"Board labels: Android (android), Security (security).",
+		cli + " card labels c_one --set",
+		cli + " vault exec ITEM --env NAME=password",
+	} {
+		if !strings.Contains(resolved.Instructions, expected) {
+			t.Fatalf("instructions missing %q:\n%s", expected, resolved.Instructions)
+		}
+	}
+	// Every command names the daemon's binary; the harness runtime explains
+	// its own tools, so the templates do not repeat them.
+	for _, unexpected := range []string{"`dieter ", " dieter card", " dieter vault", "present_content", "start_background_process"} {
+		if strings.Contains(resolved.Instructions, unexpected) {
+			t.Fatalf("instructions contain %q:\n%s", unexpected, resolved.Instructions)
+		}
+	}
+	detail.Card.Scope, detail.Card.BoardID, detail.Card.VaultAccess = model.ConversationScopeChat, "", false
+	chat, err := ResolveForWorkspace(NormalizeSettings(model.Settings{}), detail, nil, workspace, cli)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(chat.Skill, "standalone chat c_one") || !strings.Contains(chat.Skill, cli+" chat --help") || strings.Contains(chat.Skill, "card move") {
+		t.Fatalf("chat skill = %q", chat.Skill)
+	}
+}
+
+func TestCLIWordQuotesOnlyWhenNeeded(t *testing.T) {
+	t.Parallel()
+	for path, want := range map[string]string{
+		"":                           "dieter",
+		"/usr/local/bin/dieter":      "/usr/local/bin/dieter",
+		"/Users/a b/bin/dieter":      "'/Users/a b/bin/dieter'",
+		"/opt/dieter's/bin/dieter":   `'/opt/dieter'\''s/bin/dieter'`,
+		"/home/me/.local/bin/dieter": "/home/me/.local/bin/dieter",
+	} {
+		if got := CLIWord(path); got != want {
+			t.Fatalf("CLIWord(%q) = %q, want %q", path, got, want)
+		}
 	}
 }

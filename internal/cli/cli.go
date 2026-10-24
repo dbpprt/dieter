@@ -45,6 +45,9 @@ type CLI struct {
 	Timeout    time.Duration
 	transport  *dieterTransport
 	gateway    *gatewayTransport
+	// chatScope is set while a "dieter chat" action runs a shared card
+	// implementation, so its help names the chat command.
+	chatScope bool
 }
 
 // New returns a CLI for the local DIETER_HOME root.

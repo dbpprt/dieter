@@ -14,6 +14,7 @@ import (
 
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
+	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
 	"github.com/dbpprt/dieter/internal/store/conversations"
 	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit"
@@ -224,7 +225,7 @@ func TestChannelDigestReachesTheNextTurn(t *testing.T) {
 	t.Parallel()
 	service, runner, project, board := channelSetup(t)
 	enableChannels(t, service)
-	service.ChannelHookExecutable = "/opt/dieter's/bin/dieter"
+	service.CLIExecutable = "/opt/dieter's/bin/dieter"
 	author := channelCard(t, service, project, board, "Pricing refactor")
 	reader := channelCard(t, service, project, board, "Checkout tests")
 	posted, err := service.PostChannelMessage(context.Background(), ChannelCaller{CardID: author.ID}, ChannelPost{Kind: "request", Body: "src/pricing.go now returns cents; update your assertions."})
@@ -241,7 +242,7 @@ func TestChannelDigestReachesTheNextTurn(t *testing.T) {
 		t.Fatalf("prompt = %q, want the digest ahead of the user prompt", request.Prompt)
 	}
 	cli := `'/opt/dieter'\''s/bin/dieter'`
-	if !strings.Contains(request.Instructions, channelInstructions(cli)) || !strings.Contains(request.Instructions, cli+" channel post") || !strings.Contains(request.Instructions, "-- FILE...") || !request.SteerEnabled {
+	if !strings.Contains(request.Instructions, dieterprompt.ChannelInstructions(cli)) || !strings.Contains(request.Instructions, cli+" channel post") || !strings.Contains(request.Instructions, "-- FILE...") || !request.SteerEnabled {
 		t.Fatalf("channel instructions or steering missing: steer=%v", request.SteerEnabled)
 	}
 	if request.ChannelHookCommand != `'/opt/dieter'\''s/bin/dieter' channel hook` {

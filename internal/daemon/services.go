@@ -68,7 +68,7 @@ func NewServices(data *store.Store, logger *slog.Logger, options ServiceOptions)
 		application.ProviderAccountKey = options.ProviderAccountKey
 	}
 	// Agent channel hooks run this binary's `dieter channel hook`.
-	application.ChannelHookExecutable = engine.DaemonExecutable()
+	application.CLIExecutable = engine.DaemonExecutable()
 	remoteDesktop := options.RemoteDesktop
 	if remoteDesktop == nil {
 		remoteDesktop = remotedesktop.New(remoteDesktopOptions(data.Root, options.Env.RemoteDesktop, logger))

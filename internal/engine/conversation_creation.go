@@ -266,10 +266,18 @@ func normalizeQuickTaskTitle(value string) string {
 	return value
 }
 
+// conversationGroup is the CLI command group of a conversation.
+func conversationGroup(card model.Card) string {
+	if card.Scope == model.ConversationScopeChat {
+		return "chat"
+	}
+	return "card"
+}
+
 func (s *Service) resolveInstructions(detail model.CardDetail, workspaceValue model.Workspace) (dieterprompt.Resolution, error) {
 	settings, err := s.Store.Settings.Get()
 	if err != nil {
 		return dieterprompt.Resolution{}, err
 	}
-	return dieterprompt.ResolveForWorkspace(settings, detail, detail.Card.LabelIDs, workspaceValue)
+	return dieterprompt.ResolveForWorkspace(settings, detail, detail.Card.LabelIDs, workspaceValue, s.CLIWord())
 }

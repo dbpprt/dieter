@@ -82,22 +82,22 @@ Run "dieter help <command> [action]" or append --help at any command depth.
 Usage: dieter machine <action>
 
 Actions:
-  list [--format table|json|jsonl|ids]       List enrolled machines
-  gateway                                    Show the connected gateway build
-  watch [--count N]                          Stream gateway presence as JSON Lines
-  show [MACHINE]                             Show gateway presence and route
-  route [MACHINE]                            Inspect direct routes and relay channel health
-  privacy <status|setup|on|off> [--key ID]    Control macOS local display/input privacy
-  info [MACHINE]                             Show live host telemetry (local by default)
-  rename --name NAME [MACHINE]               Rename an enrolled machine
-  revoke --confirm MACHINE_ID [MACHINE]       Revoke an enrolled machine
-  restart --confirm RESTART [MACHINE]
-  shutdown --confirm "SHUT DOWN" [MACHINE]
-  update --confirm UPDATE [MACHINE]           Update a managed daemon service
-  rtc [MACHINE]                              Get signed WebRTC configuration
-  connection <start|show|close>               Manage data-only WebRTC signaling
+  list [--format table|json|jsonl|ids]      List enrolled machines
+  gateway                                   Show the connected gateway build
+  watch [--count N]                         Stream gateway presence as JSON Lines
+  show [MACHINE]                            Show gateway presence and route
+  route [MACHINE]                           Inspect direct routes and relay channel health
+  info [MACHINE]                            Show live host telemetry
+  rename --name NAME [MACHINE]              Rename an enrolled machine
+  revoke --confirm MACHINE_ID [MACHINE]     Revoke an enrolled machine
+  restart --confirm RESTART [MACHINE]       Restart the machine
+  shutdown --confirm "SHUT DOWN" [MACHINE]  Shut the machine down
+  update --confirm UPDATE [MACHINE]         Update a managed daemon service
+  rtc [MACHINE]                             Get signed WebRTC configuration
+  connection <start|show|close>             Manage data-only WebRTC signaling
+  privacy <status|setup|on|off> [--key ID]  Control macOS local display/input privacy
 
-Pass MACHINE or global --machine to select a remote daemon. Info, restart, and
+Pass MACHINE or global --machine to select a remote daemon. Info, restart,
 shutdown and update target the local daemon when MACHINE is omitted. Update is
 non-interactive and available to Homebrew-managed macOS services and
 Dieter-managed Linux systemd user services.
@@ -124,55 +124,67 @@ Usage: dieter machine watch [--count N]
 ### dieter machine show
 
 ```text
-Usage: dieter machine show [options] [MACHINE]
+Usage: dieter machine show [MACHINE]
+
+Show the machine's gateway presence and route as JSON.
 ```
 
 ### dieter machine route
 
 ```text
-Usage: dieter machine route [options] [MACHINE]
+Usage: dieter machine route [MACHINE]
+
+Show the machine's direct routes and relay channel health as JSON.
 ```
 
 ### dieter machine info
 
 ```text
-Usage: dieter machine info [options] [MACHINE]
+Usage: dieter machine info [MACHINE]
+
+Show live host telemetry; the local daemon when MACHINE is omitted.
 ```
 
 ### dieter machine rename
 
 ```text
-Usage: dieter machine rename [options] [MACHINE]
+Usage: dieter machine rename --name NAME [MACHINE]
 ```
 
 ### dieter machine revoke
 
 ```text
-Usage: dieter machine revoke [options] [MACHINE]
+Usage: dieter machine revoke --confirm MACHINE_ID [MACHINE]
+
+--confirm must equal the machine's exact ID.
 ```
 
 ### dieter machine restart
 
 ```text
-Usage: dieter machine restart [options] [MACHINE]
+Usage: dieter machine restart --confirm RESTART [MACHINE]
 ```
 
 ### dieter machine shutdown
 
 ```text
-Usage: dieter machine shutdown [options] [MACHINE]
+Usage: dieter machine shutdown --confirm "SHUT DOWN" [MACHINE]
 ```
 
 ### dieter machine update
 
 ```text
-Usage: dieter machine update [options] [MACHINE]
+Usage: dieter machine update --confirm UPDATE [MACHINE]
+
+Update a Homebrew-managed macOS or Dieter-managed Linux daemon service.
 ```
 
 ### dieter machine rtc
 
 ```text
-Usage: dieter machine rtc [options] [MACHINE]
+Usage: dieter machine rtc [MACHINE]
+
+Print a signed WebRTC (ICE) configuration for the machine as JSON.
 ```
 
 ### dieter machine connection
@@ -188,28 +200,26 @@ start requires protobuf JSON containing rtcConfiguration and offerSdp.
 ### dieter machine connection start
 
 ```text
-Usage: dieter machine connection start [--request FILE] [SESSION]
+Usage: dieter machine connection start --request FILE
 
-Start with a signed RTC configuration and gathered SDP offer; show reports the
-selected ICE mode (direct or turn); close disconnects only this transport.
+Start data-only WebRTC signaling from protobuf JSON with rtcConfiguration and
+offerSdp (a signed RTC configuration and the gathered SDP offer).
 ```
 
 ### dieter machine connection show
 
 ```text
-Usage: dieter machine connection show [--request FILE] [SESSION]
+Usage: dieter machine connection show SESSION
 
-Start with a signed RTC configuration and gathered SDP offer; show reports the
-selected ICE mode (direct or turn); close disconnects only this transport.
+Show the session's selected ICE mode (direct or turn).
 ```
 
 ### dieter machine connection close
 
 ```text
-Usage: dieter machine connection close [--request FILE] [SESSION]
+Usage: dieter machine connection close SESSION
 
-Start with a signed RTC configuration and gathered SDP offer; show reports the
-selected ICE mode (direct or turn); close disconnects only this transport.
+Close only this data-only transport.
 ```
 
 ### dieter machine privacy
@@ -228,10 +238,7 @@ unlock explicitly or reboot to clear. This is session privacy, not an authentica
 ```text
 Usage: dieter [--machine ID|NAME] machine privacy status
 
-Black out local displays and block physical input while agents and remote control continue.
-Setup registers the privileged input helper; approve it and grant Input Monitoring on the target Mac.
-Requires macOS Accessibility permission. Stays on across disconnects and daemon restarts;
-unlock explicitly or reboot to clear. This is session privacy, not an authentication lock.
+Show the privacy state (off, on or degraded) and whether its input helper needs setup, as JSON.
 ```
 
 ### dieter machine privacy setup
@@ -239,10 +246,8 @@ unlock explicitly or reboot to clear. This is session privacy, not an authentica
 ```text
 Usage: dieter [--machine ID|NAME] machine privacy setup [--key ID]
 
-Black out local displays and block physical input while agents and remote control continue.
-Setup registers the privileged input helper; approve it and grant Input Monitoring on the target Mac.
-Requires macOS Accessibility permission. Stays on across disconnects and daemon restarts;
-unlock explicitly or reboot to clear. This is session privacy, not an authentication lock.
+Register the privileged input helper; approve it and grant Input Monitoring on the target Mac.
+--key is an idempotency key: reuse it only to retry this operation on this daemon.
 ```
 
 ### dieter machine privacy on
@@ -250,10 +255,9 @@ unlock explicitly or reboot to clear. This is session privacy, not an authentica
 ```text
 Usage: dieter [--machine ID|NAME] machine privacy on [--key ID]
 
-Black out local displays and block physical input while agents and remote control continue.
-Setup registers the privileged input helper; approve it and grant Input Monitoring on the target Mac.
-Requires macOS Accessibility permission. Stays on across disconnects and daemon restarts;
-unlock explicitly or reboot to clear. This is session privacy, not an authentication lock.
+Black out local displays and block physical input; agents and remote control continue.
+It stays on across disconnects and daemon restarts until off or a reboot.
+--key is an idempotency key: reuse it only to retry this operation on this daemon.
 ```
 
 ### dieter machine privacy off
@@ -261,10 +265,8 @@ unlock explicitly or reboot to clear. This is session privacy, not an authentica
 ```text
 Usage: dieter [--machine ID|NAME] machine privacy off [--key ID]
 
-Black out local displays and block physical input while agents and remote control continue.
-Setup registers the privileged input helper; approve it and grant Input Monitoring on the target Mac.
-Requires macOS Accessibility permission. Stays on across disconnects and daemon restarts;
-unlock explicitly or reboot to clear. This is session privacy, not an authentication lock.
+Restore local displays and physical input.
+--key is an idempotency key: reuse it only to retry this operation on this daemon.
 ```
 
 ## dieter status
@@ -347,19 +349,19 @@ Usage: dieter quota reset openai --account KEY --confirm RESET
 Usage: dieter project <action>
 
 Actions:
-  consolidate SOURCE DESTINATION  Combine project identities; retain all boards and owners
-  attach PROJECT PATH  Attach this machine’s checkout to an existing shared project
-  checkouts PROJECT    List checkouts across machines
-  detach CHECKOUT      Detach a local checkout
-  create PATH       Create and register a Git working tree on the target daemon
-  open PATH         Register an existing Git working tree on the target daemon
-  directories PATH  Browse daemon-host directories and Git repositories
-  list              List active projects; use --removed for archived projects
-  show PROJECT      Show project metadata
-  update PROJECT    Update project path, name, summary, prompt, or browser hostnames
-  workspace PROJECT Update Git base and validation commands
-  remove PROJECT    Archive a project
-  restore PROJECT   Restore an archived project
+  list                            List active projects; --removed lists archived ones
+  show PROJECT                    Show project metadata
+  create PATH                     Create and register a Git working tree on the target daemon
+  open PATH                       Register an existing Git working tree on the target daemon
+  directories [PATH]              Browse daemon-host directories and Git repositories
+  update PROJECT                  Update path, name, summary, instructions or browser hostnames
+  workspace PROJECT               Update the Git base and validation commands
+  remove PROJECT                  Archive a project
+  restore PROJECT                 Restore an archived project
+  checkouts PROJECT               List the project's checkouts across machines
+  attach PROJECT PATH             Attach this machine's checkout to an existing shared project
+  detach CHECKOUT                 Detach a local checkout
+  consolidate SOURCE DESTINATION  Merge SOURCE into DESTINATION, keeping all boards and owners
 ```
 
 ### dieter project create
@@ -452,6 +454,7 @@ Usage: dieter project restore PROJECT
 
 ```text
 Usage: dieter project consolidate SOURCE DESTINATION
+
 Keep destination project defaults and retain every source board, label, checkout, and conversation with its existing ID and machine owner. Source references become durable redirects.
 ```
 
@@ -459,6 +462,7 @@ Keep destination project defaults and retain every source board, label, checkout
 
 ```text
 Usage: dieter project attach [--name NAME] PROJECT PATH
+
 Attach an existing Git working tree on the selected machine to a shared project.
 ```
 
@@ -466,6 +470,7 @@ Attach an existing Git working tree on the selected machine to a shared project.
 
 ```text
 Usage: dieter project detach CHECKOUT
+
 Detach a checkout on the selected machine without deleting project or conversation data.
 ```
 
@@ -473,7 +478,8 @@ Detach a checkout on the selected machine without deleting project or conversati
 
 ```text
 Usage: dieter project checkouts PROJECT
-List the shared checkout directory; paths are shown only for the selected machine.
+
+List the project's checkouts on every machine; paths are shown only for the selected machine.
 ```
 
 ## dieter board (alias: boards)
@@ -481,20 +487,19 @@ List the shared checkout directory; paths are shown only for the selected machin
 ```text
 Usage: dieter board <action>
 
-  hostnames BOARD  Replace, append, or clear exact browser hosts
-
 Actions:
-  create              Create a fixed direct or review workflow board
-  list                List boards
-  show BOARD           Show one board
-  retire BOARD         Retire an empty board without deleting its records
-  restore BOARD        Restore a retired board by exact ID
+  list                 List boards
+  show BOARD           Show one board, its lanes and labels
+  create               Create a direct or review workflow board
   rename BOARD         Rename a board
   retention BOARD      Configure automatic Done-card archiving
   git BOARD            Configure the default remote and publishing mode
-  label add            Create a board label
+  hostnames BOARD      Replace, append or clear exact browser hosts
+  retire BOARD         Retire an empty board without deleting its records
+  restore BOARD        Restore a retired board by exact ID
   label list           List board labels
-  label update LABEL   Update label name, color, or instructions
+  label add            Create a board label
+  label update LABEL   Update label name, color or instructions
   label remove LABEL   Delete a board label
 ```
 
@@ -580,6 +585,9 @@ Actions:
   list --board BOARD
   update --board BOARD [--name NAME] [--color COLOR] [--instructions TEXT] LABEL
   remove --board BOARD LABEL
+
+COLOR is a hex color such as #6558df (the default for new labels). LABEL is an
+exact label ID or a unique name. Agents see a label's instructions on its cards.
 ```
 
 ### dieter board label add
@@ -592,6 +600,9 @@ Actions:
   list --board BOARD
   update --board BOARD [--name NAME] [--color COLOR] [--instructions TEXT] LABEL
   remove --board BOARD LABEL
+
+COLOR is a hex color such as #6558df (the default for new labels). LABEL is an
+exact label ID or a unique name. Agents see a label's instructions on its cards.
 ```
 
 ### dieter board label list
@@ -604,6 +615,9 @@ Actions:
   list --board BOARD
   update --board BOARD [--name NAME] [--color COLOR] [--instructions TEXT] LABEL
   remove --board BOARD LABEL
+
+COLOR is a hex color such as #6558df (the default for new labels). LABEL is an
+exact label ID or a unique name. Agents see a label's instructions on its cards.
 ```
 
 ### dieter board label update
@@ -616,6 +630,9 @@ Actions:
   list --board BOARD
   update --board BOARD [--name NAME] [--color COLOR] [--instructions TEXT] LABEL
   remove --board BOARD LABEL
+
+COLOR is a hex color such as #6558df (the default for new labels). LABEL is an
+exact label ID or a unique name. Agents see a label's instructions on its cards.
 ```
 
 ### dieter board label remove
@@ -628,6 +645,9 @@ Actions:
   list --board BOARD
   update --board BOARD [--name NAME] [--color COLOR] [--instructions TEXT] LABEL
   remove --board BOARD LABEL
+
+COLOR is a hex color such as #6558df (the default for new labels). LABEL is an
+exact label ID or a unique name. Agents see a label's instructions on its cards.
 ```
 
 ## dieter card (alias: cards)
@@ -636,29 +656,32 @@ Actions:
 Usage: dieter card <action>
 
 Actions:
-  create       Create a board conversation
-  list         Search board conversations
-  show         Show card metadata
-  context      Print bounded agent context
-  transcript   Read the durable conversation
+  list         Search board cards
+  show         Show a card's metadata as JSON
+  context      Print a card's task brief, project instructions, board and lane
+  transcript   Read a card's conversation
   poll         Fetch one bounded conversation update
   watch        Stream conversation updates as JSON Lines
   tool-output  Fetch a full tool input/output payload
-  present      Present a file or URL in this conversation’s native workspace pane
-  fork         Fork a completed conversation into a standalone chat
-  send         Submit a human message to the daemon-owned turn lifecycle
-  queue        Manage messages waiting behind the active turn
+  create       Create a card (Todo draft or running)
+  start        Start a Todo draft
+  send         Send a message to a card; it queues behind a running turn
+  queue        Manage messages waiting behind the running turn
+  cancel       Cancel the running turn
+  move         Move a card to another lane
+  labels       Replace a card's board labels
+  present      Show a file or URL in the conversation's workspace pane
   read         Mark a displayed model response as seen
-  merge        Add an idle card’s initial request to a started task; mark source Done
-  move         Move a card between workflow lanes
-  start        Start a draft card idempotently
-  labels       Replace board-label assignments
-  cancel       Request cancellation of the active turn
   rename       Rename a card
-  update       Update title and initial prompt
+  update       Update the title, or a draft's task brief and agent settings
+  fork         Fork a finished conversation into a standalone chat
+  merge        Queue an idle card's request in a started card and mark it Done
   archive      Archive a card
-  unarchive    Restore a card
-  workspace    Select the project directory or an isolated worktree
+  unarchive    Restore an archived card
+  workspace    Use the project directory or an isolated worktree
+
+Messages sent with "card send" appear as the human's. Agents message each
+other with "dieter channel post" when agent channels are on.
 ```
 
 ### dieter card present
@@ -680,7 +703,7 @@ Global --machine selects the owning daemon through authenticated direct/relay ro
 Usage: dieter card create --project PROJECT --board BOARD (--title TITLE | --auto-title) --workspace project|worktree [options]
 
 Options:
-  --checkout CHECKOUT      Checkout on the target machine; required if it has several
+  --checkout CHECKOUT       Checkout on the target machine; required if it has several
   --lane todo|running       Todo creates a draft; Running starts immediately
   --auto-title              Save immediately; GPT Spark improves the title in the background
   --prompt TEXT             Initial task brief
@@ -715,7 +738,8 @@ Usage: dieter card list [--project PROJECT] [--board BOARD] [--lane LANE] [--lab
 ```text
 Usage: dieter card show CARD
 
-Includes cumulative provider-reported tokenUsage (input/output/total and partial coverage).
+Show the conversation with its project and board as JSON, including cumulative
+provider-reported tokenUsage.
 ```
 
 ### dieter card context
@@ -723,7 +747,8 @@ Includes cumulative provider-reported tokenUsage (input/output/total and partial
 ```text
 Usage: dieter card context CARD
 
-Includes cumulative provider-reported tokenUsage (input/output/total and partial coverage).
+Print the title, task brief, lane, project instructions, board and workflow, and
+cumulative provider-reported tokenUsage as compact JSON.
 ```
 
 ### dieter card transcript
@@ -767,9 +792,11 @@ Usage: dieter card fork [--at MESSAGE_ID] [--title TITLE] [--format json|id] CAR
 
 ```text
 Usage: dieter card send [--message TEXT|--file FILE] [--attach FILE ...] [--provider P] [--model M] [--effort E] [--provider-option K=V] CARD
-Model, effort and mutable provider options apply to this message where supported.
-During a running turn, the message and its selection are queued together.
-The provider stays fixed after the first message. Use --effort default to reset reasoning.
+
+Send a message as the human. It starts a turn, or queues behind the running turn
+with its model selection. Model, effort and mutable provider options apply to this
+message where supported; the provider stays fixed after the first message. Use
+--effort default to reset reasoning.
 ```
 
 ### dieter card queue
@@ -794,7 +821,8 @@ Removes a queued message and prints its complete content as JSON.
 ```text
 Usage: dieter card read --response-seq SEQ CARD
 
-Mark the displayed model response as seen. Use responseSeq from card show; stale receipts cannot clear newer replies. Also available as chat read and with global --machine.
+Mark the displayed model response as seen. Use responseSeq from show; a stale
+receipt cannot clear a newer reply.
 ```
 
 ### dieter card merge
@@ -844,23 +872,20 @@ Usage: dieter card rename --title TITLE CARD
 
 ```text
 Usage: dieter card update [--title TITLE] [--prompt TEXT|--prompt-file FILE] [--provider P] [--model M] [--effort E] [--provider-option K=V] CARD
-Agent settings are editable only before the initial task is sent.
+
+The task brief and agent settings are editable only before the first turn.
 ```
 
 ### dieter card archive
 
 ```text
 Usage: dieter card archive CARD
-
-Includes cumulative provider-reported tokenUsage (input/output/total and partial coverage).
 ```
 
 ### dieter card unarchive
 
 ```text
 Usage: dieter card unarchive CARD
-
-Includes cumulative provider-reported tokenUsage (input/output/total and partial coverage).
 ```
 
 ### dieter card workspace
@@ -875,17 +900,19 @@ Usage: dieter card workspace --mode project|worktree [--branch BRANCH] [--base-b
 Usage: dieter chat <action>
 
 Actions:
-  create, list, show, context, transcript, watch, tool-output, present, fork, send,
-  queue, read, cancel, rename, update, archive, unarchive, workspace, pin, unpin
+  create, list, show, context, transcript, poll, watch, tool-output, send,
+  queue, cancel, present, read, rename, update, fork, archive, unarchive,
+  workspace, pin, unpin
 
-Standalone chats use the same durable conversation and workspace operations as
-cards but are not assigned to a board lane.
+A standalone chat is a conversation without a board: it has no lanes or labels
+and starts when created. Actions take the same options as their card versions
+(see dieter chat ACTION --help).
 ```
 
 ### dieter chat present
 
 ```text
-Usage: dieter card present (--path PATH [--line N] | --url URL) [--title TITLE] CARD
+Usage: dieter chat present (--path PATH [--line N] | --url URL) [--title TITLE] CHAT
 
 Request presentation in the exact conversation's native workspace pane.
 Paths belong to its owning daemon/worktree (relative paths are recommended).
@@ -901,8 +928,7 @@ Global --machine selects the owning daemon through authenticated direct/relay ro
 Usage: dieter chat create --project PROJECT (--title TITLE | --auto-title) --workspace project|worktree [options]
 
 Options:
-  --checkout CHECKOUT      Checkout on the target machine; required if it has several
-  --lane todo|running       Todo creates a draft; Running starts immediately
+  --checkout CHECKOUT       Checkout on the target machine; required if it has several
   --auto-title              Save immediately; GPT Spark improves the title in the background
   --prompt TEXT             Initial task brief
   --prompt-file FILE        Read the task brief from FILE or -
@@ -911,7 +937,6 @@ Options:
   --model MODEL             Model for the first turn
   --effort EFFORT           Reasoning or thinking effort
   --provider-option K=V     Provider option; repeat as needed
-  --labels LABELS           Comma-separated label IDs
   --workspace MODE          project or worktree
   --branch BRANCH           Optional worktree branch
   --base-branch BRANCH      Optional worktree base branch
@@ -928,41 +953,43 @@ before the command to create on another enrolled machine.
 ### dieter chat list
 
 ```text
-Usage: dieter chat list [--archived] [--format table|json|jsonl|ids]
+Usage: dieter chat list [--project PROJECT] [--archived] [--format table|json|jsonl|ids]
 ```
 
 ### dieter chat show
 
 ```text
-Usage: dieter card show CARD
+Usage: dieter chat show CHAT
 
-Includes cumulative provider-reported tokenUsage (input/output/total and partial coverage).
+Show the conversation with its project and board as JSON, including cumulative
+provider-reported tokenUsage.
 ```
 
 ### dieter chat context
 
 ```text
-Usage: dieter card context CARD
+Usage: dieter chat context CHAT
 
-Includes cumulative provider-reported tokenUsage (input/output/total and partial coverage).
+Print the title, task brief, lane, project instructions, board and workflow, and
+cumulative provider-reported tokenUsage as compact JSON.
 ```
 
 ### dieter chat transcript
 
 ```text
-Usage: dieter card transcript [--last N] [--before INDEX] CARD
+Usage: dieter chat transcript [--last N] [--before INDEX] CHAT
 ```
 
 ### dieter chat poll
 
 ```text
-Usage: dieter card poll [--last N] [--after-seq N] CARD
+Usage: dieter chat poll [--last N] [--after-seq N] CHAT
 ```
 
 ### dieter chat watch
 
 ```text
-Usage: dieter card watch [--last N] [--after-seq N] [--count N] CARD
+Usage: dieter chat watch [--last N] [--after-seq N] [--count N] CHAT
 
 An up-to-date --after-seq receives a current metadata acknowledgment without
 resending unchanged messages; this initial frame counts toward --count.
@@ -975,28 +1002,30 @@ recovery. Mutations, process starts, and stdin writes are never replayed.
 ### dieter chat tool-output
 
 ```text
-Usage: dieter card tool-output --message MESSAGE --tool-call TOOL [--revision REVISION] CARD
+Usage: dieter chat tool-output --message MESSAGE --tool-call TOOL [--revision REVISION] CHAT
 ```
 
 ### dieter chat fork
 
 ```text
-Usage: dieter card fork [--at MESSAGE_ID] [--title TITLE] [--format json|id] CARD
+Usage: dieter chat fork [--at MESSAGE_ID] [--title TITLE] [--format json|id] CHAT
 ```
 
 ### dieter chat send
 
 ```text
-Usage: dieter card send [--message TEXT|--file FILE] [--attach FILE ...] [--provider P] [--model M] [--effort E] [--provider-option K=V] CARD
-Model, effort and mutable provider options apply to this message where supported.
-During a running turn, the message and its selection are queued together.
-The provider stays fixed after the first message. Use --effort default to reset reasoning.
+Usage: dieter chat send [--message TEXT|--file FILE] [--attach FILE ...] [--provider P] [--model M] [--effort E] [--provider-option K=V] CHAT
+
+Send a message as the human. It starts a turn, or queues behind the running turn
+with its model selection. Model, effort and mutable provider options apply to this
+message where supported; the provider stays fixed after the first message. Use
+--effort default to reset reasoning.
 ```
 
 ### dieter chat queue
 
 ```text
-Usage: dieter card queue <action>
+Usage: dieter chat queue <action>
 
 Actions:
   remove   Remove a message that has not started yet
@@ -1005,7 +1034,7 @@ Actions:
 ### dieter chat queue remove
 
 ```text
-Usage: dieter card queue remove --message MESSAGE_ID CARD
+Usage: dieter chat queue remove --message MESSAGE_ID CHAT
 
 Removes a queued message and prints its complete content as JSON.
 ```
@@ -1013,29 +1042,16 @@ Removes a queued message and prints its complete content as JSON.
 ### dieter chat read
 
 ```text
-Usage: dieter card read --response-seq SEQ CARD
+Usage: dieter chat read --response-seq SEQ CHAT
 
-Mark the displayed model response as seen. Use responseSeq from card show; stale receipts cannot clear newer replies. Also available as chat read and with global --machine.
-```
-
-### dieter chat start
-
-```text
-Usage: dieter card start CARD
-```
-
-### dieter chat labels
-
-```text
-Usage: dieter card labels --set LABELS CARD
-
-LABELS is a comma-separated list of board label IDs; empty clears labels.
+Mark the displayed model response as seen. Use responseSeq from show; a stale
+receipt cannot clear a newer reply.
 ```
 
 ### dieter chat cancel
 
 ```text
-Usage: dieter card cancel CARD
+Usage: dieter chat cancel CHAT
 
 Requests cancellation and returns once the active turn has been signaled.
 Queued messages start after that turn finishes cleanup.
@@ -1044,36 +1060,33 @@ Queued messages start after that turn finishes cleanup.
 ### dieter chat rename
 
 ```text
-Usage: dieter card rename --title TITLE CARD
+Usage: dieter chat rename --title TITLE CHAT
 ```
 
 ### dieter chat update
 
 ```text
-Usage: dieter card update [--title TITLE] [--prompt TEXT|--prompt-file FILE] [--provider P] [--model M] [--effort E] [--provider-option K=V] CARD
-Agent settings are editable only before the initial task is sent.
+Usage: dieter chat update [--title TITLE] [--prompt TEXT|--prompt-file FILE] [--provider P] [--model M] [--effort E] [--provider-option K=V] CHAT
+
+The task brief and agent settings are editable only before the first turn.
 ```
 
 ### dieter chat archive
 
 ```text
-Usage: dieter card archive CARD
-
-Includes cumulative provider-reported tokenUsage (input/output/total and partial coverage).
+Usage: dieter chat archive CHAT
 ```
 
 ### dieter chat unarchive
 
 ```text
-Usage: dieter card unarchive CARD
-
-Includes cumulative provider-reported tokenUsage (input/output/total and partial coverage).
+Usage: dieter chat unarchive CHAT
 ```
 
 ### dieter chat workspace
 
 ```text
-Usage: dieter card workspace --mode project|worktree [--branch BRANCH] [--base-branch BRANCH] [--base-remote REMOTE] [--remote-publish manual|pull_request|push_base] CARD
+Usage: dieter chat workspace --mode project|worktree [--branch BRANCH] [--base-branch BRANCH] [--base-remote REMOTE] [--remote-publish manual|pull_request|push_base] CHAT
 ```
 
 ### dieter chat pin
@@ -1095,7 +1108,7 @@ Usage: dieter workspace <action>
 
 Actions:
   show CARD                 Provision and show a conversation workspace
-  list [--project PROJECT]  List durable project workspaces
+  list --project PROJECT    List durable project workspaces
   changes [target]          Show local changes for a worktree card or project
   diff [target]             Read a staged, unstaged, or combined file diff
   comments CARD             List changeset review comments
@@ -1106,13 +1119,12 @@ Actions:
   run --kind KIND [target]  Start a serialized durable Git operation
   cancel OPERATION          Request cancellation of an operation
 
-Project targets support stage, unstage, discard_changes, commit, update,
-validate, and push.
-Worktree cards additionally support update, continue_conflict, abort_conflict,
-validate, merge_local, push, cleanup, discard, adopt, create_pr, refresh_pr,
-and merge_pr. Commit uses the staged index; pass --param stage_all=true only
-when explicitly committing every local change. Repeat --param KEY=VALUE for
-kind-specific parameters.
+A target is --project PROJECT or a CARD. Run kinds for a project: stage,
+unstage, discard_changes, commit, update, validate and push. A worktree card
+also supports continue_conflict, abort_conflict, merge_local, cleanup, discard,
+adopt, create_pr, refresh_pr and merge_pr. Commit uses the staged index; pass
+--param stage_all=true only when explicitly committing every local change.
+Repeat --param KEY=VALUE for kind-specific parameters.
 ```
 
 ### dieter workspace show
@@ -1688,15 +1700,7 @@ the mode. A later local display change takes precedence. Supports --machine ID|N
 ```text
 Usage: dieter screen resolution modes SESSION
 
-Usage: dieter screen resolution <modes|set|restore> SESSION [options]
-
-Experimental physical desktop resolution, independent of video stream ceilings.
-"modes" lists the selected display's supported modes and current mode ID.
-"set" requires --display ID --mode ID --expected-current ID from a fresh modes
-response. It requires the controlling session and temporarily changes the actual
-remote monitor for everyone using it. "restore" restores the leased original mode.
-Control handoff, display selection, session closure, and helper exit also restore
-the mode. A later local display change takes precedence. Supports --machine ID|NAME.
+List the selected display's supported modes and its current mode ID.
 ```
 
 ### dieter screen resolution set
@@ -1704,15 +1708,8 @@ the mode. A later local display change takes precedence. Supports --machine ID|N
 ```text
 Usage: dieter screen resolution set SESSION --display ID --mode ID --expected-current ID
 
-Usage: dieter screen resolution <modes|set|restore> SESSION [options]
-
-Experimental physical desktop resolution, independent of video stream ceilings.
-"modes" lists the selected display's supported modes and current mode ID.
-"set" requires --display ID --mode ID --expected-current ID from a fresh modes
-response. It requires the controlling session and temporarily changes the actual
-remote monitor for everyone using it. "restore" restores the leased original mode.
-Control handoff, display selection, session closure, and helper exit also restore
-the mode. A later local display change takes precedence. Supports --machine ID|NAME.
+Change the physical monitor's mode for everyone using it; IDs come from a fresh
+modes response. Requires the controlling session.
 ```
 
 ### dieter screen resolution restore
@@ -1720,15 +1717,7 @@ the mode. A later local display change takes precedence. Supports --machine ID|N
 ```text
 Usage: dieter screen resolution restore SESSION
 
-Usage: dieter screen resolution <modes|set|restore> SESSION [options]
-
-Experimental physical desktop resolution, independent of video stream ceilings.
-"modes" lists the selected display's supported modes and current mode ID.
-"set" requires --display ID --mode ID --expected-current ID from a fresh modes
-response. It requires the controlling session and temporarily changes the actual
-remote monitor for everyone using it. "restore" restores the leased original mode.
-Control handoff, display selection, session closure, and helper exit also restore
-the mode. A later local display change takes precedence. Supports --machine ID|NAME.
+Restore the leased original mode.
 ```
 
 ### dieter screen clipboard
@@ -2146,54 +2135,54 @@ Use global --machine ID|NAME for verified TLS, WebRTC, or relay targeting.
 
 ```text
 Usage: dieter kv get --namespace NS --key KEY [--account ID]
+
 Read the selected value and all causal siblings.
-Mutations may pass --account ID --daemon ID to pin an uncertain retry.
-Retry identical input and --operation only on that same daemon.
 ```
 
 ### dieter kv list
 
 ```text
 Usage: dieter kv list [--namespace NS] [--prefix PREFIX] [--after KEY --epoch EPOCH --sequence N]
+
 Read up to 64 entries. Pass nextKey and cursor for subsequent pages.
-Mutations may pass --account ID --daemon ID to pin an uncertain retry.
-Retry identical input and --operation only on that same daemon.
 ```
 
 ### dieter kv put
 
 ```text
 Usage: dieter kv put --namespace NS --key KEY --file FILE [--revision REV] [--operation ID]
+
 Write JSON (maximum 32 KiB). Read all siblings before resolving conflicts.
-Mutations may pass --account ID --daemon ID to pin an uncertain retry.
-Retry identical input and --operation only on that same daemon.
+Pass --account ID --daemon ID to pin an uncertain retry, and retry identical
+input and --operation only on that same daemon.
 ```
 
 ### dieter kv delete
 
 ```text
 Usage: dieter kv delete --namespace NS --key KEY --revision REV [--operation ID]
+
 Retain a tombstone; deleting does not remove causal history.
-Mutations may pass --account ID --daemon ID to pin an uncertain retry.
-Retry identical input and --operation only on that same daemon.
+Pass --account ID --daemon ID to pin an uncertain retry, and retry identical
+input and --operation only on that same daemon.
 ```
 
 ### dieter kv move
 
 ```text
 Usage: dieter kv move --namespace NS --key KEY [--parent ID] [--after KEY] [--before KEY] [--revision REV] [--operation ID]
+
 Write an atomic parent/rank position. Empty neighbors append to this list.
-Mutations may pass --account ID --daemon ID to pin an uncertain retry.
-Retry identical input and --operation only on that same daemon.
+Pass --account ID --daemon ID to pin an uncertain retry, and retry identical
+input and --operation only on that same daemon.
 ```
 
 ### dieter kv watch
 
 ```text
 Usage: dieter kv watch [--namespace NS] [--prefix PREFIX] [--epoch EPOCH --sequence N] [--count N]
+
 Watch until canceled or count frames. Reset replaces the cache; publish at caughtUp.
-Mutations may pass --account ID --daemon ID to pin an uncertain retry.
-Retry identical input and --operation only on that same daemon.
 ```
 
 ## dieter channel (alias: channels)
@@ -2653,16 +2642,16 @@ Use global --machine ID|NAME to address another daemon over authenticated routes
 ### dieter peer show
 
 ```text
-Usage: dieter peer show
-  --kind KIND --id ID
-Read one shared record.
+Usage: dieter peer show --kind KIND --id ID
+
+Read one shared record and all conflicting values.
 ```
 
 ### dieter peer changes
 
 ```text
-Usage: dieter peer changes
-  [--account HASH] [--epoch EPOCH] [--sequence N]
+Usage: dieter peer changes [--account HASH] [--epoch EPOCH] [--sequence N]
+
 Read a bounded incremental change page.
 ```
 
@@ -2670,41 +2659,47 @@ Read a bounded incremental change page.
 
 ```text
 Usage: dieter peer status
-Show enrolled account, conflicts, and bounded per-peer attempts, successes, directions, checkpoints and sanitized record blockers. Catchup means durable page progress with more work pending. A successful exchange is not acknowledgement by every machine.
+
+Show the enrolled account, conflicts, and bounded per-peer attempts, successes,
+directions, checkpoints and sanitized record blockers. Catchup means durable page
+progress with more work pending. A successful exchange is not acknowledgement by
+every machine.
 ```
 
 ### dieter peer list
 
 ```text
-Usage: dieter peer list
-  [--account HASH] [--after KEY --snapshot REVISION]
+Usage: dieter peer list [--account HASH] [--after KEY --snapshot REVISION]
+
 Return up to 64 records. Pass nextKey and snapshotRevision for the next page.
 ```
 
 ### dieter peer put
 
 ```text
-Usage: dieter peer put
-  --kind KIND --id ENTITY.FIELD --file FILE [--revision HASH]
-FILE contains the JSON value for the typed shared field. Prefer project/board commands for normal edits; the daemon rejects unrecognized kinds and fields.
-Omit revision only for a new record. Resolve conflicts by supplying the current revision.
+Usage: dieter peer put --kind KIND --id ENTITY.FIELD --file FILE [--revision HASH]
+
+FILE contains the JSON value for the typed shared field. Prefer project and board
+commands for normal edits; the daemon rejects unknown kinds and fields. Omit
+--revision only for a new record; resolve conflicts with the current revision.
 ```
 
 ### dieter peer delete
 
 ```text
-Usage: dieter peer delete
-  --kind KIND --id ID --revision HASH
+Usage: dieter peer delete --kind KIND --id ID --revision HASH
+
 Persist a tombstone; concurrent unseen writes remain visible as conflicts.
 ```
 
 ### dieter peer merge
 
 ```text
-Usage: dieter peer merge
-  --file FILE
-Import at most 64 records (2 MiB total) using protobuf JSON with account and records fields.
-This joins causal versions, never replaces the store or runs an agent.
+Usage: dieter peer merge --file FILE
+
+Import at most 64 records (2 MiB total) from protobuf JSON with account and
+records fields. This joins causal versions; it never replaces the store or runs
+an agent.
 ```
 
 ## dieter settings
@@ -2760,7 +2755,12 @@ Usage: dieter prompt show
 ### dieter prompt update
 
 ```text
-Usage: dieter prompt update [--template TEXT|--template-file FILE] [--board-skill TEXT|--board-skill-file FILE] [--chat-skill TEXT|--chat-skill-file FILE]
+Usage: dieter prompt update [--template TEXT|--template-file FILE] [--board-skill TEXT|--board-skill-file FILE] [--chat-skill TEXT|--chat-skill-file FILE] [--reset template|board-skill|chat-skill]...
+
+The template opens every turn's instructions; the board skill follows it for
+cards and the chat skill for standalone chats. dieter prompt show lists their
+variables and dieter prompt preview renders them. --reset restores a template
+to this release's default, which then follows later releases.
 ```
 
 ### dieter prompt project
@@ -2987,12 +2987,12 @@ Alias for "dieter daemon start".
 ### dieter daemon start
 
 ```text
-Usage: dieter daemon start [--addr ADDRESS] [--direct-addr ADDRESS --direct-host HOST] [--env-file PATH] [--service [--runtime PATH]] [--verbose]
+Usage: dieter daemon start [--addr ADDRESS] [--direct-addr ADDRESS --direct-host HOST [--direct-network lan|tailscale|public|loopback]] [--env-file PATH] [--service [--runtime PATH]] [--verbose]
 
 Run the machine-local Dieter data plane and, when enrolled, its persistent
 outbound gateway tunnel. The local API is always loopback-only. An enrolled
 daemon automatically advertises an authenticated loopback route; direct flags
-add an optional LAN, Tailscale, or public route.
+add an optional LAN (the default --direct-network), Tailscale, or public route.
 A package manager may supply --runtime with a fixed executable directory.
 Service startup activates a staged verified release there before workers begin.
 An enrolled daemon also verifies any gateway-signed endpoint relocation at startup,

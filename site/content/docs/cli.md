@@ -169,6 +169,30 @@ dieter quota watch --count 3
 Continue paginated schedule output with its opaque `--page-token`. Each quota
 account/window remains separate; provider summaries never combine allowances.
 
+## How agents use the CLI
+
+Every agent turn starts with short instructions that name its card or chat and
+the daemon's own `dieter` binary by absolute path, so an older `dieter` earlier
+on a login shell's `PATH` cannot shadow it. They give the few commands a card
+needs (re-read the task, move the card when it is done, create a follow-up card
+when asked, set labels) and point the agent at `dieter --help` for everything
+else. Every harness gets the same instructions. The presentation and background
+process tools come with their own instructions and CLI equivalents.
+
+See exactly what a conversation receives, or replace the defaults:
+
+```sh
+dieter prompt preview --card CARD_ID
+dieter prompt show
+dieter prompt update --board-skill-file board-instructions.md
+dieter prompt update --reset board-skill
+```
+
+`dieter prompt show` lists the template variables, such as `{{card.id}}`,
+`{{board.target_lane}}` and `{{dieter.cli}}` (the daemon's binary). Templates
+you have not changed, or have reset, follow the defaults of the installed
+release.
+
 ## Automation rules
 
 Use bounded contexts and lists; fetch full tool payloads only when needed.

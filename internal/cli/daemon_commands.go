@@ -119,22 +119,22 @@ func (c *CLI) daemonBackedStorage(args []string) error {
 const machineHelp = `Usage: dieter machine <action>
 
 Actions:
-  list [--format table|json|jsonl|ids]       List enrolled machines
-  gateway                                    Show the connected gateway build
-  watch [--count N]                          Stream gateway presence as JSON Lines
-  show [MACHINE]                             Show gateway presence and route
-  route [MACHINE]                            Inspect direct routes and relay channel health
-  privacy <status|setup|on|off> [--key ID]    Control macOS local display/input privacy
-  info [MACHINE]                             Show live host telemetry (local by default)
-  rename --name NAME [MACHINE]               Rename an enrolled machine
-  revoke --confirm MACHINE_ID [MACHINE]       Revoke an enrolled machine
-  restart --confirm RESTART [MACHINE]
-  shutdown --confirm "SHUT DOWN" [MACHINE]
-  update --confirm UPDATE [MACHINE]           Update a managed daemon service
-  rtc [MACHINE]                              Get signed WebRTC configuration
-  connection <start|show|close>               Manage data-only WebRTC signaling
+  list [--format table|json|jsonl|ids]      List enrolled machines
+  gateway                                   Show the connected gateway build
+  watch [--count N]                         Stream gateway presence as JSON Lines
+  show [MACHINE]                            Show gateway presence and route
+  route [MACHINE]                           Inspect direct routes and relay channel health
+  info [MACHINE]                            Show live host telemetry
+  rename --name NAME [MACHINE]              Rename an enrolled machine
+  revoke --confirm MACHINE_ID [MACHINE]     Revoke an enrolled machine
+  restart --confirm RESTART [MACHINE]       Restart the machine
+  shutdown --confirm "SHUT DOWN" [MACHINE]  Shut the machine down
+  update --confirm UPDATE [MACHINE]         Update a managed daemon service
+  rtc [MACHINE]                             Get signed WebRTC configuration
+  connection <start|show|close>             Manage data-only WebRTC signaling
+  privacy <status|setup|on|off> [--key ID]  Control macOS local display/input privacy
 
-Pass MACHINE or global --machine to select a remote daemon. Info, restart, and
+Pass MACHINE or global --machine to select a remote daemon. Info, restart,
 shutdown and update target the local daemon when MACHINE is omitted. Update is
 non-interactive and available to Homebrew-managed macOS services and
 Dieter-managed Linux systemd user services.
@@ -280,8 +280,21 @@ func (c *CLI) machineCommand(args []string) error {
 	}
 }
 
+// machineActionUsage is the help of each machine action that names one machine.
+var machineActionUsage = map[string]string{
+	"show":     "Usage: dieter machine show [MACHINE]\n\nShow the machine's gateway presence and route as JSON.\n",
+	"route":    "Usage: dieter machine route [MACHINE]\n\nShow the machine's direct routes and relay channel health as JSON.\n",
+	"info":     "Usage: dieter machine info [MACHINE]\n\nShow live host telemetry; the local daemon when MACHINE is omitted.\n",
+	"rename":   "Usage: dieter machine rename --name NAME [MACHINE]\n",
+	"revoke":   "Usage: dieter machine revoke --confirm MACHINE_ID [MACHINE]\n\n--confirm must equal the machine's exact ID.\n",
+	"restart":  "Usage: dieter machine restart --confirm RESTART [MACHINE]\n",
+	"shutdown": "Usage: dieter machine shutdown --confirm \"SHUT DOWN\" [MACHINE]\n",
+	"update":   "Usage: dieter machine update --confirm UPDATE [MACHINE]\n\nUpdate a Homebrew-managed macOS or Dieter-managed Linux daemon service.\n",
+	"rtc":      "Usage: dieter machine rtc [MACHINE]\n\nPrint a signed WebRTC (ICE) configuration for the machine as JSON.\n",
+}
+
 func (c *CLI) machineAction(action string, args []string) error {
-	usage := fmt.Sprintf("Usage: dieter machine %s [options] [MACHINE]\n", action)
+	usage := machineActionUsage[action]
 	set := flags("machine " + action)
 	name := set.String("name", "", "new machine name")
 	confirmation := set.String("confirm", "", "required destructive-action confirmation")
@@ -494,7 +507,16 @@ func (c *CLI) machinePrivacyCommand(args []string) error {
 	if action == "status" {
 		options = ""
 	}
-	usage := fmt.Sprintf("Usage: dieter [--machine ID|NAME] machine privacy %s%s\n\n%s", action, options, group[strings.Index(group, "Black out"):])
+	detail := map[string]string{
+		"status": "Show the privacy state (off, on or degraded) and whether its input helper needs setup, as JSON.",
+		"setup":  "Register the privileged input helper; approve it and grant Input Monitoring on the target Mac.",
+		"on":     "Black out local displays and block physical input; agents and remote control continue.\nIt stays on across disconnects and daemon restarts until off or a reboot.",
+		"off":    "Restore local displays and physical input.",
+	}[action]
+	if action != "status" {
+		detail += "\n--key is an idempotency key: reuse it only to retry this operation on this daemon."
+	}
+	usage := fmt.Sprintf("Usage: dieter [--machine ID|NAME] machine privacy %s%s\n\n%s\n", action, options, detail)
 	set := flags("machine privacy " + action)
 	key := new(string)
 	if action != "status" {

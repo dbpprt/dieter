@@ -18,6 +18,7 @@ import (
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/platform/fault"
+	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
 	"github.com/dbpprt/dieter/internal/store/channels"
 )
 
@@ -680,7 +681,7 @@ func (s *Service) channelObservedWrite(cardID string, chunk json.RawMessage) {
 	if !conflict {
 		return
 	}
-	body := fmt.Sprintf("You just changed %s, which agent %s ('%s') has been changing for %s. Coordinate with them (%s channel post --to %s \"...\") before you change it further; Dieter tells you when it is free.", claim.Path, claim.CardID, channelAttribute(claim.CardTitle), heldFor(claim), s.channelCLI(), claim.CardID)
+	body := fmt.Sprintf("You just changed %s, which agent %s ('%s') has been changing for %s. Coordinate with them (%s channel post --to %s \"...\") before you change it further; Dieter tells you when it is free.", claim.Path, claim.CardID, channelAttribute(claim.CardTitle), heldFor(claim), s.CLIWord(), claim.CardID)
 	s.postDieterMessage(channel.projectID, model.ChannelKindHold, body, []string{cardID}, []string{claim.Path}, false)
 	s.notifyHolder(claim, cardID, channel.title)
 }
@@ -726,7 +727,7 @@ func (s *Service) HandleChannelHook(caller ChannelCaller, event []byte) ([]byte,
 		return nil, nil
 	}
 	s.notifyHolder(claim, caller.CardID, channel.title)
-	reason := fmt.Sprintf("Dieter agent channels: %s is being changed by agent %s ('%s') for %s. Do the other parts of your task first. If nothing else is left, end your turn with a one-line status; you will be woken when %s is free. Do not poll or sleep. You can message them with: %s channel post --to %s \"...\"", claim.Path, claim.CardID, channelAttribute(claim.CardTitle), heldFor(claim), claim.Path, s.channelCLI(), claim.CardID)
+	reason := fmt.Sprintf("Dieter agent channels: %s is being changed by agent %s ('%s') for %s. Do the other parts of your task first. If nothing else is left, end your turn with a one-line status; you will be woken when %s is free. Do not poll or sleep. You can message them with: %s channel post --to %s \"...\"", claim.Path, claim.CardID, channelAttribute(claim.CardTitle), heldFor(claim), claim.Path, s.CLIWord(), claim.CardID)
 	return json.Marshal(map[string]any{"hookSpecificOutput": map[string]string{
 		"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason,
 	}})
@@ -1103,7 +1104,7 @@ func (s *Service) planChannelTurn(detail model.CardDetail, messageID string) cha
 	if !s.ChannelsEnabled(detail.Card) {
 		return channelPlan{}
 	}
-	plan := channelPlan{enabled: true, projectID: detail.Card.ProjectID, cli: s.channelCLI()}
+	plan := channelPlan{enabled: true, projectID: detail.Card.ProjectID, cli: s.CLIWord()}
 	pending, err := s.Store.Channels.Undelivered(detail.Card.ProjectID, detail.Card.ID, detail.Card.CreatedAt)
 	if err == nil && len(pending) > 0 {
 		plan.digest = renderChannelDigest(detail.Project.Name, pending)
@@ -1118,7 +1119,7 @@ func (p channelPlan) instructions(base string) string {
 	if !p.enabled {
 		return base
 	}
-	return strings.TrimSpace(base + "\n\n" + channelInstructions(p.cli))
+	return strings.TrimSpace(base + "\n\n" + dieterprompt.ChannelInstructions(p.cli))
 }
 
 func (p channelPlan) prompt(base string) string {
@@ -1135,35 +1136,25 @@ func (s *Service) commitChannelTurn(cardID string, plan channelPlan, request *ha
 		return
 	}
 	request.SteerEnabled = true
-	if s.ChannelHookExecutable != "" {
-		request.ChannelHookCommand = shellQuote(s.ChannelHookExecutable) + " channel hook"
+	if s.CLIExecutable != "" {
+		request.ChannelHookCommand = s.CLIWord() + " channel hook"
 	}
 	if err := s.Store.Channels.Deliver(plan.projectID, cardID, model.ChannelDeliveryDigest, plan.delivered); err != nil {
 		slog.Warn("agent channel digest not recorded", "card", cardID, "error", err)
 	}
 }
 
-// channelCLI is the dieter command agents are told to run: the daemon's own
-// binary when known, so an older dieter earlier on a login shell's PATH
-// (macOS path_helper) cannot shadow it.
-func (s *Service) channelCLI() string {
-	if s.ChannelHookExecutable != "" {
-		return shellQuote(s.ChannelHookExecutable)
-	}
-	return "dieter"
-}
+// CLIWord is the shell word agents run the Dieter CLI with: CLIExecutable,
+// quoted when needed, or "dieter".
+func (s *Service) CLIWord() string { return dieterprompt.CLIWord(s.CLIExecutable) }
 
-// DaemonExecutable is the running dieter binary, for ChannelHookExecutable.
+// DaemonExecutable is the running dieter binary, for CLIExecutable.
 func DaemonExecutable() string {
 	path, err := os.Executable()
 	if err != nil {
 		return ""
 	}
 	return path
-}
-
-func shellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
 
 // channelTurnBegin attaches channel state to a running turn.

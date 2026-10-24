@@ -74,7 +74,11 @@ func (c *CLI) controlConnectionCommand(args []string) error {
 	if action != "start" && action != "show" && action != "close" {
 		return fmt.Errorf("unknown connection action %q", action)
 	}
-	usage := fmt.Sprintf("Usage: dieter machine connection %s [--request FILE] [SESSION]\n\nStart with a signed RTC configuration and gathered SDP offer; show reports the\nselected ICE mode (direct or turn); close disconnects only this transport.\n", action)
+	usage := map[string]string{
+		"start": "Usage: dieter machine connection start --request FILE\n\nStart data-only WebRTC signaling from protobuf JSON with rtcConfiguration and\nofferSdp (a signed RTC configuration and the gathered SDP offer).\n",
+		"show":  "Usage: dieter machine connection show SESSION\n\nShow the session's selected ICE mode (direct or turn).\n",
+		"close": "Usage: dieter machine connection close SESSION\n\nClose only this data-only transport.\n",
+	}[action]
 	set := flags("machine connection " + action)
 	requestPath := set.String("request", "", "protobuf JSON offer file (start only)")
 	help, err := parse(set, args[1:], usage, c.Out)

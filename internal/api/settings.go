@@ -151,7 +151,7 @@ func (api *settingsAPI) PreviewPrompt(ctx context.Context, request *dieterv1.Pre
 			return nil, workspaceErr
 		}
 	}
-	resolved, err := dieterprompt.ResolveForWorkspace(settings, detail, labelIDs, workspaceValue)
+	resolved, err := dieterprompt.ResolveForWorkspace(settings, detail, labelIDs, workspaceValue, api.server.app.CLIWord())
 	if err != nil {
 		return nil, err
 	}

@@ -151,7 +151,7 @@ func TestVaultAgentAccessFollowsConversationCreationAndRoute(t *testing.T) {
 	if request.Environment["DIETER_CARD_ID"] != allowed.ID || request.Environment["DIETER_HOME"] != data.Root || request.Environment["DIETER_TURN_TOKEN"] == "" {
 		t.Fatalf("agent environment = %v", request.Environment)
 	}
-	if !strings.Contains(request.Instructions, "Account vault access") {
+	if !strings.Contains(request.Instructions, "This conversation may use the account vault") {
 		t.Fatal("vault instructions missing for a vault-enabled card")
 	}
 	agent := map[string]string{turnTokenMetadata: request.Environment["DIETER_TURN_TOKEN"]}
@@ -190,7 +190,7 @@ func TestVaultAgentAccessFollowsConversationCreationAndRoute(t *testing.T) {
 
 	// A card created without vault access is denied.
 	request = startVaultTurn(t, client, runner, denied.ID)
-	if strings.Contains(request.Instructions, "Account vault access") {
+	if strings.Contains(request.Instructions, "This conversation may use the account vault") {
 		t.Fatal("vault instructions leaked to a card without access")
 	}
 	other := map[string]string{turnTokenMetadata: request.Environment["DIETER_TURN_TOKEN"]}

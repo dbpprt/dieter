@@ -116,6 +116,11 @@ type Request struct {
 	ContentPresentationEnabled bool              `json:"contentPresentationEnabled,omitempty"`
 	BackgroundProcessesEnabled bool              `json:"backgroundProcessesEnabled,omitempty"`
 	BackgroundProcess          ProcessHandler    `json:"-"`
+	// PresentCommand and ProcessCommand are the Dieter CLI equivalents of the
+	// presentation and background-process tools for this conversation, named
+	// in their instructions for harnesses that load host tools on demand.
+	PresentCommand string `json:"presentCommand,omitempty"`
+	ProcessCommand string `json:"processCommand,omitempty"`
 	// SteerEnabled keeps the worker's stdin open for steer frames: Steer
 	// delivers agent channel messages into the running turn, and the worker
 	// answers each with a steer-result Output.

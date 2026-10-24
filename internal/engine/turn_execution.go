@@ -74,6 +74,7 @@ func (filter *capabilityProgressFilter) shouldPersist(capability json.RawMessage
 func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID string, request harness.Request, updates chan TurnUpdate, done chan struct{}) {
 	if s.BackgroundProcesses != nil {
 		request.BackgroundProcessesEnabled = true
+		request.ProcessCommand = s.CLIWord() + " remote exec --card " + detail.Card.ID + " --detach --"
 		request.BackgroundProcess = func(ctx context.Context, call harness.ProcessCall) (json.RawMessage, error) {
 			endHostWork, _ := s.beginTurnHostWork(detail.Card.ID, turnID)
 			defer endHostWork()

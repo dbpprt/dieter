@@ -217,6 +217,7 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 		RuntimeRoot:                filepath.Join(s.Store.RuntimeDir(), "sessions", detail.Project.ID),
 		RuntimeDigest:              runtimeReference.Digest,
 		ContentPresentationEnabled: true,
+		PresentCommand:             s.CLIWord() + " " + conversationGroup(detail.Card) + " present " + detail.Card.ID,
 		Environment:                s.agentEnvironment(detail.Card.ID, turnID),
 	}
 	request.Prompt = channelPlan.prompt(harnessPrompt)

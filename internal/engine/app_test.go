@@ -503,9 +503,8 @@ func TestHarnessTurnRunsInsideConversationWorktree(t *testing.T) {
 	if presented, err := service.PresentConversationContent(context.Background(), card.ID, "", model.ContentPresentation{Path: filepath.Join(value.Path, "README.md")}); err != nil || presented.Path != "README.md" {
 		t.Fatalf("owning worktree presentation=%#v err=%v", presented, err)
 	}
-	if !strings.Contains(request.Instructions, "Working tree: "+value.Path) ||
-		!strings.Contains(request.Instructions, "Authoritative working tree: "+value.Path) ||
-		strings.Contains(request.Instructions, "Working tree: "+repository+"\n") {
+	if !strings.Contains(request.Instructions, "Authoritative working tree: "+value.Path) ||
+		strings.Contains(request.Instructions, "working tree: "+repository+"\n") {
 		t.Fatalf("worktree instructions=%q", request.Instructions)
 	}
 }

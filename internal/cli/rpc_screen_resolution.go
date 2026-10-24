@@ -27,11 +27,11 @@ func (c *CLI) rpcScreenResolution(args []string) error {
 	if action != "modes" && action != "set" && action != "restore" {
 		return errors.New(resolutionHelp)
 	}
-	usage := "Usage: dieter screen resolution " + action + " SESSION"
-	if action == "set" {
-		usage += " --display ID --mode ID --expected-current ID"
-	}
-	usage += "\n\n" + resolutionHelp
+	usage := map[string]string{
+		"modes":   "Usage: dieter screen resolution modes SESSION\n\nList the selected display's supported modes and its current mode ID.\n",
+		"set":     "Usage: dieter screen resolution set SESSION --display ID --mode ID --expected-current ID\n\nChange the physical monitor's mode for everyone using it; IDs come from a fresh\nmodes response. Requires the controlling session.\n",
+		"restore": "Usage: dieter screen resolution restore SESSION\n\nRestore the leased original mode.\n",
+	}[action]
 	set := flags("screen resolution " + action)
 	display := set.String("display", "", "display ID returned by modes")
 	mode := set.String("mode", "", "supported mode ID returned by modes")

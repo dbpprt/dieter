@@ -75,7 +75,7 @@ func (s *Store) Update(value model.Settings) (model.Settings, error) {
 	}
 	defer release()
 	normalized.UpdatedAt = home.Timestamp()
-	data, err := yaml.Marshal(normalized)
+	data, err := yaml.Marshal(customizations(normalized))
 	if err != nil {
 		return model.Settings{}, err
 	}
@@ -83,6 +83,21 @@ func (s *Store) Update(value model.Settings) (model.Settings, error) {
 		return model.Settings{}, err
 	}
 	return normalized, nil
+}
+
+// customizations is what settings.yaml stores: templates equal to the
+// built-in defaults are left out, so a new release's defaults apply to them.
+func customizations(value model.Settings) model.Settings {
+	if value.PromptTemplate == dieterprompt.DefaultTemplate {
+		value.PromptTemplate = ""
+	}
+	if value.BoardSkillTemplate == dieterprompt.DefaultBoardSkillTemplate {
+		value.BoardSkillTemplate = ""
+	}
+	if value.ChatSkillTemplate == dieterprompt.DefaultChatSkillTemplate {
+		value.ChatSkillTemplate = ""
+	}
+	return value
 }
 
 func (s *Store) UpdatePrompts(promptTemplate, boardSkillTemplate, chatSkillTemplate string) (model.Settings, error) {

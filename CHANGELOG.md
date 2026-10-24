@@ -8,7 +8,34 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
-Nothing yet.
+### Changed
+
+- Agents get shorter, precise instructions on every turn, the same for every
+  harness. They name the card or chat and the daemon's own `dieter` binary by
+  absolute path, so an older `dieter` earlier on the `PATH` can no longer run
+  instead, and send agents to `dieter --help` for everything beyond the
+  essentials. Nothing is said twice any more, and the follow-up card command
+  now includes its required `--title` and `--workspace`. When a harness has not
+  loaded the presentation or background process tools, their instructions name
+  the equivalent `dieter` command, and they ask agents to open a file in the
+  workspace pane when you want to see it instead of printing it.
+- Prompt templates you have not changed follow each release's defaults; saving
+  settings no longer freezes the defaults of the release you saved them with.
+  `dieter prompt update --reset template|board-skill|chat-skill` restores a
+  replaced default, and `dieter prompt preview --card CARD` shows a
+  conversation's exact instructions.
+
+### Fixed
+
+- `dieter chat` help shows `dieter chat … CHAT` instead of the card commands,
+  and chats no longer offer `start`, `labels`, `--lane` or `--labels`.
+  `dieter chat list --project` now filters by project instead of being ignored.
+- CLI help names the flags machine actions need (`--name`, `--confirm`), the hex
+  format of `board label --color`, what `card context` and `card archive` do,
+  and the `--direct-network` option of `daemon start`; the `project`, `board`,
+  `workspace`, `screen resolution`, `kv` and `peer` help is corrected.
+  `card context` also returns the card title, and `board label list` prints
+  `[]` for a board without labels.
 
 ## 0.6.425
 

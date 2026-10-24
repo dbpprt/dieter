@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"regexp"
 	"slices"
 	"strings"
 	"syscall"
@@ -19,40 +20,57 @@ import (
 const cardHelp = `Usage: dieter card <action>
 
 Actions:
-  create       Create a board conversation
-  list         Search board conversations
-  show         Show card metadata
-  context      Print bounded agent context
-  transcript   Read the durable conversation
+  list         Search board cards
+  show         Show a card's metadata as JSON
+  context      Print a card's task brief, project instructions, board and lane
+  transcript   Read a card's conversation
   poll         Fetch one bounded conversation update
   watch        Stream conversation updates as JSON Lines
   tool-output  Fetch a full tool input/output payload
-  present      Present a file or URL in this conversation’s native workspace pane
-  fork         Fork a completed conversation into a standalone chat
-  send         Submit a human message to the daemon-owned turn lifecycle
-  queue        Manage messages waiting behind the active turn
+  create       Create a card (Todo draft or running)
+  start        Start a Todo draft
+  send         Send a message to a card; it queues behind a running turn
+  queue        Manage messages waiting behind the running turn
+  cancel       Cancel the running turn
+  move         Move a card to another lane
+  labels       Replace a card's board labels
+  present      Show a file or URL in the conversation's workspace pane
   read         Mark a displayed model response as seen
-  merge        Add an idle card’s initial request to a started task; mark source Done
-  move         Move a card between workflow lanes
-  start        Start a draft card idempotently
-  labels       Replace board-label assignments
-  cancel       Request cancellation of the active turn
   rename       Rename a card
-  update       Update title and initial prompt
+  update       Update the title, or a draft's task brief and agent settings
+  fork         Fork a finished conversation into a standalone chat
+  merge        Queue an idle card's request in a started card and mark it Done
   archive      Archive a card
-  unarchive    Restore a card
-  workspace    Select the project directory or an isolated worktree
+  unarchive    Restore an archived card
+  workspace    Use the project directory or an isolated worktree
+
+Messages sent with "card send" appear as the human's. Agents message each
+other with "dieter channel post" when agent channels are on.
 `
 
 const chatHelp = `Usage: dieter chat <action>
 
 Actions:
-  create, list, show, context, transcript, watch, tool-output, present, fork, send,
-  queue, read, cancel, rename, update, archive, unarchive, workspace, pin, unpin
+  create, list, show, context, transcript, poll, watch, tool-output, send,
+  queue, cancel, present, read, rename, update, fork, archive, unarchive,
+  workspace, pin, unpin
 
-Standalone chats use the same durable conversation and workspace operations as
-cards but are not assigned to a board lane.
+A standalone chat is a conversation without a board: it has no lanes or labels
+and starts when created. Actions take the same options as their card versions
+(see dieter chat ACTION --help).
 `
+
+// chatCardWord rewrites the CARD placeholder of shared card usages for chats.
+var chatCardWord = regexp.MustCompile(`\bCARD\b`)
+
+// scoped returns usage for the group being run: chat actions reuse the card
+// implementations, so their help names dieter chat and CHAT.
+func (c *CLI) scoped(usage string) string {
+	if !c.chatScope {
+		return usage
+	}
+	return chatCardWord.ReplaceAllString(strings.ReplaceAll(usage, "dieter card ", "dieter chat "), "CHAT")
+}
 
 func (c *CLI) rpcCard(args []string, chat bool) error {
 	if groupHelp(args) {
@@ -62,6 +80,10 @@ func (c *CLI) rpcCard(args []string, chat bool) error {
 			fmt.Fprint(c.Out, cardHelp)
 		}
 		return nil
+	}
+	if chat {
+		c.chatScope = true
+		defer func() { c.chatScope = false }()
 	}
 	switch args[0] {
 	case "create":
@@ -101,8 +123,14 @@ func (c *CLI) rpcCard(args []string, chat bool) error {
 		}
 		return c.rpcCardMove(args[1:])
 	case "start":
+		if chat {
+			return errors.New("standalone chats start when they are created")
+		}
 		return c.rpcCardStart(args[1:])
 	case "labels":
+		if chat {
+			return errors.New("standalone chats do not have board labels")
+		}
 		return c.rpcCardLabels(args[1:])
 	case "cancel":
 		return c.rpcCardCancel(args[1:])
@@ -152,7 +180,7 @@ func (c *CLI) rpcCardCreate(args []string, chat bool) error {
 	usage := `Usage: dieter card create --project PROJECT --board BOARD (--title TITLE | --auto-title) --workspace project|worktree [options]
 
 Options:
-  --checkout CHECKOUT      Checkout on the target machine; required if it has several
+  --checkout CHECKOUT       Checkout on the target machine; required if it has several
   --lane todo|running       Todo creates a draft; Running starts immediately
   --auto-title              Save immediately; GPT Spark improves the title in the background
   --prompt TEXT             Initial task brief
@@ -178,6 +206,8 @@ before the command to create on another enrolled machine.
 	if chat {
 		group = "chat"
 		usage = strings.Replace(usage, "card create --project PROJECT --board BOARD", "chat create --project PROJECT", 1)
+		usage = strings.Replace(usage, "  --lane todo|running       Todo creates a draft; Running starts immediately\n", "", 1)
+		usage = strings.Replace(usage, "  --labels LABELS           Comma-separated label IDs\n", "", 1)
 	}
 	set := flags(group + " create")
 	checkout := set.String("checkout", "", "local checkout ID; required when the project has multiple checkouts here")
@@ -203,7 +233,7 @@ before the command to create on another enrolled machine.
 	remotePublish := set.String("remote-publish", "", "manual, pull_request, or push_base")
 	vaultAccess := set.Bool("vault", false, "grant agent turns access to the account vault")
 	format := set.String("format", "json", "json or id")
-	help, err := parse(set, args, usage, c.Out)
+	help, err := parse(set, args, c.scoped(usage), c.Out)
 	if help || err != nil {
 		return err
 	}
@@ -316,7 +346,7 @@ func (c *CLI) rpcCardList(args []string, chat bool) error {
 	usage := "Usage: dieter card list [--project PROJECT] [--board BOARD] [--lane LANE] [--label LABEL] [--status STATUS] [--query TEXT] [--archived] [--limit N] [--format table|json|jsonl|ids]\n"
 	if chat {
 		group = "chat"
-		usage = "Usage: dieter chat list [--archived] [--format table|json|jsonl|ids]\n"
+		usage = "Usage: dieter chat list [--project PROJECT] [--archived] [--format table|json|jsonl|ids]\n"
 	}
 	set := flags(group + " list")
 	project := set.String("project", "", "project ID")
@@ -328,7 +358,7 @@ func (c *CLI) rpcCardList(args []string, chat bool) error {
 	archived := set.Bool("archived", false, "include archived conversations")
 	limit := set.Int("limit", 0, "maximum results")
 	format := set.String("format", "table", "table, json, jsonl, or ids")
-	help, err := parse(set, args, usage, c.Out)
+	help, err := parse(set, args, c.scoped(usage), c.Out)
 	if help || err != nil {
 		return err
 	}
@@ -340,11 +370,27 @@ func (c *CLI) rpcCardList(args []string, chat bool) error {
 	}
 	var items []*dieterv1.Card
 	if chat {
+		var cardOnly []string
+		set.Visit(func(item *flag.Flag) {
+			if item.Name == "board" || item.Name == "lane" || item.Name == "label" || item.Name == "status" || item.Name == "query" || item.Name == "limit" {
+				cardOnly = append(cardOnly, "--"+item.Name)
+			}
+		})
+		if len(cardOnly) > 0 {
+			return fmt.Errorf("chat list does not filter by %s", strings.Join(cardOnly, ", "))
+		}
 		value, err := client.ListChats(rpcCtx, &dieterv1.ListChatsRequest{IncludeArchived: *archived})
 		if err != nil {
 			return err
 		}
 		items = value.GetChats()
+		if *project != "" {
+			projectValue, _, err := c.projectState(ctx, *project)
+			if err != nil {
+				return err
+			}
+			items = slices.DeleteFunc(items, func(item *dieterv1.Card) bool { return item.GetProjectId() != projectValue.GetId() })
+		}
 	} else {
 		if *project == "" && *board != "" {
 			selected, _, err := c.boardState(ctx, *board)
@@ -433,13 +479,12 @@ func (c *CLI) getCard(ctx context.Context, reference string) (*dieterv1.CardDeta
 }
 
 func (c *CLI) rpcCardShow(args []string, compact bool) error {
-	action := "show"
+	usage := "Usage: dieter card show CARD\n\nShow the conversation with its project and board as JSON, including cumulative\nprovider-reported tokenUsage.\n"
 	if compact {
-		action = "context"
+		usage = "Usage: dieter card context CARD\n\nPrint the title, task brief, lane, project instructions, board and workflow, and\ncumulative provider-reported tokenUsage as compact JSON.\n"
 	}
-	usage := fmt.Sprintf("Usage: dieter card %s CARD\n\nIncludes cumulative provider-reported tokenUsage (input/output/total and partial coverage).\n", action)
 	if wantsHelp(args) {
-		fmt.Fprint(c.Out, usage)
+		fmt.Fprint(c.Out, c.scoped(usage))
 		return nil
 	}
 	if len(args) != 1 {
@@ -459,7 +504,7 @@ func (c *CLI) rpcCardShow(args []string, compact bool) error {
 				"missingMessages": u.MissingMessages, "partial": u.Partial}
 		}
 		return jsonOut(c.Out, map[string]any{
-			"cardId": detail.GetCard().GetId(), "project": detail.GetProject().GetName(),
+			"cardId": detail.GetCard().GetId(), "title": detail.GetCard().GetTitle(), "project": detail.GetProject().GetName(),
 			"projectPrompt": detail.GetProject().GetPrompt(), "board": detail.GetBoard().GetName(),
 			"workflow": detail.GetBoard().GetWorkflow(), "lane": detail.GetCard().GetLane(),
 			"task":       detail.GetCard().GetInitialPrompt(),
@@ -474,7 +519,7 @@ func (c *CLI) rpcCardTranscript(args []string) error {
 	set := flags("card transcript")
 	last := set.Int("last", 30, "message count")
 	before := set.Int("before", -1, "exclusive message index")
-	help, err := parse(set, args, usage, c.Out)
+	help, err := parse(set, args, c.scoped(usage), c.Out)
 	if help || err != nil {
 		return err
 	}
@@ -505,7 +550,7 @@ func (c *CLI) rpcCardWatch(args []string) error {
 	last := set.Int("last", 30, "message count")
 	after := set.Int64("after-seq", 0, "resume sequence")
 	count := set.Int("count", 0, "stop after N frames")
-	help, err := parse(set, args, usage, c.Out)
+	help, err := parse(set, args, c.scoped(usage), c.Out)
 	if help || err != nil {
 		return err
 	}
@@ -541,7 +586,7 @@ func (c *CLI) rpcCardPoll(args []string) error {
 	set := flags("card poll")
 	last := set.Int("last", 30, "message count")
 	after := set.Int64("after-seq", 0, "wait for changes after this sequence")
-	help, err := parse(set, args, usage, c.Out)
+	help, err := parse(set, args, c.scoped(usage), c.Out)
 	if help || err != nil {
 		return err
 	}
@@ -573,7 +618,7 @@ func (c *CLI) rpcCardToolOutput(args []string) error {
 	messageID := set.String("message", "", "message ID")
 	toolCallID := set.String("tool-call", "", "tool-call ID")
 	revision := set.String("revision", "", "payload revision")
-	help, err := parse(set, args, usage, c.Out)
+	help, err := parse(set, args, c.scoped(usage), c.Out)
 	if help || err != nil {
 		return err
 	}
@@ -608,7 +653,7 @@ Global --machine selects the owning daemon through authenticated direct/relay ro
 	url := set.String("url", "", "absolute HTTP(S) URL")
 	line := set.Int("line", 0, "one-based file line")
 	title := set.String("title", "", "optional pane title (256 characters maximum)")
-	help, err := parse(set, args, usage, c.Out)
+	help, err := parse(set, args, c.scoped(usage), c.Out)
 	if help || err != nil {
 		return err
 	}
@@ -637,7 +682,7 @@ func (c *CLI) rpcCardFork(args []string) error {
 	messageID := set.String("at", "", "message boundary")
 	title := set.String("title", "", "fork title")
 	format := set.String("format", "json", "json or id")
-	help, err := parse(set, args, usage, c.Out)
+	help, err := parse(set, args, c.scoped(usage), c.Out)
 	if help || err != nil {
 		return err
 	}
@@ -662,7 +707,7 @@ func (c *CLI) rpcCardFork(args []string) error {
 }
 
 func (c *CLI) rpcCardSend(args []string) error {
-	const usage = "Usage: dieter card send [--message TEXT|--file FILE] [--attach FILE ...] [--provider P] [--model M] [--effort E] [--provider-option K=V] CARD\nModel, effort and mutable provider options apply to this message where supported.\nDuring a running turn, the message and its selection are queued together.\nThe provider stays fixed after the first message. Use --effort default to reset reasoning.\n"
+	const usage = "Usage: dieter card send [--message TEXT|--file FILE] [--attach FILE ...] [--provider P] [--model M] [--effort E] [--provider-option K=V] CARD\n\nSend a message as the human. It starts a turn, or queues behind the running turn\nwith its model selection. Model, effort and mutable provider options apply to this\nmessage where supported; the provider stays fixed after the first message. Use\n--effort default to reset reasoning.\n"
 	set := flags("card send")
 	message := set.String("message", "", "message text")
 	file := set.String("file", "", "message file or -")
@@ -673,7 +718,7 @@ func (c *CLI) rpcCardSend(args []string) error {
 	effort := set.String("effort", "", "reasoning effort")
 	providerOptions := parameterFlags{}
 	set.Var(&providerOptions, "provider-option", "provider option KEY=VALUE")
-	help, err := parse(set, args, usage, c.Out)
+	help, err := parse(set, args, c.scoped(usage), c.Out)
 	if help || err != nil {
 		return err
 	}
@@ -724,7 +769,7 @@ func (c *CLI) rpcCardSend(args []string) error {
 func (c *CLI) rpcCardQueue(args []string) error {
 	const usage = "Usage: dieter card queue <action>\n\nActions:\n  remove   Remove a message that has not started yet\n"
 	if groupHelp(args) {
-		fmt.Fprint(c.Out, usage)
+		fmt.Fprint(c.Out, c.scoped(usage))
 		return nil
 	}
 	if args[0] != "remove" {
@@ -737,7 +782,7 @@ func (c *CLI) rpcCardQueueRemove(args []string) error {
 	const usage = "Usage: dieter card queue remove --message MESSAGE_ID CARD\n\nRemoves a queued message and prints its complete content as JSON.\n"
 	set := flags("card queue remove")
 	messageID := set.String("message", "", "queued message ID")
-	help, err := parse(set, args, usage, c.Out)
+	help, err := parse(set, args, c.scoped(usage), c.Out)
 	if help || err != nil {
 		return err
 	}
@@ -763,7 +808,7 @@ func (c *CLI) rpcCardMerge(args []string) error {
 	const usage = "Usage: dieter card merge --into TARGET CARD\n\nQueue CARD's initial request and attachments in a started target on the same board. The source must be idle with an empty queue. Move it to Done and link it to TARGET. Retries are idempotent; conversations and workspaces are preserved.\n"
 	set := flags("card merge")
 	target := set.String("into", "", "target card ID")
-	help, err := parse(set, args, usage, c.Out)
+	help, err := parse(set, args, c.scoped(usage), c.Out)
 	if help || err != nil {
 		return err
 	}
@@ -790,7 +835,7 @@ func (c *CLI) rpcCardMove(args []string) error {
 	after := set.String("after", "", "place after this card ID (empty means lane start)")
 	before := set.String("before", "", "place before this card ID (empty means lane end)")
 	revision := set.String("revision", "", "observed placement revision; reject a stale move")
-	help, err := parse(set, args, usage, c.Out)
+	help, err := parse(set, args, c.scoped(usage), c.Out)
 	if help || err != nil {
 		return err
 	}
@@ -814,7 +859,7 @@ func (c *CLI) rpcCardMove(args []string) error {
 func (c *CLI) rpcCardStart(args []string) error {
 	const usage = "Usage: dieter card start CARD\n"
 	if wantsHelp(args) {
-		fmt.Fprint(c.Out, usage)
+		fmt.Fprint(c.Out, c.scoped(usage))
 		return nil
 	}
 	if len(args) != 1 {
@@ -841,7 +886,7 @@ func (c *CLI) rpcCardLabels(args []string) error {
 	const usage = "Usage: dieter card labels --set LABELS CARD\n\nLABELS is a comma-separated list of board label IDs; empty clears labels.\n"
 	set := flags("card labels")
 	labels := set.String("set", "", "comma-separated label IDs")
-	help, err := parse(set, args, usage, c.Out)
+	help, err := parse(set, args, c.scoped(usage), c.Out)
 	if help || err != nil {
 		return err
 	}
@@ -864,7 +909,7 @@ func (c *CLI) rpcCardLabels(args []string) error {
 func (c *CLI) rpcCardCancel(args []string) error {
 	const usage = "Usage: dieter card cancel CARD\n\nRequests cancellation and returns once the active turn has been signaled.\nQueued messages start after that turn finishes cleanup.\n"
 	if wantsHelp(args) {
-		fmt.Fprint(c.Out, usage)
+		fmt.Fprint(c.Out, c.scoped(usage))
 		return nil
 	}
 	if len(args) != 1 {
@@ -884,7 +929,7 @@ func (c *CLI) rpcCardRename(args []string) error {
 	const usage = "Usage: dieter card rename --title TITLE CARD\n"
 	set := flags("card rename")
 	title := set.String("title", "", "new title")
-	help, err := parse(set, args, usage, c.Out)
+	help, err := parse(set, args, c.scoped(usage), c.Out)
 	if help || err != nil {
 		return err
 	}
@@ -905,7 +950,7 @@ func (c *CLI) rpcCardRename(args []string) error {
 }
 
 func (c *CLI) rpcCardUpdate(args []string) error {
-	const usage = "Usage: dieter card update [--title TITLE] [--prompt TEXT|--prompt-file FILE] [--provider P] [--model M] [--effort E] [--provider-option K=V] CARD\nAgent settings are editable only before the initial task is sent.\n"
+	const usage = "Usage: dieter card update [--title TITLE] [--prompt TEXT|--prompt-file FILE] [--provider P] [--model M] [--effort E] [--provider-option K=V] CARD\n\nThe task brief and agent settings are editable only before the first turn.\n"
 	set := flags("card update")
 	provider, modelName, effort := &optional{}, &optional{}, &optional{}
 	set.Var(provider, "provider", "draft agent")
@@ -917,7 +962,7 @@ func (c *CLI) rpcCardUpdate(args []string) error {
 	set.Var(title, "title", "title")
 	set.Var(prompt, "prompt", "initial prompt")
 	promptFile := set.String("prompt-file", "", "initial prompt file")
-	help, err := parse(set, args, usage, c.Out)
+	help, err := parse(set, args, c.scoped(usage), c.Out)
 	if help || err != nil {
 		return err
 	}
@@ -985,9 +1030,9 @@ func (c *CLI) rpcCardArchive(args []string, archived bool) error {
 	if !archived {
 		action = "unarchive"
 	}
-	usage := fmt.Sprintf("Usage: dieter card %s CARD\n\nIncludes cumulative provider-reported tokenUsage (input/output/total and partial coverage).\n", action)
+	usage := fmt.Sprintf("Usage: dieter card %s CARD\n", action)
 	if wantsHelp(args) {
-		fmt.Fprint(c.Out, usage)
+		fmt.Fprint(c.Out, c.scoped(usage))
 		return nil
 	}
 	if len(args) != 1 {
@@ -1014,7 +1059,7 @@ func (c *CLI) rpcCardWorkspace(args []string) error {
 	baseBranch := set.String("base-branch", "", "worktree base branch")
 	baseRemote := set.String("base-remote", "", "base remote override")
 	remotePublish := set.String("remote-publish", "", "manual, pull_request, or push_base")
-	help, err := parse(set, args, usage, c.Out)
+	help, err := parse(set, args, c.scoped(usage), c.Out)
 	if help || err != nil {
 		return err
 	}
@@ -1044,7 +1089,7 @@ func (c *CLI) rpcChatPin(args []string, pinned bool) error {
 	}
 	usage := fmt.Sprintf("Usage: dieter chat %s CHAT\n", action)
 	if wantsHelp(args) {
-		fmt.Fprint(c.Out, usage)
+		fmt.Fprint(c.Out, c.scoped(usage))
 		return nil
 	}
 	if len(args) != 1 {
@@ -1064,10 +1109,10 @@ func (c *CLI) rpcChatPin(args []string, pinned bool) error {
 }
 
 func (c *CLI) rpcCardRead(args []string) error {
-	const usage = "Usage: dieter card read --response-seq SEQ CARD\n\nMark the displayed model response as seen. Use responseSeq from card show; stale receipts cannot clear newer replies. Also available as chat read and with global --machine.\n"
+	const usage = "Usage: dieter card read --response-seq SEQ CARD\n\nMark the displayed model response as seen. Use responseSeq from show; a stale\nreceipt cannot clear a newer reply.\n"
 	set := flags("card read")
 	seq := set.Int64("response-seq", 0, "sequence of the displayed completed response")
-	help, err := parse(set, args, usage, c.Out)
+	help, err := parse(set, args, c.scoped(usage), c.Out)
 	if help || err != nil {
 		return err
 	}
