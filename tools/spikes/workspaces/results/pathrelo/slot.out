@@ -1,0 +1,11 @@
+clone js -> upstream: 1.922s
+upstream first git status after clone: 1.154s
+commits created; files changed base0..b1=      20 ..b10=     201 ..b100=     218
+FRESH: spike clone base(b100) -> view: 2.968s; first git status: 1.313s; second: 0.156s
+slot-1 warm git status: 0.163s
+REFRESH slot to b1: fetch 1.793s reset --hard 0.452s clean 0.264s status 0.182s; leftover non-node_modules entries=       0; node_modules kept:     4995 entries; HEAD=b1
+slot-10 warm git status: 0.177s
+REFRESH slot to b10: fetch 1.413s reset --hard 0.378s clean 0.826s status 0.183s; leftover non-node_modules entries=       0; node_modules kept:     4995 entries; HEAD=b10
+slot-100 warm git status: 0.158s
+REFRESH slot to b100: fetch 1.443s reset --hard 1.066s clean 0.535s status 0.196s; leftover non-node_modules entries=       0; node_modules kept:     4995 entries; HEAD=b100
+clean slot b100->base0: reset 1.082s clean 0.156s; ->b100: reset 1.286s

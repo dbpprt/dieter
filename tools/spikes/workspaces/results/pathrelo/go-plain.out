@@ -1,0 +1,9 @@
+plain source cold build:      535 pkgs, 104.7s
+clone: 4.15s
+plain view build:       56 pkgs rebuilt (56 module pkgs), 32.9s
+plain view go test: 0 cached / 4 ok
+vet rc=0
+plain after edit:        2 pkgs rebuilt: github.com/dbpprt/dieter/internal/cli github.com/dbpprt/dieter/cmd/dieter
+  marker in view binary: 0
+  abs paths in binary:  341 /Volumes/External/dieter-spike/pathrelo/go/view-plain
+  cache: 646M	/Volumes/External/dieter-spike/pathrelo/go/cache-plain
