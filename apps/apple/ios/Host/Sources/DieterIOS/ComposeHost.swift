@@ -420,7 +420,14 @@ final class TabContainer: UIViewController {
         if let coordinator = navigator.transitionCoordinator {
             deferred = true
             coordinator.animate(alongsideTransition: nil) { [weak self] context in
-                if context.isCancelled { self?.settle?() }
+                if context.isCancelled {
+                    self?.settle?()
+                } else {
+                    // A stack inside the iPhone More list never reports its own transitions to the
+                    // shell, so nothing else would apply the change that waited for this one. Pops
+                    // are recorded by then; `settle` only acts while a change is deferred.
+                    DispatchQueue.main.async { self?.settle?() }
+                }
             }
             return
         }
