@@ -5,9 +5,10 @@ name: Devices
 tags: [smoke]
 ---
 - runFlow: common/launch.yaml
-- tapOn:
-    text: "Tools"
-    waitToSettleTimeoutMs: 500
+- runFlow:
+    file: common/tab.yaml
+    env:
+      TAB: "Tools"
 - scrollUntilVisible:
     element:
       id: tool-devices

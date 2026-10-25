@@ -8,9 +8,10 @@ name: Channels
 tags: [full]
 ---
 - runFlow: common/launch.yaml
-- tapOn:
-    text: "Channels"
-    waitToSettleTimeoutMs: 500
+- runFlow:
+    file: common/tab.yaml
+    env:
+      TAB: "Channels"
 - extendedWaitUntil:
     visible: "Agent channels are off"
     timeout: 30000
@@ -63,9 +64,10 @@ tags: [full]
       id: channel-audience-hint
     timeout: 30000
 - runFlow: common/back.yaml
-- tapOn:
-    text: "Tools"
-    waitToSettleTimeoutMs: 500
+- runFlow:
+    file: common/tab.yaml
+    env:
+      TAB: "Tools"
 - scrollUntilVisible:
     element:
       id: tool-settings

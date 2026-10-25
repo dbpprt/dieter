@@ -10,9 +10,10 @@ tags: [full]
 - extendedWaitUntil:
     visible: "Mobile release checklist"
     timeout: 40000
-- tapOn:
-    text: "Tools"
-    waitToSettleTimeoutMs: 500
+- runFlow:
+    file: common/tab.yaml
+    env:
+      TAB: "Tools"
 - tapOn:
     id: tool-machines
     waitToSettleTimeoutMs: 500
