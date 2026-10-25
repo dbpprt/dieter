@@ -19,6 +19,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.getdieter.client.v1.SessionSlice
 import com.getdieter.mobile.board.*
+import com.getdieter.mobile.channels.*
 import com.getdieter.mobile.conversation.*
 import com.getdieter.mobile.creation.*
 import com.getdieter.mobile.design.*
@@ -145,15 +146,22 @@ private fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
 @Composable
 private fun BottomBar(store: MobileStore, navigation: MobileNavigation) {
     val activity by store.workspace.activity.collectAsState()
+    val channels by store.channels.slice.collectAsState()
     NavigationBar(containerColor = colors.surfaceContainer) {
         MobileTab.entries.forEach { tab ->
             NavigationBarItem(
                 selected = navigation.tab == tab,
                 onClick = { store.selectTab(tab) },
                 icon = {
-                    val attention =
-                        if (tab == MobileTab.INBOX) activity.summary?.attention ?: 0 else 0
-                    BadgedBox(badge = { if (attention > 0) Badge { Text("$attention") } }) {
+                    val badge =
+                        when (tab) {
+                            MobileTab.INBOX -> (activity.summary?.attention ?: 0).toString()
+                            MobileTab.CHANNELS -> channels.unread_label
+                            else -> ""
+                        }
+                    BadgedBox(
+                        badge = { if (badge.isNotEmpty() && badge != "0") Badge { Text(badge) } }
+                    ) {
                         Icon(tab.glyph, null, size = 24.dp)
                     }
                 },
@@ -285,11 +293,13 @@ internal fun RouteContent(store: MobileStore, route: MobileRoute, openUrl: (Stri
                 MobileTab.INBOX -> InboxScreen(store)
                 MobileTab.PROJECTS -> ProjectsScreen(store)
                 MobileTab.CHATS -> ChatsScreen(store)
+                MobileTab.CHANNELS -> ChannelsScreen(store)
                 MobileTab.TOOLS -> ToolsScreen(store)
             }
         is MobileRoute.Project -> ProjectScreen(store, route.projectId)
         is MobileRoute.Board -> BoardScreen(store, route.boardId)
         is MobileRoute.Conversation -> ConversationScreen(store, card(route.cardId), openUrl)
+        is MobileRoute.Channel -> ChannelScreen(store, route.projectId, openUrl)
         is MobileRoute.Pane -> CardPaneScreen(store, card(route.cardId), route.pane, openUrl)
         is MobileRoute.Tool -> ToolScreen(store, route.page)
         is MobileRoute.NewTask -> CreationScreen(store, route.chat)

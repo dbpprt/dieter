@@ -53,6 +53,7 @@ class MobileStore(
     val terminals: TerminalsModel = TerminalsModel(context) { conversation.showsTerminal }
     val screens: ScreensModel = ScreensModel(context)
     val devices: DevicesModel = DevicesModel(context)
+    val channels: ChannelsModel = ChannelsModel(context)
     private var activeTop = ""
 
     init {
@@ -68,6 +69,7 @@ class MobileStore(
         machines.subscribe()
         terminals.subscribe()
         screens.subscribe()
+        channels.subscribe()
         conversation.loadDrafts()
     }
 
@@ -104,6 +106,19 @@ class MobileStore(
         val base = current.stack.take(index + 1)
         if (base + route == current.stack) return
         routes.value = current.with(current.tab, base + route)
+        syncNavigation()
+    }
+
+    /** Opens [projectId]'s channel on the Channels tab, e.g. from a channel message in a turn. */
+    fun openChannel(projectId: String) {
+        val current = routes.value
+        routes.value =
+            current
+                .copy(tab = MobileTab.CHANNELS)
+                .with(
+                    MobileTab.CHANNELS,
+                    listOf(MobileRoute.Root(MobileTab.CHANNELS), MobileRoute.Channel(projectId)),
+                )
         syncNavigation()
     }
 
@@ -240,11 +255,17 @@ class MobileStore(
         else if (screen != null && screen.machineId != screens.selected.value)
             screens.open(screen.machineId)
         machines.select((stack.lastOrNull() as? MobileRoute.Machine)?.machineId.orEmpty())
+        channels.show((state.top as? MobileRoute.Channel)?.projectId)
         val top = state.modal ?: state.top
         if (top.key == activeTop) return
         activeTop = top.key
         when (top) {
-            is MobileRoute.Root -> if (top.tab == MobileTab.INBOX) machines.loadQuotas()
+            is MobileRoute.Root ->
+                when (top.tab) {
+                    MobileTab.INBOX -> machines.loadQuotas()
+                    MobileTab.CHANNELS -> channels.refresh()
+                    else -> Unit
+                }
             is MobileRoute.Tool -> {
                 if (top.projectId.isNotEmpty() && top.projectId != boards.selectedProject.value)
                     boards.selectProject(top.projectId)
@@ -319,5 +340,6 @@ class MobileStore(
         const val PROJECT_CHANGES_SCOPE = "mobile-project-changes"
         const val PROCESSES_SCOPE = "mobile-processes"
         const val SCREEN_SCOPE = "mobile-screen"
+        const val CHANNELS_SCOPE = "mobile-channels"
     }
 }

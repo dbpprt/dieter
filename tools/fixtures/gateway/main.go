@@ -72,7 +72,7 @@ func main() {
 	e2eFixture := flag.Bool("e2e-fixture", false, "seed the small persisted workspace that every Maestro flow uses")
 	usageFixture := flag.Bool("usage-fixture", false, "publish deterministic provider usage without provider credentials")
 	showcaseFixture := flag.Bool("showcase-fixture", false, "seed the multi-machine workspace with live agent turns used for documentation screenshots")
-	channelsFixture := flag.Bool("channels-fixture", false, "turn agent channels on and seed the project channel with a two-agent coordination")
+	channelsFixture := flag.Bool("channels-fixture", false, "turn agent channels on and seed the project channel and its agents' conversations with a two-agent coordination")
 	directRoute := flag.String("direct-route", "", `advertise a loopback direct TLS route for the primary daemon: "live" serves it, "dead" advertises a closed port`)
 	flag.Parse()
 	if *directRoute != "" && *directRoute != "live" && *directRoute != "dead" {

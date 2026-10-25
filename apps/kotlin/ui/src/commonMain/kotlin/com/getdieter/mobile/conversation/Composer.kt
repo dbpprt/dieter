@@ -230,13 +230,14 @@ internal fun Composer(
 }
 
 @Composable
-private fun SendButton(
+internal fun SendButton(
     glyph: Glyph,
     description: String,
     onClick: () -> Unit,
     enabled: Boolean,
     size: androidx.compose.ui.unit.Dp,
     destructive: Boolean = false,
+    tag: String = if (glyph == Glyph.STOP) "stop-agent" else "send-message",
 ) {
     val container =
         when {
@@ -258,7 +259,7 @@ private fun SendButton(
             .background(container)
             .pressable(onClick = onClick, enabled = enabled)
             .semantics { contentDescription = description }
-            .testTag(if (glyph == Glyph.STOP) "stop-agent" else "send-message"),
+            .testTag(tag),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
@@ -272,7 +273,7 @@ private fun SendButton(
 }
 
 @Composable
-private fun ComposerChip(
+internal fun ComposerChip(
     text: String,
     glyph: Glyph,
     modifier: Modifier = Modifier,

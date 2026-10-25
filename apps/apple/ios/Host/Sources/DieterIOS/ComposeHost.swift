@@ -90,10 +90,12 @@ public final class ShellController: UIViewController, UINavigationControllerDele
     private var modalKey: String?
     private var current: NativeNavigation?
     private var applying = false
+    /// In the shared `MobileTab` order.
     private static let specs: [(title: String, symbol: String)] = [
         ("Inbox", "tray"), ("Projects", "folder"), ("Chats", "bubble.left.and.bubble.right"),
-        ("Tools", "square.grid.2x2"),
+        ("Channels", "number"), ("Tools", "square.grid.2x2"),
     ]
+    private static let channelsTab = specs.firstIndex { $0.title == "Channels" } ?? 3
 
     init(host: MobileHost) {
         self.host = host
@@ -179,6 +181,10 @@ public final class ShellController: UIViewController, UINavigationControllerDele
         }
         if visible != selected, selected < tabs.tabs.count { tabs.selectedTab = tabs.tabs[selected] }
         tabs.tabs.first?.badgeValue = navigation.attention > 0 ? "\(navigation.attention)" : nil
+        if Self.channelsTab < tabs.tabs.count {
+            tabs.tabs[Self.channelsTab].badgeValue =
+                navigation.channelsUnread.isEmpty ? nil : navigation.channelsUnread
+        }
         if selected < containers.count {
             updateTabBar(for: containers[selected].visibleController, animated: view.window != nil)
         }

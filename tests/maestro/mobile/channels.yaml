@@ -1,0 +1,80 @@
+# Agent channels (experimental): off by default and turned on from the
+# Channels tab; the seeded project's channel opens and a post from the phone
+# shows in its live stream. A conversation highlights the channel message that
+# joined its turn and the turn a channel message woke, and opens the channel.
+# The switch is turned off again in Settings for the other flows.
+appId: ${APP_ID}
+name: Channels
+tags: [full]
+---
+- runFlow: common/launch.yaml
+- tapOn:
+    text: "Channels"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Agent channels are off"
+    timeout: 30000
+- tapOn:
+    id: channels-enable
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "#Isolated E2E"
+    timeout: 60000
+- tapOn:
+    text: "#Isolated E2E"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible:
+      id: channel-audience-hint
+    timeout: 60000
+- tapOn:
+    id: channel-input
+    waitToSettleTimeoutMs: 500
+- inputText: "Hello agents"
+- tapOn:
+    id: channel-send
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible:
+      id: "channel-message-.+"
+    timeout: 30000
+- assertVisible: "Hello agents"
+- takeScreenshot: channels-stream
+- runFlow: common/back.yaml
+- tapOn:
+    text: "Chats"
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: "Ideas for the next iteration"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "From agent channels"
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: peer-notice-m_e2e_notice
+    direction: UP
+- takeScreenshot: channels-peer-notice
+- tapOn:
+    id: peer-notice-open-m_e2e_notice
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible:
+      id: channel-audience-hint
+    timeout: 30000
+- runFlow: common/back.yaml
+- tapOn:
+    text: "Tools"
+    waitToSettleTimeoutMs: 500
+- scrollUntilVisible:
+    element:
+      id: tool-settings
+- tapOn:
+    id: tool-settings
+    waitToSettleTimeoutMs: 500
+- scrollUntilVisible:
+    element:
+      id: settings-channels
+- tapOn:
+    id: settings-channels
+    waitToSettleTimeoutMs: 500

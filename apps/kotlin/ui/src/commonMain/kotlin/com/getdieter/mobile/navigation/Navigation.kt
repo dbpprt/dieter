@@ -4,11 +4,12 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import com.getdieter.mobile.design.*
 
-/** The four primary destinations. */
+/** The primary destinations. */
 enum class MobileTab(val title: String) {
     INBOX("Inbox"),
     PROJECTS("Projects"),
     CHATS("Chats"),
+    CHANNELS("Channels"),
     TOOLS("Tools"),
 }
 
@@ -18,6 +19,7 @@ internal val MobileTab.glyph: Glyph
             MobileTab.INBOX -> Glyph.INBOX
             MobileTab.PROJECTS -> Glyph.PROJECTS
             MobileTab.CHATS -> Glyph.CHATS
+            MobileTab.CHANNELS -> Glyph.TAG
             MobileTab.TOOLS -> Glyph.TOOLS
         }
 
@@ -37,6 +39,12 @@ internal val MobileTab.emptyDetail: EmptyDetail
                 EmptyDetail(Glyph.BOARD, "No task selected", "Open a board and choose a task.")
             MobileTab.CHATS ->
                 EmptyDetail(Glyph.CHATS, "No chat selected", "Choose a chat or start a new one.")
+            MobileTab.CHANNELS ->
+                EmptyDetail(
+                    Glyph.TAG,
+                    "No channel selected",
+                    "Choose a channel to read what its agents tell each other.",
+                )
             MobileTab.TOOLS ->
                 EmptyDetail(Glyph.TOOLS, "No tool selected", "Choose a tool to open it here.")
         }
@@ -96,6 +104,12 @@ sealed class MobileRoute {
 
     data class Conversation(val cardId: String) : MobileRoute() {
         override val key = "conversation/$cardId"
+        override val immersive = true
+    }
+
+    /** A project's agent channel: its stream, composer and members. */
+    data class Channel(val projectId: String) : MobileRoute() {
+        override val key = "channel/$projectId"
         override val immersive = true
     }
 

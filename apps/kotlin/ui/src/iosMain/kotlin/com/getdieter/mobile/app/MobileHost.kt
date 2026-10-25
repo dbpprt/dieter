@@ -42,6 +42,8 @@ class NativeNavigation(
     val attention: Int,
     /** ARGB accent for native controls; 0 means the label color (monochrome). */
     val accent: Long,
+    /** The Channels tab badge: "3", "99+", or empty. */
+    val channelsUnread: String,
 )
 
 interface MobileNavigationObserver {
@@ -132,7 +134,7 @@ class MobileHost(private val shared: DieterShared, private val nativeViews: Mobi
                     store.session.slice,
                     store.workspace.slice,
                     combine(store.theme.appearance, store.theme.palette, ::Pair),
-                    store.workspace.activity,
+                    combine(store.workspace.activity, store.channels.slice, ::Pair),
                 ) { _, _, _, _, _ ->
                     navigation()
                 }
@@ -155,6 +157,7 @@ class MobileHost(private val shared: DieterShared, private val nativeViews: Mobi
             store.workspace.activity.value.summary?.attention ?: 0,
             if (palette == com.getdieter.mobile.settings.DieterPalette.MONOCHROME) 0L
             else palette.tokens.shellEnd,
+            store.channels.slice.value.unread_label,
         )
     }
 

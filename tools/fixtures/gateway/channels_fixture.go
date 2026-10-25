@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+
 	"github.com/dbpprt/dieter/internal/model"
 	boardstore "github.com/dbpprt/dieter/internal/store"
 	"github.com/dbpprt/dieter/internal/store/kanban"
@@ -9,7 +11,9 @@ import (
 // seedChannelsFixture turns agent channels on for the account and seeds the
 // project channel with the two-agent coordination of the Atrium pair: a
 // request, Dieter's heads-up to the holder, the threaded "free" reply, the
-// release, a pinned human decision and their delivery receipts.
+// release, a pinned human decision and their delivery receipts. The agents'
+// conversations show what reached them: the steered messages in the holder's
+// turn, and the waiter's turn that the release woke.
 func seedChannelsFixture(data *boardstore.Store, project model.Project, board model.Board) error {
 	if err := data.KV.SetChannelSetting("global", "", "on"); err != nil {
 		return err
@@ -73,6 +77,35 @@ func seedChannelsFixture(data *boardstore.Store, project model.Project, board mo
 		{waiter.ID, model.ChannelDeliveryWoke, []string{reply.ID, release.ID}},
 	} {
 		if err := data.Channels.Deliver(project.ID, delivery.card, delivery.mode, delivery.ids); err != nil {
+			return err
+		}
+	}
+	notice := func(message model.ChannelMessage) model.UIMessagePart {
+		payload, _ := json.Marshal(map[string]any{
+			"messageId": message.ID, "projectId": project.ID, "channel": project.Name, "kind": message.Kind,
+			"author": message.Author, "direct": len(message.To) > 0, "files": message.Files, "createdAt": message.CreatedAt,
+		})
+		return model.UIMessagePart{Type: "data-peer-notice", Text: message.Body, Data: payload}
+	}
+	text := func(value string) model.UIMessagePart { return model.UIMessagePart{Type: "text", Text: value} }
+	conversations := map[string][]model.UIMessage{
+		holder.ID: {
+			{ID: "channels-holder-prompt", Role: "user", Parts: []model.UIMessagePart{text(holder.InitialPrompt)}},
+			{ID: "channels-holder-turn", Role: "assistant", Parts: []model.UIMessagePart{
+				text("I'll append the review marker to the four module headers."),
+				notice(request), notice(headsUp),
+				text("Agent " + waiter.ID + " is waiting for src/module3.js, so I'll commit it first and tell them when it is free."),
+			}},
+		},
+		waiter.ID: {
+			{ID: "channels-waiter-prompt", Role: "user", Parts: []model.UIMessagePart{text(waiter.InitialPrompt)}},
+			{ID: "channels-waiter-turn", Role: "assistant", Parts: []model.UIMessagePart{text("src/module3.js is held by another agent, so I edited module5 first and asked them to tell me when it is free.")}},
+			{ID: model.ChannelWakeMessagePrefix + "fixture", Role: "user", Parts: []model.UIMessagePart{text(release.Body)}},
+			{ID: "channels-waiter-woken", Role: "assistant", Parts: []model.UIMessagePart{text("Added MAX_TIER_3 to src/module3.js and committed it.")}},
+		},
+	}
+	for cardID, messages := range conversations {
+		if _, err := data.Conversations.InitializeFork(cardID, messages); err != nil {
 			return err
 		}
 	}

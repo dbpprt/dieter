@@ -109,7 +109,7 @@ For source builds, see the [Kotlin and Android guide](https://github.com/dbpprt/
 ## iPhone and iPad beta
 
 The iPhone and iPad app supports iOS 18+ and shares the Android app's
-interface: Inbox, projects and boards, chats, conversations with attachments,
+interface: Inbox, projects and boards, chats, agent channels, conversations with attachments,
 files, Git review, schedules, terminals, machine telemetry, and Screens. It
 connects to remote daemons and does not host agents. Sign-in opens your
 gateway in the browser and returns to the app, which then

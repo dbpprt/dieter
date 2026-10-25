@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -85,7 +86,11 @@ func seedE2EFixture(data *boardstore.Store, project model.Project, board model.B
 		if title == "Markdown code fences" {
 			text = "Markdown regression\n\n```text\nfenced line one\nfenced line two\n```\n\nFence complete."
 		}
-		if _, err = data.Conversations.InitializeFork(chat.ID, []model.UIMessage{{ID: "chat-" + chat.ID, Role: "assistant", Parts: []model.UIMessagePart{{Type: "text", Text: text}}}}); err != nil {
+		messages := []model.UIMessage{{ID: "chat-" + chat.ID, Role: "assistant", Parts: []model.UIMessagePart{{Type: "text", Text: text}}}}
+		if title == "Ideas for the next iteration" {
+			messages = channelMessagesInATurn(project, chat.ID)
+		}
+		if _, err = data.Conversations.InitializeFork(chat.ID, messages); err != nil {
 			return err
 		}
 		if _, err = data.Kanban.UpdateCardCache(chat.ID, kanban.CardCacheInput{Runtime: "idle", Summary: "Review the shared mobile experience."}); err != nil {
@@ -97,4 +102,23 @@ func seedE2EFixture(data *boardstore.Store, project model.Project, board model.B
 		return err
 	}
 	return nil
+}
+
+// channelMessagesInATurn is a turn that an agent channel message joined and a
+// turn that a channel message woke, as the daemon records them.
+func channelMessagesInATurn(project model.Project, chatID string) []model.UIMessage {
+	notice, _ := json.Marshal(map[string]any{
+		"messageId": "m_e2e_notice", "projectId": project.ID, "channel": project.Name, "kind": model.ChannelKindRequest,
+		"author": model.ChannelAuthor{Kind: model.ChannelAuthorAgent, CardID: "c_e2e_reviewer", Title: "Review headers", Harness: "codex", Model: "gpt-5"},
+		"direct": true, "files": []string{"src/pricing.ts"}, "createdAt": "2026-10-25T09:00:00Z",
+	})
+	return []model.UIMessage{
+		{ID: "chat-" + chatID, Role: "assistant", Parts: []model.UIMessagePart{
+			{Type: "text", Text: "I'll sketch the next iteration."},
+			{Type: "data-peer-notice", Text: "Please leave src/pricing.ts to me until my review is in.", Data: notice},
+			{Type: "text", Text: "Noted: I'll keep away from src/pricing.ts."},
+		}},
+		{ID: model.ChannelWakeMessagePrefix + "e2e", Role: "user", Parts: []model.UIMessagePart{{Type: "text", Text: "src/pricing.ts is free now: the review is in."}}},
+		{ID: "chat-woken-" + chatID, Role: "assistant", Parts: []model.UIMessagePart{{Type: "text", Text: "Picking up src/pricing.ts again."}}},
+	}
 }
