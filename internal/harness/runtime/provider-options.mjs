@@ -78,7 +78,7 @@ export function ompACPArgs(request, hookPath, configPath) {
   ];
 }
 
-export const dshPackageVersion = "0.2.0-rc.2";
+export const dshPackageVersion = "0.2.1-rc.2";
 
 export function dshACPArgs(...extra) {
   return ["--profile", "acp", ...extra];

@@ -1,9 +1,10 @@
 name: Dependabot auto-merge
 
-# Dependabot's daily "agents" group (agent CLIs and AI SDK harness adapters in
-# the harness runtime) merges as soon as a code owner approves it and the
-# required ci-ok check passes, so an approved bump ships with the next nightly.
-# Nothing merges unreviewed: their code runs in the release builders.
+# Dependabot's daily "agents" and "agents-adapters" groups (agent CLIs and AI
+# SDK harness adapters in the harness runtime) merge as soon as a code owner
+# approves them and the required ci-ok check passes, so an approved bump ships
+# with the next nightly. Nothing merges unreviewed: their code runs in the
+# release builders.
 on: pull_request
 
 permissions: {}

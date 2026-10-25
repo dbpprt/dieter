@@ -8,7 +8,18 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
-Nothing yet.
+### Changed
+
+- Updated the bundled agents: Claude Code 2.1.310 (Agent SDK 0.3.310), Codex
+  0.164.0, Oh My Pi 18.12.6, Pi 1.4.0 and DSH 0.2.1-rc.2. The AI SDK harness
+  adapters move to the newest releases that start (harness 1.0.158); the newer
+  Claude Code, Codex and ACP adapters were published without a file their
+  setup reads and stay held back until a fixed release.
+
+### Fixed
+
+- DSH lists its models again. Model discovery looked for DSH in the wrong
+  directory, so apps showed only a default model.
 
 ## 0.6.426
 

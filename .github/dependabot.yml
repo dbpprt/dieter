@@ -14,16 +14,23 @@ updates:
     directory: /apps/kotlin
     schedule: { interval: weekly }
     groups: { gradle: { patterns: ["*"] } }
-  # The agent CLIs (Claude Code, Codex, OMP) and the AI SDK harness adapters
-  # are checked daily, before the nightly release, and their group merges on
-  # its own once ci-ok passes (dependabot-automerge.yml).
+  # The agent CLIs (Claude Code, Codex, OMP, Pi) and the AI SDK harness
+  # adapters are checked daily, before the nightly release, in separate groups
+  # so a broken adapter release does not hold back the CLIs. Each merges once
+  # approved and ci-ok passes (dependabot-automerge.yml matches "agents-").
+  # The ACP bridge pins @agentclientprotocol/sdk 1.x, so majors wait for it.
   - package-ecosystem: npm
     directory: /internal/harness/runtime
     schedule: { interval: daily, time: "00:30", timezone: Etc/UTC }
     groups:
       agents:
-        patterns: ["@anthropic-ai/*", "@openai/codex", "@oh-my-pi/*", "@ai-sdk/*", "ai"]
+        patterns: ["@anthropic-ai/*", "@openai/codex", "@oh-my-pi/*", "@earendil-works/*"]
+      agents-adapters:
+        patterns: ["@ai-sdk/*", "ai"]
       npm: { patterns: ["*"] }
+    ignore:
+      - dependency-name: "@agentclientprotocol/sdk"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: npm
     directory: /apps/apple/mac/MarkdownPreview
     schedule: { interval: weekly }
