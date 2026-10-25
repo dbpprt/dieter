@@ -8,6 +8,10 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.6.427
+
 ### Changed
 
 - Updated the bundled agents: Claude Code 2.1.310 (Agent SDK 0.3.310), Codex
@@ -15,11 +19,18 @@ copy the **Unreleased** notes into a section named after that exact version
   adapters move to the newest releases that start (harness 1.0.158); the newer
   Claude Code, Codex and ACP adapters were published without a file their
   setup reads and stay held back until a fixed release.
+- A machine stays responsive while many agent turns run at once: running turns
+  write to the daemon's storage only when their state changes, and repeated
+  reads share a small cache. The Homebrew service now uses Standard instead of
+  Background scheduling; `brew services restart dieter` applies it after an
+  upgrade (this restarts the daemon).
 
 ### Fixed
 
 - DSH lists its models again. Model discovery looked for DSH in the wrong
   directory, so apps showed only a default model.
+- A late or duplicate quota reply no longer disconnects a machine's control
+  connection.
 
 ## 0.6.426
 
