@@ -513,6 +513,9 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
     private suspend fun channels(command: ChannelsCommand): Result {
         command.set_setting?.let {
             runtime.channelSettings.set(it)
+            // The change showed before the write landed, so a listing it woke may
+            // predate it; list again now that the machine has it.
+            surfaces.channels.all.forEach { channels -> channels.requestRefresh() }
             return Result(done = Done())
         }
         val channels = surfaces.channels.scoped(command.scope, "Open the channels first.")

@@ -27,6 +27,8 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ### Fixed
 
+- Turning agent channels on in the app lists the project's channel right away;
+  before, the list could stay empty for up to a minute.
 - `dieter chat` help shows `dieter chat … CHAT` instead of the card commands,
   and chats no longer offer `start`, `labels`, `--lane` or `--labels`.
   `dieter chat list --project` now filters by project instead of being ignored.
