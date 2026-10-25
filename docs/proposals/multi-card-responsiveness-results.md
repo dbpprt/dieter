@@ -10,7 +10,7 @@ running daemon and launchd job were left unchanged.
 - The turn engine publishes its initial runtime and subsequent transitions,
   rather than repeating a conditional card-cache transaction after every chunk
   batch. Cancellation, finishing, suspension and recovery retain their existing
-  ordering. A regression test asserts one writer admission per unchanged batch.
+  ordering. A regression test asserts one writer admission per unchanged append.
 - Replica snapshots share a bounded cache of immutable point reads, including
   absent fields. Every snapshot still establishes its real MVCC account, epoch
   and sequence before using cached data. Returned clocks, provenance and values
@@ -36,7 +36,8 @@ snapshots, caller mutation and boundedness have dedicated tests.
 ## Concurrent writer measurements
 
 The opt-in `TestConcurrentTurnWriterCost` seeds 100 cards and runs 20 bursts of
-32 token deltas per turn, with semantic barriers. Setup and admission are outside
+32 token deltas per turn, with heartbeats between bursts. Heartbeats do not flush;
+the batch size and timer bounds determine durable appends. Setup and admission are outside
 the measured streaming window. Every accepted token and final response receipt
 is checked. These are finite, backpressured bursts, not a ten-minute offered-load
 qualification.
@@ -120,6 +121,12 @@ and its bundled Codex streaming test failed with `kill EPERM` in
 `local-sandbox.mjs`. The run was stopped as free space dropped further. No
 harness-runtime sources were changed by this implementation; those files contain
 concurrent work. These failures remain unresolved by this change.
+
+The first Actions run passed the concurrent-turn route test, CLI E2E, quota
+timeout test, formatting, pipeline and site checks. The new writer-count test
+failed because it incorrectly used a heartbeat as a flush barrier. The fixture
+now uses text-end, checking both its append and the preceding delta append
+without assuming a timer schedule. Follow-up validation runs in Actions.
 
 The host had approximately 4–7 GiB free during the performance runs, below the
 plan's 20 GiB reference condition. During broader verification it fell below the

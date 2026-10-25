@@ -17,8 +17,9 @@ import (
 	"github.com/dbpprt/dieter/internal/store/kanban"
 )
 
-// Bursts have semantic barriers so every turn offers the same number of
-// batches. Admission and fixture construction are outside the measured window.
+// Each turn offers the same token bursts, with heartbeats between them. Batch
+// size and timer bounds determine the durable appends; heartbeats do not flush.
+// Admission and fixture construction are outside the measured window.
 func TestConcurrentTurnWriterCost(t *testing.T) {
 	if os.Getenv("DIETER_TEST_CONGESTION") != "1" {
 		t.Skip("set DIETER_TEST_CONGESTION=1 for the 100-card concurrent writer qualification")

@@ -28,23 +28,25 @@ func TestStreamBatchesDoNotReacquireWriterForUnchangedRuntime(t *testing.T) {
 	var admissions atomic.Int64
 	service.Store.SetWriterObserver(func(home.WriterSample) { admissions.Add(1) })
 	service.Runner = batchRunnerFunc(func(_ context.Context, request harness.Request, emit func(harness.Output) error) error {
-		for _, raw := range []string{`{"type":"start","messageId":"` + request.ResponseMessageID + `"}`, `{"type":"text-start","id":"text"}`} {
-			if err := emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(raw)}); err != nil {
-				return err
-			}
+		if err := emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(`{"type":"start","messageId":"` + request.ResponseMessageID + `"}`)}); err != nil {
+			return err
 		}
 		for range 4 {
-			before := admissions.Load()
-			for range 8 {
-				if err := emit(tokenOutput("x")); err != nil {
-					return err
-				}
-			}
-			if err := emit(harness.Output{Type: "heartbeat"}); err != nil {
+			if err := emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(`{"type":"text-start","id":"text"}`)}); err != nil {
 				return err
 			}
-			if got := admissions.Load() - before; got != 1 {
-				return fmt.Errorf("unchanged runtime batch acquired writer %d times, want one durable append", got)
+			before := admissions.Load()
+			if err := emit(tokenOutput("x")); err != nil {
+				return err
+			}
+			// Text-end flushes the pending delta and persists its own chunk.
+			// Heartbeats deliberately do not flush. One delta keeps the count
+			// independent of timer scheduling on a busy runner.
+			if err := emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(`{"type":"text-end","id":"text"}`)}); err != nil {
+				return err
+			}
+			if got := admissions.Load() - before; got != 2 {
+				return fmt.Errorf("unchanged runtime acquired writer %d times, want two durable appends", got)
 			}
 		}
 		return emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(`{"type":"finish"}`)})
