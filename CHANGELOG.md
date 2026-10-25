@@ -8,6 +8,10 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.6.426
+
 ### Changed
 
 - Agents get shorter, precise instructions on every turn, the same for every
