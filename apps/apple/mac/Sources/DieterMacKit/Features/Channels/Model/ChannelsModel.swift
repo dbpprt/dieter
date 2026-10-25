@@ -3,7 +3,7 @@ import Foundation
 import Observation
 
 /// Agent channels (experimental) as the shared core presents them: the list
-/// of every machine's project channels with the sidebar's unread count, the
+/// of the account's project channels with the sidebar's unread count, the
 /// selected channel's stream and inspector, and the account's settings. The
 /// core lists, watches, groups and words everything; this model only folds
 /// its slices and sends its commands.
@@ -26,7 +26,7 @@ final class ChannelsModel {
     var stream: ClientChannelStreamView? { slice.hasStream ? slice.stream : nil }
     var unread: Int { Int(slice.unread) }
 
-    /// Observes the channels and their settings; the core lists machines only
+    /// Observes the channels and their settings; the core lists channels only
     /// while some setting is on.
     func attach(_ core: CoreClient) {
         guard subscriptions.isEmpty else { return }
@@ -80,12 +80,9 @@ final class ChannelsModel {
         await run { $0.active = .with { $0.on = active } }
     }
 
-    func select(daemonID: String, projectID: String) async {
+    func select(projectID: String) async {
         await run { command in
-            command.select = .with {
-                $0.daemonID = daemonID
-                $0.projectID = projectID
-            }
+            command.select = .with { $0.projectID = projectID }
         }
     }
 
@@ -93,15 +90,19 @@ final class ChannelsModel {
         await run { $0.refresh = ClientStep() }
     }
 
-    /// Posts as the user; false (with the failure shown) when it was refused.
+    /// Posts as the user to everyone, @here or the picked cards; false (with
+    /// the failure shown) when it was refused.
     @discardableResult
-    func post(body: String, to cardIDs: [String], kind: ClientChannelMessageKind, wake: Bool) async -> Bool {
+    func post(
+        body: String, to cardIDs: [String], here: Bool = false, kind: ClientChannelMessageKind, wake: Bool
+    ) async -> Bool {
         let result = await run { command in
             command.post = .with {
                 $0.body = body
-                $0.toCardIds = cardIDs
+                $0.toCardIds = here ? [] : cardIDs
+                $0.here = here
                 $0.kind = kind
-                $0.wake = wake && !cardIDs.isEmpty
+                $0.wake = wake && !here && !cardIDs.isEmpty
             }
         }
         return result != nil

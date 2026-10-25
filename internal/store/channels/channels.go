@@ -56,6 +56,14 @@ type event struct {
 	CardID      string                `json:"cardId,omitempty"`
 	Mode        string                `json:"mode,omitempty"`
 	At          string                `json:"at,omitempty"`
+	// Local marks a pin change made on this daemon (it is replicated).
+	Local bool `json:"local,omitempty"`
+}
+
+// pinState is the latest pin change of a message; the newest change wins.
+type pinState struct {
+	At    string
+	Local bool
 }
 
 type projectLog struct {
@@ -64,6 +72,8 @@ type projectLog struct {
 	messages   []model.ChannelMessage
 	index      map[string]int
 	operations map[string]string
+	pins       map[string]pinState
+	originSeq  map[string]int64
 }
 
 type readState struct {
@@ -105,7 +115,7 @@ func (s *Store) load(projectID string) (*projectLog, error) {
 	path := filepath.Join(dir, "events.ndjson")
 	info, err := os.Stat(path)
 	if errors.Is(err, os.ErrNotExist) {
-		log := &projectLog{index: map[string]int{}, operations: map[string]string{}}
+		log := newProjectLog()
 		s.logs[projectID] = log
 		return log, nil
 	}
@@ -119,7 +129,8 @@ func (s *Store) load(projectID string) (*projectLog, error) {
 	if err != nil {
 		return nil, err
 	}
-	log := &projectLog{size: int64(len(raw)), index: map[string]int{}, operations: map[string]string{}}
+	log := newProjectLog()
+	log.size = int64(len(raw))
 	scanner := bufio.NewScanner(bytes.NewReader(raw))
 	scanner.Buffer(make([]byte, 64*1024), 1<<20)
 	for scanner.Scan() {
@@ -142,6 +153,10 @@ func (s *Store) load(projectID string) (*projectLog, error) {
 	return log, nil
 }
 
+func newProjectLog() *projectLog {
+	return &projectLog{index: map[string]int{}, operations: map[string]string{}, pins: map[string]pinState{}, originSeq: map[string]int64{}}
+}
+
 func (l *projectLog) apply(e event) {
 	switch e.Type {
 	case "post":
@@ -151,6 +166,9 @@ func (l *projectLog) apply(e event) {
 		message := *e.Message
 		if _, exists := l.index[message.ID]; exists {
 			return
+		}
+		if message.Origin != "" && message.OriginSeq > l.originSeq[message.Origin] {
+			l.originSeq[message.Origin] = message.OriginSeq
 		}
 		l.index[message.ID] = len(l.messages)
 		l.messages = append(l.messages, message)
@@ -164,7 +182,11 @@ func (l *projectLog) apply(e event) {
 		}
 	case "pin":
 		if at, ok := l.index[e.ID]; ok {
+			if current, ok := l.pins[e.ID]; ok && current.At > e.At {
+				return
+			}
 			l.messages[at].Pinned = e.Pinned
+			l.pins[e.ID] = pinState{At: e.At, Local: e.Local}
 		}
 	case "deliver":
 		if at, ok := l.index[e.ID]; ok {
@@ -249,7 +271,7 @@ func (s *Store) compact(projectID string, log *projectLog) error {
 		operations[id] = operation
 	}
 	var buffer bytes.Buffer
-	next := &projectLog{index: map[string]int{}, operations: map[string]string{}}
+	next := newProjectLog()
 	write := func(e event) {
 		raw, _ := json.Marshal(e)
 		buffer.Write(raw)
@@ -262,8 +284,8 @@ func (s *Store) compact(projectID string, log *projectLog) error {
 		deliveries := post.Deliveries
 		post.Deliveries, post.ReplyCount = nil, 0
 		write(event{Type: "post", Message: &post, OperationID: operations[post.ID]})
-		if message.Pinned {
-			write(event{Type: "pin", ID: post.ID, Pinned: true})
+		if pin, ok := log.pins[post.ID]; ok {
+			write(event{Type: "pin", ID: post.ID, Pinned: message.Pinned, At: pin.At, Local: pin.Local})
 		}
 		for _, delivery := range deliveries {
 			write(event{Type: "deliver", ID: post.ID, CardID: delivery.CardID, Mode: delivery.Mode, At: delivery.At})
@@ -309,6 +331,11 @@ func (s *Store) Post(message model.ChannelMessage, operationID string) (model.Ch
 	}
 	message.ID = home.NewID("m_")
 	message.Seq = log.lastSeq() + 1
+	// A message with an origin is numbered in that daemon's ring; Dieter's
+	// coordination events have none and stay on this daemon.
+	if message.Origin != "" {
+		message.OriginSeq = log.originSeq[message.Origin] + 1
+	}
 	if message.CreatedAt == "" {
 		message.CreatedAt = home.Timestamp()
 	}
@@ -357,7 +384,7 @@ func (s *Store) Pin(projectID, id string, pinned bool) (model.ChannelMessage, er
 		return model.ChannelMessage{}, ErrUnknownMessage
 	}
 	if log.messages[at].Pinned != pinned {
-		if err := s.append(projectID, log, event{Type: "pin", ID: id, Pinned: pinned}); err != nil {
+		if err := s.append(projectID, log, event{Type: "pin", ID: id, Pinned: pinned, At: home.Timestamp(), Local: true}); err != nil {
 			return model.ChannelMessage{}, err
 		}
 	}
@@ -392,6 +419,186 @@ func (s *Store) Deliver(projectID, cardID, mode string, ids []string) error {
 		return nil
 	}
 	return s.append(projectID, log, events...)
+}
+
+// Ingest appends a message replicated from another daemon, keeping its ID,
+// origin and time and giving it this log's next sequence number. A message
+// already in the log returns false. A reply whose thread root has not
+// arrived keeps its thread and attaches when the root is ingested later.
+func (s *Store) Ingest(message model.ChannelMessage) (model.ChannelMessage, bool, error) {
+	release, err := s.home.BeginWriteKind(home.ConversationChange)
+	if err != nil {
+		return model.ChannelMessage{}, false, err
+	}
+	defer release()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	log, err := s.load(message.ProjectID)
+	if err != nil {
+		return model.ChannelMessage{}, false, err
+	}
+	if at, ok := log.index[message.ID]; ok {
+		return cloneMessage(log.messages[at]), false, nil
+	}
+	message.Seq = log.lastSeq() + 1
+	message.Deliveries, message.ReplyCount, message.Pinned = nil, 0, false
+	if err := s.append(message.ProjectID, log, event{Type: "post", Message: &message}); err != nil {
+		return model.ChannelMessage{}, false, err
+	}
+	stored, _, err := s.messageLocked(message.ProjectID, message.ID)
+	return stored, true, err
+}
+
+// Has reports whether the message is in the project's log.
+func (s *Store) Has(projectID, id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	log, err := s.load(projectID)
+	if err != nil {
+		return false
+	}
+	_, ok := log.index[id]
+	return ok
+}
+
+// PinRemote applies a pin change replicated from another daemon when it is
+// newer than the message's latest pin change. It reports whether it applied;
+// one that changes nothing takes no write lock.
+func (s *Store) PinRemote(projectID, id string, pinned bool, at string) (bool, error) {
+	if applies, err := s.pinApplies(projectID, id, pinned, at); err != nil || !applies {
+		return false, err
+	}
+	release, err := s.home.BeginWriteKind(home.ConversationChange)
+	if err != nil {
+		return false, err
+	}
+	defer release()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	log, err := s.load(projectID)
+	if err != nil {
+		return false, err
+	}
+	if !log.pinApplies(id, pinned, at) {
+		return false, nil
+	}
+	return true, s.append(projectID, log, event{Type: "pin", ID: id, Pinned: pinned, At: at})
+}
+
+func (s *Store) pinApplies(projectID, id string, pinned bool, at string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	log, err := s.load(projectID)
+	if err != nil {
+		return false, err
+	}
+	return log.pinApplies(id, pinned, at), nil
+}
+
+func (l *projectLog) pinApplies(id string, pinned bool, at string) bool {
+	index, ok := l.index[id]
+	if !ok {
+		return false
+	}
+	current, known := l.pins[id]
+	return !(known && current.At >= at || !known && l.messages[index].Pinned == pinned)
+}
+
+// LocalPins returns the newest pin changes made on this daemon, at most
+// limit, oldest first: what its replicated pins record carries.
+func (s *Store) LocalPins(projectID string, limit int) ([]model.ChannelPinChange, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	log, err := s.load(projectID)
+	if err != nil {
+		return nil, err
+	}
+	var changes []model.ChannelPinChange
+	for id, pin := range log.pins {
+		if !pin.Local {
+			continue
+		}
+		changes = append(changes, model.ChannelPinChange{MessageID: id, Pinned: log.messages[log.index[id]].Pinned, At: pin.At})
+	}
+	sort.Slice(changes, func(i, j int) bool { return changes[i].At < changes[j].At })
+	if len(changes) > limit {
+		changes = changes[len(changes)-limit:]
+	}
+	return changes, nil
+}
+
+// DeliverRemote records deliveries to cardID replicated from its owner
+// daemon; a delivery is kept unless the log has a newer one for the card.
+// Deliveries of messages not in the log are skipped; nothing new takes no
+// write lock.
+func (s *Store) DeliverRemote(projectID, cardID string, deliveries []model.ChannelDeliveryEntry) error {
+	s.mu.Lock()
+	log, err := s.load(projectID)
+	pending := err == nil && len(log.remoteDeliveries(cardID, deliveries)) > 0
+	s.mu.Unlock()
+	if err != nil || !pending {
+		return err
+	}
+	release, err := s.home.BeginWriteKind(home.ConversationChange)
+	if err != nil {
+		return err
+	}
+	defer release()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	log, err = s.load(projectID)
+	if err != nil {
+		return err
+	}
+	events := log.remoteDeliveries(cardID, deliveries)
+	if len(events) == 0 {
+		return nil
+	}
+	return s.append(projectID, log, events...)
+}
+
+func (l *projectLog) remoteDeliveries(cardID string, deliveries []model.ChannelDeliveryEntry) []event {
+	var events []event
+	for _, delivery := range deliveries {
+		at, ok := l.index[delivery.MessageID]
+		if !ok {
+			continue
+		}
+		known := slices.IndexFunc(l.messages[at].Deliveries, func(d model.ChannelDelivery) bool { return d.CardID == cardID })
+		if known >= 0 && l.messages[at].Deliveries[known].At >= delivery.At {
+			continue
+		}
+		events = append(events, event{Type: "deliver", ID: delivery.MessageID, CardID: cardID, Mode: delivery.Mode, At: delivery.At})
+	}
+	return events
+}
+
+// CardDeliveries returns the newest deliveries to cardID, at most limit,
+// oldest first: what its owner's replicated receipt carries.
+func (s *Store) CardDeliveries(projectID, cardID string, limit int) ([]model.ChannelDeliveryEntry, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	log, err := s.load(projectID)
+	if err != nil {
+		return nil, err
+	}
+	var entries []model.ChannelDeliveryEntry
+	for _, message := range log.messages {
+		// Other daemons never see this daemon's coordination events.
+		if message.Origin == "" {
+			continue
+		}
+		for _, delivery := range message.Deliveries {
+			if delivery.CardID == cardID {
+				entries = append(entries, model.ChannelDeliveryEntry{MessageID: message.ID, Mode: delivery.Mode, At: delivery.At})
+			}
+		}
+	}
+	sort.SliceStable(entries, func(i, j int) bool { return entries[i].At < entries[j].At })
+	if len(entries) > limit {
+		entries = entries[len(entries)-limit:]
+	}
+	return entries, nil
 }
 
 // Undelivered returns, oldest first, the messages addressed to cardID that

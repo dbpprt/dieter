@@ -14,6 +14,7 @@ import com.getdieter.client.v1.ChannelListRow
 import com.getdieter.client.v1.ChannelMemberRow
 import com.getdieter.client.v1.ChannelMessageKind
 import com.getdieter.client.v1.ChannelPinRow
+import com.getdieter.client.v1.ChannelPost
 import com.getdieter.client.v1.ChannelPresence
 import com.getdieter.client.v1.ChannelRecipientOption
 import com.getdieter.client.v1.ChannelStreamRow
@@ -43,6 +44,17 @@ object ChannelRules {
 
     const val WAKE_HINT =
         "Wake starts a turn for idle recipients, within their wake budget. It needs recipients."
+
+    const val EVERYONE_HINT =
+        "Everyone: agents read it when their next turn starts. Nobody is interrupted."
+
+    const val HERE_HINT =
+        "@here: interrupts every running agent of the project, on every machine. Idle agents " +
+            "don't get it."
+
+    const val DIRECT_HINT =
+        "Agents you pick get a direct message: a running agent reads it at once, an idle one in " +
+            "its next turn."
 
     // --- Kinds ---------------------------------------------------------------------------
 
@@ -156,8 +168,11 @@ object ChannelRules {
         )
     }
 
-    /** The name line's details: "codex · gpt-5" for an agent, "you" for a person. */
-    fun meta(author: ChannelAuthor?): String =
+    /**
+     * The name line's details: "codex · gpt-5 · mbp-office" for an agent ([machine] is where it
+     * posted from), "you" for a person.
+     */
+    fun meta(author: ChannelAuthor?, machine: String = ""): String =
         when (authorKind(author?.kind.orEmpty())) {
             ChannelAuthorKind.CHANNEL_AUTHOR_KIND_HUMAN -> "you"
             ChannelAuthorKind.CHANNEL_AUTHOR_KIND_DIETER -> ""
@@ -165,6 +180,7 @@ object ChannelRules {
                 listOfNotNull(
                         author?.harness?.ifBlank { null },
                         author?.model?.ifBlank { null },
+                        machine.ifBlank { null },
                     )
                     .joinToString(" · ")
         }
@@ -199,10 +215,13 @@ object ChannelRules {
     private fun title(cardId: String, titles: Map<String, String>): String =
         titles[cardId]?.ifBlank { null } ?: cardId
 
-    /** "to Fix checkout tests, Review headers"; empty for a channel post. */
+    /** "to Fix checkout tests, Review headers", or "@here"; empty for a channel post. */
     fun recipients(message: ChannelMessage, titles: Map<String, String>): String =
-        if (message.to_card_ids.isEmpty()) ""
-        else "to " + message.to_card_ids.joinToString(", ") { title(it, titles) }
+        when {
+            message.here -> "@here"
+            message.to_card_ids.isEmpty() -> ""
+            else -> "to " + message.to_card_ids.joinToString(", ") { title(it, titles) }
+        }
 
     /** How a message reached one recipient. */
     fun deliveryPhrase(mode: String): String =
@@ -276,12 +295,14 @@ object ChannelRules {
 
     /**
      * [messages] (oldest first) as rows. The first unread message (after [seenSeq], not the user's)
-     * starts a new group, where the "New" divider goes.
+     * starts a new group, where the "New" divider goes. [machine] names the machine an agent posted
+     * from.
      */
     fun rows(
         messages: List<ChannelMessage>,
         seenSeq: Long,
         titles: Map<String, String>,
+        machine: (String) -> String = { "" },
     ): ChannelRows {
         val firstUnread = messages.firstOrNull {
             it.seq > seenSeq &&
@@ -311,10 +332,17 @@ object ChannelRules {
                     if (message.reply_count > 0) Counts.of(message.reply_count, "reply", "replies")
                     else "",
                 receipt = receipt(message, titles),
-                meta = if (event) "" else meta(message.author),
+                meta =
+                    if (event) ""
+                    else
+                        meta(
+                            message.author,
+                            message.origin_daemon_id.ifEmpty { null }?.let(machine).orEmpty(),
+                        ),
                 created_at_millis =
                     Timestamps.parse(message.created_at)?.toEpochMilliseconds() ?: 0,
                 thread_id = message.thread_id,
+                here = message.here,
             )
         }
         return ChannelRows(rows, firstUnread?.id)
@@ -356,8 +384,14 @@ object ChannelRules {
             ChannelPresence.CHANNEL_PRESENCE_IDLE -> "Idle"
         }
 
-    /** Running first, then waiting, idle and failed; by title within each. */
-    fun members(members: List<ChannelMember>): List<ChannelMemberRow> =
+    /**
+     * Running first, then waiting, idle and failed; by title within each. [machine] names the
+     * machine that runs a card.
+     */
+    fun members(
+        members: List<ChannelMember>,
+        machine: (String) -> String = { "" },
+    ): List<ChannelMemberRow> =
         members
             .sortedWith(
                 compareBy(
@@ -368,6 +402,7 @@ object ChannelRules {
             )
             .map { member ->
                 val title = member.title.ifBlank { member.card_id }
+                val host = member.daemon_id.ifEmpty { null }?.let(machine).orEmpty()
                 ChannelMemberRow(
                     card_id = member.card_id,
                     title = title,
@@ -378,7 +413,7 @@ object ChannelRules {
                     presence = presence(member.status),
                     presence_label = presenceLabel(member),
                     detail =
-                        (listOf(member.harness, member.model).filter { it.isNotBlank() } +
+                        (listOf(member.harness, member.model, host).filter { it.isNotBlank() } +
                                 listOfNotNull(
                                     member.holds
                                         .takeIf { it.isNotEmpty() }
@@ -389,6 +424,7 @@ object ChannelRules {
                     waiting_on = member.waiting_on,
                     enabled = member.enabled,
                     board_id = member.board_id,
+                    machine = host,
                 )
             }
 
@@ -400,11 +436,15 @@ object ChannelRules {
             ChannelPresence.CHANNEL_PRESENCE_FAILED -> 3
         }
 
-    /** Live claims, longest held first. */
+    /**
+     * Live claims on every machine, longest held first. Another machine's claim is advisory: it
+     * blocks writes only in that machine's checkout. [machine] names a machine.
+     */
     fun claims(
         claims: List<ChannelClaim>,
         titles: Map<String, String>,
         now: Instant,
+        machine: (String) -> String = { "" },
     ): List<ChannelClaimRow> =
         claims
             .sortedWith(
@@ -430,6 +470,8 @@ object ChannelRules {
                             else -> "${claim.waiting_card_ids.size} waiting"
                         },
                     waiting = claim.waiting_card_ids.size,
+                    machine = claim.daemon_id.ifEmpty { null }?.let(machine).orEmpty(),
+                    advisory = claim.remote,
                 )
             }
 
@@ -461,10 +503,8 @@ object ChannelRules {
             .joinToString(" · ")
     }
 
-    fun listRow(daemonId: String, summary: ChannelSummary, selected: Boolean): ChannelListRow =
+    fun listRow(summary: ChannelSummary, selected: Boolean): ChannelListRow =
         ChannelListRow(
-            id = "$daemonId/${summary.project_id}",
-            daemon_id = daemonId,
             project_id = summary.project_id,
             name = summary.project_name.ifBlank { summary.project_id },
             enabled = summary.enabled,
@@ -490,19 +530,22 @@ object ChannelRules {
         }
 
     /**
-     * The composer of a channel named [name]: it posts while the channel is on and its machine is
-     * reachable; direct messages go to the members whose setting is on.
+     * The composer of a channel named [name], read from [machineName] (null before a machine lists
+     * it): it posts while the channel is on and that machine is reachable; direct messages go to
+     * the members whose setting is on, on any machine.
      */
     fun composer(
         name: String,
         enabled: Boolean,
         reachable: Boolean,
-        machineName: String,
+        machineName: String?,
         members: List<ChannelMember>,
         sending: Boolean,
+        machine: (String) -> String = { "" },
     ): ChannelComposerState {
         val reason =
             when {
+                machineName == null -> "No reachable machine has this channel yet."
                 !reachable -> "$machineName is not reachable."
                 !enabled -> "Agent channels are off for this project. Turn them on in its settings."
                 else -> ""
@@ -512,19 +555,33 @@ object ChannelRules {
             placeholder = "Message #$name",
             disabled_reason = reason,
             recipients =
-                members(members.filter { it.enabled }).map {
+                members(members.filter { it.enabled }, machine).map {
                     ChannelRecipientOption(
                         card_id = it.card_id,
                         title = it.title,
                         presence = it.presence,
+                        machine = it.machine,
                     )
                 },
             kinds = postKinds,
             wake_hint = WAKE_HINT,
             max_body_bytes = MAX_BODY_BYTES,
             sending = sending,
+            everyone_hint = EVERYONE_HINT,
+            here_hint = HERE_HINT,
+            direct_hint = DIRECT_HINT,
         )
     }
+
+    /** Why [post] cannot be sent, or null when it can. */
+    fun postProblem(post: ChannelPost): String? =
+        bodyProblem(post.body)
+            ?: when {
+                post.here && post.to_card_ids.isNotEmpty() ->
+                    "@here already reaches every running agent. Remove the recipients."
+                post.wake && post.to_card_ids.isEmpty() -> "Choose who to wake."
+                else -> null
+            }
 
     /** Why [body] cannot be posted, or null when it can. */
     fun bodyProblem(body: String): String? {

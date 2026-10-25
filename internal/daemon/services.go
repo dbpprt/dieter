@@ -138,6 +138,9 @@ func (s *Services) Serve(ctx context.Context, listener net.Listener, activating 
 			return fmt.Errorf("commit service runtime activation: %w", err)
 		}
 	}
+	// Agent channels are account-wide: publish this daemon's channel records
+	// and ingest the other daemons'.
+	go s.App.RunChannelReplication(ctx)
 	// During a launchd/systemd replacement the previous owner PID can remain
 	// alive for a fraction of a second after the new process starts. Recheck
 	// once after handoff so that transiently-valid leases cannot strand a turn.

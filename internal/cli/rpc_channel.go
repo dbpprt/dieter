@@ -16,13 +16,16 @@ import (
 
 const channelHelp = `Usage: dieter channel <list|messages|post|inbox|check|claims|release|pin|read|settings|watch|hook> [options]
 
-Agent channels (experimental): one message channel per project on each
-daemon, direct messages to cards, threads, pinned decisions and file claims
-that keep agents sharing a checkout from overwriting each other. Inside an
-agent turn (DIETER_TURN_TOKEN) the caller is that card's agent; otherwise you
-act as a human. Channels are off until switched on with "channel settings".
+Agent channels (experimental): one message channel per project, shared by
+every machine of the account, with direct messages to cards, threads, pinned
+decisions and file claims that keep agents sharing a checkout from overwriting
+each other. A channel post interrupts nobody: agents read it when their next
+turn starts. A direct message (--to) reaches a running agent in its turn, and
+a person's --here reaches every running agent. Inside an agent turn
+(DIETER_TURN_TOKEN) the caller is that card's agent; otherwise you act as a
+person. Channels are off until switched on with "channel settings".
 
-  list      List this daemon's project channels with unread counts and members
+  list      List project channels with unread counts and members on every machine
   messages  Page a project channel or one thread
   post      Post to the project channel, a thread, or directly to cards
   inbox     Read a card's undelivered messages (an agent's own by default)
@@ -54,12 +57,12 @@ func (c *CLI) rpcChannel(args []string) error {
 	}
 	action := args[0]
 	usages := map[string]string{
-		"list":     "[--format table|json]\nList this daemon's project channels: enabled state, unread count, live claims and members.",
+		"list":     "[--format table|json]\nList project channels: enabled state, unread count, live claims and members on every machine.",
 		"messages": "--project PROJECT [--thread ID] [--after SEQ] [--before SEQ] [--limit N] [--format table|json]\nPage a project channel in sequence order (default: the newest 50 messages).",
-		"post":     "[--project PROJECT] [--to CARD]... [--thread ID] [--kind note|request|done|decision] [--file PATH]... [--wake] [--operation ID] [--stdin] TEXT...\nPost at most 4096 bytes. Agents post to their own project; --to sends a direct message.\n--wake starts a turn for idle direct recipients within their wake budget. A decision is pinned.",
-		"inbox":    "[--card CARD] [--peek] [--format text|json]\nPrint a card's undelivered messages and mark them delivered (--peek keeps them).\nAgents read their own inbox; humans name --card.",
-		"check":    "[--card CARD] [--intent TEXT] [--format text|json] FILE...\nShow live claims by other cards on FILEs (relative to the card's workspace), pinned decisions\nand recent notes that mention them. An agent whose files are held is woken when they are free.",
-		"claims":   "[--project PROJECT] [--format table|json]\nList live file claims: path, holder card, since when, and waiting cards.",
+		"post":     "[--project PROJECT] [--to CARD]... [--here] [--thread ID] [--kind note|request|done|decision] [--file PATH]... [--wake] [--operation ID] [--stdin] TEXT...\nPost at most 4096 bytes to the project channel. Agents post to their own project. A post without\n--to interrupts nobody; agents read it when their next turn starts. --to sends a direct message\nthat reaches a running recipient in its turn, and --wake also starts idle direct recipients\nwithin their wake budget. --here (people only) reaches every running agent of the project.\nA decision is pinned.",
+		"inbox":    "[--card CARD] [--peek] [--format text|json]\nPrint a card's undelivered messages (direct messages, and channel posts from the last 24 hours)\nand mark them delivered (--peek keeps them). Agents read their own inbox; humans name --card.\nOnly the card's machine marks them; elsewhere, add --peek or --machine.",
+		"check":    "[--card CARD] [--intent TEXT] [--format text|json] FILE...\nShow live claims by other cards on FILEs (relative to the card's workspace), pinned decisions\nand recent notes that mention them. An agent whose files are held is woken when they are free.\nClaims in other machines' checkouts are listed as advisory: coordinate before you push.",
+		"claims":   "[--project PROJECT] [--format table|json]\nList live file claims: path, holder card, since when, waiting cards and the machine.\nClaims on other machines are advisory; they never block a write here.",
 		"release":  "[--card CARD] [PATH...]\nRelease a card's claims (all without PATHs). Agents release their own; humans name --card.",
 		"pin":      "--project PROJECT [--off] MESSAGE_ID\nPin a message as a decision that check returns for the files it mentions, or unpin it.",
 		"read":     "--project PROJECT [--seq N]\nMark the project channel read for humans up to N (default: the newest message).",
@@ -97,6 +100,7 @@ func (c *CLI) rpcChannel(args []string) error {
 	limit := set.Int("limit", 0, "page size")
 	count := set.Int("count", 0, "watch frame limit (zero watches until canceled)")
 	wake := set.Bool("wake", false, "wake idle direct recipients")
+	here := set.Bool("here", false, "reach every running agent of the project (people only)")
 	peek := set.Bool("peek", false, "do not mark delivered")
 	off := set.Bool("off", false, "remove the pin")
 	stdin := set.Bool("stdin", false, "read the message body from stdin")
@@ -172,7 +176,7 @@ func (c *CLI) rpcChannel(args []string) error {
 			return errors.New("a message is required\n\n" + usage)
 		}
 		message, err := client.PostChannelMessage(rpcCtx, &dieterv1.PostChannelMessageRequest{
-			ProjectId: *project, ToCardIds: to, ThreadId: *thread, Kind: *kind, Body: body, Files: files, Wake: *wake, OperationId: *operation,
+			ProjectId: *project, ToCardIds: to, ThreadId: *thread, Kind: *kind, Body: body, Files: files, Wake: *wake, Here: *here, OperationId: *operation,
 		})
 		if err != nil {
 			return err
@@ -213,9 +217,13 @@ func (c *CLI) rpcChannel(args []string) error {
 			return protoJSONOut(c.Out, claims)
 		}
 		writer := tabwriter.NewWriter(c.Out, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(writer, "PATH\tCARD\tTITLE\tSINCE\tWAITING")
+		fmt.Fprintln(writer, "PATH\tCARD\tTITLE\tSINCE\tWAITING\tMACHINE")
 		for _, claim := range claims.GetClaims() {
-			fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\n", claim.GetPath(), claim.GetCardId(), claim.GetCardTitle(), claim.GetSince(), strings.Join(claim.GetWaitingCardIds(), ","))
+			machine := claim.GetDaemonId()
+			if claim.GetRemote() {
+				machine += " (advisory)"
+			}
+			fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\n", claim.GetPath(), claim.GetCardId(), claim.GetCardTitle(), claim.GetSince(), strings.Join(claim.GetWaitingCardIds(), ","), machine)
 		}
 		return writer.Flush()
 	case "release":

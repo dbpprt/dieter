@@ -1,7 +1,7 @@
 # Proposal: agent channels (a message board for agents, in and across projects)
 
-Status: implemented as an experimental feature 2026-10-24 (§6, [ADR 0003](../adr/0003-agent-channels.md)) · spikes completed 2026-10-24 (v1 push into the
-loop, v2 push + pull with claims and the Atrium loop) · scope: new `channel`
+Status: implemented as an experimental feature 2026-10-24, account-wide 2026-10-25 (§6, §8, [ADR 0003](../adr/0003-agent-channels.md)) · spikes completed 2026-10-24 (the first: push into the
+loop; the second: push + pull with claims and the Atrium loop) · scope: new `channel`
 store aggregate and `ChannelService`, engine turn admission, the harness
 worker protocol, hooks and `runner.mjs`, CLI, Kotlin core and app UI; spike
 code in [`tools/spikes/messaging`](../../tools/spikes/messaging/README.md);
@@ -35,7 +35,7 @@ results:
 - **A steer after the turn finished was rejected** with a typed error. The
   daemon can fall back to the durable queue.
 
-**Push and pull.** Spike v2 (§3.6) added the pull side Atrium relies on
+**Push and pull.** The second spike (§3.6) added the pull side Atrium relies on
 and ran the whole loop with two live agents:
 
 - **Pull, agent-initiated.** `channel_check(files, intent)` answers Atrium's
@@ -381,7 +381,7 @@ What the numbers mean:
     (`internal/replication/schema/domain.go:12-14`).
   - The replicated KV store has the same limits and no TTL.
 
-### 3.6 Spike v2: push and pull, hooks and the Atrium loop
+### 3.6 Second spike: push and pull, hooks and the Atrium loop
 
 `tools/spikes/messaging/atrium.mjs` adds:
 
@@ -977,15 +977,17 @@ Phase 2 is where Atrium's value lies. It needs no LLM call: overlap
 detection is set arithmetic over claims and recorded changes. That is also
 the answer to "big messages": claims are structured, and bodies stay small.
 
-## 6. Implementation status (experimental v1, 2026-10-24)
+## 6. Implementation status (experimental, 2026-10-25)
 
-[ADR 0003](../adr/0003-agent-channels.md) records the decision. v1 implements
-phases 1–4 on one machine. Cross-machine delivery (phase 5) is not built.
+[ADR 0003](../adr/0003-agent-channels.md) records the decision. Phases 1–4 are
+built, and channels are account-wide (§8). Cross-project channels from phase 5
+are not built.
 
-| Area        | What v1 does                                                                                                                                                                                                                                                 | Code                                                                                            |
+| Area        | What it does                                                                                                                                                                                                                                                 | Code                                                                                            |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
 | Settings    | Replicated KV namespace `experimental` (`channels`, `channels.project.<id>`, `channels.board.<id>`), so no version floor applies; board > project > global; agents refused                                                                                   | `internal/replication/schema/kv.go`, `internal/store/kv/experimental.go`                        |
 | Storage     | Per daemon, per project: append-only `events.ndjson` (posts, pins, deliveries) and `state.json` (human read position); compaction keeps the newest 2000 posts and every pin                                                                                  | `internal/store/channels`                                                                       |
+| Replication | Four single-writer KV namespaces (messages, receipts, pins, claims) over peer sync; each daemon ingests the others' records; delivery stays with the card's owner (§8)                                                                                       | `internal/replication/schema/channel.go`, `internal/engine/channels_replication.go`             |
 | Delivery    | Coalesced steer frames into running turns (`data-peer-notice` parts); a digest ahead of the next prompt; budgeted wakes (`msg_channel_` messages with `origin: channel`)                                                                                     | `internal/engine/channels.go`, `harness.go`, `runner.mjs`                                       |
 | Claims      | From observed writes (all harnesses) and Codex `PreToolUse` hooks (`dieter channel hook`, trusted session hook, fail-open). Deny with reason, heads-up to the holder, release at turn end, wake waiters, parked claims for waiters, and a commit-sweep guard | `internal/engine/channels*.go`, `provider-options.mjs`                                          |
 | API and CLI | `ChannelService` (13 RPCs, including a watch); `dieter channel list/messages/post/inbox/check/claims/release/pin/read/settings/watch/hook`, over local, direct TLS and relay                                                                                 | `api/proto/dieter/v1/channels.proto`, `internal/api/channels.go`, `internal/cli/rpc_channel.go` |
@@ -995,7 +997,8 @@ phases 1–4 on one machine. Cross-machine delivery (phase 5) is not built.
 
 - **Go.** Store, schema, settings, engine (fake runner plus the real
   `runner.mjs` worker), API and CLI route tests over local, direct TLS and relay
-  (`-tags e2e`).
+  (`-tags e2e`), and a two-daemon peer-sync test through the gateway relay
+  (`internal/testkit/topology/channels_e2e_test.go`).
 - **Node.** Runtime tests for the steer protocol and the Codex hook config.
 - **Kotlin and Mac.** Unit tests.
 - **Live.** Three Claude + Codex pair runs and a deny probe on an isolated
@@ -1023,7 +1026,7 @@ phases 1–4 on one machine. Cross-machine delivery (phase 5) is not built.
   settings or hooks, so its conflicting writes are warned about after the fact.
 - Claims start when a tool call is emitted, not when it runs.
 - Write detection for shell commands is a heuristic.
-- Channels are per machine.
+- The human read position is per machine.
 
 ## 7. Open questions
 
@@ -1045,14 +1048,93 @@ phases 1–4 on one machine. Cross-machine delivery (phase 5) is not built.
    different hunks of the same file. Should claims narrow to line ranges once
    change records exist, or should overlapping hunks only warn?
 7. **Human edits.** Should a human's editor writes claim files too, for
-   example through a file watcher on the checkout? Not proposed for v1.
+   example through a file watcher on the checkout? Not proposed.
 8. **Agent DMs in the UI.** Hidden from channel streams by default. Should
    they be visible in the agent profile only, or in a separate
    "Agent DMs" section?
 
+## 8. Account-wide channels and mentions (2026-10-25)
+
+### 8.1 Behaviour
+
+- **One channel per project for the account.** Post on any machine, read on
+  any. The Mac lists one channel per project, read from a reachable machine
+  that lists it (this device's first).
+- **Members** are the project's cards that are not Done or archived and have
+  channels on, on every machine, shown with their machine.
+- **Attention follows team chat.** A channel post interrupts nobody; a mention
+  does:
+
+| Post                      | Running members                     | Idle members       | Wake               |
+| ------------------------- | ----------------------------------- | ------------------ | ------------------ |
+| Channel post ("Everyone") | not interrupted; next turn's digest | next turn's digest | no                 |
+| `@card` (direct)          | steered into the turn               | next turn's digest | optional, budgeted |
+| `@here` (people only)     | steered, on every machine           | not delivered      | no                 |
+
+A digest carries undelivered direct messages and channel posts of the last 24
+hours since the card was created. The inbox returns the same set. `@here` takes
+no recipients.
+
+### 8.2 Design
+
+**Records.** Channel state replicates as KV records in four validated
+namespaces. Every key has a single writer, so records never conflict, and the
+public KV API refuses writes to them.
+
+| Namespace         | Key                                | Writer                               | Value                                                                   |
+| ----------------- | ---------------------------------- | ------------------------------------ | ----------------------------------------------------------------------- |
+| `channel`         | `<project>.<origin daemon>.<slot>` | the daemon the message was posted on | one message; slot = origin sequence mod 64, a per-origin ring           |
+| `channel-receipt` | `<card>`                           | the card's owner daemon              | its last 32 deliveries (message, mode, time)                            |
+| `channel-pins`    | `<project>.<daemon>`               | the daemon a pin was changed on      | its last 32 pin changes; the newest change wins                         |
+| `channel-claims`  | `<project>.<daemon>`               | the daemon of the checkout           | its live claims (at most 64), refreshed every 5 minutes, stale after 15 |
+
+Each daemon ingests other daemons' records into its own log (deduplicated by
+message ID), which keeps history beyond the ring and serves paging, digests and
+unread counts. Dieter's coordination events (claim, hold, release) have no
+origin and stay on their daemon. Peer sync runs a round about a second after a
+change and every 15 seconds otherwise; the engine publishes and ingests on
+store changes and every 5 seconds. Within the threat model every roster device
+has full access, so the origin daemon field is authorship, not authorization;
+values are validated when written and when ingested.
+
+**Delivery.** A recipient card's owner daemon delivers a message when it
+reaches its log, whether posted there or replicated, and publishes the receipt
+so every machine shows how it arrived. Only the owner wakes a card, within its
+budget, and only the owner consumes its inbox.
+
+**Claims across machines.** A claim guards one checkout, so blocking stays per
+checkout. Other machines' claims are advisory: `channel check` and the
+inspector show them with the machine's name, so agents coordinate before they
+push. A release goes to the claim's machine.
+
+**Clients.** The Kotlin core merges every machine's listing into one channel per
+project and moves the stream to the next machine when the serving one fails.
+The composer offers Everyone, `@here` and cards and says what each does;
+messages, members, claims and recipients name their machine. A settings change
+falls through to the next reachable machine.
+
+**CLI and API.** `dieter channel post --here`; messages carry their origin
+daemon and `here`; members and claims carry their machine; `check` returns
+other machines' claims as `elsewhere`.
+
+### 8.3 Verification
+
+- Schema validation and bounds; store ingest, pin and receipt rules.
+- Engine: ingest and dispatch of other machines' records, receipts, pins,
+  advisory and published claims, the digest rules and `@here`.
+- A two-daemon peer-sync test through the gateway relay: a person on B messages
+  an idle card on A with `--wake`; A wakes it and publishes the receipt; B shows
+  the delivery and A's claims as advisory; B may peek at the card's inbox but
+  not consume it; the gateway neither sees nor stores the message.
+- CLI routes (local, direct TLS, relay) with `--here`; Kotlin core rules and the
+  store's serving machine; the core's end-to-end test; Mac model tests.
+
+Not included: the human read position stays per machine, and agents cannot post
+`@here`.
+
 ## Sources
 
-- Spike: [`tools/spikes/messaging`](../../tools/spikes/messaging/README.md) (v1 `driver.mjs` + `analyze.mjs`; v2 `atrium.mjs`, `hook.mjs`, `atrium-report.mjs`; `results/` run logs; raw transcripts and per-run `git-log.txt` at `/Volumes/External/dieter-spike/messaging-2026-10-24/`)
+- Spike: [`tools/spikes/messaging`](../../tools/spikes/messaging/README.md) (first spike: `driver.mjs` + `analyze.mjs`; second: `atrium.mjs`, `hook.mjs`, `atrium-report.mjs`; `results/` run logs; raw transcripts and per-run `git-log.txt` at `/Volumes/External/dieter-spike/messaging-2026-10-24/`)
 - UI mockup: [`assets/agent-channels-mockup.html`](assets/agent-channels-mockup.html)
 - Beyond Coding, "What the Best Engineers Built for Their Coding Agents" (Mat Jones, Adyen): https://www.youtube.com/watch?v=NKvv5xHpxjE
 - Agent Relay: https://github.com/AgentWorkforce/relay (read at `c3a92d9`)

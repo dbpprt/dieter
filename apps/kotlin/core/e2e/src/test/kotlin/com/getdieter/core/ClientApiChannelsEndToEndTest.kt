@@ -82,20 +82,17 @@ class ClientApiChannelsEndToEndTest : EndToEnd() {
         }
         val listed =
             channels.await(30.seconds, describe = { "listed: ${channels.value}" }) { slice ->
-                slice?.machines.orEmpty().any { machine ->
-                    machine.daemon_id == fixture.daemonId &&
-                        machine.channels.any { it.project_id == fixture.projectId && it.enabled }
-                }
+                slice?.channels.orEmpty().any { it.project_id == fixture.projectId && it.enabled }
             }!!
         assertTrue(listed.enabled)
 
         api.dispatch(command(ChannelsCommand(active = Toggle(on = true))))
-        api.dispatch(
-            command(ChannelsCommand(select = ChannelRef(fixture.daemonId, fixture.projectId)))
-        )
-        channels.await(30.seconds, describe = { "stream: ${channels.value?.stream}" }) {
-            it?.stream?.loading == false && it.stream?.composer?.can_post == true
-        }
+        api.dispatch(command(ChannelsCommand(select = ChannelRef(fixture.projectId))))
+        val opened =
+            channels.await(30.seconds, describe = { "stream: ${channels.value?.stream}" }) {
+                it?.stream?.loading == false && it.stream?.composer?.can_post == true
+            }!!
+        assertTrue(opened.stream!!.subtitle.startsWith("Shared by your machines · read from "))
 
         val posted =
             api.dispatch(
@@ -134,6 +131,18 @@ class ClientApiChannelsEndToEndTest : EndToEnd() {
         assertEquals("Pins · 1", live.stream!!.pins_tab)
         // The user's own posts are never unread.
         assertEquals(0, live.unread)
+
+        // @here reaches every running agent; it shows as such.
+        api.dispatch(
+            command(ChannelsCommand(post = ChannelPost(body = "Stop pushing.", here = true)))
+        )
+        val here =
+            channels.await(30.seconds, describe = { "here: ${channels.value?.stream?.rows}" }) {
+                it?.stream?.rows.orEmpty().any { row -> row.body == "Stop pushing." }
+            }!!
+        val hereRow = here.stream!!.rows.first { it.body == "Stop pushing." }
+        assertTrue(hereRow.here)
+        assertEquals("@here", hereRow.recipients)
         api.dispatch(command(ChannelsCommand(mark_read = Step())))
 
         // Unpinning resends the message with its original sequence.

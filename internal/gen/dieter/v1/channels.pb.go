@@ -175,20 +175,25 @@ func (x *ChannelDelivery) GetAt() string {
 // "release". Bodies are at most 4096 bytes; at most 16 files and 32
 // recipients.
 type ChannelMessage struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ProjectId     string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Seq           int64                  `protobuf:"varint,3,opt,name=seq,proto3" json:"seq,omitempty"`
-	ThreadId      string                 `protobuf:"bytes,4,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
-	Kind          string                 `protobuf:"bytes,5,opt,name=kind,proto3" json:"kind,omitempty"`
-	Author        *ChannelAuthor         `protobuf:"bytes,6,opt,name=author,proto3" json:"author,omitempty"`
-	ToCardIds     []string               `protobuf:"bytes,7,rep,name=to_card_ids,json=toCardIds,proto3" json:"to_card_ids,omitempty"`
-	Body          string                 `protobuf:"bytes,8,opt,name=body,proto3" json:"body,omitempty"`
-	Files         []string               `protobuf:"bytes,9,rep,name=files,proto3" json:"files,omitempty"`
-	Pinned        bool                   `protobuf:"varint,10,opt,name=pinned,proto3" json:"pinned,omitempty"`
-	CreatedAt     string                 `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	ReplyCount    int32                  `protobuf:"varint,12,opt,name=reply_count,json=replyCount,proto3" json:"reply_count,omitempty"`
-	Deliveries    []*ChannelDelivery     `protobuf:"bytes,13,rep,name=deliveries,proto3" json:"deliveries,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Id         string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	ProjectId  string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Seq        int64                  `protobuf:"varint,3,opt,name=seq,proto3" json:"seq,omitempty"`
+	ThreadId   string                 `protobuf:"bytes,4,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
+	Kind       string                 `protobuf:"bytes,5,opt,name=kind,proto3" json:"kind,omitempty"`
+	Author     *ChannelAuthor         `protobuf:"bytes,6,opt,name=author,proto3" json:"author,omitempty"`
+	ToCardIds  []string               `protobuf:"bytes,7,rep,name=to_card_ids,json=toCardIds,proto3" json:"to_card_ids,omitempty"`
+	Body       string                 `protobuf:"bytes,8,opt,name=body,proto3" json:"body,omitempty"`
+	Files      []string               `protobuf:"bytes,9,rep,name=files,proto3" json:"files,omitempty"`
+	Pinned     bool                   `protobuf:"varint,10,opt,name=pinned,proto3" json:"pinned,omitempty"`
+	CreatedAt  string                 `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	ReplyCount int32                  `protobuf:"varint,12,opt,name=reply_count,json=replyCount,proto3" json:"reply_count,omitempty"`
+	Deliveries []*ChannelDelivery     `protobuf:"bytes,13,rep,name=deliveries,proto3" json:"deliveries,omitempty"`
+	// The daemon the message was posted on; empty for this daemon's own
+	// coordination events (claim, hold, release), which stay on it.
+	OriginDaemonId string `protobuf:"bytes,14,opt,name=origin_daemon_id,json=originDaemonId,proto3" json:"origin_daemon_id,omitempty"`
+	// A person's @here: it steered every running member on every machine.
+	Here          bool `protobuf:"varint,15,opt,name=here,proto3" json:"here,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -314,19 +319,36 @@ func (x *ChannelMessage) GetDeliveries() []*ChannelDelivery {
 	return nil
 }
 
+func (x *ChannelMessage) GetOriginDaemonId() string {
+	if x != nil {
+		return x.OriginDaemonId
+	}
+	return ""
+}
+
+func (x *ChannelMessage) GetHere() bool {
+	if x != nil {
+		return x.Here
+	}
+	return false
+}
+
 // A card of a project channel. status is "running", "waiting" (blocked on a
 // claim), "idle" or "failed".
 type ChannelMember struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CardId        string                 `protobuf:"bytes,1,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
-	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
-	BoardId       string                 `protobuf:"bytes,3,opt,name=board_id,json=boardId,proto3" json:"board_id,omitempty"`
-	Harness       string                 `protobuf:"bytes,4,opt,name=harness,proto3" json:"harness,omitempty"`
-	Model         string                 `protobuf:"bytes,5,opt,name=model,proto3" json:"model,omitempty"`
-	Status        string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
-	Enabled       bool                   `protobuf:"varint,7,opt,name=enabled,proto3" json:"enabled,omitempty"`
-	Holds         []string               `protobuf:"bytes,8,rep,name=holds,proto3" json:"holds,omitempty"`
-	WaitingOn     []string               `protobuf:"bytes,9,rep,name=waiting_on,json=waitingOn,proto3" json:"waiting_on,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	CardId    string                 `protobuf:"bytes,1,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	Title     string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	BoardId   string                 `protobuf:"bytes,3,opt,name=board_id,json=boardId,proto3" json:"board_id,omitempty"`
+	Harness   string                 `protobuf:"bytes,4,opt,name=harness,proto3" json:"harness,omitempty"`
+	Model     string                 `protobuf:"bytes,5,opt,name=model,proto3" json:"model,omitempty"`
+	Status    string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
+	Enabled   bool                   `protobuf:"varint,7,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	Holds     []string               `protobuf:"bytes,8,rep,name=holds,proto3" json:"holds,omitempty"`
+	WaitingOn []string               `protobuf:"bytes,9,rep,name=waiting_on,json=waitingOn,proto3" json:"waiting_on,omitempty"`
+	// The machine that runs the card; remote members run on another one.
+	DaemonId      string `protobuf:"bytes,10,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
+	Remote        bool   `protobuf:"varint,11,opt,name=remote,proto3" json:"remote,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -422,6 +444,20 @@ func (x *ChannelMember) GetWaitingOn() []string {
 		return x.WaitingOn
 	}
 	return nil
+}
+
+func (x *ChannelMember) GetDaemonId() string {
+	if x != nil {
+		return x.DaemonId
+	}
+	return ""
+}
+
+func (x *ChannelMember) GetRemote() bool {
+	if x != nil {
+		return x.Remote
+	}
+	return false
 }
 
 type ChannelSummary struct {
@@ -764,15 +800,17 @@ func (x *ChannelMessagePage) GetHasMore() bool {
 // turn for idle direct recipients within their wake budget. operation_id makes
 // a retried post return the original message.
 type PostChannelMessageRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	ToCardIds     []string               `protobuf:"bytes,2,rep,name=to_card_ids,json=toCardIds,proto3" json:"to_card_ids,omitempty"`
-	ThreadId      string                 `protobuf:"bytes,3,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
-	Kind          string                 `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"`
-	Body          string                 `protobuf:"bytes,5,opt,name=body,proto3" json:"body,omitempty"`
-	Files         []string               `protobuf:"bytes,6,rep,name=files,proto3" json:"files,omitempty"`
-	Wake          bool                   `protobuf:"varint,7,opt,name=wake,proto3" json:"wake,omitempty"`
-	OperationId   string                 `protobuf:"bytes,8,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId   string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	ToCardIds   []string               `protobuf:"bytes,2,rep,name=to_card_ids,json=toCardIds,proto3" json:"to_card_ids,omitempty"`
+	ThreadId    string                 `protobuf:"bytes,3,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
+	Kind        string                 `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"`
+	Body        string                 `protobuf:"bytes,5,opt,name=body,proto3" json:"body,omitempty"`
+	Files       []string               `protobuf:"bytes,6,rep,name=files,proto3" json:"files,omitempty"`
+	Wake        bool                   `protobuf:"varint,7,opt,name=wake,proto3" json:"wake,omitempty"`
+	OperationId string                 `protobuf:"bytes,8,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
+	// Steer every running member on every machine. People only.
+	Here          bool `protobuf:"varint,9,opt,name=here,proto3" json:"here,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -861,6 +899,13 @@ func (x *PostChannelMessageRequest) GetOperationId() string {
 		return x.OperationId
 	}
 	return ""
+}
+
+func (x *PostChannelMessageRequest) GetHere() bool {
+	if x != nil {
+		return x.Here
+	}
+	return false
 }
 
 type PinChannelMessageRequest struct {
@@ -1101,8 +1146,12 @@ type ChannelClaim struct {
 	Since          string                 `protobuf:"bytes,5,opt,name=since,proto3" json:"since,omitempty"`
 	WaitingCardIds []string               `protobuf:"bytes,6,rep,name=waiting_card_ids,json=waitingCardIds,proto3" json:"waiting_card_ids,omitempty"`
 	Parked         bool                   `protobuf:"varint,7,opt,name=parked,proto3" json:"parked,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// The machine whose checkout the claim is in. A remote claim is another
+	// machine's: advisory, in its own checkout.
+	DaemonId      string `protobuf:"bytes,8,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
+	Remote        bool   `protobuf:"varint,9,opt,name=remote,proto3" json:"remote,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ChannelClaim) Reset() {
@@ -1184,14 +1233,30 @@ func (x *ChannelClaim) GetParked() bool {
 	return false
 }
 
+func (x *ChannelClaim) GetDaemonId() string {
+	if x != nil {
+		return x.DaemonId
+	}
+	return ""
+}
+
+func (x *ChannelClaim) GetRemote() bool {
+	if x != nil {
+		return x.Remote
+	}
+	return false
+}
+
 type ChannelCheck struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	Conflicts []*ChannelClaim        `protobuf:"bytes,1,rep,name=conflicts,proto3" json:"conflicts,omitempty"`
 	Decisions []*ChannelMessage      `protobuf:"bytes,2,rep,name=decisions,proto3" json:"decisions,omitempty"`
 	Recent    []*ChannelMessage      `protobuf:"bytes,3,rep,name=recent,proto3" json:"recent,omitempty"`
 	// summary is the plain-text answer agents read.
-	Summary       string `protobuf:"bytes,4,opt,name=summary,proto3" json:"summary,omitempty"`
-	Unread        int32  `protobuf:"varint,5,opt,name=unread,proto3" json:"unread,omitempty"`
+	Summary string `protobuf:"bytes,4,opt,name=summary,proto3" json:"summary,omitempty"`
+	Unread  int32  `protobuf:"varint,5,opt,name=unread,proto3" json:"unread,omitempty"`
+	// Other machines' claims on the same paths, in their own checkouts.
+	Elsewhere     []*ChannelClaim `protobuf:"bytes,6,rep,name=elsewhere,proto3" json:"elsewhere,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1259,6 +1324,13 @@ func (x *ChannelCheck) GetUnread() int32 {
 		return x.Unread
 	}
 	return 0
+}
+
+func (x *ChannelCheck) GetElsewhere() []*ChannelClaim {
+	if x != nil {
+		return x.Elsewhere
+	}
+	return nil
 }
 
 type ListChannelClaimsRequest struct {
@@ -1868,7 +1940,7 @@ const file_dieter_v1_channels_proto_rawDesc = "" +
 	"\x0fChannelDelivery\x12\x17\n" +
 	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12\x12\n" +
 	"\x04mode\x18\x02 \x01(\tR\x04mode\x12\x0e\n" +
-	"\x02at\x18\x03 \x01(\tR\x02at\"\x92\x03\n" +
+	"\x02at\x18\x03 \x01(\tR\x02at\"\xd0\x03\n" +
 	"\x0eChannelMessage\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -1888,7 +1960,9 @@ const file_dieter_v1_channels_proto_rawDesc = "" +
 	"replyCount\x12:\n" +
 	"\n" +
 	"deliveries\x18\r \x03(\v2\x1a.dieter.v1.ChannelDeliveryR\n" +
-	"deliveries\"\xf0\x01\n" +
+	"deliveries\x12(\n" +
+	"\x10origin_daemon_id\x18\x0e \x01(\tR\x0eoriginDaemonId\x12\x12\n" +
+	"\x04here\x18\x0f \x01(\bR\x04here\"\xa5\x02\n" +
 	"\rChannelMember\x12\x17\n" +
 	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x19\n" +
@@ -1899,7 +1973,10 @@ const file_dieter_v1_channels_proto_rawDesc = "" +
 	"\aenabled\x18\a \x01(\bR\aenabled\x12\x14\n" +
 	"\x05holds\x18\b \x03(\tR\x05holds\x12\x1d\n" +
 	"\n" +
-	"waiting_on\x18\t \x03(\tR\twaitingOn\"\xae\x02\n" +
+	"waiting_on\x18\t \x03(\tR\twaitingOn\x12\x1b\n" +
+	"\tdaemon_id\x18\n" +
+	" \x01(\tR\bdaemonId\x12\x16\n" +
+	"\x06remote\x18\v \x01(\bR\x06remote\"\xae\x02\n" +
 	"\x0eChannelSummary\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12!\n" +
@@ -1926,7 +2003,7 @@ const file_dieter_v1_channels_proto_rawDesc = "" +
 	"\x12ChannelMessagePage\x125\n" +
 	"\bmessages\x18\x01 \x03(\v2\x19.dieter.v1.ChannelMessageR\bmessages\x12\x19\n" +
 	"\blast_seq\x18\x02 \x01(\x03R\alastSeq\x12\x19\n" +
-	"\bhas_more\x18\x03 \x01(\bR\ahasMore\"\xec\x01\n" +
+	"\bhas_more\x18\x03 \x01(\bR\ahasMore\"\x80\x02\n" +
 	"\x19PostChannelMessageRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x1e\n" +
@@ -1936,7 +2013,8 @@ const file_dieter_v1_channels_proto_rawDesc = "" +
 	"\x04body\x18\x05 \x01(\tR\x04body\x12\x14\n" +
 	"\x05files\x18\x06 \x03(\tR\x05files\x12\x12\n" +
 	"\x04wake\x18\a \x01(\bR\x04wake\x12!\n" +
-	"\foperation_id\x18\b \x01(\tR\voperationId\"p\n" +
+	"\foperation_id\x18\b \x01(\tR\voperationId\x12\x12\n" +
+	"\x04here\x18\t \x01(\bR\x04here\"p\n" +
 	"\x18PinChannelMessageRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x1d\n" +
@@ -1953,7 +2031,7 @@ const file_dieter_v1_channels_proto_rawDesc = "" +
 	"\x18CheckChannelFilesRequest\x12\x17\n" +
 	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12\x14\n" +
 	"\x05files\x18\x02 \x03(\tR\x05files\x12\x16\n" +
-	"\x06intent\x18\x03 \x01(\tR\x06intent\"\xd1\x01\n" +
+	"\x06intent\x18\x03 \x01(\tR\x06intent\"\x86\x02\n" +
 	"\fChannelClaim\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
@@ -1963,13 +2041,16 @@ const file_dieter_v1_channels_proto_rawDesc = "" +
 	"card_title\x18\x04 \x01(\tR\tcardTitle\x12\x14\n" +
 	"\x05since\x18\x05 \x01(\tR\x05since\x12(\n" +
 	"\x10waiting_card_ids\x18\x06 \x03(\tR\x0ewaitingCardIds\x12\x16\n" +
-	"\x06parked\x18\a \x01(\bR\x06parked\"\xe3\x01\n" +
+	"\x06parked\x18\a \x01(\bR\x06parked\x12\x1b\n" +
+	"\tdaemon_id\x18\b \x01(\tR\bdaemonId\x12\x16\n" +
+	"\x06remote\x18\t \x01(\bR\x06remote\"\x9a\x02\n" +
 	"\fChannelCheck\x125\n" +
 	"\tconflicts\x18\x01 \x03(\v2\x17.dieter.v1.ChannelClaimR\tconflicts\x127\n" +
 	"\tdecisions\x18\x02 \x03(\v2\x19.dieter.v1.ChannelMessageR\tdecisions\x121\n" +
 	"\x06recent\x18\x03 \x03(\v2\x19.dieter.v1.ChannelMessageR\x06recent\x12\x18\n" +
 	"\asummary\x18\x04 \x01(\tR\asummary\x12\x16\n" +
-	"\x06unread\x18\x05 \x01(\x05R\x06unread\"9\n" +
+	"\x06unread\x18\x05 \x01(\x05R\x06unread\x125\n" +
+	"\telsewhere\x18\x06 \x03(\v2\x17.dieter.v1.ChannelClaimR\telsewhere\"9\n" +
 	"\x18ListChannelClaimsRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\"@\n" +
@@ -2076,42 +2157,43 @@ var file_dieter_v1_channels_proto_depIdxs = []int32{
 	14, // 5: dieter.v1.ChannelCheck.conflicts:type_name -> dieter.v1.ChannelClaim
 	2,  // 6: dieter.v1.ChannelCheck.decisions:type_name -> dieter.v1.ChannelMessage
 	2,  // 7: dieter.v1.ChannelCheck.recent:type_name -> dieter.v1.ChannelMessage
-	14, // 8: dieter.v1.ChannelClaims.claims:type_name -> dieter.v1.ChannelClaim
-	22, // 9: dieter.v1.ChannelSettings.overrides:type_name -> dieter.v1.ChannelSettingOverride
-	2,  // 10: dieter.v1.ChannelFrame.messages:type_name -> dieter.v1.ChannelMessage
-	4,  // 11: dieter.v1.ChannelFrame.summary:type_name -> dieter.v1.ChannelSummary
-	14, // 12: dieter.v1.ChannelFrame.claims:type_name -> dieter.v1.ChannelClaim
-	5,  // 13: dieter.v1.ChannelService.ListChannels:input_type -> dieter.v1.ListChannelsRequest
-	7,  // 14: dieter.v1.ChannelService.ListChannelMessages:input_type -> dieter.v1.ListChannelMessagesRequest
-	9,  // 15: dieter.v1.ChannelService.PostChannelMessage:input_type -> dieter.v1.PostChannelMessageRequest
-	10, // 16: dieter.v1.ChannelService.PinChannelMessage:input_type -> dieter.v1.PinChannelMessageRequest
-	11, // 17: dieter.v1.ChannelService.MarkChannelRead:input_type -> dieter.v1.MarkChannelReadRequest
-	12, // 18: dieter.v1.ChannelService.GetChannelInbox:input_type -> dieter.v1.GetChannelInboxRequest
-	13, // 19: dieter.v1.ChannelService.CheckChannelFiles:input_type -> dieter.v1.CheckChannelFilesRequest
-	16, // 20: dieter.v1.ChannelService.ListChannelClaims:input_type -> dieter.v1.ListChannelClaimsRequest
-	18, // 21: dieter.v1.ChannelService.ReleaseChannelClaims:input_type -> dieter.v1.ReleaseChannelClaimsRequest
-	19, // 22: dieter.v1.ChannelService.HandleChannelHook:input_type -> dieter.v1.ChannelHookRequest
-	21, // 23: dieter.v1.ChannelService.GetChannelSettings:input_type -> dieter.v1.GetChannelSettingsRequest
-	24, // 24: dieter.v1.ChannelService.SetChannelSetting:input_type -> dieter.v1.SetChannelSettingRequest
-	25, // 25: dieter.v1.ChannelService.WatchChannel:input_type -> dieter.v1.WatchChannelRequest
-	6,  // 26: dieter.v1.ChannelService.ListChannels:output_type -> dieter.v1.ListChannelsResponse
-	8,  // 27: dieter.v1.ChannelService.ListChannelMessages:output_type -> dieter.v1.ChannelMessagePage
-	2,  // 28: dieter.v1.ChannelService.PostChannelMessage:output_type -> dieter.v1.ChannelMessage
-	2,  // 29: dieter.v1.ChannelService.PinChannelMessage:output_type -> dieter.v1.ChannelMessage
-	27, // 30: dieter.v1.ChannelService.MarkChannelRead:output_type -> google.protobuf.Empty
-	8,  // 31: dieter.v1.ChannelService.GetChannelInbox:output_type -> dieter.v1.ChannelMessagePage
-	15, // 32: dieter.v1.ChannelService.CheckChannelFiles:output_type -> dieter.v1.ChannelCheck
-	17, // 33: dieter.v1.ChannelService.ListChannelClaims:output_type -> dieter.v1.ChannelClaims
-	17, // 34: dieter.v1.ChannelService.ReleaseChannelClaims:output_type -> dieter.v1.ChannelClaims
-	20, // 35: dieter.v1.ChannelService.HandleChannelHook:output_type -> dieter.v1.ChannelHookResponse
-	23, // 36: dieter.v1.ChannelService.GetChannelSettings:output_type -> dieter.v1.ChannelSettings
-	23, // 37: dieter.v1.ChannelService.SetChannelSetting:output_type -> dieter.v1.ChannelSettings
-	26, // 38: dieter.v1.ChannelService.WatchChannel:output_type -> dieter.v1.ChannelFrame
-	26, // [26:39] is the sub-list for method output_type
-	13, // [13:26] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	14, // 8: dieter.v1.ChannelCheck.elsewhere:type_name -> dieter.v1.ChannelClaim
+	14, // 9: dieter.v1.ChannelClaims.claims:type_name -> dieter.v1.ChannelClaim
+	22, // 10: dieter.v1.ChannelSettings.overrides:type_name -> dieter.v1.ChannelSettingOverride
+	2,  // 11: dieter.v1.ChannelFrame.messages:type_name -> dieter.v1.ChannelMessage
+	4,  // 12: dieter.v1.ChannelFrame.summary:type_name -> dieter.v1.ChannelSummary
+	14, // 13: dieter.v1.ChannelFrame.claims:type_name -> dieter.v1.ChannelClaim
+	5,  // 14: dieter.v1.ChannelService.ListChannels:input_type -> dieter.v1.ListChannelsRequest
+	7,  // 15: dieter.v1.ChannelService.ListChannelMessages:input_type -> dieter.v1.ListChannelMessagesRequest
+	9,  // 16: dieter.v1.ChannelService.PostChannelMessage:input_type -> dieter.v1.PostChannelMessageRequest
+	10, // 17: dieter.v1.ChannelService.PinChannelMessage:input_type -> dieter.v1.PinChannelMessageRequest
+	11, // 18: dieter.v1.ChannelService.MarkChannelRead:input_type -> dieter.v1.MarkChannelReadRequest
+	12, // 19: dieter.v1.ChannelService.GetChannelInbox:input_type -> dieter.v1.GetChannelInboxRequest
+	13, // 20: dieter.v1.ChannelService.CheckChannelFiles:input_type -> dieter.v1.CheckChannelFilesRequest
+	16, // 21: dieter.v1.ChannelService.ListChannelClaims:input_type -> dieter.v1.ListChannelClaimsRequest
+	18, // 22: dieter.v1.ChannelService.ReleaseChannelClaims:input_type -> dieter.v1.ReleaseChannelClaimsRequest
+	19, // 23: dieter.v1.ChannelService.HandleChannelHook:input_type -> dieter.v1.ChannelHookRequest
+	21, // 24: dieter.v1.ChannelService.GetChannelSettings:input_type -> dieter.v1.GetChannelSettingsRequest
+	24, // 25: dieter.v1.ChannelService.SetChannelSetting:input_type -> dieter.v1.SetChannelSettingRequest
+	25, // 26: dieter.v1.ChannelService.WatchChannel:input_type -> dieter.v1.WatchChannelRequest
+	6,  // 27: dieter.v1.ChannelService.ListChannels:output_type -> dieter.v1.ListChannelsResponse
+	8,  // 28: dieter.v1.ChannelService.ListChannelMessages:output_type -> dieter.v1.ChannelMessagePage
+	2,  // 29: dieter.v1.ChannelService.PostChannelMessage:output_type -> dieter.v1.ChannelMessage
+	2,  // 30: dieter.v1.ChannelService.PinChannelMessage:output_type -> dieter.v1.ChannelMessage
+	27, // 31: dieter.v1.ChannelService.MarkChannelRead:output_type -> google.protobuf.Empty
+	8,  // 32: dieter.v1.ChannelService.GetChannelInbox:output_type -> dieter.v1.ChannelMessagePage
+	15, // 33: dieter.v1.ChannelService.CheckChannelFiles:output_type -> dieter.v1.ChannelCheck
+	17, // 34: dieter.v1.ChannelService.ListChannelClaims:output_type -> dieter.v1.ChannelClaims
+	17, // 35: dieter.v1.ChannelService.ReleaseChannelClaims:output_type -> dieter.v1.ChannelClaims
+	20, // 36: dieter.v1.ChannelService.HandleChannelHook:output_type -> dieter.v1.ChannelHookResponse
+	23, // 37: dieter.v1.ChannelService.GetChannelSettings:output_type -> dieter.v1.ChannelSettings
+	23, // 38: dieter.v1.ChannelService.SetChannelSetting:output_type -> dieter.v1.ChannelSettings
+	26, // 39: dieter.v1.ChannelService.WatchChannel:output_type -> dieter.v1.ChannelFrame
+	27, // [27:40] is the sub-list for method output_type
+	14, // [14:27] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_dieter_v1_channels_proto_init() }

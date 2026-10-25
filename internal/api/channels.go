@@ -72,7 +72,7 @@ func (api *channelsAPI) PostChannelMessage(ctx context.Context, r *dieterv1.Post
 	}
 	message, err := api.server.app.PostChannelMessage(ctx, caller, engine.ChannelPost{
 		ProjectID: r.GetProjectId(), To: r.GetToCardIds(), ThreadID: r.GetThreadId(), Kind: r.GetKind(),
-		Body: r.GetBody(), Files: r.GetFiles(), Wake: r.GetWake(), OperationID: r.GetOperationId(),
+		Body: r.GetBody(), Files: r.GetFiles(), Wake: r.GetWake(), Here: r.GetHere(), OperationID: r.GetOperationId(),
 	})
 	if err != nil {
 		return nil, domainFailure(err)
@@ -131,6 +131,9 @@ func (api *channelsAPI) CheckChannelFiles(ctx context.Context, r *dieterv1.Check
 	}
 	for _, message := range check.Recent {
 		response.Recent = append(response.Recent, protoChannelMessage(message))
+	}
+	for _, claim := range check.Elsewhere {
+		response.Elsewhere = append(response.Elsewhere, protoChannelClaim(claim))
 	}
 	return response, nil
 }
@@ -288,7 +291,11 @@ func (s *Server) watchChannel(ctx context.Context, r *dieterv1.WatchChannelReque
 }
 
 func channelFingerprint(message model.ChannelMessage) string {
-	return fmt.Sprintf("%t/%d/%d", message.Pinned, message.ReplyCount, len(message.Deliveries))
+	fingerprint := fmt.Sprintf("%t/%d", message.Pinned, message.ReplyCount)
+	for _, delivery := range message.Deliveries {
+		fingerprint += "/" + delivery.CardID + ":" + delivery.Mode + "@" + delivery.At
+	}
+	return fingerprint
 }
 
 func protoChannelAuthor(author model.ChannelAuthor) *dieterv1.ChannelAuthor {
@@ -300,6 +307,7 @@ func protoChannelMessage(message model.ChannelMessage) *dieterv1.ChannelMessage 
 		Id: message.ID, ProjectId: message.ProjectID, Seq: message.Seq, ThreadId: message.ThreadID, Kind: message.Kind,
 		Author: protoChannelAuthor(message.Author), ToCardIds: slices.Clone(message.To), Body: message.Body,
 		Files: slices.Clone(message.Files), Pinned: message.Pinned, CreatedAt: message.CreatedAt, ReplyCount: int32(message.ReplyCount),
+		OriginDaemonId: message.Origin, Here: message.Here,
 	}
 	for _, delivery := range message.Deliveries {
 		result.Deliveries = append(result.Deliveries, &dieterv1.ChannelDelivery{CardId: delivery.CardID, Mode: delivery.Mode, At: delivery.At})
@@ -316,7 +324,7 @@ func protoChannelPage(messages []model.ChannelMessage, last int64, more bool) *d
 }
 
 func protoChannelClaim(claim model.ChannelClaim) *dieterv1.ChannelClaim {
-	return &dieterv1.ChannelClaim{ProjectId: claim.ProjectID, Path: claim.Path, CardId: claim.CardID, CardTitle: claim.CardTitle, Since: claim.Since, WaitingCardIds: slices.Clone(claim.Waiting), Parked: claim.Parked}
+	return &dieterv1.ChannelClaim{ProjectId: claim.ProjectID, Path: claim.Path, CardId: claim.CardID, CardTitle: claim.CardTitle, Since: claim.Since, WaitingCardIds: slices.Clone(claim.Waiting), Parked: claim.Parked, DaemonId: claim.Daemon, Remote: claim.Remote}
 }
 
 func protoChannelClaims(claims []model.ChannelClaim) *dieterv1.ChannelClaims {
@@ -338,6 +346,7 @@ func protoChannelSummary(summary engine.ChannelSummary) *dieterv1.ChannelSummary
 			CardId: member.Card.ID, Title: member.Card.Title, BoardId: member.Card.BoardID, Harness: member.Card.Provider,
 			Model: member.Card.Model, Status: member.Status, Enabled: member.Enabled,
 			Holds: slices.Clone(member.Holds), WaitingOn: slices.Clone(member.WaitingOn),
+			DaemonId: member.Daemon, Remote: member.Remote,
 		})
 	}
 	return result

@@ -8,6 +8,7 @@ import com.getdieter.api.v1.ChannelMessage
 import com.getdieter.api.v1.ChannelSummary
 import com.getdieter.client.v1.ChannelAuthorKind
 import com.getdieter.client.v1.ChannelMessageKind
+import com.getdieter.client.v1.ChannelPost
 import com.getdieter.client.v1.ChannelPresence
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -30,6 +31,7 @@ class ChannelRulesTest {
     private val dieter = ChannelAuthor(kind = "dieter")
     private val titles =
         mapOf("c1" to "Review headers", "c2" to "Add MAX_TIER_3", "c3" to "Fix checkout tests")
+    private val machines = { id: String -> if (id == "d_office") "mbp-office" else id }
 
     private fun message(
         seq: Long,
@@ -81,6 +83,20 @@ class ChannelRulesTest {
         assertEquals(ChannelAuthorKind.CHANNEL_AUTHOR_KIND_HUMAN, rows.rows[6].author?.kind)
         assertEquals("codex · gpt-5", rows.rows[0].meta)
         assertEquals("RH", rows.rows[0].author?.initials)
+    }
+
+    @Test
+    fun rowsNameTheMachineAnAgentPostedFromAndMarkHere() {
+        val fromOffice =
+            message(1, agentA, "2026-10-24T11:00:00Z").copy(origin_daemon_id = "d_office")
+        val here =
+            message(2, human, "2026-10-24T11:01:00Z")
+                .copy(origin_daemon_id = "d_office", here = true)
+        val rows = ChannelRules.rows(listOf(fromOffice, here), 0, titles, machines).rows
+        assertEquals("codex · gpt-5 · mbp-office", rows[0].meta)
+        assertEquals("you", rows[1].meta)
+        assertTrue(rows[1].here)
+        assertEquals("@here", rows[1].recipients)
     }
 
     @Test
@@ -211,15 +227,19 @@ class ChannelRulesTest {
                         harness = "codex",
                         model = "gpt-5",
                         holds = listOf("a", "b"),
+                        daemon_id = "d_office",
+                        remote = true,
                     ),
-                )
+                ),
+                machines,
             )
         assertEquals(listOf("c1", "c2", "c3"), members.map { it.card_id })
         assertEquals(
             listOf("Running", "Waiting on src/module3.js", "Idle"),
             members.map { it.presence_label },
         )
-        assertEquals("codex · gpt-5 · holds 2 files", members[0].detail)
+        assertEquals("codex · gpt-5 · mbp-office · holds 2 files", members[0].detail)
+        assertEquals("mbp-office", members[0].machine)
         assertEquals(ChannelPresence.CHANNEL_PRESENCE_WAITING, members[1].presence)
 
         val now = Instant.parse("2026-10-24T11:10:00Z")
@@ -238,12 +258,18 @@ class ChannelRulesTest {
                         card_title = "Review headers",
                         since = "2026-10-24T11:02:00Z",
                         waiting_card_ids = listOf("c2"),
+                        daemon_id = "d_office",
+                        remote = true,
                     ),
                 ),
                 titles,
                 now,
+                machines,
             )
         assertEquals(listOf("a.ts", "b.ts"), claims.map { it.path })
+        // Another machine's claim is a heads-up here; this machine's blocks.
+        assertEquals(listOf(true, false), claims.map { it.advisory })
+        assertEquals("mbp-office", claims[0].machine)
         assertEquals(listOf("held 8m", "held <1m"), claims.map { it.held_label })
         assertEquals("Add MAX_TIER_3 waiting", claims[0].waiting_label)
         assertEquals(
@@ -274,12 +300,12 @@ class ChannelRulesTest {
                         ChannelMember(card_id = "c2", status = "idle", enabled = false),
                     ),
             )
-        val row = ChannelRules.listRow("d1", summary, selected = true)
-        assertEquals("d1/p", row.id)
+        val row = ChannelRules.listRow(summary, selected = true)
+        assertEquals("p", row.project_id)
         assertEquals("2 agents · 1 running · 2 claims", row.detail)
         assertEquals(3, row.unread)
         assertEquals("Off", ChannelRules.listDetail(summary.copy(enabled = false)))
-        assertEquals(0, ChannelRules.listRow("d1", summary.copy(enabled = false), false).unread)
+        assertEquals(0, ChannelRules.listRow(summary.copy(enabled = false), false).unread)
         assertEquals("", ChannelRules.unreadLabel(0))
         assertEquals("99+", ChannelRules.unreadLabel(120))
 
@@ -295,6 +321,25 @@ class ChannelRulesTest {
             ChannelRules.composer("pricing", true, false, "mbp", emptyList(), false)
                 .disabled_reason,
         )
+        assertEquals(
+            "No reachable machine has this channel yet.",
+            ChannelRules.composer("pricing", true, false, null, emptyList(), false).disabled_reason,
+        )
+        // The composer says what each audience does.
+        assertEquals(ChannelRules.EVERYONE_HINT, composer.everyone_hint)
+        assertTrue(composer.here_hint.startsWith("@here: interrupts every running agent"))
+        assertEquals(ChannelRules.DIRECT_HINT, composer.direct_hint)
+        assertEquals(
+            "@here already reaches every running agent. Remove the recipients.",
+            ChannelRules.postProblem(
+                ChannelPost(body = "stop", here = true, to_card_ids = listOf("c1"))
+            ),
+        )
+        assertEquals(
+            "Choose who to wake.",
+            ChannelRules.postProblem(ChannelPost(body = "go", wake = true)),
+        )
+        assertNull(ChannelRules.postProblem(ChannelPost(body = "stop", here = true)))
 
         assertEquals("Write a message first.", ChannelRules.bodyProblem("  "))
         assertNull(ChannelRules.bodyProblem("hi"))

@@ -59,6 +59,13 @@ func assertChannelCLI(t *testing.T, client *CLI, output *bytes.Buffer, data *sto
 	if posted.GetBody() != "Keep src/pricing.go rules pure." || !posted.GetPinned() || posted.GetAuthor().GetKind() != "human" || posted.GetFiles()[0] != "src/pricing.go" {
 		t.Fatalf("posted = %v", &posted)
 	}
+	if posted.GetOriginDaemonId() == "" {
+		t.Fatalf("posted without its origin machine: %v", &posted)
+	}
+	var here dieterv1.ChannelMessage
+	if err := protojson.Unmarshal([]byte(runDaemonCLI(t, client, output, "channel", "post", "--project", projectID, "--here", "Stop", "pushing", "to", "main.")), &here); err != nil || !here.GetHere() || len(here.GetToCardIds()) != 0 {
+		t.Fatalf("@here post = %v, %v", &here, err)
+	}
 	if text := runDaemonCLI(t, client, output, "channel", "messages", "--project", projectID); !strings.Contains(text, posted.GetId()) || !strings.Contains(text, "[pinned]") {
 		t.Fatalf("messages = %q", text)
 	}

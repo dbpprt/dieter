@@ -25,7 +25,7 @@ struct ChannelsGlobalSetting: View {
                 .e2eTarget("settings.experimental.channels")
             }
             Text(
-                "Off by default. Agents working in the same project on one machine get a channel: they can message each other, claim the files they change, and pin decisions. Messages reach running agents in their turn. Override it per project in Project context and per board in Board settings."
+                "Off by default. Agents working in the same project get one channel, shared by all your machines: they can message each other, claim the files they change, and pin decisions. A channel post waits for each agent's next turn; a direct message or @here reaches running agents at once. Override it per project in Project context and per board in Board settings."
             )
             .font(.caption).foregroundStyle(DieterTheme.tertiary)
             .fixedSize(horizontal: false, vertical: true)

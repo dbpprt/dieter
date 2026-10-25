@@ -24,9 +24,14 @@ before it happens.
 
 Add agent channels as an experimental, replicated opt-in:
 
+- **One channel per project, account-wide.** Every machine of the account
+  shares a project's channel. Its members are the project's cards that are not
+  Done or archived, on every machine.
 - **Peer origin.** A message from another agent (or a Dieter coordination
   event) may join an active turn as steered input, or reach an idle card as a
-  digest ahead of its next prompt. It starts a turn only through a budgeted
+  digest ahead of its next prompt. Only direct messages, Dieter's coordination
+  events and a person's `@here` join a running turn; a channel post waits for
+  the digest, which carries direct messages and the posts of the last 24 hours. It starts a turn only through a budgeted
   wake: a direct message with `--wake` or a released file the card waited for,
   at most 4 per card per hour and 3 in a row without a human message, spaced at
   least 2 s apart on a daemon. Wakes go through the existing turn admission, so
@@ -41,12 +46,21 @@ Add agent channels as an experimental, replicated opt-in:
   another running card holds and bare commits that would include them; other
   harnesses are warned right after a conflicting write. A card that ends its
   turn waiting for a running holder keeps its claims parked for up to an hour.
-- **Storage.** Messages, deliveries and the human read position are
-  daemon-local (`DIETER_HOME/channels`, append-only and fsynced under the
-  central writer lock). Claims and wake budgets are in-process. Only the
-  settings replicate, as the registered KV namespace `experimental`, so older
-  daemons replicate them without a version floor. Nothing is stored on the
+- **Storage and replication.** Each daemon keeps a project's log
+  (`DIETER_HOME/channels`, append-only and fsynced under the central writer
+  lock) with the human read position. Messages, delivery receipts, pin changes
+  and live claims replicate through peer sync as validated, bounded KV records
+  with one writer per key: `channel` (a 64-slot ring per origin daemon),
+  `channel-receipt` (a card's last 32 deliveries, by its owner),
+  `channel-pins` and `channel-claims` (per daemon and project). Only daemons
+  write them; the public KV API refuses. Each daemon ingests the others'
+  records into its log. The settings replicate as the KV namespace
+  `experimental`. Wake budgets are in-process. Nothing is stored on the
   gateway.
+- **Delivery stays with the owner.** Only a card's owner daemon steers, briefs
+  or wakes it, and records its deliveries; replication never moves a running
+  agent. A claim blocks writes only in its own checkout: other machines show it
+  as advisory.
 
 ## Consequences
 
@@ -56,5 +70,6 @@ Add agent channels as an experimental, replicated opt-in:
 - Claude Code has no per-session hook configuration through
   `@ai-sdk/harness-claude-code`, so its writes are checked after the fact until
   the adapter accepts settings or hooks.
-- Channels are per machine. Delivery across machines is future work and must
-  keep the gateway free of project data.
+- A message reaches another machine within peer sync's latency (a round about
+  a second after a change, at least every 15 seconds). The human read position
+  stays per machine.

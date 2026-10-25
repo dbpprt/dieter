@@ -88,6 +88,11 @@ message ChannelMessage {
   string created_at = 11;
   int32 reply_count = 12;
   repeated ChannelDelivery deliveries = 13;
+  // The daemon the message was posted on; empty for this daemon's own
+  // coordination events (claim, hold, release), which stay on it.
+  string origin_daemon_id = 14;
+  // A person's @here: it steered every running member on every machine.
+  bool here = 15;
 }
 
 // A card of a project channel. status is "running", "waiting" (blocked on a
@@ -102,6 +107,9 @@ message ChannelMember {
   bool enabled = 7;
   repeated string holds = 8;
   repeated string waiting_on = 9;
+  // The machine that runs the card; remote members run on another one.
+  string daemon_id = 10;
+  bool remote = 11;
 }
 
 message ChannelSummary {
@@ -153,6 +161,8 @@ message PostChannelMessageRequest {
   repeated string files = 6;
   bool wake = 7;
   string operation_id = 8;
+  // Steer every running member on every machine. People only.
+  bool here = 9;
 }
 
 message PinChannelMessageRequest {
@@ -190,6 +200,10 @@ message ChannelClaim {
   string since = 5;
   repeated string waiting_card_ids = 6;
   bool parked = 7;
+  // The machine whose checkout the claim is in. A remote claim is another
+  // machine's: advisory, in its own checkout.
+  string daemon_id = 8;
+  bool remote = 9;
 }
 
 message ChannelCheck {
@@ -199,6 +213,8 @@ message ChannelCheck {
   // summary is the plain-text answer agents read.
   string summary = 4;
   int32 unread = 5;
+  // Other machines' claims on the same paths, in their own checkouts.
+  repeated ChannelClaim elsewhere = 6;
 }
 
 message ListChannelClaimsRequest {

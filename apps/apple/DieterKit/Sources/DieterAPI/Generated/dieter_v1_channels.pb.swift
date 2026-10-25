@@ -145,6 +145,19 @@ public nonisolated struct Dieter_V1_ChannelMessage: @unchecked Sendable {
     set {_uniqueStorage()._deliveries = newValue}
   }
 
+  /// The daemon the message was posted on; empty for this daemon's own
+  /// coordination events (claim, hold, release), which stay on it.
+  public var originDaemonID: String {
+    get {_storage._originDaemonID}
+    set {_uniqueStorage()._originDaemonID = newValue}
+  }
+
+  /// A person's @here: it steered every running member on every machine.
+  public var here: Bool {
+    get {_storage._here}
+    set {_uniqueStorage()._here = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -176,6 +189,11 @@ public nonisolated struct Dieter_V1_ChannelMember: Sendable {
   public var holds: [String] = []
 
   public var waitingOn: [String] = []
+
+  /// The machine that runs the card; remote members run on another one.
+  public var daemonID: String = String()
+
+  public var remote: Bool = false
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -298,6 +316,9 @@ public nonisolated struct Dieter_V1_PostChannelMessageRequest: Sendable {
 
   public var operationID: String = String()
 
+  /// Steer every running member on every machine. People only.
+  public var here: Bool = false
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -387,6 +408,12 @@ public nonisolated struct Dieter_V1_ChannelClaim: Sendable {
 
   public var parked: Bool = false
 
+  /// The machine whose checkout the claim is in. A remote claim is another
+  /// machine's: advisory, in its own checkout.
+  public var daemonID: String = String()
+
+  public var remote: Bool = false
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -407,6 +434,9 @@ public nonisolated struct Dieter_V1_ChannelCheck: Sendable {
   public var summary: String = String()
 
   public var unread: Int32 = 0
+
+  /// Other machines' claims on the same paths, in their own checkouts.
+  public var elsewhere: [Dieter_V1_ChannelClaim] = []
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -691,7 +721,7 @@ nonisolated extension Dieter_V1_ChannelDelivery: SwiftProtobuf.Message, SwiftPro
 
 nonisolated extension Dieter_V1_ChannelMessage: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ChannelMessage"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}project_id\0\u{1}seq\0\u{3}thread_id\0\u{1}kind\0\u{1}author\0\u{3}to_card_ids\0\u{1}body\0\u{1}files\0\u{1}pinned\0\u{3}created_at\0\u{3}reply_count\0\u{1}deliveries\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}project_id\0\u{1}seq\0\u{3}thread_id\0\u{1}kind\0\u{1}author\0\u{3}to_card_ids\0\u{1}body\0\u{1}files\0\u{1}pinned\0\u{3}created_at\0\u{3}reply_count\0\u{1}deliveries\0\u{3}origin_daemon_id\0\u{1}here\0")
 
   fileprivate class _StorageClass {
     var _id: String = String()
@@ -707,6 +737,8 @@ nonisolated extension Dieter_V1_ChannelMessage: SwiftProtobuf.Message, SwiftProt
     var _createdAt: String = String()
     var _replyCount: Int32 = 0
     var _deliveries: [Dieter_V1_ChannelDelivery] = []
+    var _originDaemonID: String = String()
+    var _here: Bool = false
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -730,6 +762,8 @@ nonisolated extension Dieter_V1_ChannelMessage: SwiftProtobuf.Message, SwiftProt
       _createdAt = source._createdAt
       _replyCount = source._replyCount
       _deliveries = source._deliveries
+      _originDaemonID = source._originDaemonID
+      _here = source._here
     }
   }
 
@@ -761,6 +795,8 @@ nonisolated extension Dieter_V1_ChannelMessage: SwiftProtobuf.Message, SwiftProt
         case 11: try { try decoder.decodeSingularStringField(value: &_storage._createdAt) }()
         case 12: try { try decoder.decodeSingularInt32Field(value: &_storage._replyCount) }()
         case 13: try { try decoder.decodeRepeatedMessageField(value: &_storage._deliveries) }()
+        case 14: try { try decoder.decodeSingularStringField(value: &_storage._originDaemonID) }()
+        case 15: try { try decoder.decodeSingularBoolField(value: &_storage._here) }()
         default: break
         }
       }
@@ -812,6 +848,12 @@ nonisolated extension Dieter_V1_ChannelMessage: SwiftProtobuf.Message, SwiftProt
       if !_storage._deliveries.isEmpty {
         try visitor.visitRepeatedMessageField(value: _storage._deliveries, fieldNumber: 13)
       }
+      if !_storage._originDaemonID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._originDaemonID, fieldNumber: 14)
+      }
+      if _storage._here != false {
+        try visitor.visitSingularBoolField(value: _storage._here, fieldNumber: 15)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -834,6 +876,8 @@ nonisolated extension Dieter_V1_ChannelMessage: SwiftProtobuf.Message, SwiftProt
         if _storage._createdAt != rhs_storage._createdAt {return false}
         if _storage._replyCount != rhs_storage._replyCount {return false}
         if _storage._deliveries != rhs_storage._deliveries {return false}
+        if _storage._originDaemonID != rhs_storage._originDaemonID {return false}
+        if _storage._here != rhs_storage._here {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -845,7 +889,7 @@ nonisolated extension Dieter_V1_ChannelMessage: SwiftProtobuf.Message, SwiftProt
 
 nonisolated extension Dieter_V1_ChannelMember: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ChannelMember"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{1}title\0\u{3}board_id\0\u{1}harness\0\u{1}model\0\u{1}status\0\u{1}enabled\0\u{1}holds\0\u{3}waiting_on\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{1}title\0\u{3}board_id\0\u{1}harness\0\u{1}model\0\u{1}status\0\u{1}enabled\0\u{1}holds\0\u{3}waiting_on\0\u{3}daemon_id\0\u{1}remote\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -862,6 +906,8 @@ nonisolated extension Dieter_V1_ChannelMember: SwiftProtobuf.Message, SwiftProto
       case 7: try { try decoder.decodeSingularBoolField(value: &self.enabled) }()
       case 8: try { try decoder.decodeRepeatedStringField(value: &self.holds) }()
       case 9: try { try decoder.decodeRepeatedStringField(value: &self.waitingOn) }()
+      case 10: try { try decoder.decodeSingularStringField(value: &self.daemonID) }()
+      case 11: try { try decoder.decodeSingularBoolField(value: &self.remote) }()
       default: break
       }
     }
@@ -895,6 +941,12 @@ nonisolated extension Dieter_V1_ChannelMember: SwiftProtobuf.Message, SwiftProto
     if !self.waitingOn.isEmpty {
       try visitor.visitRepeatedStringField(value: self.waitingOn, fieldNumber: 9)
     }
+    if !self.daemonID.isEmpty {
+      try visitor.visitSingularStringField(value: self.daemonID, fieldNumber: 10)
+    }
+    if self.remote != false {
+      try visitor.visitSingularBoolField(value: self.remote, fieldNumber: 11)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -908,6 +960,8 @@ nonisolated extension Dieter_V1_ChannelMember: SwiftProtobuf.Message, SwiftProto
     if lhs.enabled != rhs.enabled {return false}
     if lhs.holds != rhs.holds {return false}
     if lhs.waitingOn != rhs.waitingOn {return false}
+    if lhs.daemonID != rhs.daemonID {return false}
+    if lhs.remote != rhs.remote {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1129,7 +1183,7 @@ nonisolated extension Dieter_V1_ChannelMessagePage: SwiftProtobuf.Message, Swift
 
 nonisolated extension Dieter_V1_PostChannelMessageRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".PostChannelMessageRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}to_card_ids\0\u{3}thread_id\0\u{1}kind\0\u{1}body\0\u{1}files\0\u{1}wake\0\u{3}operation_id\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}to_card_ids\0\u{3}thread_id\0\u{1}kind\0\u{1}body\0\u{1}files\0\u{1}wake\0\u{3}operation_id\0\u{1}here\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1145,6 +1199,7 @@ nonisolated extension Dieter_V1_PostChannelMessageRequest: SwiftProtobuf.Message
       case 6: try { try decoder.decodeRepeatedStringField(value: &self.files) }()
       case 7: try { try decoder.decodeSingularBoolField(value: &self.wake) }()
       case 8: try { try decoder.decodeSingularStringField(value: &self.operationID) }()
+      case 9: try { try decoder.decodeSingularBoolField(value: &self.here) }()
       default: break
       }
     }
@@ -1175,6 +1230,9 @@ nonisolated extension Dieter_V1_PostChannelMessageRequest: SwiftProtobuf.Message
     if !self.operationID.isEmpty {
       try visitor.visitSingularStringField(value: self.operationID, fieldNumber: 8)
     }
+    if self.here != false {
+      try visitor.visitSingularBoolField(value: self.here, fieldNumber: 9)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1187,6 +1245,7 @@ nonisolated extension Dieter_V1_PostChannelMessageRequest: SwiftProtobuf.Message
     if lhs.files != rhs.files {return false}
     if lhs.wake != rhs.wake {return false}
     if lhs.operationID != rhs.operationID {return false}
+    if lhs.here != rhs.here {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1344,7 +1403,7 @@ nonisolated extension Dieter_V1_CheckChannelFilesRequest: SwiftProtobuf.Message,
 
 nonisolated extension Dieter_V1_ChannelClaim: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ChannelClaim"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}path\0\u{3}card_id\0\u{3}card_title\0\u{1}since\0\u{3}waiting_card_ids\0\u{1}parked\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}path\0\u{3}card_id\0\u{3}card_title\0\u{1}since\0\u{3}waiting_card_ids\0\u{1}parked\0\u{3}daemon_id\0\u{1}remote\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1359,6 +1418,8 @@ nonisolated extension Dieter_V1_ChannelClaim: SwiftProtobuf.Message, SwiftProtob
       case 5: try { try decoder.decodeSingularStringField(value: &self.since) }()
       case 6: try { try decoder.decodeRepeatedStringField(value: &self.waitingCardIds) }()
       case 7: try { try decoder.decodeSingularBoolField(value: &self.parked) }()
+      case 8: try { try decoder.decodeSingularStringField(value: &self.daemonID) }()
+      case 9: try { try decoder.decodeSingularBoolField(value: &self.remote) }()
       default: break
       }
     }
@@ -1386,6 +1447,12 @@ nonisolated extension Dieter_V1_ChannelClaim: SwiftProtobuf.Message, SwiftProtob
     if self.parked != false {
       try visitor.visitSingularBoolField(value: self.parked, fieldNumber: 7)
     }
+    if !self.daemonID.isEmpty {
+      try visitor.visitSingularStringField(value: self.daemonID, fieldNumber: 8)
+    }
+    if self.remote != false {
+      try visitor.visitSingularBoolField(value: self.remote, fieldNumber: 9)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1397,6 +1464,8 @@ nonisolated extension Dieter_V1_ChannelClaim: SwiftProtobuf.Message, SwiftProtob
     if lhs.since != rhs.since {return false}
     if lhs.waitingCardIds != rhs.waitingCardIds {return false}
     if lhs.parked != rhs.parked {return false}
+    if lhs.daemonID != rhs.daemonID {return false}
+    if lhs.remote != rhs.remote {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1404,7 +1473,7 @@ nonisolated extension Dieter_V1_ChannelClaim: SwiftProtobuf.Message, SwiftProtob
 
 nonisolated extension Dieter_V1_ChannelCheck: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ChannelCheck"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}conflicts\0\u{1}decisions\0\u{1}recent\0\u{1}summary\0\u{1}unread\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}conflicts\0\u{1}decisions\0\u{1}recent\0\u{1}summary\0\u{1}unread\0\u{1}elsewhere\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1417,6 +1486,7 @@ nonisolated extension Dieter_V1_ChannelCheck: SwiftProtobuf.Message, SwiftProtob
       case 3: try { try decoder.decodeRepeatedMessageField(value: &self.recent) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.summary) }()
       case 5: try { try decoder.decodeSingularInt32Field(value: &self.unread) }()
+      case 6: try { try decoder.decodeRepeatedMessageField(value: &self.elsewhere) }()
       default: break
       }
     }
@@ -1438,6 +1508,9 @@ nonisolated extension Dieter_V1_ChannelCheck: SwiftProtobuf.Message, SwiftProtob
     if self.unread != 0 {
       try visitor.visitSingularInt32Field(value: self.unread, fieldNumber: 5)
     }
+    if !self.elsewhere.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.elsewhere, fieldNumber: 6)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1447,6 +1520,7 @@ nonisolated extension Dieter_V1_ChannelCheck: SwiftProtobuf.Message, SwiftProtob
     if lhs.recent != rhs.recent {return false}
     if lhs.summary != rhs.summary {return false}
     if lhs.unread != rhs.unread {return false}
+    if lhs.elsewhere != rhs.elsewhere {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

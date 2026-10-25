@@ -102,6 +102,11 @@ func (s *Server) mutateKV(ctx context.Context, ref *dieterv1.KVRef, m kv.Mutatio
 	if ref.GetAccount() == "" {
 		return nil, fault.New(fault.Invalid, "KV account required")
 	}
+	// Agent channel records have one writer each, their daemon; clients post
+	// through ChannelService.
+	if schema.ChannelNamespaceKind(ref.GetNamespace()) {
+		return nil, fault.New(fault.PermissionDenied, "agent channel records are written by their daemon; use dieter channel")
+	}
 	m.Namespace, m.Key = ref.GetNamespace(), ref.GetKey()
 	record, err := s.store.KV.Mutate(identity, m)
 	if err != nil {

@@ -62,6 +62,11 @@ struct ChannelInspector: View {
                     ChannelAvatar(initials: claim.holderInitials, colorIndex: claim.holderColorIndex, size: 18)
                     Text(claim.holder).font(.system(size: 11.5)).lineLimit(1)
                 }
+                if claim.advisory {
+                    Label("On \(claim.machine), in its own checkout", systemImage: "desktopcomputer")
+                        .font(.system(size: 10.5)).foregroundStyle(DieterTheme.tertiary)
+                        .help("Another machine's claim: it blocks writes only there. Coordinate before you push.")
+                }
                 if !claim.waitingLabel.isEmpty {
                     Label(claim.waitingLabel, systemImage: "hourglass")
                         .font(.system(size: 11, weight: .medium)).foregroundStyle(DieterTheme.amber)

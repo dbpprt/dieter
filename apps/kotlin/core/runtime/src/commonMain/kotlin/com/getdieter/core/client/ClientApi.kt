@@ -24,7 +24,6 @@ import com.getdieter.client.v1.WorkspaceSlice
 import com.getdieter.core.CoreRuntime
 import com.getdieter.core.board.BoardOperations
 import com.getdieter.core.board.DropAnchors
-import com.getdieter.core.channels.ChannelKey
 import com.getdieter.core.channels.ChannelSettingRules
 import com.getdieter.core.channels.ChannelsView
 import com.getdieter.core.composition.Attachments
@@ -525,12 +524,7 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
         val pin = command.pin
         val release = command.release_claim
         when {
-            select != null ->
-                channels.select(
-                    select
-                        .takeIf { it.daemon_id.isNotEmpty() && it.project_id.isNotEmpty() }
-                        ?.let { ChannelKey(it.daemon_id, it.project_id) }
-                )
+            select != null -> channels.select(select.project_id.ifEmpty { null })
             active != null -> channels.setActive(active.on)
             command.refresh != null -> channels.refresh()
             post != null -> channels.post(post)

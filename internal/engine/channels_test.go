@@ -280,7 +280,17 @@ func TestChannelMessageSteersIntoARunningTurn(t *testing.T) {
 	card := channelCard(t, service, project, board, "Release notes")
 	startChannelTurn(t, service, card, "hold while writing notes")
 	waitFor(t, func() bool { return service.turnHasChannelFor(card.ID) })
-	posted, err := service.PostChannelMessage(context.Background(), ChannelCaller{DeviceID: "dv_1"}, ChannelPost{ProjectID: project.ID, Body: "The release tag is PAPAYA-7."})
+	// A plain channel post interrupts nobody: it waits for the next digest.
+	note, err := service.PostChannelMessage(context.Background(), ChannelCaller{DeviceID: "dv_1"}, ChannelPost{ProjectID: project.ID, Body: "FYI the changelog moved."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(2 * channelSteerDelay)
+	if message, _ := service.Store.Channels.Message(project.ID, note.ID); len(message.Deliveries) != 0 {
+		t.Fatalf("a plain post was delivered into a running turn: %+v", message.Deliveries)
+	}
+	// A person's @here reaches every running member.
+	posted, err := service.PostChannelMessage(context.Background(), ChannelCaller{DeviceID: "dv_1"}, ChannelPost{ProjectID: project.ID, Here: true, Body: "The release tag is PAPAYA-7."})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -529,7 +539,7 @@ func TestChannelSteerThroughTheHarnessWorkerEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool { return service.turnHasChannelFor(chat.ID) })
-	posted, err := service.PostChannelMessage(context.Background(), ChannelCaller{}, ChannelPost{ProjectID: project.ID, Body: "Release tag PAPAYA-7"})
+	posted, err := service.PostChannelMessage(context.Background(), ChannelCaller{}, ChannelPost{ProjectID: project.ID, Here: true, Body: "Release tag PAPAYA-7"})
 	if err != nil {
 		t.Fatal(err)
 	}

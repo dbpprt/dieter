@@ -2,9 +2,9 @@ import AppKit
 import DieterClientAPI
 import SwiftUI
 
-/// Agent channels (experimental): every machine's project channels on the
-/// left, the selected channel's stream and composer in the middle, and its
-/// claims, members and pins on the right.
+/// Agent channels (experimental): the account's project channels, shared by
+/// every machine, on the left, the selected channel's stream and composer in
+/// the middle, and its claims, members and pins on the right.
 struct ChannelsView: View {
     @Environment(DieterStore.self) private var store
 
@@ -51,7 +51,7 @@ private struct ChannelListPane: View {
                 .accessibilityLabel("Refresh channels")
                 .accessibilityIdentifier("channels.refresh")
             }
-            if slice.machines.isEmpty {
+            if slice.channels.isEmpty {
                 if slice.loading {
                     LoadFeedback(title: "Reading channels…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -61,41 +61,24 @@ private struct ChannelListPane: View {
                         openSettings: openSettings)
                 }
             } else {
+                if !slice.error.isEmpty {
+                    Text(slice.error).font(.caption2).foregroundStyle(DieterTheme.coral).lineLimit(2)
+                        .padding(.horizontal, 16).padding(.top, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2) {
-                        ForEach(slice.machines, id: \.daemonID) { machine in
-                            ChannelMachineHeader(machine: machine)
-                            ForEach(machine.channels, id: \.id) { row in
-                                ChannelListRowView(row: row) {
-                                    Task { await model.select(daemonID: row.daemonID, projectID: row.projectID) }
-                                }
+                        ForEach(slice.channels, id: \.projectID) { row in
+                            ChannelListRowView(row: row) {
+                                Task { await model.select(projectID: row.projectID) }
                             }
                         }
                     }
-                    .padding(.horizontal, 8).padding(.bottom, 12)
+                    .padding(.horizontal, 8).padding(.top, 8).padding(.bottom, 12)
                 }
                 .scrollIndicators(.automatic)
             }
         }
-    }
-}
-
-private struct ChannelMachineHeader: View {
-    let machine: ClientChannelMachineSection
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 6) {
-                Image(systemName: "desktopcomputer").font(.system(size: 10, weight: .medium))
-                Text(machine.name.uppercased()).font(DieterFont.sectionLabel).tracking(0.8)
-            }
-            .foregroundStyle(DieterTheme.tertiary)
-            if !machine.error.isEmpty {
-                Text(machine.error).font(.caption2).foregroundStyle(DieterTheme.coral).lineLimit(2)
-            }
-        }
-        .padding(.horizontal, 8).padding(.top, 12).padding(.bottom, 4)
-        .accessibilityElement(children: .combine)
     }
 }
 
@@ -383,7 +366,7 @@ private struct ChannelMessageRow: View {
                     ChannelKindBadge(label: row.kindLabel, kind: row.kind)
                 }
                 if !row.recipients.isEmpty {
-                    Label(row.recipients, systemImage: "arrowshape.turn.up.right")
+                    Label(row.recipients, systemImage: row.here ? "at" : "arrowshape.turn.up.right")
                         .font(.system(size: 10.5, weight: .medium)).foregroundStyle(DieterTheme.action)
                 }
                 Text(row.body)
@@ -428,13 +411,15 @@ private struct ChannelMessageRow: View {
 
 // MARK: - Composer
 
-/// What the user writes: the body, optional direct recipients from the
-/// channel's members, the kind, and whether to wake idle recipients.
+/// What the user writes: the body, who it is for (everyone, @here, or direct
+/// recipients from the channel's members on any machine) and what that does,
+/// the kind, and whether to wake idle recipients.
 private struct ChannelComposer: View {
     let model: ChannelsModel
     let stream: ClientChannelStreamView
     @State private var text = ""
     @State private var recipients: Set<String> = []
+    @State private var here = false
     @State private var kind = ClientChannelMessageKind.note
     @State private var wake = false
     @FocusState private var focused: Bool
@@ -442,6 +427,12 @@ private struct ChannelComposer: View {
     private var composer: ClientChannelComposerState { stream.composer }
     private var canSend: Bool {
         composer.canPost && !composer.sending && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    private var audience: String {
+        here ? "@here" : recipients.isEmpty ? "Everyone" : "\(recipients.count) recipients"
+    }
+    private var audienceHint: String {
+        here ? composer.hereHint : recipients.isEmpty ? composer.everyoneHint : composer.directHint
     }
 
     var body: some View {
@@ -484,28 +475,50 @@ private struct ChannelComposer: View {
                     .e2eTarget("channels.composer")
                 HStack(spacing: 8) {
                     Menu {
-                        ForEach(composer.recipients, id: \.cardID) { recipient in
-                            Toggle(
-                                recipient.title,
-                                isOn: Binding(
-                                    get: { recipients.contains(recipient.cardID) },
-                                    set: { on in
-                                        if on {
-                                            recipients.insert(recipient.cardID)
-                                        } else {
-                                            recipients.remove(recipient.cardID)
-                                        }
-                                    }))
+                        Toggle(
+                            "Everyone",
+                            isOn: Binding(
+                                get: { !here && recipients.isEmpty },
+                                set: { on in
+                                    if on {
+                                        here = false
+                                        recipients = []
+                                    }
+                                }))
+                        Toggle(
+                            "@here",
+                            isOn: Binding(
+                                get: { here },
+                                set: { on in
+                                    here = on
+                                    if on { recipients = [] }
+                                }))
+                        Section("Agents") {
+                            ForEach(composer.recipients, id: \.cardID) { recipient in
+                                Toggle(
+                                    recipient.machine.isEmpty
+                                        ? recipient.title : "\(recipient.title) · \(recipient.machine)",
+                                    isOn: Binding(
+                                        get: { recipients.contains(recipient.cardID) },
+                                        set: { on in
+                                            if on {
+                                                here = false
+                                                recipients.insert(recipient.cardID)
+                                            } else {
+                                                recipients.remove(recipient.cardID)
+                                            }
+                                        }))
+                            }
+                            if composer.recipients.isEmpty { Text("No agents in this channel") }
                         }
-                        if composer.recipients.isEmpty { Text("No agents in this channel") }
                     } label: {
-                        Label(recipients.isEmpty ? "Everyone" : "\(recipients.count) recipients", systemImage: "at")
+                        Label(audience, systemImage: "at")
                             .font(.system(size: 11.5, weight: .medium))
                     }
                     .menuStyle(.button)
                     .buttonStyle(DieterBarButtonStyle(size: 24))
                     .fixedSize()
-                    .help("Send directly to agents of this channel")
+                    .help(audienceHint)
                     .accessibilityIdentifier("channels.composer.recipients")
 
                     DieterSegmentedPicker(
@@ -535,6 +548,10 @@ private struct ChannelComposer: View {
                     .accessibilityIdentifier("channels.composer.send")
                     .e2eTarget("channels.composer.send")
                 }
+                Text(audienceHint)
+                    .font(.system(size: 10.5)).foregroundStyle(DieterTheme.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("channels.composer.audience")
             }
             .padding(12)
             .dieterInset(radius: 12)
@@ -542,6 +559,7 @@ private struct ChannelComposer: View {
         .padding(.horizontal, 14).padding(.bottom, 14).padding(.top, 6)
         .onChange(of: stream.channel) { _, _ in
             recipients = []
+            here = false
             wake = false
         }
         .onChange(of: recipients) { _, value in if value.isEmpty { wake = false } }
@@ -550,11 +568,13 @@ private struct ChannelComposer: View {
     private func send() {
         guard canSend else { return }
         let body = text, to = composer.recipients.map(\.cardID).filter(recipients.contains)
-        let kind = kind, wake = wake && !to.isEmpty
+        let here = here, kind = kind, wake = wake && !here && !to.isEmpty
         Task {
-            if await model.post(body: body, to: to, kind: kind, wake: wake) {
+            if await model.post(body: body, to: to, here: here, kind: kind, wake: wake) {
                 if text == body { text = "" }
                 self.kind = .note
+                // @here interrupts every running agent: never keep it for the next message.
+                self.here = false
             }
         }
     }

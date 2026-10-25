@@ -16,8 +16,6 @@ import com.getdieter.core.runtime.Deadlines
 import com.getdieter.core.runtime.FailureKind
 import com.getdieter.core.runtime.Failures
 import com.getdieter.core.session.MachineSessions
-import com.squareup.wire.GrpcException
-import com.squareup.wire.GrpcStatus
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -266,14 +264,27 @@ data class ChannelSettingsView(
 
 /**
  * The agent channel settings: read from the account view's KV, written with SetChannelSetting on a
- * reachable machine (this device's first), which replicates them. A change shows at once and stays
- * shown until the account view has it or the write fails. Confined to the core dispatcher.
+ * reachable machine (this device's first that accepts it), which replicates them. A change shows at
+ * once and stays shown until the account view has it or the write fails. [send] performs one
+ * SetChannelSetting call on a machine. Confined to the core dispatcher.
  */
 class ChannelSettingsStore(
-    private val sessions: MachineSessions,
+    private val send: suspend (daemonId: String, request: SetChannelSettingRequest) -> Unit,
     private val reachable: () -> List<String>,
     private val logger: CoreLogger,
 ) {
+    constructor(
+        sessions: MachineSessions,
+        reachable: () -> List<String>,
+        logger: CoreLogger,
+    ) : this(
+        { daemonId, request ->
+            sessions.call(daemonId, Deadlines.CALL) { it.SetChannelSetting().execute(request) }
+        },
+        reachable,
+        logger,
+    )
+
     private var confirmed = ChannelSwitches()
     private var pending = emptyList<ChannelSettingChange>()
     private var writing = 0
@@ -313,7 +324,11 @@ class ChannelSettingsStore(
         }
     }
 
-    /** Machines without agent channels (an older release) are skipped. */
+    /**
+     * Saves on the first reachable machine that accepts the change; the setting replicates from
+     * there. A machine that fails (one this device does not trust, for example) is skipped, so it
+     * cannot keep the others from saving. When none saves, the last failure shows.
+     */
     private suspend fun write(request: SetChannelSettingRequest) {
         val machines = reachable()
         if (machines.isEmpty())
@@ -321,24 +336,22 @@ class ChannelSettingsStore(
                 FailureKind.TRANSIENT,
                 "No machine is reachable to save the setting.",
             )
-        var last: Throwable? = null
+        var failure: Throwable? = null
         for (machine in machines) {
             try {
-                sessions.call(machine, Deadlines.CALL) {
-                    it.SetChannelSetting().execute(request)
-                }
+                send(machine, request)
                 return
-            } catch (failure: GrpcException) {
-                if (failure.grpcStatus != GrpcStatus.UNIMPLEMENTED) throw failure
-                logger.info("Channels", "$machine has no agent channels")
-                last = failure
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                logger.info(
+                    "Channels",
+                    "$machine did not save the setting: ${Failures.message(error)}",
+                )
+                failure = error
             }
         }
-        throw CoreException(
-            FailureKind.PERMANENT,
-            "No reachable machine supports agent channels yet. Update Dieter on your machines.",
-            last,
-        )
+        throw failure!!
     }
 
     private fun publish() {

@@ -2190,13 +2190,16 @@ Watch until canceled or count frames. Reset replaces the cache; publish at caugh
 ```text
 Usage: dieter channel <list|messages|post|inbox|check|claims|release|pin|read|settings|watch|hook> [options]
 
-Agent channels (experimental): one message channel per project on each
-daemon, direct messages to cards, threads, pinned decisions and file claims
-that keep agents sharing a checkout from overwriting each other. Inside an
-agent turn (DIETER_TURN_TOKEN) the caller is that card's agent; otherwise you
-act as a human. Channels are off until switched on with "channel settings".
+Agent channels (experimental): one message channel per project, shared by
+every machine of the account, with direct messages to cards, threads, pinned
+decisions and file claims that keep agents sharing a checkout from overwriting
+each other. A channel post interrupts nobody: agents read it when their next
+turn starts. A direct message (--to) reaches a running agent in its turn, and
+a person's --here reaches every running agent. Inside an agent turn
+(DIETER_TURN_TOKEN) the caller is that card's agent; otherwise you act as a
+person. Channels are off until switched on with "channel settings".
 
-  list      List this daemon's project channels with unread counts and members
+  list      List project channels with unread counts and members on every machine
   messages  Page a project channel or one thread
   post      Post to the project channel, a thread, or directly to cards
   inbox     Read a card's undelivered messages (an agent's own by default)
@@ -2214,7 +2217,7 @@ act as a human. Channels are off until switched on with "channel settings".
 
 ```text
 Usage: dieter channel list [--format table|json]
-List this daemon's project channels: enabled state, unread count, live claims and members.
+List project channels: enabled state, unread count, live claims and members on every machine.
 ```
 
 ### dieter channel messages
@@ -2227,17 +2230,21 @@ Page a project channel in sequence order (default: the newest 50 messages).
 ### dieter channel post
 
 ```text
-Usage: dieter channel post [--project PROJECT] [--to CARD]... [--thread ID] [--kind note|request|done|decision] [--file PATH]... [--wake] [--operation ID] [--stdin] TEXT...
-Post at most 4096 bytes. Agents post to their own project; --to sends a direct message.
---wake starts a turn for idle direct recipients within their wake budget. A decision is pinned.
+Usage: dieter channel post [--project PROJECT] [--to CARD]... [--here] [--thread ID] [--kind note|request|done|decision] [--file PATH]... [--wake] [--operation ID] [--stdin] TEXT...
+Post at most 4096 bytes to the project channel. Agents post to their own project. A post without
+--to interrupts nobody; agents read it when their next turn starts. --to sends a direct message
+that reaches a running recipient in its turn, and --wake also starts idle direct recipients
+within their wake budget. --here (people only) reaches every running agent of the project.
+A decision is pinned.
 ```
 
 ### dieter channel inbox
 
 ```text
 Usage: dieter channel inbox [--card CARD] [--peek] [--format text|json]
-Print a card's undelivered messages and mark them delivered (--peek keeps them).
-Agents read their own inbox; humans name --card.
+Print a card's undelivered messages (direct messages, and channel posts from the last 24 hours)
+and mark them delivered (--peek keeps them). Agents read their own inbox; humans name --card.
+Only the card's machine marks them; elsewhere, add --peek or --machine.
 ```
 
 ### dieter channel check
@@ -2246,13 +2253,15 @@ Agents read their own inbox; humans name --card.
 Usage: dieter channel check [--card CARD] [--intent TEXT] [--format text|json] FILE...
 Show live claims by other cards on FILEs (relative to the card's workspace), pinned decisions
 and recent notes that mention them. An agent whose files are held is woken when they are free.
+Claims in other machines' checkouts are listed as advisory: coordinate before you push.
 ```
 
 ### dieter channel claims
 
 ```text
 Usage: dieter channel claims [--project PROJECT] [--format table|json]
-List live file claims: path, holder card, since when, and waiting cards.
+List live file claims: path, holder card, since when, waiting cards and the machine.
+Claims on other machines are advisory; they never block a write here.
 ```
 
 ### dieter channel release

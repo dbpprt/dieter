@@ -20,6 +20,7 @@ import (
 	"github.com/dbpprt/dieter/internal/platform/fault"
 	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
 	"github.com/dbpprt/dieter/internal/store/channels"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 )
 
 // Agent channels (experimental). Messages persist in Store.Channels; this
@@ -53,19 +54,24 @@ type ChannelCaller struct {
 
 // ChannelPost is a message to post.
 type ChannelPost struct {
-	ProjectID   string
-	To          []string
-	ThreadID    string
-	Kind        string
-	Body        string
-	Files       []string
-	Wake        bool
+	ProjectID string
+	To        []string
+	ThreadID  string
+	Kind      string
+	Body      string
+	Files     []string
+	Wake      bool
+	// Here steers every running member on every machine; people only.
+	Here        bool
 	OperationID string
 }
 
 // ChannelCheck answers "is anybody else doing this? has this happened before?"
 type ChannelCheck struct {
 	Conflicts []model.ChannelClaim
+	// Elsewhere are other machines' claims on the same paths: advisory, in
+	// their own checkouts.
+	Elsewhere []model.ChannelClaim
 	Decisions []model.ChannelMessage
 	Recent    []model.ChannelMessage
 	Summary   string
@@ -79,6 +85,9 @@ type ChannelMember struct {
 	Enabled   bool
 	Holds     []string
 	WaitingOn []string
+	// Daemon runs the card; Remote members run on another machine.
+	Daemon string
+	Remote bool
 }
 
 // ChannelSummary describes one project channel of this daemon.
@@ -104,6 +113,8 @@ type channelHub struct {
 	nextWake   time.Time
 	settings   model.ChannelSettings
 	settingsAt time.Time
+	// replication tracks published and ingested account-wide records.
+	replication channelReplication
 }
 
 type channelClaim struct {
@@ -279,6 +290,20 @@ func (s *Service) PostChannelMessage(ctx context.Context, caller ChannelCaller, 
 		message.ProjectID = project.ID
 		message.Author = model.ChannelAuthor{Kind: model.ChannelAuthorHuman, DeviceID: caller.DeviceID}
 	}
+	if post.Here {
+		if caller.CardID != "" {
+			return model.ChannelMessage{}, fault.New(fault.PermissionDenied, "only people mention @here")
+		}
+		if len(post.To) > 0 {
+			return model.ChannelMessage{}, fault.Invalidf("@here already reaches every running agent; leave out the recipients")
+		}
+		message.Here = true
+	}
+	origin, err := s.Store.KV.ChannelDaemon()
+	if err != nil {
+		return model.ChannelMessage{}, err
+	}
+	message.Origin, message.Wake = origin, post.Wake && len(post.To) > 0
 	for _, ref := range post.To {
 		card, err := s.Store.Kanban.ResolveCard(ref)
 		if err != nil {
@@ -308,14 +333,18 @@ func (s *Service) PostChannelMessage(ctx context.Context, caller ChannelCaller, 
 	if err != nil {
 		return model.ChannelMessage{}, err
 	}
+	if created {
+		s.publishChannelMessage(stored)
+	}
 	if created && kind == model.ChannelKindDecision {
 		stored, err = s.Store.Channels.Pin(stored.ProjectID, stored.ID, true)
 		if err != nil {
 			return model.ChannelMessage{}, err
 		}
+		s.schedulePins(stored.ProjectID)
 	}
 	if created {
-		s.dispatchChannelMessage(stored, post.Wake)
+		s.dispatchChannelMessage(stored, stored.Wake)
 	}
 	return stored, nil
 }
@@ -332,13 +361,15 @@ func validOperationID(id string) bool {
 	return true
 }
 
-// dispatchChannelMessage pushes a new message to running recipients and wakes
-// idle direct recipients when wake is set. Others read it in their digest.
+// dispatchChannelMessage pushes a new message (posted here or replicated) to
+// this daemon's running recipients it interrupts (direct messages and @here)
+// and wakes its idle direct recipients when wake is set. Others read it in
+// their digest.
 func (s *Service) dispatchChannelMessage(message model.ChannelMessage, wake bool) {
 	s.mu.Lock()
 	var running []string
 	for cardID, active := range s.active {
-		if active.channel != nil && active.channel.projectID == message.ProjectID && !active.finishing && message.AddressedTo(cardID) {
+		if active.channel != nil && active.channel.projectID == message.ProjectID && !active.finishing && message.AddressedTo(cardID) && steerable(message, cardID) {
 			running = append(running, cardID)
 		}
 	}
@@ -350,7 +381,11 @@ func (s *Service) dispatchChannelMessage(message model.ChannelMessage, wake bool
 		return
 	}
 	for _, cardID := range message.To {
-		if !slices.Contains(running, cardID) && cardID != message.Author.CardID {
+		if slices.Contains(running, cardID) || cardID == message.Author.CardID {
+			continue
+		}
+		// Only the recipient's owner daemon wakes it, within its own budget.
+		if card, err := s.Store.Kanban.ResolveCard(cardID); err == nil && s.ownsCard(card) {
 			s.requestChannelWake(cardID)
 		}
 	}
@@ -394,6 +429,7 @@ func (s *Service) flushSteer(cardID string) {
 		return
 	}
 	pending, err := s.Store.Channels.Undelivered(channel.projectID, cardID, channel.since)
+	pending = keepMessages(pending, func(message model.ChannelMessage) bool { return steerable(message, cardID) })
 	if err != nil || len(pending) == 0 {
 		return
 	}
@@ -493,7 +529,7 @@ func (s *Service) completeSteer(cardID, turnID, responseMessageID string, output
 		}
 		ids = append(ids, message.ID)
 	}
-	return s.Store.Channels.Deliver(channel.projectID, cardID, model.ChannelDeliverySteered, ids)
+	return s.deliverChannel(channel.projectID, cardID, model.ChannelDeliverySteered, ids)
 }
 
 // requestChannelWake starts a turn for an idle card within its wake budget:
@@ -532,7 +568,7 @@ func (s *Service) requestChannelWake(cardID string) {
 
 func (s *Service) wakeCard(cardID string) {
 	detail, err := s.Store.Kanban.CardDetail(cardID)
-	if err != nil || !s.ChannelsEnabled(detail.Card) || detail.Card.Archived {
+	if err != nil || !s.ChannelsEnabled(detail.Card) || detail.Card.Archived || !s.ownsCard(detail.Card) {
 		return
 	}
 	s.mu.Lock()
@@ -543,6 +579,8 @@ func (s *Service) wakeCard(cardID string) {
 		return
 	}
 	pending, err := s.Store.Channels.Undelivered(detail.Card.ProjectID, cardID, detail.Card.CreatedAt)
+	now := time.Now()
+	pending = keepMessages(pending, func(message model.ChannelMessage) bool { return digestible(message, cardID, now) })
 	if err != nil || len(pending) == 0 {
 		return
 	}
@@ -551,7 +589,7 @@ func (s *Service) wakeCard(cardID string) {
 		ids = append(ids, message.ID)
 	}
 	// Mark first so the started turn's digest does not repeat the messages.
-	if err := s.Store.Channels.Deliver(detail.Card.ProjectID, cardID, model.ChannelDeliveryWoke, ids); err != nil {
+	if err := s.deliverChannel(detail.Card.ProjectID, cardID, model.ChannelDeliveryWoke, ids); err != nil {
 		slog.Warn("agent channel wake not recorded", "card", cardID, "error", err)
 		return
 	}
@@ -855,12 +893,27 @@ func (s *Service) releaseChannelClaims(cardID string, paths []string) []model.Ch
 
 // ChannelClaims lists live claims, all or of one project.
 func (s *Service) ChannelClaims(projectID string) []model.ChannelClaim {
+	claims := append(s.localChannelClaims(projectID), s.remoteChannelClaims(projectID)...)
+	sort.SliceStable(claims, func(i, j int) bool {
+		if claims[i].ProjectID != claims[j].ProjectID {
+			return claims[i].ProjectID < claims[j].ProjectID
+		}
+		return claims[i].Path < claims[j].Path
+	})
+	return claims
+}
+
+// localChannelClaims are the live claims in this daemon's checkouts.
+func (s *Service) localChannelClaims(projectID string) []model.ChannelClaim {
+	origin := s.channelOrigin()
 	s.channels.mu.Lock()
 	defer s.channels.mu.Unlock()
 	var claims []model.ChannelClaim
 	for _, claim := range s.channels.claims {
 		if projectID == "" || claim.ProjectID == projectID {
-			claims = append(claims, claim.snapshot())
+			snapshot := claim.snapshot()
+			snapshot.Daemon = origin
+			claims = append(claims, snapshot)
 		}
 	}
 	sort.Slice(claims, func(i, j int) bool {
@@ -888,8 +941,8 @@ func (s *Service) ReleaseChannelClaims(caller ChannelCaller, cardID string, path
 	return s.releaseChannelClaims(card.ID, paths), nil
 }
 
-// ChannelInbox returns a card's undelivered messages; unless peek, it marks
-// them delivered.
+// ChannelInbox returns a card's undelivered messages, the ones its next digest
+// would carry; unless peek, it marks them delivered on the card's owner.
 func (s *Service) ChannelInbox(caller ChannelCaller, cardID string, peek bool) ([]model.ChannelMessage, error) {
 	if caller.CardID != "" {
 		if cardID != "" && cardID != caller.CardID {
@@ -902,14 +955,20 @@ func (s *Service) ChannelInbox(caller ChannelCaller, cardID string, peek bool) (
 		return nil, err
 	}
 	pending, err := s.Store.Channels.Undelivered(card.ProjectID, card.ID, card.CreatedAt)
+	now := time.Now()
+	pending = keepMessages(pending, func(message model.ChannelMessage) bool { return digestible(message, card.ID, now) })
 	if err != nil || peek || len(pending) == 0 {
 		return pending, err
+	}
+	// Deliveries are recorded by the card's owner, which publishes its receipt.
+	if !s.ownsCard(card) {
+		return nil, fault.New(fault.FailedPrecondition, "the card runs on another machine: read its inbox there (--machine), or add --peek")
 	}
 	ids := make([]string, 0, len(pending))
 	for _, message := range pending {
 		ids = append(ids, message.ID)
 	}
-	return pending, s.Store.Channels.Deliver(card.ProjectID, card.ID, model.ChannelDeliveryInbox, ids)
+	return pending, s.deliverChannel(card.ProjectID, card.ID, model.ChannelDeliveryInbox, ids)
 }
 
 // CheckChannelFiles reports live claims on files, pinned decisions and recent
@@ -956,6 +1015,11 @@ func (s *Service) CheckChannelFiles(caller ChannelCaller, cardID string, files [
 			s.notifyHolder(claim, card.ID, card.Title)
 		}
 	}
+	for _, claim := range s.remoteChannelClaims(card.ProjectID) {
+		if slices.Contains(paths, claim.Path) && claim.CardID != card.ID {
+			check.Elsewhere = append(check.Elsewhere, claim)
+		}
+	}
 	mentions := func(message model.ChannelMessage) bool {
 		for _, path := range paths {
 			if slices.Contains(message.Files, path) || strings.Contains(message.Body, path) {
@@ -976,6 +1040,9 @@ func (s *Service) CheckChannelFiles(caller ChannelCaller, cardID string, files [
 	var summary strings.Builder
 	for _, claim := range check.Conflicts {
 		fmt.Fprintf(&summary, "%s: being changed by agent %s ('%s') for %s. Do other work first; you will be woken when it is free.\n", claim.Path, claim.CardID, channelAttribute(claim.CardTitle), heldFor(claim))
+	}
+	for _, claim := range check.Elsewhere {
+		fmt.Fprintf(&summary, "%s: also being changed by agent %s ('%s') on machine %s, in its own checkout. Coordinate with it before you push.\n", claim.Path, claim.CardID, channelAttribute(claim.CardTitle), claim.Daemon)
 	}
 	if len(check.Decisions) > 0 {
 		summary.WriteString("Pinned decisions about these files:\n")
@@ -1018,7 +1085,7 @@ func (s *Service) cardWorkspace(cardID string) string {
 	return ""
 }
 
-// ChannelSummaries lists this daemon's project channels: projects with
+// ChannelSummaries lists the account's project channels: projects with
 // channels on or with messages, their read state and members.
 func (s *Service) ChannelSummaries(ctx context.Context) ([]ChannelSummary, error) {
 	projects, err := s.Store.Kanban.ListProjects()
@@ -1026,10 +1093,12 @@ func (s *Service) ChannelSummaries(ctx context.Context) ([]ChannelSummary, error
 		return nil, err
 	}
 	logged, _ := s.Store.Channels.Projects()
-	cards, err := s.Store.Kanban.OwnedCards(ctx)
+	// Members are the account's cards of the project on every machine.
+	cards, err := s.Store.Kanban.ListCards(kanban.CardFilter{})
 	if err != nil {
 		return nil, err
 	}
+	origin := s.channelOrigin()
 	settings := s.channelSettings()
 	claims := s.ChannelClaims("")
 	s.mu.Lock()
@@ -1058,14 +1127,19 @@ func (s *Service) ChannelSummaries(ctx context.Context) ([]ChannelSummary, error
 			}
 		}
 		for _, card := range cards {
-			if card.ProjectID != project.ID {
+			if card.ProjectID != project.ID || !memberActive(card) {
 				continue
 			}
-			member := ChannelMember{Card: card, Enabled: settings.Enabled(project.ID, cardBoardID(card)), Status: "idle"}
+			daemon := card.OwnerDaemonID
+			if daemon == "" {
+				daemon = origin
+			}
+			remote := daemon != origin
+			member := ChannelMember{Card: card, Enabled: settings.Enabled(project.ID, cardBoardID(card)), Status: "idle", Daemon: daemon, Remote: remote}
 			if card.Runtime == model.RuntimeFailed {
 				member.Status = "failed"
 			}
-			if running[card.ID] {
+			if running[card.ID] || remote && card.Runtime == model.RuntimeRunning {
 				member.Status = "running"
 			}
 			for _, claim := range claims {
@@ -1106,6 +1180,8 @@ func (s *Service) planChannelTurn(detail model.CardDetail, messageID string) cha
 	}
 	plan := channelPlan{enabled: true, projectID: detail.Card.ProjectID, cli: s.CLIWord()}
 	pending, err := s.Store.Channels.Undelivered(detail.Card.ProjectID, detail.Card.ID, detail.Card.CreatedAt)
+	now := time.Now()
+	pending = keepMessages(pending, func(message model.ChannelMessage) bool { return digestible(message, detail.Card.ID, now) })
 	if err == nil && len(pending) > 0 {
 		plan.digest = renderChannelDigest(detail.Project.Name, pending)
 		for _, message := range pending {
@@ -1139,7 +1215,7 @@ func (s *Service) commitChannelTurn(cardID string, plan channelPlan, request *ha
 	if s.CLIExecutable != "" {
 		request.ChannelHookCommand = s.CLIWord() + " channel hook"
 	}
-	if err := s.Store.Channels.Deliver(plan.projectID, cardID, model.ChannelDeliveryDigest, plan.delivered); err != nil {
+	if err := s.deliverChannel(plan.projectID, cardID, model.ChannelDeliveryDigest, plan.delivered); err != nil {
 		slog.Warn("agent channel digest not recorded", "card", cardID, "error", err)
 	}
 }
@@ -1245,7 +1321,11 @@ func (s *Service) PinChannelMessage(projectID, messageID string, pinned bool) (m
 	if err != nil {
 		return model.ChannelMessage{}, err
 	}
-	return s.Store.Channels.Pin(project.ID, messageID, pinned)
+	message, err := s.Store.Channels.Pin(project.ID, messageID, pinned)
+	if err == nil {
+		s.schedulePins(project.ID)
+	}
+	return message, err
 }
 
 // MarkChannelRead advances the human read position.

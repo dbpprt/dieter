@@ -78,16 +78,16 @@ class ChannelsTest {
         val off = slice(channels, settings.value.switches)
         assertFalse(off.enabled)
         assertEquals(ChannelsView.OFF_TITLE, off.empty_title)
-        assertTrue(off.machines.isEmpty())
+        assertTrue(off.channels.isEmpty())
 
-        // On, but the only machine cannot be reached: its failure shows on its section.
+        // On, but the only machine cannot be reached: the list says why.
         settings.value = ChannelSettingsView(ChannelSwitches(global = true))
         channels.refresh()
         val failed = slice(channels, settings.value.switches)
         assertTrue(failed.enabled)
-        assertEquals(listOf("mbp-office"), failed.machines.map { it.name })
-        assertTrue(failed.machines.single().error.isNotEmpty())
-        assertEquals(ChannelsView.NONE_TITLE, failed.empty_title)
+        assertTrue(failed.error.startsWith("mbp-office: "))
+        assertEquals(ChannelsView.FAILED_TITLE, failed.empty_title)
+        assertEquals(failed.error, failed.empty_detail)
 
         channels.stop()
         val none =
@@ -106,6 +106,55 @@ class ChannelsTest {
     }
 
     @Test
+    fun aProjectHasOneChannelReadFromTheFirstMachineThatListsIt() = runTest {
+        val settings = MutableStateFlow(ChannelSettingsView(ChannelSwitches(global = true)))
+        val channels =
+            Channels(
+                offlineSessions(),
+                { emptyList() },
+                settings,
+                backgroundScope,
+                object : CoreLogger {},
+            )
+        val other = summary(unread = 0).copy(project_id = "p2", project_name = "checkout")
+        // Every machine lists the account's channels; d1 is this device's.
+        channels.applyListing(
+            listOf(
+                "d1" to Channels.Listing.Listed(listOf(summary(unread = 3))),
+                "d2" to Channels.Listing.Listed(listOf(summary(unread = 5), other)),
+            )
+        )
+        val listed = slice(channels, settings.value.switches)
+        assertEquals(listOf("p2", "p1"), listed.channels.map { it.project_id })
+        // The unread count is the serving machine's.
+        assertEquals(3, listed.unread)
+        assertEquals("", listed.error)
+
+        channels.select("p1")
+        assertEquals(ChannelKey("d1", "p1"), channels.view.value.streamKey)
+        channels.select("p2")
+        assertEquals(ChannelKey("d2", "p2"), channels.view.value.streamKey)
+
+        // When this device's machine fails, the channel is read from the next one, afresh.
+        channels.select("p1")
+        channels.receive(key, ChannelFrame(messages = listOf(message(1)), reset = true))
+        assertEquals(1, channels.view.value.stream.messages.size)
+        channels.applyListing(
+            listOf(
+                "d1" to Channels.Listing.Failed("offline"),
+                "d2" to Channels.Listing.Listed(listOf(summary(unread = 5), other)),
+            )
+        )
+        assertEquals(ChannelKey("d2", "p1"), channels.view.value.streamKey)
+        assertTrue(channels.view.value.stream.messages.isEmpty())
+        val moved = slice(channels, settings.value.switches)
+        assertEquals("Shared by your machines · read from d2", moved.stream!!.subtitle)
+        assertEquals(5, moved.unread)
+        // One machine failing while another serves is no error.
+        assertEquals("", moved.error)
+    }
+
+    @Test
     fun theSelectedChannelFoldsItsStreamIntoTheSlice() = runTest {
         val settings = MutableStateFlow(ChannelSettingsView(ChannelSwitches(global = true)))
         val channels =
@@ -116,12 +165,16 @@ class ChannelsTest {
                 backgroundScope,
                 object : CoreLogger {},
             )
-        channels.select(key)
-        assertEquals(key, channels.view.value.selected)
+        channels.select("p1")
+        assertEquals("p1", channels.view.value.selected)
         val loading = slice(channels, settings.value.switches).stream!!
         assertTrue(loading.loading)
         assertEquals("#p1", loading.title)
+        assertEquals(ChannelsView.SHARED, loading.subtitle)
+        assertFalse(loading.composer!!.can_post)
+        assertFailsWith<CoreException> { channels.post(ChannelPost(body = "hi")) }
 
+        channels.applyListing(listOf("d1" to Channels.Listing.Listed(listOf(summary()))))
         channels.receive(
             key,
             ChannelFrame(
@@ -141,7 +194,7 @@ class ChannelsTest {
                 reset = true,
             ),
         )
-        // A frame for a channel that is no longer selected is dropped.
+        // A frame from a machine the channel is not read from is dropped.
         channels.receive(
             ChannelKey("d2", "p1"),
             ChannelFrame(messages = listOf(message(3)), reset = true),
@@ -150,7 +203,7 @@ class ChannelsTest {
         val stream = slice(channels, settings.value.switches).stream!!
         assertFalse(stream.loading)
         assertEquals("#pricing", stream.title)
-        assertEquals("Project channel on mbp-office", stream.subtitle)
+        assertEquals("Shared by your machines · read from mbp-office", stream.subtitle)
         assertEquals(listOf("m1", "m2"), stream.rows.map { it.id })
         // The first unread message starts its own group, under the "New" divider.
         assertEquals(listOf(false, false), stream.rows.map { it.continued })
@@ -169,11 +222,14 @@ class ChannelsTest {
         assertEquals(0, read.unread)
         assertEquals("", read.first_unread_row_id)
 
-        // Commands go to the hosting machine; offline, they fail and say so.
+        // Commands go to the serving machine; offline, they fail and say so.
         assertFailsWith<Throwable> { channels.post(ChannelPost(body = "hi")) }
         assertTrue(channels.view.value.actionError!!.isNotEmpty())
         assertFalse(channels.view.value.sending)
         assertFailsWith<CoreException> { channels.post(ChannelPost(body = "   ")) }
+        assertFailsWith<CoreException> {
+            channels.post(ChannelPost(body = "stop", here = true, to_card_ids = listOf("c1")))
+        }
 
         channels.select(null)
         assertNull(slice(channels, settings.value.switches).stream)

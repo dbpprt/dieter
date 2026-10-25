@@ -8,7 +8,9 @@ import com.getdieter.client.v1.ChannelSettingMode
 import com.getdieter.client.v1.ChannelSettingScope
 import com.getdieter.core.runtime.CoreException
 import com.getdieter.core.runtime.CoreLogger
+import com.getdieter.core.runtime.FailureKind
 import com.getdieter.core.testing.offlineSessions
+import com.getdieter.core.trust.DeviceTrust
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -161,5 +163,41 @@ class ChannelSettingsTest {
         assertFalse(store.view.value.saving)
         store.apply(mapOf(entry("channels", "true"), entry("channels.project.p1", "\"off\"")))
         assertFalse(store.view.value.switches.enabled("p1"))
+    }
+
+    @Test
+    fun aMachineThatCannotSaveDoesNotKeepTheNextFromSaving() = runTest {
+        val tried = mutableListOf<String>()
+        var accepts = setOf("office")
+        val store =
+            ChannelSettingsStore(
+                { machine, _ ->
+                    tried += machine
+                    when (machine) {
+                        in accepts -> Unit
+                        "untrusted" ->
+                            throw CoreException(
+                                FailureKind.TRANSIENT,
+                                DeviceTrust.MACHINE_NOT_TRUSTED,
+                            )
+                        else -> throw CoreException(FailureKind.TRANSIENT, "offline")
+                    }
+                },
+                { listOf("untrusted", "offline", "office") },
+                object : CoreLogger {},
+            )
+        val change = ChannelSettingChange(ChannelSettingScope.CHANNEL_SETTING_SCOPE_GLOBAL, "", ON)
+        // This device's own machine is untrusted and the next one fails: the third saves it.
+        store.set(change)
+        assertEquals(listOf("untrusted", "offline", "office"), tried)
+        assertEquals(null, store.view.value.error)
+        assertTrue(store.view.value.switches.global)
+
+        // When none saves, the last failure shows.
+        accepts = emptySet()
+        tried.clear()
+        assertFailsWith<CoreException> { store.set(change.copy(mode = OFF)) }
+        assertEquals(listOf("untrusted", "offline", "office"), tried)
+        assertEquals("offline", store.view.value.error)
     }
 }

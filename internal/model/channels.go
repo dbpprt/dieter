@@ -60,6 +60,21 @@ type ChannelAuthor struct {
 	DeviceID string `json:"deviceId,omitempty"`
 }
 
+// ChannelDeliveryEntry is one delivery of a message to a known card, as a
+// receipt replicates it.
+type ChannelDeliveryEntry struct {
+	MessageID string
+	Mode      string
+	At        string
+}
+
+// ChannelPinChange is one pin change of a message.
+type ChannelPinChange struct {
+	MessageID string
+	Pinned    bool
+	At        string
+}
+
 type ChannelDelivery struct {
 	CardID string `json:"cardId"`
 	Mode   string `json:"mode"`
@@ -69,19 +84,39 @@ type ChannelDelivery struct {
 // ChannelMessage is one post of a project channel. Seq orders the channel;
 // Pinned, Deliveries and ReplyCount are projections of later events.
 type ChannelMessage struct {
-	ID         string            `json:"id"`
-	ProjectID  string            `json:"projectId"`
-	Seq        int64             `json:"seq"`
-	ThreadID   string            `json:"threadId,omitempty"`
-	Kind       string            `json:"kind"`
-	Author     ChannelAuthor     `json:"author"`
-	To         []string          `json:"to,omitempty"`
-	Body       string            `json:"body"`
-	Files      []string          `json:"files,omitempty"`
+	ID        string        `json:"id"`
+	ProjectID string        `json:"projectId"`
+	Seq       int64         `json:"seq"`
+	ThreadID  string        `json:"threadId,omitempty"`
+	Kind      string        `json:"kind"`
+	Author    ChannelAuthor `json:"author"`
+	To        []string      `json:"to,omitempty"`
+	// Here mentions every running member: it steers them on every machine
+	// and is not part of later digests. Only people post it.
+	Here  bool     `json:"here,omitempty"`
+	Body  string   `json:"body"`
+	Files []string `json:"files,omitempty"`
+	// Origin is the daemon the message was posted on; OriginSeq numbers its
+	// replicated messages of the project. Dieter's own coordination events
+	// (claim, hold, release) are not replicated and have no origin sequence.
+	Origin    string `json:"origin,omitempty"`
+	OriginSeq int64  `json:"originSeq,omitempty"`
+	// Wake asks the recipients' owner daemons to start idle direct recipients.
+	Wake       bool              `json:"wake,omitempty"`
 	Pinned     bool              `json:"pinned,omitempty"`
 	CreatedAt  string            `json:"createdAt"`
 	ReplyCount int               `json:"-"`
 	Deliveries []ChannelDelivery `json:"-"`
+}
+
+// Direct reports whether cardID is one of the message's named recipients.
+func (m ChannelMessage) Direct(cardID string) bool {
+	for _, to := range m.To {
+		if to == cardID {
+			return true
+		}
+	}
+	return false
 }
 
 // AddressedTo reports whether the message is for cardID: a direct message to
@@ -114,6 +149,10 @@ type ChannelClaim struct {
 	// Parked claims belong to a card that ended its turn waiting for another
 	// card's file; they hold its uncommitted changes until it is woken.
 	Parked bool `json:"parked,omitempty"`
+	// Daemon is the machine whose checkout the claim is in. Remote claims are
+	// another machine's: advisory here, never blocking.
+	Daemon string `json:"daemon,omitempty"`
+	Remote bool   `json:"remote,omitempty"`
 }
 
 // ChannelSettings is the replicated switch of the feature: Global, plus

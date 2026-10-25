@@ -3929,12 +3929,13 @@ message DeviceNotice {
 message ChannelsCommand {
   string scope = 1;
   oneof action {
-    // Shows a channel's stream and inspector; an empty ref shows none.
+    // Shows a project's channel, its stream and inspector; an empty ref
+    // shows none.
     ChannelRef select = 2;
     // The stream is on screen: it is watched and the list refreshes often.
     // Off, the list refreshes slowly for the unread badge only.
     Toggle active = 3;
-    // Reads every machine's channels again.
+    // Lists the channels again.
     Step refresh = 4;
     // Posts to the selected channel as the user.
     ChannelPost post = 5;
@@ -3948,17 +3949,17 @@ message ChannelsCommand {
   }
 }
 
-// A project's channel on the machine that hosts it.
+// A project's channel. Every machine of the account shares it; the core
+// reads it from a reachable machine that lists it, this device's first.
 message ChannelRef {
-  string daemon_id = 1;
-  string project_id = 2;
+  string project_id = 1;
 }
 
 message ChannelPost {
   // 1 to 4096 bytes after trimming.
   string body = 1;
-  // Direct recipients (the channel's member cards); empty posts to the
-  // whole channel.
+  // Direct recipients (the channel's member cards, on any machine); empty
+  // posts to the whole channel, which interrupts nobody.
   repeated string to_card_ids = 2;
   // NOTE, REQUEST, DONE or DECISION; a decision is pinned.
   ChannelMessageKind kind = 3;
@@ -3966,6 +3967,9 @@ message ChannelPost {
   bool wake = 4;
   // Replies in a thread: the root message's ID.
   string thread_id = 5;
+  // @here: interrupts every running agent of the project on every machine.
+  // It takes no recipients.
+  bool here = 6;
 }
 
 message ChannelPin {
@@ -4030,8 +4034,8 @@ enum ChannelPresence {
 }
 
 message ChannelsSlice {
-  // Machines with channels, this device's first, then by name.
-  repeated ChannelMachineSection machines = 1;
+  // The account's project channels by name.
+  repeated ChannelListRow channels = 1;
   // Unread messages in channels that are on, for the sidebar badge.
   int32 unread = 2;
   // "3", or "99+"; empty with nothing unread.
@@ -4046,37 +4050,28 @@ message ChannelsSlice {
   string empty_detail = 7;
   // The selected channel; absent when none is selected.
   ChannelStreamView stream = 8;
-}
-
-message ChannelMachineSection {
-  string daemon_id = 1;
-  string name = 2;
-  // Why this machine's channels could not be read; its last list stays.
-  string error = 3;
-  // Its project channels by name.
-  repeated ChannelListRow channels = 4;
+  // Why no reachable machine could list the channels; the last list stays.
+  string error = 9;
 }
 
 message ChannelListRow {
-  // "<daemon ID>/<project ID>".
-  string id = 1;
-  string daemon_id = 2;
-  string project_id = 3;
+  string project_id = 1;
   // The project's name, e.g. "pricing".
-  string name = 4;
+  string name = 2;
   // On for the project or one of its boards. A channel that is off but has
   // messages is listed read-only.
-  bool enabled = 5;
-  int32 unread = 6;
-  // Live file claims.
-  int32 claims = 7;
-  int32 members = 8;
-  int32 running = 9;
+  bool enabled = 3;
+  int32 unread = 4;
+  // Live file claims on every machine.
+  int32 claims = 5;
+  // Member agents on every machine.
+  int32 members = 6;
+  int32 running = 7;
   // "4 agents · 1 running · 2 claims", or "Off".
-  string detail = 10;
-  bool selected = 11;
+  string detail = 8;
+  bool selected = 9;
   // When the newest message was written; 0 when it has none.
-  int64 last_message_at_millis = 12;
+  int64 last_message_at_millis = 10;
 }
 
 // The selected channel: its stream, inspector and composer.
@@ -4084,7 +4079,7 @@ message ChannelStreamView {
   ChannelRef channel = 1;
   // "#pricing".
   string title = 2;
-  // "Project channel on mbp-office".
+  // "Shared by your machines · read from mbp-office".
   string subtitle = 3;
   bool enabled = 4;
   // The first frame has not arrived yet.
@@ -4127,7 +4122,7 @@ message ChannelStreamRow {
   string kind_label = 7;
   string body = 8;
   repeated string files = 9;
-  // "to Fix checkout tests"; empty for a channel post.
+  // "to Fix checkout tests", or "@here"; empty for a channel post.
   string recipients = 10;
   bool direct = 11;
   bool pinned = 12;
@@ -4137,10 +4132,13 @@ message ChannelStreamRow {
   // How it reached its recipients, e.g. "Review headers: steered into turn ·
   // Fix checkout tests: in next turn"; empty before any delivery.
   string receipt = 15;
-  // The name line's details, e.g. "codex · gpt-5" or "you".
+  // The name line's details, e.g. "codex · gpt-5 · mbp-office" (the
+  // machine an agent posted from) or "you".
   string meta = 16;
   int64 created_at_millis = 17;
   string thread_id = 18;
+  // A person's @here: it interrupted every running agent of the project.
+  bool here = 19;
 }
 
 message ChannelAuthorView {
@@ -4173,6 +4171,11 @@ message ChannelClaimRow {
   // "Add MAX_TIER_3 waiting"; empty without waiters.
   string waiting_label = 9;
   int32 waiting = 10;
+  // The machine whose checkout the claim is in, e.g. "mbp-office".
+  string machine = 11;
+  // Another machine's claim: it blocks writes only in that machine's
+  // checkout, so here it is a heads-up. Releasing it goes to that machine.
+  bool advisory = 12;
 }
 
 message ChannelMemberRow {
@@ -4185,13 +4188,15 @@ message ChannelMemberRow {
   ChannelPresence presence = 7;
   // "Running", "Waiting on src/x.ts", "Idle" or "Failed".
   string presence_label = 8;
-  // "codex · gpt-5 · holds 2 files".
+  // "codex · gpt-5 · mbp-office · holds 2 files".
   string detail = 9;
   repeated string holds = 10;
   repeated string waiting_on = 11;
   // The card's own setting is on; a member listed only for a claim is not.
   bool enabled = 12;
   string board_id = 13;
+  // The machine that runs the card, e.g. "mbp-office".
+  string machine = 14;
 }
 
 message ChannelPinRow {
@@ -4219,12 +4224,19 @@ message ChannelComposerState {
   int32 max_body_bytes = 7;
   // A post is in flight.
   bool sending = 8;
+  // What each audience does: a channel post (no recipients), @here, and
+  // picked agents.
+  string everyone_hint = 9;
+  string here_hint = 10;
+  string direct_hint = 11;
 }
 
 message ChannelRecipientOption {
   string card_id = 1;
   string title = 2;
   ChannelPresence presence = 3;
+  // The machine that runs the card, e.g. "mbp-office".
+  string machine = 4;
 }
 
 message ChannelKindOption {
