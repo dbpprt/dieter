@@ -201,6 +201,13 @@ readiness rolls back on the next service start. User data remains under
 `DIETER_HOME`. Never
 invoke the internal `__service-stage` packaging command during normal operation.
 
+The Homebrew service uses Standard scheduling. Refreshing an older Background
+launchd definition requires an operator's explicit `brew services restart dieter`
+after the formula is upgraded; staging a binary alone does not change it. Never
+restart the operator's service to qualify scheduling. On busy hosts, inspect
+`machine info` and `remote list --status running`: registered background
+executions can outlive an agent turn and are not counted as active agents.
+
 The initial task should supply an exact card ID. Never guess one. Resolve names
 only for interactive discovery, then retain returned IDs for mutation.
 

@@ -52,6 +52,14 @@ go test -race ./internal/engine/...       # one package, with the race detector
   `DIETER_TEST_LINUX_CAPTURE_REAL`). See
   [reference/environment.md](reference/environment.md#fixtures-and-tests).
 
+For concurrent-turn storage measurements, run
+`DIETER_TEST_CONGESTION=1 go test ./internal/engine -run '^TestConcurrentTurnWriterCost$' -count=1 -v`.
+It uses a 100-card isolated store and measures 1, 8 and 16 streaming turns after
+fixture setup and admission. Run it separately from compilation and other
+suites. The end-to-end `TestConcurrentTurnsStayResponsiveAcrossRoutes` in
+`internal/testkit/topology` additionally covers local, direct TLS and relay
+admission, watches, concurrent edits, peer exchange and cold journal replay.
+
 ### Contract tests
 
 These keep the product surfaces in step. Never weaken them to land a change:

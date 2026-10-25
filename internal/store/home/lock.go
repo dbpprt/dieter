@@ -7,6 +7,18 @@ import (
 	"time"
 )
 
+// WriterSample describes one admission attempt. Held excludes post-release
+// work such as checkpoint encoding. Err is non-nil when admission failed.
+type WriterSample struct {
+	Wait, Held time.Duration
+	Err        error
+}
+
+// SetWriterObserver configures bounded diagnostics before the store is used.
+// The observer runs after release (or failed admission), may run concurrently,
+// and must not block. It must not call back into the writer.
+func (s *Dir) SetWriterObserver(observer func(WriterSample)) { s.writerObserver = observer }
+
 // BeginWriteLock serializes access both within the process and across CLI/server
 // processes without recording a change. Conditional writers use it to
 // revalidate that a domain change is still necessary before advancing the change
@@ -19,8 +31,17 @@ func (s *Dir) BeginWriteLock() (func(), error) {
 
 // BeginWriteLockContext is BeginWriteLock bounded by ctx. A timeout before
 // admission is ErrWriterBusy and may be retried.
-func (s *Dir) BeginWriteLockContext(ctx context.Context) (func(), error) {
+func (s *Dir) BeginWriteLockContext(ctx context.Context) (release func(), err error) {
 	requestedAt := time.Now()
+	defer func() {
+		if err != nil {
+			wait := time.Since(requestedAt)
+			slog.Debug("store writer admission failed", "waitMs", wait.Milliseconds(), "error", err)
+			if s.writerObserver != nil {
+				s.writerObserver(WriterSample{Wait: wait, Err: err})
+			}
+		}
+	}()
 	if err := s.writeMu.LockContext(ctx); err != nil {
 		return nil, writerBusy(err)
 	}
@@ -54,6 +75,9 @@ func (s *Dir) BeginWriteLockContext(ctx context.Context) (func(), error) {
 		}
 		unlockAdmission()
 		s.writeMu.Unlock()
+		if s.writerObserver != nil {
+			s.writerObserver(WriterSample{Wait: acquiredAt.Sub(requestedAt), Held: held})
+		}
 	}, nil
 }
 

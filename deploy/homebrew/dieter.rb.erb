@@ -31,7 +31,9 @@ class Dieter < Formula
          "--runtime", var/"dieter/service"]
     keep_alive true
     restart_delay 5
-    process_type :background
+    # The daemon serves interactive RPCs and launches user-requested workers.
+    # Background QoS is inherited by those workers and can starve the writer.
+    process_type :standard
     environment_variables PATH: std_service_path_env
     log_path var/"log/dieter-service.log"
     error_log_path var/"log/dieter-service.log"

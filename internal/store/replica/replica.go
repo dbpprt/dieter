@@ -30,6 +30,7 @@ type Store struct {
 	peerCacheData    PeerData
 	peerHooks        Hooks
 	ownerKeyCache    ownerKeyCache
+	snapshotRecords  snapshotRecordCache
 }
 
 // New returns the replica of dir.

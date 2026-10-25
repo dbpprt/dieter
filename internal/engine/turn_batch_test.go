@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,8 +17,56 @@ import (
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
 	"github.com/dbpprt/dieter/internal/store/conversations"
+	"github.com/dbpprt/dieter/internal/store/home"
 	"github.com/dbpprt/dieter/internal/store/kanban"
 )
+
+func TestStreamBatchesDoNotReacquireWriterForUnchangedRuntime(t *testing.T) {
+	t.Parallel()
+	service, _, project, board := appSetup(t)
+	defer service.Store.Close()
+	var admissions atomic.Int64
+	service.Store.SetWriterObserver(func(home.WriterSample) { admissions.Add(1) })
+	service.Runner = batchRunnerFunc(func(_ context.Context, request harness.Request, emit func(harness.Output) error) error {
+		for _, raw := range []string{`{"type":"start","messageId":"` + request.ResponseMessageID + `"}`, `{"type":"text-start","id":"text"}`} {
+			if err := emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(raw)}); err != nil {
+				return err
+			}
+		}
+		for range 4 {
+			before := admissions.Load()
+			for range 8 {
+				if err := emit(tokenOutput("x")); err != nil {
+					return err
+				}
+			}
+			if err := emit(harness.Output{Type: "heartbeat"}); err != nil {
+				return err
+			}
+			if got := admissions.Load() - before; got != 1 {
+				return fmt.Errorf("unchanged runtime batch acquired writer %d times, want one durable append", got)
+			}
+		}
+		return emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(`{"type":"finish"}`)})
+	})
+	card, err := service.Store.Kanban.CreateCard(kanban.CreateCardInput{Project: project.ID, Board: board.ID, Title: "runtime transitions", Provider: "codex", Model: "gpt-5.5", WorkspaceMode: model.WorkspaceModeProject})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updates, err := service.StartCard(card.ID, "stream", "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for update := range updates {
+		if update.Err != nil {
+			t.Error(update.Err)
+		}
+	}
+	current, err := service.Store.Kanban.ResolveCard(card.ID)
+	if err != nil || current.Runtime != "idle" || current.ResponseSeq == 0 {
+		t.Fatalf("lost final runtime or receipt: %+v %v", current, err)
+	}
+}
 
 type batchRunnerFunc func(context.Context, harness.Request, func(harness.Output) error) error
 

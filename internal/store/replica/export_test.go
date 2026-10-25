@@ -30,3 +30,6 @@ func (d PeerData) ViewCache() (records, bytes int) { return len(d.view.cache), d
 
 // ClearViewCache drops a view's point-read cache.
 func (d PeerData) ClearViewCache() { clear(d.view.cache) }
+
+// ViewQueries counts reads made through this view, excluding snapshot admission.
+func (d PeerData) ViewQueries() int { return d.view.queries }

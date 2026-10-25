@@ -253,6 +253,8 @@ class ReleaseTest < Minitest::Test
                     %(url "https://github.com/owner/dieter/releases/download/v0.5.9/dieter-darwin-arm64.tar.gz")
     assert_includes formula, %(version "0.5.9")
     assert_includes formula, %(sha256 "#{"f" * 64}")
+    assert_includes formula, "process_type :standard"
+    refute_includes formula, "process_type :background"
     cask =
       Dieter::Release.homebrew(
         "dieter-app.rb.erb",

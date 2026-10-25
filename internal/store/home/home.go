@@ -20,10 +20,11 @@ var ErrNotFound = fault.New(fault.NotFound, "not found")
 type Dir struct {
 	// writeMu queues this instance's writers in process before they contend
 	// for the cross-process writer admission lock under Root.
-	writeMu       ContextMutex
-	hooks         Hooks
-	notifications changeNotifications
-	Root          string
+	writeMu        ContextMutex
+	writerObserver func(WriterSample)
+	hooks          Hooks
+	notifications  changeNotifications
+	Root           string
 }
 
 // New opens the central store rooted at the absolute DIETER_HOME root. The

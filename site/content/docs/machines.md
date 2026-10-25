@@ -15,6 +15,23 @@ Mac app reconnect on their own within seconds. A headless Linux host needs no
 graphical login for agents or terminals; [screen hosting](/docs/screens/) has
 additional desktop requirements.
 
+## Keep busy hosts responsive
+
+Inspect CPU, memory, swap and free disk with `dieter machine info`. Registered
+background executions can keep using resources after their agent turn finishes;
+inspect them with `dieter remote list --status running`. When distributing work,
+include those executions and emulators as well as active agents. Keep enough
+free disk for concurrent builds, dependency caches and swap. The turn-admission
+disk floor is a last-resort check, not reserved build capacity.
+
+The Homebrew service uses Standard scheduling so the daemon and its workers can
+respond to interactive requests. Older service definitions may still use
+Background scheduling. After upgrading the formula, an operator can activate the
+staged release and refresh the service definition with `brew services restart
+dieter`. This restarts the daemon; choose the activation time explicitly.
+Installing or staging a new binary alone does not change the running service's
+scheduling policy.
+
 ## Enroll another host
 
 On the new machine, install the daemon and run:

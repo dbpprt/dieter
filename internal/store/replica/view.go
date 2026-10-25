@@ -36,6 +36,9 @@ type peerView struct {
 	bytes    int
 	snapshot *sql.Tx
 	close    func()
+	shared   *snapshotRecordCache
+	account  string
+	queries  int
 }
 
 // Domain projections pin an MVCC snapshot so an unrelated streamed update cannot
@@ -86,6 +89,7 @@ func (s *Store) OpenPeerSnapshot(account string) (PeerData, error) {
 		data.Close()
 		return PeerData{}, err
 	}
+	v.shared, v.account = &s.snapshotRecords, account
 	data.Epoch, data.Sequence = v.epoch, v.sequence
 	return data, nil
 }
@@ -129,7 +133,7 @@ func (d PeerData) Record(key string) crdt.Record {
 	if d.view == nil || d.view.err != nil {
 		return crdt.Record{}
 	}
-	if r, ok := d.view.cache[key]; ok {
+	if r, ok := d.view.cached(key); ok {
 		return r
 	}
 	var r crdt.Record
@@ -164,11 +168,35 @@ func (v *peerView) remember(key string, r crdt.Record, size int) {
 	}
 	v.cache[key] = r
 	v.bytes += size
+	if v.shared != nil {
+		v.shared.remember(v, key, r, size)
+	}
+}
+
+func (v *peerView) cached(key string) (crdt.Record, bool) {
+	if r, ok := v.cache[key]; ok {
+		return r, true
+	}
+	if v.shared != nil {
+		if r, size, ok := v.shared.record(v, key); ok {
+			// The shared cache returns owned data. Keep it in this view without
+			// publishing it back into the shared cache.
+			if v.bytes+size > peerViewCacheBytes || len(v.cache) >= peerViewCacheRecords {
+				clear(v.cache)
+				v.bytes = 0
+			}
+			v.cache[key] = r
+			v.bytes += size
+			return r, true
+		}
+	}
+	return crdt.Record{}, false
 }
 func (v *peerView) read(f func(*sql.Tx) error) {
 	if v.err != nil {
 		return
 	}
+	v.queries++
 	if v.snapshot != nil {
 		v.err = f(v.snapshot)
 		return
@@ -339,7 +367,7 @@ func (d PeerData) primeEntity(kind, id string) {
 	complete := true
 	for field := range schema.DomainFields[kind] {
 		key := crdt.Key(kind, id+"."+field)
-		_, cached := d.view.cache[key]
+		_, cached := d.view.cached(key)
 		_, edited := d.Records[key]
 		complete = complete && (cached || edited)
 	}

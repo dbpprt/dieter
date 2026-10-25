@@ -120,6 +120,12 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 	streamFailed := false
 	var reportedFailure error
 	capabilityFilter := newCapabilityProgressFilter()
+	// Admission/recovery publishes the selection; this turn owns subsequent
+	// runtime transitions. Cancellation cancels this same context before writing
+	// cancelling, and recovery cannot replace a live runtime lease. Publish the
+	// first observed state (a first turn starts as starting), then transitions
+	// only: a no-op UpdateCardCache still resolves replicas under the writer.
+	publishedRuntime := ""
 	persistChunks := func(chunks []json.RawMessage) error {
 		endHostWork, ok := s.beginTurnHostWork(detail.Card.ID, turnID)
 		if !ok {
@@ -159,11 +165,14 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 		case ctx.Err() != nil && runtimeStatus == model.RuntimeRunning:
 			runtimeStatus = model.RuntimeCancelling
 		}
-		if err := retryWhileStoreBusy(ctx, func() error {
-			_, err := s.Store.Kanban.UpdateCardCache(detail.Card.ID, kanban.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: runtimeStatus})
-			return err
-		}); err != nil {
-			return err
+		if runtimeStatus != publishedRuntime {
+			if err := retryWhileStoreBusy(ctx, func() error {
+				_, err := s.Store.Kanban.UpdateCardCache(detail.Card.ID, kanban.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: runtimeStatus})
+				return err
+			}); err != nil {
+				return err
+			}
+			publishedRuntime = runtimeStatus
 		}
 		for _, chunk := range chunks {
 			select {
