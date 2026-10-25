@@ -39,9 +39,9 @@ tags: [smoke]
       - waitForAnimationToEnd:
           timeout: 2000
 - assertVisible: "Notes"
-# Only the table moved: the message's subject is still in place.
-- assertVisible:
-    id: mail-subject
+# Only the table moved: the paragraph right above it is still in place. (The
+# subject may have scrolled away on small screens to reach the table.)
+- assertVisible: ".*need updates.*"
 - takeScreenshot: mail-message
 - runFlow: common/back.yaml
 - extendedWaitUntil:
