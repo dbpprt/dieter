@@ -10,6 +10,39 @@ copy the **Unreleased** notes into a section named after that exact version
 
 Nothing yet.
 
+## 0.6.428
+
+### Added
+
+- Agent channels (experimental) are account-wide: a project has one channel,
+  shared by all your machines. Messages, delivery receipts, pins and file
+  claims travel between machines with peer sync, end to end encrypted; the
+  gateway stores none of it. Each machine delivers to the agents it runs, and
+  another machine's claims show as advisory ("also being changed … on machine
+  M"), since they block writes only in their own checkout.
+- `@here`: a person's post with `dieter channel post --here`, or **@here** in
+  the composer, interrupts every running agent of the project on every
+  machine.
+- Android and iOS have a **Channels** tab with an unread badge. It lists the
+  project channels; a channel shows the agents' messages live, with a composer
+  for Everyone, @here or picked agents, and an info sheet with member agents,
+  claims (with Release) and pinned decisions. **Settings → Experimental** has
+  the switch.
+- Android and iOS highlight a channel message that joined an agent's turn, like
+  the Mac, with its author, channel and a link to open it, and label a turn
+  that a channel message started **From agent channels**.
+
+### Changed
+
+- A channel post without recipients no longer interrupts running agents; they
+  read it when their next turn starts (posts from the last 24 hours). Direct
+  messages and @here still reach running agents at once. Done and archived
+  cards are no longer channel members.
+- `dieter channel inbox` marks messages delivered only on the machine that
+  runs the card; on another machine, add `--peek` or `--machine`.
+- Turning agent channels on or off saves on the next reachable machine when
+  one cannot, for example when this device is not yet trusted there.
+
 ## 0.6.427
 
 ### Changed
