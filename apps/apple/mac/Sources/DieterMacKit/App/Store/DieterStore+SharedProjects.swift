@@ -92,6 +92,17 @@ extension DieterStore {
         return project.checkoutChoices.first { $0.id == chosen }
     }
 
+    /// A mail sender's checkout on its machine, where the message's
+    /// workspace links resolve; nil when this Mac does not know it.
+    func mailCheckout(id: String, daemonID: String) -> (projectID: String, path: String)? {
+        for project in projectDirectory.values {
+            if let checkout = project.checkouts.first(where: { $0.id == id && $0.daemonID == daemonID }) {
+                return (project.id, checkout.path)
+            }
+        }
+        return nil
+    }
+
     /// Picks the checkout new conversations in its project run on; the core remembers it.
     func pickCheckout(_ checkout: Dieter_V1_Checkout) {
         creationCheckoutIDs[checkout.projectID] = checkout.id

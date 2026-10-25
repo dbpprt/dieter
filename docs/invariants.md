@@ -70,6 +70,10 @@ invariant, it is named; keep it passing rather than weakening it.
   through a budgeted wake and never approve, trust or speak for the user. They
   replicate between the account's daemons as single-writer peer records, and
   only a card's owner daemon delivers to it.
+- Agent mail ([ADR 0004](adr/0004-agent-mail.md)) is one-way: a turn of a
+  conversation created with mail access may send the user a message, and no
+  mail ever reaches a prompt, starts a turn, or is readable by an agent. Mail
+  stays on the daemon that received it and is never replicated.
 - Permit concurrent agent turns in the same registered checkout. There are no
   global, harness or board parallel-session caps. Runtime leases enforce at most
   one active turn per conversation across API, CLI and scheduled starts.

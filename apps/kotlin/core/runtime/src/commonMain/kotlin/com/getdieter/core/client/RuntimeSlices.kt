@@ -385,6 +385,8 @@ internal fun operationLabel(kind: OutboxKind): String =
         OutboxKind.OUTBOX_KIND_CREATE_CHAT -> "Create chat"
         OutboxKind.OUTBOX_KIND_SEND_MESSAGE -> "Send message"
         OutboxKind.OUTBOX_KIND_START_CARD -> "Start card"
+        OutboxKind.OUTBOX_KIND_UPDATE_MAIL -> "Change mail"
+        OutboxKind.OUTBOX_KIND_DELETE_MAIL -> "Delete mail"
         else -> "Queued operation"
     }
 

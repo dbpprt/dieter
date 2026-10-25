@@ -14,7 +14,7 @@ struct DieterRootView: View {
 
     private var showsSynchronizedWorkspace: Bool {
         switch store.section {
-        case .inbox, .channels, .board, .chats, .files, .changes, .schedules, .archive: true
+        case .inbox, .mail, .channels, .board, .chats, .files, .changes, .schedules, .archive: true
         case .terminals, .screens, .settings: false
         }
     }
@@ -114,7 +114,7 @@ struct DieterRootView: View {
     }
 }
 
-/// The workspace column: the retained board, chats, and Inbox panes and the
+/// The workspace column: the retained board, chats, Inbox and Mail panes and the
 /// selected section. It lives in the split view's own hosting view and reads
 /// the session there.
 private struct DieterWorkspaceDetail: View {
@@ -124,6 +124,7 @@ private struct DieterWorkspaceDetail: View {
     @State private var hasOpenedBoard = false
     @State private var hasOpenedChats = false
     @State private var hasOpenedInbox = false
+    @State private var hasOpenedMail = false
 
     var body: some View {
         let section = store.section
@@ -164,12 +165,26 @@ private struct DieterWorkspaceDetail: View {
                 .allowsHitTesting(section == .inbox)
                 .accessibilityHidden(section != .inbox)
             }
+            // Mail keeps its list, selection and reading position while away.
+            if hasOpenedMail || section == .mail {
+                RetainedWorkspacePane(active: section == .mail) {
+                    MailView(active: section == .mail)
+                        .environment(store)
+                        .environment(\.dieterTitleBandLeadingInset, titleBandLeadingInset)
+                        .dieterThemeRoot(
+                            palette: store.themeSelection.palette, appearance: store.themeSelection.appearance)
+                }
+                .ignoresSafeArea(.container, edges: .top)
+                .allowsHitTesting(section == .mail)
+                .accessibilityHidden(section != .mail)
+            }
             DieterSectionContent(section: section)
         }
         .onChange(of: section, initial: true) { _, section in
             if section == .board { hasOpenedBoard = true }
             if section == .chats { hasOpenedChats = true }
             if section == .inbox { hasOpenedInbox = true }
+            if section == .mail { hasOpenedMail = true }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay {
@@ -202,7 +217,7 @@ private struct DieterSectionContent: View {
 
     var body: some View {
         switch section {
-        case .inbox: Color.clear.allowsHitTesting(false)
+        case .inbox, .mail: Color.clear.allowsHitTesting(false)
         case .board:
             Color.clear.allowsHitTesting(false)
         case .chats: Color.clear.allowsHitTesting(false)

@@ -1,0 +1,88 @@
+# Maestro syntax, run in-app: Maestro has no macOS driver.
+# Agent mail on the seeded fixture: the sidebar opens Mail, the dependency
+# audit renders its report and can open its conversation, the migration
+# report is archived, found in Archive and flagged there, and the audit's
+# board offers Mail access on a new card.
+appId: com.getdieter.mac
+name: Mac agent mail
+tags: [full]
+---
+- launchApp
+- tapOn:
+    id: sidebar.mail
+- assertVisible:
+    id: destination.Mail
+- extendedWaitUntil:
+    visible:
+      id: 'mail\.row\..+'
+      text: "Dependency audit — 3 critical, 7 outdated"
+    timeout: 60000
+- tapOn:
+    id: 'mail\.row\..+'
+    text: "Dependency audit — 3 critical, 7 outdated"
+- extendedWaitUntil:
+    visible:
+      id: mail.reader.body
+      text: ".*Package.*"
+    timeout: 30000
+- assertVisible:
+    id: mail.reader.open-conversation
+    text: "Open conversation"
+- takeScreenshot: mac-mail-reader
+
+# Archive the migration report, then find it in Archive and flag it there.
+- tapOn:
+    id: 'mail\.row\..+'
+    text: "Invoice migration finished: 12,408 rows moved"
+- assertVisible:
+    id: mail.reader
+    text: "Invoice migration finished: 12,408 rows moved"
+- tapOn:
+    id: mail.reader.archive
+- extendedWaitUntil:
+    notVisible:
+      id: 'mail\.row\..+'
+      text: "Invoice migration finished: 12,408 rows moved"
+    timeout: 30000
+- tapOn:
+    id: mail.mailbox
+- tapOn:
+    id: mail.mailbox.archive
+- extendedWaitUntil:
+    visible:
+      id: 'mail\.row\..+'
+      text: "Invoice migration finished: 12,408 rows moved"
+    timeout: 30000
+- tapOn:
+    id: 'mail\.row\..+'
+    text: "Invoice migration finished: 12,408 rows moved"
+- tapOn:
+    id: mail.reader.flag
+    text: "Flag"
+- extendedWaitUntil:
+    visible:
+      id: mail.reader.flag
+      text: "Unflag"
+    timeout: 30000
+- takeScreenshot: mac-mail-archive
+
+# The audit's conversation opens on its board, where a new card can be
+# allowed to send mail.
+- tapOn:
+    id: mail.mailbox
+- tapOn:
+    id: mail.mailbox.inbox
+- tapOn:
+    id: 'mail\.row\..+'
+    text: "Dependency audit — 3 critical, 7 outdated"
+- tapOn:
+    id: mail.reader.open-conversation
+- assertVisible:
+    id: destination.Board
+- tapOn:
+    id: 'board\.lane\..+\.new-card'
+- assertVisible:
+    id: new-card.mail-access
+- takeScreenshot: mac-mail-new-card
+- tapOn:
+    id: new-card.cancel

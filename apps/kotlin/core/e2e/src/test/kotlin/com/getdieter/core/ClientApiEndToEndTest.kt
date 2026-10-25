@@ -3,7 +3,12 @@ package com.getdieter.core
 import com.getdieter.api.v1.Card
 import com.getdieter.api.v1.CreateConversationRequest
 import com.getdieter.api.v1.HarnessSelection
+import com.getdieter.api.v1.ListMailRequest
+import com.getdieter.api.v1.MailFolder
+import com.getdieter.api.v1.MailImportance
+import com.getdieter.api.v1.MailRef
 import com.getdieter.api.v1.ScheduleDraft
+import com.getdieter.api.v1.SendMailRequest
 import com.getdieter.client.v1.AdoptSession
 import com.getdieter.client.v1.AgentChoice
 import com.getdieter.client.v1.ArchiveCard
@@ -39,6 +44,14 @@ import com.getdieter.client.v1.ListArchivedCards
 import com.getdieter.client.v1.ListDrafts
 import com.getdieter.client.v1.MachineEntry
 import com.getdieter.client.v1.MachineSyncState
+import com.getdieter.client.v1.MailBox
+import com.getdieter.client.v1.MailChange
+import com.getdieter.client.v1.MailCommand
+import com.getdieter.client.v1.MailMessageRef
+import com.getdieter.client.v1.MailPreferences
+import com.getdieter.client.v1.MailRefs
+import com.getdieter.client.v1.MailSenderStyle
+import com.getdieter.client.v1.MailSlice
 import com.getdieter.client.v1.MetadataSlice
 import com.getdieter.client.v1.MoveCard
 import com.getdieter.client.v1.MoveProject
@@ -46,6 +59,7 @@ import com.getdieter.client.v1.MoveToFolder
 import com.getdieter.client.v1.NavigationCommand
 import com.getdieter.client.v1.NavigationFolder
 import com.getdieter.client.v1.NavigationSlice
+import com.getdieter.client.v1.NotificationResponse
 import com.getdieter.client.v1.PinProject
 import com.getdieter.client.v1.Reconnect
 import com.getdieter.client.v1.RememberCreation
@@ -91,6 +105,7 @@ import com.getdieter.core.client.ClientApi
 import com.getdieter.core.client.ClientFailure
 import com.getdieter.core.client.ClientSubscription
 import com.getdieter.core.connection.SyncState
+import com.getdieter.core.mail.MailRules
 import com.getdieter.core.navigation.NavigationLayout
 import com.getdieter.core.outbox.OutboxPolicy
 import com.getdieter.core.testing.EndToEnd
@@ -109,6 +124,7 @@ import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.withTimeoutOrNull
 import okio.ByteString.Companion.encodeUtf8
 
 /**
@@ -1582,5 +1598,246 @@ class ClientApiEndToEndTest : EndToEnd() {
                 )
                 .card!!
         assertTrue(afterResync.id.isNotEmpty())
+    }
+
+    @Test
+    fun mailCreatesWithAccessListsReadsQueuesOfflineArchivesAndDeletes() = e2e {
+        // The Maestro workspace, with the mail its flows read.
+        val fixture = fixture(seeded = true)
+        val runtime = runtime(fixture)
+        runtime.awaitConnected()
+        runtime.awaitLoaded(fixture)
+        val api = ClientApi(runtime)
+
+        // A card created with mail access shows it at once, and once its machine has it.
+        val created =
+            api.dispatch(
+                    Command(
+                        create_conversation =
+                            CreateConversation(
+                                intent =
+                                    CreationIntent(
+                                        project_id = fixture.projectId,
+                                        board_id = fixture.boardId,
+                                        lane = "todo",
+                                        title = "Mail reports",
+                                        prompt = "report",
+                                        workspace_mode = "project",
+                                        mail_access = true,
+                                    )
+                            )
+                    )
+                )
+                .card!!
+        assertTrue(created.mail_access, "the optimistic card carries mail access")
+        runtime.workspace.state.await(30.seconds, describe = { "mail access synced" }) { view ->
+            view.allItems.any {
+                OutboxPolicy.isServerBacked(it.id) &&
+                    it.id !in view.pendingCardIds &&
+                    it.title == "Mail reports" &&
+                    it.mail_access
+            }
+        }
+
+        val scope = "mail-test"
+        val mail = MutableStateFlow<MailSlice?>(null)
+        val watch =
+            api.observe(Slice.SLICE_MAIL, scope) {
+                mail.value = Update.ADAPTER.decode(it.encode()).mail
+            }
+        fun command(action: MailCommand) = Command(mail = action.copy(scope = scope))
+        suspend fun header(id: String) =
+            runtime.onMachine(fixture.daemonId) { it.GetMail().execute(MailRef(id)) }.header_!!
+        // The daemon's own state, read until it shows [what]; a route may still be reconnecting.
+        suspend fun awaitDaemon(what: String, predicate: suspend () -> Boolean) {
+            val shown =
+                withTimeoutOrNull(30.seconds) {
+                    while (runCatching { predicate() }.getOrDefault(false) != true) delay(100)
+                }
+            assertTrue(shown != null, "the daemon never showed: $what")
+        }
+        fun MailSlice.rows() = sections.flatMap { it.rows }
+
+        // The fixture's Inbox: two unread reports and a read, flagged one.
+        val seeded =
+            mail.await(30.seconds, describe = { "seeded: ${mail.value}" }) { it?.count == 3 }!!
+        assertEquals(2, seeded.unread)
+        val audit =
+            seeded.rows().single { it.subject == "Dependency audit — 3 critical, 7 outdated" }
+        val invoices =
+            seeded.rows().single { it.subject == "Invoice migration finished: 12,408 rows moved" }
+        val smoke =
+            seeded.rows().single { it.subject == "Release smoke results: all platforms passed" }
+        assertEquals("Nightly dependency audit", audit.sender)
+        assertEquals(MailSenderStyle.MAIL_SENDER_STYLE_SCHEDULE, audit.sender_style)
+        assertTrue(audit.important && !audit.read)
+        assertTrue(smoke.flagged && smoke.read)
+
+        // An operator sends through the daemon API.
+        val sent =
+            runtime.onMachine(fixture.daemonId) {
+                it.SendMail()
+                    .execute(
+                        SendMailRequest(
+                            subject = "Nightly e2e report",
+                            body = MAIL_REPORT,
+                            importance = MailImportance.MAIL_IMPORTANCE_HIGH,
+                            operation_id = "e2e-report",
+                            from = "e2e.sh",
+                        )
+                    )
+            }
+        val ref = MailMessageRef(fixture.daemonId, sent.id)
+        val listed =
+            mail.await(30.seconds, describe = { "sent: ${mail.value?.sections}" }) { slice ->
+                slice?.rows().orEmpty().any { it.ref == ref }
+            }!!
+        val row = listed.rows().single { it.ref == ref }
+        assertEquals("e2e.sh", row.sender)
+        assertEquals(MailSenderStyle.MAIL_SENDER_STYLE_OPERATOR, row.sender_style)
+        assertTrue(row.important && !row.read)
+        assertEquals("", row.stale)
+        assertEquals("Today", listed.sections.first().title)
+        assertEquals(ref, listed.sections.first().rows.first().ref, "newest first")
+        val boxes = listed.boxes.associateBy { it.box }
+        assertEquals(3, listed.unread)
+        assertEquals("3", listed.unread_label)
+        assertEquals("", listed.app_badge, "the app badge is off by default")
+        assertEquals(4, boxes.getValue(MailBox.MAIL_BOX_INBOX).total)
+        assertEquals("3", boxes.getValue(MailBox.MAIL_BOX_INBOX).count_label)
+        assertEquals(3, boxes.getValue(MailBox.MAIL_BOX_UNREAD).total)
+        assertEquals(1, boxes.getValue(MailBox.MAIL_BOX_FLAGGED).total)
+        assertEquals(1, boxes.getValue(MailBox.MAIL_BOX_ARCHIVE).total)
+        assertEquals(0, boxes.getValue(MailBox.MAIL_BOX_TRASH).total)
+        val badged =
+            api.dispatch(
+                    Command(
+                        mail =
+                            MailCommand(
+                                set_preferences = MailPreferences(notify = true, app_badge = true)
+                            )
+                    )
+                )
+                .mail!!
+        assertEquals("3", badged.app_badge)
+
+        // Selecting it marks it read at once, loads the body, and the daemon marks it read.
+        val selected = api.dispatch(command(MailCommand(select = ref))).mail!!
+        assertTrue(selected.reader_!!.read, "read at once")
+        assertEquals(2, selected.unread)
+        val reader =
+            mail
+                .await(30.seconds, describe = { "body: ${mail.value?.reader_}" }) {
+                    it?.reader_?.body == MAIL_REPORT
+                }!!
+                .reader_!!
+        assertFalse(reader.loading)
+        assertEquals("", reader.unavailable)
+        assertFalse(reader.can_open_conversation)
+        assertEquals("Sent by e2e.sh", reader.open_conversation_unavailable)
+        assertTrue(reader.sent_label.startsWith("Today "), reader.sent_label)
+        awaitDaemon("read") { header(sent.id).read }
+
+        // The reading pane knows which conversations still exist.
+        val auditReader = api.dispatch(command(MailCommand(select = audit.ref))).mail!!.reader_!!
+        assertTrue(auditReader.can_open_conversation)
+        assertEquals("c_mail_audit", auditReader.card_id)
+        assertTrue(auditReader.sender_detail.startsWith("Schedule · "), auditReader.sender_detail)
+        val smokeReader = api.dispatch(command(MailCommand(select = smoke.ref))).mail!!.reader_!!
+        assertFalse(smokeReader.can_open_conversation)
+        assertEquals("The conversation was deleted", smokeReader.open_conversation_unavailable)
+
+        // Notification responses: an action changes the message in place, a tap opens it.
+        fun respond(key: String, action: String = "") =
+            Command(notification_response = NotificationResponse(key = key, action = action))
+        val marked =
+            api.dispatch(respond("mail:${fixture.daemonId}:${invoices.ref!!.id}", "MARK_READ"))
+                .notification_target!!
+        assertTrue(marked.none != null)
+        awaitDaemon("read from the notification") { header(invoices.ref!!.id).read }
+        assertEquals(
+            invoices.ref,
+            api.dispatch(respond("mail:${fixture.daemonId}:${invoices.ref!!.id}"))
+                .notification_target!!
+                .mail,
+        )
+        runtime.awaitSync(fixture.daemonId, SyncState.LIVE)
+        assertEquals(
+            "c_mail_audit",
+            api.dispatch(respond("result:c_mail_audit", "OPEN")).notification_target!!.card_id,
+        )
+        assertTrue(
+            api.dispatch(respond("review:c_mail_smoke_deleted")).notification_target!!.inbox !=
+                null,
+            "a conversation that is gone shows the Inbox",
+        )
+        assertTrue(api.dispatch(respond("unknown")).notification_target!!.none != null)
+
+        // While its machine is offline a change shows at once and waits; it replays once back.
+        fixture.daemonOffline()
+        runtime.awaitSync(fixture.daemonId, SyncState.OFFLINE)
+        api.dispatch(command(MailCommand(select = ref)))
+        val flagged =
+            api.dispatch(
+                    command(MailCommand(change = MailChange(refs = listOf(ref), flagged = true)))
+                )
+                .mail!!
+        assertTrue(flagged.reader_!!.flagged, "the change shows at once")
+        assertTrue(flagged.reader_!!.stale.endsWith(" is offline"), flagged.reader_!!.stale)
+        assertEquals(MAIL_REPORT, flagged.reader_!!.body, "a body read once opens offline")
+        assertTrue(
+            runtime.outbox.view.value.entries.any {
+                MailRules.changesMail(it) &&
+                    it.daemon_id == fixture.daemonId &&
+                    it.server_id.isEmpty()
+            },
+            "the change waits for its machine",
+        )
+        fixture.daemonOnline()
+        awaitDaemon("flag replayed") { header(sent.id).flagged }
+        runtime.outbox.view.await(30.seconds, describe = { "settled" }) { view ->
+            view.entries.none(MailRules::changesMail)
+        }
+
+        // Archive, then delete for good.
+        val archived =
+            api.dispatch(
+                    command(
+                        MailCommand(
+                            change =
+                                MailChange(
+                                    refs = listOf(ref),
+                                    folder = MailFolder.MAIL_FOLDER_ARCHIVE,
+                                )
+                        )
+                    )
+                )
+                .mail!!
+        assertTrue(archived.rows().none { it.ref == ref }, "it leaves the Inbox at once")
+        assertEquals(MailFolder.MAIL_FOLDER_ARCHIVE, archived.reader_!!.folder)
+        awaitDaemon("archived") { header(sent.id).folder == MailFolder.MAIL_FOLDER_ARCHIVE }
+        val archive =
+            api.dispatch(command(MailCommand(select_box = MailBox.MAIL_BOX_ARCHIVE))).mail!!
+        assertEquals(2, archive.count)
+        assertTrue(archive.rows().any { it.ref == ref })
+        val deleted = api.dispatch(command(MailCommand(delete = MailRefs(listOf(ref))))).mail!!
+        assertTrue(deleted.rows().none { it.ref == ref }, "it goes at once")
+        assertEquals(1, deleted.count)
+        awaitDaemon("deleted") {
+            runtime
+                .onMachine(fixture.daemonId) { it.ListMail().execute(ListMailRequest(limit = 500)) }
+                .messages
+                .none { it.id == sent.id }
+        }
+        mail.await(30.seconds, describe = { "deleted: ${mail.value?.boxes}" }) { slice ->
+            slice?.boxes?.firstOrNull { it.box == MailBox.MAIL_BOX_ARCHIVE }?.total == 1 &&
+                runtime.outbox.view.value.entries.none(MailRules::changesMail)
+        }
+        watch.close()
+    }
+
+    private companion object {
+        const val MAIL_REPORT =
+            "## Nightly e2e report\n\n| Check | Result |\n| :-- | --: |\n| Build | passed |\n"
     }
 }

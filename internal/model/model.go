@@ -246,7 +246,10 @@ type Card struct {
 	RemotePublishMode   string                     `json:"remotePublishMode,omitempty" yaml:"remote_publish_mode,omitempty"`
 	// VaultAccess is owner-local and fixed at creation: agent turns of this
 	// conversation may use the account vault.
-	VaultAccess bool                `json:"vaultAccess,omitempty" yaml:"vault_access,omitempty"`
+	VaultAccess bool `json:"vaultAccess,omitempty" yaml:"vault_access,omitempty"`
+	// MailAccess is owner-local and fixed at creation: agent turns of this
+	// conversation may send the user mail.
+	MailAccess  bool                `json:"mailAccess,omitempty" yaml:"mail_access,omitempty"`
 	Workspace   *WorkspaceSummary   `json:"workspace,omitempty" yaml:"-"`
 	PullRequest *PullRequestSummary `json:"pullRequest,omitempty" yaml:"-"`
 }
@@ -530,6 +533,7 @@ type Schedule struct {
 	ProviderOptions map[string]string `json:"providerOptions,omitempty" yaml:"provider_options,omitempty"`
 	WorkspaceMode   string            `json:"workspaceMode" yaml:"workspace_mode"`
 	VaultAccess     bool              `json:"vaultAccess,omitempty" yaml:"vault_access,omitempty"`
+	MailAccess      bool              `json:"mailAccess,omitempty" yaml:"mail_access,omitempty"`
 	LabelIDs        []string          `json:"labelIds,omitempty" yaml:"labels,omitempty"`
 	OpenCardPolicy  string            `json:"openCardPolicy" yaml:"open_card_policy"`
 	MisfirePolicy   string            `json:"misfirePolicy" yaml:"misfire_policy"`

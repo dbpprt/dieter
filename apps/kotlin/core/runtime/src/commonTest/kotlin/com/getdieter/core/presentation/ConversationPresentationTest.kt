@@ -121,6 +121,58 @@ class ConversationPresentationTest {
     }
 
     @Test
+    fun newerAccountActivityUpdatesLiveWorkWithoutReplacingFullMessages() {
+        val full =
+            Conversation(
+                card_id = "c",
+                last_seq = 10,
+                status = "idle",
+                updated_at = "2026-09-30T10:00:00Z",
+                messages = listOf(assistant("a", MessagePart(type = "text", text = "Full reply"))),
+            )
+        val preview =
+            Conversation(
+                card_id = "c",
+                last_seq = 12,
+                status = "running",
+                updated_at = "2026-09-30T10:01:00Z",
+                messages = listOf(assistant("a", running("new command"))),
+            )
+        val view =
+            ConversationView(
+                "c",
+                presented =
+                    ConversationSnapshot(detail = CardDetail(card = started), conversation = full),
+                activity = preview,
+                syncing = true,
+            )
+        val live = ConversationPresenter.present(view, OutboxView(), board)
+        assertEquals("Running new command", live.liveActivity.english())
+        assertTrue(live.working)
+        assertEquals(
+            full.messages,
+            view.messages,
+            "preview payloads are never promoted to full transcript content",
+        )
+        val completed =
+            ConversationPresenter.present(
+                view.copy(activity = preview.copy(status = "idle")),
+                OutboxView(),
+                board,
+            )
+        assertFalse(completed.working, "newer completed activity beats the cached running card")
+        assertEquals("idle", completed.runtime)
+    }
+
+    @Test
+    fun aNewerCardCompletionBeatsAnOlderRunningTranscript() {
+        val completed = started.copy(runtime = "idle", runtime_updated_at = "2026-09-30T10:02:00Z")
+        val stale = Conversation(status = "running", updated_at = "2026-09-30T10:00:00Z")
+        assertEquals("idle", present(completed, stale).runtime)
+        assertFalse(present(completed, stale).canHalt)
+    }
+
+    @Test
     fun liveActivityAndTimerIgnoreOptimisticQueuedAndFailedMessages() {
         val conversation =
             Conversation(

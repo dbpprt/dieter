@@ -64,6 +64,7 @@ extension MarkdownStyler {
         let identity = "\(ctx.baseFont.fontName)|\(ctx.baseFont.pointSize)|\(appearance.name.rawValue)|"
             + "\(ObjectIdentifier(theme.bodyText))|\(ObjectIdentifier(theme.mutedText))|"
             + "\(ObjectIdentifier(theme.highlightColor))|\(ObjectIdentifier(ctx.codeBackgroundColor))|"
+            + "\(ObjectIdentifier(theme.link))|"
             + "\(ObjectIdentifier(theme.latexLightModeText))|\(ObjectIdentifier(theme.latexDarkModeText))|"
             + "\(ObjectIdentifier(type(of: ctx.services.latex)))"
 
@@ -85,6 +86,7 @@ extension MarkdownStyler {
             colorKey(theme.mutedText, under: appearance),
             colorKey(theme.highlightColor, under: appearance),
             colorKey(ctx.codeBackgroundColor, under: appearance),
+            colorKey(theme.link, under: appearance),   // Dieter: cell links
             colorKey(theme.latexLightModeText, under: appearance),
             colorKey(theme.latexDarkModeText, under: appearance),
             "\(ObjectIdentifier(type(of: ctx.services.latex)))",
@@ -426,7 +428,7 @@ extension MarkdownStyler {
         return NSFont(descriptor: baseDescriptor.withSymbolicTraits(traits), size: pointSize) ?? current
     }
 
-    /// Walk the inline AST into marker-stripped runs; LaTeX as attachments, links/embeds emitted raw.
+    /// Walk the inline AST into marker-stripped runs; LaTeX as attachments, links as their labels, embeds emitted raw.
     private static func appendInlineCell(
         _ nodes: [InlineNode],
         in ns: NSString,
@@ -496,8 +498,21 @@ extension MarkdownStyler {
                 } else {
                     appendPlain(range, font)   // renderer unavailable → keep raw `$…$`
                 }
-            case .link(let range, _, _, _, _),
-                 .image(let range, _, _, _),
+            case .link(let range, _, let url, _, let children):
+                // Dieter: the label, styled like a body link, carrying its
+                // original destination so a click inside the image can follow it.
+                let start = out.length
+                recurse(children, font)
+                guard out.length > start else {
+                    appendPlain(range, font)
+                    break
+                }
+                out.addAttributes([
+                    .foregroundColor: theme.link,
+                    .underlineStyle: NSUnderlineStyle.single.rawValue,
+                    .tableCellLinkDestination: ns.substring(with: url),
+                ], range: NSRange(location: start, length: out.length - start))
+            case .image(let range, _, _, _),
                  .wikiLink(let range, _, _, _),
                  .imageEmbed(let range, _, _):
                 appendPlain(range, font)
@@ -671,8 +686,83 @@ extension MarkdownStyler {
         let alignments = table.alignments
         let headerFill = mutedColor(alpha: 0.08)
 
+        /// A cell's content box in the image's top-down coordinates.
+        func cellRect(col: Int, row: Int) -> NSRect {
+            let cellLeft = columnLeft[col] + cellHPadding
+            let cellRight = columnLeft[col + 1] - borderWidth - cellHPadding
+            return NSRect(
+                x: cellLeft,
+                y: rowTop[row] + cellVPadding,
+                width: cellRight - cellLeft,
+                height: rowContentHeights[row]
+            )
+        }
+        /// Align via NSParagraphStyle; word-wrap fills the row height
+        /// measured above (long words fall back to character breaks).
+        func alignedCell(_ s: NSAttributedString, col: Int) -> NSAttributedString {
+            let paragraph = NSMutableParagraphStyle()
+            switch alignments[col] {
+            case .left:   paragraph.alignment = .left
+            case .center: paragraph.alignment = .center
+            case .right:  paragraph.alignment = .right
+            }
+            paragraph.lineBreakMode = .byWordWrapping
+            let aligned = NSMutableAttributedString(attributedString: s)
+            aligned.addAttribute(
+                .paragraphStyle,
+                value: paragraph,
+                range: NSRange(location: 0, length: aligned.length)
+            )
+            return aligned
+        }
+
+        // Dieter: where each cell link lands in the image, laid out exactly as
+        // `drawCell` draws it, so clicks on the image can follow the link.
+        var linkRegions: [RenderedTableImage.LinkRegion] = []
+        func collectLinks(_ s: NSAttributedString, col: Int, row: Int) {
+            guard col < columnCount else { return }
+            var hasLink = false
+            s.enumerateAttribute(.tableCellLinkDestination, in: NSRange(location: 0, length: s.length)) { value, _, stop in
+                if value is String { hasLink = true; stop.pointee = true }
+            }
+            guard hasLink else { return }
+            let rect = cellRect(col: col, row: row)
+            let storage = NSTextStorage(attributedString: alignedCell(s, col: col))
+            let layout = NSLayoutManager()
+            layout.usesFontLeading = false
+            let container = NSTextContainer(size: NSSize(width: rect.width, height: .greatestFiniteMagnitude))
+            container.lineFragmentPadding = 0
+            layout.addTextContainer(container)
+            storage.addLayoutManager(layout)
+            layout.ensureLayout(for: container)
+            storage.enumerateAttribute(.tableCellLinkDestination, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+                guard let destination = value as? String else { return }
+                let glyphs = layout.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                layout.enumerateEnclosingRects(
+                    forGlyphRange: glyphs,
+                    withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
+                    in: container
+                ) { linkRect, _ in
+                    linkRegions.append(.init(
+                        rect: linkRect.offsetBy(dx: rect.minX, dy: rect.minY),
+                        destination: destination
+                    ))
+                }
+            }
+        }
+        for (col, cell) in headerCells.enumerated() {
+            collectLinks(cell, col: col, row: 0)
+        }
+        for (rowIdx, row) in bodyCells.enumerated() {
+            for (col, cell) in row.enumerated() {
+                collectLinks(cell, col: col, row: rowIdx + 1)
+            }
+        }
+
         // Flipped image so AppKit handles the y-flip; a manual transform mirror would flip glyphs too.
-        return NSImage(size: size, flipped: true) { _ in
+        let image = RenderedTableImage(size: size)
+        image.linkRegions = linkRegions
+        image.addRepresentation(NSCustomImageRep(size: size, flipped: true) { _ in
             // Header row fill
             headerFill.setFill()
             NSBezierPath(rect: NSRect(
@@ -710,31 +800,7 @@ extension MarkdownStyler {
 
             func drawCell(_ s: NSAttributedString, col: Int, row: Int) {
                 guard col < columnCount else { return }
-                let cellLeft = columnLeft[col] + cellHPadding
-                let cellRight = columnLeft[col + 1] - borderWidth - cellHPadding
-                let cellContentWidth = cellRight - cellLeft
-                // Align via NSParagraphStyle; word-wrap fills the row height
-                // measured above (long words fall back to character breaks).
-                let paragraph = NSMutableParagraphStyle()
-                switch alignments[col] {
-                case .left:   paragraph.alignment = .left
-                case .center: paragraph.alignment = .center
-                case .right:  paragraph.alignment = .right
-                }
-                paragraph.lineBreakMode = .byWordWrapping
-                let aligned = NSMutableAttributedString(attributedString: s)
-                aligned.addAttribute(
-                    .paragraphStyle,
-                    value: paragraph,
-                    range: NSRange(location: 0, length: aligned.length)
-                )
-                let drawRect = NSRect(
-                    x: cellLeft,
-                    y: rowTop[row] + cellVPadding,
-                    width: cellContentWidth,
-                    height: rowContentHeights[row]
-                )
-                aligned.draw(with: drawRect, options: [.usesLineFragmentOrigin], context: nil)
+                alignedCell(s, col: col).draw(with: cellRect(col: col, row: row), options: [.usesLineFragmentOrigin], context: nil)
             }
 
             for (col, cell) in headerCells.enumerated() {
@@ -746,7 +812,8 @@ extension MarkdownStyler {
                 }
             }
             return true
-        }
+        })
+        return image
     }
 
     // MARK: - Scrollable table helpers

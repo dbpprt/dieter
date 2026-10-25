@@ -12,6 +12,7 @@ import AppKit
 
 extension NativeTextView {
     override func mouseDown(with event: NSEvent) {
+        if followTableCellLinkIfHit(event: event) { return }
         if revealRenderedCodeIfHit(event: event) { return }
         (delegate as? NativeTextViewCoordinator)?.beginNativeInteraction()
         // Was the click point on a link? Captured before super.mouseDown, which

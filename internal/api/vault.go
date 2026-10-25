@@ -8,6 +8,7 @@ import (
 	"time"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/platform/fault"
 	"github.com/dbpprt/dieter/internal/security/vault"
 	"github.com/dbpprt/dieter/internal/store/vaults"
@@ -175,6 +176,47 @@ func (s *Server) vaultCaller(ctx context.Context) (vaultCaller, error) {
 		return caller, err
 	}
 	return vaultCaller{kind: "agent", cardID: cardID, route: caller.route, access: card.VaultAccess}, nil
+}
+
+// turnCaller resolves the conversation of an agent turn: a live turn token on
+// the local route. ok is false for the operator, the local CLI without a
+// token or a remote device, whose metadata the DirectServer never forwards a
+// token with.
+func (s *Server) turnCaller(ctx context.Context) (card model.Card, turnID string, ok bool, err error) {
+	token := requestHeader(ctx, turnTokenMetadata)
+	if token == "" || requestHeader(ctx, operatorSubjectMetadata) != "" {
+		return model.Card{}, "", false, nil
+	}
+	cardID, turnID, err := s.app.VerifyTurn(token)
+	if err != nil {
+		return model.Card{}, "", false, fault.New(fault.PermissionDenied, err.Error())
+	}
+	if card, err = s.store.Kanban.ResolveCard(cardID); err != nil {
+		return model.Card{}, "", false, err
+	}
+	return card, turnID, true, nil
+}
+
+// capabilityCaller is who creates a conversation or schedule. The operator
+// may grant every capability; an agent turn only those its own conversation
+// has, so a turn cannot escalate through a sibling it creates.
+type capabilityCaller struct {
+	agent bool
+	card  model.Card
+}
+
+func (s *Server) capabilityCaller(ctx context.Context) (capabilityCaller, error) {
+	card, _, agent, err := s.turnCaller(ctx)
+	return capabilityCaller{agent: agent, card: card}, err
+}
+
+// grantMail refuses an agent turn that would turn mail access on for a
+// conversation or schedule while its own conversation lacks it.
+func (c capabilityCaller) grantMail(granted bool) error {
+	if granted && c.agent && !c.card.MailAccess {
+		return fault.New(fault.PermissionDenied, "a conversation without mail access cannot grant it")
+	}
+	return nil
 }
 
 // vaultAdmit classifies the caller and enforces the access rules.

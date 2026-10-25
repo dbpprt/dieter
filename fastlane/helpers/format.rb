@@ -19,7 +19,7 @@ module Dieter
   module Format
     ROOT = File.expand_path("../..", __dir__)
     EXCLUDED =
-      %r{\A(?:third_party/|internal/gen/|tmp/|\.mise/|apps/apple/DieterKit/Sources/DieterAPI(?:GRPC)?/|
+      %r{\A(?:third_party/|internal/gen/|tmp/|\.mise/|tests/fixtures/markdown/|apps/apple/DieterKit/Sources/DieterAPI(?:GRPC)?/|
                     apps/apple/mac/Sources/DieterMacKit/Resources/MarkdownPreview/|apps/kotlin/android/webrtc/src/|
                     site/layouts/)|/testdata/|(?:\A|/)(?:package-lock\.json|gradlew(?:\.bat)?|mise\.lock)\z}x
     CONFIGS = %w[.editorconfig .prettierrc.json ruff.toml .streerc apps/apple/.swift-format].freeze

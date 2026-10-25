@@ -195,6 +195,20 @@ class OutboxPolicyTest {
         assertEquals("c_2", failed.id)
         assertEquals("", failed.board_id)
         assertEquals("failed", failed.runtime)
+        assertFalse(card.mail_access)
+        val mail =
+            create("3").let { entry ->
+                val request = CreateConversationRequest.ADAPTER.decode(entry.request)
+                entry.copy(
+                    request =
+                        CreateConversationRequest.ADAPTER.encode(
+                                request.copy(mail_access = true, vault_access = true)
+                            )
+                            .toByteString()
+                )
+            }
+        val capable = OutboxPolicy.optimisticCard(mail)!!
+        assertTrue(capable.mail_access && capable.vault_access, "the request's capabilities")
     }
 
     private fun metadata(at: Instant) = "{\"createdAt\":\"$at\"}".encodeUtf8()

@@ -90,12 +90,8 @@ public final class ShellController: UIViewController, UINavigationControllerDele
     private var modalKey: String?
     private var current: NativeNavigation?
     private var applying = false
-    /// In the shared `MobileTab` order.
-    private static let specs: [(title: String, symbol: String)] = [
-        ("Inbox", "tray"), ("Projects", "folder"), ("Chats", "bubble.left.and.bubble.right"),
-        ("Channels", "number"), ("Tools", "square.grid.2x2"),
-    ]
-    private static let channelsTab = specs.firstIndex { $0.title == "Channels" } ?? 3
+    /// The shared visible tabs' IDs, in order; the tab bar is rebuilt only when they change.
+    private var tabIDs: [String] = []
 
     init(host: MobileHost) {
         self.host = host
@@ -106,14 +102,6 @@ public final class ShellController: UIViewController, UINavigationControllerDele
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemGroupedBackground
-        containers = Self.specs.indices.map { TabContainer(index: $0, delegate: self) }
-        containers.forEach { $0.settle = { [weak self] in self?.resync() } }
-        tabs.tabs = Self.specs.enumerated().map { index, spec in
-            let container = containers[index]
-            return UITab(title: spec.title, image: UIImage(systemName: spec.symbol), identifier: "tab-\(index)") {
-                _ in container
-            }
-        }
         tabs.mode = .tabSidebar
         tabs.delegate = self
         tabs.sidebar.delegate = self
@@ -150,6 +138,45 @@ public final class ShellController: UIViewController, UINavigationControllerDele
         child.didMove(toParent: self)
     }
 
+    /// Shows [shown] in the shared order. Tabs that stay keep their container, stack and UITab;
+    /// a tab that goes takes its stack with it.
+    private func rebuildTabs(_ shown: [NativeTab]) {
+        let ids = shown.map(\.key)
+        guard ids != tabIDs else { return }
+        let existing = Dictionary(uniqueKeysWithValues: zip(tabIDs, zip(containers, tabs.tabs)))
+        var nextContainers: [TabContainer] = []
+        var nextTabs: [UITab] = []
+        for (index, tab) in shown.enumerated() {
+            if case let (container, item)? = existing[tab.key] {
+                container.index = index
+                nextContainers.append(container)
+                nextTabs.append(item)
+                continue
+            }
+            let container = TabContainer(index: index, delegate: self)
+            container.settle = { [weak self] in self?.resync() }
+            container.configure(regular: regular)
+            let item = UITab(title: tab.title, image: UIImage(systemName: tab.symbol), identifier: "tab-\(tab.key)") {
+                _ in container
+            }
+            nextContainers.append(container)
+            nextTabs.append(item)
+        }
+        containers = nextContainers
+        tabIDs = ids
+        tabs.tabs = nextTabs
+    }
+
+    /// Inbox attention, unread mail and unread channel messages.
+    private static func badge(_ id: String, _ navigation: NativeNavigation) -> String? {
+        switch id {
+        case "inbox": navigation.attention > 0 ? "\(navigation.attention)" : nil
+        case "mail": navigation.mailUnread.isEmpty ? nil : navigation.mailUnread
+        case "channels": navigation.channelsUnread.isEmpty ? nil : navigation.channelsUnread
+        default: nil
+        }
+    }
+
     private func remove(_ child: UIViewController) {
         child.willMove(toParent: nil)
         child.view.removeFromSuperview()
@@ -172,18 +199,18 @@ public final class ShellController: UIViewController, UINavigationControllerDele
             remove(controller)
             signIn = nil
         }
+        applying = true
+        rebuildTabs(navigation.tabs)
         let selected = Int(navigation.tab)
         let visible = tabs.tabs.firstIndex { $0 == tabs.selectedTab } ?? 0
-        applying = true
         for (index, stack) in navigation.stacks.enumerated() where index < containers.count {
             containers[index].sync(
                 routes: stack, host: host, animated: index == selected && index == visible && view.window != nil)
         }
         if visible != selected, selected < tabs.tabs.count { tabs.selectedTab = tabs.tabs[selected] }
-        tabs.tabs.first?.badgeValue = navigation.attention > 0 ? "\(navigation.attention)" : nil
-        if Self.channelsTab < tabs.tabs.count {
-            tabs.tabs[Self.channelsTab].badgeValue =
-                navigation.channelsUnread.isEmpty ? nil : navigation.channelsUnread
+        for (id, tab) in zip(tabIDs, tabs.tabs) {
+            let badge = Self.badge(id, navigation)
+            if tab.badgeValue != badge { tab.badgeValue = badge }
         }
         if selected < containers.count {
             updateTabBar(for: containers[selected].visibleController, animated: view.window != nil)
@@ -305,7 +332,8 @@ public final class ShellController: UIViewController, UINavigationControllerDele
 /// One tab's content: a navigation stack, or on regular width a list column beside a detail column.
 @MainActor
 final class TabContainer: UIViewController {
-    let index: Int
+    /// The tab's position among the visible tabs; it moves when a tab before it shows or hides.
+    var index: Int
     private weak var delegate: (any UINavigationControllerDelegate)?
     private var navigators: [UINavigationController] = []
     private var keys: [[String]] = []

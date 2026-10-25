@@ -198,6 +198,8 @@ Options:
   --remote-publish MODE     manual, pull_request, or push_base
   --vault                   Let this conversation's agent turns use the account
                             vault (fixed at creation; see dieter vault --help)
+  --mail                    Let this conversation's agent turns send you mail
+                            (fixed at creation; see dieter mail --help)
   --format json|id          Output format
 
 Destination defaults to the running local daemon. Pass global --machine ID|NAME
@@ -232,6 +234,7 @@ before the command to create on another enrolled machine.
 	baseRemote := set.String("base-remote", "", "base remote override")
 	remotePublish := set.String("remote-publish", "", "manual, pull_request, or push_base")
 	vaultAccess := set.Bool("vault", false, "grant agent turns access to the account vault")
+	mailAccess := set.Bool("mail", false, "let agent turns send the user mail")
 	format := set.String("format", "json", "json or id")
 	help, err := parse(set, args, c.scoped(usage), c.Out)
 	if help || err != nil {
@@ -285,7 +288,7 @@ before the command to create on another enrolled machine.
 		LabelIds: splitCSV(*labels), DeferStart: !chat && *lane != "running", Attachments: messageParts(attachments),
 		ClientId: "dieter-cli", CommandId: commandID, WorkspaceMode: *workspaceMode,
 		WorkspaceBranch: *branch, WorkspaceBaseBranch: *baseBranch, AutoGenerateTitle: *autoTitle,
-		WorkspaceBaseRemote: *baseRemote, RemotePublishMode: *remotePublish, VaultAccess: *vaultAccess,
+		WorkspaceBaseRemote: *baseRemote, RemotePublishMode: *remotePublish, VaultAccess: *vaultAccess, MailAccess: *mailAccess,
 	}
 	client, rpcCtx, err := c.rpc(ctx)
 	if err != nil {

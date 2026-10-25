@@ -96,7 +96,8 @@ struct AppSidebar: View {
     }
 }
 
-/// Inbox, Chats, Terminals, and Screens. Each count observes its own source.
+/// Inbox, Mail, Channels, Chats, Terminals, and Screens. Each count observes
+/// its own source.
 private struct SidebarPrimaryDestinations: View {
     @Environment(DieterStore.self) private var store
 
@@ -109,6 +110,13 @@ private struct SidebarPrimaryDestinations: View {
                 Task { await store.openInbox() }
             }
             .accessibilityIdentifier("sidebar.inbox").e2eTarget("sidebar.inbox")
+
+            DieterNavRow(title: "Mail", symbol: "envelope", selected: section == .mail) {
+                SidebarMailCount()
+            } action: {
+                store.openMail()
+            }
+            .accessibilityIdentifier("sidebar.mail").e2eTarget("sidebar.mail")
 
             DieterNavRow(title: "Channels", symbol: "number", selected: section == .channels) {
                 SidebarChannelsCount()
@@ -163,6 +171,20 @@ private struct SidebarChannelsCount: View {
         if unread > 0 {
             DieterCountBadge(count: unread, tint: DieterTheme.coral)
                 .accessibilityLabel("\(store.channelsModel.slice.unreadLabel) unread")
+        }
+    }
+}
+
+/// Unread mail in every machine's Inbox, as the core counts and words it.
+private struct SidebarMailCount: View {
+    @Environment(DieterStore.self) private var store
+
+    var body: some View {
+        let slice = store.mailModel.slice
+        if slice.unread > 0 {
+            let label = slice.unreadLabel.isEmpty ? "\(slice.unread)" : slice.unreadLabel
+            DieterCountBadge(count: Int(slice.unread), tint: DieterTheme.action, label: label)
+                .accessibilityLabel("\(label) unread")
         }
     }
 }

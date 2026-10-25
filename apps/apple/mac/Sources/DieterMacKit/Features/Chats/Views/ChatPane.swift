@@ -50,12 +50,15 @@ enum ChatPaneLayout {
     case inbox
     /// Agent channels: the channel list beside the stream and its inspector.
     case channels
+    /// Agent mail: the message list beside the reading pane.
+    case mail
 
     var identifier: String {
         switch self {
         case .chats: "chats"
         case .inbox: "inbox"
         case .channels: "channels"
+        case .mail: "mail"
         }
     }
     var preference: String {
@@ -63,6 +66,7 @@ enum ChatPaneLayout {
         case .chats: "dieter.chatBrowserPaneWidth"
         case .inbox: "dieter.inboxPaneWidth"
         case .channels: "dieter.channelsPaneWidth"
+        case .mail: "dieter.mailPaneWidth"
         }
     }
     var defaultWidth: CGFloat {
@@ -70,6 +74,7 @@ enum ChatPaneLayout {
         case .chats: ChatPaneSizing.defaultWidth
         case .inbox: 340
         case .channels: 260
+        case .mail: 360
         }
     }
     var minimumWidth: CGFloat {
@@ -77,6 +82,7 @@ enum ChatPaneLayout {
         case .chats: ChatPaneSizing.minimumWidth
         case .inbox: 300
         case .channels: 220
+        case .mail: 320
         }
     }
     var maximumWidth: CGFloat {
@@ -84,6 +90,7 @@ enum ChatPaneLayout {
         case .chats: ChatPaneSizing.maximumWidth
         case .inbox: 420
         case .channels: 360
+        case .mail: 460
         }
     }
     var resizeLabel: String {
@@ -91,6 +98,7 @@ enum ChatPaneLayout {
         case .chats: "Resize chat browser"
         case .inbox: "Resize inbox"
         case .channels: "Resize channel list"
+        case .mail: "Resize message list"
         }
     }
 

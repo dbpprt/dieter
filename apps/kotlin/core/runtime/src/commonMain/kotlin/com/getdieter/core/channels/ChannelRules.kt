@@ -522,12 +522,7 @@ object ChannelRules {
         )
 
     /** "3", "99+"; empty for none. */
-    fun unreadLabel(count: Int): String =
-        when {
-            count <= 0 -> ""
-            count > 99 -> "99+"
-            else -> count.toString()
-        }
+    fun unreadLabel(count: Int): String = Counts.badge(count)
 
     /**
      * The composer of a channel named [name], read from [machineName] (null before a machine lists

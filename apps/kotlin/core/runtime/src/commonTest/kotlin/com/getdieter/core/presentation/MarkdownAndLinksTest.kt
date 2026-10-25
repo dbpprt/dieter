@@ -1,5 +1,6 @@
 package com.getdieter.core.presentation
 
+import com.getdieter.core.files.CodeLanguage
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -44,8 +45,7 @@ class MarkdownAndLinksTest {
         assertEquals(
             listOf(
                 MarkdownBlock.Heading(2, "Summary"),
-                MarkdownBlock.Bullet("Durable storage"),
-                MarkdownBlock.Bullet("Native Android client"),
+                bullets("Durable storage", "Native Android client"),
                 MarkdownBlock.Code("go test ./...\ngo vet ./...", "text"),
             ),
             blocks,
@@ -57,9 +57,10 @@ class MarkdownAndLinksTest {
             ),
             Markdown.parse("first line\nsecond line\n\nnext"),
         )
+        assertEquals(listOf(MarkdownBlock.Heading(5, "five")), Markdown.parse("##### five"))
         assertEquals(
-            listOf(MarkdownBlock.Paragraph("##### too deep")),
-            Markdown.parse("##### too deep"),
+            listOf(MarkdownBlock.Paragraph("####### too deep")),
+            Markdown.parse("####### too deep"),
         )
     }
 
@@ -73,8 +74,9 @@ class MarkdownAndLinksTest {
             listOf(
                 MarkdownBlock.Heading(2, "Title"),
                 MarkdownBlock.Paragraph("paragraph line"),
-                MarkdownBlock.Bullet("one"),
-                MarkdownBlock.Bullet("two"),
+                // Another bullet character starts another list.
+                bullets("one"),
+                bullets("two"),
                 MarkdownBlock.Code("val x = 1", "kotlin"),
             ),
             blocks.take(5),
@@ -149,11 +151,130 @@ class MarkdownAndLinksTest {
             "rows are fitted to the header",
         )
         assertEquals(
-            listOf(MarkdownBlock.Paragraph("a | b\n| - | - |")),
+            listOf(
+                MarkdownBlock.Table(
+                    listOf("a", "b"),
+                    listOf(TableAlignment.START, TableAlignment.START),
+                    emptyList(),
+                )
+            ),
             Markdown.parse("a | b\n| - | - |"),
-            "a delimiter needs three dashes",
+            "a delimiter cell needs one dash, as in GFM",
+        )
+        assertEquals(
+            listOf(MarkdownBlock.Paragraph("| a | b |\n| --- |")),
+            Markdown.parse("| a | b |\n| --- |"),
+            "the delimiter row must be as wide as the header",
         )
     }
+
+    @Test
+    fun linesEndingInCarriageReturnsAndTabIndentsParseAlike() {
+        assertEquals(
+            Markdown.parse("- one\n    - two\n\n```sh\nls\n```"),
+            Markdown.parse("- one\r\n\t- two\r\n\r\n```sh\r\nls\r\n```"),
+        )
+        val nested = assertIs<MarkdownBlock.ListBlock>(Markdown.parse("- one\n\t- two").single())
+        assertIs<MarkdownBlock.ListBlock>(nested.items.single().blocks[1])
+    }
+
+    @Test
+    fun inlineSpansNestAndBreaksAreKept() {
+        assertEquals(
+            listOf(
+                MarkdownInline.Text("a "),
+                MarkdownInline.Strong(
+                    listOf(
+                        MarkdownInline.Text("b "),
+                        MarkdownInline.Emphasis(listOf(MarkdownInline.Text("c"))),
+                    )
+                ),
+                MarkdownInline.Break(hard = true),
+                MarkdownInline.Text("d"),
+                MarkdownInline.Break(hard = false),
+                MarkdownInline.Strikethrough(listOf(MarkdownInline.Text("e"))),
+            ),
+            Markdown.inline("a **b *c***  \nd \n~~e~~"),
+        )
+        assertEquals(
+            listOf(
+                MarkdownInline.Link(
+                    "https://example.com/x",
+                    listOf(MarkdownInline.Text("https://example.com/x")),
+                    autolink = true,
+                ),
+                MarkdownInline.Text(" and "),
+                MarkdownInline.Link("README.md", listOf(MarkdownInline.Code("README"))),
+            ),
+            Markdown.inline("https://example.com/x and [`README`](README.md)"),
+            "addresses in prose are links, as in transcripts",
+        )
+        assertEquals(
+            "Build graph and code",
+            Markdown.plain(Markdown.inline("![Build graph](g.png) and `code`")),
+        )
+    }
+
+    @Test
+    fun hostileNestingStaysBounded() {
+        val quotes = Markdown.parse(">".repeat(10_000) + " deep")
+        assertIs<MarkdownBlock.Quote>(quotes.single())
+        val lists = Markdown.parse("- ".repeat(5_000) + "x")
+        assertIs<MarkdownBlock.ListBlock>(lists.single())
+        val emphasis = Markdown.inline("*a ".repeat(5_000) + "b" + "*".repeat(5_000))
+        assertEquals("a ".repeat(5_000) + "b", Markdown.plain(emphasis))
+        assertTrue(Markdown.inline("[".repeat(10_000) + "x" + "](y)".repeat(10_000)).isNotEmpty())
+    }
+
+    @Test
+    fun fenceLanguagesPickTheirHighlighter() {
+        assertEquals(CodeLanguage.SHELL, Markdown.codeLanguage("sh"))
+        assertEquals(CodeLanguage.SHELL, Markdown.codeLanguage("bash"))
+        assertEquals(CodeLanguage.KOTLIN, Markdown.codeLanguage("kotlin"))
+        assertEquals(CodeLanguage.KOTLIN, Markdown.codeLanguage("kt"))
+        assertEquals(CodeLanguage.TYPESCRIPT, Markdown.codeLanguage("ts"))
+        assertEquals(CodeLanguage.GO, Markdown.codeLanguage("Go"))
+        assertEquals(CodeLanguage.JSON, Markdown.codeLanguage("json"))
+        assertEquals(CodeLanguage.PLAIN_TEXT, Markdown.codeLanguage("mermaid"))
+        assertEquals(CodeLanguage.PLAIN_TEXT, Markdown.codeLanguage(""))
+    }
+
+    @Test
+    fun onlyProfileLinksOpenAndWorkspaceLinksStayInTheWorkspace() {
+        val root = "/work/repo"
+        assertEquals(
+            MarkdownLinkTarget.External("https://example.com/a"),
+            Markdown.link("https://example.com/a", root),
+        )
+        assertEquals(
+            MarkdownLinkTarget.External("mailto:ops@example.com"),
+            Markdown.link(" mailto:ops@example.com ", null),
+        )
+        assertEquals(MarkdownLinkTarget.File("README.md"), Markdown.link("README.md", root))
+        assertEquals(
+            MarkdownLinkTarget.File("src/app.kt", 12),
+            Markdown.link("src/app.kt#L12", root),
+        )
+        assertEquals(
+            MarkdownLinkTarget.File("notes.md"),
+            Markdown.link("file:///work/repo/notes.md", root),
+        )
+        // An operator's mail has no workspace; other schemes and escapes never open.
+        assertEquals(MarkdownLinkTarget.Inert, Markdown.link("README.md", null))
+        assertEquals(MarkdownLinkTarget.Inert, Markdown.link("README.md", " "))
+        assertEquals(MarkdownLinkTarget.Inert, Markdown.link("javascript:alert(1)", root))
+        assertEquals(MarkdownLinkTarget.Inert, Markdown.link("ftp://example.com/x", root))
+        assertEquals(MarkdownLinkTarget.Inert, Markdown.link("../outside.md", root))
+        assertEquals(MarkdownLinkTarget.Inert, Markdown.link("file:///etc/passwd", root))
+        assertEquals(MarkdownLinkTarget.Inert, Markdown.link("", root))
+    }
+
+    private fun bullets(vararg texts: String) =
+        MarkdownBlock.ListBlock(
+            ordered = false,
+            start = 0,
+            texts.map { MarkdownListItem(null, listOf(MarkdownBlock.Paragraph(it))) },
+        )
 
     @Test
     fun workspaceImageLinksStayInsideTheWorkspace() {

@@ -73,6 +73,22 @@ tags: [smoke]
     visible: "Mock harness received: .*Ping from the Mac.*"
     timeout: 300000
 - takeScreenshot: mac-conversation
+# Switching to another card and back must retain the reply just shown.
+- tapOn:
+    id: 'sidebar\.board\..+'
+- tapOn:
+    id: 'card\..+'
+    text: "Make reconnect feel effortless"
+- assertVisible: 'Keep drafts safe while a machine is offline\.'
+- tapOn:
+    id: 'card\..+'
+    text: "Design the mobile workspace"
+- assertVisible: "Mock harness received: .*Ping from the Mac.*"
+- extendedWaitUntil:
+    notVisible:
+      id: conversation.refreshing
+    timeout: 30000
+- takeScreenshot: mac-conversation-returned
 - tapOn:
     id: sidebar.inbox
 - extendedWaitUntil:

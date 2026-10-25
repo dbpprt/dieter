@@ -132,6 +132,8 @@ def markdown_links():
                 )
                 or (p.startswith("apps/") and "/node_modules/" not in p)
             )
+            # Markdown parser inputs: their links are test data, not references.
+            and not p.startswith("tests/fixtures/markdown/")
         }
     )
     errors = []

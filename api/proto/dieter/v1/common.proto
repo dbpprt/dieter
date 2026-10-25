@@ -195,6 +195,9 @@ message Card {
   // Owner-local: agent turns of this conversation may use the account vault.
   // Set only at creation; forks and merges never inherit it.
   bool vault_access = 47;
+  // Owner-local: agent turns of this conversation may send the user mail.
+  // Set only at creation; forks and merges never inherit it.
+  bool mail_access = 48;
 }
 
 message CardOrigin {

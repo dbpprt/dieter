@@ -101,7 +101,7 @@ func seedE2EFixture(data *boardstore.Store, project model.Project, board model.B
 	if err != nil {
 		return err
 	}
-	return nil
+	return seedE2EMail(data, project, board)
 }
 
 // channelMessagesInATurn is a turn that an agent channel message joined and a

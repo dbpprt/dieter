@@ -5,6 +5,8 @@ import com.getdieter.api.v1.ChangesCursor
 import com.getdieter.api.v1.ChangesFrame
 import com.getdieter.api.v1.Checkout
 import com.getdieter.api.v1.Conversation
+import com.getdieter.api.v1.MailFolder
+import com.getdieter.api.v1.MailHeader
 import com.getdieter.api.v1.PeerSyncDiagnostic
 import com.getdieter.api.v1.PeerSyncStatus
 import com.getdieter.core.sync.TestRecords.field
@@ -225,5 +227,68 @@ class MachineReplicaTest {
         assertEquals(cursor(1), restored.cursor)
         assertFalse(restored.replaying)
         assertNull(MachineReplica("fresh").cursor)
+    }
+
+    @Test
+    fun mailHeadersApplyLiveResetWithTheOwnerDataAndRoundTripThroughTheCache() {
+        val audit = MailHeader(id = "ml_a", subject = "Audit", sent_at = "2026-10-25T09:14:00Z")
+        val backup = MailHeader(id = "ml_b", subject = "Backup", read = true)
+        val replica = MachineReplica("m")
+        replica.apply(
+            ChangesFrame(
+                daemon_id = "m",
+                cursor = cursor(1),
+                reset_records = true,
+                reset_local = true,
+                caught_up = true,
+                mail = listOf(audit, backup),
+            )
+        )
+        assertEquals(setOf("ml_a", "ml_b"), replica.owner.mail.keys)
+
+        val read = audit.copy(read = true, folder = MailFolder.MAIL_FOLDER_ARCHIVE)
+        val change =
+            replica.apply(
+                ChangesFrame(
+                    daemon_id = "m",
+                    cursor = cursor(1, 2),
+                    caught_up = true,
+                    mail = listOf(read),
+                    removed_mail_ids = listOf("ml_b"),
+                )
+            )
+        assertTrue(change.owner, "a mail change is an owner change")
+        assertEquals(mapOf("ml_a" to read), replica.owner.mail)
+        assertEquals(
+            ReplicaChange.NONE,
+            replica.apply(
+                ChangesFrame(
+                    daemon_id = "m",
+                    cursor = cursor(1, 3),
+                    caught_up = true,
+                    removed_mail_ids = listOf("ml_unknown"),
+                )
+            ),
+            "removing a message it never listed changes nothing",
+        )
+
+        // The cached view keeps the headers.
+        val cached = ChangesFrame.ADAPTER.decode(ChangesFrame.ADAPTER.encode(replica.snapshot()))
+        assertEquals(listOf(read), cached.mail)
+        assertEquals(mapOf("ml_a" to read), MachineReplica("m", cached).owner.mail)
+
+        // A reset replaces the headers once caught up, like the rest of the owner data.
+        replica.apply(
+            ChangesFrame(
+                daemon_id = "m",
+                cursor = cursor(2, 1),
+                reset_records = true,
+                reset_local = true,
+                mail = listOf(backup),
+            )
+        )
+        assertEquals(mapOf("ml_a" to read), replica.owner.mail, "a replay is never half shown")
+        replica.apply(ChangesFrame(daemon_id = "m", cursor = cursor(2, 2), caught_up = true))
+        assertEquals(mapOf("ml_b" to backup), replica.owner.mail)
     }
 }

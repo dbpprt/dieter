@@ -209,11 +209,14 @@ func ResolveForWorkspace(settings model.Settings, detail model.CardDetail, label
 		return Resolution{}, fmt.Errorf("skill template: %w", err)
 	}
 	skill := render(skillTemplate, variables)
-	vault := ""
+	vault, mail := "", ""
 	if detail.Card.VaultAccess {
 		vault = VaultInstructions(cli)
 	}
-	instructions := BindWorkspace(joinSections(context, skill, vault), detail.Project.Path, workspace)
+	if detail.Card.MailAccess {
+		mail = MailInstructions(cli)
+	}
+	instructions := BindWorkspace(joinSections(context, skill, vault, mail), detail.Project.Path, workspace)
 	if len(instructions) > MaxRenderedBytes {
 		return Resolution{}, fault.Invalidf("rendered instructions exceed %d KiB", MaxRenderedBytes>>10)
 	}
@@ -229,6 +232,16 @@ func VaultInstructions(cli string) string {
 - Read the current TOTP code: DIETER vault totp ITEM
 - Only when a secret must be typed somewhere: DIETER vault get ITEM --field password --reveal. Never repeat secret values in replies, files, commits or logs.
 - Store a new credential without seeing it: DIETER vault add --name NAME [--url URL] [--username USER] --generate`, "DIETER", cli)
+}
+
+// MailInstructions are appended outside the configurable templates for
+// conversations created with mail access; cli is the CLI's shell word. They
+// name the Markdown profile every client renders and the send limits.
+func MailInstructions(cli string) string {
+	return strings.ReplaceAll(`## Mail to the user
+You can send the user a read-only report in Dieter Mail. The user reads it later and cannot reply; ask questions in this conversation instead.
+  DIETER mail send --subject "Nightly audit: 3 critical" --body-file report.md
+Write GitHub-flavored Markdown: headings, paragraphs, bold/italic/strikethrough, inline code, links, ordered/unordered/task lists, block quotes, horizontal rules, fenced code with a language, and tables (use column alignment; keep cells short). No HTML, images or diagrams. Link workspace files by relative path. Bodies are at most 128 KiB and 4,000 lines. Send one message per finished report, not progress updates; at most 10 per turn. Use --important only for failures that need action. Retry with the same --operation-id to avoid duplicates.`, "DIETER", cli)
 }
 
 // ChannelInstructions are appended to a card's instructions while agent

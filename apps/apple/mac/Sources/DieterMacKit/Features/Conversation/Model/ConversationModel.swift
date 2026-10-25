@@ -101,13 +101,16 @@ final class ConversationModel {
     /// until the core's first update, so opening a chat from another does not
     /// lay the conversation pane out twice.
     func observe(_ cardID: String?, chat: Bool = false) {
-        guard cardID != observedCardID else { return }
+        guard cardID != observedCardID || conversationError != nil else { return }
         subscription?.close()
         subscription = nil
         slice = nil
         unpresented = false
         presentationBaselineDaemons = []
         presumedChat = cardID == nil ? nil : chat
+        conversationSyncing = cardID != nil
+        conversationLastRefreshedAt = nil
+        conversationError = nil
         state = ClientConversationState()
         turnFailure = nil
         observedCardID = cardID
@@ -132,6 +135,7 @@ final class ConversationModel {
         case .failure(let failure):
             conversationError = failure.message
             conversationLoading = false
+            conversationSyncing = false
             return
         default:
             return

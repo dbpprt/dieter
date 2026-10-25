@@ -7,6 +7,7 @@ option java_multiple_files = true;
 option java_package = "com.getdieter.api.v1";
 
 import "dieter/v1/common.proto";
+import "dieter/v1/mail.proto";
 
 // Workspace state snapshots and the change stream.
 service StateService {
@@ -87,6 +88,10 @@ message ChangesFrame {
   PeerSyncStatus peer_sync = 12;
   // Present on initial/reset and whenever this owner's privacy state changes.
   MachinePrivacy privacy = 16;
+  // Headers of the mail this machine holds, without bodies (GetMail), in every
+  // folder.
+  repeated MailHeader mail = 17;
+  repeated string removed_mail_ids = 18;
 }
 
 message PeerSyncStatus { repeated PeerSyncDiagnostic issues = 1; }

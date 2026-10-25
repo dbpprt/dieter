@@ -6,6 +6,7 @@ import UserNotifications
 
 enum AppSection: String, CaseIterable, Identifiable, Sendable {
     case inbox = "Inbox"
+    case mail = "Mail"
     case channels = "Channels"
     case board = "Board"
     case chats = "All chats"
@@ -21,6 +22,7 @@ enum AppSection: String, CaseIterable, Identifiable, Sendable {
     var symbol: String {
         switch self {
         case .inbox: "tray"
+        case .mail: "envelope"
         case .channels: "number"
         case .board: "rectangle.split.3x1"
         case .chats: "bubble.left.and.bubble.right"

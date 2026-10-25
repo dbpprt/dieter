@@ -29,8 +29,11 @@ open class EndToEnd {
 
     fun e2e(block: suspend CoroutineScope.() -> Unit) = runBlocking { block() }
 
-    fun fixture(directRoute: String? = null, secondDaemon: Boolean = false) =
-        IsolatedGateway(directRoute, secondDaemon).also(fixtures::add)
+    fun fixture(
+        directRoute: String? = null,
+        secondDaemon: Boolean = false,
+        seeded: Boolean = false,
+    ) = IsolatedGateway(directRoute, secondDaemon, seeded).also(fixtures::add)
 
     suspend fun runtime(
         fixture: IsolatedGateway,

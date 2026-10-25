@@ -23,7 +23,7 @@ func TestAgentInstructionsNameRealCommandsAndFlags(t *testing.T) {
 		Project: model.Project{ID: "p_one", Name: "Atlas", Path: "/work/atlas"},
 		Board: model.Board{ID: "b_one", Name: "Delivery", Workflow: model.WorkflowReview,
 			Labels: []model.Label{{ID: "label_docs", Name: "docs"}}},
-		Card: model.Card{ID: "c_one", Scope: model.ConversationScopeBoard, Lane: model.LaneRunning, VaultAccess: true},
+		Card: model.Card{ID: "c_one", Scope: model.ConversationScopeBoard, Lane: model.LaneRunning, VaultAccess: true, MailAccess: true},
 	}
 	workspace := model.Workspace{Mode: model.WorkspaceModeProject, Path: "/work/atlas"}
 	board, err := dieterprompt.ResolveForWorkspace(settings, detail, nil, workspace, instructionCLI)
@@ -68,6 +68,22 @@ func TestAgentInstructionsNameRealCommandsAndFlags(t *testing.T) {
 	}
 	if commands < 15 {
 		t.Fatalf("found only %d instruction commands", commands)
+	}
+	// The mail block names send flags in its prose too.
+	var output bytes.Buffer
+	client := New(t.TempDir())
+	client.Out, client.Err = &output, &output
+	if err := client.Run([]string{"mail", "send", "--help"}); err != nil {
+		t.Fatal(err)
+	}
+	block := dieterprompt.MailInstructions(instructionCLI)
+	if !strings.Contains(board.Instructions, block) {
+		t.Fatal("the instructions of a conversation with mail access lack the mail block")
+	}
+	for _, flag := range regexp.MustCompile(`--[a-z][a-z-]*`).FindAllString(block, -1) {
+		if !regexp.MustCompile(regexp.QuoteMeta(flag) + `([^a-z-]|$)`).MatchString(output.String()) {
+			t.Errorf("dieter mail send --help does not list %s", flag)
+		}
 	}
 }
 

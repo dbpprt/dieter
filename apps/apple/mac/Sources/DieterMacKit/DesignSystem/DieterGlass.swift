@@ -528,9 +528,11 @@ struct DieterSegmentLabel: View {
 struct DieterCountBadge: View {
     let count: Int
     var tint: Color?
+    /// The core's wording of the count ("99+"), shown instead of `count`.
+    var label: String?
 
     var body: some View {
-        Text("\(count)")
+        Text(label ?? "\(count)")
             .font(.system(size: 10.5, weight: .semibold))
             .monospacedDigit()
             .foregroundStyle(tint ?? DieterTheme.subtle)

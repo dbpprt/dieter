@@ -24,6 +24,7 @@ import com.getdieter.core.conversation.TurnFailure
 import com.getdieter.core.metadata.MachineMetadata
 import com.getdieter.core.outbox.OutboxPolicy
 import com.getdieter.core.outbox.OutboxView
+import com.getdieter.core.runtime.Timestamps
 import com.getdieter.core.store.WorkspaceView
 import kotlin.time.Instant
 
@@ -121,6 +122,9 @@ object ConversationPresenter {
         cache: TimelineCache? = null,
     ): ConversationPresentation {
         val conversation = view.conversation
+        // Account previews may be ahead of a cached or delayed full transcript. They describe
+        // live work only; their truncated messages never replace the timeline or queued content.
+        val activity = view.activity ?: conversation
         val reported = view.card ?: fallbackCard
         val pendingStart = reported != null && startPending(reported, outbox)
         // A start still in the outbox shows as this client's start, on the card as it will look.
@@ -128,28 +132,39 @@ object ConversationPresenter {
         val inFlight = operation ?: CardOperation.STARTING.takeIf { pendingStart }
         val messages = view.messages
         val queue = conversation?.queue.orEmpty()
-        val runtime = Runtimes.resolved(card?.runtime, conversation?.status, inFlight)
+        val cardIsNewer =
+            Timestamps.compare(card?.runtime_updated_at.orEmpty(), activity?.updated_at.orEmpty()) >
+                0
+        val activityIsNewer =
+            Timestamps.compare(activity?.updated_at.orEmpty(), card?.runtime_updated_at.orEmpty()) >
+                0
+        val runtime =
+            Runtimes.resolved(
+                card?.runtime?.takeUnless { activityIsNewer },
+                activity?.status?.takeUnless { cardIsNewer },
+                inFlight,
+            )
         val activeTurn = Runtimes.isActive(runtime)
         // Optimistic sends and queued follow-ups never describe the provider's turn.
         val excluded =
             queue.mapTo(HashSet()) { it.id } + outbox.pendingMessageIds + outbox.failedIds
-        val live = conversation?.messages.orEmpty().filterNot { it.id in excluded }
+        val live = activity?.messages.orEmpty().filterNot { it.id in excluded }
         val neverSent = card != null && card.initial_prompt_sent_at.isEmpty()
         val draftAttachments =
             if (neverSent) conversation?.draft_attachments.orEmpty() else emptyList()
         val liveActivity =
             LiveActivities.resolve(
                 live,
-                conversation?.pending_tools.orEmpty(),
-                conversation?.task_plans.orEmpty(),
+                activity?.pending_tools.orEmpty(),
+                activity?.task_plans.orEmpty(),
                 showReasoning,
                 // A local start or cancel shows as "Starting agent…" or "Stopping…" before the
                 // daemon reports it.
-                conversation?.status,
+                activity?.status,
                 runtime,
-                conversation?.provider_status,
+                activity?.provider_status,
             )
-        val turnFailure = TurnFailure.resolve(messages, conversation?.status, reported?.runtime)
+        val turnFailure = TurnFailure.resolve(messages, activity?.status, reported?.runtime)
         return ConversationPresentation(
             card = card,
             timeline =
@@ -195,11 +210,13 @@ object ConversationPresenter {
             canHalt =
                 inFlight != CardOperation.CANCELLING &&
                     (Runtimes.classify(runtime) == RuntimeState.ACTIVE ||
-                        listOf(conversation?.status, card?.runtime).any {
-                            Runtimes.classify(it) == RuntimeState.NEEDS_INPUT
-                        }),
+                        listOf(
+                                activity?.status?.takeUnless { cardIsNewer },
+                                card?.runtime?.takeUnless { activityIsNewer },
+                            )
+                            .any { Runtimes.classify(it) == RuntimeState.NEEDS_INPUT }),
             pendingTools =
-                LiveActivities.unfinishedPendingTools(live, conversation?.pending_tools.orEmpty()),
+                LiveActivities.unfinishedPendingTools(live, activity?.pending_tools.orEmpty()),
             chat = card != null && Cards.isChat(card),
             showReasoning = showReasoning,
             pendingIds = outbox.pendingMessageIds,

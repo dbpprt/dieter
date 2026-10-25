@@ -212,6 +212,18 @@ public nonisolated struct Dieter_V1_ChangesFrame: @unchecked Sendable {
   /// Clears the value of `privacy`. Subsequent reads from it will return its default value.
   public mutating func clearPrivacy() {_uniqueStorage()._privacy = nil}
 
+  /// Headers of the mail this machine holds, without bodies (GetMail), in every
+  /// folder.
+  public var mail: [Dieter_V1_MailHeader] {
+    get {_storage._mail}
+    set {_uniqueStorage()._mail = newValue}
+  }
+
+  public var removedMailIds: [String] {
+    get {_storage._removedMailIds}
+    set {_uniqueStorage()._removedMailIds = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -386,7 +398,7 @@ nonisolated extension Dieter_V1_ChangesRequest: SwiftProtobuf.Message, SwiftProt
 
 nonisolated extension Dieter_V1_ChangesFrame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ChangesFrame"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0\u{1}cursor\0\u{3}reset_records\0\u{3}reset_local\0\u{3}caught_up\0\u{1}heartbeat\0\u{1}records\0\u{3}owned_cards\0\u{3}removed_owned_card_ids\0\u{1}activities\0\u{3}removed_activity_ids\0\u{3}peer_sync\0\u{1}account\0\u{3}owned_checkouts\0\u{3}removed_owned_checkout_ids\0\u{1}privacy\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0\u{1}cursor\0\u{3}reset_records\0\u{3}reset_local\0\u{3}caught_up\0\u{1}heartbeat\0\u{1}records\0\u{3}owned_cards\0\u{3}removed_owned_card_ids\0\u{1}activities\0\u{3}removed_activity_ids\0\u{3}peer_sync\0\u{1}account\0\u{3}owned_checkouts\0\u{3}removed_owned_checkout_ids\0\u{1}privacy\0\u{1}mail\0\u{3}removed_mail_ids\0")
 
   fileprivate class _StorageClass {
     var _daemonID: String = String()
@@ -405,6 +417,8 @@ nonisolated extension Dieter_V1_ChangesFrame: SwiftProtobuf.Message, SwiftProtob
     var _removedActivityIds: [String] = []
     var _peerSync: Dieter_V1_PeerSyncStatus? = nil
     var _privacy: Dieter_V1_MachinePrivacy? = nil
+    var _mail: [Dieter_V1_MailHeader] = []
+    var _removedMailIds: [String] = []
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -431,6 +445,8 @@ nonisolated extension Dieter_V1_ChangesFrame: SwiftProtobuf.Message, SwiftProtob
       _removedActivityIds = source._removedActivityIds
       _peerSync = source._peerSync
       _privacy = source._privacy
+      _mail = source._mail
+      _removedMailIds = source._removedMailIds
     }
   }
 
@@ -465,6 +481,8 @@ nonisolated extension Dieter_V1_ChangesFrame: SwiftProtobuf.Message, SwiftProtob
         case 14: try { try decoder.decodeRepeatedMessageField(value: &_storage._ownedCheckouts) }()
         case 15: try { try decoder.decodeRepeatedStringField(value: &_storage._removedOwnedCheckoutIds) }()
         case 16: try { try decoder.decodeSingularMessageField(value: &_storage._privacy) }()
+        case 17: try { try decoder.decodeRepeatedMessageField(value: &_storage._mail) }()
+        case 18: try { try decoder.decodeRepeatedStringField(value: &_storage._removedMailIds) }()
         default: break
         }
       }
@@ -525,6 +543,12 @@ nonisolated extension Dieter_V1_ChangesFrame: SwiftProtobuf.Message, SwiftProtob
       try { if let v = _storage._privacy {
         try visitor.visitSingularMessageField(value: v, fieldNumber: 16)
       } }()
+      if !_storage._mail.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._mail, fieldNumber: 17)
+      }
+      if !_storage._removedMailIds.isEmpty {
+        try visitor.visitRepeatedStringField(value: _storage._removedMailIds, fieldNumber: 18)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -550,6 +574,8 @@ nonisolated extension Dieter_V1_ChangesFrame: SwiftProtobuf.Message, SwiftProtob
         if _storage._removedActivityIds != rhs_storage._removedActivityIds {return false}
         if _storage._peerSync != rhs_storage._peerSync {return false}
         if _storage._privacy != rhs_storage._privacy {return false}
+        if _storage._mail != rhs_storage._mail {return false}
+        if _storage._removedMailIds != rhs_storage._removedMailIds {return false}
         return true
       }
       if !storagesAreEqual {return false}

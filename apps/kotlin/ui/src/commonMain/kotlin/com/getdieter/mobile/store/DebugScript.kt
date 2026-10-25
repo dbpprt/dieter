@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.first
 /**
  * Debug builds only: replays navigation steps so screenshots of any screen can be taken without
  * touch automation. Steps are separated by ";", e.g. "tab projects; board Main; card Design; pane
- * subagents" or "channel Pricing".
+ * subagents", "channel Pricing" or "tab mail; mail Dependency audit".
  */
 internal suspend fun MobileStore.runDebugScript(script: String) {
     workspace.slice.first { it.loaded }
@@ -31,6 +31,18 @@ internal suspend fun MobileStore.runDebugScript(script: String) {
                 workspace.slice.value.projects
                     .firstOrNull { it.name.startsWith(argument, true) }
                     ?.let { openChannel(it.id) }
+            "mail" ->
+                mail.slice.value.sections
+                    .flatMap { it.rows }
+                    .firstOrNull { it.subject.startsWith(argument, true) }
+                    ?.ref
+                    ?.let {
+                        if (routes.value.tab != MobileTab.MAIL) selectTab(MobileTab.MAIL)
+                        showFrom(
+                            MobileRoute.Root(MobileTab.MAIL),
+                            MobileRoute.MailMessage(it.daemon_id, it.id),
+                        )
+                    }
             "card",
             "chat" ->
                 cards

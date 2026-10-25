@@ -1,0 +1,8 @@
+[
+  {"code": "go get golang.org/x/net@v0.33.0\ngo mod tidy && go test ./...", "language": "sh"},
+  {"code": "val x = 1", "language": "kotlin"},
+  {"code": "print(\"tildes\")", "language": "python"},
+  {"code": "```\nA fence inside a longer fence\n```", "language": "markdown"},
+  {"code": "No language\n\n# Not a heading inside code\n- not a list", "language": ""},
+  {"code": "Indented fence content\n  keeps its relative indentation", "language": ""}
+]

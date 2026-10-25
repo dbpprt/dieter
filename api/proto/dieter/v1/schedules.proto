@@ -63,6 +63,8 @@ message Schedule {
   string workspace_mode = 25;
   // Cards created by this schedule get vault access. Owner-local.
   bool vault_access = 42;
+  // Cards created by this schedule may send the user mail. Owner-local.
+  bool mail_access = 43;
 }
 
 message ScheduleDraft {
@@ -87,6 +89,7 @@ message ScheduleDraft {
   map<string, string> provider_options = 18;
   string workspace_mode = 19;
   bool vault_access = 41;
+  bool mail_access = 42;
 }
 
 message SaveScheduleRequest {

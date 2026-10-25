@@ -2,6 +2,7 @@ package com.getdieter.core.sync
 
 import com.getdieter.api.v1.ChangesCursor
 import com.getdieter.api.v1.ChangesFrame
+import com.getdieter.api.v1.MailHeader
 import com.getdieter.core.runtime.SilentLogger
 import com.getdieter.core.storage.CoreStorage
 import com.getdieter.core.store.WorkspaceStore
@@ -231,5 +232,31 @@ class AccountSyncTest {
         sync.publish()
         assertEquals("c", store.state.value.card("c")?.title, "then the replayed view replaces it")
         assertEquals("e2", sync.cursor("studio")?.records_epoch)
+    }
+
+    @Test
+    fun everyMachinesMailIsInTheViewAndInItsCache() = runTest {
+        val sync = AccountSync(WorkspaceStore(), backgroundScope, clock, SilentLogger)
+        sync.bind(storage)
+        val header = MailHeader(id = "ml_1", subject = "Audit")
+        sync.apply("studio", frame(1).copy(mail = listOf(header)))
+        sync.apply(
+            "office",
+            frame(1).copy(daemon_id = "office", records = emptyList(), mail = listOf(header)),
+        )
+        sync.publish()
+        assertEquals(
+            mapOf("studio" to mapOf("ml_1" to header), "office" to mapOf("ml_1" to header)),
+            sync.snapshot.value.mail,
+            "the same ID on two machines is two messages",
+        )
+        sync.flush()
+
+        val restored = AccountSync(WorkspaceStore(), backgroundScope, clock, SilentLogger)
+        restored.bind(storage)
+        assertEquals(sync.snapshot.value.mail, restored.snapshot.value.mail)
+        restored.forget("office")
+        restored.publish()
+        assertEquals(setOf("studio"), restored.snapshot.value.mail.keys)
     }
 }

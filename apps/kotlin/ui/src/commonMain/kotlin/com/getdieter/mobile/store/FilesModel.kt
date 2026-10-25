@@ -51,6 +51,17 @@ internal constructor(
         )
     }
 
+    /** Binds Files to [checkoutId] on [daemonId], e.g. for a workspace link in mail. */
+    internal fun bindCheckout(daemonId: String, projectId: String, checkoutId: String) =
+        bind(
+            FilesTarget(
+                daemon_id = daemonId,
+                project_id = projectId,
+                checkout_id = checkoutId,
+                card_id = "",
+            )
+        )
+
     /** Binds Files to an open conversation's workspace. */
     internal fun bindCard(daemonId: String, projectId: String, cardId: String) =
         bind(

@@ -530,7 +530,7 @@ private fun ScheduleEditor(store: MobileStore, scheduleId: String, onDismiss: ()
             store.creation.update(store.creation.intent.value, choice)
         }
         SectionHeader("Behavior")
-        Group(listOf(0, 1, 2, 3)) { index, position ->
+        Group(listOf(0, 1, 2, 3, 4)) { index, position ->
             when (index) {
                 0 ->
                     PickerRow(
@@ -564,6 +564,19 @@ private fun ScheduleEditor(store: MobileStore, scheduleId: String, onDismiss: ()
                                 value.vault_access,
                                 { draft = value.copy(vault_access = it) },
                                 Modifier.testTag("schedule-vault-access"),
+                            )
+                        },
+                    )
+                4 ->
+                    ListRow(
+                        "Allow mail",
+                        position = position,
+                        subtitle = "Runs may send you reports",
+                        trailing = {
+                            DSwitch(
+                                value.mail_access,
+                                { draft = value.copy(mail_access = it) },
+                                Modifier.testTag("schedule-mail-access"),
                             )
                         },
                     )

@@ -93,7 +93,7 @@ linters:
             - pkg: github.com/dbpprt/dieter/internal/cli
               desc: storage is daemon-side
         # The store aggregates form an acyclic graph (internal/store/store.go):
-        # home <- replica, leases, settings, commands, channels <- kv (home, replica) <-
+        # home <- replica, leases, settings, commands, channels, mail <- kv (home, replica) <-
         # kanban (home, replica, leases) <- workspaces, conversations, schedules.
         # Only the composition root imports every aggregate; vaults and
         # daemonstate build on the composed store. Lax mode: an allowed
@@ -115,6 +115,7 @@ linters:
             - "**/internal/store/settings/**"
             - "**/internal/store/commands/**"
             - "**/internal/store/channels/**"
+            - "**/internal/store/mail/**"
             - "!$test"
           allow:
             - github.com/dbpprt/dieter/internal/store/home

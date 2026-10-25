@@ -115,6 +115,14 @@ struct NewConversationSheet: View {
                         "Let this task's agent use the account vault's passwords and TOTP codes. "
                             + "Set only when creating."
                     )
+                    LabeledContent("Mail") {
+                        Toggle("Allow the agent to send you mail", isOn: $form.intent.mailAccess)
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                            .accessibilityIdentifier("new-card.mail-access")
+                            .e2eTarget("new-card.mail-access")
+                    }
+                    .help("Let this task's agent send you reports in Mail. Set only when creating.")
 
                     if preview.catalog == .none {
                         HStack(spacing: 8) {
@@ -184,6 +192,7 @@ struct NewConversationSheet: View {
                     .keyboardShortcut(.cancelAction)
                     .disabled(submitting)
                     .accessibilityIdentifier("new-card.cancel")
+                    .e2eTarget("new-card.cancel")
                 let startLane = preview.startLanes.first { $0.id == form.lane }
                 Button(preview.defersStart ? "Save to \(startLane?.name ?? "board")" : "Start task") {
                     Task { await submit() }

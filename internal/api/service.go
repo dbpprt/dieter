@@ -29,6 +29,7 @@ type (
 	peerAPI          struct{ server *Server }
 	trustAPI         struct{ server *Server }
 	channelsAPI      struct{ server *Server }
+	mailAPI          struct{ server *Server }
 )
 
 // service composes every domain handler: the whole daemon API, Dieter's only
@@ -55,6 +56,7 @@ type service struct {
 	*peerAPI
 	*trustAPI
 	*channelsAPI
+	*mailAPI
 }
 
 var (
@@ -77,6 +79,7 @@ var (
 	_ dieterv1connect.PeerServiceHandler         = (*peerAPI)(nil)
 	_ dieterv1connect.TrustServiceHandler        = (*trustAPI)(nil)
 	_ dieterv1connect.ChannelServiceHandler      = (*channelsAPI)(nil)
+	_ dieterv1connect.MailServiceHandler         = (*mailAPI)(nil)
 )
 
 func newService(s *Server) *service {
@@ -87,6 +90,7 @@ func newService(s *Server) *service {
 		terminalsAPI: &terminalsAPI{s}, executionsAPI: &executionsAPI{s}, screensAPI: &screensAPI{s},
 		controlAPI: &controlAPI{s}, schedulesAPI: &schedulesAPI{s}, vaultAPI: &vaultAPI{s},
 		kvAPI: &kvAPI{s}, peerAPI: &peerAPI{s}, trustAPI: &trustAPI{s}, channelsAPI: &channelsAPI{s},
+		mailAPI: &mailAPI{s},
 	}
 }
 
@@ -113,6 +117,7 @@ func (svc *service) handlers(options ...connect.HandlerOption) map[string]http.H
 	add(dieterv1connect.NewPeerServiceHandler(svc.peerAPI, options...))
 	add(dieterv1connect.NewTrustServiceHandler(svc.trustAPI, options...))
 	add(dieterv1connect.NewChannelServiceHandler(svc.channelsAPI, options...))
+	add(dieterv1connect.NewMailServiceHandler(svc.mailAPI, options...))
 	return result
 }
 

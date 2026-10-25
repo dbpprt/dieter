@@ -109,7 +109,7 @@ func TestBindWorkspaceUpgradesPersistedInstructionsOnce(t *testing.T) {
 func TestDefaultInstructionsRunTheDaemonsCLI(t *testing.T) {
 	t.Parallel()
 	detail := promptDetail()
-	detail.Card.VaultAccess = true
+	detail.Card.VaultAccess, detail.Card.MailAccess = true, true
 	workspace := model.Workspace{Mode: model.WorkspaceModeProject, Path: "/work/atlas"}
 	cli := CLIWord("/opt/homebrew/var/dieter/service/bin/dieter")
 	resolved, err := ResolveForWorkspace(NormalizeSettings(model.Settings{}), detail, detail.Card.LabelIDs, workspace, cli)
@@ -125,6 +125,8 @@ func TestDefaultInstructionsRunTheDaemonsCLI(t *testing.T) {
 		"Board labels: Android (android), Security (security).",
 		cli + " card labels c_one --set",
 		cli + " vault exec ITEM --env NAME=password",
+		"## Mail to the user",
+		cli + ` mail send --subject "Nightly audit: 3 critical" --body-file report.md`,
 	} {
 		if !strings.Contains(resolved.Instructions, expected) {
 			t.Fatalf("instructions missing %q:\n%s", expected, resolved.Instructions)
@@ -132,15 +134,21 @@ func TestDefaultInstructionsRunTheDaemonsCLI(t *testing.T) {
 	}
 	// Every command names the daemon's binary; the harness runtime explains
 	// its own tools, so the templates do not repeat them.
-	for _, unexpected := range []string{"`dieter ", " dieter card", " dieter vault", "present_content", "start_background_process"} {
+	for _, unexpected := range []string{"`dieter ", " dieter card", " dieter vault", " dieter mail", "present_content", "start_background_process"} {
 		if strings.Contains(resolved.Instructions, unexpected) {
 			t.Fatalf("instructions contain %q:\n%s", unexpected, resolved.Instructions)
 		}
 	}
-	detail.Card.Scope, detail.Card.BoardID, detail.Card.VaultAccess = model.ConversationScopeChat, "", false
+	detail.Card.Scope, detail.Card.BoardID, detail.Card.VaultAccess, detail.Card.MailAccess = model.ConversationScopeChat, "", false, false
 	chat, err := ResolveForWorkspace(NormalizeSettings(model.Settings{}), detail, nil, workspace, cli)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// A conversation without mail access never learns how to send mail.
+	for _, unexpected := range []string{"mail send", "Dieter Mail", "vault exec"} {
+		if strings.Contains(chat.Instructions, unexpected) {
+			t.Fatalf("instructions without access contain %q:\n%s", unexpected, chat.Instructions)
+		}
 	}
 	if !strings.Contains(chat.Skill, "standalone chat c_one") || !strings.Contains(chat.Skill, cli+" chat --help") || strings.Contains(chat.Skill, "card move") {
 		t.Fatalf("chat skill = %q", chat.Skill)

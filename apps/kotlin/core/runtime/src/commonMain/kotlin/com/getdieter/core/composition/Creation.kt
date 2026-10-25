@@ -85,6 +85,8 @@ data class CreationInput(
     val remotePublishMode: String = "",
     /** The conversation's agent turns may use the account vault. */
     val vaultAccess: Boolean = false,
+    /** The conversation's agent turns may send the user mail. */
+    val mailAccess: Boolean = false,
 )
 
 /** The agent catalog a new conversation is checked against, relative to its destination machine. */
@@ -390,6 +392,7 @@ object Creation {
                 else "",
             auto_generate_title = Titles.generated(input.title, input.prompt),
             vault_access = input.vaultAccess,
+            mail_access = input.mailAccess,
         )
     }
 

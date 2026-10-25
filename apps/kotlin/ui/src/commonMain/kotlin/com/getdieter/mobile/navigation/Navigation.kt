@@ -4,11 +4,12 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import com.getdieter.mobile.design.*
 
-/** The primary destinations. */
+/** The primary destinations, in navigation order. */
 enum class MobileTab(val title: String) {
     INBOX("Inbox"),
     PROJECTS("Projects"),
     CHATS("Chats"),
+    MAIL("Mail"),
     CHANNELS("Channels"),
     TOOLS("Tools"),
 }
@@ -19,6 +20,7 @@ internal val MobileTab.glyph: Glyph
             MobileTab.INBOX -> Glyph.INBOX
             MobileTab.PROJECTS -> Glyph.PROJECTS
             MobileTab.CHATS -> Glyph.CHATS
+            MobileTab.MAIL -> Glyph.MAIL
             MobileTab.CHANNELS -> Glyph.TAG
             MobileTab.TOOLS -> Glyph.TOOLS
         }
@@ -39,6 +41,8 @@ internal val MobileTab.emptyDetail: EmptyDetail
                 EmptyDetail(Glyph.BOARD, "No task selected", "Open a board and choose a task.")
             MobileTab.CHATS ->
                 EmptyDetail(Glyph.CHATS, "No chat selected", "Choose a chat or start a new one.")
+            MobileTab.MAIL ->
+                EmptyDetail(Glyph.MAIL, "No message selected", "Choose a message to read it.")
             MobileTab.CHANNELS ->
                 EmptyDetail(
                     Glyph.TAG,
@@ -131,11 +135,28 @@ sealed class MobileRoute {
         override val key = "share/${if (chat) "chat" else "task"}"
     }
 
-    /** A folder or document below a Files root; [cardId] scopes it to a conversation. */
-    data class FilePath(val path: String, val file: Boolean, val cardId: String = "") :
-        MobileRoute() {
-        override val key = "file/$cardId/${if (file) "doc" else "dir"}/$path"
+    /**
+     * A folder or document below a Files root; [cardId] scopes it to a conversation, a [checkoutId]
+     * on [daemonId] (in [projectId]) to that checkout, e.g. a workspace link in mail.
+     */
+    data class FilePath(
+        val path: String,
+        val file: Boolean,
+        val cardId: String = "",
+        val daemonId: String = "",
+        val projectId: String = "",
+        val checkoutId: String = "",
+    ) : MobileRoute() {
+        override val key =
+            "file/" +
+                (if (checkoutId.isEmpty()) cardId else "$daemonId:$checkoutId") +
+                "/${if (file) "doc" else "dir"}/$path"
         override val immersive = cardId.isNotEmpty() || file
+    }
+
+    /** A mail message on [daemonId], beside the mailbox on wide layouts. */
+    data class MailMessage(val daemonId: String, val id: String) : MobileRoute() {
+        override val key = "mail/$daemonId/$id"
     }
 
     data class Machine(val machineId: String) : MobileRoute() {

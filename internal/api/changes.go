@@ -86,7 +86,8 @@ func (s *changeStream) records(frame *dieterv1.ChangesFrame) (bool, error) {
 func (s *changeStream) hasContent(frame *dieterv1.ChangesFrame) bool {
 	return frame.ResetRecords || frame.ResetLocal || len(frame.Records) > 0 || len(frame.OwnedCards) > 0 ||
 		len(frame.RemovedOwnedCardIds) > 0 || len(frame.OwnedCheckouts) > 0 || len(frame.RemovedOwnedCheckoutIds) > 0 ||
-		len(frame.Activities) > 0 || len(frame.RemovedActivityIds) > 0 || frame.PeerSync != nil || frame.Privacy != nil
+		len(frame.Activities) > 0 || len(frame.RemovedActivityIds) > 0 || frame.PeerSync != nil || frame.Privacy != nil ||
+		len(frame.Mail) > 0 || len(frame.RemovedMailIds) > 0
 }
 
 func addLocalChange(frame *dieterv1.ChangesFrame, change localChange) {
@@ -112,6 +113,10 @@ func addLocalChange(frame *dieterv1.ChangesFrame, change localChange) {
 		frame.RemovedActivityIds = append(frame.RemovedActivityIds, id)
 	case kind == "activity":
 		frame.Activities = append(frame.Activities, change.entry.activity)
+	case kind == "mail" && change.entry.removed:
+		frame.RemovedMailIds = append(frame.RemovedMailIds, id)
+	case kind == "mail":
+		frame.Mail = append(frame.Mail, change.entry.mail)
 	}
 }
 

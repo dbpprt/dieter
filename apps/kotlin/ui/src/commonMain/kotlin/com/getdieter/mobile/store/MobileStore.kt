@@ -54,6 +54,8 @@ class MobileStore(
     val screens: ScreensModel = ScreensModel(context)
     val devices: DevicesModel = DevicesModel(context)
     val channels: ChannelsModel = ChannelsModel(context)
+    val mail: MailModel = MailModel(context)
+
     private var activeTop = ""
 
     init {
@@ -70,6 +72,7 @@ class MobileStore(
         terminals.subscribe()
         screens.subscribe()
         channels.subscribe()
+        mail.subscribe()
         conversation.loadDrafts()
     }
 
@@ -256,6 +259,15 @@ class MobileStore(
             screens.open(screen.machineId)
         machines.select((stack.lastOrNull() as? MobileRoute.Machine)?.machineId.orEmpty())
         channels.show((state.top as? MobileRoute.Channel)?.projectId)
+        // The message open in the Mail tab stays selected beneath a conversation it opened.
+        mail.show(
+            state.stacks
+                .getValue(MobileTab.MAIL)
+                .lastOrNull { it is MobileRoute.MailMessage }
+                ?.let { it as MobileRoute.MailMessage }
+                ?.let { MailMessageRef(daemon_id = it.daemonId, id = it.id) }
+        )
+        mail.setActive(state.tab == MobileTab.MAIL)
         val top = state.modal ?: state.top
         if (top.key == activeTop) return
         activeTop = top.key
@@ -276,11 +288,14 @@ class MobileStore(
             is MobileRoute.Pane ->
                 if (top.pane == CardPane.FILES && files.slice.value.directory.isNotEmpty())
                     files.command(FilesCommand(navigate = FilesPath("")))
-            is MobileRoute.FilePath ->
+            is MobileRoute.FilePath -> {
+                if (top.checkoutId.isNotEmpty())
+                    files.bindCheckout(top.daemonId, top.projectId, top.checkoutId)
                 files.command(
                     if (top.file) FilesCommand(open_ = FilesPath(top.path))
                     else FilesCommand(navigate = FilesPath(top.path))
                 )
+            }
             is MobileRoute.TerminalSession ->
                 terminals.select(top.terminalId, inCard = top.cardId.isNotEmpty())
             else -> Unit
@@ -341,5 +356,6 @@ class MobileStore(
         const val PROCESSES_SCOPE = "mobile-processes"
         const val SCREEN_SCOPE = "mobile-screen"
         const val CHANNELS_SCOPE = "mobile-channels"
+        const val MAIL_SCOPE = "mobile-mail"
     }
 }

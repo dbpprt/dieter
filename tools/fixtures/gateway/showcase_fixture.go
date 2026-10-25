@@ -112,7 +112,13 @@ func seedShowcaseOffice(ctx context.Context, home string, data *boardstore.Store
 	}
 	atlas := s.projects["Atlas API"]
 	board, err := s.board(data, atlas, atlasBoard.name)
-	return s, atlas, board, err
+	if err != nil {
+		return nil, model.Project{}, model.Board{}, err
+	}
+	if err := seedShowcaseMail(data, atlas, board); err != nil {
+		return nil, model.Project{}, model.Board{}, err
+	}
+	return s, atlas, board, nil
 }
 
 func (s *showcase) board(data *boardstore.Store, project model.Project, name string) (model.Board, error) {

@@ -300,6 +300,7 @@ class ScheduleRulesTest {
                 misfire_policy = "latest",
                 provider_options = mapOf("personality" to "pragmatic"),
                 vault_access = true,
+                mail_access = true,
             )
         val agents =
             listOf(
@@ -340,8 +341,13 @@ class ScheduleRulesTest {
                 provider_options = mapOf("personality" to "pragmatic"),
                 workspace_mode = "project",
                 vault_access = true,
+                mail_access = true,
             )
         assertEquals(expected, draft, "a saved agent is kept even when the machine offers others")
+        assertTrue(
+            ScheduleDrafts.normalized(draft, "project", "c1").mail_access,
+            "a saved schedule keeps its mail access",
+        )
     }
 
     @Test

@@ -14,6 +14,8 @@ struct CommandPalette: View {
             ("New card", "rectangle.badge.plus", { store.createConversationPresented = true }),
             ("New standalone chat", "bubble.left.and.bubble.right.fill", { store.beginStandaloneChat() }),
             ("Open inbox", "tray", { Task { await store.openInbox() } }),
+            ("Open Mail", "envelope", { store.openMail() }),
+            ("Mark all mail read", "envelope.open", { Task { await store.mailModel.markAllRead() } }),
             ("Open all chats", "bubble.left.and.bubble.right", { Task { await store.openChats() } }),
             ("Open terminals", "terminal", { Task { await store.openTerminals() } }),
             (

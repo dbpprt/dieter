@@ -43,6 +43,11 @@ for that half; `caughtUp` marks a complete view and heartbeats repeat the
 cursor. A frame is sent only when something changed, so an idle machine emits
 heartbeats alone. Native clients hold this stream for every online machine and
 merge the records; no machine is primary.
+Native clients also keep at most eight recent full-transcript watches warm
+across navigation. Older transcripts reopen from a bounded cache, marked
+refreshing until an owner read catches up with known account activity. Slow
+watches get a bounded unary read; activity previews never replace full messages.
+Offline or unresponsive machines leave cached messages readable with a warning.
 
 For another enrolled machine, first enroll the local daemon, then pass the
 target's exact ID or unique name as a global option before the command. The CLI
@@ -1114,6 +1119,40 @@ existing member after comparing the codes both machines print. `vault join
 --recovery-key-stdin` joins offline. `vault remove-member MEMBER` revokes and
 rotates; `vault rotate --recovery-key` replaces the recovery key. `vault audit`
 shows this machine's access log without secret values.
+
+### Mail to the user (reports)
+
+`dieter mail` sends one-way Markdown reports to the user's Dieter Mail. A
+message stays on the machine that received it, with its read, flag and folder
+state (Inbox, Archive, Trash; the Trash empties after 30 days), and every
+client lists it in Mail. There is no reply: mail never reaches an agent.
+
+```sh
+dieter mail send --subject "Nightly audit: 3 critical" --body-file report.md [--important] [--operation-id ID]
+printf '%s' "$REPORT" | dieter mail send --subject TEXT --body-file - --from backup.sh   # operators only
+dieter mail list [--folder inbox|archive|trash|all] [--unread] [--flagged] [--limit N] [--before ID] [--format table|json]
+dieter mail show [--raw] ID                           # header and Markdown body
+dieter mail mark [--read|--unread] [--flag|--unflag] [--folder inbox|archive|trash] ID...
+dieter mail delete ID... | dieter mail delete --empty-trash
+```
+
+Agent turns may only send, and only when their card, chat or schedule was
+created with `--mail` (fixed at creation for cards and chats; `schedule
+update --mail=true|false` changes later runs). A turn cannot grant mail access
+it lacks to a card, chat or schedule it creates. Agents cannot set `--from`,
+list, show, mark or delete mail, and must not use `--machine` with mail
+commands. Scripts and jobs without a turn token send as the operator, named
+by `--from`.
+
+Write GitHub-flavored Markdown: headings, emphasis, inline code, links, lists,
+task lists, quotes, rules, fenced code with a language and aligned tables. No
+HTML, images or diagrams; link workspace files by relative path. Limits: a
+one-line subject of at most 200 characters; a body of at most 128 KiB and 4,000
+lines of at most 8 KiB each; at most 10 messages per turn and 50 per
+conversation in 24 hours. Send one message per finished report, use
+`--important` only for failures that need action, and retry with the same
+`--operation-id` to avoid duplicates. Revealed vault secrets are redacted from
+mail as from transcripts.
 
 ### Device trust (pairing machines and apps)
 

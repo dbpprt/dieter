@@ -161,6 +161,14 @@ only when their conversation was created with vault access. Agents run
 unsandboxed as your user, so treat that rule as protection against mistakes
 plus an audit trail, not as isolation.
 
+## Mail
+
+[Mail](/docs/mail/) stays on the machine that received it and is not
+replicated; the apps read it over the end-to-end encrypted routes, so the
+gateway never sees it. Agents may send mail only from conversations created
+with mail access, and can't read the mailbox. The apps never load images or
+other remote content from a message, and render no HTML.
+
 ## Revocation
 
 Remove a lost or retired device on any trusted device: **Devices → Remove** in

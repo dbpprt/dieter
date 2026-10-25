@@ -43,6 +43,10 @@ import com.getdieter.core.identity.Credentials
 import com.getdieter.core.identity.Gateway
 import com.getdieter.core.identity.SignIn
 import com.getdieter.core.machines.MachineChoice
+import com.getdieter.core.mail.MailMachine
+import com.getdieter.core.mail.MailProjection
+import com.getdieter.core.mail.MailRules
+import com.getdieter.core.mail.Mailbox
 import com.getdieter.core.metadata.MachineMetadataStore
 import com.getdieter.core.navigation.KvAcceptor
 import com.getdieter.core.navigation.NavigationEditor
@@ -195,6 +199,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
                 terminalSelections.reload()
                 terminalPumps.cancelAll()
                 outbox.bind(prepared.scope("outbox"))
+                mailbox.bind(prepared.scope("mail"))
                 navigationKv.bind(prepared.scope("navigation"))
                 drafts.bind(prepared.scope("drafts"))
                 captures.bind(prepared.scope("captures"))
@@ -212,7 +217,14 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
 
     /** Which machine serves what. */
     val choice = MachineChoice(workspace, accountSync, connection.machines, sessions.routes)
-    val outbox = Outbox(clientId, sessions, workspace, choice, platform.clock, platform.logger)
+    val outbox =
+        Outbox(clientId, sessions, workspace, choice, platform.clock, platform.logger) {
+            accountSync.snapshot.value.mail
+        }
+
+    /** The account's mail on this device: kept bodies, pending changes, preferences. */
+    val mailbox =
+        Mailbox(sessions, outbox, platform.settings, scope, platform.logger, ::mailProjection)
     val board = BoardOperations(sessions, workspace, choice)
     val navigationKv =
         SharedKv(
@@ -254,6 +266,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
             scope,
             platform.settings,
             catalog = { daemonId -> metadata.machines.value[daemonId]?.harnesses?.harnesses },
+            syncs = connection.syncs,
         )
 
     @Volatile private var gatewayListeners = emptyList<() -> Unit>()
@@ -285,6 +298,24 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
         }
         scope.launch { outbox.run(reachableMachines()) }
         scope.launch { workspace.revision.collect { outbox.reconcile() } }
+        // Mail changes settle when their machine's headers show them.
+        scope.launch {
+            accountSync.snapshot
+                .map { it.mail }
+                .distinctUntilChanged()
+                .collect {
+                    outbox.reconcile()
+                    mailbox.mailChanged()
+                }
+        }
+        scope.launch {
+            mailbox.run(
+                connection.syncs
+                    .map { syncs -> syncs.filterValues { it.current }.keys }
+                    .distinctUntilChanged(),
+                reachableMachines(),
+            )
+        }
         // An inline error goes with its card.
         scope.launch {
             workspace.state.collect { view -> board.retainErrors { view.card(it) != null } }
@@ -356,6 +387,46 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
                     )
                     current = connection.syncs.value.filterValues { it.current }.keys
                 }
+            }
+            scope.launch {
+                // As for cards: mail a machine replays while catching up is never notified. A
+                // machine's catch-up is published before it reports Live, so the set of current
+                // machines is read after each mail view, and also follows Live alone: a machine
+                // that caught up without new mail notifies its next message.
+                var current = emptySet<String>()
+                combine(
+                        accountSync.snapshot.map { it.mail }.distinctUntilChanged(),
+                        connection.syncs
+                            .map { syncs -> syncs.filterValues { it.current }.keys }
+                            .distinctUntilChanged(),
+                    ) { mail, live ->
+                        mail to live
+                    }
+                    .collect { (mail, live) ->
+                        if (!accountSync.loaded.value) return@collect
+                        val before = current
+                        planner.mail(
+                            mail,
+                            MailRules.overlay(mail, outbox.view.value.entries),
+                            NotificationSettings.load(platform.settings),
+                            mailbox.preferences.value,
+                            name = ::machineName,
+                            open = mailbox.openRefs(),
+                            replaying = { it !in before },
+                        )
+                        current = live
+                    }
+            }
+            // A message read, archived or deleted on this device loses its notification at once.
+            scope.launch {
+                outbox.view
+                    .map { view -> view.entries.filter(MailRules::changesMail) }
+                    .distinctUntilChanged()
+                    .collect { entries ->
+                        planner.mailShown(
+                            MailRules.overlay(accountSync.snapshot.value.mail, entries)
+                        )
+                    }
             }
         }
         scope.launch { quotas.run(connection.session.map { it?.client }.distinctUntilChanged()) }
@@ -448,6 +519,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
         credentials.remove(gateway)
         // Detach the journals first, so nothing writes the namespace while it is removed.
         outbox.bind(null)
+        mailbox.bind(null)
         navigationKv.bind(null)
         drafts.bind(null)
         captures.bind(null)
@@ -786,6 +858,29 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
             excludedIds = pending.pendingCardIds,
             staleness = { card -> staleness(card, syncs, machines) },
         )
+
+    /** [machineId]'s name, else its ID. */
+    fun machineName(machineId: String): String =
+        connection.machines.value.machine(machineId)?.name?.ifBlank { null } ?: machineId
+
+    /**
+     * The account-wide mailbox now: every machine's mail headers with this device's pending
+     * changes, each machine named, with why its view may be old ([MachineSyncs.staleness]) and
+     * whether it is reachable.
+     */
+    fun mailProjection(): MailProjection {
+        val mail = MailRules.overlay(accountSync.snapshot.value.mail, outbox.view.value.entries)
+        val syncs = connection.syncs.value
+        val reachable =
+            if (connection.session.value == null) emptySet() else choice.reachable().toSet()
+        return MailRules.project(
+            mail,
+            mail.keys.associateWith { id ->
+                val name = machineName(id)
+                MailMachine(id, name, MachineSyncs.staleness(syncs[id], name), id in reachable)
+            },
+        )
+    }
 
     /** Why [card]'s owner data may be old ([MachineSyncs.staleness]); null while current. */
     fun staleness(

@@ -193,6 +193,12 @@ public nonisolated struct Dieter_V1_Schedule: @unchecked Sendable {
     set {_uniqueStorage()._vaultAccess = newValue}
   }
 
+  /// Cards created by this schedule may send the user mail. Owner-local.
+  public var mailAccess: Bool {
+    get {_storage._mailAccess}
+    set {_uniqueStorage()._mailAccess = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -303,6 +309,11 @@ public nonisolated struct Dieter_V1_ScheduleDraft: @unchecked Sendable {
   public var vaultAccess: Bool {
     get {_storage._vaultAccess}
     set {_uniqueStorage()._vaultAccess = newValue}
+  }
+
+  public var mailAccess: Bool {
+    get {_storage._mailAccess}
+    set {_uniqueStorage()._mailAccess = newValue}
   }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -545,7 +556,7 @@ nonisolated extension Dieter_V1_SchedulesResponse: SwiftProtobuf.Message, SwiftP
 
 nonisolated extension Dieter_V1_Schedule: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Schedule"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}project_id\0\u{3}board_id\0\u{1}name\0\u{1}description\0\u{1}cron\0\u{1}timezone\0\u{1}enabled\0\u{1}action\0\u{3}title_template\0\u{3}prompt_template\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{3}label_ids\0\u{3}open_card_policy\0\u{3}misfire_policy\0\u{4}\u{2}next_run_at\0\u{3}last_run_at\0\u{3}created_at\0\u{3}updated_at\0\u{3}next_runs\0\u{3}provider_options\0\u{3}workspace_mode\0\u{4}\u{f}owner_daemon_id\0\u{3}checkout_id\0\u{3}vault_access\0\u{c}\u{12}\u{1}")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}project_id\0\u{3}board_id\0\u{1}name\0\u{1}description\0\u{1}cron\0\u{1}timezone\0\u{1}enabled\0\u{1}action\0\u{3}title_template\0\u{3}prompt_template\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{3}label_ids\0\u{3}open_card_policy\0\u{3}misfire_policy\0\u{4}\u{2}next_run_at\0\u{3}last_run_at\0\u{3}created_at\0\u{3}updated_at\0\u{3}next_runs\0\u{3}provider_options\0\u{3}workspace_mode\0\u{4}\u{f}owner_daemon_id\0\u{3}checkout_id\0\u{3}vault_access\0\u{3}mail_access\0\u{c}\u{12}\u{1}")
 
   fileprivate class _StorageClass {
     var _ownerDaemonID: String = String()
@@ -575,6 +586,7 @@ nonisolated extension Dieter_V1_Schedule: SwiftProtobuf.Message, SwiftProtobuf._
     var _providerOptions: Dictionary<String,String> = [:]
     var _workspaceMode: String = String()
     var _vaultAccess: Bool = false
+    var _mailAccess: Bool = false
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -612,6 +624,7 @@ nonisolated extension Dieter_V1_Schedule: SwiftProtobuf.Message, SwiftProtobuf._
       _providerOptions = source._providerOptions
       _workspaceMode = source._workspaceMode
       _vaultAccess = source._vaultAccess
+      _mailAccess = source._mailAccess
     }
   }
 
@@ -657,6 +670,7 @@ nonisolated extension Dieter_V1_Schedule: SwiftProtobuf.Message, SwiftProtobuf._
         case 40: try { try decoder.decodeSingularStringField(value: &_storage._ownerDaemonID) }()
         case 41: try { try decoder.decodeSingularStringField(value: &_storage._checkoutID) }()
         case 42: try { try decoder.decodeSingularBoolField(value: &_storage._vaultAccess) }()
+        case 43: try { try decoder.decodeSingularBoolField(value: &_storage._mailAccess) }()
         default: break
         }
       }
@@ -746,6 +760,9 @@ nonisolated extension Dieter_V1_Schedule: SwiftProtobuf.Message, SwiftProtobuf._
       if _storage._vaultAccess != false {
         try visitor.visitSingularBoolField(value: _storage._vaultAccess, fieldNumber: 42)
       }
+      if _storage._mailAccess != false {
+        try visitor.visitSingularBoolField(value: _storage._mailAccess, fieldNumber: 43)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -782,6 +799,7 @@ nonisolated extension Dieter_V1_Schedule: SwiftProtobuf.Message, SwiftProtobuf._
         if _storage._providerOptions != rhs_storage._providerOptions {return false}
         if _storage._workspaceMode != rhs_storage._workspaceMode {return false}
         if _storage._vaultAccess != rhs_storage._vaultAccess {return false}
+        if _storage._mailAccess != rhs_storage._mailAccess {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -793,7 +811,7 @@ nonisolated extension Dieter_V1_Schedule: SwiftProtobuf.Message, SwiftProtobuf._
 
 nonisolated extension Dieter_V1_ScheduleDraft: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ScheduleDraft"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}board_id\0\u{1}name\0\u{1}description\0\u{1}cron\0\u{1}timezone\0\u{1}enabled\0\u{1}action\0\u{3}title_template\0\u{3}prompt_template\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{3}label_ids\0\u{3}open_card_policy\0\u{3}misfire_policy\0\u{4}\u{2}provider_options\0\u{3}workspace_mode\0\u{4}\u{15}checkout_id\0\u{3}vault_access\0\u{c}\u{11}\u{1}")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}board_id\0\u{1}name\0\u{1}description\0\u{1}cron\0\u{1}timezone\0\u{1}enabled\0\u{1}action\0\u{3}title_template\0\u{3}prompt_template\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{3}label_ids\0\u{3}open_card_policy\0\u{3}misfire_policy\0\u{4}\u{2}provider_options\0\u{3}workspace_mode\0\u{4}\u{15}checkout_id\0\u{3}vault_access\0\u{3}mail_access\0\u{c}\u{11}\u{1}")
 
   fileprivate class _StorageClass {
     var _checkoutID: String = String()
@@ -816,6 +834,7 @@ nonisolated extension Dieter_V1_ScheduleDraft: SwiftProtobuf.Message, SwiftProto
     var _providerOptions: Dictionary<String,String> = [:]
     var _workspaceMode: String = String()
     var _vaultAccess: Bool = false
+    var _mailAccess: Bool = false
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -846,6 +865,7 @@ nonisolated extension Dieter_V1_ScheduleDraft: SwiftProtobuf.Message, SwiftProto
       _providerOptions = source._providerOptions
       _workspaceMode = source._workspaceMode
       _vaultAccess = source._vaultAccess
+      _mailAccess = source._mailAccess
     }
   }
 
@@ -884,6 +904,7 @@ nonisolated extension Dieter_V1_ScheduleDraft: SwiftProtobuf.Message, SwiftProto
         case 19: try { try decoder.decodeSingularStringField(value: &_storage._workspaceMode) }()
         case 40: try { try decoder.decodeSingularStringField(value: &_storage._checkoutID) }()
         case 41: try { try decoder.decodeSingularBoolField(value: &_storage._vaultAccess) }()
+        case 42: try { try decoder.decodeSingularBoolField(value: &_storage._mailAccess) }()
         default: break
         }
       }
@@ -952,6 +973,9 @@ nonisolated extension Dieter_V1_ScheduleDraft: SwiftProtobuf.Message, SwiftProto
       if _storage._vaultAccess != false {
         try visitor.visitSingularBoolField(value: _storage._vaultAccess, fieldNumber: 41)
       }
+      if _storage._mailAccess != false {
+        try visitor.visitSingularBoolField(value: _storage._mailAccess, fieldNumber: 42)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -981,6 +1005,7 @@ nonisolated extension Dieter_V1_ScheduleDraft: SwiftProtobuf.Message, SwiftProto
         if _storage._providerOptions != rhs_storage._providerOptions {return false}
         if _storage._workspaceMode != rhs_storage._workspaceMode {return false}
         if _storage._vaultAccess != rhs_storage._vaultAccess {return false}
+        if _storage._mailAccess != rhs_storage._mailAccess {return false}
         return true
       }
       if !storagesAreEqual {return false}

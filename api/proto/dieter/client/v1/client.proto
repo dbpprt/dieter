@@ -13,6 +13,7 @@ import "dieter/v1/executions.proto";
 import "dieter/v1/files.proto";
 import "dieter/v1/git.proto";
 import "dieter/v1/machine.proto";
+import "dieter/v1/mail.proto";
 import "dieter/v1/projects.proto";
 import "dieter/v1/schedules.proto";
 import "dieter/v1/screens.proto";
@@ -105,6 +106,10 @@ message Command {
     SystemWoke system_woke = 82;
     // Agent channels (experimental); see ChannelsCommand.
     ChannelsCommand channels = 83;
+    // Agent mail; see MailCommand.
+    MailCommand mail = 84;
+    // A tap on, or an action of, a notification the core posted.
+    NotificationResponse notification_response = 85;
   }
 }
 
@@ -538,6 +543,9 @@ message CreationIntent {
   // Let the conversation's agent turns use the account vault. Fixed at
   // creation; never remembered between forms.
   bool vault_access = 15;
+  // Let the conversation's agent turns send the user mail. Fixed at
+  // creation; never remembered between forms.
+  bool mail_access = 16;
 }
 
 // Binds a creation form's surface (SLICE_CREATION_PREVIEW, observed with a
@@ -1243,6 +1251,10 @@ message Result {
     CreationPreview creation_preview = 45;
     // The channels surface after a channels command.
     ChannelsSlice channels = 46;
+    // The mail surface after a mail command.
+    MailSlice mail = 47;
+    // Where a notification response leads (NotificationResponse).
+    NotificationTarget notification_target = 48;
   }
 }
 
@@ -1318,6 +1330,8 @@ enum Slice {
   SLICE_CHANNELS = 26;
   // The replicated agent channels settings.
   SLICE_CHANNEL_SETTINGS = 27;
+  // Agent mail across machines. Scoped by the view's surface key.
+  SLICE_MAIL = 28;
 }
 
 message Update {
@@ -1355,6 +1369,7 @@ message Update {
     DevicesSlice devices = 36;
     ChannelsSlice channels = 37;
     ChannelSettingsSlice channel_settings = 38;
+    MailSlice mail = 39;
     // The view's surface could not open, e.g. screen sharing on a device
     // without it. Sent once; nothing follows.
     Failure failure = 9;
@@ -4302,4 +4317,245 @@ message TimelinePeerNotice {
   // "Open in #pricing".
   string open_label = 11;
   int64 created_at_millis = 12;
+}
+
+// ---------------------------------------------------------------------------
+// Agent mail: read-only Markdown reports agents send the user. Every machine
+// streams the headers it holds (ChangesFrame.mail); the core merges them into
+// one account-wide mailbox and loads bodies on demand.
+
+// Commands of a mail surface (SLICE_MAIL, scoped by the view's surface key;
+// an empty scope reaches the unscoped surface). Preferences need no surface.
+message MailCommand {
+  string scope = 1;
+  oneof action {
+    // Shows a mailbox: Inbox, Flagged, Unread, Archive or Trash.
+    MailBox select_box = 2;
+    // Shows a message in the reading pane, loads its body and marks it read;
+    // an empty ref shows none.
+    MailMessageRef select = 3;
+    // Filters the shown mailbox by subject, sender, project and preview;
+    // empty shows everything.
+    string search = 4;
+    // Narrows the shown mailbox; an empty filter shows everything.
+    MailFilter filter = 5;
+    // Read, flag or folder changes for one or more messages. Moving a message
+    // to the Inbox restores it.
+    MailChange change = 6;
+    // Deletes messages for good.
+    MailRefs delete = 7;
+    // Deletes every message in the Trash on every reachable machine.
+    Step empty_trash = 8;
+    // Marks every unread message of the shown mailbox read.
+    Step mark_all_read = 9;
+    // The mailbox is on screen: unread bodies are fetched ahead.
+    Toggle active = 10;
+    // This device's mail notification and badge preferences.
+    MailPreferences set_preferences = 11;
+  }
+}
+
+enum MailBox {
+  MAIL_BOX_INBOX = 0;
+  MAIL_BOX_FLAGGED = 1;
+  MAIL_BOX_UNREAD = 2;
+  MAIL_BOX_ARCHIVE = 3;
+  MAIL_BOX_TRASH = 4;
+}
+
+// A message on one machine.
+message MailMessageRef {
+  string daemon_id = 1;
+  string id = 2;
+}
+
+message MailRefs {
+  repeated MailMessageRef refs = 1;
+}
+
+// Empty fields match everything.
+message MailFilter {
+  string project_id = 1;
+  string daemon_id = 2;
+  // MailRow.sender_key: a schedule, a conversation or an operator label.
+  string sender_key = 3;
+  bool important_only = 4;
+}
+
+// Unset fields stay unchanged; folder UNSPECIFIED keeps the folder.
+message MailChange {
+  repeated MailMessageRef refs = 1;
+  optional bool read = 2;
+  optional bool flagged = 3;
+  dieter.v1.MailFolder folder = 4;
+}
+
+// Device-local.
+message MailPreferences {
+  // Post a notification for each new message (Mac).
+  bool notify = 1;
+  // Only for messages marked important.
+  bool notify_important_only = 2;
+  // Show the unread count on the app icon (the Mac's Dock).
+  bool app_badge = 3;
+}
+
+message MailSlice {
+  // Inbox, Flagged, Unread, Archive and Trash with their counts.
+  repeated MailBoxRow boxes = 1;
+  MailBox box = 2;
+  string search = 3;
+  MailFilter filter = 4;
+  // Filter choices from the mail on hand, by name.
+  repeated MailFilterOption projects = 5;
+  repeated MailFilterOption machines = 6;
+  repeated MailFilterOption senders = 7;
+  // The shown mailbox, newest first, in date groups (Today, Yesterday, This
+  // week, Last week, then months).
+  repeated MailSection sections = 8;
+  // Messages listed after search and filter.
+  int32 count = 9;
+  // The selected message; absent when none is selected.
+  MailReader reader = 10;
+  // Unread Inbox messages on every machine, for navigation badges.
+  int32 unread = 11;
+  // "4", or "99+"; empty with nothing unread.
+  string unread_label = 12;
+  // The app icon badge: the unread label when MailPreferences.app_badge is
+  // on, else empty.
+  string app_badge = 13;
+  MailPreferences preferences = 14;
+  // Machines are being read and nothing is listed yet.
+  bool loading = 15;
+  // What the list says when it lists nothing.
+  string empty_title = 16;
+  string empty_detail = 17;
+  // Why the last command failed.
+  string action_error = 18;
+}
+
+message MailBoxRow {
+  MailBox box = 1;
+  // "Inbox".
+  string title = 2;
+  int32 unread = 3;
+  int32 total = 4;
+  // "3", "99+"; empty with nothing unread (Flagged and Trash: the total).
+  string count_label = 5;
+  bool selected = 6;
+}
+
+message MailFilterOption {
+  string id = 1;
+  string title = 2;
+  bool selected = 3;
+}
+
+message MailSection {
+  // "today", "yesterday", "this-week", "last-week", "2026-09".
+  string id = 1;
+  // "Today", "September 2026".
+  string title = 2;
+  repeated MailRow rows = 3;
+}
+
+enum MailSenderStyle {
+  // A card's conversation.
+  MAIL_SENDER_STYLE_CARD = 0;
+  MAIL_SENDER_STYLE_CHAT = 1;
+  // A card a schedule created.
+  MAIL_SENDER_STYLE_SCHEDULE = 2;
+  // A person or script.
+  MAIL_SENDER_STYLE_OPERATOR = 3;
+}
+
+message MailRow {
+  MailMessageRef ref = 1;
+  // "Nightly dependency audit": the schedule, else the conversation, else the
+  // operator's label, else "Operator on Studio".
+  string sender = 2;
+  // "dieter · Studio · Claude".
+  string sender_detail = 3;
+  MailSenderStyle sender_style = 4;
+  // The sender's harness ID for its mark, e.g. "claude-code"; empty for an
+  // operator.
+  string harness = 5;
+  // Up to two avatar letters.
+  string initials = 6;
+  // Groups the sender filter.
+  string sender_key = 7;
+  string subject = 8;
+  string preview = 9;
+  // "09:14", "Mon", "12 Oct", "12 Oct 2025".
+  string time_label = 10;
+  int64 sent_at_millis = 11;
+  bool read = 12;
+  bool flagged = 13;
+  bool important = 14;
+  dieter.v1.MailFolder folder = 15;
+  // Why the row may be out of date, e.g. "mbp-office is offline"; empty while
+  // its machine is current.
+  string stale = 16;
+  bool selected = 17;
+  // "Unread, important. Nightly dependency audit: Dependency audit …, 09:14".
+  string accessibility_label = 18;
+}
+
+// The reading pane.
+message MailReader {
+  MailMessageRef ref = 1;
+  string subject = 2;
+  string sender = 3;
+  // "Schedule · dieter · Studio · Claude Opus".
+  string sender_detail = 4;
+  MailSenderStyle sender_style = 5;
+  string harness = 6;
+  string initials = 7;
+  // "Today 09:14", "Sun 25 Oct 2026, 09:14".
+  string sent_label = 8;
+  bool read = 9;
+  bool flagged = 10;
+  bool important = 11;
+  dieter.v1.MailFolder folder = 12;
+  // The Markdown body; empty while it loads or when it is unavailable.
+  string body = 13;
+  bool loading = 14;
+  // Why the body is unavailable, e.g. "mbp-office is offline"; empty when it
+  // is shown or loading.
+  string unavailable = 15;
+  // The sending conversation, when it still exists.
+  string card_id = 16;
+  // "Open conversation" works; else open_conversation_unavailable says why
+  // ("The conversation was deleted", "Sent by backup.sh").
+  bool can_open_conversation = 17;
+  string open_conversation_unavailable = 18;
+  // Resolve workspace links in the body against this checkout on daemon_id;
+  // empty for an operator's message.
+  string checkout_id = 19;
+  // The machine's name, e.g. "Studio".
+  string machine_name = 20;
+  string stale = 21;
+}
+
+// A notification tap (action empty) or one of its actions ("OPEN",
+// "MARK_DONE", "MARK_READ", "ARCHIVE").
+message NotificationResponse {
+  // NotificationContent.key as the platform received it.
+  string key = 1;
+  string action = 2;
+}
+
+// Where the app goes after a notification response. Absent fields: stay.
+message NotificationTarget {
+  oneof target {
+    // Open this conversation where it belongs (a chat among the chats, a
+    // card on its board).
+    string card_id = 1;
+    // Open Mail with this message selected.
+    MailMessageRef mail = 2;
+    // The conversation is gone: show the Inbox.
+    Step inbox = 3;
+    // The action ran in place; nothing opens.
+    Step none = 4;
+  }
 }

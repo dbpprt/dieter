@@ -108,6 +108,16 @@ private struct ConversationChatColumn: View {
         @Bindable var content = context.content
         let tab = content.conversationTab
         VStack(spacing: 0) {
+            if let error = context.conversationError, context.conversation != nil {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.system(size: 12))
+                    .foregroundStyle(DieterTheme.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .accessibilityIdentifier("conversation.sync-error")
+                    .e2eTarget("conversation.sync-error")
+            }
             Group {
                 if context.conversationLoading {
                     ConversationLoadingView(standalone: standalone)

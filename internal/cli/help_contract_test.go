@@ -17,6 +17,7 @@ var rpcCommand = map[string]string{
 	"ListChannels": "channel list", "ListChannelMessages": "channel messages", "PostChannelMessage": "channel post", "PinChannelMessage": "channel pin",
 	"MarkChannelRead": "channel read", "GetChannelInbox": "channel inbox", "CheckChannelFiles": "channel check", "ListChannelClaims": "channel claims",
 	"ReleaseChannelClaims": "channel release", "HandleChannelHook": "channel hook", "GetChannelSettings": "channel settings", "SetChannelSetting": "channel settings", "WatchChannel": "channel watch",
+	"SendMail": "mail send", "ListMail": "mail list", "GetMail": "mail show", "UpdateMail": "mail mark", "DeleteMail": "mail delete",
 	"GetKV": "kv get", "ListKV": "kv list", "PutKV": "kv put", "DeleteKV": "kv delete", "MoveKV": "kv move", "WatchKV": "kv watch",
 	"GetPeerRecord": "peer show", "GetPeerChanges": "peer changes", "GetPeerStoreStatus": "peer status", "ListPeerRecords": "peer list", "PutPeerRecord": "peer put", "MergePeerRecords": "peer merge",
 	"StartControlConnection": "machine connection start", "GetControlConnection": "machine connection show", "CloseControlConnection": "machine connection close",

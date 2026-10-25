@@ -116,6 +116,16 @@ only with its complete projection; `projectionPending=true` is not a checkpoint.
 If a retained projection no longer matches, the client must process an explicit
 reset.
 
+Clients observe every online machine's account changes, including live activity
+for active and recently active conversations. Full transcripts are fetched
+separately. Up to eight recently opened conversations keep their transcript
+watches while you navigate elsewhere; older entries remain in a bounded cache.
+Reopening a cached conversation shows its messages immediately and marks it
+**Refreshing** until the owner confirms it has caught up with known activity.
+A delayed watch falls back to a bounded read. Activity previews never replace
+full message content. Offline or unresponsive machines leave cached messages
+readable and show a warning in the conversation.
+
 Peer exchanges run independently, with at most four active exchanges and a
 40-second deadline per attempt. A failed peer backs off independently from
 15 seconds to two minutes; healthy peers retain their normal cadence. Only

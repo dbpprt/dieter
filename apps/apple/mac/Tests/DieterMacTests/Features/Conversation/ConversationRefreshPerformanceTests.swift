@@ -84,3 +84,34 @@ import Testing
     #expect(model.conversationMessages == [message])
     #expect(model.conversationPresentationRevision == revision)
 }
+
+@Test @MainActor func switchingConversationsStartsRefreshingBeforeTheFirstSlice() {
+    let core = ScriptedCoreClient()
+    let model = ConversationModel()
+    model.core = core
+    model.observe("first")
+    core.emitConversation("first") {
+        $0.messages = [fixtureMessage("latest")]
+        $0.refreshedAtMillis = 1
+    }
+    #expect(!model.conversationSyncing)
+    model.observe("second")
+    #expect(model.conversationSyncing)
+    #expect(model.conversationLastRefreshedAt == nil)
+    core.emitConversation("second") { $0.error = "The conversation's machine is offline." }
+    #expect(model.conversationError == "The conversation's machine is offline.")
+    model.observe("second")
+    #expect(model.conversationSyncing)
+    #expect(model.conversationError == nil)
+    model.observe("first")
+    #expect(model.conversationSyncing)
+    #expect(model.conversationError == nil)
+    core.emitConversation("first") {
+        $0.messages = [fixtureMessage("latest")]
+        $0.refreshedAtMillis = 2
+    }
+    #expect(!model.conversationSyncing)
+    #expect(model.conversationMessages.map(\.id) == ["latest"])
+    model.observe(nil)
+    #expect(!model.conversationSyncing)
+}

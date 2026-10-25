@@ -1,0 +1,154 @@
+syntax = "proto3";
+
+package dieter.v1;
+
+option go_package = "github.com/dbpprt/dieter/internal/gen/dieter/v1;dieterv1";
+option java_multiple_files = true;
+option java_package = "com.getdieter.api.v1";
+
+// Agent mail: one-way Markdown reports for the account's user. Messages stay on
+// the daemon that received them, with their read, flag and folder state. An
+// agent turn may send only when its conversation was created with mail
+// access, and may do nothing else here; operators and devices read and
+// organize. There is no reply: mail never reaches a prompt or starts a turn.
+service MailService {
+  // Sends a message to the user. Agents identify themselves with their turn
+  // token on the local route; anyone else sends as an operator.
+  rpc SendMail(SendMailRequest) returns (MailHeader);
+  // This daemon's messages, newest first.
+  rpc ListMail(ListMailRequest) returns (MailPage);
+  // One message with its Markdown body.
+  rpc GetMail(MailRef) returns (Mail);
+  // Changes the read, flag or folder state of messages.
+  rpc UpdateMail(UpdateMailRequest) returns (UpdateMailResponse);
+  // Deletes messages for good.
+  rpc DeleteMail(DeleteMailRequest) returns (DeleteMailResponse);
+}
+
+enum MailFolder {
+  MAIL_FOLDER_UNSPECIFIED = 0;
+  MAIL_FOLDER_INBOX = 1;
+  MAIL_FOLDER_ARCHIVE = 2;
+  // Emptied after 30 days.
+  MAIL_FOLDER_TRASH = 3;
+}
+
+enum MailImportance {
+  MAIL_IMPORTANCE_UNSPECIFIED = 0;
+  MAIL_IMPORTANCE_NORMAL = 1;
+  // A failure or finding that needs action.
+  MAIL_IMPORTANCE_HIGH = 2;
+}
+
+enum MailSenderKind {
+  MAIL_SENDER_KIND_UNSPECIFIED = 0;
+  // An agent turn of a card or chat with mail access.
+  MAIL_SENDER_KIND_AGENT = 1;
+  // A person or script: the local CLI without a turn token, or a device.
+  MAIL_SENDER_KIND_OPERATOR = 2;
+}
+
+// Who sent a message, as it was when sent: it stays readable after its
+// conversation is renamed, archived or deleted.
+message MailSender {
+  MailSenderKind kind = 1;
+  string card_id = 2;
+  string turn_id = 3;
+  // "card" or "chat".
+  string scope = 4;
+  // The conversation's title.
+  string title = 5;
+  string project_id = 6;
+  string project_name = 7;
+  string checkout_id = 8;
+  // Set when the card was created by a schedule.
+  string schedule_id = 9;
+  string schedule_name = 10;
+  string harness = 11;
+  string model = 12;
+  // An operator calling over a remote route.
+  string device_id = 13;
+  // An operator's --from label, e.g. "backup.sh".
+  string label = 14;
+}
+
+message MailHeader {
+  string id = 1;
+  MailSender sender = 2;
+  // One line, at most 200 characters.
+  string subject = 3;
+  // Plain text from the start of the body, at most 200 characters.
+  string preview = 4;
+  MailImportance importance = 5;
+  // RFC 3339.
+  string sent_at = 6;
+  uint32 body_bytes = 7;
+  // Hex SHA-256 of the body.
+  string body_digest = 8;
+  bool read = 9;
+  bool flagged = 10;
+  MailFolder folder = 11;
+  // RFC 3339; when read, flag or folder last changed.
+  string state_changed_at = 12;
+}
+
+message Mail {
+  MailHeader header = 1;
+  // GitHub-flavored Markdown, at most 128 KiB and 4,000 lines.
+  string body = 2;
+}
+
+message MailRef {
+  string id = 1;
+}
+
+// A retry with the same operation_id from the same conversation (or, for an
+// operator, the same device) returns the original message.
+message SendMailRequest {
+  string subject = 1;
+  string body = 2;
+  MailImportance importance = 3;
+  // At most 128 characters.
+  string operation_id = 4;
+  // Operators only: who is sending, e.g. "backup.sh"; at most 64 characters.
+  string from = 5;
+}
+
+message ListMailRequest {
+  // UNSPECIFIED lists every folder.
+  MailFolder folder = 1;
+  bool unread_only = 2;
+  bool flagged_only = 3;
+  // Continues after this message (exclusive).
+  string before_id = 4;
+  // Default 50, at most 500.
+  int32 limit = 5;
+}
+
+message MailPage {
+  repeated MailHeader messages = 1;
+  bool has_more = 2;
+}
+
+// At most 500 IDs. Unset fields stay unchanged; folder UNSPECIFIED keeps the
+// folder.
+message UpdateMailRequest {
+  repeated string ids = 1;
+  optional bool read = 2;
+  optional bool flagged = 3;
+  MailFolder folder = 4;
+}
+
+message UpdateMailResponse {
+  repeated MailHeader messages = 1;
+}
+
+// At most 500 IDs, or empty_trash to delete every message in the Trash.
+message DeleteMailRequest {
+  repeated string ids = 1;
+  bool empty_trash = 2;
+}
+
+message DeleteMailResponse {
+  repeated string deleted_ids = 1;
+}

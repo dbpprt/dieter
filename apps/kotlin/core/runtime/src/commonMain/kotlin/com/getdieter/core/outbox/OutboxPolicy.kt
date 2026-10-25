@@ -5,11 +5,13 @@ import com.getdieter.api.v1.Conversation
 import com.getdieter.api.v1.ConversationSnapshot
 import com.getdieter.api.v1.CreateConversationRequest
 import com.getdieter.api.v1.HarnessSelection
+import com.getdieter.api.v1.MailHeader
 import com.getdieter.api.v1.MessagePart
 import com.getdieter.api.v1.QueuedMessage
 import com.getdieter.api.v1.SendMessageRequest
 import com.getdieter.api.v1.StartCardRequest
 import com.getdieter.api.v1.UiMessage
+import com.getdieter.core.mail.MailRules
 import com.getdieter.core.presentation.Counts
 import com.getdieter.core.presentation.MessageMetadata
 import com.getdieter.core.runtime.Backoff
@@ -326,6 +328,7 @@ object OutboxPolicy {
             workspace_base_remote = request.workspace_base_remote,
             remote_publish_mode = request.remote_publish_mode,
             vault_access = request.vault_access,
+            mail_access = request.mail_access,
             runtime = if (entry.state == OutboxState.OUTBOX_STATE_FAILED) "failed" else "pending",
             created_at = created,
             updated_at = created,
@@ -453,12 +456,14 @@ object OutboxPolicy {
     }
 
     /**
-     * True once the accepted command shows in the account view: its card, or its owner's activity.
+     * True once the accepted command shows in the account view: its card, its owner's activity, or
+     * (for a mail change) the [mail] headers of its machine.
      */
     fun isSynced(
         entry: OutboxEntry,
         cards: Map<String, Card>,
         activities: Map<String, Conversation>,
+        mail: Map<String, Map<String, MailHeader>> = emptyMap(),
     ): Boolean {
         val serverId =
             entry.server_id.ifEmpty {
@@ -486,6 +491,9 @@ object OutboxPolicy {
                 val cardId = startRequest(entry)?.card_id ?: return false
                 cards[cardId]?.initial_prompt_sent_at?.isNotEmpty() == true
             }
+            OutboxKind.OUTBOX_KIND_UPDATE_MAIL,
+            OutboxKind.OUTBOX_KIND_DELETE_MAIL ->
+                MailRules.synced(entry, mail[entry.daemon_id].orEmpty())
             else -> true
         }
     }

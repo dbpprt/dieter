@@ -486,6 +486,12 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
         command.channels?.let {
             return channels(it)
         }
+        command.mail?.let {
+            return runtime.executeMail(it, surfaces.mail)
+        }
+        command.notification_response?.let {
+            return runtime.respond(it, surfaces.mail)
+        }
         command.devices?.let { devices ->
             devices.refresh?.let { runtime.refreshDevices() }
             devices.approve?.let { approval ->
@@ -853,6 +859,10 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
                             }
                     }
                 }
+                Slice.SLICE_MAIL ->
+                    observeSurface(surfaces.mail, scope, ::emit) { surface ->
+                        runtime.mailSlices(surface).map { Update(mail = it) }
+                    }
                 Slice.SLICE_UNSPECIFIED -> invalid("Choose a slice to observe.")
             }
         return ClientSubscription { job.cancel() }

@@ -300,6 +300,16 @@ struct ScheduleEditor: View {
                 .toggleStyle(.switch)
                 .help("Cards this automation creates may use the account vault's passwords and TOTP codes.")
                 .accessibilityIdentifier("schedule-editor.vault-access")
+            Toggle(isOn: $draft.mailAccess) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Allow mail")
+                    Text("Runs may send you reports").font(.caption).foregroundStyle(DieterTheme.tertiary)
+                }
+            }
+            .toggleStyle(.switch)
+            .help("Cards this automation creates may send you reports in Mail.")
+            .accessibilityIdentifier("schedule-editor.mail-access")
+            .e2eTarget("schedule-editor.mail-access")
             Label(
                 options.placements.first { $0.key == draft.action }?.detail ?? "",
                 systemImage: draft.action == "run" ? "bolt.fill" : "tray.full.fill"

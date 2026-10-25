@@ -9,16 +9,16 @@ are in [invariants.md](invariants.md); the attacker's view is in
 
 ## Components
 
-| Component            | Code                                                      | Runs on                                | Owns                                                                                                                                       |
-| -------------------- | --------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `dieter` daemon      | `cmd/dieter` → `internal/daemon`                          | Apple Silicon macOS, Linux amd64/arm64 | Checkouts, conversations, harness workers, files, terminals, processes, schedules, the vault replica; a replica of shared account metadata |
-| `dieter` CLI         | `cmd/dieter` → `internal/cli`                             | Same binary                            | Nothing: a client of a daemon's API                                                                                                        |
-| `dieter-gateway`     | `cmd/dieter-gateway` → `internal/gateway`                 | Linux (container image)                | Account sessions, enrolled daemon identities, presence, route metadata, the signed device roster, pairing requests, quota snapshots        |
-| Kotlin core          | `apps/kotlin/core`                                        | Every client                           | Session, device trust, routing, sync, outbox, every client rule                                                                            |
-| Android and iOS apps | `apps/kotlin/ui`, `apps/kotlin/android`, `apps/apple/ios` | Phones and tablets                     | Presentation and platform adapters                                                                                                         |
-| macOS app            | `apps/apple/mac`                                          | macOS 26+                              | Presentation and platform adapters                                                                                                         |
-| Native helpers       | `native/macos`, `native/linux-capture`                    | Daemon hosts                           | Screen capture, input injection, macOS privacy mode                                                                                        |
-| Harness runtime      | `internal/harness/runtime` (Node)                         | Daemon hosts                           | Bridges Codex, Claude Code, Pi, Oh My Pi and DeepSeek Harness to the daemon                                                                |
+| Component            | Code                                                      | Runs on                                | Owns                                                                                                                                                   |
+| -------------------- | --------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `dieter` daemon      | `cmd/dieter` → `internal/daemon`                          | Apple Silicon macOS, Linux amd64/arm64 | Checkouts, conversations, harness workers, files, terminals, processes, schedules, agent mail, the vault replica; a replica of shared account metadata |
+| `dieter` CLI         | `cmd/dieter` → `internal/cli`                             | Same binary                            | Nothing: a client of a daemon's API                                                                                                                    |
+| `dieter-gateway`     | `cmd/dieter-gateway` → `internal/gateway`                 | Linux (container image)                | Account sessions, enrolled daemon identities, presence, route metadata, the signed device roster, pairing requests, quota snapshots                    |
+| Kotlin core          | `apps/kotlin/core`                                        | Every client                           | Session, device trust, routing, sync, outbox, every client rule                                                                                        |
+| Android and iOS apps | `apps/kotlin/ui`, `apps/kotlin/android`, `apps/apple/ios` | Phones and tablets                     | Presentation and platform adapters                                                                                                                     |
+| macOS app            | `apps/apple/mac`                                          | macOS 26+                              | Presentation and platform adapters                                                                                                                     |
+| Native helpers       | `native/macos`, `native/linux-capture`                    | Daemon hosts                           | Screen capture, input injection, macOS privacy mode                                                                                                    |
+| Harness runtime      | `internal/harness/runtime` (Node)                         | Daemon hosts                           | Bridges Codex, Claude Code, Pi, Oh My Pi and DeepSeek Harness to the daemon                                                                            |
 
 One binary, `dieter`, is both daemon and CLI: `cmd/dieter` sends `serve` and
 `daemon start` to `internal/daemon` and every other command to `internal/cli`,
@@ -134,8 +134,8 @@ internal/
   api/                   dieter.v1 services: one handler type per service (machine, state,
                          settings, projects, boards, cards, conversations, git, files,
                          terminals, executions, screens, control, schedules, vault, kv,
-                         peer, trust), composed in service.go; errors.go is the one
-                         status mapper
+                         peer, trust, channels, mail), composed in service.go; errors.go
+                         is the one status mapper
   engine/                turn engine: admission, leases, harness turns, queues
   engine/scheduler/      schedules and occurrence history
   harness/               harness adapters, discovery, runner; catalog/ (embedded
@@ -143,8 +143,9 @@ internal/
   store/                 central storage: a composition root (Store, New, Ensure, Recover,
                          Close) over aggregates: home/ (DIETER_HOME, writer lock, schema,
                          change counter), replica/ (peer replica), leases/, kv/, settings/,
-                         commands/, kanban/ (projects, checkouts, boards, cards, chats),
-                         workspaces/, conversations/, schedules/; vaults/, daemonstate/
+                         commands/, channels/, mail/ (agent mail), kanban/ (projects,
+                         checkouts, boards, cards, chats), workspaces/, conversations/,
+                         schedules/; vaults/, daemonstate/
   replication/           crdt/ (bounded registers, provenance), schema/ (record kinds),
                          peersync/ (daemon-to-daemon exchange)
   link/                  gateway link client, enrollment identity and device trust
@@ -179,9 +180,9 @@ internal/
 `.golangci.yml` enforces the main boundaries with depguard: the CLI does not
 import the store, API, engine, daemon, harness, git or host packages; the store
 does not import the API, engine, daemon or CLI, and its aggregates import only
-the layers below them (home; then replica, leases, settings, commands; then kv
-and kanban; then workspaces, conversations and schedules, which never import
-each other); the gateway imports no daemon-side package. `forbidigo` keeps `os.Getenv` inside
+the layers below them (home; then replica, leases, settings, commands, channels
+and mail; then kv and kanban; then workspaces, conversations and schedules,
+which never import each other); the gateway imports no daemon-side package. `forbidigo` keeps `os.Getenv` inside
 `internal/platform/config`. See [adr/0001](adr/0001-foundation-refactor.md) for
 the parts of the target layout that are deferred.
 

@@ -28,9 +28,16 @@ class MobileRouteHandle internal constructor(internal val route: MobileRoute) {
     val immersive: Boolean = route.immersive
 }
 
+/** A tab the shell shows: [key] is stable ("inbox", "mail"), [symbol] an SF Symbol name. */
+class NativeTab(val key: String, val title: String, val symbol: String)
+
 /** One immutable navigation state for the UIKit tab and navigation controllers. */
 class NativeNavigation(
+    /** The selected tab's index in [tabs]. */
     val tab: Int,
+    /** The visible tabs, in order; Channels only while agent channels are on. */
+    val tabs: List<NativeTab>,
+    /** Each visible tab's stack, in the order of [tabs]. */
     val stacks: List<List<MobileRouteHandle>>,
     val modal: MobileRouteHandle?,
     /**
@@ -44,6 +51,8 @@ class NativeNavigation(
     val accent: Long,
     /** The Channels tab badge: "3", "99+", or empty. */
     val channelsUnread: String,
+    /** The Mail tab badge: unread Inbox mail, "4", "99+", or empty. */
+    val mailUnread: String,
 )
 
 interface MobileNavigationObserver {
@@ -134,7 +143,12 @@ class MobileHost(private val shared: DieterShared, private val nativeViews: Mobi
                     store.session.slice,
                     store.workspace.slice,
                     combine(store.theme.appearance, store.theme.palette, ::Pair),
-                    combine(store.workspace.activity, store.channels.slice, ::Pair),
+                    combine(store.workspace.activity, store.channels.slice, store.mail.slice) {
+                        _,
+                        _,
+                        _ ->
+                        Unit
+                    },
                 ) { _, _, _, _, _ ->
                     navigation()
                 }
@@ -147,9 +161,11 @@ class MobileHost(private val shared: DieterShared, private val nativeViews: Mobi
     fun navigation(): NativeNavigation {
         val routes = store.routes.value
         val palette = store.theme.palette.value
+        val tabs = MobileTab.entries
         return NativeNavigation(
-            MobileTab.entries.indexOf(routes.tab),
-            MobileTab.entries.map { tab -> routes.stacks.getValue(tab).map(::MobileRouteHandle) },
+            tabs.indexOf(routes.tab).coerceAtLeast(0),
+            tabs.map { NativeTab(it.name.lowercase(), it.title, it.glyph.symbol) },
+            tabs.map { tab -> routes.stacks.getValue(tab).map(::MobileRouteHandle) },
             routes.modal?.let(::MobileRouteHandle),
             !(store.session.slice.value.phase == SessionSlice.Phase.PHASE_AUTH_REQUIRED &&
                 !store.workspace.slice.value.loaded) && !store.session.slice.value.pairing,
@@ -158,8 +174,13 @@ class MobileHost(private val shared: DieterShared, private val nativeViews: Mobi
             if (palette == com.getdieter.mobile.settings.DieterPalette.MONOCHROME) 0L
             else palette.tokens.shellEnd,
             store.channels.slice.value.unread_label,
+            store.mail.slice.value.unread_label,
         )
     }
+
+    /** The tab at [index] in [NativeNavigation.tabs]. */
+    private fun visibleTab(index: Int): MobileTab =
+        MobileTab.entries.getOrElse(index) { MobileTab.INBOX }
 
     /** A Compose screen for one route. [chrome] receives its navigation item contents. */
     fun controller(route: MobileRouteHandle, chrome: NativeChromeSink): UIViewController {
@@ -187,7 +208,7 @@ class MobileHost(private val shared: DieterShared, private val nativeViews: Mobi
 
     /** The iPad detail column's empty state for a tab, in Apple title case. */
     fun emptyDetail(tab: Int): NativeEmptyDetail {
-        val empty = MobileTab.entries.getOrElse(tab) { MobileTab.INBOX }.emptyDetail
+        val empty = visibleTab(tab).emptyDetail
         val title =
             empty.title.split(" ").joinToString(" ") { word ->
                 word.replaceFirstChar(Char::uppercaseChar)
@@ -195,12 +216,10 @@ class MobileHost(private val shared: DieterShared, private val nativeViews: Mobi
         return NativeEmptyDetail(empty.glyph.symbol, title, empty.message)
     }
 
-    fun selectTab(index: Int) =
-        store.selectTab(MobileTab.entries.getOrElse(index) { MobileTab.INBOX })
+    fun selectTab(index: Int) = store.selectTab(visibleTab(index))
 
     /** A native back gesture or button left [depth] routes on the tab's stack. */
-    fun popTo(tab: Int, depth: Int) =
-        store.popTo(MobileTab.entries.getOrElse(tab) { MobileTab.INBOX }, depth)
+    fun popTo(tab: Int, depth: Int) = store.popTo(visibleTab(tab), depth)
 
     fun dismissModal() = store.dismiss()
 

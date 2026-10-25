@@ -11,6 +11,7 @@ import com.getdieter.api.v1.KVEntry
 import com.getdieter.api.v1.Label
 import com.getdieter.api.v1.Lane
 import com.getdieter.api.v1.MachinePrivacy
+import com.getdieter.api.v1.MailHeader
 import com.getdieter.api.v1.PeerRecord
 import com.getdieter.api.v1.PeerSyncDiagnostic
 import com.getdieter.api.v1.PeerVersion
@@ -155,6 +156,11 @@ data class AccountSnapshot(
     /** Machine ID → its current peer replication issues. */
     val peerSyncIssues: Map<String, List<PeerSyncDiagnostic>> = emptyMap(),
     val privacy: Map<String, MachinePrivacy> = emptyMap(),
+    /**
+     * Machine ID → message ID → the header of the mail that machine holds, as its stream (or its
+     * cached view) reports it.
+     */
+    val mail: Map<String, Map<String, MailHeader>> = emptyMap(),
 )
 
 /**
@@ -192,6 +198,10 @@ class AccountProjector {
                 replicas
                     .filter { it.owner.peerSyncIssues.isNotEmpty() }
                     .associate { it.machineId to it.owner.peerSyncIssues },
+            mail =
+                replicas
+                    .filter { it.owner.mail.isNotEmpty() }
+                    .associate { it.machineId to it.owner.mail },
         )
     }
 
@@ -680,6 +690,7 @@ class AccountProjector {
                 workspace_base_remote = owned.workspace_base_remote,
                 remote_publish_mode = owned.remote_publish_mode,
                 vault_access = owned.vault_access,
+                mail_access = owned.mail_access,
                 workspace = owned.workspace,
                 pull_request = owned.pull_request,
                 token_usage = owned.token_usage,

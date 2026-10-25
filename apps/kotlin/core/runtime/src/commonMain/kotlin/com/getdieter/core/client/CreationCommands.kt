@@ -129,6 +129,7 @@ internal fun CoreRuntime.creationInput(intent: CreationIntent, chat: Boolean): C
         workspaceBaseRemote = intent.workspace_base_remote,
         remotePublishMode = intent.remote_publish_mode,
         vaultAccess = intent.vault_access,
+        mailAccess = intent.mail_access,
     )
 }
 
@@ -171,6 +172,7 @@ internal fun creationIntent(input: CreationInput): CreationIntent =
         workspace_base_remote = input.workspaceBaseRemote,
         remote_publish_mode = input.remotePublishMode,
         vault_access = input.vaultAccess,
+        mail_access = input.mailAccess,
     )
 
 /**

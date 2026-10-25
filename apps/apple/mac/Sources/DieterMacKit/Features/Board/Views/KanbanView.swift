@@ -90,6 +90,7 @@ struct LaneColumn: View, Equatable {
                 .quickHelp("New card")
                 .accessibilityLabel("New card in \(lane.name)")
                 .accessibilityIdentifier("board.lane.\(lane.laneID).new-card")
+                .e2eTarget("board.lane.\(lane.laneID).new-card")
             }
             .padding(.leading, 4).padding(.trailing, 2)
             .frame(height: 30)

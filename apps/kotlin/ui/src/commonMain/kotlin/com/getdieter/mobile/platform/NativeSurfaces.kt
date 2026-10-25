@@ -19,3 +19,6 @@ internal expect fun rememberAttachmentPicker(
 internal expect fun rememberAttachmentViewer(
     onError: (String) -> Unit
 ): (com.getdieter.api.v1.MessagePart) -> Unit
+
+/** Hands [text] to the system share sheet, titled [subject]; e.g. a mail message's Markdown. */
+@Composable internal expect fun rememberTextSharer(): (subject: String, text: String) -> Unit

@@ -14,6 +14,11 @@ class IsolatedGateway(
     directRoute: String? = null,
     /** Enrolls a second, projectless daemon in the same account. */
     secondDaemon: Boolean = false,
+    /**
+     * Seeds the workspace the Maestro flows share (`-e2e-fixture`): labelled cards, chats, a
+     * schedule, and the agent mail they read.
+     */
+    seeded: Boolean = false,
 ) : AutoCloseable {
     private val home = Files.createTempDirectory("dieter-core-e2e").toFile()
     private val offlineTrigger = File(home, "offline")
@@ -40,6 +45,7 @@ class IsolatedGateway(
             )
         if (directRoute != null) command += listOf("-direct-route", directRoute)
         if (secondDaemon) command += listOf("-daemon-restart-trigger", restartTrigger.path)
+        if (seeded) command += "-e2e-fixture"
         process = ProcessBuilder(command).redirectError(log).start()
         val lines = process.inputStream.bufferedReader()
         values = buildMap {

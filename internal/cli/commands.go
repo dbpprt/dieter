@@ -143,6 +143,12 @@ func commandTable() []command {
 			subcommands: []string{"list", "messages", "post", "inbox", "check", "claims", "release", "pin", "read", "settings", "watch", "hook"},
 		},
 		{
+			name:        "mail",
+			summary:     "Send Markdown reports to Dieter Mail; read, flag, file and delete them",
+			run:         (*CLI).rpcMail,
+			subcommands: []string{"send", "list", "show", "mark", "delete"},
+		},
+		{
 			name:        "vault",
 			summary:     "End-to-end encrypted passwords and TOTP shared by your machines",
 			run:         (*CLI).rpcVault,

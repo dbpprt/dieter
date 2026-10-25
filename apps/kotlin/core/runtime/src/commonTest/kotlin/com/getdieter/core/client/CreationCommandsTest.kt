@@ -84,6 +84,25 @@ class CreationCommandsTest {
         )
 
     @Test
+    fun theFormsIntentCarriesItsCapabilities() {
+        val input =
+            CreationInput(
+                project = project,
+                board = board,
+                checkoutId = "k1",
+                title = "Audit",
+                vaultAccess = true,
+                mailAccess = true,
+            )
+        val intent = creationIntent(input)
+        assertTrue(intent.mail_access)
+        assertTrue(intent.vault_access)
+        assertTrue(Creation.request(input).mail_access)
+        assertFalse(creationIntent(input.copy(mailAccess = false)).mail_access)
+        assertFalse(creationIntent(CreationInput(project = project)).mail_access, "off by default")
+    }
+
+    @Test
     fun formChoicesSurviveClosingAndReloadingWithoutSubmission() {
         val storage =
             com.getdieter.core.storage.CoreStorage(

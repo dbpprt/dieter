@@ -24,6 +24,12 @@ import com.getdieter.mobile.platform.*
  */
 internal enum class Glyph(val symbol: String, private val material: () -> ImageVector) {
     INBOX("tray", { Icons.Outlined.Inbox }),
+    MAIL("envelope", { Icons.Outlined.MailOutline }),
+    MAIL_OPEN("envelope.open", { Icons.Outlined.Email }),
+    MOVE_TO_INBOX("tray.and.arrow.down", { Icons.Outlined.Inbox }),
+    FLAG("flag", { Icons.Outlined.Flag }),
+    FLAG_FILL("flag.fill", { Icons.Outlined.FlagFilled }),
+    SHARE("square.and.arrow.up", { Icons.Outlined.Share }),
     PROJECTS("folder", { Icons.Outlined.Folder }),
     BOARD("rectangle.split.3x1", { Icons.Outlined.ViewKanban }),
     CHATS("bubble.left.and.bubble.right", { Icons.Outlined.Forum }),

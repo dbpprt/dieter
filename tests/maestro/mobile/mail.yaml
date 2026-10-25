@@ -1,0 +1,90 @@
+# Agent mail: the seeded audit report opens from the Mail tab; its wide table
+# scrolls sideways on its own while the message stays put. Swiping a message
+# left archives it with an undo, the Archive mailbox lists archived mail, and
+# the New task form offers the mail toggle.
+appId: ${APP_ID}
+name: Mail
+tags: [smoke]
+---
+- runFlow: common/launch.yaml
+- tapOn:
+    text: "Mail"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Dependency audit — 3 critical, 7 outdated"
+    timeout: 40000
+- tapOn:
+    text: "Dependency audit — 3 critical, 7 outdated"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible:
+      id: mail-open-conversation
+    timeout: 30000
+- assertVisible: "Open conversation"
+- scrollUntilVisible:
+    element:
+      text: "Package"
+    direction: DOWN
+    timeout: 30000
+# The last column sits past the right edge on phones.
+- repeat:
+    while:
+      notVisible: "Notes"
+    times: 4
+    commands:
+      - swipe:
+          from:
+            id: markdown-table
+          direction: LEFT
+      - waitForAnimationToEnd:
+          timeout: 2000
+- assertVisible: "Notes"
+# Only the table moved: the message's subject is still in place.
+- assertVisible:
+    id: mail-subject
+- takeScreenshot: mail-message
+- runFlow: common/back.yaml
+- extendedWaitUntil:
+    visible: "Invoice migration finished: 12,408 rows moved"
+    timeout: 10000
+- swipe:
+    from:
+      text: "Invoice migration finished: 12,408 rows moved"
+    direction: LEFT
+- extendedWaitUntil:
+    visible: "Undo"
+    timeout: 5000
+- takeScreenshot: mail-archived
+- tapOn:
+    text: "Undo"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Invoice migration finished: 12,408 rows moved"
+    timeout: 10000
+- tapOn:
+    id: chrome-title-menu
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: "Archive"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Nightly backup completed \\(41\\.2 GB\\)"
+    timeout: 10000
+- takeScreenshot: mail-archive
+- tapOn:
+    text: "Projects"
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: "Main"
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: chrome-new-task
+    waitToSettleTimeoutMs: 500
+- scrollUntilVisible:
+    element:
+      id: mail-access
+    direction: DOWN
+- takeScreenshot: mail-access
+- tapOn:
+    id: chrome-cancel-creation
+    waitToSettleTimeoutMs: 500

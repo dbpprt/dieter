@@ -1,3 +1,4 @@
+import DieterClientAPI
 import SwiftUI
 
 struct UsageSettings: View {
@@ -94,19 +95,49 @@ struct NotificationSettings: View {
                             store.notificationsEnabled = value
                             if value { store.requestNotifications() }
                         }
-                    Divider().overlay(DieterTheme.border)
-                    Toggle("Review requested", isOn: .constant(true))
-                    Toggle("Agent failed", isOn: .constant(true))
-                    Toggle("Agent completed", isOn: .constant(true))
                 }
+                MailNotificationSettings(model: store.mailModel)
                 SettingsPanel(title: "Delivery") {
                     Text(
-                        "Notifications come from state transitions on the synchronized Dieter stream. Clicking one opens the same durable conversation."
+                        "Notifications come from state transitions on the synchronized Dieter stream. Clicking one opens the same durable conversation, or the message in Mail."
                     )
                     .font(.caption).foregroundStyle(DieterTheme.tertiary)
                 }
             }
         }
+    }
+}
+
+/// This Mac's mail preferences, kept by the core: a notification per new
+/// message (or only important ones) and the unread count on the Dock icon.
+private struct MailNotificationSettings: View {
+    let model: MailModel
+
+    var body: some View {
+        let preferences = model.slice.preferences
+        SettingsPanel(title: "Mail", subtitle: "Reports your agents send you.") {
+            Toggle("New mail", isOn: binding(preferences.notify) { $0.notify = $1 })
+                .toggleStyle(.switch)
+                .accessibilityIdentifier("settings.notifications.mail")
+            Toggle(
+                "Only important mail", isOn: binding(preferences.notifyImportantOnly) { $0.notifyImportantOnly = $1 }
+            )
+            .toggleStyle(.switch)
+            .disabled(!preferences.notify)
+            .accessibilityIdentifier("settings.notifications.mail-important")
+            Divider().overlay(DieterTheme.border)
+            Toggle("Show unread mail count on the Dock icon", isOn: binding(preferences.appBadge) { $0.appBadge = $1 })
+                .toggleStyle(.switch)
+                .accessibilityIdentifier("settings.notifications.mail-badge")
+        }
+    }
+
+    private func binding(
+        _ value: Bool, _ set: @escaping (inout ClientMailPreferences, Bool) -> Void
+    ) -> Binding<Bool> {
+        Binding(
+            get: { value },
+            set: { on in Task { await model.updatePreferences { set(&$0, on) } } })
     }
 }
 

@@ -137,14 +137,27 @@ final class WideTableOverlay: NSScrollView {
     @objc private func scrollOffsetDidChange() {
         ownerTextView?.tableHorizontalScrollOffsets[sourceID] = horizontalOffset
     }
+
+    /// Dieter: the cell link shown under `point` (in `view`'s coordinates).
+    func linkDestination(at point: CGPoint, from view: NSView) -> String? {
+        tableImageView.linkDestination(at: tableImageView.convert(point, from: view))
+    }
 }
 
 // MARK: - Document view inside the overlay
 
 /// Forwards mouseDown to caret-into-table (so clicking switches to edit mode).
+/// Dieter: a click on a cell link follows it instead; read-only views never
+/// move the caret into the table's source, and offer the table copy menu.
 final class WideTableImageView: NSImageView {
 
     weak var ownerOverlay: WideTableOverlay?
+
+    /// The cell link shown under `point` (this view's coordinates).
+    func linkDestination(at point: CGPoint) -> String? {
+        guard let image = image as? RenderedTableImage, visibleRect.contains(point) else { return nil }
+        return image.linkDestination(at: CGPoint(x: point.x, y: isFlipped ? point.y : bounds.height - point.y))
+    }
 
     override func mouseDown(with event: NSEvent) {
         guard let overlay = ownerOverlay,
@@ -152,6 +165,12 @@ final class WideTableImageView: NSImageView {
             super.mouseDown(with: event)
             return
         }
+        if event.clickCount == 1, !event.modifierFlags.contains(.shift),
+           let destination = linkDestination(at: convert(event.locationInWindow, from: nil)) {
+            (textView.delegate as? NativeTextViewCoordinator)?.openTableCellLink(destination)
+            return
+        }
+        guard textView.isEditable else { return }
         let location = overlay.anchorTextLocation
         let docLen = (textView.string as NSString).length
         guard location >= 0, location <= docLen else {
@@ -160,6 +179,17 @@ final class WideTableImageView: NSImageView {
         }
         textView.window?.makeFirstResponder(textView)
         textView.setSelectedRange(NSRange(location: location, length: 0))
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard let overlay = ownerOverlay, let textView = overlay.ownerTextView, !textView.isEditable else {
+            return super.menu(for: event)
+        }
+        let base = NSMenu()
+        let menu = (textView.delegate as? NativeTextViewCoordinator)?
+            .onBuildContextMenu?(base, textView.selectedRange()) ?? base
+        textView.prependTableCopyItems(to: menu, anchor: overlay.anchorTextLocation)
+        return menu
     }
 }
 

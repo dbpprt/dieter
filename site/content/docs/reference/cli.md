@@ -51,6 +51,7 @@ Commands:
   schedule     Create, preview, dispatch, pause, and inspect schedules
   kv           Shared portable JSON, ordering, and live account subscriptions
   channel      Agent channels (experimental): messages, claims and decisions between agents
+  mail         Send Markdown reports to Dieter Mail; read, flag, file and delete them
   vault        End-to-end encrypted passwords and TOTP shared by your machines
   device       Pair, approve, revoke, and inspect the account's trusted devices
   peer         Inspect and edit account peer settings (leaderless sync)
@@ -721,6 +722,8 @@ Options:
   --remote-publish MODE     manual, pull_request, or push_base
   --vault                   Let this conversation's agent turns use the account
                             vault (fixed at creation; see dieter vault --help)
+  --mail                    Let this conversation's agent turns send you mail
+                            (fixed at creation; see dieter mail --help)
   --format json|id          Output format
 
 Destination defaults to the running local daemon. Pass global --machine ID|NAME
@@ -944,6 +947,8 @@ Options:
   --remote-publish MODE     manual, pull_request, or push_base
   --vault                   Let this conversation's agent turns use the account
                             vault (fixed at creation; see dieter vault --help)
+  --mail                    Let this conversation's agent turns send you mail
+                            (fixed at creation; see dieter mail --help)
   --format json|id          Output format
 
 Destination defaults to the running local daemon. Pass global --machine ID|NAME
@@ -2047,6 +2052,7 @@ Options:
   --enabled=true|false
   --open-card skip_if_open|always
   --vault=true|false                 Cards it creates may use the account vault
+  --mail=true|false                  Cards it creates may send you mail (dieter mail --help)
 ```
 
 ### dieter schedule list
@@ -2082,6 +2088,7 @@ Options:
   --enabled=true|false
   --open-card skip_if_open|always
   --vault=true|false                 Cards it creates may use the account vault
+  --mail=true|false                  Cards it creates may send you mail (dieter mail --help)
 ```
 
 ### dieter schedule run
@@ -2311,6 +2318,93 @@ Usage: dieter channel hook
 Harness hook adapter for agent channel file claims. Reads one hook JSON object (Claude Code or
 Codex PreToolUse format, at most 1 MiB) on stdin, prints the hook decision and exits 0.
 Prints nothing (no opinion) outside an agent turn or when the daemon is unavailable.
+```
+
+## dieter mail
+
+```text
+Usage: dieter mail <send|list|show|mark|delete> [options]
+
+Dieter Mail: one-way Markdown reports for you. Messages stay on the machine
+that received them, with their read, flag and folder state (Inbox, Archive,
+Trash; the Trash empties after 30 days), and every client shows them in Mail.
+There is no reply: mail never reaches an agent.
+
+Inside an agent turn (DIETER_TURN_TOKEN) the caller is that conversation's
+agent. It may only send, and only when its card, chat or schedule was created
+with --mail. Anyone else is the operator: scripts and jobs send with an
+optional --from label, and people read and organize the mailbox.
+
+  send    Send a Markdown report
+  list    List messages, newest first
+  show    Print one message with its Markdown body
+  mark    Mark messages read or unread, flag them, or move them to a folder
+  delete  Delete messages for good, or empty the Trash
+```
+
+### dieter mail send
+
+```text
+Usage: dieter mail send --subject TEXT (--body TEXT | --body-file PATH|-) [options]
+
+Send a Markdown report to Dieter Mail on the target machine.
+
+Options:
+  --subject TEXT          One line, at most 200 characters
+  --body TEXT             The Markdown body
+  --body-file PATH|-      Read the body from PATH or stdin
+  --important             Mark a failure or finding that needs action
+  --operation-id ID       Retry key (at most 128 characters): a repeated send
+                          returns the original message instead of a duplicate
+  --from LABEL            Operators only: who is sending, e.g. backup.sh
+                          (at most 64 characters)
+  --format text|json|id   Output format (default text)
+
+The body is GitHub-flavored Markdown of at most 128 KiB and 4,000 lines (each
+at most 8 KiB): headings, emphasis, inline code, links, lists, task lists,
+quotes, rules, fenced code and tables. Raw HTML shows as text and images as
+links. Agent turns may send only when their conversation has mail access, at
+most 10 messages per turn and 50 per conversation in any 24 hours.
+```
+
+### dieter mail list
+
+```text
+Usage: dieter mail list [--folder inbox|archive|trash|all] [--unread] [--flagged] [--limit N] [--before ID] [--format table|json]
+
+List the target machine's mail, newest first: the Inbox unless --folder names
+another folder or all of them, at most --limit messages (default 50, at most
+500). --before continues after a message ID. MARK shows ● unread, ⚑ flagged
+and ! important.
+```
+
+### dieter mail show
+
+```text
+Usage: dieter mail show [--raw] [--format text|json] ID
+
+Print one message: its header, then its Markdown body. --raw prints only the
+body. Showing a message does not mark it read; run dieter mail mark ID --read.
+```
+
+### dieter mail mark
+
+```text
+Usage: dieter mail mark [--read|--unread] [--flag|--unflag] [--folder inbox|archive|trash] [--format table|json] ID...
+
+Change the state of up to 500 messages: read or unread, flagged or not, and
+the folder. Combine the changes as needed; at least one is required. Move a
+message to the Trash with --folder trash, and back with --folder inbox.
+```
+
+### dieter mail delete
+
+```text
+Usage: dieter mail delete (ID... | --empty-trash) [--format text|json]
+
+Delete up to 500 messages for good, or every message in the Trash. To keep a
+way back, move messages to the Trash instead: dieter mail mark ID --folder
+trash. The Trash empties itself after 30 days.
 ```
 
 ## dieter vault

@@ -30,6 +30,7 @@ public struct DieterMacApp: App {
     public var body: some Scene {
         Window("Dieter", id: "workspace") {
             RequiredPermissionsGate { DieterRootView() }
+                .modifier(WorkspaceMailFocus())
                 .environment(permissions)
                 .environment(store)
                 .dieterThemeRoot(
@@ -126,7 +127,23 @@ public struct DieterMacApp: App {
                     .keyboardShortcut("r", modifiers: .command)
                     .disabled(!permissions.canUseApp)
             }
+            CommandMenu("Message") {
+                MailMessageCommands { openWindow(id: MailWindow.id, value: $0) }
+            }
         }
+
+        // One agent mail message per window.
+        WindowGroup("Message", id: MailWindow.id, for: MailMessageKey.self) { $key in
+            MailMessageWindow(key: key)
+                .environment(store)
+                .dieterThemeRoot(
+                    palette: store.themeSelection.palette,
+                    appearance: store.themeSelection.appearance
+                )
+        }
+        .defaultSize(width: 860, height: 760)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
 
         MenuBarExtra {
             Group {
@@ -267,6 +284,7 @@ struct MenuBarContent: View {
             MenuBarEndpointRows()
             MenuBarChipRow()
             MenuBarEvents()
+            MenuBarMailRow()
             Divider().overlay(DieterTheme.border)
             MenuBarActions()
             MenuBarFooter()
@@ -417,6 +435,38 @@ private struct MenuBarEvents: View {
                 subtitle: [row.title, row.boardName].filter { !$0.isEmpty }.joined(separator: " · "),
                 atMillis: row.atMillis, cardID: row.card.id)
         }
+    }
+}
+
+/// "Mail · 4 unread": opens Mail in the workspace window.
+private struct MenuBarMailRow: View {
+    @Environment(DieterStore.self) private var store
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        let slice = store.mailModel.slice
+        Button {
+            openWindow(id: "workspace")
+            NSApp.activate(ignoringOtherApps: true)
+            store.openMail()
+        } label: {
+            HStack(spacing: 9) {
+                Image(systemName: slice.unread > 0 ? "envelope.badge" : "envelope")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(slice.unread > 0 ? DieterTheme.action : DieterTheme.subtle)
+                    .frame(width: 16)
+                Text("Mail").font(.system(size: 12, weight: .semibold)).foregroundStyle(DieterTheme.text)
+                if !slice.unreadLabel.isEmpty {
+                    Text("· \(slice.unreadLabel) unread").font(.system(size: 12)).foregroundStyle(DieterTheme.subtle)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(DieterTheme.tertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("menubar.mail")
     }
 }
 

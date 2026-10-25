@@ -1,6 +1,7 @@
 # Proposal: agent mail (read-only Markdown reports from agents)
 
-Status: proposal 2026-10-25 · scope: new `mail` store aggregate and
+Status: implemented 2026-10-25 ([ADR 0004](../adr/0004-agent-mail.md); §6
+records the decisions and where the implementation differs) · scope: new `mail` store aggregate and
 `MailService`, a `mail_access` conversation and schedule flag, turn
 instructions, CLI, `ChangesFrame`, Kotlin core, Markdown rendering on all three
 clients, and a Mail destination on macOS, Android and iOS · UI mockup in
@@ -210,12 +211,8 @@ access cannot grant it". A human (local operator or remote device) can always
 set it. This is a single `capabilityCaller` helper beside `vaultCaller`, and
 the vault fix can reuse it.
 
-**Older daemons.** A machine on an older release ignores the field silently.
-The core enables the toggle only when the target machine's reported
-`release_version` (`machine.proto:25`) is at least the release that ships
-mail. Otherwise it shows "Update <machine> to send mail". There is no feature
-capability list today; `MachineOperationCapability` covers machine operations
-only. No floor bump is needed, because the change is additive.
+**Older daemons.** Not gated (decided): one release ships the daemon and the
+clients together, so the toggle is always shown.
 
 **Visibility after creation.** Show the flag next to vault access wherever a
 conversation shows its settings:
@@ -857,15 +854,33 @@ both and can start at once. Phases 4 and 5 need 2 and 3.
 - **Verification run:** `just check-changed --dry-run` first, then the
   selected suites once per phase.
 
-## 6. Decisions to confirm
+## 6. Decisions
 
-| #   | Question                                             | Recommendation                                                                                                                                                                                                  |
+All five recommendations were accepted on 2026-10-25. For D5 the user added
+that the phone and tablet apps show the unread count on the **Mail** tab.
+
+| #   | Question                                             | Decision                                                                                                                                                                                                        |
 | --- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | D1  | Can scripts and cron (no turn) send mail?            | **Yes**, as an operator with `--from`. It is useful, and CLI parity tests over direct TLS and relay need it.                                                                                                    |
 | D2  | Should the toggle be remembered between forms?       | **No**, as with vault. Off by default, chosen on purpose for each creation.                                                                                                                                     |
 | D3  | Can mail access be switched on for an existing card? | **Not in v1.** Fixed at creation for cards and chats; editable on schedules.                                                                                                                                    |
 | D4  | Naming                                               | Destination **Mail**, folders **Inbox / Archive / Trash** plus Flagged and Unread views; flag `mail_access` and `--mail`. "Inbox" inside Mail is scoped by the destination; the attention Inbox keeps its name. |
 | D5  | Mac Dock badge with the unread mail count?           | **Optional setting, off by default.** The sidebar and menu bar already show it.                                                                                                                                 |
+
+Where the implementation differs from the design above:
+
+- **Mobile tabs.** The apps had gained a Channels tab the same day, so the tab
+  bar shows six tabs: Inbox, Projects, Chats, **Mail**, Channels and Tools
+  (decided 2026-10-25; the navigation will be reworked separately).
+- **Sender names.** An agent whose card has no title and no schedule shows as
+  "Agent on <machine>", not "Operator on <machine>".
+- **Reader details** start with Card, Chat, Schedule or Operator.
+- **Notification taps** while the workspace is still loading open the
+  conversation once it arrives, following `OpenRequests`, instead of the Inbox.
+- **Pruning** removes Trash messages whatever their state; outside the Trash,
+  unread and flagged mail are never pruned.
+- **`dieter mail list`** defaults to the Inbox; `--folder all` lists every
+  folder.
 
 ## 7. Out of scope and follow-ups
 

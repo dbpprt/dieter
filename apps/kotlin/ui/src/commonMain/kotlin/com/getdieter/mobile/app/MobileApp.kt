@@ -23,6 +23,7 @@ import com.getdieter.mobile.channels.*
 import com.getdieter.mobile.conversation.*
 import com.getdieter.mobile.creation.*
 import com.getdieter.mobile.design.*
+import com.getdieter.mobile.mail.*
 import com.getdieter.mobile.navigation.*
 import com.getdieter.mobile.platform.*
 import com.getdieter.mobile.screens.*
@@ -143,28 +144,39 @@ private fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
     }
 }
 
+/** Each tab's badge: Inbox attention, unread mail and unread channel messages. */
 @Composable
-private fun BottomBar(store: MobileStore, navigation: MobileNavigation) {
+private fun rememberTabBadges(store: MobileStore): (MobileTab) -> String {
     val activity by store.workspace.activity.collectAsState()
     val channels by store.channels.slice.collectAsState()
+    val mail by store.mail.slice.collectAsState()
+    val attention = activity.summary?.attention ?: 0
+    return { tab ->
+        when (tab) {
+            MobileTab.INBOX -> if (attention > 0) attention.toString() else ""
+            MobileTab.MAIL -> mail.unread_label
+            MobileTab.CHANNELS -> channels.unread_label
+            else -> ""
+        }
+    }
+}
+
+@Composable
+private fun TabIcon(tab: MobileTab, badge: String) {
+    BadgedBox(badge = { if (badge.isNotEmpty()) Badge { Text(badge) } }) {
+        Icon(tab.glyph, null, size = 24.dp)
+    }
+}
+
+@Composable
+private fun BottomBar(store: MobileStore, navigation: MobileNavigation) {
+    val badge = rememberTabBadges(store)
     NavigationBar(containerColor = colors.surfaceContainer) {
         MobileTab.entries.forEach { tab ->
             NavigationBarItem(
                 selected = navigation.tab == tab,
                 onClick = { store.selectTab(tab) },
-                icon = {
-                    val badge =
-                        when (tab) {
-                            MobileTab.INBOX -> (activity.summary?.attention ?: 0).toString()
-                            MobileTab.CHANNELS -> channels.unread_label
-                            else -> ""
-                        }
-                    BadgedBox(
-                        badge = { if (badge.isNotEmpty() && badge != "0") Badge { Text(badge) } }
-                    ) {
-                        Icon(tab.glyph, null, size = 24.dp)
-                    }
-                },
+                icon = { TabIcon(tab, badge(tab)) },
                 label = { Text(tab.title) },
                 modifier = Modifier.testTag("nav-${tab.name.lowercase()}"),
             )
@@ -174,6 +186,7 @@ private fun BottomBar(store: MobileStore, navigation: MobileNavigation) {
 
 @Composable
 private fun NavigationRailBar(store: MobileStore, navigation: MobileNavigation) {
+    val badge = rememberTabBadges(store)
     NavigationRail(
         containerColor = colors.surfaceContainer,
         header = {
@@ -197,7 +210,7 @@ private fun NavigationRailBar(store: MobileStore, navigation: MobileNavigation) 
             NavigationRailItem(
                 selected = navigation.tab == tab,
                 onClick = { store.selectTab(tab) },
-                icon = { Icon(tab.glyph, null, size = 24.dp) },
+                icon = { TabIcon(tab, badge(tab)) },
                 label = { Text(tab.title) },
                 modifier = Modifier.testTag("nav-${tab.name.lowercase()}"),
             )
@@ -293,6 +306,7 @@ internal fun RouteContent(store: MobileStore, route: MobileRoute, openUrl: (Stri
                 MobileTab.INBOX -> InboxScreen(store)
                 MobileTab.PROJECTS -> ProjectsScreen(store)
                 MobileTab.CHATS -> ChatsScreen(store)
+                MobileTab.MAIL -> MailScreen(store)
                 MobileTab.CHANNELS -> ChannelsScreen(store)
                 MobileTab.TOOLS -> ToolsScreen(store)
             }
@@ -300,6 +314,7 @@ internal fun RouteContent(store: MobileStore, route: MobileRoute, openUrl: (Stri
         is MobileRoute.Board -> BoardScreen(store, route.boardId)
         is MobileRoute.Conversation -> ConversationScreen(store, card(route.cardId), openUrl)
         is MobileRoute.Channel -> ChannelScreen(store, route.projectId, openUrl)
+        is MobileRoute.MailMessage -> MailMessageScreen(store, route, openUrl)
         is MobileRoute.Pane -> CardPaneScreen(store, card(route.cardId), route.pane, openUrl)
         is MobileRoute.Tool -> ToolScreen(store, route.page)
         is MobileRoute.NewTask -> CreationScreen(store, route.chat)

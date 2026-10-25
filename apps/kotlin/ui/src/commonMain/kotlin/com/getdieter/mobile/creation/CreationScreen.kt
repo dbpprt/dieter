@@ -368,23 +368,37 @@ internal fun CreationScreen(store: MobileStore, chat: Boolean) {
                 }
                 if (preview.workspace_detail.isNotEmpty()) SectionFooter(preview.workspace_detail)
             }
-            item("vault") {
-                SectionHeader("Vault")
-                Group(listOf(0)) { _, position ->
-                    ListRow(
-                        "Allow vault access",
-                        position = position,
-                        subtitle = "The agent may use the account's passwords and TOTP codes",
-                        trailing = {
-                            DSwitch(
-                                intent.vault_access,
-                                { store.creation.update(intent.copy(vault_access = it)) },
-                                Modifier.testTag("vault-access"),
-                            )
-                        },
-                    )
+            item("access") {
+                SectionHeader("Access")
+                Group(listOf(0, 1)) { index, position ->
+                    if (index == 0)
+                        ListRow(
+                            "Allow vault access",
+                            position = position,
+                            subtitle = "The agent may use the account's passwords and TOTP codes",
+                            trailing = {
+                                DSwitch(
+                                    intent.vault_access,
+                                    { store.creation.update(intent.copy(vault_access = it)) },
+                                    Modifier.testTag("vault-access"),
+                                )
+                            },
+                        )
+                    else
+                        ListRow(
+                            "Allow mail to you",
+                            position = position,
+                            subtitle = "The agent may send you read-only reports in Mail",
+                            trailing = {
+                                DSwitch(
+                                    intent.mail_access,
+                                    { store.creation.update(intent.copy(mail_access = it)) },
+                                    Modifier.testTag("mail-access"),
+                                )
+                            },
+                        )
                 }
-                SectionFooter("Set only when creating. Agents never see the vault otherwise.")
+                SectionFooter("Set only when creating.")
             }
             val labels = board?.labels.orEmpty()
             if (!chat && labels.isNotEmpty())

@@ -299,3 +299,44 @@ func waitSettled(t *testing.T, runs <-chan model.ScheduleRun, id string) model.S
 		}
 	}
 }
+
+func TestScheduleCopiesCapabilitiesOntoCreatedCards(t *testing.T) {
+	t.Parallel()
+	manager, data, project, board := setup(t)
+	now := time.Date(2026, 10, 25, 7, 0, 0, 0, time.UTC)
+	manager.now = func() time.Time { return now }
+	input := schedules.Input{
+		Project: project.ID, Board: board.ID, Name: "Nightly audit", Cron: "0 3 * * *", Timezone: "UTC", Enabled: true,
+		Action: model.ScheduleActionDraft, TitleTemplate: "Audit {{date}}", PromptTemplate: "Audit", Provider: "mock", Model: "mock",
+		OpenCardPolicy: "always", VaultAccess: true, MailAccess: true,
+	}
+	schedule, err := manager.Create(input)
+	if err != nil || !schedule.VaultAccess || !schedule.MailAccess {
+		t.Fatalf("schedule = %+v, %v", schedule, err)
+	}
+	run, err := manager.RunNow(schedule.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	card, err := data.Kanban.ResolveCard(run.CardID)
+	if err != nil || !card.VaultAccess || !card.MailAccess {
+		t.Fatalf("card from a schedule with both capabilities = %+v, %v", card, err)
+	}
+	// Editing the schedule applies to later occurrences only.
+	input.MailAccess = false
+	if schedule, err = manager.Update(schedule.ID, input); err != nil || schedule.MailAccess || !schedule.VaultAccess {
+		t.Fatalf("updated schedule = %+v, %v", schedule, err)
+	}
+	now = now.Add(time.Hour)
+	next, err := manager.RunNow(schedule.ID)
+	if err != nil || next.CardID == run.CardID {
+		t.Fatalf("second run = %+v, %v", next, err)
+	}
+	later, err := data.Kanban.ResolveCard(next.CardID)
+	if err != nil || !later.VaultAccess || later.MailAccess {
+		t.Fatalf("card after mail was switched off = %+v, %v", later, err)
+	}
+	if card, err = data.Kanban.ResolveCard(run.CardID); err != nil || !card.MailAccess {
+		t.Fatalf("the earlier card lost mail access: %+v, %v", card, err)
+	}
+}

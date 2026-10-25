@@ -138,6 +138,20 @@ final class ComposeNativeViews: NSObject, @preconcurrency MobileNativeViews {
 
     func showToast(message: String) { Toast.show(message) }
 
+    /// The system share sheet with Markdown text; mail and notes apps take the subject too.
+    func shareText(subject: String, text: String) {
+        guard let presenter = Self.presenting else { return }
+        let sheet = UIActivityViewController(
+            activityItems: [MarkdownShareItem(subject: subject, text: text)], applicationActivities: nil)
+        if let popover = sheet.popoverPresentationController {
+            popover.sourceView = presenter.view
+            popover.sourceRect = CGRect(
+                x: presenter.view.bounds.maxX - 44, y: presenter.view.safeAreaInsets.top, width: 1, height: 1)
+            popover.permittedArrowDirections = [.up]
+        }
+        presenter.present(sheet, animated: true)
+    }
+
     static func presenter(for view: UIView) -> UIViewController? {
         var controller = view.window?.rootViewController
         while let next = controller?.presentedViewController, !next.isBeingDismissed { controller = next }
@@ -408,6 +422,24 @@ private final class SheetHandle: NSObject, @preconcurrency NativeSheet, UIAdapti
         closed = true
         dismissed.chose(confirmed: false)
     }
+}
+
+/// Shared Markdown text with its subject, as `UIActivityViewController` asks for them.
+@MainActor private final class MarkdownShareItem: NSObject, @preconcurrency UIActivityItemSource {
+    let subject: String
+    let text: String
+    init(subject: String, text: String) {
+        self.subject = subject
+        self.text = text
+    }
+    func activityViewControllerPlaceholderItem(_ activityViewController: UIActivityViewController) -> Any { text }
+    func activityViewController(
+        _ activityViewController: UIActivityViewController, itemForActivityType activityType: UIActivity.ActivityType?
+    ) -> Any? { text }
+    func activityViewController(
+        _ activityViewController: UIActivityViewController,
+        subjectForActivityType activityType: UIActivity.ActivityType?
+    ) -> String { subject }
 }
 
 /// A transient Liquid Glass capsule for errors that need no decision.

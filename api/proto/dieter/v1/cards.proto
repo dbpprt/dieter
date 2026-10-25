@@ -64,6 +64,9 @@ message CreateConversationRequest {
   string remote_publish_mode = 20;
   // Grant this conversation's agent turns access to the account vault.
   bool vault_access = 25;
+  // Let this conversation's agent turns send the user mail (MailService).
+  // An agent turn may grant it only when its own conversation has it.
+  bool mail_access = 26;
 }
 
 message ListChatsRequest {

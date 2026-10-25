@@ -105,6 +105,7 @@ struct ConversationTitleRow: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Refreshing conversation")
                 .accessibilityIdentifier("conversation.refreshing")
+                .e2eTarget("conversation.refreshing")
                 .help("Checking for updates. Displayed activity may be out of date.")
             }
             GlassEffectContainer(spacing: 6) {
@@ -154,6 +155,24 @@ struct ConversationBreadcrumb: View {
                     DieterBranchLabel(text: badge.conflicted ? badge.fullTitle : branch)
                         .foregroundStyle(badge.conflicted ? DieterTheme.failed : DieterTheme.tertiary)
                         .help(badge.accessibilityLabel)
+                }
+                // What the agent may use beyond its workspace, fixed at creation.
+                if card.vaultAccess || card.mailAccess {
+                    Text("·")
+                    HStack(spacing: 6) {
+                        if card.vaultAccess {
+                            Label("Vault", systemImage: "key.fill")
+                                .help("This conversation's agent may use the account vault")
+                        }
+                        if card.mailAccess {
+                            Label("Mail", systemImage: "envelope.fill")
+                                .help("This conversation's agent may send you mail")
+                                .accessibilityIdentifier("conversation.mail-access")
+                        }
+                    }
+                    .labelStyle(.titleAndIcon)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .accessibilityIdentifier("conversation.access")
                 }
             }
             Spacer(minLength: 0)

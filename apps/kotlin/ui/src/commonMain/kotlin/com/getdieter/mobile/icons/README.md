@@ -9,6 +9,8 @@ vector paths are unchanged. See [LICENSE.txt](LICENSE.txt) and each source heade
 - 56 files were reconstructed from the path calls in the compiled
   `material-icons-extended-desktop-1.7.3.jar` classes, including arc commands.
   Icons whose paths depend on computed locals were not reconstructed.
+- `Flag.kt` holds `Outlined.Flag` and `Filled.Flag` (as `Outlined.FlagFilled`),
+  written from their published path data.
 
 Keeping only used icons avoids compiling the entire extended icon library
 on Kotlin/Native. Standard icons use `material-icons-core`. On iOS, `Glyph`

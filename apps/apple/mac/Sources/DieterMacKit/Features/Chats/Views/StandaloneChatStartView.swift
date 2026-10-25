@@ -269,6 +269,14 @@ struct StandaloneChatStartView: View {
                 )
                 .accessibilityIdentifier("chats.new.vault-access")
                 .accessibilityValue(form.intent.vaultAccess ? "Allowed" : "Not allowed")
+                Toggle(isOn: $form.intent.mailAccess) {
+                    Label("Mail", systemImage: form.intent.mailAccess ? "envelope.fill" : "envelope")
+                }
+                .toggleStyle(.button)
+                .help("Let this chat's agent send you reports in Mail. Set only when starting the chat.")
+                .accessibilityIdentifier("chats.new.mail-access")
+                .accessibilityValue(form.intent.mailAccess ? "Allowed" : "Not allowed")
+                .e2eTarget("chats.new.mail-access")
                 Spacer(minLength: 0)
             }
             .font(.system(size: 11, weight: .medium))

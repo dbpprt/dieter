@@ -250,6 +250,16 @@ data to its model provider or any network destination.
   stored transcripts (`internal/api/vault.go`, `internal/engine`). An agent that
   reads `DIETER_HOME` directly bypasses this; it prevents mistakes and leaves a
   trail, nothing more.
+- Agent mail is opt-in per conversation and schedule at creation and mediated
+  by the same turn token (`internal/api/mail.go`). Agents may only send; every
+  other `MailService` call refuses a turn token, so one conversation can't
+  read another's reports or use the mailbox to relay instructions. A turn can't
+  grant mail access to a card, chat or schedule it creates unless its own
+  conversation has it. Mail bodies pass through the turn's vault redaction
+  before they are stored. The apps render a fixed Markdown subset without HTML,
+  never load images or other remote content, and resolve relative links only
+  inside the sender's checkout. As with the vault, an agent that writes
+  `DIETER_HOME` directly bypasses this.
 - Agent turns cannot change device trust. `dieter device` mutations
   (`init`, `approve`, `revoke`, `recover`, `sync`) and `dieter daemon unenroll`
   refuse a turn token, also with `--machine`, and the daemon refuses

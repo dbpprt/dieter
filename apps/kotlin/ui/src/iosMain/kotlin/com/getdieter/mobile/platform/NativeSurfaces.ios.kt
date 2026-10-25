@@ -94,6 +94,9 @@ interface MobileNativeViews {
     ): NativeSheet
 
     fun showToast(message: String)
+
+    /** Presents the share sheet with [text] (Markdown), titled [subject]. */
+    fun shareText(subject: String, text: String)
 }
 
 interface NativeChoice {
@@ -219,3 +222,9 @@ internal actual fun rememberAttachmentViewer(
 ): (com.getdieter.api.v1.MessagePart) -> Unit = { part ->
     checkNotNull(AppleNativeViews.factory).previewAttachment(part.encode().data())
 }
+
+@Composable
+internal actual fun rememberTextSharer(): (subject: String, text: String) -> Unit =
+    { subject, text ->
+        checkNotNull(AppleNativeViews.factory).shareText(subject, text)
+    }

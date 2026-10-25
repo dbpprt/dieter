@@ -49,7 +49,7 @@ func conversationInput(request *dieterv1.CreateConversationRequest) (engine.Card
 		LabelIDs: append([]string(nil), request.GetLabelIds()...), DeferStart: request.GetDeferStart(), AutoGenerateTitle: request.GetAutoGenerateTitle(), Attachments: attachments,
 		WorkspaceMode: workspaceMode, WorkspaceBranch: request.GetWorkspaceBranch(),
 		WorkspaceBaseBranch: request.GetWorkspaceBaseBranch(), WorkspaceBaseRemote: request.GetWorkspaceBaseRemote(),
-		RemotePublishMode: request.GetRemotePublishMode(), VaultAccess: request.GetVaultAccess(),
+		RemotePublishMode: request.GetRemotePublishMode(), VaultAccess: request.GetVaultAccess(), MailAccess: request.GetMailAccess(),
 	}, nil
 }
 
@@ -129,11 +129,20 @@ func scheduleInput(request *dieterv1.SaveScheduleRequest) (schedules.Input, erro
 		PromptTemplate: value.GetPromptTemplate(), Provider: value.GetProvider(), Model: value.GetModel(),
 		Effort: value.GetEffort(), ProviderOptions: cloneProtoStringMap(value.GetProviderOptions()), LabelIDs: append([]string(nil), value.GetLabelIds()...),
 		OpenCardPolicy: value.GetOpenCardPolicy(), MisfirePolicy: value.GetMisfirePolicy(),
-		WorkspaceMode: workspaceMode, VaultAccess: value.GetVaultAccess(),
+		WorkspaceMode: workspaceMode, VaultAccess: value.GetVaultAccess(), MailAccess: value.GetMailAccess(),
 	}, nil
 }
 
 func (s *Server) idempotentConversation(ctx context.Context, request *dieterv1.CreateConversationRequest, scope string) (*dieterv1.Card, error) {
+	if request.GetMailAccess() {
+		caller, err := s.capabilityCaller(ctx)
+		if err == nil {
+			err = caller.grantMail(true)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
 	clientID, commandID := strings.TrimSpace(request.GetClientId()), strings.TrimSpace(request.GetCommandId())
 	if clientID == "" && commandID == "" {
 		input, err := conversationInput(request)

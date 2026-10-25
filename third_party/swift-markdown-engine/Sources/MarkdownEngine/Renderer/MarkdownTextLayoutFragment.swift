@@ -872,3 +872,30 @@ final class MarkdownLayoutManagerDelegate: NSObject, NSTextLayoutManagerDelegate
         return fragment
     }
 }
+
+// MARK: - Dieter: rendered-table hit testing
+
+extension MarkdownTextLayoutFragment {
+    /// The table this fragment draws inline (not through a wide-table
+    /// overlay) under `containerPoint`: its anchor, image, and the image's
+    /// frame in text-container coordinates — exactly where `draw(at:)` puts it.
+    func renderedTable(at containerPoint: CGPoint) -> (anchor: Int, image: RenderedTableImage, frame: CGRect)? {
+        guard let ts = textStorage, let range = fragmentNSRange, range.length > 0 else { return nil }
+        var hit: (anchor: Int, image: RenderedTableImage, frame: CGRect)?
+        ts.enumerateAttribute(.latexImage, in: range, options: []) { value, attrRange, stop in
+            guard let image = value as? RenderedTableImage,
+                  ts.attribute(.scrollableBlockNaturalWidth, at: attrRange.location, effectiveRange: nil) == nil
+            else { return }
+            let boundsVal = ts.attribute(.latexBounds, at: attrRange.location, effectiveRange: nil) as? NSValue
+            let imageBounds = boundsVal?.rectValue ?? CGRect(origin: .zero, size: image.size)
+            let blockOffsetY = ts.attribute(.latexBlockOffsetY, at: attrRange.location, effectiveRange: nil) as? CGFloat
+            guard let frame = blockImageDrawRect(
+                attrRange: attrRange, imageBounds: imageBounds, blockOffsetY: blockOffsetY,
+                point: layoutFragmentFrame.origin
+            ), frame.contains(containerPoint) else { return }
+            hit = (attrRange.location, image, frame)
+            stop.pointee = true
+        }
+        return hit
+    }
+}

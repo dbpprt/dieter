@@ -139,6 +139,11 @@ final class AppSession {
     let schedulesModel = SchedulesModel()
     /// Agent channels (experimental) across machines, and their settings.
     let channelsModel = ChannelsModel()
+    /// Agent mail across machines: the mailbox, its badge and preferences.
+    let mailModel = MailModel()
+    /// Routes taps on the core's notifications; the notification center
+    /// holds its delegate weakly, so the session keeps it while the app runs.
+    @ObservationIgnored var notificationResponder: CoreNotificationResponder?
     let terminalsModel: TerminalsModel
     let screensModel: ScreensModel
     @ObservationIgnored lazy var terminalOverview = TerminalOverviewModel(
@@ -339,6 +344,16 @@ final class AppSession {
         screensModel.media = screenMedia
         quickTaskForm.remember = { [weak self] remember in
             Task { await self?.perform { $0.rememberCreation = remember } }
+        }
+        if host != nil {
+            // The live app routes notification taps through the core and
+            // shows the unread mail badge the core words.
+            let responder = CoreNotificationResponder { [weak self] key, action in
+                await self?.respondToNotification(key: key, action: action)
+            }
+            responder.install()
+            notificationResponder = responder
+            mailModel.onAppBadgeChange = { Self.applyAppBadge($0) }
         }
     }
 
