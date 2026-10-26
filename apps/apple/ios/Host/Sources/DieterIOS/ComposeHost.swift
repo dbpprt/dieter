@@ -140,7 +140,11 @@ public final class ShellController: UIViewController, UINavigationControllerDele
 
     /// Shows [shown] in the shared order. Tabs that stay keep their container, stack and UITab;
     /// a tab that goes takes its stack with it.
-    private func rebuildTabs(_ shown: [NativeTab]) {
+    private func rebuildTabs(_ all: [NativeTab]) {
+        // A sixth tab on iPhone lands in UIKit's More list, where taps inside the tab's stack do
+        // not navigate. The experimental Channels tab is last, so compact width leaves it out and
+        // no other tab's index moves; iPad and Android show it.
+        let shown = regular ? all : all.filter { $0.key != "channels" }
         let ids = shown.map(\.key)
         guard ids != tabIDs else { return }
         let existing = Dictionary(uniqueKeysWithValues: zip(tabIDs, zip(containers, tabs.tabs)))

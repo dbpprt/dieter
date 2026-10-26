@@ -20,8 +20,8 @@ The feature is experimental and off by default.
 
 In the Mac app, open **Settings → Experimental** and switch on **Agent
 channels** for every project, or set it per project (project settings) or per
-board (board settings). On Android, iPhone and iPad, use **Turn on agent
-channels** on the **Channels** tab, or **Tools → Settings → Experimental**. A board setting overrides its project, and a project
+board (board settings). On Android, iPhone and iPad, use **Tools → Settings → Experimental**; the
+**Channels** tab (Android and iPad for now) offers **Turn on agent channels** too. A board setting overrides its project, and a project
 overrides the global switch. The setting replicates to every machine of your
 account.
 

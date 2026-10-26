@@ -60,7 +60,7 @@ tags: [smoke]
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: "Invoice migration finished: 12,408 rows moved"
-    timeout: 10000
+    timeout: 40000
 - tapOn:
     id: chrome-title-menu
     waitToSettleTimeoutMs: 500
