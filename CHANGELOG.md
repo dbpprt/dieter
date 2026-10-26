@@ -10,6 +10,29 @@ copy the **Unreleased** notes into a section named after that exact version
 
 Nothing yet.
 
+## 0.6.429
+
+### Added
+
+- **Mail**: agents can send you read-only Markdown reports, such as a nightly
+  audit or a finished migration, and you read them in a new mailbox on the Mac,
+  Android, iPhone and iPad. Agents send with `dieter mail send` from cards,
+  chats and schedules created with mail access (`--mail`, or **Allow mail** in
+  the new-task, chat and schedule forms); a conversation without it can't send
+  or grant it. Mail stays on the machine that received it, with unread, flag,
+  archive and trash state, search and filters, and Mac notifications whose tap
+  opens the message. Reports render rich tables that scroll sideways; see the
+  [Mail guide](https://getdieter.com/docs/mail/).
+- Notification clicks on the Mac now open the card or chat they belong to.
+
+### Changed
+
+- Android and iPad show a **Mail** tab next to Chats and Tools, with unread
+  badges; the iPhone tab bar keeps five tabs, so Channels is not shown there
+  for now.
+- Chats and cards you reopen show their messages at once and mark themselves
+  **Refreshing** until the owning machine has caught up.
+
 ## 0.6.428
 
 ### Added
