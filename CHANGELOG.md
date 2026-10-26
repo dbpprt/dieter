@@ -27,8 +27,8 @@ Nothing yet.
 
 ### Changed
 
-- Android and iPad show a **Mail** tab next to Chats and Tools, with unread
-  badges; the iPhone tab bar keeps five tabs, so Channels is not shown there
+- Android, iPhone and iPad have a **Mail** tab with unread badges. The iPhone
+  tab bar keeps five tabs, so the experimental Channels tab is not shown there
   for now.
 - Chats and cards you reopen show their messages at once and mark themselves
   **Refreshing** until the owning machine has caught up.
