@@ -38,9 +38,11 @@ import com.getdieter.core.files.SyntaxKind
 import com.getdieter.core.files.syntaxRanges
 import com.getdieter.core.presentation.Markdown
 import com.getdieter.core.presentation.MarkdownBlock
+import com.getdieter.core.presentation.MarkdownDiagrams
 import com.getdieter.core.presentation.MarkdownInline
 import com.getdieter.core.presentation.MarkdownListItem
 import com.getdieter.core.presentation.TableAlignment
+import com.getdieter.mobile.platform.MarkdownDiagram
 
 /*
  * The renderer of the Markdown profile (docs/proposals/agent-mail.md §3.7) over the core's block
@@ -86,6 +88,7 @@ private data class MarkdownStyle(
     val type: DieterType,
     /** Changes whenever [MarkdownLinks.linkable] may answer differently. */
     val linkKey: Any?,
+    val diagrams: Boolean,
 ) {
     val body: TextStyle
         get() = type.body.copy(color = text)
@@ -102,7 +105,7 @@ private data class MarkdownStyle(
 }
 
 @Composable
-private fun rememberMarkdownStyle(linkKey: Any?): MarkdownStyle {
+private fun rememberMarkdownStyle(linkKey: Any?, diagrams: Boolean = false): MarkdownStyle {
     val content = LocalContentColor.current
     val text = if (content == Color.Unspecified) palette.label else content
     val link =
@@ -110,7 +113,7 @@ private fun rememberMarkdownStyle(linkKey: Any?): MarkdownStyle {
         else palette.accent
     val colors = palette
     val styles = type
-    return remember(text, link, colors, styles, linkKey) {
+    return remember(text, link, colors, styles, linkKey, diagrams) {
         MarkdownStyle(
             text = text,
             secondary = colors.secondaryLabel,
@@ -122,6 +125,7 @@ private fun rememberMarkdownStyle(linkKey: Any?): MarkdownStyle {
             dark = colors.dark,
             type = styles,
             linkKey = linkKey,
+            diagrams = diagrams,
         )
     }
 }
@@ -138,6 +142,7 @@ internal fun LazyListScope.markdownDocument(
     linkKey: Any? = null,
     key: String = "markdown",
     horizontalPadding: Dp = ScreenMargin + 4.dp,
+    diagrams: Boolean = false,
 ) {
     itemsIndexed(
         blocks,
@@ -145,7 +150,7 @@ internal fun LazyListScope.markdownDocument(
         contentType = { _, block -> contentType(block) },
     ) { index, block ->
         val links = rememberMarkdownLinks(linkHandler, linkable)
-        val style = rememberMarkdownStyle(linkKey)
+        val style = rememberMarkdownStyle(linkKey, diagrams)
         Box(
             Modifier.fillMaxWidth()
                 .padding(horizontal = horizontalPadding)
@@ -217,7 +222,14 @@ private fun BlockView(
                 Modifier.semantics { heading() },
                 style = style.heading(block.level),
             )
-        is MarkdownBlock.Code -> CodeView(block, style)
+        is MarkdownBlock.Code -> {
+            val kind = if (style.diagrams) MarkdownDiagrams.kind(block.language) else null
+            if (kind == null) CodeView(block, style)
+            else
+                MarkdownDiagram(kind, block.text, style.dark, block.language) {
+                    CodeView(block, style)
+                }
+        }
         is MarkdownBlock.Quote -> QuoteView(block, style, links, depth)
         is MarkdownBlock.ListBlock -> ListView(block, style, links, depth)
         MarkdownBlock.Rule -> Hairline(Modifier.padding(vertical = 6.dp))

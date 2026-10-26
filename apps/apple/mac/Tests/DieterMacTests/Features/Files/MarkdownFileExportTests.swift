@@ -36,6 +36,20 @@ import Testing
 @Suite(.serialized)
 @MainActor
 struct MarkdownFileExportRenderingTests {
+    @Test func mailRichReportExportsEverySupportedGraphicAsStaticSVG() async throws {
+        var root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        for _ in 0..<7 { root.deleteLastPathComponent() }
+        let source = try String(contentsOf: root.appendingPathComponent("tests/fixtures/mail/rich.md"), encoding: .utf8)
+        let data = try await MarkdownFileExport.data(for: .init(name: "Mail report.md", source: source), format: .html)
+        let html = try #require(String(data: data, encoding: .utf8))
+        #expect(
+            html.components(separatedBy: "<svg").count == 5, "Mermaid, Vega-Lite, its alias and raw Vega freeze as SVG")
+        #expect(html.contains("data-kind=\"vega\""))
+        #expect(html.contains("{&quot;data&quot;: broken JSON}") || html.contains("{\"data\": broken JSON}"))
+        #expect(!html.contains("<script") && !html.contains("<img") && !html.contains("<iframe"))
+        #expect(!html.contains("data-state=\"rendering\""))
+    }
+
     @Test func markdownExportHTMLContainsFinishedOfflineSVGsAndMalformedBlockDiagnostics() async throws {
         let source =
             exportDiagramFixture + """

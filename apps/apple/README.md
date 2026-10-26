@@ -140,6 +140,12 @@ xcodebuild -project apps/apple/ios/Dieter.xcodeproj -scheme Dieter \
 swift test --package-path native/macos
 ```
 
+The iOS app's Copy Compose resources build phase copies the UI's generated
+resources (including the shared offline Markdown bundle and third-party
+licenses) into the app bundle. Build the UI framework first; an absent renderer
+bundle fails the app build instead of shipping a nonfunctional Mail preview.
+Android enables resource packaging on the shared KMP library for the same assets.
+
 The core has no x86_64 simulator slice, so the project excludes x86_64 for the
 simulator SDK (`EXCLUDED_ARCHS`).
 

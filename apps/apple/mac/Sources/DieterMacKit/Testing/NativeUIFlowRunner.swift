@@ -121,6 +121,7 @@
             case extendedWaitUntil(ElementSelector, visible: Bool, timeout: TimeInterval)
             case takeScreenshot(String)
             case pressKey(Key)
+            case scroll
         }
 
         struct Step {
@@ -236,6 +237,9 @@
                     throw Failure("Unsupported key \(argument) on macOS")
                 }
                 command = .pressKey(key)
+            case "scroll":
+                guard argument as? Bool == true else { throw Failure("scroll takes no options on macOS") }
+                command = .scroll
             default:
                 throw Failure("Unsupported Maestro command \(name) on macOS")
             }
@@ -270,6 +274,17 @@
                 input.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
             case .takeScreenshot(let name):
                 try capture(window, name: name, output: output)
+            case .scroll:
+                // A real wheel event follows the nested reader's responder
+                // chain into the outer page scroller, just like a trackpad.
+                guard let content = window.contentView,
+                    let wheel = CGEvent(
+                        scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1,
+                        wheel1: -600, wheel2: 0, wheel3: 0),
+                    let event = NSEvent(cgEvent: wheel)
+                else { throw Failure("Native scroll event unavailable") }
+                let point = NSPoint(x: content.bounds.midX, y: content.bounds.midY)
+                content.hitTest(point)?.scrollWheel(with: event)
             case .pressKey(let key):
                 let target = NSApp.keyWindow ?? window
                 for type in [NSEvent.EventType.keyDown, .keyUp] {
@@ -352,8 +367,11 @@
         }
 
         private static func click(_ element: NativeUIAccessibility.Element) throws {
-            let frame = element.frame
             let host = element.window
+            // A tall reader may extend well beyond the window. Click its
+            // visible portion so subsequent key events reach the reader.
+            let frame = element.frame.intersection(host.frame)
+            guard !frame.isNull, !frame.isEmpty else { throw Failure("Element is outside its window") }
             let point = host.convertPoint(fromScreen: NSPoint(x: frame.midX, y: frame.midY))
             for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
                 guard

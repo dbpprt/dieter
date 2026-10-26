@@ -112,15 +112,30 @@ dieter mail delete --empty-trash
 
 The body is GitHub-flavored Markdown. Every app renders the same subset:
 
-| Renders                                                                    | Shown as text instead                     |
-| -------------------------------------------------------------------------- | ----------------------------------------- |
-| Headings, paragraphs, **bold**, _italic_, ~~strikethrough~~, `inline code` | Raw HTML                                  |
-| Links; relative links open the file in the sender's workspace              | Images (shown as a link, never loaded)    |
-| Ordered, unordered and nested lists; task lists (read-only)                | Footnotes and math                        |
-| Block quotes, horizontal rules, fenced code with a language                | Mermaid and Vega diagrams (shown as code) |
-| Tables with column alignment and formatting and links in cells             |                                           |
+| Renders                                                                    | Shown as text instead                             |
+| -------------------------------------------------------------------------- | ------------------------------------------------- |
+| Headings, paragraphs, **bold**, _italic_, ~~strikethrough~~, `inline code` | Raw HTML                                          |
+| Links; relative links open the file in the sender's workspace              | Images (shown as a link, never loaded)            |
+| Ordered, unordered and nested lists; task lists (read-only)                | Footnotes and math                                |
+| Block quotes, horizontal rules, fenced code with a language                | Unsupported or invalid diagrams (readable source) |
+| Tables with column alignment and formatting and links in cells             |                                                   |
+| Mermaid, Vega-Lite (`vega-lite` or `vegalite`) and Vega (`vega`) fences    |                                                   |
 
-Wide tables scroll sideways on their own, and the message stays put. Limits:
+Wide tables scroll sideways on their own, and the message stays put. Diagrams
+use the same bundled offline renderer as the Mac Files preview on macOS,
+Android and iOS. Charts must use inline JSON data (`data.values` or inline
+named datasets); external datasets, chart links, scripts and image/resource
+loads are blocked. This does not enable remote images. Mermaid uses strict
+security. Invalid or unsupported blocks retain readable source, so one bad
+chart does not hide the rest of the report.
+
+Mail diagrams are read-only graphics; Vega parameter controls are not interactive.
+Charts fit narrow screens and follow the app's light or dark appearance. The
+renderer keeps its existing limits: 100,000 Mermaid characters, 1 MB of chart
+JSON and a maximum JSON nesting depth of 100. Mail's smaller body limit still
+applies. Mac PDF and HTML exports keep rendered diagrams as static SVGs.
+
+Limits:
 
 | Limit       | Value                                                    |
 | ----------- | -------------------------------------------------------- |

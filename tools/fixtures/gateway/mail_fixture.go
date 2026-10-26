@@ -8,6 +8,7 @@ import (
 	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/store/mail"
 	"github.com/dbpprt/dieter/internal/store/schedules"
+	mailfixture "github.com/dbpprt/dieter/tests/fixtures/mail"
 )
 
 // Agent mail of the e2e and showcase fixtures. Maestro flows and screenshot
@@ -85,7 +86,7 @@ func seedMail(data *boardstore.Store, senders mailSenders) error {
 	}{
 		{senders.audit, mailAuditSubject, mailAuditBody, true, time.Hour, mail.Change{}},
 		{senders.invoices, mailInvoiceSubject, mailInvoiceBody, false, 2 * time.Hour, mail.Change{}},
-		{senders.smoke, mailSmokeSubject, mailSmokeBody, false, 24 * time.Hour, mail.Change{Read: &read, Flagged: &read}},
+		{senders.smoke, mailSmokeSubject, mailSmokeBody + "\n" + mailfixture.Rich, false, 24 * time.Hour, mail.Change{Read: &read, Flagged: &read}},
 		{model.MailSender{Kind: model.MailSenderOperator, Label: "backup.sh"}, mailBackupSubject, mailBackupBody, false, 72 * time.Hour, mail.Change{Read: &read, Folder: model.MailFolderArchive}},
 	} {
 		header, _, err := data.Mail.Send(mail.Draft{Sender: message.sender, Subject: message.subject, Body: message.body, Important: message.important, SentAt: now.Add(-message.ago)})

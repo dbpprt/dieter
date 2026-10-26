@@ -4,8 +4,7 @@ import SwiftUI
 
 /// A message's Markdown body in the native engine, read-only: it fits its
 /// content (the reader's scroll view scrolls the page), wide tables scroll
-/// on their own, and no block ever reveals its source. Diagram fences show
-/// as code: mail is a report, not a workspace document.
+/// on their own. Supported diagram fences use the same offline renderer as Files.
 struct MailMessageBody: View {
     let markdown: String
     /// Keeps the engine's per-document state (table scroll offsets) per message.
@@ -13,10 +12,14 @@ struct MailMessageBody: View {
     /// Every link the body opens; returns whether it handled the link.
     let openLink: @MainActor (URL) -> Bool
 
+    @State private var rendering = MailMarkdownSession()
+    @State private var graphicsStatus = "Rendering"
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         NativeTextViewWrapper(
             text: .constant(markdown),
-            configuration: MailMarkdown.configuration,
+            configuration: rendering.configuration,
             fontName: NSFont.systemFont(ofSize: MailMarkdown.fontSize).fontName,
             fontSize: MailMarkdown.fontSize,
             documentId: documentID,
@@ -24,7 +27,30 @@ struct MailMessageBody: View {
             onURLClick: openLink
         )
         .accessibilityIdentifier("mail.reader.body")
+        .onAppear { updateDiagrams() }
+        .onChange(of: markdown) { updateDiagrams() }
+        .onChange(of: colorScheme) { updateDiagrams() }
+        .onDisappear { rendering.diagrams.dispose() }
+        .onReceive(NotificationCenter.default.publisher(for: rendering.diagrams.renderingDidChangeNotification!)) { _ in
+            graphicsStatus =
+                "\(rendering.diagrams.cachedCount) rendered, \(rendering.diagrams.failedCount) source fallbacks"
+        }
+        .e2eTarget("mail.reader.graphics", text: graphicsStatus)
     }
+
+    private func updateDiagrams() {
+        rendering.diagrams.synchronizeSource(markdown)
+        rendering.diagrams.updateAppearance(NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)!)
+    }
+}
+
+/// Stable services for one message; notification-driven layout never creates another renderer.
+@MainActor
+private final class MailMarkdownSession {
+    let diagrams = NativeMarkdownDiagramRenderer(sourceOnFailure: true)
+    let configuration: MarkdownEditorConfiguration
+
+    init() { configuration = MailMarkdown.configuration(diagrams: diagrams) }
 }
 
 @MainActor
@@ -33,16 +59,16 @@ enum MailMarkdown {
     /// The readable column's maximum width, insets included.
     static let maximumWidth: CGFloat = 760
 
-    /// Built once: the Files editor's styling without its diagram renderer
-    /// and formatting commands, laid out to fit its content.
-    static let configuration: MarkdownEditorConfiguration = {
+    /// Read-only Files styling, with a renderer owned by this message.
+    static func configuration(diagrams: NativeMarkdownDiagramRenderer) -> MarkdownEditorConfiguration {
         var configuration = MarkdownEditorConfiguration.default
         configuration.textInsets = TextInsets(horizontal: 24, vertical: 14)
         configuration.extensions = [StrikethroughExtension()]
-        configuration.services = MarkdownEditorServices(syntaxHighlighter: DiagramFenceHighlighter())
+        configuration.services = MarkdownEditorServices(
+            syntaxHighlighter: DiagramFenceHighlighter(), renderedCodeBlocks: diagrams)
         configuration.heightBehavior = .fitsContent
         return configuration
-    }()
+    }
 }
 
 /// Where a link in a message leads. Web and mail links open outside Dieter;

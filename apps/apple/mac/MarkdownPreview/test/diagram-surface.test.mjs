@@ -166,3 +166,22 @@ test("diagram controller awaits rendering, caches unchanged requests and restore
     window.close();
   }
 });
+
+test("read-only Mail diagrams have image semantics and no source-edit activation", () => {
+  const { window } = new JSDOM("<main><div>Chart</div></main>");
+  const root = window.document.querySelector("main");
+  const messages = [];
+  const surface = createDiagramSurface({
+    document: window.document,
+    root,
+    postMessage: (value) => messages.push(value),
+  });
+  surface.prepare({ kind: "vega", blockID: "mail", readOnly: true });
+  assert.equal(root.getAttribute("role"), "img");
+  assert.equal(root.hasAttribute("tabindex"), false);
+  assert.doesNotMatch(root.getAttribute("aria-label"), /edit/);
+  root.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  assert.deepEqual(messages, []);
+  surface.dispose();
+  window.close();
+});

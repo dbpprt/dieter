@@ -108,6 +108,33 @@ struct NativeRenderedCodeBlockTests {
         #expect(fixture.editor.undoManager?.canUndo != true)
     }
 
+    @Test func failedPreviewRevealsOnlyItsSourceWithoutEditingTheReport() throws {
+        let source = "```mermaid\ngraph LR\n A-->B\n```\n\nUnrelated prose\n\n```vega-lite\n{broken}\n```\n"
+        let fixture = try EditorFixture(source)
+        fixture.editor.isEditable = false
+        let storage = try #require(fixture.editor.textStorage)
+        let first = try #require(fixture.imageAnchors().first)
+        let image = storage.attribute(.latexImage, at: first.location, effectiveRange: nil) as? NSImage
+        let prose = (source as NSString).range(of: "Unrelated prose")
+        let sentinel = NSAttributedString.Key("UnrelatedProsePresentation")
+        storage.addAttribute(sentinel, value: "preserved", range: prose)
+        let failed = try #require(fixture.renderer.requests.first { $0.code.contains("{broken}") })
+        fixture.renderer.unavailableSources.insert(failed.code)
+        NotificationCenter.default.post(name: fixture.renderer.notification, object: nil)
+
+        #expect(fixture.imageAnchors().count == 1)
+        let invalid = (source as NSString).range(of: "{broken}")
+        #expect(storage.attribute(.renderedCodeBlockSource, at: invalid.location, effectiveRange: nil) == nil)
+        #expect((storage.attribute(.font, at: invalid.location, effectiveRange: nil) as? NSFont)?.pointSize ?? 0 > 1)
+        #expect(
+            (storage.attribute(.foregroundColor, at: invalid.location, effectiveRange: nil) as? NSColor)?.alphaComponent
+                ?? 0 > 0)
+        #expect(storage.attribute(sentinel, at: prose.location, effectiveRange: nil) as? String == "preserved")
+        #expect(storage.attribute(.latexImage, at: first.location, effectiveRange: nil) as? NSImage === image)
+        #expect(fixture.editor.string == source && fixture.source == source)
+        #expect(fixture.editor.undoManager?.canUndo != true)
+    }
+
     @Test func largeReportUsesBoundedStylesAndRefreshesOnlyDiagramAnchors() throws {
         let rows = (0..<925).map { "            {\"x\": \($0), \"y\": \($0 % 10)}," }.joined(separator: "\n")
         let source =
@@ -183,14 +210,18 @@ private final class TestCodeRenderer: RenderedCodeBlockRenderer, @unchecked Send
     var cache: [String: RenderedCodeBlockResult] = [:]
     var height: CGFloat = 160
     var generation = 0
+    var unavailableSources: Set<String> = []
     let notification = Notification.Name("DieterRenderedCodeTest.\(UUID().uuidString)")
     var renderingDidChangeNotification: Notification.Name? { notification }
     func fingerprint() -> AnyHashable { generation }
+    func shouldRevealSource(code: String, language: String) -> Bool { unavailableSources.contains(code) }
     func render(code: String, language: String, availableWidth: CGFloat, theme: MarkdownEditorTheme)
         -> RenderedCodeBlockResult?
     {
         requests.append(Request(code: code, language: language, width: availableWidth))
-        guard ["mermaid", "vega", "vega-lite"].contains(language) else { return nil }
+        guard ["mermaid", "vega", "vega-lite"].contains(language), !unavailableSources.contains(code) else {
+            return nil
+        }
         let key = "\(generation)|\(availableWidth)|\(height)|\(language)|\(code)"
         if let result = cache[key] { return result }
         let size = CGSize(width: availableWidth, height: height)

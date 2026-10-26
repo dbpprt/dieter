@@ -63,5 +63,5 @@ binary for `maestro studio` or `maestro hierarchy` while writing a flow.
 
 The Mac interpreter supports `launchApp`, `tapOn`, `assertVisible`,
 `assertNotVisible`, `inputText`, `extendedWaitUntil`, `takeScreenshot` and
-`pressKey`. Any other command fails the flow, and `just check-changed` lints
+`pressKey` and `scroll` (a downward wheel event at the window center). Any other command fails the flow, and `just check-changed` lints
 every flow without a device.

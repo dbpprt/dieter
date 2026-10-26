@@ -15,6 +15,7 @@ go-e2e: *go
 harness-runtime:
   - "internal/harness/runtime/**"
 kotlin: &kotlin
+  - "apps/apple/mac/MarkdownPreview/**"
   - "apps/kotlin/**"
   - "api/proto/**"
   - "tests/fixtures/**"
@@ -30,6 +31,7 @@ apple:
   - "apps/kotlin/*.kts"
   - "tests/maestro/mac/**"
 ios:
+  - "apps/apple/mac/MarkdownPreview/**"
   - "apps/apple/ios/**"
   - "api/**"
   - "apps/apple/DieterKit/**"
@@ -41,6 +43,7 @@ ios:
   - "apps/kotlin/*.kts"
   - "tests/maestro/mobile/**"
 android:
+  - "apps/apple/mac/MarkdownPreview/**"
   - "apps/kotlin/android/**"
   - "apps/kotlin/ui/**"
   - "apps/kotlin/core/**"

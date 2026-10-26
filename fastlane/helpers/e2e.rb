@@ -26,6 +26,7 @@ module Dieter
       extendedWaitUntil
       takeScreenshot
       pressKey
+      scroll
     ].freeze
 
     module_function

@@ -217,11 +217,15 @@ public protocol RenderedCodeBlockRenderer: Sendable {
     func render(code: String, language: String, availableWidth: CGFloat, theme: MarkdownEditorTheme) -> RenderedCodeBlockResult?
     func fingerprint() -> AnyHashable
     var renderingDidChangeNotification: Notification.Name? { get }
+    /// A terminal failure can reveal source; temporary unavailability keeps
+    /// the previous image (for example while a retained editor is hidden).
+    func shouldRevealSource(code: String, language: String) -> Bool
 }
 
 public extension RenderedCodeBlockRenderer {
     func fingerprint() -> AnyHashable { 0 }
     var renderingDidChangeNotification: Notification.Name? { nil }
+    func shouldRevealSource(code: String, language: String) -> Bool { false }
 }
 
 public struct RenderedCodeBlockResult: Sendable {

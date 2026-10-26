@@ -80,7 +80,7 @@ tags: [full]
 - assertVisible:
     id: destination.Board
 - tapOn:
-    id: 'board\.lane\..+\.new-card'
+    id: board.lane.todo.new-card
 - assertVisible:
     id: new-card.mail-access
 - takeScreenshot: mac-mail-new-card

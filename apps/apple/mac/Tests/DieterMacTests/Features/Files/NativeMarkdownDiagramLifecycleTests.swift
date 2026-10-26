@@ -146,3 +146,27 @@ private func diagramLifecycleEventually(_ predicate: () -> Bool) async -> Bool {
     #expect(ready)
     #expect(renderer.request(code: first, language: "mermaid", availableWidth: 320)?.image === image)
 }
+
+@Test @MainActor func mailDiagramFailureKeepsReadableSourceAndDoesNotRetryOnEveryLayout() async {
+    _ = NSApplication.shared
+    var calls = 0
+    let renderer = NativeMarkdownDiagramRenderer(
+        sourceOnFailure: true,
+        render: { _ in
+            calls += 1
+            throw NSError(domain: "Malformed chart", code: 1)
+        })
+    defer { renderer.dispose() }
+    let source = "{invalid JSON}"
+    renderer.synchronizeSource(source)
+    #expect(renderer.request(code: source, language: "vegalite", availableWidth: 320) != nil)
+    let finished = await diagramLifecycleEventually { renderer.pendingCount == 0 && calls == 1 }
+    #expect(finished)
+    for _ in 0..<20 {
+        #expect(renderer.request(code: source, language: "vega-lite", availableWidth: 320) == nil)
+    }
+    #expect(calls == 1, "Read-only Mail falls back to code without repeated WebKit work")
+    renderer.dispose()
+    renderer.synchronizeSource(source)
+    #expect(renderer.request(code: source, language: "vegalite", availableWidth: 320) != nil)
+}

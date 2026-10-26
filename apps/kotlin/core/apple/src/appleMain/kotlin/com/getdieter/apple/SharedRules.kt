@@ -67,6 +67,7 @@ import com.getdieter.core.client.rules.ScheduleExports
 import com.getdieter.core.client.rules.ScreenExports
 import com.getdieter.core.client.rules.TerminalExports
 import com.getdieter.core.client.rules.WorkspaceExports
+import com.getdieter.core.presentation.MarkdownDiagrams
 import com.getdieter.core.screens.ScreenTrust
 import com.getdieter.core.screens.ScreenTrustException
 import kotlin.time.Instant
@@ -80,6 +81,9 @@ import platform.Foundation.NSData
  * dispatcher or state.
  */
 object SharedRules {
+    /** The canonical offline fence kind, or null for an ordinary source block. */
+    fun markdownDiagramKind(info: String): String? = MarkdownDiagrams.kind(info)
+
     // --- Formatting ---------------------------------------------------------------
 
     fun bytes(count: Long): String = FormatExports.bytes(count)
