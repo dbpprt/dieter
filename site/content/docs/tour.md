@@ -88,7 +88,7 @@ host telemetry without losing your board.
 
 **Inbox** is the starting point on Android, iPhone, and iPad. It brings task and
 chat activity together so you can find recent work without first choosing a
-board. The tab bar keeps **Projects**, **Chats**, [**Mail**](/docs/mail/), **Channels**, and **Tools**
+board. The tab bar keeps **Projects**, **Chats**, [**Mail**](/docs/mail/), **Tools**, and **Channels**
 nearby.
 Completed replies that you have not viewed appear under **Needs you**. Opening
 the latest reply clears that state across clients; questions waiting for your

@@ -10,8 +10,8 @@ enum class MobileTab(val title: String) {
     PROJECTS("Projects"),
     CHATS("Chats"),
     MAIL("Mail"),
-    CHANNELS("Channels"),
     TOOLS("Tools"),
+    CHANNELS("Channels"),
 }
 
 internal val MobileTab.glyph: Glyph
