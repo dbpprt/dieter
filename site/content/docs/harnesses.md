@@ -7,7 +7,7 @@ weight: 42
 slug: "harnesses"
 ---
 
-Dieter integrates five harnesses through a pinned JavaScript runtime. Each uses
+Dieter integrates six harnesses through a pinned JavaScript runtime. Each uses
 its normal local configuration on the **execution machine**.
 
 | Harness                | Default configuration                       |
@@ -17,6 +17,7 @@ its normal local configuration on the **execution machine**.
 | Pi                     | `~/.pi/agent` or `PI_AGENT_DIR`             |
 | Oh My Pi               | `~/.omp/agent`, with `OMP_PROFILE` when set |
 | DeepSeek Harness (DSH) | `~/.dsh` or `DSH_HOME`                      |
+| Antigravity (Google)   | `agy` on PATH, `~/.gemini/antigravity-cli` |
 
 Authenticate or configure the provider on that machine first. Dieter does not
 transfer provider credentials between hosts or store them on the gateway.

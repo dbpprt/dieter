@@ -289,6 +289,7 @@ const [
   { z },
   { createLocalCodex },
   { createLocalClaudeCode },
+  { createAntigravity },
   { codexConfig, dshACPArgs, dshPackageVersion, ompACPArgs, ompRuntimeConfig },
   { createLocalOMP, ompSource },
   { harnessDiagnosticErrorMessage },
@@ -318,6 +319,7 @@ const [
   import("zod"),
   import("./codex-runtime.mjs"),
   import("./claude-runtime.mjs"),
+  import("./antigravity-runtime.mjs"),
   import("./provider-options.mjs"),
   import("./omp-runtime.mjs"),
   import("./harness-errors.mjs"),
@@ -342,6 +344,9 @@ switch (adapter) {
     break;
   case "claude-code":
     harness = createLocalClaudeCode({ effort: request.effort || undefined });
+    break;
+  case "antigravity":
+    harness = createAntigravity({ effort: request.effort || undefined });
     break;
   case "pi":
     harness = createPi({
