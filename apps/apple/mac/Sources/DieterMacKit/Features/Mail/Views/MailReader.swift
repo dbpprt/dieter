@@ -28,7 +28,7 @@ struct MailReaderPane: View {
                                 .padding(.horizontal, 24).padding(.top, 12)
                                 .accessibilityIdentifier("mail.reader.stale")
                         }
-                        MailReaderBody(reader: reader) { url in
+                        MailReaderBody(reader: reader, diagramImages: model.diagramImages) { url in
                             store.openMailLink(url, checkoutID: reader.checkoutID, daemonID: reader.ref.daemonID)
                         }
                     }
@@ -266,6 +266,7 @@ private struct MailReaderHeader: View {
 /// The body, or why it is not shown yet.
 private struct MailReaderBody: View {
     let reader: ClientMailReader
+    let diagramImages: NativeMarkdownDiagramImageCache
     let openLink: @MainActor (URL) -> Bool
 
     var body: some View {
@@ -280,7 +281,8 @@ private struct MailReaderBody: View {
                 .e2eTarget("mail.reader.unavailable", text: reader.unavailable)
         } else {
             MailMessageBody(
-                markdown: reader.body, documentID: "mail:\(reader.ref.daemonID)/\(reader.ref.id)", openLink: openLink
+                markdown: reader.body, documentID: "mail:\(reader.ref.daemonID)/\(reader.ref.id)",
+                diagramImages: diagramImages, openLink: openLink
             )
             .id("\(reader.ref.daemonID)/\(reader.ref.id)")
             .e2eTarget("mail.reader.body", text: reader.body)

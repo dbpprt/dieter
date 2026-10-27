@@ -373,7 +373,8 @@ func nativeDiagramLargeReportRetainsVectorTextWithSerialAndParallelWorkers(point
         return String(decoding: try JSONSerialization.data(withJSONObject: spec, options: .sortedKeys), as: UTF8.self)
     }
     for concurrency in [1, 2] {
-        let renderer = NativeMarkdownDiagramRenderer(maximumConcurrentRenders: concurrency)
+        let images = NativeMarkdownDiagramImageCache()
+        let renderer = NativeMarkdownDiagramRenderer(maximumConcurrentRenders: concurrency, imageCache: images)
         defer { renderer.dispose() }
         renderer.synchronizeSource(sources.joined(separator: "\n"))
         let start = ContinuousClock.now
@@ -394,8 +395,21 @@ func nativeDiagramLargeReportRetainsVectorTextWithSerialAndParallelWorkers(point
                     to: url.appendingPathComponent("chart-\(points)-points-\(concurrency)-workers.pdf"))
             }
         }
+        let coldBytes = renderer.cachedBytes
+        renderer.dispose()
+        let reopened = NativeMarkdownDiagramRenderer(maximumConcurrentRenders: concurrency, imageCache: images)
+        defer { reopened.dispose() }
+        reopened.synchronizeSource(sources.joined(separator: "\n"))
+        let warmStart = ContinuousClock.now
+        for source in sources { _ = reopened.request(code: source, language: "vega-lite", availableWidth: 900) }
+        let warmDuration = warmStart.duration(to: .now)
+        #expect(reopened.cachedCount == sources.count && reopened.pendingCount == 0 && reopened.failedCount == 0)
+        #expect(reopened.cachedBytes == coldBytes)
         print(
-            "DIAGRAM_REPORT points=\(points) workers=\(concurrency) charts=\(sources.count) duration=\(duration) cachedBytes=\(renderer.cachedBytes)"
+            "DIAGRAM_REOPEN points=\(points) workers=\(concurrency) charts=\(sources.count) duration=\(warmDuration) cachedBytes=\(reopened.cachedBytes)"
+        )
+        print(
+            "DIAGRAM_REPORT points=\(points) workers=\(concurrency) charts=\(sources.count) duration=\(duration) cachedBytes=\(coldBytes)"
         )
     }
 }

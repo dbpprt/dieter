@@ -110,3 +110,71 @@ mise exec -- just e2e mac flows:mail-backgrounds,mail-rich screenshots:composito
 The supplied-report flow uses the existing local `DIETER_TEST_MAIL_REPORT`
 fixture hook, described in the earlier report. Final formatting, staged lint and
 documentation checks passed.
+
+## Further performance work
+
+The next profile tested two versus four workers. Four improved the heavy
+24-chart report only from 1.191 s to 1.131 s, at the cost of twice as many
+WebKit pages. The default stays at two.
+
+Further improvements target work the reader need not repeat:
+
+- Completed chart vectors survive message switches in a bounded cache owned by
+  that Mail model. Source bytes, normalized diagram kind, width and theme form
+  the key. Up to 48 entries / 24 MiB are retained in memory with least-recently
+  used eviction. Failures, placeholders and WebKit pages never enter this cache.
+  Detaching the model clears it and invalidates pending insertions. Models and
+  message windows do not share the cache.
+- Completed queues notify the native reader on the next main-actor turn instead
+  of waiting for the remaining 100 ms coalescing timer. Intermediate updates
+  still coalesce, and hiding/disposal cancels pending notifications.
+- Source identities retain references to source strings instead of constructing
+  a combined language/source string on every lookup. Source membership borrows
+  contiguous UTF-8 buffers for literal search, with a literal Foundation
+  fallback for other storage. This avoids expensive Unicode-equivalent search
+  through similar JSON prefixes. Membership, equality and hashing preserve exact
+  source bytes: canonically equivalent Unicode can mean different JSON field
+  names or JavaScript string values.
+
+An isolated source-search sample dropped from 0.371 s to 0.011 s for the same
+24 large source slices. Focused render measurements after the change:
+
+| Report (24 charts)       | First rendering, two workers | Reopening cached vectors |
+| ------------------------ | ---------------------------: | -----------------------: |
+| 256 observations/chart   |                      0.312 s |                 0.0024 s |
+| 4,096 observations/chart |                      0.610 s |                 0.0350 s |
+
+The heavy report's first rendering is about 49% faster than the preceding
+1.191 s two-worker measurement. Cached reopening avoids WebKit rendering and
+returns all 24 vectors synchronously. These timings cover chart requests and
+completion, not body fetching, Markdown parsing or compositor presentation;
+they remain local samples without performance assertions in CI. Vector cache
+bytes remain 500,900 and 2,660,657 respectively.
+
+Focused regressions cover exact Unicode and embedded-NUL source matching,
+byte-distinct cache keys, width/theme/source changes, least-recently used and
+byte-budget eviction, failure retries, model isolation and clearing during an
+in-flight render.
+
+Follow-up verification:
+
+- The change-selected Apple run passed DieterKit (17) and native helpers (10),
+  then completed the Mac suite with 517 total cases. Its sole failure was the
+  timer-overload policy check. The timer was corrected to the required
+  nanosecond API; all 24 focused diagram/policy tests then passed. Two final
+  cache-observation/clearing tests passed after adding native E2E evidence.
+  Passing unrelated suites were not repeated. The initial failed run is kept
+  under `tmp/pipeline/20261027T145114-swift-tests-a2f2b1/`.
+- `tmp/mail-render-speed/final-focused.log` records the corrected measurements
+  and policy pass; `worker-profile.log` records the earlier worker sweep.
+- The final Mac E2E run in `tmp/pipeline/20261027T145950-mac-e2e-18aac9/` passed
+  rich Markdown/fallback/reopening (8.7 s), backgrounds/selection (16.3 s), and
+  the supplied 15-chart report (13.9 s). The rich flow now asserts cache reuse
+  after switching messages: `mail-rich/mac-mail-rich-reopened.txt` records
+  **4 reused**. The report still asserts 15 rendered / zero fallbacks in both
+  themes. Compositor captures of the reopened message, report and explicit-white
+  fixture were opened and inspected. No task-owned app remained after cleanup.
+- Documentation checks, Maestro flow lint, formatting and staged lint passed.
+
+This follow-up changes only the Mac adapter and reader. The earlier mobile
+qualification still applies to the unchanged shared SVG renderer.

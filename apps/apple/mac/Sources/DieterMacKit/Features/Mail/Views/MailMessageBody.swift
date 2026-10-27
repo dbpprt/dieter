@@ -12,9 +12,19 @@ struct MailMessageBody: View {
     /// Every link the body opens; returns whether it handled the link.
     let openLink: @MainActor (URL) -> Bool
 
-    @State private var rendering = MailMarkdownSession()
+    @State private var rendering: MailMarkdownSession
     @State private var graphicsStatus = "Rendering"
     @Environment(\.colorScheme) private var colorScheme
+
+    init(
+        markdown: String, documentID: String, diagramImages: NativeMarkdownDiagramImageCache,
+        openLink: @escaping @MainActor (URL) -> Bool
+    ) {
+        self.markdown = markdown
+        self.documentID = documentID
+        self.openLink = openLink
+        _rendering = State(initialValue: MailMarkdownSession(images: diagramImages))
+    }
 
     var body: some View {
         NativeTextViewWrapper(
@@ -36,6 +46,7 @@ struct MailMessageBody: View {
                 "\(rendering.diagrams.cachedCount) rendered, \(rendering.diagrams.failedCount) source fallbacks"
         }
         .e2eTarget("mail.reader.graphics", text: graphicsStatus)
+        .e2eTarget("mail.reader.graphics-cache", text: "\(rendering.diagrams.reuseCount) reused")
     }
 
     private func updateDiagrams() {
@@ -47,10 +58,13 @@ struct MailMessageBody: View {
 /// Stable services for one message; notification-driven layout never creates another renderer.
 @MainActor
 private final class MailMarkdownSession {
-    let diagrams = NativeMarkdownDiagramRenderer(sourceOnFailure: true)
+    let diagrams: NativeMarkdownDiagramRenderer
     let configuration: MarkdownEditorConfiguration
 
-    init() { configuration = MailMarkdown.configuration(diagrams: diagrams) }
+    init(images: NativeMarkdownDiagramImageCache) {
+        diagrams = NativeMarkdownDiagramRenderer(sourceOnFailure: true, imageCache: images)
+        configuration = MailMarkdown.configuration(diagrams: diagrams)
+    }
 }
 
 @MainActor
