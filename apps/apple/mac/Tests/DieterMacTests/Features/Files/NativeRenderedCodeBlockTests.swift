@@ -135,6 +135,69 @@ struct NativeRenderedCodeBlockTests {
         #expect(fixture.editor.undoManager?.canUndo != true)
     }
 
+    @Test(arguments: [false, true])
+    func completedDiagramsKeepWideTablesAtTheirTextAnchors(readingColumn: Bool) async throws {
+        let table = """
+            | EditionIdentifierThatCannotWrap | PublishedArticlesIdentifierThatCannotWrap | ImageLicencesIdentifierThatCannotWrap |
+            |---|---|---|
+            | Sample edition | 88 | 18 |
+            """
+        let source = """
+            Introductory paragraph.
+
+            \(table)
+
+            ```vega-lite
+            {"mark":"line"}
+            ```
+
+            \(table)
+
+            ```mermaid
+            graph LR
+             A-->B
+            ```
+
+            \(table)
+
+            Trailing paragraph.
+            """
+        let fixture = try EditorFixture(source, readOnly: true, readingWidth: readingColumn ? 500 : nil)
+        fixture.editor.updateWideTableOverlays(immediately: true)
+        #expect(fixture.editor.wideTableOverlays.count == 3)
+        let storage = try #require(fixture.editor.textStorage)
+        let sentinel = NSAttributedString.Key("UnrelatedTablePresentation")
+        let prose = (source as NSString).range(of: "Trailing paragraph.")
+        storage.addAttribute(sentinel, value: "preserved", range: prose)
+        let originalFrames = fixture.editor.wideTableOverlays.mapValues(\.frame)
+        for overlay in fixture.editor.wideTableOverlays.values { overlay.horizontalOffset = 25 }
+        let offsets = fixture.editor.wideTableOverlays.mapValues(\.horizontalOffset)
+
+        // A chart first grows from its placeholder, then shrinks after a theme
+        // or width change. Tables both before and after it must follow TextKit.
+        for height: CGFloat in [440, 90] {
+            fixture.renderer.height = height
+            fixture.renderer.generation += 1
+            NotificationCenter.default.post(name: fixture.renderer.notification, object: nil)
+            try await Task.sleep(for: .milliseconds(30))
+            #expect(fixture.editor.wideTableOverlays.count == 3)
+            for overlay in fixture.editor.wideTableOverlays.values {
+                var expected = fixture.rect(for: NSRange(location: overlay.anchorTextLocation, length: 1))
+                expected.origin.y += fixture.editor.textContainerOrigin.y
+                if readingColumn { expected.origin.y += fixture.editor.frame.origin.y }
+                #expect(abs(overlay.frame.minY - expected.minY) < 1)
+                #expect(overlay.horizontalOffset == offsets[overlay.sourceID])
+            }
+        }
+        let moved = fixture.editor.wideTableOverlays.values.filter {
+            abs($0.frame.minY - (originalFrames[$0.sourceID]?.minY ?? $0.frame.minY)) > 50
+        }
+        #expect(moved.count == 2)
+        #expect(storage.attribute(sentinel, at: prose.location, effectiveRange: nil) as? String == "preserved")
+        #expect(fixture.editor.string == source && fixture.source == source)
+        #expect(fixture.editor.undoManager?.canUndo != true)
+    }
+
     @Test func largeReportUsesBoundedStylesAndRefreshesOnlyDiagramAnchors() throws {
         let rows = (0..<925).map { "            {\"x\": \($0), \"y\": \($0 % 10)}," }.joined(separator: "\n")
         let source =
@@ -241,7 +304,10 @@ private final class EditorFixture {
     let sourceBox: SourceBox
     var source: String { sourceBox.text }
 
-    init(_ source: String, highlighter: CountingHighlighter? = nil) throws {
+    init(
+        _ source: String, highlighter: CountingHighlighter? = nil,
+        readOnly: Bool = false, readingWidth: CGFloat? = nil
+    ) throws {
         _ = NSApplication.shared
         let box = SourceBox(source)
         sourceBox = box
@@ -256,10 +322,12 @@ private final class EditorFixture {
         container.addSubview(editor)
         scrollView.documentView = container
         var configuration = MarkdownEditorConfiguration.default
+        configuration.readingWidth = readingWidth
+        if readOnly { configuration.heightBehavior = .fitsContent }
         configuration.services.renderedCodeBlocks = renderer
         if let highlighter { configuration.services.syntaxHighlighter = highlighter }
         editor.configuration = configuration
-        editor.isEditable = true
+        editor.isEditable = !readOnly
         editor.isRichText = true
         editor.allowsUndo = true
         editor.textContainerInset = .zero

@@ -25,6 +25,13 @@ ranges regardless of source line count. Completed images and width changes updat
 only existing diagram anchors, avoiding whole-document restyling and preserving
 unrelated presentation, source text, and undo history.
 
+When a rendered diagram changes height, wide-table overlays are repositioned
+against their settled TextKit anchors in the same update. Reconciliation reuses
+the existing table anchors and images, without scanning or restyling the source,
+and preserves horizontal scroll offsets. This prevents tables after asynchronous
+charts from remaining over earlier content. `NativeRenderedCodeBlockTests`
+covers growth and shrinkage with repeated tables and reading-column layouts.
+
 If an asynchronous renderer withdraws a placeholder and opts into source fallback, refresh
 restyles only that fence to reveal readable source. Other image anchors and
 unrelated prose keep their existing presentation; the source and undo history
