@@ -17,7 +17,7 @@ its normal local configuration on the **execution machine**.
 | Pi                     | `~/.pi/agent` or `PI_AGENT_DIR`             |
 | Oh My Pi               | `~/.omp/agent`, with `OMP_PROFILE` when set |
 | DeepSeek Harness (DSH) | `~/.dsh` or `DSH_HOME`                      |
-| Antigravity (Google)   | `agy` on PATH, `~/.gemini/antigravity-cli` |
+| Antigravity (Google)   | `agy` on PATH, `~/.gemini/antigravity-cli`  |
 
 Authenticate or configure the provider on that machine first. Dieter does not
 transfer provider credentials between hosts or store them on the gateway.
@@ -52,7 +52,7 @@ model list; this page does not freeze a second copy of it.
 A new conversation uses the selected model's `defaultEffort` when defined.
 `--effort default` explicitly selects the provider's native default.
 
-Codex, Claude Code, and Pi support model and effort changes between turns.
+Codex, Claude Code, Pi, and Antigravity support model and effort changes between turns.
 OMP and DSH support model changes; OMP thinking stays fixed after the first
 message. Provider options appear only where the catalog advertises them.
 Supported Codex models expose mutable **Fast mode** with

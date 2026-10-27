@@ -37,7 +37,10 @@ function describeFailure(resultError, stderrText) {
   if (status === "RESOURCE_EXHAUSTED" || /quota reached/i.test(text)) {
     return `Antigravity has no quota left for this model${resets ? ` (resets in ${resets})` : ""}. Pick another model (e.g. Gemini 3.8 Flash) or try again later.`;
   }
-  if (status === "UNAUTHENTICATED" || /authentication required|not logged in|credentials/i.test(text)) {
+  if (
+    status === "UNAUTHENTICATED" ||
+    /authentication required|not logged in|credentials/i.test(text)
+  ) {
     return "Antigravity is not signed in on this machine: refresh the Antigravity credentials in the add-on options.";
   }
   if (!text) return "Antigravity failed without a message.";
@@ -52,9 +55,10 @@ function turnError(message) {
 }
 
 export function createAntigravity(settings = {}) {
-  const command = settings.command || process.env.DIETER_ANTIGRAVITY_BIN || "agy";
+  const command = settings.command || "agy"; // `agy` on PATH of the execution machine, like the other CLIs
   const effort = settings.effort || undefined;
-  const unsupported = (message) => new HarnessCapabilityUnsupportedError({ harnessId: HARNESS_ID, message });
+  const unsupported = (message) =>
+    new HarnessCapabilityUnsupportedError({ harnessId: HARNESS_ID, message });
 
   return {
     specificationVersion: "harness-v1",
@@ -67,21 +71,28 @@ export function createAntigravity(settings = {}) {
       if (options.continueFrom) throw unsupported("Antigravity cannot continue a suspended turn");
       const resume = options.resumeFrom;
       if (resume && resume.harnessId !== HARNESS_ID) {
-        throw new Error(`lifecycle state belongs to harness '${resume.harnessId}', not '${HARNESS_ID}'`);
+        throw new Error(
+          `lifecycle state belongs to harness '${resume.harnessId}', not '${HARNESS_ID}'`,
+        );
       }
       const state = {
         conversationId: resume?.data?.conversationId ?? null,
         instructionsApplied: resume?.data?.instructionsApplied === true,
       };
       const cwd = options.sessionWorkDir;
-      const allowAll = (options.permissionMode ?? "allow-all") === "allow-all";
+      // Only Dieter's explicit allow-all mode skips agy's permission prompts; anything else keeps them
+      // (headless agy then denies tool use, which is the safe side).
+      const allowAll = options.permissionMode === "allow-all";
       let child;
 
       const lifecycleState = () => ({
         type: "resume-session",
         harnessId: HARNESS_ID,
         specificationVersion: "harness-v1",
-        data: { conversationId: state.conversationId, instructionsApplied: state.instructionsApplied },
+        data: {
+          conversationId: state.conversationId,
+          instructionsApplied: state.instructionsApplied,
+        },
       });
 
       const session = {
@@ -96,7 +107,17 @@ export function createAntigravity(settings = {}) {
             text = `<instructions>\n${turn.instructions.trim()}\n</instructions>\n\n${text}`;
           }
           if (turn.tools?.length) {
-            turn.emit({ type: "stream-start", warnings: [{ type: "unsupported", message: "Antigravity cannot call host-defined tools; they are not offered to the agent." }], modelId: turn.model });
+            turn.emit({
+              type: "stream-start",
+              warnings: [
+                {
+                  type: "unsupported",
+                  message:
+                    "Antigravity cannot call host-defined tools; they are not offered to the agent.",
+                },
+              ],
+              modelId: turn.model,
+            });
           } else {
             turn.emit({ type: "stream-start", modelId: turn.model });
           }
@@ -105,7 +126,15 @@ export function createAntigravity(settings = {}) {
           if (effort) args.push("--effort", effort);
           if (state.conversationId) args.push("--conversation", state.conversationId);
           if (allowAll) args.push("--dangerously-skip-permissions"); // Dieter's allow-all permission mode; headless agy denies tools otherwise
-          const run = runTurn({ command, args, cwd, text, emit: turn.emit, abortSignal: turn.abortSignal, state });
+          const run = runTurn({
+            command,
+            args,
+            cwd,
+            text,
+            emit: turn.emit,
+            abortSignal: turn.abortSignal,
+            state,
+          });
           child = run.child;
           const done = run.done.finally(() => {
             child = undefined;
@@ -152,7 +181,8 @@ function promptToText(prompt) {
     return content
       .map((part) => {
         if (part?.type === "text") return part.text ?? "";
-        if (part?.type === "file" || part?.type === "image") return `[attachment ${part.filename || part.mediaType || ""} omitted: Antigravity CLI takes text only]`;
+        if (part?.type === "file" || part?.type === "image")
+          return `[attachment ${part.filename || part.mediaType || ""} omitted: Antigravity CLI takes text only]`;
         return "";
       })
       .filter(Boolean)
@@ -250,15 +280,34 @@ function runTurn({ command, args, cwd, text, emit, abortSignal, state }) {
         const input = JSON.stringify(su.tool_info?.parameters ?? {});
         if (!toolsStarted.has(idx)) {
           toolsStarted.add(idx);
-          emit({ type: "tool-call", toolCallId: id, toolName: name, input, providerExecuted: true, dynamic: true, nativeName: name });
+          emit({
+            type: "tool-call",
+            toolCallId: id,
+            toolName: name,
+            input,
+            providerExecuted: true,
+            dynamic: true,
+            nativeName: name,
+          });
         }
         if (su.state === "DONE" || su.state === "ERROR") {
           const isError = su.state === "ERROR";
           const info = su.tool_info ?? {};
           const result = isError
             ? { error: info.error ?? { message: "tool failed" } }
-            : { output: info.output ?? info.result ?? "", durationSeconds: su.duration_seconds ?? null };
-          emit({ type: "tool-result", toolCallId: id, toolName: name, result, isError, providerExecuted: true, dynamic: true });
+            : {
+                output: info.output ?? info.result ?? "",
+                durationSeconds: su.duration_seconds ?? null,
+              };
+          emit({
+            type: "tool-result",
+            toolCallId: id,
+            toolName: name,
+            result,
+            isError,
+            providerExecuted: true,
+            dynamic: true,
+          });
         }
         return;
       }
@@ -310,7 +359,8 @@ function runTurn({ command, args, cwd, text, emit, abortSignal, state }) {
           onStep(ev.step_update);
         } else if (ev.event === "result") {
           result = ev.result ?? {};
-          if (typeof result.conversation_id === "string") state.conversationId = result.conversation_id;
+          if (typeof result.conversation_id === "string")
+            state.conversationId = result.conversation_id;
         } else {
           emit({ type: "raw", rawValue: ev });
         }
@@ -324,14 +374,26 @@ function runTurn({ command, args, cwd, text, emit, abortSignal, state }) {
       if (aborted) return fail(turnError("agent turn interrupted"));
       closeParts();
       if (!result) {
-        return fail(turnError(describeFailure(`${command} exited (${signal || code}) without a result`, stderrText)));
+        return fail(
+          turnError(
+            describeFailure(`${command} exited (${signal || code}) without a result`, stderrText),
+          ),
+        );
       }
       const usage = usageOf(result.usage ?? stepUsage);
       const ok = result.status === "SUCCESS";
       const finishReason = { unified: ok ? "stop" : "error", raw: String(result.status ?? "") };
       emit({ type: "finish-step", finishReason, usage });
       emit({ type: "finish", finishReason, totalUsage: usage });
-      if (!ok) return reject(turnError(describeFailure(result.error || `turn failed (${result.status || "unknown"})`, stderrText)));
+      if (!ok)
+        return reject(
+          turnError(
+            describeFailure(
+              result.error || `turn failed (${result.status || "unknown"})`,
+              stderrText,
+            ),
+          ),
+        );
       resolve();
     });
     child.stdin.on("error", () => {});

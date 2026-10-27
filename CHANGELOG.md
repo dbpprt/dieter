@@ -8,7 +8,16 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
-Nothing yet.
+### Added
+
+- Antigravity harness: Google's Antigravity CLI (`agy`) runs as a sixth harness
+  with model and effort selection between turns. Each turn is one headless
+  `agy --output-format stream-json` run continued with `--conversation`; the
+  prompt travels on stdin, Antigravity's own tools show as provider-executed
+  tool calls, and quota or sign-in failures become one plain sentence in the
+  conversation. Host-defined tools, suspend/continue and compaction are not
+  available through the CLI. `agy` must be installed and signed in on the
+  execution machine.
 
 ## 0.6.430
 
