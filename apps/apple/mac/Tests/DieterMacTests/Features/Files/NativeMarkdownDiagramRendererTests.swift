@@ -151,8 +151,9 @@ private func diagramEventually(_ predicate: () -> Bool) async -> Bool {
             let context = NSGraphicsContext(bitmapImageRep: bitmap)!
             NSGraphicsContext.saveGraphicsState()
             NSGraphicsContext.current = context
+            context.cgContext.clear(CGRect(x: 0, y: 0, width: 1800, height: 1000))
             NSColor.systemBlue.setFill()
-            NSRect(x: 0, y: 0, width: 1800, height: 1000).fill()
+            NSRect(x: 80, y: 80, width: 1640, height: 840).fill()
             NSGraphicsContext.restoreGraphicsState()
             bitmap.size = size
             let image = NSImage(size: size)
@@ -177,6 +178,7 @@ private func diagramEventually(_ predicate: () -> Bool) async -> Bool {
         let bitmap = try #require(result.image.representations.first as? NSBitmapImageRep)
         let color = try #require(bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh / 2))
         #expect(color.alphaComponent > 0.9)
+        #expect(bitmap.colorAt(x: 0, y: 0)?.alphaComponent == 0, "Downsampling preserves transparent margins")
         #expect(bitmap.pixelsWide < 1800 && bitmap.pixelsHigh < 1000)
     }
     for _ in 0..<10 {
@@ -226,5 +228,35 @@ private func diagramEventually(_ predicate: () -> Bool) async -> Bool {
             }
         }
         #expect(visible)
+    }
+}
+
+@Test @MainActor func nativeDiagramSnapshotsKeepTransparentMarginsAndExplicitBackgrounds() async throws {
+    _ = NSApplication.shared
+    let renderer = NativeMarkdownDiagramWebRenderer()
+    defer { renderer.dispose() }
+    for theme in ["light", "dark"] {
+        for language in ["vega-lite", "vega"] {
+            for background in ["null", "omitted", "\"#ffffff\""] {
+                let property = background == "omitted" ? "" : "\"background\":\(background),"
+                let content =
+                    language == "vega-lite"
+                    ? "\"data\":{\"values\":[{\"x\":\"A\",\"y\":2}]},\"mark\":\"bar\",\"encoding\":{\"x\":{\"field\":\"x\",\"type\":\"nominal\"},\"y\":{\"field\":\"y\",\"type\":\"quantitative\"}},\"config\":{\"view\":{\"fill\":null}}"
+                    : "\"marks\":[{\"type\":\"rect\",\"encode\":{\"enter\":{\"x\":{\"value\":20},\"y\":{\"value\":20},\"width\":{\"value\":40},\"height\":{\"value\":30},\"fill\":{\"value\":\"steelblue\"}}}}]"
+                let result = try await renderer.render(
+                    .init(
+                        code: "{\(property)\"width\":240,\"height\":100,\"padding\":20,\(content)}",
+                        language: language, width: 320, theme: theme))
+                let bitmap = try #require(result.image.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:)))
+                let corner = try #require(bitmap.colorAt(x: bitmap.pixelsWide / 2, y: 2)?.usingColorSpace(.deviceRGB))
+                if background == "\"#ffffff\"" {
+                    #expect(corner.alphaComponent > 0.99)
+                    #expect(corner.redComponent > 0.99 && corner.greenComponent > 0.99 && corner.blueComponent > 0.99)
+                } else {
+                    #expect(
+                        corner.alphaComponent < 0.01, "\(language), \(theme), \(background): snapshot must keep alpha")
+                }
+            }
+        }
     }
 }

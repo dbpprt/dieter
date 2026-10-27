@@ -5,3 +5,6 @@ import _ "embed"
 
 //go:embed rich.md
 var Rich string
+
+//go:embed backgrounds.md
+var Backgrounds string

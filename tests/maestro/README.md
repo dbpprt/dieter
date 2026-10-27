@@ -41,7 +41,12 @@ evidence.
 - **macOS** needs the logged-in desktop and refuses while any `DieterMac` runs.
   Maestro has no macOS driver, so the pipeline converts each flow to a JSON
   plan and the debug app (`DIETER_E2E`) runs it with
-  `--e2e-flow PLAN --e2e-output DIR`.
+  `--e2e-flow PLAN --e2e-output DIR`. Add `screenshots:compositor` to capture
+  the actual window, including layer-backed SwiftUI/native content, instead of
+  the default in-process view capture. It requires Screen Recording permission
+  and fails if capture is unavailable; visual qualification must open these PNGs.
+  The in-process capture can omit composited layers and is insufficient for Mail
+  transparency/selection verification.
 
 The run installs the pinned, checksum-verified Maestro CLI. Use that same
 binary for `maestro studio` or `maestro hierarchy` while writing a flow.

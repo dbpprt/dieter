@@ -177,6 +177,9 @@ module Dieter
       argv = [self.class.binary, "-addr", "127.0.0.1:0", "-home", File.join(state, "gateway")]
       argv += %w[-direct-route live] if direct
       argv << "-e2e-fixture" if e2e
+      if e2e && !ENV["DIETER_TEST_MAIL_REPORT"].to_s.empty?
+        argv += ["-mail-report", File.expand_path(ENV.fetch("DIETER_TEST_MAIL_REPORT"))]
+      end
       env = { "DIETER_HARNESS_RUNTIME_DIR" => Dieter.path("internal/harness/runtime") }
       env["DIETER_TEST_CONTROL_WEBRTC"] = "1" if e2e
       log = File.join(evidence, "fixture.log")

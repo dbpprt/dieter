@@ -8,6 +8,7 @@ import (
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit"
+	mailfixture "github.com/dbpprt/dieter/tests/fixtures/mail"
 )
 
 // The Maestro flows of the Mail destination rely on these exact messages.
@@ -26,7 +27,7 @@ func TestE2EFixtureSeedsTheMailFlowsRelyOn(t *testing.T) {
 		t.Fatal(err)
 	}
 	headers, _, err := data.Mail.Headers()
-	if err != nil || len(headers) != 4 {
+	if err != nil || len(headers) != 5 {
 		t.Fatalf("headers = %+v, %v", headers, err)
 	}
 	bySubject := map[string]model.MailHeader{}
@@ -52,6 +53,14 @@ func TestE2EFixtureSeedsTheMailFlowsRelyOn(t *testing.T) {
 	smoke := bySubject["Release smoke results: all platforms passed"]
 	if !smoke.Read || !smoke.Flagged || smoke.Folder != model.MailFolderInbox || smoke.Sender.ScheduleName != "Stable smoke" || sentAgo(smoke) != 24*time.Hour {
 		t.Fatalf("smoke = %+v", smoke)
+	}
+	backgrounds := bySubject["Chart background comparison"]
+	if backgrounds.Read || backgrounds.Importance != model.MailImportanceHigh || backgrounds.Folder != model.MailFolderInbox {
+		t.Fatalf("background comparison = %+v", backgrounds)
+	}
+	_, comparison, err := data.Mail.Get(backgrounds.ID)
+	if err != nil || strings.TrimSpace(comparison) != strings.TrimSpace(mailfixture.Backgrounds) || strings.Count(comparison, "```vega") != 6 {
+		t.Fatalf("background comparison fixture missing or changed: %v", err)
 	}
 	backup := bySubject["Nightly backup completed (41.2 GB)"]
 	if !backup.Read || backup.Folder != model.MailFolderArchive || backup.Sender.Kind != model.MailSenderOperator || backup.Sender.Label != "backup.sh" || sentAgo(backup) != 72*time.Hour {

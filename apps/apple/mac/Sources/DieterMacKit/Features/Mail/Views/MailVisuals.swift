@@ -57,9 +57,11 @@ struct MailAvatar: View {
     let harness: String
     let senderKey: String
     var size: CGFloat = 32
+    var emphasized = false
 
     var body: some View {
-        let tint = style == .operator ? DieterTheme.subtle : MailStyle.avatarColor(senderKey)
+        let tint =
+            emphasized ? Color.white : (style == .operator ? DieterTheme.subtle : MailStyle.avatarColor(senderKey))
         Group {
             if let glyph = MailStyle.glyph(style) {
                 Image(systemName: glyph).font(.system(size: size * 0.42, weight: .semibold))
@@ -70,7 +72,7 @@ struct MailAvatar: View {
         .foregroundStyle(tint)
         .frame(width: size, height: size)
         .background(tint.opacity(0.2), in: Circle())
-        .background(DieterTheme.panelSolid, in: Circle())
+        .background(emphasized ? Color.clear : DieterTheme.panelSolid, in: Circle())
         .overlay { Circle().strokeBorder(tint.opacity(0.35)) }
         .overlay(alignment: .bottomTrailing) {
             if let symbol = ChannelStyle.harnessSymbol(harness) {
@@ -79,7 +81,9 @@ struct MailAvatar: View {
                     .foregroundStyle(.white)
                     .frame(width: size * 0.42, height: size * 0.42)
                     .background(ChannelStyle.harnessColor(harness), in: Circle())
-                    .overlay { Circle().strokeBorder(DieterTheme.panelSolid, lineWidth: 1.5) }
+                    .overlay {
+                        Circle().strokeBorder(emphasized ? Color.white : DieterTheme.panelSolid, lineWidth: 1.5)
+                    }
                     .offset(x: size * 0.08, y: size * 0.08)
             }
         }
@@ -88,9 +92,10 @@ struct MailAvatar: View {
 }
 
 extension MailAvatar {
-    init(row: ClientMailRow, size: CGFloat = 32) {
+    init(row: ClientMailRow, size: CGFloat = 32, emphasized: Bool = false) {
         self.init(
-            initials: row.initials, style: row.senderStyle, harness: row.harness, senderKey: row.senderKey, size: size)
+            initials: row.initials, style: row.senderStyle, harness: row.harness, senderKey: row.senderKey, size: size,
+            emphasized: emphasized)
     }
 
     init(reader: ClientMailReader, size: CGFloat = 40) {

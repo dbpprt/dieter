@@ -53,7 +53,10 @@ a native snapshot. Identical source/theme/block/viewport-width requests reuse
 the finished render. The normal per-block limits and offline security rules apply.
 The bounded block ID (at most 128 characters) is echoed in
 `{type: 'diagramSize', blockID, height}` when completed content changes height,
-and `{type: 'diagramActivate', blockID}` on click or Enter/Space. Mail passes `true` as the fifth argument to expose image semantics
+and `{type: 'diagramActivate', blockID}` on click or Enter/Space. Size updates
+also reach the mobile `diagram`/`dieterDiagram.result` bridges as JSON
+`{height}` so native layout follows title/legend reflow after the first render.
+Mail passes `true` as the fifth argument to expose image semantics
 without source-edit activation. Failed diagrams
 remain activatable so the native editor can always open their source. Ordinary
 `render(...)` restores document preview behavior; disposal removes these handlers.
@@ -85,6 +88,22 @@ losing text. Step, composed, faceted and raw Vega charts retain their layout and
 scale down as a complete figure, including labels and legends. Small charts are
 never stretched. All charts observe their container width when the native Files
 pane resizes. The stored Markdown and JSON specification remain unchanged.
+
+Null/omitted chart backgrounds remain transparent through the SVG, diagram-only
+CSS and native surfaces. Diagram-only roots reset `color-scheme` to `normal`,
+which prevents WebKit from painting its own opaque light/dark canvas beneath
+transparent HTML. Native iOS page/scroll backgrounds are also clear, and its
+UIKit interop places the view above the Compose canvas. The default placement
+cuts out the message background, exposing UIKit's root surface through alpha.
+An unpainted native container keeps WebKit at the local origin while Compose
+clips/moves it during scrolling; automatic scroll insets are disabled. This
+prevents WebKit from shifting the page inside a partially visible chart.
+Mac snapshot views disable WebKit's default page fill;
+`underPageBackgroundColor` alone does not make snapshot pixels transparent. The
+shared renderer chooses foreground defaults against the reader theme, or the
+authored CSS background when specified, preserving author colors. Raw Vega text
+and title/subtitle styles use Vega's `fill` defaults; Vega-Lite uses its color
+configuration. Static export still renders against a light document.
 
 Chart JSON is limited to 1 MB of UTF-8; Mermaid retains a 100,000-character limit.
 Oversized or invalid blocks show a local error while other content still renders.

@@ -36,6 +36,19 @@ import Testing
 @Suite(.serialized)
 @MainActor
 struct MarkdownFileExportRenderingTests {
+    @Test func mailBackgroundComparisonExportsAllSixChartsWithoutFlatteningAuthorBackgrounds() async throws {
+        var root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        for _ in 0..<7 { root.deleteLastPathComponent() }
+        let source = try String(
+            contentsOf: root.appendingPathComponent("tests/fixtures/mail/backgrounds.md"), encoding: .utf8)
+        let data = try await MarkdownFileExport.data(for: .init(name: "Backgrounds.md", source: source), format: .html)
+        let html = try #require(String(data: data, encoding: .utf8))
+        #expect(html.components(separatedBy: "<svg").count == 7)
+        #expect(html.contains("data-theme=\"light\""))
+        #expect(html.components(separatedBy: "background-color: rgb(255, 255, 255)").count == 3)
+        #expect(!html.contains("<script") && !html.contains("data-state=\"rendering\""))
+    }
+
     @Test func mailRichReportExportsEverySupportedGraphicAsStaticSVG() async throws {
         var root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         for _ in 0..<7 { root.deleteLastPathComponent() }

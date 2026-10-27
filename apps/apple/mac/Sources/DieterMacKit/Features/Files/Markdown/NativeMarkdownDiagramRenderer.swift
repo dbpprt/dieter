@@ -396,9 +396,15 @@ final class NativeMarkdownDiagramWebRenderer: NSObject, WKNavigationDelegate {
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         configuration.setURLSchemeHandler(MarkdownPreviewSchemeHandler(), forURLScheme: MarkdownPreviewResources.scheme)
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 620, height: 400), configuration: configuration)
+        // underPageBackgroundColor only controls the area behind/around the
+        // page. WebKit otherwise composites a default page fill into snapshots,
+        // even when the document and SVG backgrounds are transparent.
+        webView.setValue(false, forKey: "drawsBackground")
         webView.underPageBackgroundColor = .clear
         window = NSWindow(contentRect: webView.frame, styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
+        window.isOpaque = false
+        window.backgroundColor = .clear
         window.contentView = webView
         window.setAccessibilityElement(false)
         super.init()

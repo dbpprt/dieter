@@ -130,8 +130,13 @@ security. Invalid or unsupported blocks retain readable source, so one bad
 chart does not hide the rest of the report.
 
 Mail diagrams are read-only graphics; Vega parameter controls are not interactive.
-Charts fit narrow screens and follow the app's light or dark appearance. The
-renderer keeps its existing limits: 100,000 Mermaid characters, 1 MB of chart
+Charts fit narrow screens and follow the app's light or dark appearance. An
+omitted or `null` chart background blends with the message surface; an explicit
+background such as `"#ffffff"` stays opaque. Default chart text follows that
+background, including titles, subtitles, legends and annotations. Author-specified
+colors are preserved.
+
+The renderer keeps its existing limits: 100,000 Mermaid characters, 1 MB of chart
 JSON and a maximum JSON nesting depth of 100. Mail's smaller body limit still
 applies. Mac PDF and HTML exports keep rendered diagrams as static SVGs.
 

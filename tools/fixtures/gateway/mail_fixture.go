@@ -84,6 +84,7 @@ func seedMail(data *boardstore.Store, senders mailSenders) error {
 		ago           time.Duration
 		change        mail.Change
 	}{
+		{senders.smoke, "Chart background comparison", mailfixture.Backgrounds, true, 30 * time.Minute, mail.Change{}},
 		{senders.audit, mailAuditSubject, mailAuditBody, true, time.Hour, mail.Change{}},
 		{senders.invoices, mailInvoiceSubject, mailInvoiceBody, false, 2 * time.Hour, mail.Change{}},
 		{senders.smoke, mailSmokeSubject, mailSmokeBody + "\n" + mailfixture.Rich, false, 24 * time.Hour, mail.Change{Read: &read, Flagged: &read}},

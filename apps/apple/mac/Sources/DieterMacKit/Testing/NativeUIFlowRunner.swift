@@ -273,6 +273,21 @@
                 guard focused, let input else { throw Failure("No focused text input") }
                 input.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
             case .takeScreenshot(let name):
+                // A posted mouse/key event must be consumed before a screenshot
+                // can represent the step that just finished.
+                guard
+                    try await NativeUIAccessibility.wait(
+                        timeout: elementTimeout,
+                        until: {
+                            NSApp.nextEvent(
+                                matching: [.leftMouseDown, .leftMouseUp, .keyDown, .keyUp],
+                                until: .distantPast, inMode: .default, dequeue: false) == nil
+                        })
+                else { throw Failure("Input events did not drain before capture") }
+                await withCheckedContinuation { continuation in
+                    DispatchQueue.main.async { continuation.resume() }
+                }
+                window.displayIfNeeded()
                 try capture(window, name: name, output: output)
             case .scroll:
                 // A real wheel event follows the nested reader's responder

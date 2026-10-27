@@ -572,14 +572,32 @@ test(
       },
     });
     const messages = [];
-    window.webkit = {
-      messageHandlers: { markdown: { postMessage: (payload) => messages.push(payload) } },
+    const iosSizes = [];
+    const androidSizes = [];
+    const observers = [];
+    window.ResizeObserver = class {
+      constructor(callback) {
+        this.callback = callback;
+        observers.push(this);
+      }
+      observe(element) {
+        this.element = element;
+      }
+      disconnect() {}
     };
+    window.webkit = {
+      messageHandlers: {
+        markdown: { postMessage: (payload) => messages.push(payload) },
+        diagram: { postMessage: (payload) => iosSizes.push(JSON.parse(payload)) },
+      },
+    };
+    window.dieterDiagram = { result: (payload) => androidSizes.push(JSON.parse(payload)) };
     window.eval(bundle);
     const root = window.document.querySelector("#preview");
+    let measuredHeight = 260;
     root.getBoundingClientRect = () => ({
       width: 480,
-      height: root.querySelector("svg") ? 260 : 64,
+      height: root.querySelector("svg") ? measuredHeight : 64,
     });
     try {
       let result = await window.dieterMarkdown.renderDiagram(
@@ -592,6 +610,23 @@ test(
       assert.equal(result.failedBlocks, 0);
       assert.equal(result.width, 480);
       assert.equal(result.height, 260);
+      assert.deepEqual(iosSizes.at(-1), { height: 260 });
+      assert.deepEqual(androidSizes.at(-1), { height: 260 });
+      // Native layout can change the viewport after the promise has resolved.
+      // Both mobile adapters must receive the newly wrapped chart's full size.
+      measuredHeight = 340;
+      observers
+        .filter((observer) => observer.element === root)
+        .at(-1)
+        .callback();
+      assert.deepEqual(iosSizes.at(-1), { height: 340 });
+      assert.deepEqual(androidSizes.at(-1), { height: 340 });
+      measuredHeight = 260;
+      assert.equal(
+        window.getComputedStyle(window.document.documentElement).getPropertyValue("color-scheme"),
+        "normal",
+        "Diagram canvases must not get WebKit's opaque system color-scheme fill",
+      );
       assert.equal(root.querySelectorAll(".diagram").length, 1);
       assert.equal(root.querySelectorAll("svg").length, 1);
       assert.equal(root.querySelector("foreignObject"), null);
@@ -665,3 +700,75 @@ test(
     }
   },
 );
+
+test("Mail background fixture preserves alpha intent and readable SVG text in both themes", async () => {
+  const html = await readFile(new URL("index.html", resources), "utf8");
+  const bundle = await readFile(new URL("app.js", resources), "utf8");
+  const source = await readFile(
+    new URL("../../../../../tests/fixtures/mail/backgrounds.md", import.meta.url),
+    "utf8",
+  );
+  const { window } = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true });
+  window.structuredClone = structuredClone;
+  window.TextEncoder = TextEncoder;
+  window.Function = function () {
+    throw new Error("Dynamic JavaScript evaluation is disabled");
+  };
+  window.fetch = () => {
+    throw new Error("Unexpected resource request");
+  };
+  window.HTMLCanvasElement.prototype.getContext = () => ({
+    measureText: (text) => ({ width: String(text).length * 7 }),
+  });
+  Object.defineProperty(window.HTMLElement.prototype, "clientWidth", { get: () => 320 });
+  window.eval(bundle);
+  const root = window.document.querySelector("#preview");
+  try {
+    for (const theme of ["light", "dark"]) {
+      for (const mode of ["document", "diagram"]) {
+        for (const [, kind, json] of source.matchAll(/```(vega-lite|vega)\n([\s\S]*?)\n```/g)) {
+          const spec = JSON.parse(json);
+          const result =
+            mode === "document"
+              ? await window.dieterMarkdown.render(fence(kind, json), theme)
+              : await window.dieterMarkdown.renderDiagram(kind, json, theme, "background", true);
+          assert.equal(result.renderedBlocks, 1, root.textContent);
+          assert.equal(result.failedBlocks, 0);
+          const svg = root.querySelector("svg");
+          const white = spec.background === "#ffffff";
+          if (white) assert.equal(svg.style.backgroundColor, "rgb(255, 255, 255)");
+          else
+            assert.ok(
+              ["", "transparent"].includes(svg.style.backgroundColor),
+              "No opaque SVG background",
+            );
+          assert.ok(parseFloat(svg.style.width) <= 320, "The complete chart fits a phone");
+          const text = [...svg.querySelectorAll("text")];
+          assert.ok(text.length >= 10, "Includes title, subtitle, ticks, legend and annotations");
+          for (const node of text) {
+            const fill = node.getAttribute("fill");
+            assert.ok(
+              (theme === "dark" && !white
+                ? ["#ededf0", "#d4d4d8"]
+                : ["#242428", "#44444b"]
+              ).includes(fill),
+              `${kind}, ${theme}, ${spec.background}: ${node.textContent} uses ${fill}`,
+            );
+          }
+          if (kind === "vega-lite") {
+            assert.equal(
+              svg.querySelector("g.role-frame > g > path.background").getAttribute("fill"),
+              null,
+              "Null plot fill survives compilation",
+            );
+          }
+        }
+      }
+    }
+    await window.dieterMarkdown.render("Switched to another message", "light");
+    assert.equal(root.querySelector("svg"), null);
+    window.dieterMarkdown.dispose();
+  } finally {
+    window.close();
+  }
+});

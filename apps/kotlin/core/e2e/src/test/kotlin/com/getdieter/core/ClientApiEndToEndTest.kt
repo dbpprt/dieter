@@ -1658,10 +1658,10 @@ class ClientApiEndToEndTest : EndToEnd() {
         }
         fun MailSlice.rows() = sections.flatMap { it.rows }
 
-        // The fixture's Inbox: two unread reports and a read, flagged one.
+        // The fixture's Inbox: three unread reports and a read, flagged one.
         val seeded =
-            mail.await(30.seconds, describe = { "seeded: ${mail.value}" }) { it?.count == 3 }!!
-        assertEquals(2, seeded.unread)
+            mail.await(30.seconds, describe = { "seeded: ${mail.value}" }) { it?.count == 4 }!!
+        assertEquals(3, seeded.unread)
         val audit =
             seeded.rows().single { it.subject == "Dependency audit — 3 critical, 7 outdated" }
         val invoices =
@@ -1672,6 +1672,8 @@ class ClientApiEndToEndTest : EndToEnd() {
         assertEquals(MailSenderStyle.MAIL_SENDER_STYLE_SCHEDULE, audit.sender_style)
         assertTrue(audit.important && !audit.read)
         assertTrue(smoke.flagged && smoke.read)
+        val comparison = seeded.rows().single { it.subject == "Chart background comparison" }
+        assertTrue(comparison.important && !comparison.read)
 
         // An operator sends through the daemon API.
         val sent =
@@ -1700,12 +1702,12 @@ class ClientApiEndToEndTest : EndToEnd() {
         assertEquals("Today", listed.sections.first().title)
         assertEquals(ref, listed.sections.first().rows.first().ref, "newest first")
         val boxes = listed.boxes.associateBy { it.box }
-        assertEquals(3, listed.unread)
-        assertEquals("3", listed.unread_label)
+        assertEquals(4, listed.unread)
+        assertEquals("4", listed.unread_label)
         assertEquals("", listed.app_badge, "the app badge is off by default")
-        assertEquals(4, boxes.getValue(MailBox.MAIL_BOX_INBOX).total)
-        assertEquals("3", boxes.getValue(MailBox.MAIL_BOX_INBOX).count_label)
-        assertEquals(3, boxes.getValue(MailBox.MAIL_BOX_UNREAD).total)
+        assertEquals(5, boxes.getValue(MailBox.MAIL_BOX_INBOX).total)
+        assertEquals("4", boxes.getValue(MailBox.MAIL_BOX_INBOX).count_label)
+        assertEquals(4, boxes.getValue(MailBox.MAIL_BOX_UNREAD).total)
         assertEquals(1, boxes.getValue(MailBox.MAIL_BOX_FLAGGED).total)
         assertEquals(1, boxes.getValue(MailBox.MAIL_BOX_ARCHIVE).total)
         assertEquals(0, boxes.getValue(MailBox.MAIL_BOX_TRASH).total)
@@ -1719,12 +1721,12 @@ class ClientApiEndToEndTest : EndToEnd() {
                     )
                 )
                 .mail!!
-        assertEquals("3", badged.app_badge)
+        assertEquals("4", badged.app_badge)
 
         // Selecting it marks it read at once, loads the body, and the daemon marks it read.
         val selected = api.dispatch(command(MailCommand(select = ref))).mail!!
         assertTrue(selected.reader_!!.read, "read at once")
-        assertEquals(2, selected.unread)
+        assertEquals(3, selected.unread)
         val reader =
             mail
                 .await(30.seconds, describe = { "body: ${mail.value?.reader_}" }) {
