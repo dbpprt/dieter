@@ -13,19 +13,23 @@ on:
         description: Run every component, every Maestro flow and the iPad layout
         type: boolean
         default: false
-  # Full qualification on demand, without a release.
+  # Full or isolated iPhone qualification on demand, without a release.
   workflow_dispatch:
     inputs:
       full:
         description: Run every component, every Maestro flow and the iPad layout
         type: boolean
         default: true
+      ios_only:
+        description: Run only Release iPhone verification (overrides full)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.full && 'full' || 'affected' }}
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.ios_only && 'ios' || inputs.full && 'full' || 'affected' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -54,7 +58,7 @@ jobs:
       harness-runtime: ${{ steps.mode.outputs.full == 'true' || steps.filter.outputs.harness-runtime == 'true' }}
       kotlin: ${{ steps.mode.outputs.full == 'true' || steps.filter.outputs.kotlin == 'true' || steps.filter.outputs.go == 'true' }}
       apple: ${{ steps.mode.outputs.full == 'true' || steps.filter.outputs.apple == 'true' }}
-      ios: ${{ steps.mode.outputs.full == 'true' || steps.filter.outputs.ios == 'true' }}
+      ios: ${{ inputs.ios_only == true || steps.mode.outputs.full == 'true' || steps.filter.outputs.ios == 'true' }}
       android: ${{ steps.mode.outputs.full == 'true' || steps.filter.outputs.android == 'true' }}
       site: ${{ steps.mode.outputs.full == 'true' || steps.filter.outputs.site == 'true' }}
       deploy-gateway: ${{ steps.mode.outputs.full == 'true' || steps.filter.outputs.deploy-gateway == 'true' }}
@@ -64,15 +68,16 @@ jobs:
         with:
           persist-credentials: false
       - id: mode
-        run: echo "full=${{ inputs.full == true }}" >> "$GITHUB_OUTPUT"
+        run: echo "full=${{ inputs.full == true && inputs.ios_only != true }}" >> "$GITHUB_OUTPUT"
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
-        if: steps.mode.outputs.full != 'true'
+        if: steps.mode.outputs.full != 'true' && inputs.ios_only != true
         with:
           filters: .github/filters.yml
       - name: Summarize the selection
         env:
           FULL: ${{ steps.mode.outputs.full }}
+          IOS_ONLY: ${{ inputs.ios_only == true }}
           CHANGES: ${{ steps.filter.outputs.changes || '[]' }}
           OUTPUTS: ${{ toJSON(steps.filter.outputs) }}
         run: |
@@ -80,6 +85,8 @@ jobs:
             echo "### Selected components"
             if [[ "$FULL" == true ]]; then
               echo "Full qualification: every component, every flow."
+            elif [[ "$IOS_ONLY" == true ]]; then
+              echo "Release iPhone verification only."
             elif [[ "$CHANGES" == "[]" ]]; then
               echo "No component paths changed (see .github/filters.yml)."
             else
@@ -331,9 +338,10 @@ jobs:
     needs: plan
     if: needs.plan.outputs.ios == 'true'
     runs-on: macos-26
-    # A cold Release framework build can take 85 minutes; retain the full
-    # 25-minute Maestro deadline plus setup, evidence upload, and cleanup.
-    timeout-minutes: 130
+    # Measured cold Release framework builds take 108 minutes, followed by
+    # ~15 minutes for Xcode. Retain the full 25-minute Maestro deadline plus
+    # setup, evidence upload, cache saving, and cleanup.
+    timeout-minutes: 165
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.5.app/Contents/Developer
     steps:
