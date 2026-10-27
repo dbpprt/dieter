@@ -227,7 +227,7 @@ internal fun MailScreen(store: MobileStore) {
         else
             ScreenChrome(
                 boxTitle,
-                large = true,
+                large = apple,
                 titleMenu = boxMenu,
                 actions =
                     listOf(

@@ -1,0 +1,63 @@
+appId: ${APP_ID}
+name: Mail fast scrolling
+tags: [full]
+---
+- runFlow: common/launch.yaml
+- tapOn:
+    text: Tools
+    waitToSettleTimeoutMs: 500
+- scrollUntilVisible:
+    element:
+      id: tool-settings
+- tapOn:
+    id: tool-settings
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: appearance-2
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: Mail
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Release smoke results: all platforms passed"
+    timeout: 40000
+- takeScreenshot: mail-header-dark
+- tapOn:
+    text: "Release smoke results: all platforms passed"
+    waitToSettleTimeoutMs: 500
+- scrollUntilVisible:
+    element:
+      id: mail-diagram-mermaid-rendered
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: mail-scroll-start
+- repeat:
+    times: 8
+    commands:
+      - swipe:
+          start: 50%, 82%
+          end: 50%, 22%
+          duration: 80
+          waitToSettleTimeoutMs: 0
+- repeat:
+    times: 8
+    commands:
+      - swipe:
+          start: 50%, 22%
+          end: 50%, 82%
+          duration: 80
+          waitToSettleTimeoutMs: 0
+- takeScreenshot: mail-scroll-end
+- scrollUntilVisible:
+    element:
+      id: mail-diagram-mermaid-rendered
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: mail-scroll-recovered
+- runFlow: common/back.yaml
+- tapOn:
+    id: chrome-title-menu
+- assertVisible: "Flagged(, [0-9]+)?"
+- takeScreenshot: mail-box-menu
+- tapOn:
+    point: 90%, 30%

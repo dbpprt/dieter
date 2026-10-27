@@ -94,8 +94,13 @@ scale down as a complete figure, including labels and legends. Small charts are
 never stretched. All charts observe their container width when the native Files
 pane resizes. The stored Markdown and JSON specification remain unchanged.
 
-Null/omitted chart backgrounds remain transparent through the SVG, diagram-only
-CSS and native surfaces. Diagram-only roots reset `color-scheme` to `normal`,
+Null/omitted chart backgrounds remain transparent in the SVG and diagram-only
+HTML, blending with the native reader surface. Android primes the bundled HTML
+with diagram mode and its theme before first paint, and fills the WebView backing
+with the actual reader color to avoid white hardware-tile flashes during fast
+scrolling. That backing follows palette changes; authored white SVG backgrounds
+remain white. Offscreen prerasterization is limited to diagrams no larger than
+the native window. Diagram-only roots reset `color-scheme` to `normal`,
 which prevents WebKit from painting its own opaque light/dark canvas beneath
 transparent HTML. Native iOS page/scroll backgrounds are also clear, and its
 UIKit interop places the view above the Compose canvas. The default placement

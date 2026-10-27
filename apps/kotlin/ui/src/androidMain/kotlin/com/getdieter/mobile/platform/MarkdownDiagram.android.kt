@@ -1,12 +1,13 @@
 package com.getdieter.mobile.platform
 
 import android.annotation.SuppressLint
-import android.graphics.Color
 import android.webkit.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.viewinterop.AndroidView
 import com.getdieter.core.presentation.MarkdownDiagrams
+import com.getdieter.mobile.design.palette
 import java.io.ByteArrayInputStream
 import kotlinx.serialization.json.*
 
@@ -19,6 +20,9 @@ internal actual fun NativeMarkdownDiagram(
     onResult: (Double, String?) -> Unit,
 ) {
     val callback by rememberUpdatedState(onResult)
+    val dark = palette.dark
+    val background = palette.background.toArgb()
+    val page = remember(assets, dark) { assets["index.html"]?.let { diagramPage(it, dark) } }
     var view by remember { mutableStateOf<WebView?>(null) }
     AndroidView(
         modifier = modifier,
@@ -53,8 +57,24 @@ internal actual fun NativeMarkdownDiagram(
                         }
                     }
 
+                    fun updateRasterPolicy() {
+                        // Keep visible-size charts ready when LazyColumn moves them
+                        // offscreen. Avoid allocating tiles for oversized diagrams.
+                        settings.offscreenPreRaster =
+                            width > 0 &&
+                                height > 0 &&
+                                width <= rootView.width &&
+                                height <= rootView.height
+                    }
+
+                    override fun onAttachedToWindow() {
+                        super.onAttachedToWindow()
+                        updateRasterPolicy()
+                    }
+
                     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
                         super.onSizeChanged(w, h, oldw, oldh)
+                        updateRasterPolicy()
                         if (w != oldw) post { render() }
                     }
 
@@ -65,7 +85,10 @@ internal actual fun NativeMarkdownDiagram(
                     }
                 }
                 .apply {
-                    setBackgroundColor(Color.TRANSPARENT)
+                    // Chromium can clear hardware tiles while scrolling. Its
+                    // native backing must match the reader, including before SVG
+                    // readiness; the SVG itself keeps its authored transparency.
+                    setBackgroundColor(background)
                     settings.javaScriptEnabled = true
                     addJavascriptInterface(this, "dieterDiagram")
                     settings.allowFileAccess = false
@@ -84,7 +107,7 @@ internal actual fun NativeMarkdownDiagram(
                                 request: WebResourceRequest,
                             ): WebResourceResponse {
                                 val name = MarkdownDiagrams.asset(request.url.toString())
-                                val data = assets[name]
+                                val data = if (name == "index.html") page else assets[name]
                                 val mime =
                                     when (name) {
                                         "app.js" -> "text/javascript"
@@ -123,6 +146,7 @@ internal actual fun NativeMarkdownDiagram(
                     loadUrl(MarkdownDiagrams.ORIGIN + "index.html")
                 }
         },
+        update = { it.setBackgroundColor(background) },
     )
     DisposableEffect(Unit) {
         onDispose {
