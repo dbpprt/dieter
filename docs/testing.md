@@ -18,6 +18,17 @@ device checks separately; add `--base origin/main` for a whole branch and
 `--dry-run` to see the plan first. The required pull-request check is `ci-ok`,
 which aggregates every selected CI job.
 
+To rerun only Release iPhone verification after diagnosing an iOS CI failure:
+
+```sh
+gh workflow run ci.yml --ref main -f ios_only=true
+```
+
+This runs the iPhone build and smoke flows, overrides `full`, and skips unrelated
+components. Pull requests and main pushes keep their usual affected-check
+selection. The job allows for the cold Kotlin/Native and Xcode builds before the
+unchanged 25-minute Maestro deadline.
+
 ## Go
 
 ```sh
