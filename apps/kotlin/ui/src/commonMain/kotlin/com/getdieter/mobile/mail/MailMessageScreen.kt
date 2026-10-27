@@ -249,6 +249,7 @@ internal fun MailMessageScreen(
                         linkable = linkable,
                         linkKey = root,
                         key = "body-${route.daemonId}-${route.id}",
+                        diagrams = true,
                     )
             }
         }

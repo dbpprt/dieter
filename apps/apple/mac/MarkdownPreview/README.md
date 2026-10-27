@@ -2,7 +2,7 @@
 
 The bundle built from this source into
 `../Sources/DieterMacKit/Resources/MarkdownPreview` (not tracked) is loaded by
-the native Files preview through `dieter-markdown://preview/`. It requires no
+the native Files preview and Mail diagram adapters through `dieter-markdown://preview/`. It requires no
 server or network connection. Build it before `swift build` (a fresh clone
 must), and after editing this source:
 
@@ -11,6 +11,14 @@ must), and after editing this source:
 npm test
 ../scripts/build-markdown-preview.sh --check  # verify an existing bundle
 ```
+
+Android and iOS consume the same sources and lockfile through the UI Gradle
+`buildMarkdownPreview` task, which packages the bundle as Compose resources.
+`node build.mjs --output ABSOLUTE_DIRECTORY` builds another resource destination.
+Mail keeps native Markdown and horizontally scrolling tables, replacing only
+supported diagram fences. Native adapters deny every URL except the three
+packaged renderer assets; they dispose removed views and use native source
+fallback when a diagram fails. They never fetch remote images.
 
 All dependency versions and the complete dependency graph are pinned. The
 `lodash-es` override supplies the patched release for Mermaid's Chevrotain
@@ -36,7 +44,7 @@ Peer scroll updates and render/resize position restoration emit no scroll messag
 preventing feedback loops between the Split panes. Native code gates synchronization
 to the visible Split view. Disposal removes scroll listeners and observers.
 
-`renderDiagram(kind, source, theme, blockID)` renders one Mermaid, Vega-Lite
+`renderDiagram(kind, source, theme, blockID, readOnly = false)` renders one Mermaid, Vega-Lite
 (`vegalite` is accepted), or Vega block on a transparent surface with no page
 padding or border. The existing render result also includes measured `width`,
 `height`, and `error` (a bounded message for failed blocks, otherwise `null`);
@@ -45,7 +53,8 @@ a native snapshot. Identical source/theme/block/viewport-width requests reuse
 the finished render. The normal per-block limits and offline security rules apply.
 The bounded block ID (at most 128 characters) is echoed in
 `{type: 'diagramSize', blockID, height}` when completed content changes height,
-and `{type: 'diagramActivate', blockID}` on click or Enter/Space. Failed diagrams
+and `{type: 'diagramActivate', blockID}` on click or Enter/Space. Mail passes `true` as the fifth argument to expose image semantics
+without source-edit activation. Failed diagrams
 remain activatable so the native editor can always open their source. Ordinary
 `render(...)` restores document preview behavior; disposal removes these handlers.
 

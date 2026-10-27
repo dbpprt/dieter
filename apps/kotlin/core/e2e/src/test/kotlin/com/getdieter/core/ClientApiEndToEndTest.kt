@@ -1829,9 +1829,13 @@ class ClientApiEndToEndTest : EndToEnd() {
                 .messages
                 .none { it.id == sent.id }
         }
+        // Settlement can follow the last mailbox update without changing its
+        // slice. Observe the outbox itself so that final change wakes the wait.
+        runtime.outbox.view.await(30.seconds, describe = { "delete settled" }) { view ->
+            view.entries.none(MailRules::changesMail)
+        }
         mail.await(30.seconds, describe = { "deleted: ${mail.value?.boxes}" }) { slice ->
-            slice?.boxes?.firstOrNull { it.box == MailBox.MAIL_BOX_ARCHIVE }?.total == 1 &&
-                runtime.outbox.view.value.entries.none(MailRules::changesMail)
+            slice?.boxes?.firstOrNull { it.box == MailBox.MAIL_BOX_ARCHIVE }?.total == 1
         }
         watch.close()
     }

@@ -241,7 +241,7 @@ func MailInstructions(cli string) string {
 	return strings.ReplaceAll(`## Mail to the user
 You can send the user a read-only report in Dieter Mail. The user reads it later and cannot reply; ask questions in this conversation instead.
   DIETER mail send --subject "Nightly audit: 3 critical" --body-file report.md
-Write GitHub-flavored Markdown: headings, paragraphs, bold/italic/strikethrough, inline code, links, ordered/unordered/task lists, block quotes, horizontal rules, fenced code with a language, and tables (use column alignment; keep cells short). No HTML, images or diagrams. Link workspace files by relative path. Bodies are at most 128 KiB and 4,000 lines. Send one message per finished report, not progress updates; at most 10 per turn. Use --important only for failures that need action. Retry with the same --operation-id to avoid duplicates.`, "DIETER", cli)
+Write GitHub-flavored Markdown: headings, paragraphs, bold/italic/strikethrough, inline code, links, ordered/unordered/task lists, block quotes, horizontal rules, fenced code with a language, and tables (use column alignment; keep cells short). Mermaid, vega-lite (vegalite alias) and vega fences render offline on macOS, Android and iOS; charts require inline JSON data. External datasets, scripts and image/resource loads are blocked; raw HTML stays text and invalid diagrams keep readable source. Link workspace files by relative path. Bodies are at most 128 KiB and 4,000 lines. Send one message per finished report, not progress updates; at most 10 per turn. Use --important only for failures that need action. Retry with the same --operation-id to avoid duplicates.`, "DIETER", cli)
 }
 
 // ChannelInstructions are appended to a card's instructions while agent

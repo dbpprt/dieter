@@ -10,21 +10,33 @@ extension NativeTextViewCoordinator {
             containerWidth.isFinite && containerWidth > 0 && containerWidth < 100_000
             ? containerWidth : max(1, textView.bounds.width - textView.textContainerInset.width * 2)
         var updates: [(anchor: NSRange, image: NSImage, size: CGSize, oldSize: CGSize)] = []
+        var sourceFallbacks: [NSRange] = []
         storage.enumerateAttribute(.renderedCodeBlockSource, in: NSRange(location: 0, length: storage.length)) {
             value, anchor, _ in
             guard let code = value as? String,
                 let language = storage.attribute(.renderedCodeBlockLanguage, at: anchor.location, effectiveRange: nil)
                     as? String,
                 let oldImage = storage.attribute(.latexImage, at: anchor.location, effectiveRange: nil) as? NSImage,
-                let bounds = storage.attribute(.latexBounds, at: anchor.location, effectiveRange: nil) as? NSValue,
-                let result = self.configuration.services.renderedCodeBlocks.render(
-                    code: code, language: language, availableWidth: width, theme: self.configuration.theme),
+                let bounds = storage.attribute(.latexBounds, at: anchor.location, effectiveRange: nil) as? NSValue
+            else { return }
+            guard let result = self.configuration.services.renderedCodeBlocks.render(
+                code: code, language: language, availableWidth: width, theme: self.configuration.theme)
+            else {
+                // A failed asynchronous preview can withdraw its placeholder.
+                // Reveal just that fence; successful anchors and prose stay put.
+                if self.configuration.services.renderedCodeBlocks.shouldRevealSource(code: code, language: language),
+                   let fullRange = storage.attribute(.scrollableBlockFullRange, at: anchor.location, effectiveRange: nil) as? NSValue {
+                    sourceFallbacks.append(fullRange.rangeValue)
+                }
+                return
+            }
+            guard
                 let size = MarkdownStyler.renderedCodeSize(result.size, availableWidth: width),
                 oldImage !== result.image || bounds.rectValue.size != size
             else { return }
             updates.append((anchor, result.image, size, bounds.rectValue.size))
         }
-        guard !updates.isEmpty else { return }
+        guard !updates.isEmpty || !sourceFallbacks.isEmpty else { return }
         for update in updates {
             storage.beginEditing()
             let oldKern = storage.attribute(.kern, at: update.anchor.location, effectiveRange: nil) as? CGFloat ?? 0
@@ -46,6 +58,7 @@ extension NativeTextViewCoordinator {
             }
             storage.endEditing()
         }
+        if !sourceFallbacks.isEmpty { restyleParagraphs(sourceFallbacks, in: textView) }
         // NSTextStorage invalidates only the edited paragraphs. Invalidating the
         // document range here would lay out thousands of hidden JSON lines again.
         textView.setNeedsDisplay(textView.visibleRect)

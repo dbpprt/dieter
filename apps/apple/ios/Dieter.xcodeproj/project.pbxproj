@@ -116,6 +116,7 @@
 				D3C7E945ECB299B6438850C2 /* Sources */,
 				EDFDD4275AA762F3841D94D0 /* Frameworks */,
 				CE97D409992D5BF4820520E9 /* Resources */,
+				A11CE7A55E75A5E7A55E7A03 /* Copy Compose resources */,
 				5E0000000000000000000008 /* Embed App Extensions */,
 			);
 			buildRules = (
@@ -199,6 +200,21 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+
+/* Begin PBXShellScriptBuildPhase section */
+		A11CE7A55E75A5E7A55E7A03 /* Copy Compose resources */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = ();
+			inputPaths = ("$(SRCROOT)/../../kotlin/ui/build/generated/compose/resourceGenerator/preparedResources/commonMain/composeResources",);
+			name = "Copy Compose resources";
+			outputPaths = ("$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/compose-resources/composeResources/com.getdieter.mobile.resources",);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -eu\nsource_dir=\"$SRCROOT/../../kotlin/ui/build/generated/compose/resourceGenerator/preparedResources/commonMain/composeResources\"\ntest -f \"$source_dir/files/markdown-preview/app.js\"\n/usr/bin/ditto \"$source_dir\" \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/compose-resources/composeResources/com.getdieter.mobile.resources\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		D3C7E945ECB299B6438850C2 /* Sources */ = {

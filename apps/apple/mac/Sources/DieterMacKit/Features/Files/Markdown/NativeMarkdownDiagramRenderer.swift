@@ -1,4 +1,5 @@
 import AppKit
+import DieterCore
 import MarkdownEngine
 import WebKit
 
@@ -9,12 +10,7 @@ struct NativeMarkdownDiagramKey: Hashable, Sendable {
     let theme: String
 
     static func language(_ value: String) -> String? {
-        switch value.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) {
-        case "mermaid": "mermaid"
-        case "vega-lite", "vegalite": "vega-lite"
-        case "vega": "vega"
-        default: nil
-        }
+        SharedRules.shared.markdownDiagramKind(info: value)
     }
 
     var sourceID: String { language + "\n" + code }
@@ -28,6 +24,8 @@ final class NativeMarkdownDiagramRenderer: RenderedCodeBlockRenderer {
     nonisolated let renderingDidChangeNotification: Notification.Name? =
         Notification.Name("DieterNativeMarkdownDiagram.\(UUID().uuidString)")
     private let customRender: Render?
+    private let sourceOnFailure: Bool
+    private var failedSources: Set<String> = []
     private let maximumEntries: Int
     private let maximumBytes: Int
     private var theme = "light"
@@ -53,7 +51,11 @@ final class NativeMarkdownDiagramRenderer: RenderedCodeBlockRenderer {
         var lastRequested: TimeInterval
     }
 
-    init(maximumEntries: Int = 48, maximumBytes: Int = 24 * 1024 * 1024, render: Render? = nil) {
+    init(
+        maximumEntries: Int = 48, maximumBytes: Int = 24 * 1024 * 1024, sourceOnFailure: Bool = false,
+        render: Render? = nil
+    ) {
+        self.sourceOnFailure = sourceOnFailure
         self.maximumEntries = max(1, maximumEntries)
         self.maximumBytes = max(1024, maximumBytes)
         customRender = render
@@ -71,6 +73,11 @@ final class NativeMarkdownDiagramRenderer: RenderedCodeBlockRenderer {
     nonisolated func fingerprint() -> AnyHashable {
         guard Thread.isMainThread else { return AnyHashable(ObjectIdentifier(self)) }
         return AnyHashable(MainActor.assumeIsolated { "\(ObjectIdentifier(self)):\(theme):\(cacheRevision)" })
+    }
+
+    nonisolated func shouldRevealSource(code: String, language: String) -> Bool {
+        guard Thread.isMainThread, let language = NativeMarkdownDiagramKey.language(language) else { return false }
+        return MainActor.assumeIsolated { sourceOnFailure && failedSources.contains(language + "\n" + code) }
     }
 
     func updateAppearance(_ appearance: NSAppearance) {
@@ -127,6 +134,9 @@ final class NativeMarkdownDiagramRenderer: RenderedCodeBlockRenderer {
         }
         guard source != documentSource else { return }
         documentSource = source
+        failedSources = failedSources.filter {
+            source.contains($0.split(separator: "\n", maxSplits: 1).last.map(String.init) ?? "")
+        }
         let obsoleteActive = renderingKey.map { !source.contains($0.code) } ?? false
         let previousCount = cache.count
         cache = cache.filter { source.contains($0.key.code) }
@@ -161,6 +171,7 @@ final class NativeMarkdownDiagramRenderer: RenderedCodeBlockRenderer {
         desired.removeAll()
         cache.removeAll()
         documentSource = nil
+        failedSources.removeAll()
         cacheRevision &+= 1
     }
 
@@ -169,8 +180,10 @@ final class NativeMarkdownDiagramRenderer: RenderedCodeBlockRenderer {
             availableWidth > 0
         else { return nil }
         if let documentSource, !documentSource.contains(code) { return nil }
+        if sourceOnFailure && failedSources.contains(language + "\n" + code) { return nil }
         let width = max(1, Int(min(2048, floor(availableWidth))))
         guard code.utf8.count <= 1_000_000 else {
+            if sourceOnFailure { return nil }
             return placeholder(
                 width: width, message: "Diagram source exceeds 1 MB. Click to edit the source.", failed: true)
         }
@@ -197,6 +210,7 @@ final class NativeMarkdownDiagramRenderer: RenderedCodeBlockRenderer {
         // the document/appearance changes instead of repeatedly evicting and
         // rendering all its diagrams when a document exceeds the limit.
         if cache.count + placeholders.count >= maximumEntries {
+            if sourceOnFailure { return nil }
             return placeholder(width: width, message: "Preview limit reached. Click to edit this diagram's source.")
         }
         // Source strings and bitmap backing each have their own half of the
@@ -204,7 +218,9 @@ final class NativeMarkdownDiagramRenderer: RenderedCodeBlockRenderer {
         let admitted = Set(cache.keys.map(\.sourceID) + placeholders.keys.map(\.sourceID))
         let sourceBytes = admitted.reduce(0) { $0 + $1.utf8.count }
         guard sourceBytes + key.sourceID.utf8.count <= maximumBytes / 2 else { return nil }
-        let loading = placeholder(width: width, message: "Rendering \(language)… Click to edit the source.")
+        let loading = placeholder(
+            width: width,
+            message: sourceOnFailure ? "Rendering \(language)…" : "Rendering \(language)… Click to edit the source.")
         placeholders[key] = loading
         queue.append(key)
         startWorker()
@@ -238,6 +254,13 @@ final class NativeMarkdownDiagramRenderer: RenderedCodeBlockRenderer {
                     guard !Task.isCancelled, generation == epoch else { return }
                     webRenderer?.dispose()
                     webRenderer = nil
+                    if sourceOnFailure {
+                        failedSources.insert(key.sourceID)
+                        cacheRevision &+= 1
+                        placeholders[key] = nil
+                        notify()
+                        continue
+                    }
                     result = placeholder(width: key.width, message: error.localizedDescription, failed: true)
                 }
                 guard !Task.isCancelled, generation == epoch else { return }
@@ -310,6 +333,7 @@ final class NativeMarkdownDiagramRenderer: RenderedCodeBlockRenderer {
         return RenderedCodeBlockResult(image: image, size: result.size)
     }
 
+    var failedCount: Int { failedSources.count }
     var cachedCount: Int { cache.count }
     var cachedBytes: Int { cache.values.reduce(0) { $0 + $1.bytes } }
     var pendingCount: Int { queue.count }

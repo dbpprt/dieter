@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -71,5 +72,9 @@ func TestE2EFixtureSeedsTheMailFlowsRelyOn(t *testing.T) {
 	_, body, err := data.Mail.Get(audit.ID)
 	if err != nil || len(body) == 0 {
 		t.Fatalf("audit body = %q, %v", body, err)
+	}
+	_, richBody, err := data.Mail.Get(smoke.ID)
+	if err != nil || !strings.Contains(richBody, "```vegalite") || !strings.Contains(richBody, "```mermaid") || !strings.Contains(richBody, "```vega\n") {
+		t.Fatalf("rich Mail reader fixture missing: %v", err)
 	}
 }

@@ -237,3 +237,7 @@ hr {
 #preview[data-mode="diagram"] .diagram > * {
   pointer-events: none;
 }
+
+#preview[data-mode="diagram"][data-readonly="true"] {
+  cursor: default;
+}

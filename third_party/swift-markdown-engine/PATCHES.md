@@ -25,6 +25,13 @@ ranges regardless of source line count. Completed images and width changes updat
 only existing diagram anchors, avoiding whole-document restyling and preserving
 unrelated presentation, source text, and undo history.
 
+If an asynchronous renderer withdraws a placeholder and opts into source fallback, refresh
+restyles only that fence to reveal readable source. Other image anchors and
+unrelated prose keep their existing presentation; the source and undo history
+are unchanged. `NativeRenderedCodeBlockTests` covers this failure transition.
+Temporary unavailability keeps the previous image by default, including while
+a retained editor is hidden.
+
 Code-block overlay tokens are cleared and reseeded when rebuilding a document.
 Resize callbacks defer selection work during that rebuild, and stale token
 ranges are rejected before text-storage access. Switching from diagrams to a

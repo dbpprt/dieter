@@ -1146,7 +1146,12 @@ by `--from`.
 
 Write GitHub-flavored Markdown: headings, emphasis, inline code, links, lists,
 task lists, quotes, rules, fenced code with a language and aligned tables. No
-HTML, images or diagrams; link workspace files by relative path. Limits: a
+raw HTML or remote images are loaded. Mermaid (`mermaid`), Vega-Lite
+(`vega-lite`, alias `vegalite`) and Vega (`vega`) fences render offline in Mail
+on macOS, Android and iOS using the Files preview bundle. Charts need inline
+JSON data; external datasets, scripts, images and resource loads are blocked.
+Malformed or unsupported blocks keep readable source. Link workspace files by
+relative path. Limits: a
 one-line subject of at most 200 characters; a body of at most 128 KiB and 4,000
 lines of at most 8 KiB each; at most 10 messages per turn and 50 per
 conversation in 24 hours. Send one message per finished report, use

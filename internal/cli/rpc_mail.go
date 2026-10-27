@@ -99,8 +99,11 @@ Options:
 
 The body is GitHub-flavored Markdown of at most 128 KiB and 4,000 lines (each
 at most 8 KiB): headings, emphasis, inline code, links, lists, task lists,
-quotes, rules, fenced code and tables. Raw HTML shows as text and images as
-links. Agent turns may send only when their conversation has mail access, at
+quotes, rules, fenced code and tables. macOS, Android and iOS render mermaid,
+vega-lite (or vegalite) and vega fences offline. Charts require inline JSON data;
+external datasets and resource loads are blocked. Invalid or unsupported blocks
+keep readable source. Raw HTML shows as text and images as links, never loaded.
+Agent turns may send only when their conversation has mail access, at
 most 10 messages per turn and 50 per conversation in any 24 hours.
 `
 	set := flags("mail send")

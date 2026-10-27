@@ -148,6 +148,34 @@ test(
       await window.dieterMarkdown.render("# Latest unsaved text", "dark");
       assert.equal(root.textContent.trim(), "Latest unsaved text");
       assert.equal(window.document.documentElement.dataset.theme, "dark");
+      const mail = await readFile(
+        new URL("../../../../../tests/fixtures/mail/rich.md", import.meta.url),
+        "utf8",
+      );
+      const report = await window.dieterMarkdown.render(mail, "dark");
+      assert.equal(report.renderedBlocks, 4, root.textContent);
+      assert.equal(report.failedBlocks, 2, root.textContent);
+      assert.equal(root.querySelectorAll('[data-state="rendered"] svg').length, 4);
+      assert.equal(root.querySelector("script,img,iframe"), null);
+      assert.match(root.textContent, /Readable unsupported source/);
+      assert.match(root.textContent, /Remote image alt text/);
+      // Phones use this same API one lazy code block at a time, in either theme.
+      for (const theme of ["light", "dark"]) {
+        for (const block of mail.matchAll(
+          /```(mermaid|vega-lite|vegalite|vega)\n([\s\S]*?)\n```/g,
+        )) {
+          const result = await window.dieterMarkdown.renderDiagram(
+            block[1],
+            block[2],
+            theme,
+            "mail",
+          );
+          assert.equal(result.stale, false);
+          assert.equal(result.renderedBlocks + result.failedBlocks, 1);
+          assert.equal(result.failedBlocks, /broken JSON|example.invalid/.test(block[2]) ? 1 : 0);
+        }
+      }
+      assert.equal(networkAttempts, 0);
       window.dieterMarkdown.dispose();
       assert.equal(root.childElementCount, 0);
     } finally {

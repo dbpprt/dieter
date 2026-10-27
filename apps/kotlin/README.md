@@ -30,6 +30,13 @@ every core module targets the JVM, Android, `iosArm64`, `iosSimulatorArm64` and
 set. `gradle/libs.versions.toml` is the one source of every toolchain and
 library version.
 
+Mail's graphics reuse `apps/apple/mac/MarkdownPreview` on every platform. The
+UI's `buildMarkdownPreview` task needs the pinned Node/npm toolchain and builds
+the offline bundle from its shared lockfile; Android packages it as resources,
+and the iOS app copies the prepared Compose resources after linking its framework.
+The core owns fence names and aliases; WebView adapters only load packaged
+assets, present diagrams and release views.
+
 ## Architecture
 
 - **Threading.** Every piece of mutable state is confined to one serialized

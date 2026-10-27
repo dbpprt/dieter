@@ -9,12 +9,49 @@ group = "com.getdieter"
 
 version = providers.environmentVariable("DIETER_RELEASE_VERSION").orElse("0.0.0-dev.0").get()
 
-compose.resources { packageOfResClass = "com.getdieter.mobile.resources" }
+// Mail and Mac Files ship the very same pinned offline renderer, including licenses.
+val previewSource = rootProject.layout.projectDirectory.dir("../apple/mac/MarkdownPreview")
+val previewResources = layout.buildDirectory.dir("generated/markdownResources")
+val buildMarkdownPreview =
+    tasks.register<Exec>("buildMarkdownPreview") {
+        inputs.dir(previewSource.dir("src"))
+        inputs.files(
+            previewSource.file("build.mjs"),
+            previewSource.file("package.json"),
+            previewSource.file("package-lock.json"),
+        )
+        outputs.dir(previewResources)
+        workingDir(previewSource)
+        commandLine(
+            "sh",
+            "-c",
+            "npm ci --ignore-scripts --no-audit --no-fund && node build.mjs --output \"\$1\"",
+            "markdown-preview",
+            previewResources.get().dir("files/markdown-preview").asFile.absolutePath,
+        )
+    }
+val mergedResources = layout.buildDirectory.dir("generated/mailComposeResources")
+val mergeMarkdownResources =
+    tasks.register<Sync>("mergeMarkdownResources") {
+        dependsOn(buildMarkdownPreview)
+        from(layout.projectDirectory.dir("src/commonMain/composeResources"))
+        from(previewResources)
+        into(mergedResources)
+    }
+
+compose.resources {
+    packageOfResClass = "com.getdieter.mobile.resources"
+    customDirectory(
+        sourceSetName = "commonMain",
+        directoryProvider = mergeMarkdownResources.map { mergedResources.get() },
+    )
+}
 
 kotlin {
     jvm()
     android {
         namespace = "com.getdieter.mobile"
+        androidResources { enable = true }
         compileSdk { version = release(37) { minorApiLevel = 1 } }
         minSdk = 26
     }
@@ -36,6 +73,7 @@ kotlin {
         }
         commonMain.dependencies {
             api(project(":core:runtime"))
+            implementation(libs.kotlinx.serialization.json)
             implementation(compose.runtime)
             implementation(compose.foundation)
             implementation(compose.material3)

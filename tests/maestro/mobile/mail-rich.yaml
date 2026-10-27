@@ -1,0 +1,103 @@
+appId: ${APP_ID}
+name: Mail offline graphics
+tags: [smoke]
+---
+- runFlow: common/launch.yaml
+- tapOn:
+    text: "Mail"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Release smoke results: all platforms passed"
+    timeout: 40000
+- tapOn:
+    text: "Release smoke results: all platforms passed"
+    waitToSettleTimeoutMs: 500
+- scrollUntilVisible:
+    element:
+      id: mail-diagram-mermaid-rendered
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: mail-rich-mermaid
+- scrollUntilVisible:
+    element:
+      id: mail-diagram-vega-lite-rendered
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: mail-rich-vega-lite
+- scrollUntilVisible:
+    element:
+      text: "Alias chart"
+    direction: DOWN
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: mail-diagram-vegalite-rendered
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: mail-rich-alias
+- scrollUntilVisible:
+    element:
+      id: mail-diagram-vega-rendered
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: mail-rich-vega-and-alias
+- scrollUntilVisible:
+    element:
+      id: mail-diagram-error
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: mail-rich-error-source
+- scrollUntilVisible:
+    element:
+      text: "End of offline report."
+    direction: DOWN
+    timeout: 30000
+- assertVisible: "Remote image alt text"
+- takeScreenshot: mail-rich-offline-boundary
+- runFlow: common/back.yaml
+- tapOn:
+    text: "Invoice migration finished: 12,408 rows moved"
+    waitToSettleTimeoutMs: 500
+- assertNotVisible:
+    id: mail-diagram-mermaid-rendered
+- assertVisible: "Open conversation"
+- runFlow: common/back.yaml
+- tapOn:
+    text: "Release smoke results: all platforms passed"
+    waitToSettleTimeoutMs: 500
+- scrollUntilVisible:
+    element:
+      id: mail-diagram-mermaid-rendered
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: mail-rich-reopened
+- runFlow: common/back.yaml
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - hideKeyboard
+- tapOn:
+    text: "Tools"
+    waitToSettleTimeoutMs: 500
+- scrollUntilVisible:
+    element:
+      id: tool-settings
+- tapOn:
+    id: tool-settings
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: appearance-2
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: "Mail"
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: "Release smoke results: all platforms passed"
+    waitToSettleTimeoutMs: 500
+- scrollUntilVisible:
+    element:
+      id: mail-diagram-mermaid-rendered
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: mail-rich-dark
