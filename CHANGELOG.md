@@ -10,6 +10,21 @@ copy the **Unreleased** notes into a section named after that exact version
 
 Nothing yet.
 
+## 0.6.431
+
+### Fixed
+
+- Mail charts on the Mac and iPhone now blend with the reader in light and dark
+  appearance. Charts with an explicitly white background keep that background,
+  and selected Mac mailbox rows remain readable.
+- Mac Mail and Files keep chart text and paths sharp in large reports. Bounded
+  parallel rendering, faster source lookups and cached chart reuse reduce
+  rendering time and speed up reopening messages.
+- Wide tables in Mac Mail stay below their headings when charts finish loading,
+  including after scrolling, changing appearance and reopening a message.
+- Android Mail keeps its reader background stable during fast scrolling, and
+  the Inbox title now aligns with the toolbar actions.
+
 ## 0.6.430
 
 ### Added
