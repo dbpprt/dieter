@@ -18,6 +18,39 @@ import { HarnessCapabilityUnsupportedError } from "@ai-sdk/harness";
 //   {"event":"result","result":{"status":"SUCCESS|ERROR","response":…,"error":…,"usage":{"input_tokens":…,"output_tokens":…,"thinking_tokens":…,"cache_read_tokens":…,"total_tokens":…}}}
 const HARNESS_ID = "antigravity";
 
+// agy prints a structured `AGY_ERROR: {...}` line on stderr when a run fails. Turn it into one
+// sentence for the conversation; the raw diagnostics stay out of the user-visible text.
+function describeFailure(resultError, stderrText) {
+  let info;
+  for (const line of stderrText.split("\n")) {
+    const i = line.indexOf("AGY_ERROR:");
+    if (i < 0) continue;
+    try {
+      info = JSON.parse(line.slice(i + "AGY_ERROR:".length).trim());
+    } catch {
+      // not JSON: ignore
+    }
+  }
+  const text = (resultError || info?.short_error || "").trim();
+  const resets = text.match(/Resets in ([0-9hms]+)/)?.[1];
+  const status = info?.status || "";
+  if (status === "RESOURCE_EXHAUSTED" || /quota reached/i.test(text)) {
+    return `Antigravity has no quota left for this model${resets ? ` (resets in ${resets})` : ""}. Pick another model (e.g. Gemini 3.8 Flash) or try again later.`;
+  }
+  if (status === "UNAUTHENTICATED" || /authentication required|not logged in|credentials/i.test(text)) {
+    return "Antigravity is not signed in on this machine: refresh the Antigravity credentials in the add-on options.";
+  }
+  if (!text) return "Antigravity failed without a message.";
+  return `Antigravity: ${text.replace(/^error:\s*/i, "")}`;
+}
+
+// Thrown errors are logged with their stack by the host; keep the stack to the message only.
+function turnError(message) {
+  const error = new Error(message);
+  error.stack = message;
+  return error;
+}
+
 export function createAntigravity(settings = {}) {
   const command = settings.command || process.env.DIETER_ANTIGRAVITY_BIN || "agy";
   const effort = settings.effort || undefined;
@@ -254,12 +287,11 @@ function runTurn({ command, args, cwd, text, emit, abortSignal, state }) {
     if (abortSignal?.aborted) onAbort();
     else abortSignal?.addEventListener("abort", onAbort, { once: true });
 
-    child.on("error", (error) => fail(new Error(`cannot start ${command}: ${error.message}`)));
+    child.on("error", (error) => fail(turnError(`cannot start ${command}: ${error.message}`)));
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk) => {
       stderr.push(chunk);
       if (stderr.length > 200) stderr.shift();
-      process.stderr.write(chunk);
     });
     const lines = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
     lines.on("line", (line) => {
@@ -288,18 +320,18 @@ function runTurn({ command, args, cwd, text, emit, abortSignal, state }) {
     });
     child.on("close", (code, signal) => {
       abortSignal?.removeEventListener?.("abort", onAbort);
-      const tail = stderr.join("").trim().split("\n").slice(-3).join("\n");
-      if (aborted) return fail(new Error("agent turn interrupted"));
+      const stderrText = stderr.join("");
+      if (aborted) return fail(turnError("agent turn interrupted"));
       closeParts();
       if (!result) {
-        return fail(new Error(`${command} exited (${signal || code}) without a result${tail ? `: ${tail}` : ""}`));
+        return fail(turnError(describeFailure(`${command} exited (${signal || code}) without a result`, stderrText)));
       }
       const usage = usageOf(result.usage ?? stepUsage);
       const ok = result.status === "SUCCESS";
       const finishReason = { unified: ok ? "stop" : "error", raw: String(result.status ?? "") };
       emit({ type: "finish-step", finishReason, usage });
       emit({ type: "finish", finishReason, totalUsage: usage });
-      if (!ok) return reject(new Error(result.error || `Antigravity turn failed (${result.status || "unknown"})${tail ? `: ${tail}` : ""}`));
+      if (!ok) return reject(turnError(describeFailure(result.error || `turn failed (${result.status || "unknown"})`, stderrText)));
       resolve();
     });
     child.stdin.on("error", () => {});
