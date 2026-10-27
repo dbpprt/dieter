@@ -10,6 +10,19 @@ copy the **Unreleased** notes into a section named after that exact version
 
 Nothing yet.
 
+## 0.6.430
+
+### Added
+
+- Mail reports render Mermaid diagrams and inline-data Vega-Lite and Vega
+  charts on the Mac, Android, iPhone and iPad, using the same bundled offline
+  renderer as the Mac Files preview. Graphics fit narrow screens and follow
+  the app's light or dark appearance; Mac PDF and HTML exports keep them as
+  static graphics.
+- Invalid or unsupported diagrams keep readable source without hiding the
+  rest of the report. Remote images, external chart data and scripts remain
+  blocked; charts use inline data and their controls are read-only.
+
 ## 0.6.429
 
 ### Added
