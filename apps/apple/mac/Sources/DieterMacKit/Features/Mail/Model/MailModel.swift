@@ -55,6 +55,7 @@ final class MailModel {
     var errorMessage: String?
     /// Called with the app icon badge (empty: none) whenever it changes.
     @ObservationIgnored var onAppBadgeChange: (@MainActor (String) -> Void)?
+    @ObservationIgnored let diagramImages = NativeMarkdownDiagramImageCache()
     @ObservationIgnored let scope: String
     /// The main window's reader moves on when its message leaves the shown
     /// mailbox; a message window keeps showing its one message.
@@ -104,6 +105,7 @@ final class MailModel {
 
     /// Stops observing, e.g. when a message window closes.
     func detach() {
+        diagramImages.removeAll()
         pendingSearch?.cancel()
         subscription?.close()
         subscription = nil

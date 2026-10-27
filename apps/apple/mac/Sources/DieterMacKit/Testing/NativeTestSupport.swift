@@ -48,6 +48,21 @@
 
         /// The window's own rendering, independent of screen recording permission.
         static func capture(_ window: NSWindow, to url: URL) throws {
+            if ProcessInfo.processInfo.arguments.contains("--e2e-compositor-capture") {
+                // Layer-backed SwiftUI and embedded native surfaces are not all
+                // included by cacheDisplay. Visual qualification needs the
+                // window's composed pixels, with Screen Recording permission.
+                window.displayIfNeeded()
+                let capture = Process()
+                capture.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+                capture.arguments = ["-x", "-o", "-l", String(window.windowNumber), url.path]
+                try capture.run()
+                capture.waitUntilExit()
+                guard capture.terminationStatus == 0, FileManager.default.fileExists(atPath: url.path) else {
+                    throw CaptureError()
+                }
+                return
+            }
             guard let view = window.contentView,
                 let representation = view.bitmapImageRepForCachingDisplay(in: view.bounds)
             else { throw CaptureError() }

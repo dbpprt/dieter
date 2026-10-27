@@ -47,4 +47,7 @@ tags: [smoke]
       id: mail.reader.graphics
       text: "4 rendered, 2 source fallbacks"
     timeout: 60000
+- assertVisible:
+    id: mail.reader.graphics-cache
+    text: "[1-9][0-9]* reused"
 - takeScreenshot: mac-mail-rich-reopened

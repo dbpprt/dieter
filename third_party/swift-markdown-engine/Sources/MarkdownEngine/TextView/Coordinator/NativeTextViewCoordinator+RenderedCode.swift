@@ -62,6 +62,21 @@ extension NativeTextViewCoordinator {
         // NSTextStorage invalidates only the edited paragraphs. Invalidating the
         // document range here would lay out thousands of hidden JSON lines again.
         textView.setNeedsDisplay(textView.visibleRect)
-        if let native = textView as? NativeTextView { native.ensureVisibleLayout() }
+        if let native = textView as? NativeTextView {
+            native.ensureVisibleLayout()
+            // Chart height changes move every later text anchor. Wide tables
+            // are separate views, so reconcile their frames in the same turn.
+            // Source offsets are unchanged: reuse the existing anchors rather
+            // than scanning or restyling the report's hidden JSON paragraphs.
+            if !native.wideTableOverlays.isEmpty,
+               !sourceFallbacks.isEmpty || updates.contains(where: { $0.size.height != $0.oldSize.height }) {
+                native.updateWideTableOverlays(
+                    immediately: true,
+                    knownWideTableAnchorRanges: native.wideTableOverlays.values.map {
+                        NSRange(location: $0.anchorTextLocation, length: 1)
+                    }
+                )
+            }
+        }
     }
 }

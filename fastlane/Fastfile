@@ -810,7 +810,13 @@ platform :mac do
       flows.each do |flow|
         began = Dieter.clock
         status, reason =
-          run_mac_flow(app, plans[flow["id"]], File.join(evidence, flow["id"]), fixture)
+          run_mac_flow(
+            app,
+            plans[flow["id"]],
+            File.join(evidence, flow["id"]),
+            fixture,
+            compositor: options[:screenshots].to_s == "compositor"
+          )
         results.record(flow, status, reason, Dieter.clock - began)
       end
     end
@@ -1321,7 +1327,7 @@ end
 
 # One Mac flow in a fresh DieterE2E process with isolated state; the app
 # interprets the plan, writes report.json and quits.
-def run_mac_flow(app, plan, output, fixture)
+def run_mac_flow(app, plan, output, fixture, compositor: false)
   FileUtils.mkdir_p(output, mode: 0o700)
   state = Dir.mktmpdir("dieter-mac-flow-")
   suite = "#{Dieter::Release.ids["mac"]}.e2e.#{Digest::SHA256.hexdigest(state)[0, 16]}"
@@ -1353,7 +1359,8 @@ def run_mac_flow(app, plan, output, fixture)
           "--e2e-flow",
           File.join(state, "plan.json"),
           "--e2e-output",
-          output
+          output,
+          *(compositor ? ["--e2e-compositor-capture"] : [])
         ],
         log: File.join(output, "app.log")
       )

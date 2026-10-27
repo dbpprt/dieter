@@ -1,64 +1,132 @@
 import AppKit
+import Darwin
 import DieterCore
 import MarkdownEngine
 import WebKit
 
-struct NativeMarkdownDiagramKey: Hashable, Sendable {
+struct NativeMarkdownDiagramSource: Hashable, Sendable {
     let code: String
     let language: String
+    var byteCount: Int { code.utf8.count + language.utf8.count + 1 }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        guard lhs.language == rhs.language else { return false }
+        let contiguous = lhs.code.utf8.withContiguousStorageIfAvailable { left in
+            rhs.code.utf8.withContiguousStorageIfAvailable { right in
+                guard left.count == right.count else { return false }
+                if left.isEmpty || left.baseAddress == right.baseAddress { return true }
+                guard let first = left.baseAddress, let second = right.baseAddress else { return false }
+                return memcmp(first, second, left.count) == 0
+            }
+        }
+        if let equal = contiguous ?? nil { return equal }
+        return lhs.code.compare(rhs.code, options: .literal) == .orderedSame
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(language)
+        let contiguous: Void? = code.utf8.withContiguousStorageIfAvailable {
+            hasher.combine(bytes: UnsafeRawBufferPointer($0))
+        }
+        if contiguous == nil {
+            Array(code.utf8).withUnsafeBytes { hasher.combine(bytes: $0) }
+        }
+    }
+
+    func isPresent(in document: String) -> Bool {
+        if code.isEmpty { return true }
+        // Fences are literal source slices. Unicode-equivalent substring search
+        // repeatedly scans long, similar JSON prefixes and accepts changed bytes.
+        // Borrow contiguous UTF-8 storage without copying a multi-megabyte body.
+        let contiguous = document.utf8.withContiguousStorageIfAvailable { body in
+            code.utf8.withContiguousStorageIfAvailable { needle in
+                guard needle.count <= body.count, let start = body.baseAddress, let pattern = needle.baseAddress
+                else { return false }
+                return memmem(start, body.count, pattern, needle.count) != nil
+            }
+        }
+        if let found = contiguous ?? nil { return found }
+        return document.range(of: code, options: .literal) != nil
+    }
+}
+
+struct NativeMarkdownDiagramKey: Hashable, Sendable {
+    let sourceID: NativeMarkdownDiagramSource
     let width: Int
     let theme: String
+    var code: String { sourceID.code }
+    var language: String { sourceID.language }
+
+    init(code: String, language: String, width: Int, theme: String) {
+        sourceID = .init(code: code, language: language)
+        self.width = width
+        self.theme = theme
+    }
 
     static func language(_ value: String) -> String? {
         SharedRules.shared.markdownDiagramKind(info: value)
     }
-
-    var sourceID: String { language + "\n" + code }
 }
 
-/// A synchronous image provider for the native editor, backed by one asynchronous
-/// offline web renderer. It never replaces or serializes the editor's source.
+/// A synchronous image provider for the native editor, backed by a bounded asynchronous
+/// offline web renderer pool. It never replaces or serializes the editor's source.
 @MainActor
 final class NativeMarkdownDiagramRenderer: RenderedCodeBlockRenderer {
     typealias Render = @MainActor (NativeMarkdownDiagramKey) async throws -> RenderedCodeBlockResult
     nonisolated let renderingDidChangeNotification: Notification.Name? =
         Notification.Name("DieterNativeMarkdownDiagram.\(UUID().uuidString)")
     private let customRender: Render?
+    private let imageCache: NativeMarkdownDiagramImageCache?
+    private let imageCacheRevision: UInt64?
     private let sourceOnFailure: Bool
-    private var failedSources: Set<String> = []
+    private var failedSources: Set<NativeMarkdownDiagramSource> = []
     private let maximumEntries: Int
     private let maximumBytes: Int
+    private let maximumConcurrentRenders: Int
     private var theme = "light"
     private var cache: [NativeMarkdownDiagramKey: CacheEntry] = [:]
     private var queue: [NativeMarkdownDiagramKey] = []
     private var placeholders: [NativeMarkdownDiagramKey: RenderedCodeBlockResult] = [:]
-    private var desired: [String: NativeMarkdownDiagramKey] = [:]
-    private var clock = 0
+    private var desired: [NativeMarkdownDiagramSource: NativeMarkdownDiagramKey] = [:]
     private var generation = 0
     private var cacheRevision = 0
-    private var notificationPending = false
+    private var notificationTask: Task<Void, Never>?
     private var documentSource: String?
     private var isDisposed = false
     private var isActive = true
-    private var renderingKey: NativeMarkdownDiagramKey?
-    private var worker: Task<Void, Never>?
-    private var webRenderer: NativeMarkdownDiagramWebRenderer?
+    private var workers: [UUID: Worker] = [:]
+    private var idleRenderers: [NativeMarkdownDiagramWebRenderer] = []
+
+    @MainActor
+    private final class Worker {
+        var key: NativeMarkdownDiagramKey?
+        var task: Task<Void, Never>?
+        var renderer: NativeMarkdownDiagramWebRenderer?
+
+        func cancel() {
+            task?.cancel()
+            renderer?.dispose()
+            renderer = nil
+        }
+    }
 
     private struct CacheEntry {
-        let result: RenderedCodeBlockResult
+        let result: RenderedCodeBlockResult?
         let bytes: Int
-        var used: Int
-        var lastRequested: TimeInterval
     }
 
     init(
         maximumEntries: Int = 48, maximumBytes: Int = 24 * 1024 * 1024, sourceOnFailure: Bool = false,
+        maximumConcurrentRenders: Int = 2, imageCache: NativeMarkdownDiagramImageCache? = nil,
         render: Render? = nil
     ) {
         self.sourceOnFailure = sourceOnFailure
         self.maximumEntries = max(1, maximumEntries)
         self.maximumBytes = max(1024, maximumBytes)
+        self.maximumConcurrentRenders = min(4, max(1, maximumConcurrentRenders))
         customRender = render
+        self.imageCache = imageCache
+        imageCacheRevision = imageCache?.revision
     }
 
     nonisolated func render(
@@ -77,7 +145,11 @@ final class NativeMarkdownDiagramRenderer: RenderedCodeBlockRenderer {
 
     nonisolated func shouldRevealSource(code: String, language: String) -> Bool {
         guard Thread.isMainThread, let language = NativeMarkdownDiagramKey.language(language) else { return false }
-        return MainActor.assumeIsolated { sourceOnFailure && failedSources.contains(language + "\n" + code) }
+        return MainActor.assumeIsolated {
+            let sourceID = NativeMarkdownDiagramSource(code: code, language: language)
+            let overBudget = desired[sourceID].flatMap { cache[$0] }.map { $0.result == nil } ?? false
+            return sourceOnFailure && (failedSources.contains(sourceID) || overBudget)
+        }
     }
 
     func updateAppearance(_ appearance: NSAppearance) {
@@ -85,11 +157,7 @@ final class NativeMarkdownDiagramRenderer: RenderedCodeBlockRenderer {
         guard next != theme else { return }
         theme = next
         generation &+= 1
-        worker?.cancel()
-        worker = nil
-        renderingKey = nil
-        webRenderer?.dispose()
-        webRenderer = nil
+        cancelWorkers()
         queue.removeAll()
         placeholders.removeAll()
         desired.removeAll()
@@ -108,16 +176,12 @@ final class NativeMarkdownDiagramRenderer: RenderedCodeBlockRenderer {
             notify()
         } else {
             generation &+= 1
-            worker?.cancel()
-            worker = nil
-            if let renderingKey, desired[renderingKey.sourceID] == renderingKey,
-                !queue.contains(renderingKey)
-            {
-                queue.insert(renderingKey, at: 0)
+            for worker in workers.values {
+                if let key = worker.key, desired[key.sourceID] == key, !queue.contains(key) {
+                    queue.insert(key, at: 0)
+                }
             }
-            renderingKey = nil
-            webRenderer?.dispose()
-            webRenderer = nil
+            cancelWorkers()
         }
     }
 
@@ -127,31 +191,24 @@ final class NativeMarkdownDiagramRenderer: RenderedCodeBlockRenderer {
         isDisposed = false
         // A document without diagrams has nothing to prune: keep the source
         // without comparing it, as the editor calls this on every update.
-        guard renderingKey != nil || !cache.isEmpty || !queue.isEmpty || !placeholders.isEmpty || !desired.isEmpty
+        guard !workers.isEmpty || !cache.isEmpty || !queue.isEmpty || !placeholders.isEmpty || !desired.isEmpty
         else {
             documentSource = source
             return
         }
         guard source != documentSource else { return }
         documentSource = source
-        failedSources = failedSources.filter {
-            source.contains($0.split(separator: "\n", maxSplits: 1).last.map(String.init) ?? "")
-        }
-        let obsoleteActive = renderingKey.map { !source.contains($0.code) } ?? false
+        failedSources = failedSources.filter { $0.isPresent(in: source) }
         let previousCount = cache.count
-        cache = cache.filter { source.contains($0.key.code) }
-        queue.removeAll { !source.contains($0.code) }
-        placeholders = placeholders.filter { source.contains($0.key.code) }
-        desired = desired.filter { source.contains($0.value.code) }
-        if obsoleteActive {
-            generation &+= 1
-            worker?.cancel()
-            worker = nil
-            renderingKey = nil
-            webRenderer?.dispose()
-            webRenderer = nil
-            startWorker()
+        cache = cache.filter { $0.key.sourceID.isPresent(in: source) }
+        queue.removeAll { !$0.sourceID.isPresent(in: source) }
+        placeholders = placeholders.filter { $0.key.sourceID.isPresent(in: source) }
+        desired = desired.filter { $0.value.sourceID.isPresent(in: source) }
+        for (id, worker) in Array(workers) where worker.key.map({ !$0.sourceID.isPresent(in: source) }) == true {
+            worker.cancel()
+            workers[id] = nil
         }
+        startWorker()
         if previousCount != cache.count {
             cacheRevision &+= 1
             notify()
@@ -161,11 +218,7 @@ final class NativeMarkdownDiagramRenderer: RenderedCodeBlockRenderer {
     func dispose() {
         isDisposed = true
         generation &+= 1
-        worker?.cancel()
-        worker = nil
-        renderingKey = nil
-        webRenderer?.dispose()
-        webRenderer = nil
+        cancelWorkers()
         queue.removeAll()
         placeholders.removeAll()
         desired.removeAll()
@@ -179,8 +232,12 @@ final class NativeMarkdownDiagramRenderer: RenderedCodeBlockRenderer {
         guard !isDisposed, let language = NativeMarkdownDiagramKey.language(language), availableWidth.isFinite,
             availableWidth > 0
         else { return nil }
-        if let documentSource, !documentSource.contains(code) { return nil }
-        if sourceOnFailure && failedSources.contains(language + "\n" + code) { return nil }
+        if let documentSource,
+            !NativeMarkdownDiagramSource(code: code, language: language).isPresent(in: documentSource)
+        {
+            return nil
+        }
+        if sourceOnFailure && failedSources.contains(.init(code: code, language: language)) { return nil }
         let width = max(1, Int(min(2048, floor(availableWidth))))
         guard code.utf8.count <= 1_000_000 else {
             if sourceOnFailure { return nil }
@@ -189,22 +246,22 @@ final class NativeMarkdownDiagramRenderer: RenderedCodeBlockRenderer {
         }
         let key = NativeMarkdownDiagramKey(code: code, language: language, width: width, theme: theme)
         guard isActive else { return cache[key]?.result }
-        clock &+= 1
         desired[key.sourceID] = key
         if desired.count > maximumEntries * 2 + 1 {
             let retained = Set(cache.keys.map(\.sourceID) + queue.map(\.sourceID) + [key.sourceID])
             desired = desired.filter { retained.contains($0.key) }
         }
-        if var entry = cache[key] {
-            entry.used = clock
-            entry.lastRequested = ProcessInfo.processInfo.systemUptime
-            cache[key] = entry
-            return entry.result
+        if let entry = cache[key] {
+            if let result = entry.result { return result }
+            return sourceOnFailure
+                ? nil
+                : placeholder(
+                    width: width, message: "Preview memory limit reached. Click to edit this diagram's source.")
         }
         if let pending = placeholders[key] { return pending }
         // Width changes replace the same diagram, including at the cache limit.
         for old in Array(cache.keys) where old.sourceID == key.sourceID && old != key { cache[old] = nil }
-        for old in queue where old.sourceID == key.sourceID && old != key { placeholders[old] = nil }
+        for old in Array(placeholders.keys) where old.sourceID == key.sourceID && old != key { placeholders[old] = nil }
         queue.removeAll { $0.sourceID == key.sourceID && $0 != key }
         // A restyle asks for every diagram again. Keep admission stable until
         // the document/appearance changes instead of repeatedly evicting and
@@ -213,11 +270,20 @@ final class NativeMarkdownDiagramRenderer: RenderedCodeBlockRenderer {
             if sourceOnFailure { return nil }
             return placeholder(width: width, message: "Preview limit reached. Click to edit this diagram's source.")
         }
-        // Source strings and bitmap backing each have their own half of the
-        // cache budget. An unreasonable source set falls back to editable code.
+        // Source strings use at most half of the cache budget.
+        // An unreasonable source set falls back to editable code.
         let admitted = Set(cache.keys.map(\.sourceID) + placeholders.keys.map(\.sourceID))
-        let sourceBytes = admitted.reduce(0) { $0 + $1.utf8.count }
-        guard sourceBytes + key.sourceID.utf8.count <= maximumBytes / 2 else { return nil }
+        let sourceBytes = admitted.reduce(0) { $0 + $1.byteCount }
+        guard sourceBytes + key.sourceID.byteCount <= maximumBytes / 2 else { return nil }
+        if imageCache?.revision == imageCacheRevision, let result = imageCache?.result(for: key) {
+            cacheResult(result, for: key)
+            notify(flush: true)
+            if let cached = cache[key]?.result { return cached }
+            return sourceOnFailure
+                ? nil
+                : placeholder(
+                    width: width, message: "Preview memory limit reached. Click to edit this diagram's source.")
+        }
         let loading = placeholder(
             width: width,
             message: sourceOnFailure ? "Rendering \(language)…" : "Rendering \(language)… Click to edit the source.")
@@ -227,123 +293,113 @@ final class NativeMarkdownDiagramRenderer: RenderedCodeBlockRenderer {
         return loading
     }
 
+    private func cancelWorkers() {
+        notificationTask?.cancel()
+        notificationTask = nil
+        for worker in workers.values { worker.cancel() }
+        workers.removeAll()
+        for renderer in idleRenderers { renderer.dispose() }
+        idleRenderers.removeAll()
+    }
+
     private func startWorker() {
-        guard worker == nil, !queue.isEmpty, !isDisposed, isActive else { return }
+        guard !queue.isEmpty, !isDisposed, isActive else { return }
         let epoch = generation
-        worker = Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer {
-                if generation == epoch {
-                    worker = nil
-                    renderingKey = nil
-                }
-            }
-            while !queue.isEmpty, !Task.isCancelled, generation == epoch {
-                let key = queue.removeFirst()
-                guard desired[key.sourceID] == key else { placeholders[key] = nil; continue }
-                renderingKey = key
-                let result: RenderedCodeBlockResult
-                do {
-                    if let customRender {
-                        result = try await customRender(key)
-                    } else {
-                        if webRenderer == nil { webRenderer = NativeMarkdownDiagramWebRenderer() }
-                        result = try await webRenderer!.render(key)
+        // Each slot owns its own WebKit page, including Mermaid's global state.
+        // Overlap independent renders without racing themes or sharing a DOM.
+        for _ in 0..<min(queue.count, max(0, maximumConcurrentRenders - workers.count)) {
+            let id = UUID()
+            let worker = Worker()
+            worker.renderer = idleRenderers.popLast()
+            workers[id] = worker
+            worker.task = Task { @MainActor [weak self] in
+                guard let self else { return }
+                defer {
+                    if let renderer = worker.renderer {
+                        if !Task.isCancelled, generation == epoch, isActive, !isDisposed {
+                            idleRenderers.append(renderer)
+                        } else {
+                            renderer.dispose()
+                        }
                     }
-                } catch {
-                    guard !Task.isCancelled, generation == epoch else { return }
-                    webRenderer?.dispose()
-                    webRenderer = nil
-                    if sourceOnFailure {
-                        failedSources.insert(key.sourceID)
-                        cacheRevision &+= 1
+                    worker.renderer = nil
+                    workers[id] = nil
+                }
+                while !queue.isEmpty, !Task.isCancelled, generation == epoch {
+                    let key = queue.removeFirst()
+                    guard desired[key.sourceID] == key else { placeholders[key] = nil; continue }
+                    worker.key = key
+                    let result: RenderedCodeBlockResult
+                    do {
+                        if let customRender {
+                            result = try await customRender(key)
+                        } else {
+                            if worker.renderer == nil { worker.renderer = NativeMarkdownDiagramWebRenderer() }
+                            result = try await worker.renderer!.render(key)
+                        }
+                    } catch {
+                        guard !Task.isCancelled, generation == epoch else { return }
+                        worker.renderer?.dispose()
+                        worker.renderer = nil
+                        worker.key = nil
                         placeholders[key] = nil
-                        notify()
-                        continue
+                        // An obsolete failure must not reveal a newer width's source.
+                        guard desired[key.sourceID] == key else { continue }
+                        if sourceOnFailure {
+                            failedSources.insert(key.sourceID)
+                            cacheRevision &+= 1
+                            notify(flush: queue.isEmpty && workers.values.allSatisfy { $0.key == nil })
+                            continue
+                        }
+                        result = placeholder(width: key.width, message: error.localizedDescription, failed: true)
                     }
-                    result = placeholder(width: key.width, message: error.localizedDescription, failed: true)
+                    guard !Task.isCancelled, generation == epoch else { return }
+                    worker.key = nil
+                    placeholders[key] = nil
+                    guard desired[key.sourceID] == key else { continue }
+                    cacheResult(result, for: key)
+                    notify(flush: queue.isEmpty && workers.values.allSatisfy { $0.key == nil })
                 }
-                guard !Task.isCancelled, generation == epoch else { return }
-                renderingKey = nil
-                placeholders[key] = nil
-                guard desired[key.sourceID] == key else { continue }
-                cacheResult(result, for: key)
-                notify()
             }
         }
     }
 
     private func cacheResult(_ result: RenderedCodeBlockResult, for key: NativeMarkdownDiagramKey) {
         for old in Array(cache.keys) where old.sourceID == key.sourceID && old != key { cache[old] = nil }
-        clock &+= 1
+        let bytes = Self.imageBytes(result) + key.sourceID.byteCount
+        let fits = cachedBytes + bytes <= maximumBytes
+        // Keep vector representations at full fidelity. Unusually complex output
+        // that exceeds the byte budget falls back to source instead of silently
+        // blurring every chart. Retain that decision to avoid render/retry loops.
         cache[key] = CacheEntry(
-            result: result, bytes: Self.bitmapBytes(result) + key.sourceID.utf8.count, used: clock,
-            lastRequested: ProcessInfo.processInfo.systemUptime)
-        // Keep every admitted preview. Only reduce bitmap density when the
-        // budget is reached; changing point size would move the user's text.
-        // No eviction means a restyle never starts a render/eviction loop.
-        if cachedBytes > maximumBytes {
-            let sources = cache.keys.reduce(0) { $0 + $1.sourceID.utf8.count }
-            let bitmapBudget = max(4, (maximumBytes - sources) / cache.count)
-            for (cachedKey, entry) in Array(cache) where Self.bitmapBytes(entry.result) > bitmapBudget {
-                guard let reduced = Self.downsample(entry.result, maximumBytes: bitmapBudget) else { continue }
-                cache[cachedKey] = CacheEntry(
-                    result: reduced, bytes: Self.bitmapBytes(reduced) + cachedKey.sourceID.utf8.count,
-                    used: entry.used, lastRequested: entry.lastRequested)
-            }
-        }
+            result: fits ? result : nil, bytes: fits ? bytes : key.sourceID.byteCount)
+        if fits, imageCache?.revision == imageCacheRevision { imageCache?.insert(result, for: key) }
         cacheRevision &+= 1
     }
 
-    private static func bitmapBytes(_ result: RenderedCodeBlockResult) -> Int {
-        result.image.representations.map { max(1, $0.pixelsWide) * max(1, $0.pixelsHigh) * 4 }.max()
-            ?? Int(result.size.width * result.size.height * 4)
-    }
-
-    private static func downsample(
-        _ result: RenderedCodeBlockResult, maximumBytes: Int
-    ) -> RenderedCodeBlockResult? {
-        let largest = result.image.representations.max {
-            $0.pixelsWide * $0.pixelsHigh < $1.pixelsWide * $1.pixelsHigh
+    private static func imageBytes(_ result: RenderedCodeBlockResult) -> Int {
+        result.image.representations.reduce(0) { bytes, representation in
+            if let pdf = representation as? NSPDFImageRep { return bytes + pdf.pdfRepresentation.count }
+            return bytes + max(1, representation.pixelsWide) * max(1, representation.pixelsHigh) * 4
         }
-        let originalWidth = max(1, largest?.pixelsWide ?? Int(ceil(result.size.width)))
-        let originalHeight = max(1, largest?.pixelsHigh ?? Int(ceil(result.size.height)))
-        let scale = min(1, sqrt(Double(maximumBytes) / Double(originalWidth * originalHeight * 4)))
-        let pixelBudget = max(1, maximumBytes / 4)
-        let width = min(pixelBudget, max(1, Int(floor(Double(originalWidth) * scale))))
-        let height = min(pixelBudget / width, max(1, Int(floor(Double(originalHeight) * scale))))
-        guard
-            let bitmap = NSBitmapImageRep(
-                bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height,
-                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-                colorSpaceName: .deviceRGB, bytesPerRow: width * 4, bitsPerPixel: 32),
-            let context = NSGraphicsContext(bitmapImageRep: bitmap)
-        else { return nil }
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = context
-        context.imageInterpolation = .high
-        result.image.draw(
-            in: NSRect(x: 0, y: 0, width: width, height: height),
-            from: .zero, operation: .copy, fraction: 1)
-        NSGraphicsContext.restoreGraphicsState()
-        bitmap.size = result.size
-        let image = NSImage(size: result.size)
-        image.addRepresentation(bitmap)
-        image.accessibilityDescription = result.image.accessibilityDescription
-        return RenderedCodeBlockResult(image: image, size: result.size)
     }
 
-    var failedCount: Int { failedSources.count }
-    var cachedCount: Int { cache.count }
+    var failedCount: Int { failedSources.count + cache.values.filter { $0.result == nil }.count }
+    var cachedCount: Int { cache.values.filter { $0.result != nil }.count }
     var cachedBytes: Int { cache.values.reduce(0) { $0 + $1.bytes } }
     var pendingCount: Int { queue.count }
+    var reuseCount: Int { imageCache?.reuseCount ?? 0 }
 
-    private func notify() {
-        guard !notificationPending, isActive, let name = renderingDidChangeNotification else { return }
-        notificationPending = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) { [weak self] in
-            guard let self else { return }
-            self.notificationPending = false
+    private func notify(flush: Bool = false) {
+        guard isActive, !isDisposed, let name = renderingDidChangeNotification else { return }
+        guard flush || notificationTask == nil else { return }
+        notificationTask?.cancel()
+        notificationTask = Task { @MainActor [weak self] in
+            if !flush {
+                do { try await Task.sleep(nanoseconds: 100_000_000) } catch { return }
+            }
+            guard !Task.isCancelled, let self else { return }
+            self.notificationTask = nil
             guard !self.isDisposed, self.isActive else { return }
             NotificationCenter.default.post(name: name, object: nil)
         }
@@ -396,9 +452,15 @@ final class NativeMarkdownDiagramWebRenderer: NSObject, WKNavigationDelegate {
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         configuration.setURLSchemeHandler(MarkdownPreviewSchemeHandler(), forURLScheme: MarkdownPreviewResources.scheme)
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 620, height: 400), configuration: configuration)
+        // underPageBackgroundColor only controls the area behind/around the
+        // page. WebKit otherwise composites a default page fill into snapshots,
+        // even when the document and SVG backgrounds are transparent.
+        webView.setValue(false, forKey: "drawsBackground")
         webView.underPageBackgroundColor = .clear
         window = NSWindow(contentRect: webView.frame, styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
+        window.isOpaque = false
+        window.backgroundColor = .clear
         window.contentView = webView
         window.setAccessibilityElement(false)
         super.init()
@@ -452,23 +514,23 @@ final class NativeMarkdownDiagramWebRenderer: NSObject, WKNavigationDelegate {
         }
         let size = CGSize(width: ceil(dimensions[0]), height: ceil(dimensions[1]))
         window.setContentSize(NSSize(width: key.width, height: Int(size.height)))
-        let configuration = WKSnapshotConfiguration()
+        // Keep SVG paths and text as vector PDF drawing commands. A bitmap
+        // snapshot fixes their resolution and forces large documents to trade
+        // sharpness for cache memory. AppKit draws this representation at the
+        // destination's backing scale, including when the window changes screens.
+        let configuration = WKPDFConfiguration()
         configuration.rect = CGRect(origin: .zero, size: size)
-        let scale = min(2, sqrt(4_000_000 / (size.width * size.height)))
-        configuration.snapshotWidth = NSNumber(value: Double(size.width * scale / max(1, window.backingScaleFactor)))
-        let snapshot = NativeDiagramPending<NSImage>()
-        let image = try await snapshot.wait {
-            webView.takeSnapshot(with: configuration) { image, error in
-                if let image {
-                    snapshot.finish(.success(image))
-                } else {
-                    snapshot.finish(
-                        .failure(error ?? NativeMarkdownDiagramError.failed("The diagram image could not be captured."))
-                    )
-                }
-            }
+        let capture = NativeDiagramPending<Data>()
+        let data = try await capture.wait {
+            webView.createPDF(configuration: configuration) { result in capture.finish(result) }
         }
-        image.size = size
+        guard let representation = NSPDFImageRep(data: data) else {
+            throw NativeMarkdownDiagramError.failed("The diagram image could not be captured.")
+        }
+        representation.size = size
+        let image = NSImage(size: size)
+        image.addRepresentation(representation)
+        image.cacheMode = .never
         image.accessibilityDescription = "\(key.language) diagram. Click to edit source."
         return RenderedCodeBlockResult(image: image, size: size)
     }

@@ -87,31 +87,34 @@ private func diagramLifecycleEventually(_ predicate: () -> Bool) async -> Bool {
     #expect(renderer.request(code: next, language: "mermaid", availableWidth: 320)?.image.size.height == 40)
 }
 
-@Test @MainActor func nativeDiagramDisposalDropsQueuedWorkAndIgnoresLateCompletions() async throws {
+@Test(arguments: [1, 2]) @MainActor
+func nativeDiagramDisposalDropsQueuedWorkAndIgnoresLateCompletions(concurrency: Int) async throws {
     _ = NSApplication.shared
     let work = DiagramLifecycleWork()
-    let renderer = NativeMarkdownDiagramRenderer(render: work.render)
+    let renderer = NativeMarkdownDiagramRenderer(maximumConcurrentRenders: concurrency, render: work.render)
     defer { renderer.dispose(); work.cancelAll() }
-    _ = renderer.request(code: "graph LR; A-->B;", language: "mermaid", availableWidth: 320)
-    _ = renderer.request(code: "graph LR; C-->D;", language: "mermaid", availableWidth: 320)
-    let started = await diagramLifecycleEventually { work.keys.count == 1 }
-    #expect(started)
-    let first = try #require(work.keys.first)
+    for index in 0...concurrency {
+        _ = renderer.request(code: "graph LR; Item_\(index)-->Done;", language: "mermaid", availableWidth: 320)
+    }
+    let started = await diagramLifecycleEventually { work.keys.count == concurrency }
+    #expect(started && renderer.pendingCount == 1)
+    let active = work.keys
     renderer.dispose()
-    work.finish(first)
+    for key in active { work.finish(key) }
     for _ in 0..<20 { await Task.yield() }
-    #expect(work.keys.count == 1, "Closing a document must not start its queued diagram")
+    #expect(work.keys.count == concurrency, "Closing a document must not start its queued diagram")
     #expect(renderer.cachedCount == 0 && renderer.cachedBytes == 0 && renderer.pendingCount == 0)
-    #expect(renderer.request(code: "graph LR; C-->D;", language: "mermaid", availableWidth: 320) == nil)
+    #expect(renderer.request(code: "graph LR; Item_0-->Done;", language: "mermaid", availableWidth: 320) == nil)
     // A retained SwiftUI control may be mounted again with a fresh source.
     renderer.synchronizeSource("graph LR; Reopened-->Document;")
     #expect(renderer.request(code: "graph LR; Reopened-->Document;", language: "mermaid", availableWidth: 320) != nil)
 }
 
-@Test @MainActor func nativeDiagramHidingPausesWorkAndResumesWithoutDiscardingCompletedPreviews() async throws {
+@Test(arguments: [1, 2]) @MainActor
+func nativeDiagramHidingPausesWorkAndResumesWithoutDiscardingCompletedPreviews(concurrency: Int) async throws {
     _ = NSApplication.shared
     let work = DiagramLifecycleWork()
-    let renderer = NativeMarkdownDiagramRenderer(render: work.render)
+    let renderer = NativeMarkdownDiagramRenderer(maximumConcurrentRenders: concurrency, render: work.render)
     defer { renderer.dispose(); work.cancelAll() }
     let first = "graph LR; Cached-->Diagram;"
     let second = "graph LR; Active-->Diagram;"
@@ -126,18 +129,18 @@ private func diagramLifecycleEventually(_ predicate: () -> Bool) async -> Bool {
     let image = try #require(renderer.request(code: first, language: "mermaid", availableWidth: 320)?.image)
     _ = renderer.request(code: second, language: "mermaid", availableWidth: 320)
     _ = renderer.request(code: third, language: "mermaid", availableWidth: 320)
-    let secondStarted = await diagramLifecycleEventually { work.keys.count == 2 }
+    let secondStarted = await diagramLifecycleEventually { work.keys.count == 1 + concurrency }
     #expect(secondStarted)
     renderer.setActive(false)
-    work.finish(try #require(work.keys.last))
+    for key in work.keys.dropFirst() { work.finish(key) }
     for _ in 0..<20 { await Task.yield() }
-    #expect(renderer.cachedCount == 1 && work.keys.count == 2)
+    #expect(renderer.cachedCount == 1 && work.keys.count == 1 + concurrency)
     #expect(renderer.request(code: first, language: "mermaid", availableWidth: 320)?.image === image)
     #expect(renderer.request(code: second, language: "mermaid", availableWidth: 320) == nil)
     // Source edits while hidden remove obsolete pending work before resuming.
     renderer.synchronizeSource([first, third].joined(separator: "\n"))
     renderer.setActive(true)
-    let resumed = await diagramLifecycleEventually { work.keys.count == 3 }
+    let resumed = await diagramLifecycleEventually { work.keys.count == 2 + concurrency }
     #expect(resumed)
     let last = try #require(work.keys.last)
     #expect(last.code == third)

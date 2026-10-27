@@ -10,6 +10,7 @@ import {
   previewChartSizing,
 } from "./chart-sizing.js";
 import { createMarkdownDocument } from "./document-controller.js";
+import { chartThemeConfig } from "./chart-theme.js";
 import "./app.css";
 
 const loader = createOfflineLoader();
@@ -101,24 +102,7 @@ const preview = createRenderer({
         expr: expressionInterpreter,
         viewClass: PreviewView,
         loader,
-        config: {
-          background: "transparent",
-          axisX: { labelAngle: 0, labelOverlap: true },
-          ...(theme === "dark"
-            ? {
-                axis: {
-                  labelColor: "#d4d4d8",
-                  titleColor: "#eeeeef",
-                  domainColor: "#71717a",
-                  gridColor: "#3f3f46",
-                  tickColor: "#71717a",
-                },
-                legend: { labelColor: "#d4d4d8", titleColor: "#eeeeef" },
-                title: { color: "#eeeeef" },
-                text: { color: "#eeeeef" },
-              }
-            : {}),
-        },
+        config: chartThemeConfig(document, spec, kind, theme),
       });
       if (isCurrent()) {
         stopResizing = observeChartWidth({
@@ -159,6 +143,13 @@ const api = createMarkdownDocument({
   preview,
   postMessage(payload) {
     window.webkit?.messageHandlers?.markdown?.postMessage(payload);
+    // Mobile embeds need subsequent height changes too: native layout can
+    // settle after the first render, rewrapping titles and moving legends.
+    if (payload.type === "diagramSize") {
+      const size = JSON.stringify({ height: payload.height });
+      window.webkit?.messageHandlers?.diagram?.postMessage(size);
+      window.dieterDiagram?.result(size);
+    }
   },
 });
 window.dieterMarkdown = api;

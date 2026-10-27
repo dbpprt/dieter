@@ -39,6 +39,7 @@ import (
 	"github.com/dbpprt/dieter/internal/security/roster"
 	boardstore "github.com/dbpprt/dieter/internal/store"
 	"github.com/dbpprt/dieter/internal/store/kanban"
+	"github.com/dbpprt/dieter/internal/store/mail"
 	"github.com/dbpprt/dieter/internal/testkit/topology"
 	"github.com/dbpprt/dieter/internal/transport/controlrtc"
 	"github.com/dbpprt/dieter/tools/fixtures/fixtureturn"
@@ -69,6 +70,7 @@ func main() {
 	offlineTrigger := flag.String("offline-trigger", "", "optional file whose creation disconnects the enrolled daemon while leaving the gateway online")
 	daemonRestartTrigger := flag.String("daemon-restart-trigger", "", "optional file whose creation restarts the isolated daemon API and gateway tunnel")
 	inboxFixture := flag.Bool("inbox-fixture", false, "seed deterministic Inbox activity and real conversations")
+	mailReport := flag.String("mail-report", "", "optional Markdown file to seed as a revised report in the isolated E2E mailbox")
 	e2eFixture := flag.Bool("e2e-fixture", false, "seed the small persisted workspace that every Maestro flow uses")
 	usageFixture := flag.Bool("usage-fixture", false, "publish deterministic provider usage without provider credentials")
 	showcaseFixture := flag.Bool("showcase-fixture", false, "seed the multi-machine workspace with live agent turns used for documentation screenshots")
@@ -79,13 +81,13 @@ func main() {
 		fmt.Fprintln(os.Stderr, `error: -direct-route must be "live" or "dead"`)
 		os.Exit(2)
 	}
-	if err := run(*address, *home, *offlineTrigger, *daemonRestartTrigger, *directRoute, *inboxFixture, *usageFixture, *e2eFixture, *showcaseFixture, *channelsFixture); err != nil {
+	if err := run(*address, *home, *offlineTrigger, *daemonRestartTrigger, *directRoute, *mailReport, *inboxFixture, *usageFixture, *e2eFixture, *showcaseFixture, *channelsFixture); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
-func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string, inboxFixture, usageFixture, e2eFixture, showcaseFixture, channelsFixture bool) error {
+func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute, mailReport string, inboxFixture, usageFixture, e2eFixture, showcaseFixture, channelsFixture bool) error {
 	if home == "" {
 		var err error
 		home, err = os.MkdirTemp("", "dieter-isolated-*")
@@ -204,6 +206,18 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 	}
 	if e2eFixture {
 		if err := seedE2EFixture(data, project, board); err != nil {
+			return err
+		}
+	}
+	if mailReport != "" {
+		if !e2eFixture {
+			return fmt.Errorf("-mail-report requires -e2e-fixture")
+		}
+		body, err := os.ReadFile(mailReport)
+		if err != nil {
+			return err
+		}
+		if _, _, err := data.Mail.Send(mail.Draft{Sender: model.MailSender{Kind: model.MailSenderOperator, Label: "Revised report fixture"}, Subject: "upday revised transparency report", Body: string(body)}); err != nil {
 			return err
 		}
 	}

@@ -315,13 +315,15 @@ struct MailRowView: View, Equatable {
 
     var body: some View {
         let emphasized = prominence == .increased
+        let primary = emphasized ? Color.white : Color.primary
+        let secondary = emphasized ? Color.white.opacity(0.85) : Color.secondary
         let weight: Font.Weight = row.read ? .regular : .semibold
         VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .top, spacing: 9) {
-                MailAvatar(row: row, size: 30).padding(.top, 2)
+                MailAvatar(row: row, size: 30, emphasized: emphasized).padding(.top, 2)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline, spacing: 5) {
-                        Text(row.sender).font(.system(size: 12.5, weight: weight)).foregroundStyle(.primary)
+                        Text(row.sender).font(.system(size: 12.5, weight: weight)).foregroundStyle(primary)
                             .lineLimit(1)
                         Spacer(minLength: 4)
                         if row.important {
@@ -334,11 +336,11 @@ struct MailRowView: View, Equatable {
                                 .foregroundStyle(emphasized ? Color.white : MailStyle.flag)
                                 .accessibilityHidden(true)
                         }
-                        Text(row.timeLabel).font(.system(size: 10.5)).monospacedDigit().foregroundStyle(.secondary)
+                        Text(row.timeLabel).font(.system(size: 10.5)).monospacedDigit().foregroundStyle(secondary)
                             .lineLimit(1).fixedSize()
                     }
-                    Text(row.subject).font(.system(size: 12, weight: weight)).foregroundStyle(.primary).lineLimit(1)
-                    Text(row.preview).font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(2)
+                    Text(row.subject).font(.system(size: 12, weight: weight)).foregroundStyle(primary).lineLimit(1)
+                    Text(row.preview).font(.system(size: 11.5)).foregroundStyle(secondary).lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }

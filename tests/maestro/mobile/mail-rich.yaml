@@ -6,8 +6,10 @@ tags: [smoke]
 - tapOn:
     text: "Mail"
     waitToSettleTimeoutMs: 500
-- extendedWaitUntil:
-    visible: "Release smoke results: all platforms passed"
+- scrollUntilVisible:
+    element:
+      text: "Release smoke results: all platforms passed"
+    direction: DOWN
     timeout: 40000
 - tapOn:
     text: "Release smoke results: all platforms passed"

@@ -209,6 +209,12 @@ hr {
     padding: 16px;
   }
 }
+:root[data-surface="diagram"] {
+  /* An explicit light/dark color-scheme gives WebKit's canvas an opaque
+     system fill even when html/body are transparent. Diagram colors already
+     come from the reader theme; leave the canvas itself unpainted. */
+  color-scheme: normal;
+}
 :root[data-surface="diagram"],
 :root[data-surface="diagram"] body {
   background: transparent;

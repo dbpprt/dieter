@@ -1,10 +1,13 @@
-@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+@file:OptIn(
+    kotlinx.cinterop.ExperimentalForeignApi::class,
+    androidx.compose.ui.ExperimentalComposeUiApi::class,
+)
 
 package com.getdieter.mobile.platform
 
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.viewinterop.UIKitInteropProperties
 import androidx.compose.ui.viewinterop.UIKitView
 import com.getdieter.core.presentation.MarkdownDiagrams
 import kotlinx.cinterop.*
@@ -12,6 +15,8 @@ import kotlinx.serialization.json.*
 import platform.CoreGraphics.*
 import platform.Foundation.*
 import platform.UIKit.UIColor
+import platform.UIKit.UIScrollViewContentInsetAdjustmentBehavior
+import platform.UIKit.UIView
 import platform.WebKit.*
 import platform.darwin.NSObject
 
@@ -58,6 +63,7 @@ private class DiagramHost(
     var loaded = false
     var width = 0.0
     val view: WKWebView
+    val container: UIView
 
     init {
         val configuration = WKWebViewConfiguration()
@@ -68,7 +74,32 @@ private class DiagramHost(
         view.navigationDelegate = this
         view.opaque = false
         view.backgroundColor = UIColor.clearColor
+        // WebKit's scroll/page backing can stay white after the document turns
+        // transparent. Clear every native layer so it blends with Compose Mail.
+        view.underPageBackgroundColor = UIColor.clearColor
+        view.scrollView.backgroundColor = UIColor.clearColor
+        view.scrollView.opaque = false
         view.scrollView.scrollEnabled = false
+        view.scrollView.contentInsetAdjustmentBehavior =
+            UIScrollViewContentInsetAdjustmentBehavior.UIScrollViewContentInsetAdjustmentNever
+        // Compose moves/clips its interop child while scrolling. Keep WebKit's
+        // own frame at the local origin so it cannot shift its page viewport
+        // to compensate for a partially clipped native frame.
+        container =
+            object : UIView(frame = CGRectZero.readValue()) {
+                override fun layoutSubviews() {
+                    super.layoutSubviews()
+                    view.setFrame(bounds)
+                    val nextWidth = bounds.useContents { size.width }
+                    if (nextWidth > 0 && nextWidth != width) {
+                        width = nextWidth
+                        render()
+                    }
+                }
+            }
+        container.opaque = false
+        container.backgroundColor = UIColor.clearColor
+        container.addSubview(view)
         view.loadRequest(NSURLRequest(NSURL(string = "$SCHEME://preview/index.html")))
     }
 
@@ -141,15 +172,11 @@ internal actual fun NativeMarkdownDiagram(
     val callback by rememberUpdatedState(onResult)
     val host = remember { DiagramHost(assets, script) { height, error -> callback(height, error) } }
     UIKitView(
-        factory = { host.view },
-        modifier =
-            modifier.onSizeChanged {
-                val width = it.width.toDouble()
-                if (width != host.width) {
-                    host.width = width
-                    host.render()
-                }
-            },
+        factory = { host.container },
+        // Default interop punches a hole through Compose, so transparent pixels
+        // show UIKit's root background instead of the Mail message surface.
+        properties = UIKitInteropProperties(placedAsOverlay = true),
+        modifier = modifier,
     )
     DisposableEffect(host) { onDispose { host.close() } }
 }
