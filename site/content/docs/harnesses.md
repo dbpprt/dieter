@@ -53,6 +53,9 @@ A new conversation uses the selected model's `defaultEffort` when defined.
 `--effort default` explicitly selects the provider's native default.
 
 Codex, Claude Code, Pi, and Antigravity support model and effort changes between turns.
+Antigravity reaches Dieter's host tools through an MCP server named `dieter` that the
+harness registers in agy's own configuration (`agy mcp add dieter …`) the first time a
+turn offers them; outside a Dieter turn that server offers no tools.
 OMP and DSH support model changes; OMP thinking stays fixed after the first
 message. Provider options appear only where the catalog advertises them.
 Supported Codex models expose mutable **Fast mode** with

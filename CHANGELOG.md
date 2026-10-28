@@ -14,10 +14,14 @@ copy the **Unreleased** notes into a section named after that exact version
   with model and effort selection between turns. Each turn is one headless
   `agy --output-format stream-json` run continued with `--conversation`; the
   prompt travels on stdin, Antigravity's own tools show as provider-executed
-  tool calls, and quota or sign-in failures become one plain sentence in the
-  conversation. Host-defined tools, suspend/continue and compaction are not
-  available through the CLI. `agy` must be installed and signed in on the
-  execution machine.
+  tool calls, each model request reports its own usage, and quota or sign-in
+  failures become one plain sentence in the conversation. Host-defined tools
+  (present_content, background processes) reach `agy` as the MCP server
+  `dieter`, a stdio proxy the adapter registers once with `agy mcp add` and
+  that forwards calls to the running turn; compaction runs agy's `/compact`;
+  a conversation agy no longer has restarts fresh with the instructions and a
+  note. Suspend/continue and image input are not available through the CLI.
+  `agy` must be installed and signed in on the execution machine.
 
 ## 0.6.430
 
