@@ -11,13 +11,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dbpprt/dieter/internal/platform/fsx"
 	"golang.org/x/sys/cpu"
 )
 
-const managedBunVersion = "1.3.14"
+const managedBunVersion = "1.4.3"
 
-func ompHarnessEnvironment(runtimePaths ...string) []string {
-	environment := harnessEnvironment(runtimePaths...)
+func (e Environment) ompHarnessEnvironment(runtimePaths ...string) []string {
+	environment := e.harnessEnvironment(runtimePaths...)
 	if runtime.GOARCH != "amd64" {
 		return environment
 	}
@@ -36,8 +37,27 @@ func ompHarnessEnvironment(runtimePaths ...string) []string {
 
 // ensureManagedBun installs the exact Bun runtime required by OMP once per
 // Dieter home. It stays outside content-addressed harness runtimes so releases
-// can share the comparatively large native executable.
-func ensureManagedBun(ctx context.Context, dieterHome string) (string, error) {
+// can share the comparatively large native executable. Release builds take its
+// package from their prebuilt runtime archive; source builds use npm.
+func ensureManagedBun(ctx context.Context, dieterHome string, archive RuntimeArchive) (string, error) {
+	return installManagedBun(ctx, dieterHome, func(ctx context.Context, stage string) error {
+		if !archive.pinned() {
+			return npmInstallManagedBun(ctx, stage)
+		}
+		path, err := downloadRuntimeArchive(ctx, archive, filepath.Dir(stage))
+		if err != nil {
+			return err
+		}
+		defer os.Remove(path)
+		return extractRuntimeArchive(path, archiveBunTree, stage)
+	})
+}
+
+// installManagedBun publishes the managed Bun under its install lock unless a
+// valid installation exists: populate stages the npm package (Bun's
+// postinstall not yet run), then Bun's own postinstall selects this host's
+// executable, which is validated before the stage is renamed into place.
+func installManagedBun(ctx context.Context, dieterHome string, populate func(context.Context, string) error) (string, error) {
 	root := filepath.Join(dieterHome, "runtime", "tools", "bun")
 	finalDir := filepath.Join(root, managedBunVersion)
 	if binDir, err := validateManagedBun(ctx, finalDir); err == nil {
@@ -49,7 +69,7 @@ func ensureManagedBun(ctx context.Context, dieterHome string) (string, error) {
 	if err := os.Chmod(root, 0o700); err != nil {
 		return "", err
 	}
-	lock, err := acquireRuntimeInstallLock(ctx, filepath.Join(root, ".install-"+managedBunVersion+".lock"))
+	lock, err := fsx.LockContext(ctx, filepath.Join(root, ".install-"+managedBunVersion+".lock"), 50*time.Millisecond)
 	if err != nil {
 		return "", fmt.Errorf("lock managed Bun %s installation: %w", managedBunVersion, err)
 	}
@@ -79,14 +99,8 @@ func ensureManagedBun(ctx context.Context, dieterHome string) (string, error) {
 	if err := os.Chmod(stageDir, 0o700); err != nil {
 		return "", err
 	}
-	packageJSON := []byte("{\n  \"private\": true,\n  \"dependencies\": {\n    \"bun\": \"" + managedBunVersion + "\"\n  }\n}\n")
-	if err := os.WriteFile(filepath.Join(stageDir, "package.json"), packageJSON, 0o600); err != nil {
+	if err := populate(ctx, stageDir); err != nil {
 		return "", err
-	}
-	install := exec.CommandContext(ctx, "npm", "install", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund", "--package-lock=false")
-	install.Dir = stageDir
-	if output, installErr := install.CombinedOutput(); installErr != nil {
-		return "", fmt.Errorf("install managed Bun %s package: %s: %w", managedBunVersion, strings.TrimSpace(string(output)), installErr)
 	}
 	postinstall := exec.CommandContext(ctx, "node", filepath.Join("node_modules", "bun", "install.js"))
 	postinstall.Dir = stageDir
@@ -97,13 +111,13 @@ func ensureManagedBun(ctx context.Context, dieterHome string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("validate managed Bun %s installation: %w", managedBunVersion, err)
 	}
-	if err := syncRuntimeDirectory(stageDir); err != nil {
+	if err := fsx.SyncDir(stageDir); err != nil {
 		return "", err
 	}
 	if err := os.Rename(stageDir, finalDir); err != nil {
 		return "", fmt.Errorf("publish managed Bun %s installation: %w", managedBunVersion, err)
 	}
-	if err := syncRuntimeDirectory(root); err != nil {
+	if err := fsx.SyncDir(root); err != nil {
 		return "", err
 	}
 	relativeBin, err := filepath.Rel(stageDir, binDir)
@@ -111,6 +125,21 @@ func ensureManagedBun(ctx context.Context, dieterHome string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(finalDir, relativeBin), nil
+}
+
+// npmInstallManagedBun installs the managed Bun package without running its
+// postinstall, as both source-built daemons and release builders do.
+func npmInstallManagedBun(ctx context.Context, dir string) error {
+	packageJSON := []byte("{\n  \"private\": true,\n  \"dependencies\": {\n    \"bun\": \"" + managedBunVersion + "\"\n  }\n}\n")
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), packageJSON, 0o600); err != nil {
+		return err
+	}
+	install := exec.CommandContext(ctx, "npm", "install", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund", "--package-lock=false")
+	install.Dir = dir
+	if output, err := install.CombinedOutput(); err != nil {
+		return fmt.Errorf("install managed Bun %s package: %s: %w", managedBunVersion, strings.TrimSpace(string(output)), err)
+	}
+	return nil
 }
 
 func validateManagedBun(ctx context.Context, dir string) (string, error) {

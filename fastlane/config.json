@@ -1,0 +1,49 @@
+{
+  "defaults": {
+    "android": "android-emulator",
+    "ios": "ios-iphone"
+  },
+  "profiles": {
+    "android-emulator": {
+      "platform": "android",
+      "kind": "emulator",
+      "serial": "emulator-5554",
+      "avd": "Dieter_AOSP_API_35",
+      "lifecycle": "manage-if-started",
+      "renderer": "auto",
+      "visible": false,
+      "system_image": "system-images;android-35;default;native",
+      "boot_timeout": 180,
+      "storage_dir": ".android"
+    },
+    "android-ci": {
+      "platform": "android",
+      "kind": "emulator",
+      "serial": "emulator-5554",
+      "avd": "Dieter_CI_API_35",
+      "lifecycle": "borrow"
+    },
+    "android-device": {
+      "platform": "android",
+      "kind": "device",
+      "serial": null
+    },
+    "ios-iphone": {
+      "platform": "ios",
+      "kind": "simulator",
+      "device_type": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
+      "runtime": null
+    },
+    "ios-ipad": {
+      "platform": "ios",
+      "kind": "simulator",
+      "device_type": "com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M3",
+      "runtime": null
+    }
+  },
+  "swift_test_minimums": {
+    "kit": 14,
+    "native": 10,
+    "mac": 461
+  }
+}

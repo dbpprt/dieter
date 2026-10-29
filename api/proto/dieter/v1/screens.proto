@@ -1,0 +1,427 @@
+syntax = "proto3";
+
+package dieter.v1;
+
+option go_package = "github.com/dbpprt/dieter/internal/gen/dieter/v1;dieterv1";
+option java_multiple_files = true;
+option java_package = "com.getdieter.api.v1";
+
+import "dieter/gateway/v1/gateway.proto";
+import "google/protobuf/empty.proto";
+
+// Remote desktop sessions.
+service ScreenService {
+  rpc GetRemoteDesktopCapabilities(google.protobuf.Empty)
+      returns (RemoteDesktopCapabilities);
+  rpc ListRemoteDesktopDisplayModes(RemoteDesktopRef) returns (RemoteDesktopDisplayModes);
+  rpc SetRemoteDesktopDisplayMode(SetRemoteDesktopDisplayModeRequest) returns (RemoteDesktopDisplayModes);
+  rpc RestoreRemoteDesktopDisplayMode(RemoteDesktopRef) returns (RemoteDesktopDisplayModes);
+  rpc GetRemoteDesktopVirtualDisplay(RemoteDesktopRef) returns (RemoteDesktopVirtualDisplay);
+  rpc SetRemoteDesktopVirtualDisplay(SetRemoteDesktopVirtualDisplayRequest) returns (RemoteDesktopVirtualDisplay);
+  rpc ConfirmRemoteDesktopVirtualDisplay(ConfirmRemoteDesktopVirtualDisplayRequest) returns (RemoteDesktopVirtualDisplay);
+  rpc RestoreRemoteDesktopVirtualDisplay(RemoteDesktopRef) returns (RemoteDesktopVirtualDisplay);
+  // Explicit, bounded permission test performed by the running daemon.
+  // Discards one encoded frame and never injects input or changes settings.
+  rpc ProbeRemoteDesktopPermissions(ProbeRemoteDesktopPermissionsRequest)
+      returns (RemoteDesktopPermissionProbe);
+  rpc StartRemoteDesktop(StartRemoteDesktopRequest)
+      returns (stream RemoteDesktopSignal);
+  rpc SendRemoteDesktopSignal(RemoteDesktopSignal)
+      returns (google.protobuf.Empty);
+  rpc GetRemoteDesktopSession(RemoteDesktopRef) returns (RemoteDesktopSessionState);
+  rpc ListRemoteDesktopSessions(google.protobuf.Empty) returns (RemoteDesktopSessions);
+  rpc SetRemoteDesktopControl(RemoteDesktopControlRequest) returns (RemoteDesktopSessionState);
+  rpc UpdateRemoteDesktopSession(UpdateRemoteDesktopSessionRequest) returns (RemoteDesktopSessionState);
+  rpc ExchangeRemoteDesktopClipboard(RemoteDesktopClipboardRequest) returns (RemoteDesktopClipboardResponse);
+  rpc CloseRemoteDesktop(RemoteDesktopRef)
+      returns (google.protobuf.Empty);
+}
+
+enum RemoteDesktopAvailability {
+  REMOTE_DESKTOP_AVAILABILITY_UNSPECIFIED = 0;
+  REMOTE_DESKTOP_AVAILABILITY_READY = 1;
+  REMOTE_DESKTOP_AVAILABILITY_PERMISSION_REQUIRED = 2;
+  REMOTE_DESKTOP_AVAILABILITY_UNSUPPORTED = 3;
+}
+
+message RemoteDesktopCapabilities {
+  string platform = 1;
+  bool graphical_session_active = 2;
+  reserved 3;
+  reserved "enabled";
+  bool ready = 4;
+  string unavailable_reason = 5;
+  string helper_version = 6;
+  string capture_permission = 7;
+  string control_permission = 8;
+  repeated RemoteDesktopDisplay displays = 9;
+  repeated string codecs = 10;
+  bool encoder_available = 11;
+  bool control_supported = 12;
+  bool clipboard_supported = 13;
+  bool audio_supported = 14;
+  bool file_transfer_supported = 15;
+  bool active_session = 16;
+  bool adaptive_supported = 17;
+  bool cursor_supported = 18;
+  uint32 input_protocol_version = 19;
+  int32 max_fps = 20;
+  string encoder = 21;
+  string daemon_executable = 22;
+  string capture_executable = 23;
+  uint32 max_clients = 24;
+  uint32 connected_clients = 25;
+  bool binary_clipboard_supported = 27;
+  // Hardware-verified operating envelopes; missing entries use the baseline H.264 profile.
+  repeated RemoteDesktopCodecMode codec_modes = 28;
+  bool display_mode_switching_supported = 29;
+  // Linux portal consent is requested interactively when a session starts.
+  RemoteDesktopAvailability availability = 30;
+  // Experimental, explicitly enabled on the host. Physical disabling is separately qualified.
+  bool virtual_display_supported = 31;
+  bool virtual_display_disable_supported = 32;
+}
+
+// Physical desktop modes, independent of the encoded stream's size limits.
+message RemoteDesktopDisplayMode {
+  string id = 1;
+  int32 logical_width = 2;
+  int32 logical_height = 3;
+  int32 pixel_width = 4;
+  int32 pixel_height = 5;
+  double refresh_rate = 6;
+}
+
+message RemoteDesktopDisplayModes {
+  string display_id = 1;
+  repeated RemoteDesktopDisplayMode modes = 2;
+  string current_mode_id = 3;
+  string original_mode_id = 4;
+  bool temporary = 5;
+  // A local change superseded the lease; do not automatically reapply it.
+  bool superseded = 6;
+}
+
+message SetRemoteDesktopDisplayModeRequest {
+  string session_id = 1;
+  string display_id = 2;
+  string mode_id = 3;
+  // Reject stale mode lists or a display changed locally after discovery.
+  string expected_current_mode_id = 4;
+}
+
+// One temporary virtual display owned by the controlling screen session.
+message RemoteDesktopVirtualDisplay {
+  bool active = 1;
+  string display_id = 2;
+  int32 pixel_width = 3;
+  int32 pixel_height = 4;
+  int32 scale = 5;
+  bool awaiting_presentation = 6;
+  bool physical_disabled = 7;
+  string original_display_id = 8;
+}
+
+message SetRemoteDesktopVirtualDisplayRequest {
+  string session_id = 1;
+  int32 pixel_width = 2;
+  int32 pixel_height = 3;
+  int32 scale = 4; // Exactly 1 or 2; backing pixels are independent of UI scale.
+  bool disable_physical = 5;
+}
+
+message ConfirmRemoteDesktopVirtualDisplayRequest {
+  string session_id = 1;
+  string display_id = 2;
+  // Acknowledge only after presenting a frame from this exact display/media generation.
+  uint64 display_generation = 3;
+}
+
+message RemoteDesktopCodecMode {
+  string codec = 1;
+  string profile = 2;
+  int32 max_width = 3;
+  int32 max_height = 4;
+  int32 max_fps = 5;
+}
+
+enum RemoteDesktopCodecPreference {
+  REMOTE_DESKTOP_CODEC_PREFERENCE_AUTO = 0;
+  REMOTE_DESKTOP_CODEC_PREFERENCE_H264 = 1;
+  // Strict: unsupported hardware, mode, or offer is an error.
+  REMOTE_DESKTOP_CODEC_PREFERENCE_HEVC = 2;
+}
+
+message ProbeRemoteDesktopPermissionsRequest {
+  // Only explicit interactive onboarding may request an OS permission prompt.
+  bool request_control = 1;
+}
+
+message RemoteDesktopPermissionProbe {
+  string platform = 1;
+  string daemon_executable = 2;
+  string capture_executable = 3;
+  bool capture_verified = 4;
+  bool control_verified = 5;
+  string capture_error = 6;
+  string control_error = 7;
+}
+
+message RemoteDesktopDisplay {
+  string id = 1;
+  string name = 2;
+  int32 logical_width = 3;
+  int32 logical_height = 4;
+  int32 physical_width = 5;
+  int32 physical_height = 6;
+  double scale = 7;
+  int32 rotation = 8;
+  bool primary = 9;
+  int32 origin_x = 10;
+  int32 origin_y = 11;
+  double refresh_rate = 12;
+}
+
+message RemoteDesktopSessionDescription {
+  string type = 1;
+  string sdp = 2;
+}
+
+message RemoteDesktopICECandidate {
+  string candidate = 1;
+  string sdp_mid = 2;
+  int32 sdp_mline_index = 3;
+  string username_fragment = 4;
+}
+
+message StartRemoteDesktopRequest {
+  string client_nonce = 1;
+  dieter.gateway.v1.RTCConfiguration rtc_configuration = 2;
+  RemoteDesktopSessionDescription offer = 3;
+  repeated RemoteDesktopICECandidate initial_candidates = 4;
+  string display_id = 5;
+  bool control = 6;
+  int32 max_width = 7;
+  int32 max_height = 8;
+  int32 max_fps = 9;
+  int32 max_bitrate_kbps = 10;
+  RemoteDesktopQuality quality = 11;
+  bool embedded_cursor = 12;
+  // Independent remote-desktop input revision; ownership is revocable.
+  uint32 input_protocol_version = 13;
+  string client_name = 14;
+  bool clipboard = 15;
+  RemoteDesktopCodecPreference codec_preference = 16;
+  // Receiver acknowledges decoded reference challenges and negotiates generic frame dependencies.
+  bool reference_recovery = 17;
+}
+
+message RemoteDesktopSessions {
+  repeated RemoteDesktopSessionInfo sessions = 1;
+  uint32 max_clients = 2;
+  uint32 capture_streams = 3;
+  uint32 encoders = 4;
+}
+
+message RemoteDesktopSessionInfo {
+  string session_id = 1;
+  string client_name = 2;
+  string display_id = 3;
+  bool control_allowed = 4;
+  bool control_active = 5;
+  uint32 input_protocol_version = 6;
+}
+
+message RemoteDesktopControlRequest {
+  string session_id = 1;
+  bool take_control = 2;
+}
+
+// Configuration is a ceiling; the adaptive controller reports the applied values.
+enum RemoteDesktopQuality {
+  REMOTE_DESKTOP_QUALITY_AUTO = 0;
+  REMOTE_DESKTOP_QUALITY_DETAIL = 1;
+  REMOTE_DESKTOP_QUALITY_MOTION = 2;
+}
+
+message RemoteDesktopStreamConfiguration {
+  string display_id = 1;
+  int32 max_width = 2;
+  int32 max_height = 3;
+  int32 max_fps = 4;
+  int32 max_bitrate_kbps = 5;
+  RemoteDesktopQuality quality = 6;
+  bool embedded_cursor = 7;
+}
+
+message UpdateRemoteDesktopSessionRequest {
+  string session_id = 1;
+  RemoteDesktopStreamConfiguration configuration = 2;
+  bool refresh = 3;
+}
+
+message RemoteDesktopRef {
+  string session_id = 1;
+}
+
+message RemoteDesktopSessionBinding {
+  string client_nonce = 1;
+  string helper_dtls_fingerprint = 2;
+  string expires_at = 3;
+  bytes offer_sha256 = 4;
+  bytes daemon_signature = 5;
+  bool control_granted = 6;
+  string display_id = 7;
+  uint32 input_protocol_version = 8;
+  bytes input_epoch = 9;
+}
+
+// Render timings end at different platform events. Neither endpoint measures
+// physical scanout. Zero means no render endpoint was measured.
+enum RemoteDesktopRenderMeasurement {
+  REMOTE_DESKTOP_RENDER_MEASUREMENT_UNSPECIFIED = 0;
+  REMOTE_DESKTOP_RENDER_MEASUREMENT_METAL_PRESENTED = 1;
+  REMOTE_DESKTOP_RENDER_MEASUREMENT_EGL_SUBMITTED = 2;
+  REMOTE_DESKTOP_RENDER_MEASUREMENT_ANDROID_FRAME_RENDERED = 3;
+}
+
+message RemoteDesktopSessionState {
+  string phase = 1;
+  string reason = 2;
+  string route = 3;
+  string codec = 4;
+  int32 width = 5;
+  int32 height = 6;
+  int32 fps = 7;
+  int32 bitrate_kbps = 8;
+  string display_id = 9;
+  uint64 display_generation = 10;
+  RemoteDesktopStreamConfiguration configuration = 11;
+  double encode_ms = 12;
+  double capture_delay_ms = 13;
+  double queue_ms = 14;
+  uint64 frames_sent = 15;
+  uint64 frames_dropped = 16;
+  uint64 last_frame_id = 17;
+  uint64 last_input_ordinal = 18;
+  string encoder = 19;
+  bool embedded_cursor = 20;
+  double receiver_fps = 21;
+  double rtt_ms = 22;
+  // First transmitted keyframe of the active display generation (90 kHz RTP).
+  uint64 media_generation = 23;
+  uint32 media_timestamp = 24;
+  // Sender stages include intentional packet pacing; queue_ms is socket work only.
+  double send_ms = 25;
+  double capture_to_send_ms = 26;
+  double jitter_buffer_ms = 27;
+  double render_ms = 28;
+  uint32 pacing_bitrate_kbps = 29;
+  bool control_active = 30;
+  uint64 control_generation = 31;
+  string controller_name = 32;
+  uint32 connected_clients = 33;
+  bool clipboard_enabled = 34;
+  uint64 clipboard_generation = 35;
+  bool reference_recovery = 36;
+  uint32 fec_percent = 37;
+  uint64 fec_packets = 38;
+  uint64 fec_bytes = 39;
+  uint64 reference_acks = 40;
+  uint64 reference_recovery_frames = 41;
+  uint64 reference_recoveries = 42; // Recovery frames acknowledged after decoding.
+  RemoteDesktopRenderMeasurement render_measurement = 43;
+  string decoder_implementation = 44;
+  optional bool decoder_hardware = 45;
+  optional bool decoder_low_latency_accepted = 46;
+  string decoder_configuration_reason = 47;
+  // Serialized RTP bytes, including extensions/padding. Excludes SRTP, RTCP,
+  // SCTP, ICE and IP/UDP/TURN overhead; these are not total wire-byte counts.
+  uint64 media_rtp_bytes = 48;
+  uint64 repair_rtp_bytes = 49;
+  uint64 probe_rtp_bytes = 50;
+  uint64 fec_rtp_bytes = 51;
+  string encoder_configuration = 52; // Accepted settings and optional-property fallbacks.
+  optional double content_changed_fraction = 53; // Native capture damage, unknown when absent.
+  uint64 content_measurement_sequence = 54;
+  uint32 content_samples = 55;
+  string content_class = 56; // Applied controller classification, not a visual-quality score.
+  RemoteDesktopRecoveryDiagnostics recovery_diagnostics = 57;
+  RemoteDesktopVirtualDisplay virtual_display = 58;
+}
+
+// Session-local history counters, not proof of successful decode repair.
+message RemoteDesktopRecoveryDiagnostics {
+  uint64 history_hits = 1;
+  uint64 history_misses = 2;
+  uint64 capacity_evictions = 3;
+  uint64 expired_repairs = 4;
+  uint64 duplicate_requests = 5;
+  uint64 retained_packets = 6;
+  uint64 retained_bytes = 7; // Serialized RTP headers and payload.
+}
+
+message RemoteDesktopSessionError {
+  string code = 1;
+  string message = 2;
+  bool recoverable = 3;
+}
+
+message RemoteDesktopSignal {
+  string session_id = 1;
+  uint64 sequence = 2;
+  oneof payload {
+    RemoteDesktopSessionBinding binding = 3;
+    RemoteDesktopSessionDescription description = 4;
+    RemoteDesktopICECandidate candidate = 5;
+    RemoteDesktopSessionState state = 6;
+    RemoteDesktopSessionError error = 7;
+    google.protobuf.Empty lease_heartbeat = 8;
+  }
+}
+
+// Clipboard payloads are transient. Both RPC and the dedicated encrypted
+// dieter-clipboard-v1 channel use this same operation contract.
+message RemoteDesktopClipboardRequest {
+  enum Action {
+    READ = 0;
+    WRITE = 1;
+    PASTE = 2;
+    CONFIGURE = 3;
+    COPY = 4;
+    CUT = 5;
+  }
+  string session_id = 1;
+  string operation_id = 2;
+  bytes input_epoch = 3;
+  uint64 control_generation = 4;
+  Action action = 5;
+  string text = 6;
+  string known_revision = 7;
+  bool enabled = 8;
+  // Wait for prior reliable input (selection/focus) before a clipboard shortcut.
+  uint64 input_barrier = 9;
+  // Images or regular files, at most 64 items and 8 MiB combined.
+  repeated RemoteDesktopClipboardItem items = 10;
+  // Older viewers receive only text, never file paths or partial binary data.
+  bool accept_binary = 11;
+}
+
+message RemoteDesktopClipboardItem {
+  enum Kind { FILE = 0; IMAGE = 1; }
+  Kind kind = 1;
+  string name = 2;
+  string mime_type = 3;
+  bytes data = 4;
+}
+
+message RemoteDesktopClipboardResponse {
+  string operation_id = 1;
+  string revision = 2;
+  string text = 3;
+  bool changed = 4;
+  bool has_text = 5;
+  string error = 6;
+  bool enabled = 7;
+  repeated RemoteDesktopClipboardItem items = 8;
+}

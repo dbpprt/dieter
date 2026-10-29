@@ -1,130 +1,136 @@
 # AGENTS.md
 
-## Purpose
+Operating instructions for coding agents working in this repository. People
+should read [CONTRIBUTING.md](CONTRIBUTING.md); the rules below apply to both.
 
-Dieter has a local Go daemon, a machine-only Go gateway, and native macOS and
-Android clients. Every card is one durable local AI SDK Harness conversation.
+## Binding rules
 
-## Invariants
+[docs/invariants.md](docs/invariants.md) is the source of the product
+invariants (one release version, central `DIETER_HOME` storage, atomic writes
+under the central lock, loopback-only raw API, a gateway that stores no project
+data, bounded relays, one active turn per conversation, and more). They are
+binding: do not work around them. If a task requires breaking one, stop and say
+so. Read [docs/architecture.md](docs/architecture.md) before structural changes
+and [docs/threat-model.md](docs/threat-model.md) before touching
+authentication, transports, the vault, updaters or release signing.
 
-- Ship one canonical SemVer release across gateway, daemon/CLI, and native
-  clients. The gateway publishes minimum client and daemon releases; reject
-  callers below those floors and do not add historical API branches. Keep only
-  genuine subsystem revisions such as remote-desktop framing and persisted
-  projection formats.
-- Store all Dieter data centrally under `DIETER_HOME` (default `~/.dieter`). Never
-  write Dieter metadata into project repositories.
-- Every logical project has a Dieter-generated shared identity and may have
-  several checkouts across machines. Each checkout references one existing Git
-  working tree by canonical path on its immutable owner daemon.
-- Shared project, board, label, placement, and portable settings are replicated
-  within the account by the leaderless peer store. No machine owns a project.
-  Conversations and schedules retain one execution owner and checkout.
-- Every card has a Dieter-generated ID and exactly one durable conversation.
-- Dieter owns transcripts, runtime status, harness/model configuration, queues,
-  session resume data, board labels, card label assignments, and
-  fixed workflow positions, schedules, occurrence history, and admission
-  settings.
-- Harness workers run locally on the daemon host without a sandbox. Keep the
-  raw Dieter data plane loopback-only. An enrolled daemon automatically
-  advertises a separate authenticated loopback TLS route; remote access goes
-  through the gateway tunnel or an explicitly enabled additional direct TLS
-  route.
-- The gateway stores only account sessions, daemon identities, presence, route
-  metadata, and normalized credential-free provider quota snapshots. Never put
-  Dieter projects, transcripts, provider credentials, raw provider responses,
-  or harness credentials on the gateway.
-- A daemon proves possession of its enrolled Ed25519 key on every tunnel
-  connection. Client sessions have binary full access or no access; do not add
-  scopes or accept a daemon ID without cryptographic proof.
-- Keep relay queues, messages, and concurrent streams bounded. A canceled relay
-  RPC cancels only that transport RPC and must not implicitly stop an agent.
-- Human chat messages resume the same harness session.
-- Permit concurrent agent turns in the same registered checkout. There are no
-  global, harness, or board parallel-session caps. Runtime leases enforce at
-  most one active turn per conversation across API, CLI, and scheduled starts.
-  Transport, process, and storage resource bounds still apply.
-- Treat schedule occurrence records as authoritative. Use deterministic card
-  identity and never replay a turn that may already have been dispatched.
-- Start the scheduler only with `dieter serve`; constructing an HTTP handler in
-  a test must not start background work.
-- Use atomic writes and the central cross-process lock for every mutation.
-- Dieter has no web UI. The public gateway root is intentionally 404; only
-  OAuth completion pages, health, gateway gRPC, and tunneled Dieter gRPC exist.
+## Repository map
 
-## Repository checks
+| Path                                | Contents                                                                                       |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `cmd/`, `internal/`                 | Go daemon, CLI and gateway; package map in [architecture.md](docs/architecture.md#go-packages) |
+| `api/proto/`                        | The only RPC schema                                                                            |
+| `apps/kotlin/`                      | One Gradle build: Kotlin core (`core/`), shared Compose UI (`ui/`), Android app (`android/`)   |
+| `apps/apple/`                       | `DieterKit` (shared Swift package), `mac/` (macOS app), `ios/` (iOS app)                       |
+| `native/`                           | Daemon-side helpers: `macos/` (SwiftPM capture, privacy, protocol), `linux-capture/`           |
+| `third_party/`                      | Vendored packages, each with `PATCHES.md`; do not reformat                                     |
+| `tests/maestro/`, `tests/fixtures/` | Device flows; cross-language golden vectors                                                    |
+| `tools/`                            | `identity` (generator), `fixtures/` (fixture gateway, turn probe), `clidocs`, `brandcheck`     |
+| `deploy/`                           | Gateway deployment bundle and image; Linux installer                                           |
+| `fastlane/`                         | Native builds, signing, notarization, TestFlight (built-in Fastlane actions)                   |
+| `site/`                             | Hugo website and the user documentation                                                        |
+| `docs/`                             | Contributor documentation, ADRs, proposals                                                     |
+| `config/identity.json`              | Distribution identity; everything derived is generated                                         |
 
-For local development, use `just check-changed --dry-run` to inspect the affected
-checks, then `just check-changed` to run them. The default includes all
-uncommitted changes; use `--base REF` to include branch changes. Run tests for
-the affected packages/components, and native integration tests only for related
-app, shared schema, or integration fixture changes. Preserve the existing app,
-daemon, and emulator lifecycle rules; report an unavailable integration run
-instead of disrupting a running operator app. Full checks below remain for CI
-and explicitly requested repository-wide validation.
+Put client rules in the Kotlin core (`apps/kotlin/core`), never in an app or
+the shared UI. Put user documentation in `site/content/docs` and contributor
+documentation in `docs/`.
 
-Android builds use Android Studio's bundled JBR. If `JAVA_HOME` is absent or
-points to a removed Homebrew JDK, use:
+## Commands
+
+Tools are pinned in `mise.toml`. In non-interactive shells run
+`mise exec -- just …`. Each recipe wraps a plain command; see
+[docs/building.md](docs/building.md#command-surface).
 
 ```sh
-export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+just setup                         # mise install + npm ci for the harness runtime
+just build                         # bin/dieter, bin/dieter-gateway
+just test                          # go test ./...
+just test-e2e                      # go test -tags e2e ./...
+just lint [--staged]               # every formatter and linter, check mode
+just fmt                           # rewrite formatting
+just generate                      # identity + protobuf code; CI fails on drift
+just check-changed [--base REF] [--dry-run]
+just kotlin <gradle tasks>         # ./gradlew -p apps/kotlin …
+just framework                     # DieterCore.xcframework for apps/apple
+just mac …   /   just ios …        # Apple app builds, tests, launches
+just e2e <android|ios|mac> [tags:smoke|full] [flows:NAME,…]
+just site serve|build|check
+just hooks
+just pipeline <fastlane lane> …    # signing, packaging, releases
 ```
 
-```sh
-just harness install
-just check
-just mac test
-just android test
-```
+Start every verification with `just check-changed --dry-run`, run the selected
+checks once at the end of a change, and rerun only what failed or became newly
+affected. Do not repeat full suites, all device flows or `tags:full` between
+edits. Run Gradle and Xcode builds one at a time. `gofmt` Go files; run
+`just fmt` before handing over. Regenerate with `just generate` after editing
+`api/proto` or `config/identity.json`, and regenerate the CLI reference after
+changing command help ([docs/building.md](docs/building.md#generated-code)).
 
-Use `gofmt` on Go files. Keep both native clients accessible and adaptive.
+## Safety
 
-## Daemon CLI feature parity
+- **Never stop, restart, replace or install over the operator's running daemon
+  or `Dieter.app`,** and never edit their `DIETER_HOME`. Tests and experiments
+  use a temporary `DIETER_HOME`, a concrete free loopback port (never the
+  default `127.0.0.1:4242`) and the fixture gateway
+  (`go run ./tools/fixtures/gateway`). Stop only processes you started.
+- **Devices.** Android phones are used only through a profile that names their
+  exact serial; never auto-select a phone. iOS flows create and delete their
+  own simulators; there is no physical-iPhone E2E. Device tests install the
+  separate E2E apps (`com.getdieter.android.e2e`, `com.getdieter.ios.e2e`) and
+  never the operator's apps. The Mac flows refuse to run while any `DieterMac`
+  process runs.
+- **Warm emulator.** Keep one Android emulator running as its own registered
+  background process
+  (`just pipeline android local action:emulator_run profile:android-emulator`)
+  so runs borrow a booted device. If it shows a System UI "isn't responding"
+  dialog, tap **Wait** (for example `uiautomator dump`, then `input tap` on its
+  bounds) and force-stop only `com.getdieter.android.e2e`. Never wipe emulator
+  data or kill unrelated processes to repair a run.
+- **Evidence.** Missing, skipped or unavailable required assertions and cleanup
+  failures fail the gate. Keep failed evidence; do not relax assertions to hide
+  failures. If an integration environment is unavailable, report that instead
+  of disrupting a running operator app.
+- **Releases.** Do not publish releases, rotate signing material or activate
+  production to test a change. Never rename `.github/workflows/release.yml`:
+  installed updaters trust exactly that signer.
 
-The `dieter` binary is the supported automation client as well as the local
-daemon executable. Operational commands must go through the running daemon API;
-do not reintroduce direct-store reads or writes for normal CLI operation.
+## Adding or changing an operation (CLI parity)
 
-When a feature team adds, changes, or removes a native-client operation:
+The `dieter` binary is the supported automation client. Every native-client
+operation is available from the CLI, over the local route, verified direct TLS
+and the gateway relay, in the same change:
 
-1. Declare the operation in `api/proto/dieter/v1/dieter.proto` and implement it
-   explicitly on `grpcAPI`. Keep `connectAPI` a thin adapter to that core so
-   loopback, authenticated direct TLS, and gateway relay routes behave alike.
-2. Add or update the equivalent command in `internal/cli`. It must work against
-   the local daemon and with global `--machine ID|NAME`; machine targeting must
-   prefer verified direct TLS and fall back to the authenticated bounded relay.
-3. Give the group and every leaf command useful offline `--help` text. Update
-   the root help, `README.md`, and `.agents/skills/dieter-cli/SKILL.md` whenever
-   discovery, flags, output, safety, or semantics change.
-4. Extend `rpcCommand` in `internal/cli/help_contract_test.go`, add operation
-   tests, and cover the CLI path end to end. Keep
-   `TestGRPCAPIImplementsEveryDeclaredRPC` passing; it prevents implicit
-   `Unimplemented` drift.
-5. Regenerate Go, copied schemas, and checked-in Swift clients with
-   `just proto`. Android generates from the authoritative schema during its
-   build.
+1. Declare the RPC in its domain's service in `api/proto/dieter/v1/<domain>.proto`
+   (e.g. `cards.proto` → `CardService`) and run `just generate`.
+2. Implement it on the matching domain handler in `internal/api` (one file and
+   handler type per proto service, mounted in `service.go`). Return errors with a
+   `internal/platform/fault` kind; unknown errors become `Internal`.
+3. Add the CLI command to the command table in `internal/cli/commands.go` with
+   useful offline `--help` for the group and every leaf. The table drives
+   dispatch, root help, the help contract and the generated
+   [CLI reference](site/content/docs/reference/cli.md); regenerate that page.
+   Global `--machine ID|NAME` must work: verified direct TLS first, then the
+   authenticated bounded relay.
+4. Map the RPC in `rpcCommand` (`internal/cli/help_contract_test.go`) and keep
+   `TestGRPCAPIImplementsEveryDeclaredRPC` and the help-contract tests passing.
+   Add operation tests and an end-to-end CLI test over local, direct-TLS and
+   relay routes (`internal/testkit/topology`, `-tags e2e`).
+5. Update [.agents/skills/dieter-cli/SKILL.md](.agents/skills/dieter-cli/SKILL.md)
+   and the user guide in `site/content/docs` when behaviour, safety or output
+   semantics change.
 
-Never stop, restart, replace, or install over an operator's currently running
-daemon during tests. Use temporary `DIETER_HOME` roots, random loopback
-listeners, isolated in-process gateways/daemons, and disposable credentials.
-Verify local, direct-TLS, and relay CLI routes without touching the live service.
+Remote execution lifecycle operations additionally need manager, local,
+direct-TLS and relay coverage, and keep the bounds and semantics in
+[invariants.md](docs/invariants.md#remote-execution).
 
-Remote execution is a separate agent-oriented interface from screen terminals.
-Keep it exact-argv and shell-free by default, retain stdout/stderr boundaries,
-propagate explicit exit state, and make admission idempotent when a key is
-provided. A watch disconnect must never stop an execution. Keep process count,
-input frames, output frames/bytes, retained sessions, timeouts, and relay
-streams bounded. New execution lifecycle operations require proto, core server,
-Connect adapter, CLI/help, skill/docs, manager, local, direct-TLS, and relay
-coverage in the same change.
+## Skills
 
-## Use Dieter as an agent
-
-Read `.agents/skills/dieter-cli/SKILL.md`. Prefer bounded context:
-
-```sh
-dieter card context <exact-card-id>
-dieter card move <exact-card-id> --lane review
-```
-
-Do not edit central storage directly during normal operation.
+- [dieter-cli](.agents/skills/dieter-cli/SKILL.md): operate Dieter through the
+  CLI. Prefer bounded context (`dieter card context CARD_ID`) and move your card
+  with `dieter card move CARD_ID --lane review` when done.
+- [dieter-pipelines](.agents/skills/dieter-pipelines/SKILL.md): builds, checks,
+  device flows, CI and releases.
+- [mac-app](.agents/skills/mac-app/SKILL.md): build, launch, inspect and close
+  the Mac app safely.

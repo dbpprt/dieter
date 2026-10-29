@@ -9,6 +9,7 @@ import (
 	"text/tabwriter"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 )
 
 const scheduleHelp = `Usage: dieter schedule <action>
@@ -55,23 +56,7 @@ func (c *CLI) rpcSchedule(args []string) error {
 	}
 }
 
-func resolveProtoSchedule(items []*dieterv1.Schedule, reference string) (*dieterv1.Schedule, error) {
-	var matches []*dieterv1.Schedule
-	for _, item := range items {
-		if item.GetId() == reference || strings.EqualFold(item.GetName(), reference) {
-			matches = append(matches, item)
-		}
-	}
-	if len(matches) == 0 {
-		return nil, fmt.Errorf("schedule %q was not found on the target daemon", reference)
-	}
-	if len(matches) > 1 {
-		return nil, fmt.Errorf("schedule name %q is ambiguous; use its exact ID", reference)
-	}
-	return matches[0], nil
-}
-
-func (c *CLI) resolveSchedule(rpcCtx context.Context, client dieterv1.DieterServiceClient, reference string) (*dieterv1.Schedule, error) {
+func (c *CLI) resolveSchedule(rpcCtx context.Context, client dieterclient.Client, reference string) (*dieterv1.Schedule, error) {
 	pageToken := ""
 	var matches []*dieterv1.Schedule
 	for {
@@ -257,6 +242,8 @@ Options:
   --provider-option KEY=VALUE        Repeatable harness option
   --enabled=true|false
   --open-card skip_if_open|always
+  --vault=true|false                 Cards it creates may use the account vault
+  --mail=true|false                  Cards it creates may send you mail (dieter mail --help)
 `, actionName, map[bool]string{true: " SCHEDULE"}[updating])
 	defaults := &dieterv1.Schedule{Enabled: true, Cron: "0 9 * * 1-5", Timezone: "UTC", Action: "draft", OpenCardPolicy: "skip_if_open", MisfirePolicy: "latest", WorkspaceMode: "worktree"}
 	if current != nil && current.GetId() != "" {
@@ -281,6 +268,8 @@ Options:
 	labels := set.String("labels", strings.Join(defaults.GetLabelIds(), ","), "label IDs")
 	enabled := set.Bool("enabled", defaults.GetEnabled(), "enabled")
 	openCard := set.String("open-card", defaults.GetOpenCardPolicy(), "open-card policy")
+	vaultAccess := set.Bool("vault", defaults.GetVaultAccess(), "cards created by this schedule may use the account vault")
+	mailAccess := set.Bool("mail", defaults.GetMailAccess(), "cards created by this schedule may send the user mail")
 
 	providerOptions := parameterFlags{}
 	for key, value := range defaults.GetProviderOptions() {
@@ -323,7 +312,7 @@ Options:
 	if err != nil {
 		return err
 	}
-	draft := &dieterv1.ScheduleDraft{CheckoutId: *checkout, ProjectId: projectValue.GetId(), BoardId: boardValue.GetId(), Name: *name, Description: *description, Cron: *expression, Timezone: *timezone, Enabled: *enabled, Action: *action, TitleTemplate: *title, PromptTemplate: promptValue, Provider: *provider, Model: *modelName, Effort: *effort, LabelIds: splitCSV(*labels), OpenCardPolicy: *openCard, MisfirePolicy: "latest", ProviderOptions: map[string]string(providerOptions), WorkspaceMode: *workspaceMode}
+	draft := &dieterv1.ScheduleDraft{CheckoutId: *checkout, ProjectId: projectValue.GetId(), BoardId: boardValue.GetId(), Name: *name, Description: *description, Cron: *expression, Timezone: *timezone, Enabled: *enabled, Action: *action, TitleTemplate: *title, PromptTemplate: promptValue, Provider: *provider, Model: *modelName, Effort: *effort, LabelIds: splitCSV(*labels), OpenCardPolicy: *openCard, MisfirePolicy: "latest", ProviderOptions: map[string]string(providerOptions), WorkspaceMode: *workspaceMode, VaultAccess: *vaultAccess, MailAccess: *mailAccess}
 	request := &dieterv1.SaveScheduleRequest{Schedule: draft}
 	var value *dieterv1.Schedule
 	if updating {

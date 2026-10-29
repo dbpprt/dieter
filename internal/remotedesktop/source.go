@@ -43,6 +43,14 @@ type ControlledFrameSource interface {
 	SetBitrateKbps(int)
 }
 
+// DisplayWaker is implemented by a native host source that can report remote
+// user activity before a viewer starts consuming the shared desktop. The
+// capture pool invokes it once per logical connection, even when peers share
+// one encoder.
+type DisplayWaker interface {
+	WakeDisplay(context.Context) error
+}
+
 // InputSink is implemented by the signed native helper source. The daemon
 // validates protobuf input before forwarding this deliberately small command
 // representation to the helper that owns macOS event-posting permission.
@@ -52,6 +60,7 @@ type InputSink interface {
 }
 
 type SourceOptions struct {
+	StateRoot  string // Central DIETER_HOME (or disposable fixture root) for native display recovery.
 	RecoveryID string // private encoder identity for acknowledged references; capture stays shared
 	// Optional named pasteboard for isolated native fixtures; empty uses the system clipboard.
 	ClipboardDirectory string
@@ -69,6 +78,9 @@ type SourceOptions struct {
 	Codec              VideoCodec
 	EmbeddedCursor     bool
 	Control            bool
+	// FrameOverlap lets the native encoder overlap a capture with the previous
+	// send when the helper supports it (DIETER_SCREEN_OVERLAP=1).
+	FrameOverlap bool
 }
 
 var captureProbeTimeout = func() time.Duration {
@@ -150,7 +162,7 @@ func NewFrameSource(options SourceOptions) (FrameSource, error) {
 				bitrateKbps: options.Bitrate, maxWidth: options.MaxWidth,
 				maxHeight: options.MaxHeight, logger: options.Logger,
 				profile: options.Profile, codec: options.Codec, referenceRecovery: options.RecoveryID != "", synthetic: options.Kind == "native-synthetic", portalStatePath: options.PortalStatePath,
-				embeddedCursor: options.EmbeddedCursor, inputAllowed: options.Control,
+				embeddedCursor: options.EmbeddedCursor, inputAllowed: options.Control, frameOverlap: options.FrameOverlap,
 			}, nil
 		}
 		return nil, errors.New("native screen sharing is unavailable on this platform")

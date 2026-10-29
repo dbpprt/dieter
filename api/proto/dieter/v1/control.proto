@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package dieter.v1;
+
+option go_package = "github.com/dbpprt/dieter/internal/gen/dieter/v1;dieterv1";
+option java_multiple_files = true;
+option java_package = "com.getdieter.api.v1";
+
+import "dieter/gateway/v1/gateway.proto";
+import "google/protobuf/empty.proto";
+
+// The WebRTC control connection.
+service ControlService {
+  // Data-only WebRTC carries the existing authenticated TLS/gRPC byte stream.
+  // Bootstrap uses an existing route; no screen capture is started.
+  rpc StartControlConnection(StartControlConnectionRequest) returns (ControlConnection);
+  rpc GetControlConnection(ControlConnectionRef) returns (ControlConnection);
+  rpc CloseControlConnection(ControlConnectionRef) returns (google.protobuf.Empty);
+}
+
+message StartControlConnectionRequest {
+  dieter.gateway.v1.RTCConfiguration rtc_configuration = 1;
+  string offer_sdp = 2;
+}
+
+message ControlConnectionRef { string session_id = 1; }
+
+message ControlConnection {
+  string session_id = 1;
+  string answer_sdp = 2;
+  string expires_at = 3;
+  string state = 4;
+  // unknown until ICE selects a pair; then direct or turn.
+  string mode = 5;
+  string local_candidate_type = 6;
+  string remote_candidate_type = 7;
+}

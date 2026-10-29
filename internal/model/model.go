@@ -47,7 +47,27 @@ const (
 	RemotePublishManual      = "manual"
 	RemotePublishPullRequest = "pull_request"
 	RemotePublishPushBase    = "push_base"
+
+	// Card runtimes the daemon writes.
+	RuntimeIdle     = "idle"
+	RuntimeStarting = "starting"
+	RuntimeRunning  = "running"
+	// The reply is complete; the worker is exiting and the workspace refreshing.
+	RuntimeFinishing = "finishing"
+	// Stop was requested; the worker is cleaning up.
+	RuntimeCancelling = "cancelling"
+	RuntimeFailed     = "failed"
 )
+
+// RuntimeHoldsTurn reports whether a turn still owns the card: its worker may
+// still write, and a daemon that dies meanwhile must recover the card.
+func RuntimeHoldsTurn(runtime string) bool {
+	switch runtime {
+	case RuntimeStarting, RuntimeRunning, RuntimeFinishing, RuntimeCancelling:
+		return true
+	}
+	return false
+}
 
 // CanonicalWorkspaceMode accepts the two supported workspace modes.
 func CanonicalWorkspaceMode(value string) (string, bool) {
@@ -224,8 +244,14 @@ type Card struct {
 	WorkspaceBaseBranch string                     `json:"workspaceBaseBranch,omitempty" yaml:"workspace_base_branch,omitempty"`
 	WorkspaceBaseRemote string                     `json:"workspaceBaseRemote,omitempty" yaml:"workspace_base_remote,omitempty"`
 	RemotePublishMode   string                     `json:"remotePublishMode,omitempty" yaml:"remote_publish_mode,omitempty"`
-	Workspace           *WorkspaceSummary          `json:"workspace,omitempty" yaml:"-"`
-	PullRequest         *PullRequestSummary        `json:"pullRequest,omitempty" yaml:"-"`
+	// VaultAccess is owner-local and fixed at creation: agent turns of this
+	// conversation may use the account vault.
+	VaultAccess bool `json:"vaultAccess,omitempty" yaml:"vault_access,omitempty"`
+	// MailAccess is owner-local and fixed at creation: agent turns of this
+	// conversation may send the user mail.
+	MailAccess  bool                `json:"mailAccess,omitempty" yaml:"mail_access,omitempty"`
+	Workspace   *WorkspaceSummary   `json:"workspace,omitempty" yaml:"-"`
+	PullRequest *PullRequestSummary `json:"pullRequest,omitempty" yaml:"-"`
 }
 
 // Workspace is the durable execution location for either a board card or a
@@ -506,6 +532,8 @@ type Schedule struct {
 	Effort          string            `json:"effort,omitempty" yaml:"effort,omitempty"`
 	ProviderOptions map[string]string `json:"providerOptions,omitempty" yaml:"provider_options,omitempty"`
 	WorkspaceMode   string            `json:"workspaceMode" yaml:"workspace_mode"`
+	VaultAccess     bool              `json:"vaultAccess,omitempty" yaml:"vault_access,omitempty"`
+	MailAccess      bool              `json:"mailAccess,omitempty" yaml:"mail_access,omitempty"`
 	LabelIDs        []string          `json:"labelIds,omitempty" yaml:"labels,omitempty"`
 	OpenCardPolicy  string            `json:"openCardPolicy" yaml:"open_card_policy"`
 	MisfirePolicy   string            `json:"misfirePolicy" yaml:"misfire_policy"`
@@ -562,6 +590,7 @@ type Conversation struct {
 	Subagents        []Subagent           `json:"subagents,omitempty"`
 	TaskPlans        []TaskPlan           `json:"taskPlans,omitempty"`
 	PresentedContent *ContentPresentation `json:"presentedContent,omitempty"`
+	ProviderStatus   *ProviderStatus      `json:"providerStatus,omitempty"`
 	Queue            []QueuedMessage      `json:"queue,omitempty"`
 	Session          json.RawMessage      `json:"session,omitempty"`
 	ActiveTurn       *ConversationTurn    `json:"activeTurn,omitempty"`
@@ -577,6 +606,19 @@ type ContentPresentation struct {
 	URL   string `json:"url,omitempty"`
 	Line  int    `json:"line,omitempty"`
 	Title string `json:"title,omitempty"`
+}
+
+// ProviderStatus is the latest transient provider connectivity report for the
+// active turn, such as a harness retrying its provider stream. The reducer
+// drops it when the stream recovers or the turn ends; it is never transcript.
+type ProviderStatus struct {
+	State       string `json:"state"`
+	Attempt     int32  `json:"attempt,omitempty"`
+	MaxAttempts int32  `json:"maxAttempts,omitempty"`
+	Message     string `json:"message,omitempty"`
+	Provider    string `json:"provider,omitempty"`
+	MessageID   string `json:"messageId,omitempty"`
+	UpdatedAt   string `json:"updatedAt,omitempty"`
 }
 
 // ConversationTurn identifies the one in-flight response. Persisting the
@@ -691,6 +733,8 @@ type UIMessagePart struct {
 	Input      json.RawMessage `json:"input,omitempty"`
 	Output     json.RawMessage `json:"output,omitempty"`
 	ErrorText  string          `json:"errorText,omitempty"`
+	// Data is the JSON payload of a "data-*" part (data-peer-notice).
+	Data json.RawMessage `json:"data,omitempty"`
 }
 
 type PendingTool struct {
@@ -723,13 +767,10 @@ type CardDetail struct {
 }
 
 type State struct {
-	RetiredBoards      []Board   `json:"retiredBoards,omitempty"`
-	ArchivedProjectIDs []string  `json:"archivedProjectIds,omitempty"`
-	ArchivedItemIDs    []string  `json:"archivedItemIds,omitempty"`
-	StorePath          string    `json:"storePath"`
-	Projects           []Project `json:"projects"`
-	Project            *Project  `json:"project,omitempty"`
-	Boards             []Board   `json:"boards"`
-	Cards              []Card    `json:"cards"`
-	Chats              []Card    `json:"chats"`
+	StorePath string    `json:"storePath"`
+	Projects  []Project `json:"projects"`
+	Project   *Project  `json:"project,omitempty"`
+	Boards    []Board   `json:"boards"`
+	Cards     []Card    `json:"cards"`
+	Chats     []Card    `json:"chats"`
 }

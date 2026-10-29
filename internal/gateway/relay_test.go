@@ -1,31 +1,61 @@
 package gateway
 
 import (
-	"context"
-	"io"
 	"testing"
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	"github.com/dbpprt/dieter/internal/transport/relay"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
 
-func TestRelayDeadlineOnlyPropagatesClientDeadline(t *testing.T) {
-	if got := relayDeadlineUnixMillis(context.Background()); got != 0 {
-		t.Fatalf("background relay deadline = %d, want 0", got)
+// newTestRelayHub registers one in-memory daemon link per lane. Tests drive
+// the links directly instead of through a transport.
+func newTestRelayHub(t *testing.T) (*Hub, map[relay.Lane]*daemonLink) {
+	t.Helper()
+	hub := NewHub(nil, Config{})
+	links := map[relay.Lane]*daemonLink{}
+	for _, lane := range relay.Lanes {
+		link := &daemonLink{
+			id: "isolated-test-daemon", lane: lane, sessionID: "isolated-session", budget: relay.NewBudget(relay.BufferedBytes, nil),
+			control: make(chan *gatewayv1.DaemonLinkFrame, 2*relay.TunnelLimit(lane)+16),
+			done:    make(chan struct{}), tunnels: map[uint64]*tunnel{},
+		}
+		link.outbound = relay.NewQueue(link.budget)
+		link.markSeen(time.Now())
+		if err := hub.register(link); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { hub.unregister(link) })
+		links[lane] = link
 	}
+	return hub, links
+}
 
-	deadline := time.Now().Add(time.Minute).Truncate(time.Millisecond)
-	ctx, cancel := context.WithDeadline(context.Background(), deadline)
-	defer cancel()
-	if got := relayDeadlineUnixMillis(ctx); got != deadline.UnixMilli() {
-		t.Fatalf("relay deadline = %d, want %d", got, deadline.UnixMilli())
+func nextOutbound(t *testing.T, link *daemonLink) *gatewayv1.DaemonLinkFrame {
+	t.Helper()
+	frame, release := link.outbound.Next()
+	if frame == nil {
+		t.Fatal("no queued daemon link frame")
+	}
+	release()
+	return frame
+}
+
+func tunnelReason(t *testing.T, opened *tunnel) *status.Status {
+	t.Helper()
+	select {
+	case <-opened.done:
+		return opened.reason
+	case <-time.After(5 * time.Second):
+		t.Fatal("tunnel did not close")
+		return nil
 	}
 }
 
 func TestDaemonLinkHeartbeatLease(t *testing.T) {
+	t.Parallel()
 	link := &daemonLink{}
 	now := time.Now()
 	link.markSeen(now)
@@ -37,207 +67,297 @@ func TestDaemonLinkHeartbeatLease(t *testing.T) {
 	}
 }
 
-func TestRemoteDesktopRelayAllowsBoundedSignalingBurst(t *testing.T) {
-	if got := relayFrameBuffer("/dieter.v1.DieterService/StartRemoteDesktop"); got != remoteDesktopRelayFrameBuffer {
-		t.Fatalf("remote desktop relay buffer = %d, want %d", got, remoteDesktopRelayFrameBuffer)
-	}
-	if got := relayFrameBuffer("/dieter.v1.DieterService/WatchSync"); got != defaultRelayFrameBuffer {
-		t.Fatalf("default relay buffer = %d, want %d", got, defaultRelayFrameBuffer)
-	}
-}
-
-func TestRelayPreservesCompletedExecutionBurstBeforeReceiverRuns(t *testing.T) {
-	hub, link := newTestRelayHub(t)
-	relay, err := hub.Open(t.Context(), link.id, &gatewayv1.DaemonLinkFrame{Method: "/dieter.v1.DieterService/WatchExecution"})
+func TestTunnelOpenAsksTheDaemonOnItsLane(t *testing.T) {
+	t.Parallel()
+	hub, links := newTestRelayHub(t)
+	opened, err := hub.openTunnel("isolated-test-daemon", relay.Replication)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer relay.Close()
-
-	// A completed command can replay its initial state, stdin EOF, stdout,
-	// stderr, and exit state between the transport header and trailer. Dispatch
-	// all of them before scheduling the receiver, as a busy CI host may do.
-	want := []*gatewayv1.DaemonLinkFrame{{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_HEADER}}
-	for _, payload := range []string{"started", "stdin closed", "stdout", "stderr", "exited"} {
-		want = append(want, &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_MESSAGE, Payload: []byte(payload)})
+	defer opened.close(status.New(codes.Canceled, "test ended"), false)
+	frame := nextOutbound(t, links[relay.Replication])
+	if frame.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_TUNNEL_OPEN || frame.GetStreamId() != opened.id ||
+		frame.GetDaemonId() != "isolated-test-daemon" || frame.GetLane() != relay.Replication {
+		t.Fatalf("tunnel open = %v", frame)
 	}
-	want = append(want, &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_END})
-	for _, frame := range want {
-		frame.StreamId = relay.id
-		link.dispatch(frame)
-	}
-	for i, expected := range want {
-		actual, err := relay.Recv()
-		if err != nil || !proto.Equal(actual, expected) {
-			t.Fatalf("frame %d = %v, %v; want %v", i, actual, err, expected)
+	for _, lane := range []relay.Lane{relay.Control, relay.Command, relay.Subscription} {
+		if frame, _ := links[lane].outbound.Next(); frame != nil {
+			t.Fatalf("tunnel opened on the %s lane as well", lane)
 		}
 	}
-	if _, err := relay.Recv(); err != io.EOF {
-		t.Fatalf("after completed burst = %v; want EOF", err)
-	}
-	if got := relay.queue.bytes.Load(); got != 0 {
-		t.Fatalf("buffered bytes after EOF = %d; want 0", got)
+	if _, err := hub.openTunnel("another-daemon", relay.Command); status.Code(err) != codes.Unavailable {
+		t.Fatalf("tunnel to an offline daemon = %v", err)
 	}
 }
 
-func TestRelayBurstLimitsIsolateSlowConsumers(t *testing.T) {
-	for _, limit := range []string{"frames", "bytes"} {
-		t.Run(limit, func(t *testing.T) {
-			hub, link := newTestRelayHub(t)
-			slow, err := hub.Open(t.Context(), link.id, &gatewayv1.DaemonLinkFrame{Method: "/dieter.v1.DieterService/WatchExecution"})
+func TestTunnelLimitIsPerDaemonLane(t *testing.T) {
+	t.Parallel()
+	hub, links := newTestRelayHub(t)
+	for _, lane := range relay.Lanes {
+		for range relay.TunnelLimit(lane) {
+			opened, err := hub.openTunnel("isolated-test-daemon", lane)
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("%s tunnel below its limit = %v", lane, err)
 			}
-			healthy, err := hub.Open(t.Context(), link.id, &gatewayv1.DaemonLinkFrame{Method: "/dieter.v1.DieterService/GetState"})
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer healthy.Close()
-			payload := []byte("small event")
-			count := cap(slow.queue.frames) + 1
-			if limit == "bytes" {
-				// Each encoded frame fits the 16 MiB transport limit. Reusing
-				// the immutable payload keeps this regression test inexpensive.
-				payload = make([]byte, maxRelayPayload-128)
-				count = 5
-			}
-			for i := 0; i < count; i++ {
-				link.dispatch(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_MESSAGE, StreamId: slow.id, Payload: payload})
-			}
-			failure, err := slow.Recv()
-			if err != nil || failure.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RPC_ERROR || failure.GetStatusCode() != int32(codes.ResourceExhausted) {
-				t.Fatalf("overflow kind=%v code=%d err=%v; want ResourceExhausted", failure.GetKind(), failure.GetStatusCode(), err)
-			}
-			if _, err := slow.Recv(); err != io.EOF {
-				t.Fatalf("after overflow = %v; want EOF", err)
-			}
-			if got := slow.queue.bytes.Load(); got != 0 {
-				t.Fatalf("buffered bytes after overflow = %d; want 0", got)
-			}
-			response := &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_MESSAGE, StreamId: healthy.id, Payload: []byte("healthy response")}
-			link.dispatch(response)
-			link.dispatch(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_END, StreamId: healthy.id})
-			if got, err := healthy.Recv(); err != nil || !proto.Equal(got, response) {
-				t.Fatalf("unrelated stream = %v, %v; want %v", got, err, response)
-			}
-		})
+			t.Cleanup(func() { opened.close(status.New(codes.Canceled, "test ended"), false) })
+		}
+		if _, err := hub.openTunnel("isolated-test-daemon", lane); status.Code(err) != codes.ResourceExhausted {
+			t.Fatalf("%s tunnel above its limit = %v", lane, err)
+		}
+	}
+	for _, value := range hub.RelayLanes("isolated-test-daemon") {
+		if int(value.GetActiveCalls()) != relay.TunnelLimit(value.GetLane()) || int(value.GetCallLimit()) != relay.TunnelLimit(value.GetLane()) || value.GetRejectedCalls() != 1 {
+			t.Fatalf("lane status does not report tunnels: %v", value)
+		}
+	}
+	link := links[relay.Command]
+	link.mu.RLock()
+	var first *tunnel
+	for _, value := range link.tunnels {
+		first = value
+		break
+	}
+	link.mu.RUnlock()
+	first.close(status.New(codes.Canceled, "client ended the tunnel"), true)
+	if _, err := hub.openTunnel("isolated-test-daemon", relay.Command); err != nil {
+		t.Fatalf("closed tunnel did not free its slot: %v", err)
 	}
 }
 
-func TestRelayPreservesEntireRetainedExecutionReplay(t *testing.T) {
-	hub, link := newTestRelayHub(t)
-	relay, err := hub.Open(t.Context(), link.id, &gatewayv1.DaemonLinkFrame{Method: "/dieter.v1.DieterService/WatchExecution"})
+func TestTunnelWithAnUnreadClientClosesAloneAndReleasesItsBytes(t *testing.T) {
+	t.Parallel()
+	hub, links := newTestRelayHub(t)
+	link := links[relay.Command]
+	slow, err := hub.openTunnel("isolated-test-daemon", relay.Command)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer relay.Close()
-	want := []*gatewayv1.DaemonLinkFrame{{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_HEADER, StreamId: relay.id}}
-	// remoteexec retains at most 4096 events. Reset is a flag on the first
-	// event and exit is the final event, so only header/trailer add frames.
-	for i := 0; i < 4096; i++ {
-		want = append(want, &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_MESSAGE, StreamId: relay.id, Payload: []byte("replayed output")})
-	}
-	want = append(want, &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_END, StreamId: relay.id})
-	for _, frame := range want {
-		link.dispatch(frame)
-	}
-	for i, expected := range want {
-		if got, err := relay.Recv(); err != nil || got != expected {
-			t.Fatalf("replay frame %d = %v, %v; want retained frame", i, got.GetKind(), err)
-		}
-	}
-	if _, err := relay.Recv(); err != io.EOF {
-		t.Fatalf("after retained replay = %v; want EOF", err)
-	}
-	if got := relay.queue.bytes.Load(); got != 0 {
-		t.Fatalf("buffered bytes after replay = %d; want 0", got)
-	}
-}
-
-func TestRelayReleasesByteBudgetWhileConsumingAndClosing(t *testing.T) {
-	hub, link := newTestRelayHub(t)
-	relay, err := hub.Open(t.Context(), link.id, &gatewayv1.DaemonLinkFrame{Method: "/dieter.v1.DieterService/WatchExecution"})
+	healthy, err := hub.openTunnel("isolated-test-daemon", relay.Command)
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := make([]byte, maxRelayPayload-128)
-	frame := &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_MESSAGE, StreamId: relay.id, Payload: payload}
-	for round := 0; round < 2; round++ {
-		for i := 0; i < 4; i++ {
-			link.dispatch(frame)
-		}
-		if round == 1 {
-			relay.Close()
-		}
-		for i := 0; i < 4; i++ {
-			if got, err := relay.Recv(); err != nil || got != frame {
-				t.Fatalf("round %d frame %d = %v, %v; want buffered response", round, i, got.GetKind(), err)
-			}
-		}
-		if got := relay.queue.bytes.Load(); got != 0 {
-			t.Fatalf("round %d buffered bytes = %d; want 0", round, got)
-		}
+	defer healthy.close(status.New(codes.Canceled, "test ended"), false)
+	nextOutbound(t, link)
+	nextOutbound(t, link)
+	// Nobody consumes the slow tunnel. A daemon that ignores the window fills
+	// its bounded queue; delivery never blocks the shared link reader.
+	for range relay.QueuedFrames + 1 {
+		link.deliver(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_TUNNEL_DATA, StreamId: slow.id, Payload: make([]byte, relay.ChunkBytes)})
 	}
-	if _, err := relay.Recv(); err != io.EOF {
-		t.Fatalf("after close = %v; want EOF", err)
+	if reason := tunnelReason(t, slow); reason.Code() != codes.ResourceExhausted {
+		t.Fatalf("overflowing tunnel closed with %v", reason)
 	}
-}
-
-func TestRelayFailureDrainsWhileReceiverIsActive(t *testing.T) {
-	hub, link := newTestRelayHub(t)
-	for attempt := 0; attempt < 100; attempt++ {
-		relay, err := hub.Open(t.Context(), link.id, &gatewayv1.DaemonLinkFrame{Method: "/dieter.v1.DieterService/WatchExecution"})
-		if err != nil {
-			t.Fatal(err)
+	select {
+	case frame := <-link.control:
+		if frame.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_TUNNEL_CLOSE || frame.GetStreamId() != slow.id {
+			t.Fatalf("daemon was told to close %v", frame)
 		}
-		<-link.send
-		for i := 0; i < defaultRelayFrameBuffer; i++ {
-			link.dispatch(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_MESSAGE, StreamId: relay.id, Payload: []byte("queued output")})
-		}
-		consumed := make(chan error, 1)
-		go func() {
-			for {
-				if _, err := relay.Recv(); err != nil {
-					consumed <- err
-					return
-				}
-			}
-		}()
-		failed := make(chan struct{})
-		go func() {
-			link.failStream(relay.id, status.Error(codes.ResourceExhausted, "slow consumer"))
-			close(failed)
-		}()
-		select {
-		case <-failed:
-		case <-time.After(5 * time.Second):
-			t.Fatal("failure drain blocked against the active receiver")
-		}
-		<-link.control
-		select {
-		case err := <-consumed:
-			if err != io.EOF {
-				t.Fatalf("receiver finished with %v; want EOF", err)
-			}
-		case <-time.After(5 * time.Second):
-			t.Fatal("receiver did not finish after failure")
-		}
-		if got := relay.queue.bytes.Load(); got != 0 {
-			t.Fatalf("buffered bytes after concurrent drain = %d; want 0", got)
-		}
+	default:
+		t.Fatal("daemon was not told to close the overflowing tunnel")
+	}
+	if link.budget.Used() != 0 {
+		t.Fatalf("closed tunnel retained %d buffered bytes", link.budget.Used())
+	}
+	link.deliver(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_TUNNEL_OPENED, StreamId: healthy.id})
+	select {
+	case item := <-healthy.inbound:
+		link.budget.Release(item.bytes)
+	default:
+		t.Fatal("an overflowing tunnel blocked its neighbour")
+	}
+	if !link.isAlive(time.Now()) {
+		t.Fatal("an overflowing tunnel closed the shared link")
 	}
 }
 
-func newTestRelayHub(t *testing.T) (*Hub, *daemonLink) {
-	t.Helper()
+func TestTunnelCloseDropsQueuedDataAndUsesTheControlQueue(t *testing.T) {
+	t.Parallel()
+	hub, links := newTestRelayHub(t)
+	link := links[relay.Command]
+	opened, err := hub.openTunnel("isolated-test-daemon", relay.Command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := hub.openTunnel("isolated-test-daemon", relay.Command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.close(status.New(codes.Canceled, "test ended"), false)
+	reserved := int64(relay.BufferedBytes) - link.budget.Used()
+	if !link.budget.Reserve(reserved) {
+		t.Fatal("cannot fill the lane byte budget")
+	}
+	defer link.budget.Release(reserved)
+	// With the byte budget full, new tunnels fail fast and closing one still
+	// reaches the daemon through the bounded control queue.
+	if _, err := hub.openTunnel("isolated-test-daemon", relay.Command); status.Code(err) != codes.ResourceExhausted {
+		t.Fatalf("tunnel open with a full send budget = %v", err)
+	}
+	opened.close(status.New(codes.Canceled, "client ended the tunnel"), true)
+	select {
+	case frame := <-link.control:
+		if frame.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_TUNNEL_CLOSE || frame.GetStreamId() != opened.id || frame.GetStatusCode() != int32(codes.Canceled) {
+			t.Fatalf("close frame = %v", frame)
+		}
+	default:
+		t.Fatal("close did not use the control queue")
+	}
+	for {
+		frame, release := link.outbound.Next()
+		if frame == nil {
+			break
+		}
+		release()
+		if frame.GetStreamId() == opened.id {
+			t.Fatal("a closed tunnel's queued frames were still scheduled")
+		}
+	}
+	link.mu.RLock()
+	defer link.mu.RUnlock()
+	if len(link.tunnels) != 1 || link.tunnels[other.id] != other {
+		t.Fatal("closing one tunnel affected another")
+	}
+}
+
+func TestDaemonLinkCloseEndsItsTunnels(t *testing.T) {
+	t.Parallel()
+	hub, links := newTestRelayHub(t)
+	command, err := hub.openTunnel("isolated-test-daemon", relay.Command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replication, err := hub.openTunnel("isolated-test-daemon", relay.Replication)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer replication.close(status.New(codes.Canceled, "test ended"), false)
+	links[relay.Command].deliver(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_TUNNEL_OPENED, StreamId: command.id})
+	links[relay.Command].close()
+	if reason := tunnelReason(t, command); reason.Code() != codes.Unavailable {
+		t.Fatalf("tunnel of a closed link ended with %v", reason)
+	}
+	if links[relay.Command].budget.Used() != 0 {
+		t.Fatal("closed link retained tunnel bytes")
+	}
+	select {
+	case <-replication.done:
+		t.Fatal("closing one lane ended another lane's tunnel")
+	default:
+	}
+	hub.CloseDaemon("isolated-test-daemon")
+	if reason := tunnelReason(t, replication); reason.Code() != codes.Unavailable {
+		t.Fatalf("revocation ended a tunnel with %v", reason)
+	}
+}
+
+func TestRelayClosedDaemonIsImmediatelyOffline(t *testing.T) {
+	t.Parallel()
+	hub, _ := newTestRelayHub(t)
+	hub.CloseDaemon("isolated-test-daemon")
+	if hub.Online("isolated-test-daemon") {
+		t.Fatal("closed daemon remains online until the heartbeat lease expires")
+	}
+}
+
+func TestAuthenticatedStreamsAreBoundedPerAccount(t *testing.T) {
+	t.Parallel()
+	var budget streamBudget
+	for range maxAccountStreams {
+		if !budget.acquire(1) {
+			t.Fatal("account stream below its bound was rejected")
+		}
+	}
+	if budget.acquire(1) {
+		t.Fatal("account exceeded its stream bound")
+	}
+	if !budget.acquire(2) {
+		t.Fatal("one account's streams exhausted another's")
+	}
+	budget.release(1)
+	if !budget.acquire(1) {
+		t.Fatal("released stream was not returned to its account")
+	}
+	for account := int64(3); budget.total < maxGatewayStreams; account++ {
+		for range maxAccountStreams {
+			if budget.total < maxGatewayStreams && !budget.acquire(account) {
+				t.Fatal("stream below the gateway bound was rejected")
+			}
+		}
+	}
+	if budget.acquire(1 << 40) {
+		t.Fatal("gateway exceeded its total stream bound")
+	}
+}
+
+func TestAuthenticatedSubscriptionCapacityReservesOtherTrafficClasses(t *testing.T) {
+	t.Parallel()
+	var budget streamBudget
+	for range maxAccountStreams {
+		if !budget.acquireLane(1, relay.Subscription) {
+			t.Fatal("subscription rejected below account ceiling")
+		}
+	}
+	if budget.acquireLane(1, relay.Subscription) {
+		t.Fatal("subscription ceiling exceeded")
+	}
+	for _, lane := range []relay.Lane{relay.Control, relay.Replication, relay.Command} {
+		if !budget.acquireLane(1, lane) {
+			t.Fatalf("subscriptions consumed %s capacity", lane)
+		}
+	}
+	for range maxAccountStreams {
+		budget.releaseLane(1, relay.Subscription)
+	}
+	if !budget.acquireLane(1, relay.Subscription) {
+		t.Fatal("subscription reservation was not released")
+	}
+}
+
+func TestRelaySessionJoinsRejectStaleProcessesAndPreserveReplacements(t *testing.T) {
+	t.Parallel()
 	hub := NewHub(nil, Config{})
-	link := &daemonLink{
-		id: "isolated-test-daemon", send: make(chan *gatewayv1.DaemonLinkFrame, 8),
-		control: make(chan *gatewayv1.DaemonLinkFrame, 32),
-		done:    make(chan struct{}), streams: map[uint64]*relayFrameQueue{},
+	link := func(lane relay.Lane, session string) *daemonLink {
+		b := relay.NewBudget(relay.BufferedBytes, nil)
+		l := &daemonLink{id: "daemon", lane: lane, sessionID: session, budget: b, outbound: relay.NewQueue(b), done: make(chan struct{}), tunnels: map[uint64]*tunnel{}}
+		l.markSeen(time.Now())
+		t.Cleanup(l.close)
+		return l
 	}
-	link.markSeen(time.Now())
-	hub.register(link)
-	t.Cleanup(func() { hub.unregister(link) })
-	return hub, link
+	a := link(relay.Control, "session-a")
+	if err := hub.register(a); err != nil {
+		t.Fatal(err)
+	}
+	auxiliary := link(relay.Subscription, "session-a")
+	if err := hub.register(auxiliary); err != nil {
+		t.Fatal(err)
+	}
+	if err := hub.register(link(relay.Command, "unrelated-session")); status.Code(err) != codes.FailedPrecondition {
+		t.Fatal("unrelated process joined daemon lanes", err)
+	}
+	b := link(relay.Control, "session-b")
+	if err := hub.register(b); err != nil {
+		t.Fatal(err)
+	}
+	if a.isAlive(time.Now()) || auxiliary.isAlive(time.Now()) {
+		t.Fatal("replaced process retained a lane")
+	}
+	hub.unregister(a)
+	if !hub.Online("daemon") {
+		t.Fatal("old cleanup removed new control connection")
+	}
+	if err := hub.register(link(relay.Control, "session-a")); status.Code(err) != codes.FailedPrecondition {
+		t.Fatal("stale control resurrected old process", err)
+	}
+	if err := hub.register(link(relay.Subscription, "session-a")); status.Code(err) != codes.FailedPrecondition {
+		t.Fatal("stale subscription joined new process", err)
+	}
+	if err := hub.register(link(relay.Subscription, "session-b")); err != nil {
+		t.Fatal(err)
+	}
+	hub.CloseDaemon("daemon")
+	for _, lane := range hub.RelayLanes("daemon") {
+		if lane.Connected {
+			t.Fatal("revocation left authenticated lane alive")
+		}
+	}
 }

@@ -1,0 +1,90 @@
+[
+  {
+    "paragraph": [
+      "An ",
+      {"link": "https://example.com/docs", "text": ["inline link"]},
+      " and one ",
+      {"link": "https://example.com", "text": ["with a title"]},
+      "."
+    ]
+  },
+  {
+    "paragraph": [
+      "A ",
+      {"link": "https://example.com/a", "text": ["link with ", {"strong": ["bold"]}]},
+      " and ",
+      {"link": "https://example.com/b", "text": ["nested [brackets]"]},
+      "."
+    ]
+  },
+  {
+    "paragraph": [
+      "Autolinks: ",
+      {"link": "https://example.com/auto", "text": ["https://example.com/auto"], "autolink": true},
+      ", ",
+      {"link": "mailto:ops@example.com", "text": ["mailto:ops@example.com"], "autolink": true},
+      " and ",
+      {"link": "mailto:ops@example.com", "text": ["ops@example.com"], "autolink": true},
+      "."
+    ]
+  },
+  {
+    "paragraph": [
+      "Bare addresses: ",
+      {
+        "link": "https://example.com/path?q=1",
+        "text": ["https://example.com/path?q=1"],
+        "autolink": true
+      },
+      ", ",
+      {"link": "http://localhost:8080/health", "text": ["localhost:8080/health"], "autolink": true},
+      " and (",
+      {"link": "https://example.com/x", "text": ["https://example.com/x"], "autolink": true},
+      ")."
+    ]
+  },
+  {
+    "paragraph": [
+      "Bold address: ",
+      {
+        "strong": [
+          {
+            "link": "https://example.com/bold",
+            "text": ["https://example.com/bold"],
+            "autolink": true
+          }
+        ]
+      },
+      " and a sentence ending in ",
+      {"link": "https://example.com/end", "text": ["https://example.com/end"], "autolink": true},
+      "."
+    ]
+  },
+  {
+    "paragraph": [
+      "Workspace links: ",
+      {"link": "README.md", "text": ["README.md"]},
+      ", ",
+      {"link": "src/app.kt#L12", "text": ["line 12"]},
+      " and ",
+      {"link": "file:///work/repo/notes.md", "text": ["a file"]},
+      "."
+    ]
+  },
+  {
+    "paragraph": [
+      {"link": "docs/My File.md", "text": ["Angle destination"]},
+      " and ",
+      {"link": "", "text": ["empty"]},
+      " and [not a link] (missing)."
+    ]
+  },
+  {
+    "paragraph": [
+      "An image: ",
+      {"image": "https://example.com/graph.png", "alt": "Build graph"},
+      " is never fetched."
+    ]
+  },
+  {"paragraph": ["Raw HTML stays text: <b>bold</b> and <img src=\"x.png\">."]}
+]

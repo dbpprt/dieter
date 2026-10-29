@@ -4,140 +4,26 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
-	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/link"
+	"github.com/dbpprt/dieter/internal/platform/buildinfo"
+	"github.com/dbpprt/dieter/internal/security/localauth"
+	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
-
-const (
-	daemonLogLimit   = 10 << 20
-	daemonLogBackups = 3
-)
-
-type rotatingLogWriter struct {
-	mu   sync.Mutex
-	path string
-	file *os.File
-	size int64
-}
-
-func openRotatingLog(path string) (*rotatingLogWriter, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return nil, err
-	}
-	if err := os.Chmod(filepath.Dir(path), 0o700); err != nil {
-		return nil, err
-	}
-	writer := &rotatingLogWriter{path: path}
-	if err := writer.open(); err != nil {
-		return nil, err
-	}
-	return writer, nil
-}
-
-func (w *rotatingLogWriter) open() error {
-	file, err := os.OpenFile(w.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	info, err := file.Stat()
-	if err != nil {
-		_ = file.Close()
-		return err
-	}
-	w.file, w.size = file, info.Size()
-	return nil
-}
-
-func (w *rotatingLogWriter) Write(data []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.size+int64(len(data)) > daemonLogLimit {
-		if err := w.rotate(); err != nil {
-			return 0, err
-		}
-	}
-	written, err := w.file.Write(data)
-	w.size += int64(written)
-	return written, err
-}
-
-func (w *rotatingLogWriter) rotate() error {
-	if err := w.file.Close(); err != nil {
-		return err
-	}
-	for index := daemonLogBackups; index >= 1; index-- {
-		destination := fmt.Sprintf("%s.%d", w.path, index)
-		if index == daemonLogBackups {
-			_ = os.Remove(destination)
-		}
-		source := w.path
-		if index > 1 {
-			source = fmt.Sprintf("%s.%d", w.path, index-1)
-		}
-		if err := os.Rename(source, destination); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-	}
-	w.file, w.size = nil, 0
-	return w.open()
-}
-
-func (w *rotatingLogWriter) Close() error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.file == nil {
-		return nil
-	}
-	return w.file.Close()
-}
-
-func daemonLogger(root string, serviceMode, verbose bool, stderr io.Writer) (*slog.Logger, string, func(), error) {
-	level := slog.LevelInfo
-	if verbose {
-		level = slog.LevelDebug
-	}
-	if !serviceMode {
-		return slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: level})), "", func() {}, nil
-	}
-	path := dieterdaemon.LogPath(root)
-	writer, err := openRotatingLog(path)
-	if err != nil {
-		return nil, "", nil, err
-	}
-	logger := slog.New(slog.NewTextHandler(writer, &slog.HandlerOptions{Level: level}))
-	return logger, path, func() { _ = writer.Close() }, nil
-}
-
-func runStatusHeartbeat(ctx context.Context, writer *dieterdaemon.StatusWriter) {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			_ = writer.Touch()
-		}
-	}
-}
 
 type daemonStatusView struct {
 	Status               string `json:"status"`
@@ -177,24 +63,24 @@ func (c *CLI) daemonStatus(args []string) error {
 	}
 
 	view := daemonStatusView{
-		Status: "stopped", Service: "foreground", Store: c.Store.Root,
-		ListenAddress: "127.0.0.1:4242", LogPath: dieterdaemon.LogPath(c.Store.Root),
-		GatewayState: dieterdaemon.GatewayNotEnrolled,
+		Status: "stopped", Service: "foreground", Store: c.Root,
+		ListenAddress: "127.0.0.1:4242", LogPath: link.LogPath(c.Root),
+		GatewayState: link.GatewayNotEnrolled,
 	}
-	identity, identityErr := dieterdaemon.LoadIdentity(c.Store.Root)
+	identity, identityErr := link.LoadIdentity(c.Root)
 	if identityErr == nil {
 		view.Enrolled = identity.Enrolled()
 		view.DaemonID, view.DaemonName = identity.ID, identity.Name
 		view.GatewayURL = identity.GatewayURL
 		view.CertificateExpiresAt = identity.CertificateExpiresAt
 		if view.Enrolled {
-			view.GatewayState = dieterdaemon.GatewayDisconnected
+			view.GatewayState = link.GatewayDisconnected
 		}
 	} else if !errors.Is(identityErr, os.ErrNotExist) {
 		return identityErr
 	}
 
-	runtimeStatus, runtimeErr := dieterdaemon.LoadRuntimeStatus(c.Store.Root)
+	runtimeStatus, runtimeErr := link.LoadRuntimeStatus(c.Root)
 	if runtimeErr == nil {
 		view.PID, view.Version, view.StartedAt = runtimeStatus.PID, runtimeStatus.Version, runtimeStatus.StartedAt
 		view.ListenAddress = runtimeStatus.ListenAddress
@@ -214,18 +100,18 @@ func (c *CLI) daemonStatus(args []string) error {
 					view.Service = "managed"
 				}
 			}
-			view.ServiceStatus = managedServiceStatus(view.Service)
+			view.ServiceStatus = managedServiceStatus(c.env.Environment, view.Service)
 		}
-	} else if !dieterdaemon.IsRuntimeStatusMissing(runtimeErr) {
+	} else if !link.IsRuntimeStatusMissing(runtimeErr) {
 		return runtimeErr
 	}
-	view.APIHealthy = daemonHealth(view.ListenAddress)
-	view.Running = view.APIHealthy && runtimeErr == nil && dieterdaemon.RuntimeStatusCurrent(runtimeStatus, time.Now().UTC())
+	view.APIHealthy, view.Projects = daemonHealthProjects(c.Root, view.ListenAddress)
+	view.Running = view.APIHealthy && runtimeErr == nil && link.RuntimeStatusCurrent(runtimeStatus, time.Now().UTC())
 	if view.Running {
 		switch {
 		case !view.Enrolled:
 			view.Status = "local-only"
-		case view.GatewayState == dieterdaemon.GatewayConnected:
+		case view.GatewayState == link.GatewayConnected:
 			view.Status = "healthy"
 		default:
 			view.Status = "degraded"
@@ -233,8 +119,6 @@ func (c *CLI) daemonStatus(args []string) error {
 	} else if view.APIHealthy {
 		view.Status = "unmanaged"
 	}
-	projects, _ := c.Store.ListProjects()
-	view.Projects = len(projects)
 	_, nodeErr := exec.LookPath("node")
 	view.NodeReady = nodeErr == nil
 
@@ -276,45 +160,35 @@ func healthLabel(healthy bool) string {
 	return "unreachable"
 }
 
-func daemonHealth(address string) bool {
+func daemonHealth(root, address string) bool {
+	healthy, _ := daemonHealthProjects(root, address)
+	return healthy
+}
+
+// daemonHealthProjects probes the local API and, when it is healthy, counts
+// its active projects. The CLI never reads central storage, so a stopped
+// daemon reports zero projects.
+func daemonHealthProjects(root, address string) (bool, int) {
 	if strings.TrimSpace(address) == "" {
-		return false
+		return false, 0
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 1200*time.Millisecond)
 	defer cancel()
-	connection, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	connection, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithPerRPCCredentials(localauth.FileCredentials{Root: root}))
 	if err != nil {
-		return false
+		return false, 0
 	}
 	defer connection.Close()
-	health, err := dieterv1.NewDieterServiceClient(connection).Health(ctx, &emptypb.Empty{})
-	return err == nil && health.GetStatus() == "ok" && health.GetReleaseVersion() != ""
-}
-
-func homebrewServiceStatus() string {
-	brew, err := exec.LookPath("brew")
+	client := dieterclient.New(connection)
+	health, err := client.Health(ctx, &emptypb.Empty{})
+	if err != nil || health.GetStatus() != "ok" || health.GetReleaseVersion() == "" {
+		return false, 0
+	}
+	state, err := client.GetState(ctx, &dieterv1.GetStateRequest{AllProjects: true})
 	if err != nil {
-		return "unknown"
+		return true, 0
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	raw, err := exec.CommandContext(ctx, brew, "services", "info", "--all", "--json").Output()
-	if err != nil {
-		return "unknown"
-	}
-	var items []struct {
-		Name   string `json:"name"`
-		Status string `json:"status"`
-	}
-	if json.Unmarshal(raw, &items) != nil {
-		return "unknown"
-	}
-	for _, item := range items {
-		if item.Name == "dieter" {
-			return item.Status
-		}
-	}
-	return "not registered"
+	return true, len(state.GetProjects())
 }
 
 func (c *CLI) daemonLogs(args []string) error {
@@ -329,8 +203,8 @@ func (c *CLI) daemonLogs(args []string) error {
 	if set.NArg() != 0 || *lines < 0 {
 		return errors.New(usage)
 	}
-	path := dieterdaemon.LogPath(c.Store.Root)
-	if runtimeStatus, statusErr := dieterdaemon.LoadRuntimeStatus(c.Store.Root); statusErr == nil && runtimeStatus.LogPath != "" {
+	path := link.LogPath(c.Root)
+	if runtimeStatus, statusErr := link.LoadRuntimeStatus(c.Root); statusErr == nil && runtimeStatus.LogPath != "" {
 		path = runtimeStatus.LogPath
 	}
 	return streamLog(c.Out, path, *lines, *follow)
@@ -400,12 +274,17 @@ func (c *CLI) setup(args []string) error {
 	const usage = `Usage: dieter setup [--gateway URL] [--name NAME] [--no-open] [--no-start]
 
 Authorize this machine with GitHub and start the platform-managed daemon service.
-On macOS, setup also guides and verifies Screen Recording and Accessibility
-permissions used by remote desktop. Project registration is separate; use
+On macOS, setup also registers the signed background privacy helper and guides
+Screen Recording, Accessibility, Login Items approval and Input Monitoring.
+Privacy stays off until explicitly enabled. --no-open and --no-start skip privacy
+helper registration; use "dieter machine privacy setup" later on this Mac.
+Project registration is separate; use
 "dieter project open PATH" explicitly after setup.
+The default gateway is https://gateway.getdieter.com; use --gateway for self-hosting.
+Retrying incomplete enrollment updates the gateway while preserving the machine key.
 `
 	set := flags("setup")
-	gatewayURL := set.String("gateway", "https://gateway.getdieter.com", "gateway origin")
+	gatewayURL := set.String("gateway", buildinfo.DefaultGatewayURL, "gateway origin")
 	hostname, _ := os.Hostname()
 	name := set.String("name", hostname, "machine display name")
 	noOpen := set.Bool("no-open", false, "do not open the verification URL or System Settings")
@@ -417,8 +296,11 @@ permissions used by remote desktop. Project registration is separate; use
 	if set.NArg() != 0 {
 		return errors.New("setup does not accept project paths; register a project explicitly with `dieter project open PATH`")
 	}
+	if strings.TrimSpace(c.Machine) != "" {
+		return errors.New("setup is local-only; omit --machine")
+	}
 
-	identity, identityErr := dieterdaemon.LoadIdentity(c.Store.Root)
+	identity, identityErr := link.LoadIdentity(c.Root)
 	if errors.Is(identityErr, os.ErrNotExist) || identityErr == nil && !identity.Enrolled() {
 		enrollArgs := []string{"--gateway", *gatewayURL, "--name", *name}
 		if *noOpen {
@@ -439,8 +321,10 @@ permissions used by remote desktop. Project registration is separate; use
 	fmt.Fprintln(c.Out, "\n2. Daemon service")
 	if *noStart {
 		fmt.Fprintln(c.Out, serviceStartHint())
+	} else if err := setupServicePreflight(c.Root); err != nil {
+		return err
 	} else if runtime.GOOS == "linux" {
-		if err := installAndStartPlatformService(c.Store.Root, c.Out); err != nil {
+		if err := installAndStartPlatformService(c.env.Environment, c.Root, c.Out); err != nil {
 			return err
 		}
 	} else {
@@ -452,14 +336,18 @@ permissions used by remote desktop. Project registration is separate; use
 			fmt.Fprintln(c.Out, "Homebrew installation not detected; run `dieter daemon start` in the foreground.")
 			return nil
 		}
-		if err := waitForDaemon(c.Store.Root, 20*time.Second); err != nil {
+		if err := waitForDaemon(c.Root, 20*time.Second); err != nil {
 			fmt.Fprintln(c.Out, "Homebrew service started, but onboarding is not fully healthy.")
 			fmt.Fprintln(c.Out)
 			_ = c.daemonStatus(nil)
 			return err
 		}
 	}
-	fmt.Fprintln(c.Out, "\n3. Required screen sharing permissions")
+	fmt.Fprintln(c.Out, "\n3. Device trust")
+	if err := c.setupDeviceTrust(20 * time.Second); err != nil {
+		return fmt.Errorf("device trust: %w (run `dieter device status`)", err)
+	}
+	fmt.Fprintln(c.Out, "\n4. Required screen sharing permissions")
 	capabilities, capabilityErr := c.remoteDesktopCapabilities()
 	if capabilityErr != nil {
 		return capabilityErr
@@ -469,9 +357,52 @@ permissions used by remote desktop. Project registration is separate; use
 	} else if err := c.ensureRemoteDesktopPermissions(false, *noOpen); err != nil {
 		return err
 	}
+	if runtime.GOOS == "darwin" {
+		fmt.Fprintln(c.Out, "\n5. Privacy input helper")
+		if err := c.setupPrivacyHelper(*noOpen || *noStart); err != nil {
+			return err
+		}
+	}
 
 	fmt.Fprintln(c.Out)
 	return c.daemonStatus(nil)
+}
+
+func (c *CLI) setupPrivacyHelper(skip bool) error {
+	if skip {
+		fmt.Fprintln(c.Out, "Skipped helper registration; run `dieter machine privacy setup` on this Mac when ready to approve it.")
+		return nil
+	}
+	ctx, cancel := c.commandContext()
+	defer cancel()
+	client, rpcCtx, err := c.rpc(ctx)
+	if err != nil {
+		return err
+	}
+	information, err := client.GetMachineInformation(rpcCtx, &emptypb.Empty{})
+	if err != nil {
+		return err
+	}
+	privacy := information.GetPrivacy()
+	if privacy.GetRequested() {
+		fmt.Fprintln(c.Out, "Privacy is already requested; its helper registration is preserved.")
+		return nil
+	}
+	if privacy.GetSupported() && !privacy.GetHelperSetupRequired() {
+		fmt.Fprintln(c.Out, "Privacy input helper is already available. Privacy remains off.")
+		return nil
+	}
+	response, err := client.PerformMachineOperation(rpcCtx, &dieterv1.MachineOperationRequest{
+		Action: dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_SETUP,
+	})
+	if err != nil {
+		return fmt.Errorf("privacy helper setup: %w", err)
+	}
+	if !response.GetAccepted() {
+		return errors.New("daemon did not accept privacy helper setup")
+	}
+	fmt.Fprintln(c.Out, response.GetMessage())
+	return nil
 }
 
 func (c *CLI) remoteDesktopCapabilities() (*dieterv1.RemoteDesktopCapabilities, error) {
@@ -611,22 +542,42 @@ func restartHomebrewService(output io.Writer) (bool, error) {
 	return true, nil
 }
 
+func setupServicePreflight(root string) error {
+	status, err := link.LoadRuntimeStatus(root)
+	if err == nil && link.RuntimeStatusCurrent(status, time.Now().UTC()) && !status.ServiceManaged && daemonHealth(root, status.ListenAddress) {
+		return fmt.Errorf("foreground Dieter daemon (pid %d) is already running; stop it in its terminal with Ctrl-C, then rerun `dieter setup` so the managed service can load the enrollment", status.PID)
+	}
+	return nil
+}
+
+func setupDaemonReady(status link.RuntimeStatus, identity *link.Identity) bool {
+	return status.ServiceManaged && status.Enrolled && status.DaemonID == identity.ID &&
+		status.GatewayURL == identity.GatewayURL && status.GatewayState == link.GatewayConnected
+}
+
 func waitForDaemon(root string, timeout time.Duration) error {
+	identity, err := link.LoadIdentity(root)
+	if err != nil {
+		return err
+	}
 	deadline := time.Now().Add(timeout)
-	var last dieterdaemon.RuntimeStatus
+	var last link.RuntimeStatus
 	for time.Now().Before(deadline) {
-		status, err := dieterdaemon.LoadRuntimeStatus(root)
+		status, err := link.LoadRuntimeStatus(root)
 		if err == nil {
 			last = status
 		}
-		if err == nil && dieterdaemon.RuntimeStatusCurrent(status, time.Now().UTC()) && daemonHealth(status.ListenAddress) {
-			if !status.Enrolled || status.GatewayState == dieterdaemon.GatewayConnected {
+		if err == nil && link.RuntimeStatusCurrent(status, time.Now().UTC()) && daemonHealth(root, status.ListenAddress) {
+			if setupDaemonReady(status, identity) {
 				return nil
 			}
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
-	if last.GatewayState != "" && daemonHealth(last.ListenAddress) {
+	if last.GatewayState != "" && daemonHealth(root, last.ListenAddress) {
+		if !last.ServiceManaged || !last.Enrolled || last.DaemonID != identity.ID || last.GatewayURL != identity.GatewayURL {
+			return errors.New("daemon local API is healthy, but the managed service has not loaded the expected enrollment; stop any foreground daemon and rerun `dieter setup`")
+		}
 		if last.GatewayLastError != "" {
 			return fmt.Errorf("daemon local API is healthy, but the gateway is %s: %s", last.GatewayState, last.GatewayLastError)
 		}

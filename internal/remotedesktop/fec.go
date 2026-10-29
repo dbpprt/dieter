@@ -130,7 +130,10 @@ func (c *fecController) next(now time.Time, current int, h transportHealth) int 
 		c.cleanAt = time.Time{}
 		return 0
 	}
-	if h.packets < 3 || h.span < 20*time.Millisecond {
+	// Packet loss counts remain useful even in a single-packet feedback
+	// report, which cannot provide a rate/span estimate. The accumulated
+	// thirty-packet and one-second gates below provide the sample floor.
+	if h.packets < 1 {
 		return current
 	}
 	if c.window.IsZero() {
@@ -138,16 +141,16 @@ func (c *fecController) next(now time.Time, current int, h transportHealth) int 
 	}
 	c.packets += h.packets
 	c.lost += h.loss * float64(h.packets)
-	if now.Sub(c.window) < time.Second {
+	// Sparse, highly compressed frames still need repair. Keep fresh samples
+	// until both the minimum observation time and packet count are met; resetting
+	// every second would discard loss forever below thirty packets per second.
+	if now.Sub(c.window) < time.Second || c.packets < 30 {
 		return current
 	}
 	packets, lost := c.packets, c.lost
 	c.window = now
 	c.packets = 0
 	c.lost = 0
-	if packets < 30 {
-		return current
-	}
 	loss := lost / float64(packets)
 	if loss > .08 {
 		c.cleanAt = time.Time{}

@@ -22,22 +22,48 @@ import (
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/harness"
+	"github.com/dbpprt/dieter/internal/transport/relay"
 	"google.golang.org/protobuf/proto"
 )
 
 const (
-	maxAccounts        = 8
-	maxProbeOutput     = 64 << 10
-	probeCacheDuration = time.Minute
+	maxAccounts    = 8
+	maxProbeOutput = 64 << 10
 )
 
-type Manager struct {
-	runner runtimeDirectoryProvider
-	logger *slog.Logger
-	now    func() time.Time
+// Accounts locates provider credential profiles on the daemon host. The
+// daemon fills it from its environment configuration.
+type Accounts struct {
+	// CodexHome is the active Codex profile (CODEX_HOME); empty uses ~/.codex.
+	CodexHome string
+	// ClaudeConfigDir is the active Claude profile (CLAUDE_CONFIG_DIR); empty
+	// keeps Claude Code's default profile.
+	ClaudeConfigDir string
+	// CodexAccountHomes and ClaudeAccountHomes list additional profiles as
+	// path lists (DIETER_CODEX_ACCOUNT_HOMES, DIETER_CLAUDE_ACCOUNT_HOMES).
+	CodexAccountHomes, ClaudeAccountHomes string
+	// Environment is inherited by quota probes in os.Environ form; nil
+	// inherits the process environment.
+	Environment []string
+}
 
-	mu      sync.Mutex
-	handles map[string]accountHandle
+type Manager struct {
+	accounts Accounts
+	runner   runtimeDirectoryProvider
+	logger   *slog.Logger
+	now      func() time.Time
+
+	mu           sync.Mutex
+	handles      map[string]accountHandle
+	claudeProbes map[string]*cachedProbe
+	readProbe    func(context.Context, gatewayv1.ProviderQuotaProvider, string) (probeResult, error)
+}
+
+type cachedProbe struct {
+	mu     sync.Mutex
+	result probeResult
+	err    error
+	nextAt time.Time
 }
 
 type runtimeDirectoryProvider interface {
@@ -90,6 +116,7 @@ type probeResetCredits struct {
 }
 
 type probeResult struct {
+	probedAt             time.Time
 	StableAccountID      string               `json:"stableAccountID"`
 	DisplayEmail         string               `json:"displayEmail"`
 	AccountKind          string               `json:"accountKind"`
@@ -103,21 +130,25 @@ type probeResult struct {
 	ResetOutcome         string               `json:"resetOutcome"`
 }
 
-func New(root string, logger *slog.Logger) *Manager {
-	return NewWithRuntime(root, logger, nil)
+func New(root string, logger *slog.Logger, accounts Accounts) *Manager {
+	return NewWithRuntime(root, logger, nil, accounts)
 }
 
 // NewWithRuntime lets daemon quota discovery share the exact runtime manager
 // used by agent turns. The filesystem installer remains cross-process locked;
 // sharing also avoids redundant same-process preparation during startup.
-func NewWithRuntime(root string, logger *slog.Logger, runtimeProvider runtimeDirectoryProvider) *Manager {
+func NewWithRuntime(root string, logger *slog.Logger, runtimeProvider runtimeDirectoryProvider, accounts Accounts) *Manager {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	if runtimeProvider == nil {
-		runtimeProvider = harness.NewSubprocessRunner(root)
+		runtimeProvider = harness.NewSubprocessRunner(root, harness.Environment{Variables: accounts.Environment})
 	}
-	return &Manager{runner: runtimeProvider, logger: logger, now: time.Now, handles: map[string]accountHandle{}}
+	m := &Manager{accounts: accounts, runner: runtimeProvider, logger: logger, now: time.Now, handles: map[string]accountHandle{}, claudeProbes: map[string]*cachedProbe{}}
+	m.readProbe = func(ctx context.Context, provider gatewayv1.ProviderQuotaProvider, profileRoot string) (probeResult, error) {
+		return m.runProbe(ctx, provider, profileRoot, "read", "", "")
+	}
+	return m
 }
 
 // ActiveAccountKey returns the owner-scoped account identity used by new
@@ -130,10 +161,10 @@ func (m *Manager) ActiveAccountKey(provider string) string {
 	switch provider {
 	case "codex", "openai-codex":
 		quotaProvider = gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX
-		profileRoot, err = activeCodexProfile()
+		profileRoot, err = m.accounts.activeCodexProfile()
 	case "claude-code", "anthropic-claude":
 		quotaProvider = gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE
-		profileRoot, err = activeClaudeProfile()
+		profileRoot, err = m.accounts.activeClaudeProfile()
 	default:
 		return ""
 	}
@@ -154,15 +185,28 @@ func (m *Manager) Discover(ctx context.Context, correlationKey []byte) (*gateway
 	if len(correlationKey) != 32 {
 		return nil, errors.New("provider account correlation key is invalid")
 	}
-	codexProfiles, err := configuredCodexProfiles()
+	codexProfiles, err := m.accounts.codexProfiles()
 	if err != nil {
 		return nil, err
 	}
-	claudeProfiles, err := configuredClaudeProfiles()
+	claudeProfiles, err := m.accounts.claudeProfiles()
 	if err != nil {
 		return nil, err
 	}
 	m.mu.Lock()
+	// Bound the cache to the currently configured profiles, including the default.
+	for root := range m.claudeProbes {
+		present := false
+		for _, configured := range claudeProfiles {
+			if root == configured {
+				present = true
+				break
+			}
+		}
+		if !present {
+			delete(m.claudeProbes, root)
+		}
+	}
 	previousHandles := make(map[string]accountHandle, len(m.handles))
 	for key, handle := range m.handles {
 		previousHandles[key] = handle
@@ -241,7 +285,7 @@ func (m *Manager) Discover(ctx context.Context, correlationKey []byte) (*gateway
 		}
 		nextHandles[accountKey] = accountHandle{
 			provider: discovered.provider, profileRoot: profileRoot, stableAccountID: result.StableAccountID,
-			lastProbe: result, probedAt: m.now().UTC(),
+			lastProbe: result, probedAt: result.probedAt,
 		}
 		presence.Accounts = append(presence.Accounts, &gatewayv1.ProviderAccountPresence{
 			Provider:   discovered.provider,
@@ -276,11 +320,15 @@ func (m *Manager) Refresh(ctx context.Context, correlationKey []byte, request *g
 	}
 	result := handle.lastProbe
 	probed := false
-	if handle.probedAt.IsZero() || m.now().Sub(handle.probedAt) > probeCacheDuration {
+	if handle.probedAt.IsZero() || m.now().Sub(handle.probedAt) >= relay.QuotaRefreshInterval(handle.provider) {
 		var err error
 		result, err = m.probe(ctx, handle.provider, handle.profileRoot)
 		if err != nil {
-			return &gatewayv1.ProviderQuotaRefreshResult{ErrorCode: "temporarily_unavailable"}, nil
+			failure := &gatewayv1.ProviderQuotaRefreshResult{ErrorCode: "temporarily_unavailable"}
+			if handle.provider == gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE {
+				failure.RetryAfterSeconds = uint32(relay.QuotaFailureBackoff(handle.provider, 1) / time.Second)
+			}
+			return failure, nil
 		}
 		probed = true
 	}
@@ -292,7 +340,7 @@ func (m *Manager) Refresh(ctx context.Context, correlationKey []byte, request *g
 		m.mu.Lock()
 		if current, ok := m.handles[request.GetAccountKey()]; ok && current.stableAccountID == handle.stableAccountID {
 			current.lastProbe = result
-			current.probedAt = m.now().UTC()
+			current.probedAt = result.probedAt
 			m.handles[request.GetAccountKey()] = current
 		}
 		m.mu.Unlock()
@@ -351,25 +399,25 @@ func correlateAccount(key []byte, provider gatewayv1.ProviderQuotaProvider, stab
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
-func configuredCodexProfiles() ([]string, error) {
-	active, err := activeCodexProfile()
+func (a Accounts) codexProfiles() ([]string, error) {
+	active, err := a.activeCodexProfile()
 	if err != nil {
 		return nil, err
 	}
-	return configuredProfiles(active, "DIETER_CODEX_ACCOUNT_HOMES")
+	return configuredProfiles(active, a.CodexAccountHomes)
 }
 
-func configuredClaudeProfiles() ([]string, error) {
-	active, err := activeClaudeProfile()
+func (a Accounts) claudeProfiles() ([]string, error) {
+	active, err := a.activeClaudeProfile()
 	if err != nil {
 		return nil, err
 	}
-	return configuredProfiles(active, "DIETER_CLAUDE_ACCOUNT_HOMES")
+	return configuredProfiles(active, a.ClaudeAccountHomes)
 }
 
-func configuredProfiles(active, environmentName string) ([]string, error) {
+func configuredProfiles(active, additional string) ([]string, error) {
 	candidates := []string{active}
-	if configured := strings.TrimSpace(os.Getenv(environmentName)); configured != "" {
+	if configured := strings.TrimSpace(additional); configured != "" {
 		for _, value := range filepath.SplitList(configured) {
 			if value = strings.TrimSpace(value); value != "" {
 				candidates = append(candidates, value)
@@ -406,8 +454,8 @@ func configuredProfiles(active, environmentName string) ([]string, error) {
 	return profiles, nil
 }
 
-func activeCodexProfile() (string, error) {
-	value := strings.TrimSpace(os.Getenv("CODEX_HOME"))
+func (a Accounts) activeCodexProfile() (string, error) {
+	value := strings.TrimSpace(a.CodexHome)
 	if value == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -418,8 +466,8 @@ func activeCodexProfile() (string, error) {
 	return filepath.Abs(value)
 }
 
-func activeClaudeProfile() (string, error) {
-	value := strings.TrimSpace(os.Getenv("CLAUDE_CONFIG_DIR"))
+func (a Accounts) activeClaudeProfile() (string, error) {
+	value := strings.TrimSpace(a.ClaudeConfigDir)
 	if value == "" {
 		// An unset CLAUDE_CONFIG_DIR is semantically different from explicitly
 		// setting it to ~/.claude: Claude Code resolves its global state beside
@@ -450,7 +498,43 @@ func (w *cappedBuffer) Write(value []byte) (int, error) {
 }
 
 func (m *Manager) probe(ctx context.Context, provider gatewayv1.ProviderQuotaProvider, profileRoot string) (probeResult, error) {
-	return m.runProbe(ctx, provider, profileRoot, "read", "", "")
+	if provider != gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE {
+		result, err := m.readProbe(ctx, provider, profileRoot)
+		result.probedAt = m.now().UTC()
+		return result, err
+	}
+	// Discovery, automatic refresh, and manual refresh share this cooldown.
+	// Serializing each profile also coalesces overlapping provider requests.
+	m.mu.Lock()
+	cached := m.claudeProbes[profileRoot]
+	if cached == nil {
+		if len(m.claudeProbes) >= maxAccounts {
+			m.mu.Unlock()
+			return probeResult{}, errors.New("Claude quota profile limit exceeded")
+		}
+		cached = &cachedProbe{}
+		m.claudeProbes[profileRoot] = cached
+	}
+	m.mu.Unlock()
+	cached.mu.Lock()
+	defer cached.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return probeResult{}, err
+	}
+	if m.now().Before(cached.nextAt) {
+		return cached.result, cached.err
+	}
+	result, err := m.readProbe(ctx, provider, profileRoot)
+	if ctx.Err() != nil {
+		return probeResult{}, ctx.Err()
+	}
+	result.probedAt = m.now().UTC()
+	interval := relay.QuotaRefreshInterval(provider)
+	if err != nil {
+		interval = relay.QuotaFailureBackoff(provider, 1)
+	}
+	cached.result, cached.err, cached.nextAt = result, err, result.probedAt.Add(interval)
+	return result, err
 }
 
 func (m *Manager) runProbe(ctx context.Context, provider gatewayv1.ProviderQuotaProvider, profileRoot, action, idempotencyKey, expectedAccountID string) (probeResult, error) {
@@ -474,7 +558,11 @@ func (m *Manager) runProbe(ctx context.Context, provider gatewayv1.ProviderQuota
 	command := exec.CommandContext(ctx, "node", filepath.Join(runtimeDirectory, script))
 	command.Dir = runtimeDirectory
 	command.WaitDelay = 2 * time.Second
-	command.Env = environmentWithProfile(os.Environ(), environmentName, profileRoot)
+	environment := m.accounts.Environment
+	if environment == nil {
+		environment = os.Environ()
+	}
+	command.Env = environmentWithProfile(environment, environmentName, profileRoot)
 	command.Env = append(command.Env, "DIETER_QUOTA_ACTION="+action)
 	if idempotencyKey != "" {
 		command.Env = append(command.Env, "DIETER_QUOTA_IDEMPOTENCY_KEY="+idempotencyKey)

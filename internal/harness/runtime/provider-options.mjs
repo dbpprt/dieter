@@ -1,20 +1,4 @@
-export const ompACPModelMapping = Object.freeze({
-  type: 'session-config-option',
-  path: 'model',
-});
-
-// OMP's CLI accepts every selector reported by `omp models`, while its ACP
-// model config option exposes only the user's small model-cycling list. Launch
-// new bridges with the selected CLI model so Dieter's full discovered catalog
-// remains executable. Retain the previous config-option implementation solely
-// to restore lifecycle state created before this change.
-export const ompImplementations = Object.freeze([
-  Object.freeze({ packageVersion: '18.2.11', modelStrategy: 'launch-argument' }),
-  Object.freeze({ packageVersion: '18.2.9', modelStrategy: 'launch-argument' }),
-  Object.freeze({ packageVersion: '18.1.10', modelStrategy: 'session-config-option' }),
-]);
-export const ompPackageVersions = Object.freeze(ompImplementations.map(item => item.packageVersion));
-export const ompPackageVersion = ompImplementations[0].packageVersion;
+import { createHash } from "node:crypto";
 
 export const ompStreamTimeoutSeconds = 30 * 60;
 
@@ -27,26 +11,75 @@ export function ompRuntimeConfig() {
 }
 
 export function codexConfig(request) {
-  const fastMode = request.options?.fast_mode === 'true';
-  return {
-    service_tier: fastMode ? 'fast' : 'default',
+  const fastMode = request.options?.fast_mode === "true";
+  const config = {
+    service_tier: fastMode ? "fast" : "default",
     features: { fast_mode: true },
+  };
+  const hookCommand =
+    typeof request.channelHookCommand === "string" ? request.channelHookCommand.trim() : "";
+  if (hookCommand) {
+    config.features.hooks = true;
+    config.hooks = codexChannelHooks(hookCommand);
+  }
+  return config;
+}
+
+// Agent channels claim files before Codex writes them. The PreToolUse group is
+// marked trusted with the hash Codex computes for session-flag hooks (the
+// scheme @ai-sdk/harness-codex uses for its own apply_patch hook).
+export const CODEX_CHANNEL_HOOK_MATCHER = "^(apply_patch|Bash|Edit|Write)$";
+
+export function codexChannelHooks(command) {
+  const handler = { type: "command", command, timeout: 10, async: false };
+  const hash = `sha256:${createHash("sha256")
+    .update(
+      JSON.stringify(
+        canonicalize({
+          event_name: "pre_tool_use",
+          matcher: CODEX_CHANNEL_HOOK_MATCHER,
+          hooks: [handler],
+        }),
+      ),
+    )
+    .digest("hex")}`;
+  return {
+    PreToolUse: [{ matcher: CODEX_CHANNEL_HOOK_MATCHER, hooks: [handler] }],
+    state: {
+      "/<session-flags>/config.toml:pre_tool_use:0:0": { enabled: true, trusted_hash: hash },
+    },
   };
 }
 
-export function ompACPArgs(request, hookPath, configPath, modelStrategy = 'session-config-option') {
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value != null && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, canonicalize(item)]),
+    );
+  return value;
+}
+
+// OMP's CLI accepts every selector reported by `omp models`, while its ACP
+// model config option exposes only the user's small model-cycling list. Launch
+// bridges with the selected CLI model so Dieter's full discovered catalog
+// remains executable.
+export function ompACPArgs(request, hookPath, configPath) {
   return [
-    'acp',
-    ...(configPath ? ['--config', configPath] : []),
-    '--hook', hookPath,
+    "acp",
+    ...(configPath ? ["--config", configPath] : []),
+    "--hook",
+    hookPath,
     ...(request.effort ? [`--thinking=${request.effort}`] : []),
-    ...(request.options?.advisor === 'true' ? ['--advisor'] : []),
-    ...(modelStrategy === 'launch-argument' && request.model ? [`--model=${request.model}`] : []),
+    ...(request.options?.advisor === "true" ? ["--advisor"] : []),
+    ...(request.model ? [`--model=${request.model}`] : []),
   ];
 }
 
-export const dshPackageVersion = '0.1.2-rc.1';
+export const dshPackageVersion = "0.2.1-rc.2";
 
 export function dshACPArgs(...extra) {
-  return ['--profile', 'acp', ...extra];
+  return ["--profile", "acp", ...extra];
 }

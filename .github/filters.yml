@@ -1,0 +1,71 @@
+# Affected-check selection, shared by CI (dorny/paths-filter in ci.yml) and
+# `just check-changed` (fastlane/helpers/changes.rb). Keys are components;
+# values are path globs (`dir/**` = everything below dir).
+go: &go
+  - "cmd/**"
+  - "internal/**"
+  - "tools/**"
+  - "api/**"
+  - "config/**"
+  - "go.mod"
+  - "go.sum"
+  - ".golangci.yml"
+  - "justfile"
+go-e2e: *go
+harness-runtime:
+  - "internal/harness/runtime/**"
+kotlin: &kotlin
+  - "apps/apple/mac/MarkdownPreview/**"
+  - "apps/kotlin/**"
+  - "api/proto/**"
+  - "tests/fixtures/**"
+apple:
+  - "apps/apple/**"
+  - "api/**"
+  - "native/macos/**"
+  - "third_party/**"
+  - "apps/kotlin/core/**"
+  - "apps/kotlin/ui/**"
+  - "apps/kotlin/gradle/**"
+  - "apps/kotlin/build-logic/**"
+  - "apps/kotlin/*.kts"
+  - "tests/maestro/mac/**"
+ios:
+  - "apps/apple/mac/MarkdownPreview/**"
+  - "apps/apple/ios/**"
+  - "api/**"
+  - "apps/apple/DieterKit/**"
+  - "third_party/**"
+  - "apps/kotlin/core/**"
+  - "apps/kotlin/ui/**"
+  - "apps/kotlin/gradle/**"
+  - "apps/kotlin/build-logic/**"
+  - "apps/kotlin/*.kts"
+  - "tests/maestro/mobile/**"
+android:
+  - "apps/apple/mac/MarkdownPreview/**"
+  - "apps/kotlin/android/**"
+  - "apps/kotlin/ui/**"
+  - "apps/kotlin/core/**"
+  - "apps/kotlin/gradle/**"
+  - "apps/kotlin/build-logic/**"
+  - "apps/kotlin/*.kts"
+  - "apps/kotlin/gradle.properties"
+  - "tests/maestro/mobile/**"
+site:
+  - "site/**"
+  - "docs/**"
+  - "assets/brand/**"
+  - "**/*.md"
+deploy-gateway:
+  - "deploy/gateway/**"
+  - "tools/fixtures/turn-probe/**"
+workflows:
+  - ".github/**"
+maestro:
+  - "tests/maestro/**"
+fastlane:
+  - "fastlane/**"
+  - "Gemfile"
+  - "Gemfile.lock"
+  - ".ruby-version"

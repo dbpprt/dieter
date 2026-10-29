@@ -1,0 +1,11 @@
+{
+  "$comment": "Distribution identity of this Dieter build. Forks edit this file, run `just generate`, and commit the regenerated files. See docs/building.md#identity.",
+  "product": "Dieter",
+  "bundle_prefix": "com.getdieter",
+  "apple_team_id": "FNGU8JFNPL",
+  "repository": "dbpprt/dieter",
+  "default_gateway": "gateway.getdieter.com",
+  "homebrew_tap": "dbpprt/homebrew-tap",
+  "container_registry": "ghcr.io/dbpprt",
+  "testflight_groups": ["Dieter Internal"]
+}

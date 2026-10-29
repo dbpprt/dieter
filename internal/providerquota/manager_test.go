@@ -2,8 +2,11 @@ package providerquota
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -12,6 +15,7 @@ import (
 )
 
 func TestConfiguredCodexProfilesSupportsSeveralExplicitAccounts(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	first, second := filepath.Join(root, "first"), filepath.Join(root, "second")
 	if err := os.Mkdir(first, 0o700); err != nil {
@@ -20,9 +24,8 @@ func TestConfiguredCodexProfilesSupportsSeveralExplicitAccounts(t *testing.T) {
 	if err := os.Mkdir(second, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("DIETER_CODEX_ACCOUNT_HOMES", first+string(os.PathListSeparator)+second+string(os.PathListSeparator)+first)
-	t.Setenv("CODEX_HOME", first)
-	profiles, err := configuredCodexProfiles()
+	accounts := Accounts{CodexHome: first, CodexAccountHomes: first + string(os.PathListSeparator) + second + string(os.PathListSeparator) + first}
+	profiles, err := accounts.codexProfiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,10 +34,136 @@ func TestConfiguredCodexProfilesSupportsSeveralExplicitAccounts(t *testing.T) {
 	}
 }
 
+func TestClaudeDiscoveryAndRefreshShareFiveMinutePollingAndTenMinuteRecovery(t *testing.T) {
+	t.Parallel()
+	accounts := Accounts{CodexHome: t.TempDir()}
+	provider := gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE
+	key := make([]byte, 32)
+	start := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	now := start
+	manager := New(t.TempDir(), nil, accounts)
+	manager.now = func() time.Time { return now }
+	var calls int
+	fail := false
+	manager.readProbe = func(_ context.Context, got gatewayv1.ProviderQuotaProvider, _ string) (probeResult, error) {
+		if got != provider {
+			return probeResult{}, nil
+		}
+		calls++
+		if fail {
+			return probeResult{}, errors.New("provider throttled")
+		}
+		return probeResult{StableAccountID: "claude-account", Availability: "available"}, nil
+	}
+	discover := func() {
+		t.Helper()
+		if _, err := manager.Discover(context.Background(), key); err != nil {
+			t.Fatal(err)
+		}
+	}
+	discover()
+	accountKey := manager.ActiveAccountKey("claude-code")
+	if accountKey == "" {
+		t.Fatal("successful discovery must associate the active profile")
+	}
+	refresh := func() *gatewayv1.ProviderQuotaRefreshResult {
+		t.Helper()
+		result, err := manager.Refresh(context.Background(), key, &gatewayv1.ProviderQuotaRefreshRequest{Provider: provider, AccountKey: accountKey})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	for _, elapsed := range []time.Duration{time.Minute, 4*time.Minute + 59*time.Second} {
+		now = start.Add(elapsed)
+		discover()
+		if result := refresh(); result.GetSnapshot() == nil {
+			t.Fatalf("cached refresh = %v", result)
+		}
+		if got := manager.handles[accountKey].probedAt; !got.Equal(start) {
+			t.Fatalf("cached discovery moved probe time to %s", got)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("made %d provider calls inside the five-minute interval", calls)
+	}
+	now = start.Add(5 * time.Minute)
+	fail = true
+	discover()
+	if result := refresh(); result.GetErrorCode() != "temporarily_unavailable" || result.GetRetryAfterSeconds() != 600 {
+		t.Fatalf("failed refresh = %v", result)
+	}
+	if calls != 2 {
+		t.Fatalf("failed discovery and refresh made %d calls, want 2 total", calls)
+	}
+	if manager.ActiveAccountKey("claude-code") != accountKey {
+		t.Fatal("temporary failure lost the known account association")
+	}
+	now = start.Add(15*time.Minute - time.Second)
+	discover()
+	refresh()
+	if calls != 2 {
+		t.Fatalf("retried before the ten-minute cooldown: %d calls", calls)
+	}
+	now = start.Add(15 * time.Minute)
+	fail = false
+	discover()
+	if result := refresh(); result.GetSnapshot() == nil {
+		t.Fatalf("recovered refresh = %v", result)
+	}
+	if calls != 3 {
+		t.Fatalf("recovery made %d calls, want 3 total", calls)
+	}
+}
+
+func TestClaudeColdDiscoveryFailureWaitsTenMinutesAndConcurrentReadsCoalesce(t *testing.T) {
+	t.Parallel()
+	manager := New(t.TempDir(), nil, Accounts{CodexHome: t.TempDir()})
+	provider := gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE
+	start := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	now := start
+	manager.now = func() time.Time { return now }
+	var calls atomic.Int32
+	fail := true
+	manager.readProbe = func(context.Context, gatewayv1.ProviderQuotaProvider, string) (probeResult, error) {
+		calls.Add(1)
+		if fail {
+			return probeResult{}, errors.New("provider throttled")
+		}
+		return probeResult{StableAccountID: "claude-account", Availability: "available"}, nil
+	}
+	if _, err := manager.probe(context.Background(), provider, ""); err == nil {
+		t.Fatal("expected cold probe failure")
+	}
+	now = start.Add(10*time.Minute - time.Second)
+	if _, err := manager.probe(context.Background(), provider, ""); err == nil {
+		t.Fatal("cooldown must retain the failed state")
+	}
+	if calls.Load() != 1 {
+		t.Fatal("cold discovery retried during cooldown")
+	}
+	now = start.Add(10 * time.Minute)
+	fail = false
+	var group sync.WaitGroup
+	for range 20 {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			if _, err := manager.probe(context.Background(), provider, ""); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	group.Wait()
+	if calls.Load() != 2 {
+		t.Fatalf("overlapping reads made %d provider calls, want 2 total", calls.Load())
+	}
+}
+
 func TestActiveAccountKeyUsesTheHarnessCodexProfile(t *testing.T) {
+	t.Parallel()
 	active, other := t.TempDir(), t.TempDir()
-	t.Setenv("CODEX_HOME", active)
-	manager := New(t.TempDir(), nil)
+	manager := New(t.TempDir(), nil, Accounts{CodexHome: active})
 	manager.handles["active-account-key"] = accountHandle{
 		provider: gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX, profileRoot: active,
 	}
@@ -54,10 +183,9 @@ func TestActiveAccountKeyUsesTheHarnessCodexProfile(t *testing.T) {
 }
 
 func TestConfiguredClaudeProfilesPreservesTheUnsetDefaultProfile(t *testing.T) {
-	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	t.Parallel()
 	other := t.TempDir()
-	t.Setenv("DIETER_CLAUDE_ACCOUNT_HOMES", other)
-	profiles, err := configuredClaudeProfiles()
+	profiles, err := Accounts{ClaudeAccountHomes: other}.claudeProfiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,6 +195,7 @@ func TestConfiguredClaudeProfilesPreservesTheUnsetDefaultProfile(t *testing.T) {
 }
 
 func TestCorrelateAccountIsStableProviderScopedAndOpaque(t *testing.T) {
+	t.Parallel()
 	key := make([]byte, 32)
 	for index := range key {
 		key[index] = byte(index + 1)
@@ -83,6 +212,7 @@ func TestCorrelateAccountIsStableProviderScopedAndOpaque(t *testing.T) {
 }
 
 func TestNormalizeSnapshotPreservesMultipleWindows(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
 	result := probeResult{
 		StableAccountID: "account-1", DisplayEmail: "person@example.com", AccountKind: "subscription", Plan: "plus", Availability: "available",
@@ -110,6 +240,7 @@ func TestNormalizeSnapshotPreservesMultipleWindows(t *testing.T) {
 }
 
 func TestResetIdempotencyKeyValidation(t *testing.T) {
+	t.Parallel()
 	if !validIdempotencyKey("123e4567-e89b-42d3-a456-426614174000") {
 		t.Fatal("valid reset UUID was rejected")
 	}
@@ -121,6 +252,7 @@ func TestResetIdempotencyKeyValidation(t *testing.T) {
 }
 
 func TestRefreshDoesNotExtendDiscoveryCacheWithoutAProbe(t *testing.T) {
+	t.Parallel()
 	key := make([]byte, 32)
 	for index := range key {
 		key[index] = byte(index + 1)
@@ -131,7 +263,7 @@ func TestRefreshDoesNotExtendDiscoveryCacheWithoutAProbe(t *testing.T) {
 		gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX,
 		"account-1",
 	)
-	manager := New(t.TempDir(), nil)
+	manager := New(t.TempDir(), nil, Accounts{CodexHome: t.TempDir()})
 	manager.now = func() time.Time { return discoveredAt.Add(30 * time.Second) }
 	manager.handles[accountKey] = accountHandle{
 		provider:        gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX,

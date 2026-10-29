@@ -1,0 +1,15 @@
+{
+  "profiles": {
+    "android-emulator": {
+      "renderer": "auto",
+      "visible": false,
+      "boot_timeout": 180
+    },
+    "android-device": {
+      "serial": null
+    },
+    "ios-iphone": {
+      "runtime": null
+    }
+  }
+}

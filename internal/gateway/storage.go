@@ -13,8 +13,12 @@ import (
 	"sync"
 	"time"
 
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
 )
+
+// Pending enrollments are small rows that expire after ten minutes; each client
+// network is also limited to a few (maxActiveEnrollmentsPerClient).
+const maxPendingEnrollments = 10000
 
 type Store struct {
 	Root string
@@ -30,17 +34,6 @@ type Session struct {
 	ExpiresAt time.Time `json:"expiresAt"`
 }
 
-type OAuthPending struct {
-	StateHash       string    `json:"stateHash"`
-	Verifier        string    `json:"verifier"`
-	NativeRedirect  string    `json:"nativeRedirect,omitempty"`
-	NativeChallenge string    `json:"nativeChallenge,omitempty"`
-	EnrollmentID    string    `json:"enrollmentId,omitempty"`
-	EnrollmentCode  string    `json:"enrollmentCode,omitempty"`
-	CreatedAt       time.Time `json:"createdAt"`
-	ExpiresAt       time.Time `json:"expiresAt"`
-}
-
 type NativeCode struct {
 	CodeHash  string    `json:"codeHash"`
 	Challenge string    `json:"challenge"`
@@ -50,10 +43,21 @@ type NativeCode struct {
 }
 
 type AuthState struct {
-	Sessions  []Session            `json:"sessions,omitempty"`
-	Pending   []OAuthPending       `json:"pending,omitempty"`
-	Codes     []NativeCode         `json:"codes,omitempty"`
-	Approvals []EnrollmentApproval `json:"approvals,omitempty"`
+	Sessions  []Session              `json:"sessions,omitempty"`
+	Codes     []NativeCode           `json:"codes,omitempty"`
+	Approvals []EnrollmentApproval   `json:"approvals,omitempty"`
+	SignIns   []NativeSignInApproval `json:"signIns,omitempty"`
+}
+
+// NativeSignInApproval waits for the user to confirm an app sign-in after
+// GitHub has identified them. Only allowed accounts reach this state.
+type NativeSignInApproval struct {
+	TokenHash string    `json:"tokenHash"`
+	Redirect  string    `json:"redirect"`
+	Challenge string    `json:"challenge"`
+	GitHubID  int64     `json:"githubId"`
+	Login     string    `json:"login"`
+	ExpiresAt time.Time `json:"expiresAt"`
 }
 
 type EnrollmentApproval struct {
@@ -95,8 +99,9 @@ type DaemonRecord struct {
 	RemoteDesktopJSON []byte
 }
 
-func DefaultRoot() string {
-	if value := strings.TrimSpace(os.Getenv("DIETER_GATEWAY_HOME")); value != "" {
+// DefaultRoot is DIETER_GATEWAY_HOME from environment, or ~/.dieter-gateway.
+func DefaultRoot(environment map[string]string) string {
+	if value := strings.TrimSpace(environment["DIETER_GATEWAY_HOME"]); value != "" {
 		return value
 	}
 	home, err := os.UserHomeDir()
@@ -108,7 +113,7 @@ func DefaultRoot() string {
 
 func OpenStore(root string) (*Store, error) {
 	if strings.TrimSpace(root) == "" {
-		root = DefaultRoot()
+		return nil, errors.New("gateway state directory is required")
 	}
 	absolute, err := filepath.Abs(root)
 	if err != nil {
@@ -124,10 +129,12 @@ func OpenStore(root string) (*Store, error) {
 	// Reserve the SQLite writer before any read-modify-write operation. The
 	// database lock protects sessions across processes, including sign-out.
 	databaseURL.RawQuery = url.Values{"_txlock": {"immediate"}, "_busy_timeout": {"5000"}}.Encode()
-	db, err := sql.Open("sqlite", databaseURL.String())
+	// Open through the driver directly, not the process-wide driver registry.
+	connector, err := sqlite.NewConnector(databaseURL.String())
 	if err != nil {
 		return nil, err
 	}
+	db := sql.OpenDB(connector)
 	db.SetMaxOpenConns(1)
 	store := &Store{Root: absolute, DB: db}
 	if err := store.initializeSchema(); err != nil {
@@ -184,7 +191,6 @@ CREATE TABLE IF NOT EXISTS daemons (
   created_at TEXT NOT NULL,
   last_seen_at TEXT NOT NULL DEFAULT '',
   version TEXT NOT NULL DEFAULT '',
-  api_version TEXT NOT NULL DEFAULT '',
   routes_json BLOB NOT NULL DEFAULT '[]',
   remote_desktop_json BLOB NOT NULL DEFAULT '{}'
 );
@@ -248,6 +254,24 @@ CREATE TABLE IF NOT EXISTS provider_quota_snapshots (
     REFERENCES provider_accounts(github_id, provider, account_key)
     ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS device_roster_entries (
+  github_id INTEGER NOT NULL,
+  sequence INTEGER NOT NULL,
+  entry BLOB NOT NULL,
+  PRIMARY KEY(github_id, sequence)
+);
+CREATE TABLE IF NOT EXISTS pairing_requests (
+  id TEXT PRIMARY KEY,
+  github_id INTEGER NOT NULL,
+  device_id TEXT NOT NULL,
+  device BLOB NOT NULL,
+  proof BLOB NOT NULL,
+  confirmation BLOB NOT NULL DEFAULT x'',
+  requested_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  UNIQUE(github_id, device_id)
+);
+CREATE INDEX IF NOT EXISTS pairing_requests_expiry ON pairing_requests(expires_at);
 PRAGMA user_version=1;
 COMMIT;
 `)
@@ -325,7 +349,7 @@ func (s *Store) CreateEnrollment(record EnrollmentRecord) error {
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM enrollments`).Scan(&active); err != nil {
 		return err
 	}
-	if active >= 1000 {
+	if active >= maxPendingEnrollments {
 		return errors.New("too many pending daemon enrollments")
 	}
 	if _, err := tx.Exec(`INSERT INTO enrollments(id, secret_hash, user_code, name, public_key, expires_at) VALUES(?, ?, ?, ?, ?, ?)`,
@@ -395,10 +419,9 @@ func (s *Store) Daemon(id string) (DaemonRecord, error) {
 	var record DaemonRecord
 	var generation int64
 	var revoked int
-	var legacyAPIVersion string
 	var created, lastSeen string
-	err := s.DB.QueryRow(`SELECT id, name, github_id, login, public_key, certificate, generation, revoked, created_at, last_seen_at, version, api_version, routes_json, remote_desktop_json FROM daemons WHERE id=?`, id).
-		Scan(&record.ID, &record.Name, &record.GitHubID, &record.Login, &record.PublicKey, &record.Certificate, &generation, &revoked, &created, &lastSeen, &record.Version, &legacyAPIVersion, &record.RoutesJSON, &record.RemoteDesktopJSON)
+	err := s.DB.QueryRow(`SELECT id, name, github_id, login, public_key, certificate, generation, revoked, created_at, last_seen_at, version, routes_json, remote_desktop_json FROM daemons WHERE id=?`, id).
+		Scan(&record.ID, &record.Name, &record.GitHubID, &record.Login, &record.PublicKey, &record.Certificate, &generation, &revoked, &created, &lastSeen, &record.Version, &record.RoutesJSON, &record.RemoteDesktopJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return record, errors.New("daemon not found")
 	}

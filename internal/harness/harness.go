@@ -12,17 +12,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	boardconfig "github.com/dbpprt/dieter/config"
-	"gopkg.in/yaml.v3"
+	"github.com/dbpprt/dieter/internal/platform/fault"
 )
 
 type Model struct {
@@ -35,7 +34,7 @@ type Model struct {
 	Hidden        bool     `json:"-" yaml:"-"`
 }
 
-var ErrNoActiveTurn = errors.New("card has no active turn")
+var ErrNoActiveTurn = fault.New(fault.FailedPrecondition, "card has no active turn")
 
 type workerRecord struct {
 	PID      int    `json:"pid"`
@@ -96,410 +95,6 @@ type Capability struct {
 	Level string `json:"level" yaml:"level"`
 }
 
-type Adapter struct {
-	ID           string           `json:"id" yaml:"id"`
-	Name         string           `json:"name" yaml:"name"`
-	Runtime      string           `json:"-" yaml:"adapter"`
-	DefaultModel string           `json:"defaultModel" yaml:"defaultModel"`
-	Effort       *EffortConfig    `json:"effort,omitempty" yaml:"effort,omitempty"`
-	Options      []ProviderOption `json:"options,omitempty" yaml:"options,omitempty"`
-	Capabilities []Capability     `json:"capabilities,omitempty" yaml:"capabilities,omitempty"`
-	Models       []Model          `json:"models" yaml:"models"`
-}
-
-type registry struct {
-	Version   int       `yaml:"version"`
-	Harnesses []Adapter `yaml:"harnesses"`
-}
-
-var (
-	catalogMu               sync.RWMutex
-	configuredCatalog       = mustLoadCatalog(boardconfig.HarnessesYAML, "embedded config/harnesses.yaml")
-	configuredCatalogSource = "embedded config/harnesses.yaml"
-	discoveredCatalog       []Adapter
-)
-
-func mustLoadCatalog(data []byte, source string) []Adapter {
-	items, err := LoadCatalog(data)
-	if err != nil {
-		panic("invalid " + source + ": " + err.Error())
-	}
-	return items
-}
-
-// ConfigureCatalog replaces the embedded catalog with a local YAML file. An
-// empty path restores the embedded release defaults. Call this once at process
-// startup, before serving requests.
-func ConfigureCatalog(path string) error {
-	data := boardconfig.HarnessesYAML
-	source := "embedded config/harnesses.yaml"
-	if path = strings.TrimSpace(path); path != "" {
-		absolute, err := filepath.Abs(path)
-		if err != nil {
-			return fmt.Errorf("resolve harness config: %w", err)
-		}
-		data, err = os.ReadFile(absolute)
-		if err != nil {
-			return fmt.Errorf("read harness config %q: %w", absolute, err)
-		}
-		source = absolute
-	}
-	items, err := LoadCatalog(data)
-	if err != nil {
-		return fmt.Errorf("invalid harness config %q: %w", source, err)
-	}
-	catalogMu.Lock()
-	configuredCatalog = items
-	configuredCatalogSource = source
-	discoveredCatalog = nil
-	catalogMu.Unlock()
-	return nil
-}
-
-func CatalogSource() string {
-	catalogMu.RLock()
-	defer catalogMu.RUnlock()
-	return configuredCatalogSource
-}
-
-func LoadCatalog(data []byte) ([]Adapter, error) {
-	var document registry
-	decoder := yaml.NewDecoder(bytes.NewReader(data))
-	decoder.KnownFields(true)
-	if err := decoder.Decode(&document); err != nil {
-		return nil, err
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return nil, errors.New("multiple YAML documents are not supported")
-		}
-		return nil, err
-	}
-	if document.Version != 1 {
-		return nil, fmt.Errorf("unsupported registry version %d", document.Version)
-	}
-	if len(document.Harnesses) == 0 {
-		return nil, errors.New("at least one harness is required")
-	}
-	seenHarnesses := map[string]bool{}
-	for index := range document.Harnesses {
-		harness := &document.Harnesses[index]
-		harness.ID, harness.Name = strings.TrimSpace(harness.ID), strings.TrimSpace(harness.Name)
-		harness.Runtime, harness.DefaultModel = strings.TrimSpace(harness.Runtime), strings.TrimSpace(harness.DefaultModel)
-		if harness.ID == "" || harness.Name == "" || harness.Runtime == "" {
-			return nil, fmt.Errorf("harness %d requires id, name, and adapter", index)
-		}
-		if seenHarnesses[harness.ID] {
-			return nil, fmt.Errorf("duplicate harness %q", harness.ID)
-		}
-		seenHarnesses[harness.ID] = true
-		seenCapabilities := map[string]bool{}
-		for capabilityIndex := range harness.Capabilities {
-			capability := &harness.Capabilities[capabilityIndex]
-			capability.ID, capability.Level = strings.TrimSpace(capability.ID), strings.TrimSpace(capability.Level)
-			if capability.ID == "" || capability.Level == "" || seenCapabilities[capability.ID] {
-				return nil, fmt.Errorf("harness %q has invalid capability %d", harness.ID, capabilityIndex)
-			}
-			seenCapabilities[capability.ID] = true
-		}
-		seenOptions := map[string]bool{}
-		for optionIndex := range harness.Options {
-			option := &harness.Options[optionIndex]
-			option.ID, option.Name = strings.TrimSpace(option.ID), strings.TrimSpace(option.Name)
-			option.Type, option.Default = strings.TrimSpace(option.Type), strings.TrimSpace(option.Default)
-			option.Description = strings.TrimSpace(option.Description)
-			if option.ID == "" || option.Name == "" || seenOptions[option.ID] {
-				return nil, fmt.Errorf("harness %q has invalid provider option %d", harness.ID, optionIndex)
-			}
-			seenOptions[option.ID] = true
-			switch option.Type {
-			case "boolean":
-				if option.Default == "" {
-					option.Default = "false"
-				}
-				if option.Default != "true" && option.Default != "false" {
-					return nil, fmt.Errorf("harness %q option %q has invalid boolean default %q", harness.ID, option.ID, option.Default)
-				}
-				if len(option.Choices) > 0 {
-					return nil, fmt.Errorf("harness %q boolean option %q cannot have choices", harness.ID, option.ID)
-				}
-			case "enum":
-				seenChoices := map[string]bool{}
-				for choiceIndex := range option.Choices {
-					choice := &option.Choices[choiceIndex]
-					choice.Value, choice.Name = strings.TrimSpace(choice.Value), strings.TrimSpace(choice.Name)
-					if choice.Value == "" || choice.Name == "" || seenChoices[choice.Value] {
-						return nil, fmt.Errorf("harness %q option %q has invalid choice %d", harness.ID, option.ID, choiceIndex)
-					}
-					seenChoices[choice.Value] = true
-				}
-				if len(option.Choices) == 0 || (option.Default != "" && !seenChoices[option.Default]) {
-					return nil, fmt.Errorf("harness %q enum option %q requires choices and a valid default", harness.ID, option.ID)
-				}
-			case "string":
-				if len(option.Choices) > 0 {
-					return nil, fmt.Errorf("harness %q string option %q cannot have choices", harness.ID, option.ID)
-				}
-			default:
-				return nil, fmt.Errorf("harness %q option %q has unsupported type %q", harness.ID, option.ID, option.Type)
-			}
-		}
-		efforts := map[string]bool{}
-		if harness.Effort != nil {
-			harness.Effort.Label = strings.TrimSpace(harness.Effort.Label)
-			if harness.Effort.Label == "" || len(harness.Effort.Options) == 0 {
-				return nil, fmt.Errorf("harness %q effort requires a label and options", harness.ID)
-			}
-			for optionIndex := range harness.Effort.Options {
-				option := &harness.Effort.Options[optionIndex]
-				option.ID, option.Name = strings.TrimSpace(option.ID), strings.TrimSpace(option.Name)
-				if option.ID == "" || option.Name == "" || efforts[option.ID] {
-					return nil, fmt.Errorf("harness %q has invalid effort option %d", harness.ID, optionIndex)
-				}
-				efforts[option.ID] = true
-			}
-		}
-		seenModels := map[string]bool{}
-		for modelIndex := range harness.Models {
-			model := &harness.Models[modelIndex]
-			model.ID, model.Name = strings.TrimSpace(model.ID), strings.TrimSpace(model.Name)
-			model.DefaultEffort = strings.TrimSpace(model.DefaultEffort)
-			if model.RuntimeModel != nil {
-				value := strings.TrimSpace(*model.RuntimeModel)
-				model.RuntimeModel = &value
-			}
-			if model.ID == "" || model.Name == "" || model.ContextWindow < 0 {
-				return nil, fmt.Errorf("harness %q has invalid model %d", harness.ID, modelIndex)
-			}
-			if seenModels[model.ID] {
-				return nil, fmt.Errorf("harness %q has duplicate model %q", harness.ID, model.ID)
-			}
-			seenModels[model.ID] = true
-			if model.DefaultEffort != "" && !efforts[model.DefaultEffort] {
-				return nil, fmt.Errorf("harness %q model %q has unknown default effort %q", harness.ID, model.ID, model.DefaultEffort)
-			}
-			seenModelEfforts := map[string]bool{}
-			for effortIndex := range model.Efforts {
-				model.Efforts[effortIndex] = strings.TrimSpace(model.Efforts[effortIndex])
-				if !efforts[model.Efforts[effortIndex]] || seenModelEfforts[model.Efforts[effortIndex]] {
-					return nil, fmt.Errorf("harness %q model %q has invalid effort %q", harness.ID, model.ID, model.Efforts[effortIndex])
-				}
-				seenModelEfforts[model.Efforts[effortIndex]] = true
-			}
-			if model.DefaultEffort != "" && len(model.Efforts) > 0 && !seenModelEfforts[model.DefaultEffort] {
-				return nil, fmt.Errorf("harness %q model %q default effort %q is not allowed", harness.ID, model.ID, model.DefaultEffort)
-			}
-		}
-		if harness.DefaultModel != "" && !seenModels[harness.DefaultModel] {
-			return nil, fmt.Errorf("harness %q default model %q is not registered", harness.ID, harness.DefaultModel)
-		}
-		for optionIndex := range harness.Options {
-			option := &harness.Options[optionIndex]
-			seenOptionModels := map[string]bool{}
-			for modelIndex := range option.Models {
-				option.Models[modelIndex] = strings.TrimSpace(option.Models[modelIndex])
-				modelID := option.Models[modelIndex]
-				if !seenModels[modelID] || seenOptionModels[modelID] {
-					return nil, fmt.Errorf("harness %q option %q has invalid model %q", harness.ID, option.ID, modelID)
-				}
-				seenOptionModels[modelID] = true
-			}
-		}
-	}
-	return document.Harnesses, nil
-}
-
-func Catalog(includeMock bool) []Adapter {
-	catalogMu.RLock()
-	source := configuredCatalog
-	if len(discoveredCatalog) > 0 {
-		source = discoveredCatalog
-	}
-	items := make([]Adapter, len(source))
-	for index, item := range source {
-		items[index] = cloneAdapter(item)
-	}
-	catalogMu.RUnlock()
-	if includeMock {
-		items = append(items, Adapter{
-			ID: "mock", Name: "Mock", Runtime: "mock", DefaultModel: "mock",
-			Effort: &EffortConfig{Label: "Effort", Options: []EffortOption{{ID: "low", Name: "Low"}, {ID: "high", Name: "High"}}},
-			Models: []Model{{ID: "mock", Name: "Mock", DefaultEffort: "low", Efforts: []string{"low", "high"}}},
-		})
-	}
-	return items
-}
-
-func cloneAdapter(adapter Adapter) Adapter {
-	adapter.Capabilities = append([]Capability(nil), adapter.Capabilities...)
-	adapter.Options = append([]ProviderOption(nil), adapter.Options...)
-	for index := range adapter.Options {
-		adapter.Options[index].Choices = append([]ProviderOptionChoice(nil), adapter.Options[index].Choices...)
-		adapter.Options[index].Models = append([]string(nil), adapter.Options[index].Models...)
-	}
-	adapter.Models = append([]Model(nil), adapter.Models...)
-	for index := range adapter.Models {
-		adapter.Models[index].Efforts = append([]string(nil), adapter.Models[index].Efforts...)
-		if adapter.Models[index].RuntimeModel != nil {
-			value := *adapter.Models[index].RuntimeModel
-			adapter.Models[index].RuntimeModel = &value
-		}
-	}
-	if adapter.Effort != nil {
-		effort := *adapter.Effort
-		effort.Options = append([]EffortOption(nil), effort.Options...)
-		adapter.Effort = &effort
-	}
-	return adapter
-}
-
-// ResolveOptions validates provider-specific values for the adapter's default
-// model and materializes defaults. Call ResolveOptionsForModel when the model
-// has already been resolved.
-func ResolveOptions(adapter Adapter, requested map[string]string) (map[string]string, error) {
-	return ResolveOptionsForModel(adapter, adapter.DefaultModel, requested)
-}
-
-// OptionSupportsModel reports whether an option applies to a model. An empty
-// model list means the provider option applies to every model in the adapter.
-func OptionSupportsModel(option ProviderOption, modelID string) bool {
-	if len(option.Models) == 0 {
-		return true
-	}
-	for _, supportedModel := range option.Models {
-		if supportedModel == modelID {
-			return true
-		}
-	}
-	return false
-}
-
-// ResolveOptionsForModel validates provider-specific values and materializes
-// defaults only for options supported by the selected model. A persisted
-// unsupported value equal to the option default is ignored for compatibility
-// with conversations created before model-scoped options were advertised.
-func ResolveOptionsForModel(adapter Adapter, modelID string, requested map[string]string) (map[string]string, error) {
-	modelID = strings.TrimSpace(modelID)
-	if modelID == "" {
-		modelID = adapter.DefaultModel
-	}
-	definitions := make(map[string]ProviderOption, len(adapter.Options))
-	resolved := make(map[string]string, len(adapter.Options))
-	for _, option := range adapter.Options {
-		definitions[option.ID] = option
-		if OptionSupportsModel(option, modelID) && option.Default != "" {
-			resolved[option.ID] = option.Default
-		}
-	}
-	for rawID, rawValue := range requested {
-		id, value := strings.TrimSpace(rawID), strings.TrimSpace(rawValue)
-		option, ok := definitions[id]
-		if !ok {
-			return nil, fmt.Errorf("option %q is not supported for harness %q", id, adapter.ID)
-		}
-		if !OptionSupportsModel(option, modelID) {
-			if value == strings.TrimSpace(option.Default) {
-				continue
-			}
-			return nil, fmt.Errorf("option %q is not supported for model %q of harness %q", id, modelID, adapter.ID)
-		}
-		switch option.Type {
-		case "boolean":
-			if value != "true" && value != "false" {
-				return nil, fmt.Errorf("option %q for harness %q must be true or false", id, adapter.ID)
-			}
-		case "enum":
-			valid := false
-			for _, choice := range option.Choices {
-				valid = valid || choice.Value == value
-			}
-			if !valid {
-				return nil, fmt.Errorf("option %q value %q is not supported for harness %q", id, value, adapter.ID)
-			}
-		case "string":
-		}
-		resolved[id] = value
-	}
-	return resolved, nil
-}
-
-// ValidateOptionUpdate permits a provider-defined mutable option to change
-// between turns while keeping session-defining options locked. Both maps must
-// already have been materialized with ResolveOptions.
-func ValidateOptionUpdate(adapter Adapter, current, next map[string]string) error {
-	for _, option := range adapter.Options {
-		if !option.Mutable && current[option.ID] != next[option.ID] {
-			return fmt.Errorf("conversation provider options are locked: %q cannot change", option.ID)
-		}
-	}
-	return nil
-}
-
-func ResolveAdapter(id string, includeMock bool) (Adapter, bool) {
-	for _, adapter := range Catalog(includeMock) {
-		if adapter.ID == id {
-			return adapter, true
-		}
-	}
-	return Adapter{}, false
-}
-
-func ResolveSelection(providerID, modelID string, includeMock bool) (Adapter, Model, error) {
-	adapter, valid := ResolveAdapter(strings.TrimSpace(providerID), includeMock)
-	if !valid {
-		return Adapter{}, Model{}, fmt.Errorf("unsupported harness %q", providerID)
-	}
-	modelID = strings.TrimSpace(modelID)
-	if modelID == "" {
-		modelID = adapter.DefaultModel
-	}
-	if modelID == "" && len(adapter.Models) == 0 {
-		return adapter, Model{}, nil
-	}
-	for _, configuredModel := range adapter.Models {
-		if configuredModel.ID == modelID {
-			return adapter, configuredModel, nil
-		}
-	}
-	return Adapter{}, Model{}, fmt.Errorf("model %q is not registered for harness %q", modelID, adapter.ID)
-}
-
-// ResolveEffort validates an explicitly selected effort against the local
-// registry. An empty effort deliberately defers to the underlying CLI's
-// configured default.
-func ResolveEffort(adapter Adapter, configuredModel Model, effort string) (string, error) {
-	effort = strings.TrimSpace(effort)
-	if effort == "default" {
-		return "", nil
-	}
-	if effort == "" {
-		return "", nil
-	}
-	if adapter.Effort == nil {
-		return "", fmt.Errorf("harness %q does not support configurable effort", adapter.ID)
-	}
-	allowed := map[string]bool{}
-	if len(configuredModel.Efforts) > 0 {
-		for _, id := range configuredModel.Efforts {
-			allowed[id] = true
-		}
-	} else {
-		for _, option := range adapter.Effort.Options {
-			allowed[option.ID] = true
-		}
-	}
-	if !allowed[effort] {
-		return "", fmt.Errorf("effort %q is not supported for %s/%s", effort, adapter.ID, configuredModel.ID)
-	}
-	return effort, nil
-}
-
-func ValidAdapter(id string, includeMock bool) bool {
-	_, valid := ResolveAdapter(id, includeMock)
-	return valid
-}
-
 type Request struct {
 	Harness                    string            `json:"harness"`
 	Adapter                    string            `json:"adapter"`
@@ -521,12 +116,41 @@ type Request struct {
 	ContentPresentationEnabled bool              `json:"contentPresentationEnabled,omitempty"`
 	BackgroundProcessesEnabled bool              `json:"backgroundProcessesEnabled,omitempty"`
 	BackgroundProcess          ProcessHandler    `json:"-"`
+	// PresentCommand and ProcessCommand are the Dieter CLI equivalents of the
+	// presentation and background-process tools for this conversation, named
+	// in their instructions for harnesses that load host tools on demand.
+	PresentCommand string `json:"presentCommand,omitempty"`
+	ProcessCommand string `json:"processCommand,omitempty"`
+	// SteerEnabled keeps the worker's stdin open for steer frames: Steer
+	// delivers agent channel messages into the running turn, and the worker
+	// answers each with a steer-result Output.
+	SteerEnabled bool             `json:"steerEnabled,omitempty"`
+	Steer        <-chan SteerCall `json:"-"`
+	// ChannelHookCommand is the shell command a harness runs as its pre-write
+	// hook (agent channels file claims); empty disables the hook.
+	ChannelHookCommand string `json:"channelHookCommand,omitempty"`
+	// Environment is added to the worker after the allowlist, so commands the
+	// agent runs inherit it. Values never enter the stdin request.
+	Environment map[string]string `json:"-"`
 	// RuntimeDigest pins only this active turn to an immutable installed
 	// harness runtime. Completed conversations deliberately do not retain it:
 	// their next turn resolves the then-current runtime and resumes the opaque
 	// provider session with the newer adapter implementation.
 	RuntimeDigest string `json:"-"`
 }
+
+// SteerCall asks a running worker to add Text to its active turn.
+type SteerCall struct {
+	ID   string
+	Text string
+}
+
+// Steer-result reasons.
+const (
+	SteerNoRunningTurn = "no-running-turn"
+	SteerUnsupported   = "unsupported"
+	SteerError         = "error"
+)
 
 type Attachment struct {
 	MediaType string `json:"mediaType"`
@@ -542,6 +166,10 @@ type Output struct {
 	Presentation json.RawMessage `json:"presentation,omitempty"`
 	Message      string          `json:"error,omitempty"`
 	ProcessCall  *ProcessCall    `json:"processCall,omitempty"`
+	// ID, Accepted and Reason answer a SteerCall (type steer-result).
+	ID       string `json:"id,omitempty"`
+	Accepted bool   `json:"accepted,omitempty"`
+	Reason   string `json:"reason,omitempty"`
 }
 
 type Runner interface {
@@ -566,17 +194,23 @@ type Suspender interface {
 	Suspend(sessionID, runtimeRoot string) error
 }
 
-//go:embed runtime/package.json runtime/package-lock.json runtime/runner.mjs runtime/content-presentation.mjs runtime/background-processes.mjs runtime/dsh-discovery.mjs runtime/dsh-models.mjs runtime/omp-discovery.mjs runtime/omp-models.mjs runtime/claude-resilience.mjs runtime/claude-runtime.mjs runtime/local-attachments.mjs runtime/local-sandbox.mjs runtime/codex-runtime.mjs runtime/capabilities.mjs runtime/stream-reconciliation.mjs runtime/omp-capabilities-hook.mjs runtime/omp-resilience.mjs runtime/provider-options.mjs runtime/harness-errors.mjs runtime/usage-metadata.mjs runtime/quota-openai.mjs runtime/quota-claude.mjs
+// runtimeAssets is the harness runtime source. Node test files match the
+// glob but are never staged or digested; see runtimeSourceFile.
+//
+//go:embed runtime/package.json runtime/package-lock.json runtime/*.mjs
 var runtimeAssets embed.FS
 
 type SubprocessRunner struct {
 	root string
+	env  Environment
 	mu   sync.Mutex
 	dirs map[string]string
 }
 
-func NewSubprocessRunner(root string) *SubprocessRunner {
-	return &SubprocessRunner{root: filepath.Join(root, "runtime", "harness"), dirs: map[string]string{}}
+// NewSubprocessRunner runs harness workers from runtimes installed under the
+// DIETER_HOME root, with env as their host environment.
+func NewSubprocessRunner(root string, env Environment) *SubprocessRunner {
+	return &SubprocessRunner{root: filepath.Join(root, "runtime", "harness"), env: env, dirs: map[string]string{}}
 }
 
 const RuntimeProtocolVersion = "1"
@@ -601,7 +235,7 @@ func stageRuntimeAssets(dir string) error {
 		return err
 	}
 	for _, entry := range entries {
-		if entry.IsDir() {
+		if entry.IsDir() || !runtimeSourceFile(entry.Name()) {
 			continue
 		}
 		data, readErr := runtimeAssets.ReadFile("runtime/" + entry.Name())
@@ -633,13 +267,18 @@ func (r *SubprocessRunner) ensure(ctx context.Context) (string, error) {
 	return reference.Directory, nil
 }
 
+// home is the DIETER_HOME directory the runner's runtimes live under.
+func (r *SubprocessRunner) home() string { return filepath.Dir(filepath.Dir(r.root)) }
+
 // PrepareRuntime installs the embedded runtime when digest is empty, or
 // validates and reopens an already-published historical runtime when digest is
 // supplied by a suspended active turn. Historical assets are never rewritten.
+// Release builds install the prebuilt archive their binary pins (and the
+// managed Bun it carries); source builds install with npm.
 func (r *SubprocessRunner) PrepareRuntime(ctx context.Context, digest string) (RuntimeReference, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if override := strings.TrimSpace(os.Getenv("DIETER_HARNESS_RUNTIME_DIR")); override != "" {
+	if override := strings.TrimSpace(r.env.RuntimeDir); override != "" {
 		absolute, err := filepath.Abs(override)
 		if err != nil {
 			return RuntimeReference{}, err
@@ -676,7 +315,13 @@ func (r *SubprocessRunner) PrepareRuntime(ctx context.Context, digest string) (R
 		r.dirs[digest] = dir
 		return RuntimeReference{Digest: digest, ProtocolVersion: RuntimeProtocolVersion, Directory: dir}, nil
 	}
-	if err := installRuntimeAtomically(ctx, r.root, dir, digest); err != nil {
+	populate := npmInstallRuntime
+	if archive := r.env.runtimeArchive(); archive.pinned() {
+		populate = func(ctx context.Context, stage string) error {
+			return installRuntimeArchive(ctx, archive, stage, r.home())
+		}
+	}
+	if err := installRuntimeAtomically(ctx, r.root, dir, digest, populate); err != nil {
 		return RuntimeReference{}, err
 	}
 	r.dirs[digest] = dir
@@ -698,7 +343,7 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 	dir := reference.Directory
 	var runtimePaths []string
 	if request.Adapter == "omp-acp" {
-		bunBin, bunErr := ensureManagedBun(ctx, filepath.Dir(filepath.Dir(r.root)))
+		bunBin, bunErr := ensureManagedBun(ctx, r.home(), r.env.runtimeArchive())
 		if bunErr != nil {
 			return fmt.Errorf("prepare OMP runtime: %w", bunErr)
 		}
@@ -716,9 +361,12 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 	command.WaitDelay = 9 * time.Second
 	command.Dir = dir
 	if request.Adapter == "omp-acp" {
-		command.Env = ompHarnessEnvironment(runtimePaths...)
+		command.Env = r.env.ompHarnessEnvironment(runtimePaths...)
 	} else {
-		command.Env = harnessEnvironment()
+		command.Env = r.env.harnessEnvironment()
+	}
+	for name, value := range request.Environment {
+		command.Env = append(command.Env, name+"="+value)
 	}
 	stdin, err := command.StdinPipe()
 	if err != nil {
@@ -781,8 +429,34 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 		}
 		return fmt.Errorf("start harness worker: %s", message)
 	}
-	if !request.BackgroundProcessesEnabled {
+	// Host replies and steer frames share the worker's stdin; one line per write.
+	host := &lockedWriter{writer: stdin}
+	if !request.BackgroundProcessesEnabled && !request.SteerEnabled {
 		_ = stdin.Close()
+	}
+	steering := make(chan struct{})
+	defer close(steering)
+	if request.SteerEnabled && request.Steer != nil {
+		go func() {
+			for {
+				select {
+				case call, ok := <-request.Steer:
+					if !ok {
+						return
+					}
+					line, _ := json.Marshal(struct {
+						Type string `json:"type"`
+						ID   string `json:"id"`
+						Text string `json:"text"`
+					}{"steer", call.ID, call.Text})
+					_, _ = host.Write(append(line, '\n'))
+				case <-steering:
+					return
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
 	}
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 8<<20)
@@ -811,7 +485,7 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 			workerError = output.Message
 		}
 		if output.Type == "background-process" {
-			if err := replyProcessCall(ctx, stdin, request.BackgroundProcess, output.ProcessCall); err != nil {
+			if err := replyProcessCall(ctx, host, request.BackgroundProcess, output.ProcessCall); err != nil {
 				return err
 			}
 			continue
@@ -840,26 +514,45 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 	if scanErr != nil {
 		return scanErr
 	}
-	if workerError != "" {
-		if diagnostic := strings.TrimSpace(stderr.String() + "\n" + stdoutDiagnostics.String()); diagnostic != "" {
-			return fmt.Errorf("%s: %s", workerError, diagnostic)
+	diagnostic := workerDiagnostics(stderr.String() + "\n" + stdoutDiagnostics.String())
+	for _, failure := range []string{workerError, streamError} {
+		if failure == "" {
+			continue
 		}
-		return errors.New(workerError)
-	}
-	if streamError != "" {
-		if diagnostic := strings.TrimSpace(stderr.String() + "\n" + stdoutDiagnostics.String()); diagnostic != "" {
-			return fmt.Errorf("%s: %s", streamError, diagnostic)
+		if diagnostic != "" {
+			// Clients summarize a failure by its first line and keep the rest as
+			// the log, so the harness's own error must stand alone on that line.
+			return fmt.Errorf("%s\n\n%s", failure, diagnostic)
 		}
-		return errors.New(streamError)
+		return errors.New(failure)
 	}
 	if waitErr != nil {
-		message := strings.TrimSpace(stderr.String() + "\n" + stdoutDiagnostics.String())
+		message := diagnostic
 		if message == "" {
 			message = waitErr.Error()
 		}
 		return fmt.Errorf("harness worker: %s", message)
 	}
 	return nil
+}
+
+// benignWorkerDiagnostics are expected on every run of the unsandboxed local
+// provider and never explain a failure: the harness warns that it forwards
+// credentials because the host has no request-transformation sandbox.
+var benignWorkerDiagnostics = []string{
+	"The sandbox implementation does not support configuring request transformations",
+}
+
+func workerDiagnostics(output string) string {
+	lines := strings.Split(output, "\n")
+	kept := lines[:0]
+	for _, line := range lines {
+		if slices.ContainsFunc(benignWorkerDiagnostics, func(notice string) bool { return strings.Contains(line, notice) }) {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.TrimSpace(strings.Join(kept, "\n"))
 }
 
 func (r *SubprocessRunner) Cancel(sessionID, runtimeRoot string) error {
@@ -935,8 +628,8 @@ func (r *SubprocessRunner) cleanupProviderBridge(sessionID, runtimeRoot string) 
 }
 
 // ProviderBridgeStateDirs returns every supported bridge-state location for a
-// Dieter conversation. ACP adapters keep their state in the sandbox home,
-// while older non-ACP adapters used the per-project runtime root.
+// Dieter conversation. Current adapters share the sandbox-home harness state;
+// older adapters used the ACP-specific home or per-project runtime root.
 func ProviderBridgeStateDirs(sessionID, runtimeRoot string) ([]string, error) {
 	if strings.ContainsAny(sessionID, `/\\`) {
 		return nil, errors.New("invalid harness session ID")
@@ -951,6 +644,7 @@ func ProviderBridgeStateDirs(sessionID, runtimeRoot string) ([]string, error) {
 		filepath.Join(runtimeRoot, ".agent-runs", sessionID, "bridge"),
 		filepath.Join(home, ".ai-sdk", "harness-acp", "omp", key, "bridge"),
 		filepath.Join(home, ".ai-sdk", "harness-acp", "dsh", key, "bridge"),
+		filepath.Join(home, ".ai-sdk-harness", ".agent-runs", sessionID, "bridge"),
 	}, nil
 }
 
@@ -1022,7 +716,7 @@ func (r *SubprocessRunner) Suspend(sessionID, runtimeRoot string) error {
 	return nil
 }
 
-func harnessEnvironment(runtimePaths ...string) []string {
+func (e Environment) harnessEnvironment(runtimePaths ...string) []string {
 	allowed := map[string]bool{
 		"PATH": true, "HOME": true, "USER": true, "LOGNAME": true, "TMPDIR": true, "SHELL": true, "LANG": true, "TERM": true,
 		"DIETER_HARNESS_ENV": true,
@@ -1034,14 +728,14 @@ func harnessEnvironment(runtimePaths ...string) []string {
 		"DSH_PERMISSION_MODE": true, "DSH_TOOLS_MODE": true, "DSH_TELEMETRY_MODE": true, "DSH_TELEMETRY_DISABLED": true, "DSH_TELEMETRY_OTLP_URL": true,
 		"NODE_EXTRA_CA_CERTS": true, "NODE_USE_ENV_PROXY": true, "HTTP_PROXY": true, "HTTPS_PROXY": true, "NO_PROXY": true,
 	}
-	for _, name := range strings.Split(os.Getenv("DIETER_HARNESS_ENV"), ",") {
+	for _, name := range e.PassThrough {
 		if name = strings.TrimSpace(name); name != "" && !strings.Contains(name, "=") {
 			allowed[name] = true
 		}
 	}
 	result := make([]string, 0, len(allowed))
-	home := os.Getenv("HOME")
-	for _, item := range os.Environ() {
+	home := e.Value("HOME")
+	for _, item := range e.environ() {
 		name, _, _ := strings.Cut(item, "=")
 		if allowed[name] {
 			if name == "PATH" {
@@ -1092,4 +786,18 @@ func harnessPath(current, home string, runtimePaths ...string) string {
 	return strings.Join(paths, string(os.PathListSeparator))
 }
 
-func RuntimeAssets() fs.FS { return runtimeAssets }
+// runtimeSourceFile reports whether an embedded runtime file belongs to the
+// installed runtime. Node tests ship in the same directory but are excluded.
+func runtimeSourceFile(name string) bool { return !strings.HasSuffix(name, ".test.mjs") }
+
+// lockedWriter serializes whole-line writes of concurrent stdin writers.
+type lockedWriter struct {
+	mu     sync.Mutex
+	writer io.Writer
+}
+
+func (w *lockedWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.writer.Write(p)
+}

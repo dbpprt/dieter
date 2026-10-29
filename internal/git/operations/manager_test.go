@@ -1,0 +1,706 @@
+package operations_test
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/dbpprt/dieter/internal/git"
+	"github.com/dbpprt/dieter/internal/git/operations"
+	"github.com/dbpprt/dieter/internal/git/workspace"
+	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/store/kanban"
+	"github.com/dbpprt/dieter/internal/testkit"
+)
+
+func TestCommitFastForwardMergeAndCleanupEndToEnd(t *testing.T) {
+	t.Parallel()
+	repository := testkit.GitRepo(t)
+	data := testkit.Store(t)
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Operation", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces := workspace.New(data, nil)
+	value, err := workspaces.Ensure(context.Background(), chat.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(value.Path, "README.md"), []byte("merged content\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manager := operations.New(data, workspaces, nil)
+	changes, err := manager.Changesets.Get(context.Background(), chat.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit, err := manager.Start(context.Background(), operations.Request{CardID: chat.ID, Kind: "commit", ExpectedRevision: changes.Revision, Parameters: map[string]string{"subject": "workspace change", "validate": "false", "stage_all": "true"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit = waitOperation(t, manager, commit.ID)
+	if commit.Status != model.GitOperationSucceeded || commit.Result == "" {
+		t.Fatalf("commit failed: %#v", commit)
+	}
+	merge, err := manager.Start(context.Background(), operations.Request{CardID: chat.ID, Kind: "merge_local", Parameters: map[string]string{"strategy": "squash", "subject": "squashed workspace", "validate": "false"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	merge = waitOperation(t, manager, merge.ID)
+	if merge.Status != model.GitOperationSucceeded {
+		t.Fatalf("merge failed: %#v", merge)
+	}
+	content, err := os.ReadFile(filepath.Join(repository, "README.md"))
+	if err != nil || string(content) != "merged content\n" {
+		t.Fatalf("base checkout was not updated: %q, %v", content, err)
+	}
+	cleanup, err := manager.Start(context.Background(), operations.Request{CardID: chat.ID, Kind: "cleanup"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanup = waitOperation(t, manager, cleanup.ID)
+	if cleanup.Status != model.GitOperationSucceeded {
+		t.Fatalf("cleanup failed: %#v", cleanup)
+	}
+	if _, err := os.Stat(value.Path); !os.IsNotExist(err) {
+		t.Fatalf("worktree still exists: %v", err)
+	}
+}
+
+func TestPushBasePublishingPushesValidatedIntegration(t *testing.T) {
+	t.Parallel()
+	repository := testkit.GitRepo(t)
+	remote := filepath.Join(t.TempDir(), "private.git")
+	testkit.RunGit(t, "", "init", "--bare", remote)
+	testkit.RunGit(t, repository, "remote", "add", "private", remote)
+	testkit.RunGit(t, repository, "push", "private", "main")
+	data := testkit.Store(t)
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{
+		Name: "Fixture", Path: repository, BaseBranch: "main", BaseRemote: "private",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat, err := data.Kanban.CreateChat(kanban.CreateCardInput{
+		Project: project.ID, Title: "Publish main", WorkspaceMode: model.WorkspaceModeWorktree,
+		RemotePublishMode: model.RemotePublishPushBase,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces := workspace.New(data, nil)
+	value, err := workspaces.Ensure(context.Background(), chat.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(value.Path, "README.md"), []byte("published content\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	testkit.RunGit(t, value.Path, "add", "README.md")
+	testkit.RunGit(t, value.Path, "commit", "-m", "publish content")
+	manager := operations.New(data, workspaces, nil)
+	merge, err := manager.Start(context.Background(), operations.Request{
+		CardID: chat.ID, Kind: "merge_local",
+		Parameters: map[string]string{"strategy": "squash", "subject": "publish content", "validate": "false"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	merge = waitOperation(t, manager, merge.ID)
+	if merge.Status != model.GitOperationSucceeded {
+		t.Fatalf("merge and push failed: %#v", merge)
+	}
+	localHead := testkit.RunGit(t, repository, "rev-parse", "main")
+	remoteHead := testkit.RunGit(t, "", "--git-dir="+remote, "rev-parse", "main")
+	if localHead != remoteHead || localHead != merge.Result {
+		t.Fatalf("published heads differ: local=%s remote=%s result=%s", localHead, remoteHead, merge.Result)
+	}
+}
+
+func TestPullRequestPublishingRejectsLocalMerge(t *testing.T) {
+	t.Parallel()
+	repository := testkit.GitRepo(t)
+	data := testkit.Store(t)
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat, err := data.Kanban.CreateChat(kanban.CreateCardInput{
+		Project: project.ID, Title: "PR only", WorkspaceMode: model.WorkspaceModeWorktree,
+		RemotePublishMode: model.RemotePublishPullRequest,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces := workspace.New(data, nil)
+	if _, err := workspaces.Ensure(context.Background(), chat.ID); err != nil {
+		t.Fatal(err)
+	}
+	manager := operations.New(data, workspaces, nil)
+	operation, err := manager.Start(context.Background(), operations.Request{CardID: chat.ID, Kind: "merge_local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation = waitOperation(t, manager, operation.ID)
+	if operation.Status != model.GitOperationFailed || !strings.Contains(operation.Error, "pull-request publishing") {
+		t.Fatalf("local merge was not rejected by PR policy: %#v", operation)
+	}
+}
+
+func TestRebaseConflictCanBeResolvedAndContinued(t *testing.T) {
+	t.Parallel()
+	repository := testkit.GitRepo(t)
+	data := testkit.Store(t)
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Conflict", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces := workspace.New(data, nil)
+	value, err := workspaces.Ensure(context.Background(), chat.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(value.Path, "README.md"), []byte("workspace version\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	testkit.RunGit(t, value.Path, "add", "README.md")
+	testkit.RunGit(t, value.Path, "commit", "-m", "workspace version")
+	if err := os.WriteFile(filepath.Join(repository, "README.md"), []byte("base version\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	testkit.RunGit(t, repository, "add", "README.md")
+	testkit.RunGit(t, repository, "commit", "-m", "base version")
+
+	manager := operations.New(data, workspaces, nil)
+	update, err := manager.Start(context.Background(), operations.Request{CardID: chat.ID, Kind: "update", Parameters: map[string]string{"fetch": "false", "validate": "false"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	update = waitOperation(t, manager, update.ID)
+	if update.Status != model.GitOperationWaitingForResolution || len(update.Conflicts) != 1 {
+		t.Fatalf("expected conflict: %#v", update)
+	}
+	if err := os.WriteFile(filepath.Join(value.Path, "README.md"), []byte("resolved version\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	testkit.RunGit(t, value.Path, "add", "README.md")
+	continued, err := manager.Start(context.Background(), operations.Request{CardID: chat.ID, Kind: "continue_conflict", Parameters: map[string]string{"validate": "false"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	continued = waitOperation(t, manager, continued.ID)
+	if continued.Status != model.GitOperationSucceeded {
+		t.Fatalf("continue failed: %#v", continued)
+	}
+	update, err = manager.Get(update.ID)
+	if err != nil || update.Status != model.GitOperationSucceeded {
+		t.Fatalf("original update was not completed: %#v %v", update, err)
+	}
+	workspaceValue, err := data.Workspaces.Get(chat.ID)
+	if err != nil || workspaceValue.State != model.WorkspaceStateReady || workspaceValue.CurrentOperationID != "" {
+		t.Fatalf("workspace did not recover: %#v %v", workspaceValue, err)
+	}
+}
+
+func TestWorkspaceCanBeAdoptedByAnotherConversation(t *testing.T) {
+	t.Parallel()
+	repository := testkit.GitRepo(t)
+	data := testkit.Store(t)
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Source", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Target", Prompt: "work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces := workspace.New(data, nil)
+	before, err := workspaces.Ensure(context.Background(), source.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := operations.New(data, workspaces, nil)
+	operation, err := manager.Start(context.Background(), operations.Request{
+		CardID: source.ID, Kind: "adopt", Parameters: map[string]string{"target_card_id": target.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation = waitOperation(t, manager, operation.ID)
+	if operation.Status != model.GitOperationSucceeded || operation.Result != target.ID {
+		t.Fatalf("adoption failed: %#v", operation)
+	}
+	adopted, err := data.Workspaces.Get(target.ID)
+	if err != nil || adopted.Path != before.Path || adopted.CardID != target.ID || len(adopted.PreviousCardIDs) != 1 || adopted.CurrentOperationID != "" {
+		t.Fatalf("unexpected adopted workspace: %#v %v", adopted, err)
+	}
+	if _, err := workspaces.Ensure(context.Background(), source.ID); err == nil || !strings.Contains(err.Error(), "adopted") {
+		t.Fatalf("source conversation silently recreated its workspace: %v", err)
+	}
+}
+
+func TestPullRequestWorkflowPersistsAndMarksWorkspaceForCleanup(t *testing.T) {
+	t.Parallel()
+	repository := testkit.GitRepo(t)
+	data := testkit.Store(t)
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main", BaseRemote: "origin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Pull request", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces := workspace.New(data, nil)
+	value, err := workspaces.Ensure(context.Background(), chat.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &fakeSCMProvider{headSHA: value.HeadSHA}
+	manager := operations.New(data, workspaces, nil)
+	manager.SCM = provider
+	created, err := manager.Start(context.Background(), operations.Request{
+		CardID: chat.ID, Kind: "create_pr", Parameters: map[string]string{"title": "Ship it", "push": "false"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created = waitOperation(t, manager, created.ID)
+	if created.Status != model.GitOperationSucceeded || created.Result != "https://example.test/pull/17" {
+		t.Fatalf("create PR failed: %#v", created)
+	}
+	persisted, err := data.Workspaces.PullRequest(chat.ID)
+	if err != nil || persisted.Number != 17 || persisted.State != "open" {
+		t.Fatalf("pull request was not persisted: %#v %v", persisted, err)
+	}
+	merged, err := manager.Start(context.Background(), operations.Request{
+		CardID: chat.ID, Kind: "merge_pr", Parameters: map[string]string{"strategy": "squash", "expected_head_sha": value.HeadSHA},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged = waitOperation(t, manager, merged.ID)
+	if merged.Status != model.GitOperationSucceeded || provider.mergedHead != value.HeadSHA {
+		t.Fatalf("merge PR failed: %#v provider=%#v", merged, provider)
+	}
+	workspaceValue, err := data.Workspaces.Get(chat.ID)
+	if err != nil || workspaceValue.State != model.WorkspaceStateCleanupPending || workspaceValue.IntegratedHeadSHA != value.HeadSHA {
+		t.Fatalf("merged PR did not mark cleanup state: %#v %v", workspaceValue, err)
+	}
+}
+
+func TestDiscardCreatesRecoveryArtifactsBeforeRemovingWorktree(t *testing.T) {
+	t.Parallel()
+	repository := testkit.GitRepo(t)
+	data := testkit.Store(t)
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Discard", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces := workspace.New(data, nil)
+	value, err := workspaces.Ensure(context.Background(), chat.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(value.Path, "README.md"), []byte("uncommitted\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(value.Path, "untracked.txt"), []byte("recover me\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manager := operations.New(data, workspaces, nil)
+	operation, err := manager.Start(context.Background(), operations.Request{CardID: chat.ID, Kind: "discard"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation = waitOperation(t, manager, operation.ID)
+	if operation.Status != model.GitOperationSucceeded {
+		t.Fatalf("discard failed: %#v", operation)
+	}
+	recovery := filepath.Join(data.RecoveryDir(), operation.ID)
+	for _, name := range []string{"branch.bundle", "unstaged.patch", "staged.patch", "untracked.tar", "RESTORE.txt"} {
+		if info, statErr := os.Stat(filepath.Join(recovery, name)); statErr != nil || !info.Mode().IsRegular() {
+			t.Fatalf("missing recovery artifact %s: %v", name, statErr)
+		}
+	}
+	if _, err := data.Workspaces.Get(chat.ID); err == nil {
+		t.Fatal("discard left a workspace record")
+	}
+}
+
+func TestProjectCheckoutStageCommitAndDiscardAreProjectScoped(t *testing.T) {
+	t.Parallel()
+	repository := testkit.GitRepo(t)
+	data := testkit.Store(t)
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, "README.md"), []byte("project change\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, "scratch.txt"), []byte("discard me\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	workspaces := workspace.New(data, nil)
+	manager := operations.New(data, workspaces, nil)
+	changes, err := manager.Changesets.GetProject(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage, err := manager.Start(context.Background(), operations.Request{
+		ProjectID: project.ID, Kind: "stage", ExpectedRevision: changes.Revision, Parameters: map[string]string{"path": "README.md"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage = waitOperation(t, manager, stage.ID)
+	if stage.Status != model.GitOperationSucceeded || stage.CardID != "" || stage.ProjectID != project.ID {
+		t.Fatalf("project stage failed: %#v", stage)
+	}
+	changes, err = manager.Changesets.GetProject(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit, err := manager.Start(context.Background(), operations.Request{
+		ProjectID: project.ID, Kind: "commit", ExpectedRevision: changes.Revision,
+		Parameters: map[string]string{"subject": "project change", "validate": "false"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit = waitOperation(t, manager, commit.ID)
+	if commit.Status != model.GitOperationSucceeded {
+		t.Fatalf("project commit failed: %#v", commit)
+	}
+	changes, err = manager.Changesets.GetProject(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changes.Files) != 1 || changes.Files[0].Path != "scratch.txt" || changes.Files[0].Staged {
+		t.Fatalf("commit did not preserve the unstaged file: %#v", changes.Files)
+	}
+	discard, err := manager.Start(context.Background(), operations.Request{
+		ProjectID: project.ID, Kind: "discard_changes", ExpectedRevision: changes.Revision, Parameters: map[string]string{"path": "scratch.txt"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	discard = waitOperation(t, manager, discard.ID)
+	if discard.Status != model.GitOperationSucceeded {
+		t.Fatalf("project discard failed: %#v", discard)
+	}
+	if _, err := os.Stat(filepath.Join(repository, "scratch.txt")); !os.IsNotExist(err) {
+		t.Fatalf("untracked project file was not discarded: %v", err)
+	}
+	if info, err := os.Stat(filepath.Join(data.RecoveryDir(), discard.ID, "RESTORE.txt")); err != nil || !info.Mode().IsRegular() {
+		t.Fatalf("project discard did not create recovery instructions: %v", err)
+	}
+}
+
+func TestProjectCheckoutDiscardsAFolder(t *testing.T) {
+	t.Parallel()
+	repository := testkit.GitRepo(t)
+	folder := filepath.Join(repository, "pkg")
+	if err := os.MkdirAll(filepath.Join(folder, "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(repository, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("pkg/tracked.txt", "base\n")
+	write("pkg/gone.txt", "base\n")
+	write("pkg/.gitignore", "*.log\n")
+	testkit.RunGit(t, repository, "add", "pkg")
+	testkit.RunGit(t, repository, "commit", "-m", "pkg")
+	write("pkg/tracked.txt", "edited\n")
+	if err := os.Remove(filepath.Join(folder, "gone.txt")); err != nil {
+		t.Fatal(err)
+	}
+	write("pkg/nested/new.txt", "untracked\n")
+	write("pkg/staged.txt", "staged\n")
+	testkit.RunGit(t, repository, "add", "pkg/staged.txt")
+	write("pkg/keep.log", "ignored\n")
+	write("README.md", "outside\n")
+
+	data := testkit.Store(t)
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := operations.New(data, workspace.New(data, nil), nil)
+	changes, err := manager.Changesets.GetProject(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	discard, err := manager.Start(context.Background(), operations.Request{
+		ProjectID: project.ID, Kind: "discard_changes", ExpectedRevision: changes.Revision, Parameters: map[string]string{"path": "pkg"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if discard = waitOperation(t, manager, discard.ID); discard.Status != model.GitOperationSucceeded {
+		t.Fatalf("folder discard failed: %#v", discard)
+	}
+	for name, want := range map[string]string{"pkg/tracked.txt": "base\n", "pkg/gone.txt": "base\n", "pkg/keep.log": "ignored\n", "README.md": "outside\n"} {
+		if got, err := os.ReadFile(filepath.Join(repository, name)); err != nil || string(got) != want {
+			t.Fatalf("%s = %q, %v; want %q", name, got, err, want)
+		}
+	}
+	for _, name := range []string{"pkg/nested/new.txt", "pkg/staged.txt"} {
+		if _, err := os.Stat(filepath.Join(repository, name)); !os.IsNotExist(err) {
+			t.Fatalf("folder discard left %s: %v", name, err)
+		}
+	}
+	if status := testkit.RunGit(t, repository, "status", "--porcelain"); strings.TrimSpace(status) != "M README.md" {
+		t.Fatalf("status after folder discard = %q", status)
+	}
+}
+
+func TestProjectCheckoutCanPushItsCurrentBranch(t *testing.T) {
+	t.Parallel()
+	repository := testkit.GitRepo(t)
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	testkit.RunGit(t, "", "init", "--bare", remote)
+	testkit.RunGit(t, repository, "remote", "add", "origin", remote)
+	testkit.RunGit(t, repository, "push", "--set-upstream", "origin", "main")
+
+	data := testkit.Store(t)
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{
+		Name: "Fixture", Path: repository, BaseRemote: "origin", BaseBranch: "main",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, "README.md"), []byte("ship from project mode\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	workspaces := workspace.New(data, nil)
+	manager := operations.New(data, workspaces, nil)
+	changes, err := manager.Changesets.GetProject(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit, err := manager.Start(context.Background(), operations.Request{
+		ProjectID: project.ID, Kind: "commit", ExpectedRevision: changes.Revision,
+		Parameters: map[string]string{"subject": "ship project checkout", "stage_all": "true", "validate": "false"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if commit = waitOperation(t, manager, commit.ID); commit.Status != model.GitOperationSucceeded {
+		t.Fatalf("project commit failed: %#v", commit)
+	}
+	push, err := manager.Start(context.Background(), operations.Request{ProjectID: project.ID, Kind: "push"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if push = waitOperation(t, manager, push.ID); push.Status != model.GitOperationSucceeded {
+		t.Fatalf("project push failed: %#v", push)
+	}
+	local := testkit.RunGit(t, repository, "rev-parse", "HEAD")
+	remoteHead := testkit.RunGit(t, repository, "--git-dir", remote, "rev-parse", "refs/heads/main")
+	if local != remoteHead {
+		t.Fatalf("remote head=%s local=%s", remoteHead, local)
+	}
+}
+
+func TestProjectCheckoutCanStageWhileAProjectModeAgentIsActive(t *testing.T) {
+	t.Parallel()
+	repository := testkit.GitRepo(t)
+	data := testkit.Store(t)
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Shared", Path: repository, BaseBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	card, err := data.Kanban.CreateChat(kanban.CreateCardInput{
+		Project: project.ID, Title: "Active", Prompt: "work", WorkspaceMode: model.WorkspaceModeProject,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := data.Kanban.AcquireRuntimeLease(project.ID, card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = data.Leases.Release(lease) }()
+	if err := os.WriteFile(filepath.Join(repository, "README.md"), []byte("agent edit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manager := operations.New(data, workspace.New(data, nil), nil)
+	changes, err := manager.Changesets.GetProject(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage, err := manager.Start(context.Background(), operations.Request{
+		ProjectID: project.ID, Kind: "stage", ExpectedRevision: changes.Revision,
+		Parameters: map[string]string{"path": "README.md"},
+	})
+	if err != nil {
+		t.Fatalf("stage should remain available in a shared active checkout: %v", err)
+	}
+	if stage = waitOperation(t, manager, stage.ID); stage.Status != model.GitOperationSucceeded {
+		t.Fatalf("stage failed while project agent active: %#v", stage)
+	}
+	if _, err := manager.Start(context.Background(), operations.Request{
+		ProjectID: project.ID, Kind: "update",
+	}); !errors.Is(err, operations.ErrWorkspaceBusy) {
+		t.Fatalf("branch-moving update should remain blocked while an agent is active: %v", err)
+	}
+}
+
+func TestProjectCheckoutUnstageAndDiscardSupportUnbornRepository(t *testing.T) {
+	t.Parallel()
+	repository := filepath.Join(t.TempDir(), "repository")
+	testkit.RunGit(t, "", "init", "-b", "feature/unborn", repository)
+	testkit.RunGit(t, repository, "config", "user.name", "Dieter Test")
+	testkit.RunGit(t, repository, "config", "user.email", "dieter@example.test")
+	data := testkit.Store(t)
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Unborn", Path: repository, BaseBranch: "feature/unborn"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(repository, "new.txt")
+	if err := os.WriteFile(path, []byte("staged\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	workspaces := workspace.New(data, nil)
+	manager := operations.New(data, workspaces, nil)
+	changes, err := manager.Changesets.GetProject(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage, err := manager.Start(context.Background(), operations.Request{
+		ProjectID: project.ID, Kind: "stage", ExpectedRevision: changes.Revision, Parameters: map[string]string{"path": "new.txt"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stage = waitOperation(t, manager, stage.ID); stage.Status != model.GitOperationSucceeded {
+		t.Fatalf("stage in unborn repository failed: %#v", stage)
+	}
+	if err := os.WriteFile(path, []byte("changed after staging\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	changes, err = manager.Changesets.GetProject(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unstage, err := manager.Start(context.Background(), operations.Request{
+		ProjectID: project.ID, Kind: "unstage", ExpectedRevision: changes.Revision, Parameters: map[string]string{"path": "new.txt"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unstage = waitOperation(t, manager, unstage.ID); unstage.Status != model.GitOperationSucceeded {
+		t.Fatalf("unstage in unborn repository failed: %#v", unstage)
+	}
+	changes, err = manager.Changesets.GetProject(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changes.Files) != 1 || changes.Files[0].Staged || !changes.Files[0].Unstaged {
+		t.Fatalf("unborn unstage did not leave a working-tree-only file: %#v", changes.Files)
+	}
+	stage, err = manager.Start(context.Background(), operations.Request{
+		ProjectID: project.ID, Kind: "stage", ExpectedRevision: changes.Revision, Parameters: map[string]string{"path": "new.txt"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stage = waitOperation(t, manager, stage.ID); stage.Status != model.GitOperationSucceeded {
+		t.Fatalf("restage in unborn repository failed: %#v", stage)
+	}
+	if err := os.WriteFile(path, []byte("changed before discard\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	changes, err = manager.Changesets.GetProject(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	discard, err := manager.Start(context.Background(), operations.Request{
+		ProjectID: project.ID, Kind: "discard_changes", ExpectedRevision: changes.Revision, Parameters: map[string]string{"path": "new.txt"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if discard = waitOperation(t, manager, discard.ID); discard.Status != model.GitOperationSucceeded {
+		t.Fatalf("discard in unborn repository failed: %#v", discard)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("discard left unborn file behind: %v", err)
+	}
+}
+
+type fakeSCMProvider struct {
+	headSHA    string
+	mergedHead string
+}
+
+func (f *fakeSCMProvider) Capabilities(context.Context, string, string) model.SCMCapabilities {
+	return model.SCMCapabilities{Provider: "fake", Authenticated: true}
+}
+
+func (f *fakeSCMProvider) CreatePullRequest(_ context.Context, _, _ string, _ git.CreatePullRequestInput) (model.PullRequest, error) {
+	return model.PullRequest{Provider: "fake", Number: 17, URL: "https://example.test/pull/17", State: "open", HeadSHA: f.headSHA, BaseSHA: "base"}, nil
+}
+
+func (f *fakeSCMProvider) PullRequest(context.Context, string, string, int) (model.PullRequest, error) {
+	return model.PullRequest{Provider: "fake", Number: 17, URL: "https://example.test/pull/17", State: "open", HeadSHA: f.headSHA, BaseSHA: "base"}, nil
+}
+
+func (f *fakeSCMProvider) MergePullRequest(_ context.Context, _, _ string, _ int, _, expectedHeadSHA string) (model.PullRequest, error) {
+	f.mergedHead = expectedHeadSHA
+	return model.PullRequest{Provider: "fake", Number: 17, URL: "https://example.test/pull/17", State: "merged", HeadSHA: expectedHeadSHA, BaseSHA: "merged-base"}, nil
+}
+
+func waitOperation(t *testing.T, manager *operations.Manager, id string) model.GitOperation {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		value, err := manager.Get(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch value.Status {
+		case model.GitOperationQueued, model.GitOperationRunning:
+			time.Sleep(10 * time.Millisecond)
+		default:
+			// The terminal record is visible before SaveGitOperation finishes
+			// its change count commit. Drain that writer before using the result
+			// or letting TempDir cleanup remove the store underneath it.
+			ctx, cancel := context.WithDeadline(context.Background(), deadline)
+			err := manager.Store.WaitForWriter(ctx)
+			cancel()
+			if err != nil {
+				t.Fatal(err)
+			}
+			return value
+		}
+	}
+	t.Fatal("timed out waiting for Git operation")
+	return model.GitOperation{}
+}

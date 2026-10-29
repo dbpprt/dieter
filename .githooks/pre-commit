@@ -1,0 +1,4 @@
+#!/bin/sh
+# Checks the staged index (formatting, file integrity, Go lint, secrets) without
+# stashing or touching working files. Install with `just hooks`.
+exec mise exec -- just lint --staged

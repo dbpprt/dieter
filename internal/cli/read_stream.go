@@ -22,12 +22,12 @@ type readResumingConn struct{ grpc.ClientConnInterface }
 
 func (c readResumingConn) NewStream(ctx context.Context, desc *grpc.StreamDesc, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
 	switch method {
-	case dieterv1.DieterService_WatchKV_FullMethodName, dieterv1.DieterService_WatchState_FullMethodName,
-		dieterv1.DieterService_WatchSync_FullMethodName,
-		dieterv1.DieterService_WatchConversation_FullMethodName,
-		dieterv1.DieterService_WatchTerminal_FullMethodName,
-		dieterv1.DieterService_WatchExecution_FullMethodName,
-		dieterv1.DieterService_WatchGitOperation_FullMethodName:
+	case dieterv1.KVService_WatchKV_FullMethodName, dieterv1.StateService_WatchChanges_FullMethodName,
+		dieterv1.ConversationService_WatchConversation_FullMethodName,
+		dieterv1.TerminalService_WatchTerminal_FullMethodName,
+		dieterv1.ExecutionService_WatchExecution_FullMethodName,
+		dieterv1.GitService_WatchGitOperation_FullMethodName,
+		dieterv1.ChannelService_WatchChannel_FullMethodName:
 		return &resumingReadStream{ctx: ctx, open: func(ctx context.Context) (grpc.ClientStream, error) {
 			return c.ClientConnInterface.NewStream(ctx, desc, method, opts...)
 		}}, nil
@@ -158,10 +158,13 @@ func (s *resumingReadStream) checkpoint(value any) {
 		for _, log := range value.(*dieterv1.GitOperationFrame).GetLogs() {
 			request.AfterSequence = max(request.AfterSequence, log.GetSequence())
 		}
-	case *dieterv1.SyncRequest:
-		frame := value.(*dieterv1.SyncFrame)
-		if !frame.GetHeartbeat() && !frame.GetTransportOnly() && !frame.GetProjectionPending() && frame.GetCursor() != nil {
-			request.After = proto.Clone(frame.GetCursor()).(*dieterv1.SyncCursor)
+	case *dieterv1.WatchChannelRequest:
+		// A resumed watch starts after the last delivered sequence, without a reset page.
+		request.AfterSeq = max(request.AfterSeq, value.(*dieterv1.ChannelFrame).GetLastSeq())
+	case *dieterv1.ChangesRequest:
+		// Every frame's cursor covers everything delivered up to it.
+		if cursor := value.(*dieterv1.ChangesFrame).GetCursor(); cursor != nil {
+			request.After = proto.Clone(cursor).(*dieterv1.ChangesCursor)
 		}
 	}
 }

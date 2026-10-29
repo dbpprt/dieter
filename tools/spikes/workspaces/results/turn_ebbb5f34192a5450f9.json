@@ -1,0 +1,26 @@
+{
+  "card": "c_2940192bc7b257cd9ba29104",
+  "changes": [
+    {
+      "path": "api/schema.json",
+      "status": "D"
+    },
+    {
+      "path": "docs/guide.md",
+      "status": "M"
+    },
+    {
+      "path": "notes-codex.txt",
+      "status": "A"
+    },
+    {
+      "path": "src/app/main.go",
+      "status": "M"
+    }
+  ],
+  "end": "98389c53b72f9a4625a41593f25a1ca3799bf13d",
+  "snapshotMs": 295,
+  "start": "6740be4e6429549960bb096fd14851608e4e5f23",
+  "turn": "turn_ebbb5f34192a5450f9",
+  "workspace": "/Volumes/External/dieter-spike/phase-d/home/worktrees/p_28a650d24f93/c_2940192bc7b257cd9ba29104"
+}

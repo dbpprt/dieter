@@ -12,16 +12,18 @@ import (
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 type nativeDisplay struct {
-	mu      sync.Mutex
-	options SourceOptions
-	cancel  context.CancelFunc
-	input   io.WriteCloser
-	output  chan []byte
-	done    chan struct{}
-	closed  bool
+	mu        sync.Mutex
+	options   SourceOptions
+	arguments []string
+	cancel    context.CancelFunc
+	input     io.WriteCloser
+	output    chan []byte
+	done      chan struct{}
+	closed    bool
 }
 
 func newNativeDisplay(options SourceOptions) *nativeDisplay { return &nativeDisplay{options: options} }
@@ -32,7 +34,10 @@ func (n *nativeDisplay) start() error {
 		return err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	args := []string{"--display-service"}
+	args := n.arguments
+	if len(args) == 0 {
+		args = []string{"--display-service"}
+	}
 	if n.options.Kind == "native-synthetic" {
 		args = append(args, "--dry-run")
 	}
@@ -80,9 +85,19 @@ func (n *nativeDisplay) start() error {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				// A bounded mutation already owns the pipe. Start the heartbeat
+				// deadline after admission, never while waiting for that mutation.
+				if !n.mu.TryLock() {
+					continue
+				}
+				if n.closed {
+					n.mu.Unlock()
+					return
+				}
 				heartbeat, stop := context.WithTimeout(ctx, time.Second)
-				_, err := n.Exchange(heartbeat, "heartbeat", "", "", "")
+				err := n.exchangeLocked(heartbeat, map[string]string{"action": "heartbeat"}, nil)
 				stop()
+				n.mu.Unlock()
 				if err != nil {
 					n.Close()
 					return
@@ -109,7 +124,7 @@ func (n *nativeDisplay) closeLocked() {
 	if n.done != nil {
 		select {
 		case <-n.done:
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(n.closeGrace()):
 			n.cancel()
 			<-n.done
 		}
@@ -129,24 +144,34 @@ func (n *nativeDisplay) Exchange(ctx context.Context, action, display, mode, exp
 			return nil, err
 		}
 	}
-	raw, _ := json.Marshal(map[string]string{"action": action, "display_id": display, "mode_id": mode, "expected_current_mode_id": expected})
+	result := &dieterv1.RemoteDesktopDisplayModes{}
+	var destination proto.Message = result
+	if action == "heartbeat" {
+		destination = nil
+	}
+	err := n.exchangeLocked(ctx, map[string]string{"action": action, "display_id": display, "mode_id": mode, "expected_current_mode_id": expected}, destination)
+	return result, err
+}
+
+func (n *nativeDisplay) exchangeLocked(ctx context.Context, request any, result proto.Message) error {
+	raw, _ := json.Marshal(request)
 	written := make(chan error, 1)
 	go func() { _, err := n.input.Write(append(raw, '\n')); written <- err }()
 	select {
 	case err := <-written:
 		if err != nil {
 			n.closeLocked()
-			return nil, err
+			return err
 		}
 	case <-ctx.Done():
 		n.closeLocked()
-		return nil, ctx.Err()
+		return ctx.Err()
 	}
 	select {
 	case raw, ok := <-n.output:
 		if !ok {
 			n.closeLocked()
-			return nil, errors.New("display helper stopped")
+			return errors.New("display helper stopped")
 		}
 		var reply struct {
 			Result json.RawMessage `json:"result"`
@@ -154,21 +179,27 @@ func (n *nativeDisplay) Exchange(ctx context.Context, action, display, mode, exp
 		}
 		if err := json.Unmarshal(raw, &reply); err != nil {
 			n.closeLocked()
-			return nil, err
+			return err
 		}
 		if reply.Error != "" {
-			return nil, errors.New(reply.Error)
+			return errors.New(reply.Error)
 		}
-		result := &dieterv1.RemoteDesktopDisplayModes{}
-		if len(reply.Result) > 0 {
+		if result != nil && len(reply.Result) > 0 {
 			if err := protojson.Unmarshal(reply.Result, result); err != nil {
 				n.closeLocked()
-				return nil, err
+				return err
 			}
 		}
-		return result, nil
+		return nil
 	case <-ctx.Done():
 		n.closeLocked()
-		return nil, ctx.Err()
+		return ctx.Err()
 	}
+}
+
+func (n *nativeDisplay) closeGrace() time.Duration {
+	if len(n.arguments) > 0 && n.arguments[0] == "--virtual-display-service" {
+		return 3 * time.Second
+	}
+	return 500 * time.Millisecond
 }

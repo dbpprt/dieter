@@ -1,0 +1,17 @@
+{
+  "board": "Pair verify1",
+  "cardId": "c_d00fd57612cdca88e6136edd",
+  "lane": "running",
+  "project": "atrium-verify1",
+  "projectPrompt": "",
+  "task": "For each of src/module3.js, src/module4.js, src/module6.js and src/module7.js, one file at a time: append ' (reviewed)' to the comment on line 1, then run `sleep 3 \u0026\u0026 echo checked`. When all four are done, commit them with message 'A: review headers'. Commit only the files you changed yourself (git add \u003cfiles\u003e; never git add -A / . / commit -a).",
+  "tokenUsage": {
+    "inputTokens": 82091,
+    "missingMessages": 0,
+    "outputTokens": 1023,
+    "partial": false,
+    "reportedMessages": 1,
+    "totalTokens": 83114
+  },
+  "workflow": "direct"
+}

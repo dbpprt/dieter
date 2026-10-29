@@ -1,0 +1,11 @@
+# Reviewed false positives in history (2026-10-12): test fixtures with synthetic
+# account keys, a placeholder PEM in a redaction test, an example UUID and a
+# minified JS bundle. Add a fingerprint only after reviewing the finding.
+2f20e7d92a03231b68c92579b124f90d69660c12:apps/mac/Tests/DieterMacTests/ProviderQuotaPreviewRenderTests.swift:generic-api-key:160
+2f20e7d92a03231b68c92579b124f90d69660c12:apps/mac/Tests/DieterMacTests/ProviderQuotaPreviewRenderTests.swift:generic-api-key:268
+8a27b41ff402cf99901dc1e54587a11797ce2904:apps/mac/Sources/DieterIOS/UI/IOSProviderQuotaView.swift:generic-api-key:510
+737a4068924cbcfa9506e38ce2bd77aee00969cc:internal/gateway/quota_manager_test.go:generic-api-key:137
+5328d704242da909c6a0e1a9ddcd52983d644410:apps/mac/Tests/DieterMacTests/ProviderQuotaPreviewRenderTests.swift:generic-api-key:94
+174dc7b2af26ea875b1512f83c49fcac007173c0:scripts/ios_release_test.py:private-key:442
+860a17cd4fdfc930265d315726f2a0e287aa1306:scripts/ios_release_test.py:private-key:442
+6ec88e612cfcd986b69288e455a19693e53fd952:apps/mac/Sources/DieterMac/Resources/MarkdownPreview/app.js:generic-api-key:614

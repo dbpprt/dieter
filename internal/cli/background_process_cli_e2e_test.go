@@ -1,3 +1,5 @@
+//go:build e2e
+
 package cli
 
 import (
@@ -8,12 +10,15 @@ import (
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
+	"github.com/dbpprt/dieter/internal/testkit"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func TestDaemonCLIBackgroundConversationProcesses(t *testing.T) {
+	t.Parallel()
 	client, output, data := daemonCLIForTest(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Path: initTestRepository(t, "processes"), Name: "Processes"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Path: initTestRepository(t, "processes"), Name: "Processes"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,7 +27,7 @@ func TestDaemonCLIBackgroundConversationProcesses(t *testing.T) {
 
 func assertBackgroundProcessCLI(t *testing.T, client *CLI, output *bytes.Buffer, data *store.Store, projectID string) {
 	t.Helper()
-	card, err := data.CreateChat(store.CreateCardInput{Project: projectID, Title: "Background process", WorkspaceMode: "project"})
+	card, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: projectID, Title: "Background process", WorkspaceMode: "project"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +40,7 @@ func assertBackgroundProcessCLI(t *testing.T, client *CLI, output *bytes.Buffer,
 		t.Fatalf("scoped list=%s", listed)
 	}
 	runDaemonCLI(t, client, output, "remote", "cancel", value.Id)
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(testkit.Budget(30 * time.Second))
 	for {
 		raw = runDaemonCLI(t, client, output, "remote", "show", value.Id)
 		value.Reset()

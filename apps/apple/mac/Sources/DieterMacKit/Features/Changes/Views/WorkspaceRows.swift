@@ -1,0 +1,192 @@
+import AppKit
+import DieterAPI
+import DieterClientAPI
+import DieterCore
+import SwiftUI
+
+struct WorkspaceSectionHeader: View {
+    let title: String
+    let count: Int
+    var additions: Int32? = nil
+    var deletions: Int32? = nil
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(title.uppercased()).font(DieterFont.sectionLabel).tracking(0.45).foregroundStyle(DieterTheme.tertiary)
+            Text("\(count)").font(.system(size: 9, weight: .bold)).foregroundStyle(DieterTheme.tertiary)
+            Spacer()
+            if let additions, let deletions { WorkspaceDeltaLabel(additions: additions, deletions: deletions) }
+        }
+        .frame(height: 22)
+    }
+}
+
+struct WorkspaceDeltaLabel: View {
+    let additions: Int32
+    let deletions: Int32
+
+    var body: some View {
+        Group {
+            if additions != 0 || deletions != 0 {
+                HStack(spacing: 6) {
+                    Text("+\(additions)").foregroundStyle(DieterTheme.diffAddition)
+                    Text("−\(deletions)").foregroundStyle(DieterTheme.coral)
+                }
+                .font(.system(size: 10, weight: .semibold, design: .monospaced)).fixedSize()
+            }
+        }
+    }
+}
+
+struct WorkspaceEmptyRow: View {
+    let symbol: String
+    let title: String
+    var body: some View {
+        Label(title, systemImage: symbol).font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
+            .padding(.horizontal, 8).frame(height: 34)
+    }
+}
+
+/// Equatable over what it shows: its action opens `file`, so equal rows act
+/// alike and an unrelated update of the list re-renders none of them.
+struct WorkspaceFileRow: View, Equatable {
+    let file: Dieter_V1_ChangedFile
+    let selected: Bool
+    var viewed = false
+    let action: () -> Void
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.file == rhs.file && lhs.selected == rhs.selected && lhs.viewed == rhs.viewed
+    }
+
+    private var tint: Color {
+        if file.conflicted { return DieterTheme.coral }
+        if file.untracked { return DieterTheme.amber }
+        return DieterTheme.shell
+    }
+
+    var body: some View {
+        let label = ClientChangedFileLabel.of(
+            file.path, status: file.status, conflicted: file.conflicted, untracked: file.untracked)
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Text(label.badge)
+                    .font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(tint)
+                    .frame(width: 20, height: 20).background(tint.opacity(0.11), in: RoundedRectangle(cornerRadius: 5))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(label.filename)
+                        .font(.system(size: 11, weight: .medium))
+                        .strikethrough(label.badge == "D")
+                        .opacity(viewed && !selected ? 0.55 : 1)
+                        .lineLimit(1)
+                    if !label.directory.isEmpty {
+                        Text(label.directory).font(.system(size: 9, design: .monospaced)).foregroundStyle(
+                            DieterTheme.tertiary
+                        ).lineLimit(1).truncationMode(.middle)
+                    }
+                }
+                Spacer(minLength: 5)
+                if viewed {
+                    Image(systemName: "checkmark").font(.system(size: 8, weight: .bold)).foregroundStyle(
+                        DieterTheme.diffAddition)
+                }
+                WorkspaceDeltaLabel(additions: file.additions, deletions: file.deletions)
+            }
+            .padding(.horizontal, 8).frame(minHeight: 42)
+            .background(selected ? DieterTheme.selection : .clear, in: RoundedRectangle(cornerRadius: 7))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).help("\(label.title): \(file.path)")
+    }
+}
+
+struct WorkspaceCommitRow: View {
+    let commit: Dieter_V1_WorkspaceCommit
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .firstTextBaseline, spacing: 9) {
+                Text(SharedRules.shared.shortSha(shortSha: commit.shortSha, sha: commit.sha))
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(DieterTheme.shell)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(commit.subject).font(.system(size: 11, weight: .medium)).lineLimit(2)
+                    HStack(spacing: 6) {
+                        WorkspaceDeltaLabel(additions: commit.additions, deletions: commit.deletions)
+                        if !commit.authoredAt.isEmpty {
+                            Text(SharedRules.shared.agoSince(value: commit.authoredAt, nowMillis: Date.now.epochMillis))
+                                .font(.system(size: 9)).foregroundStyle(DieterTheme.tertiary)
+                        }
+                    }
+                }
+                Spacer(minLength: 5)
+            }
+            .padding(.horizontal, 11).padding(.vertical, 8)
+            .background(selected ? DieterTheme.selection : .clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct PullRequestStateBadge: View {
+    let label: String
+    let tone: ClientWorkspaceTone
+
+    var body: some View {
+        Text(label)
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(color)
+            .padding(.horizontal, 7).frame(height: 17)
+            .background(color.opacity(0.13), in: Capsule())
+    }
+
+    private var color: Color { WorkspaceToneStyle.color(tone) }
+}
+
+/// The colour of a workspace fact's tone.
+@MainActor enum WorkspaceToneStyle {
+    static func color(_ tone: ClientWorkspaceTone) -> Color {
+        switch tone {
+        case .success: DieterTheme.diffAddition
+        case .active: DieterTheme.shell
+        case .warning: DieterTheme.amber
+        case .danger: DieterTheme.coral
+        default: DieterTheme.subtle
+        }
+    }
+}
+
+struct PullRequestSignalLabel: View {
+    let signal: ClientPullRequestSignal
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if signal.tone == .active {
+                DieterActivityIndicator(color: DieterTheme.shell, size: 9)
+            } else {
+                Image(systemName: symbol).font(.system(size: 8, weight: .bold))
+            }
+            Text(signal.text)
+        }
+        .font(.system(size: 9, weight: .medium))
+        .foregroundStyle(color)
+        .lineLimit(1)
+        .fixedSize()
+    }
+
+    private var symbol: String {
+        switch signal.tone {
+        case .success: "checkmark"
+        case .warning: "clock"
+        case .danger: "xmark"
+        default: "circle"
+        }
+    }
+
+    private var color: Color { WorkspaceToneStyle.color(signal.tone) }
+}
+
+// MARK: - Merge sheet

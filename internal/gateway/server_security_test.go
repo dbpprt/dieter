@@ -20,7 +20,6 @@ import (
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
-	"golang.org/x/net/http2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -38,6 +37,7 @@ func (b *repeatedBody) Read(p []byte) (int, error) {
 }
 
 func TestGatewayRejectsUnauthenticatedRPCBeforeReadingBody(t *testing.T) {
+	t.Parallel()
 	store, err := OpenStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -48,7 +48,6 @@ func TestGatewayRejectsUnauthenticatedRPCBeforeReadingBody(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer server.APIGRPC.Stop()
-	defer server.RelayGRPC.Stop()
 	for _, headers := range [][]string{nil, {"Bearer invalid"}, {"Bearer one", "Bearer two"}} {
 		body := &repeatedBody{}
 		request := httptest.NewRequest(http.MethodPost, "https://gateway.example/dieter.gateway.v1.GatewayService/GetAccount", body)
@@ -66,6 +65,7 @@ func TestGatewayRejectsUnauthenticatedRPCBeforeReadingBody(t *testing.T) {
 }
 
 func TestGatewayRejectsUnauthenticatedProviderQuotaRPCsBeforeReadingBody(t *testing.T) {
+	t.Parallel()
 	store, err := OpenStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +76,6 @@ func TestGatewayRejectsUnauthenticatedProviderQuotaRPCsBeforeReadingBody(t *test
 		t.Fatal(err)
 	}
 	defer server.APIGRPC.Stop()
-	defer server.RelayGRPC.Stop()
 	for _, method := range []string{"ListProviderQuotas", "WatchProviderQuotas", "RefreshProviderQuotas", "SetProviderQuotaSummaryInclusion", "ConsumeProviderQuotaReset"} {
 		t.Run(method, func(t *testing.T) {
 			body := &repeatedBody{}
@@ -93,6 +92,7 @@ func TestGatewayRejectsUnauthenticatedProviderQuotaRPCsBeforeReadingBody(t *test
 }
 
 func TestGatewayBoundsHTTP1BodiesBeforeRouting(t *testing.T) {
+	t.Parallel()
 	store, err := OpenStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -103,7 +103,6 @@ func TestGatewayBoundsHTTP1BodiesBeforeRouting(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer server.APIGRPC.Stop()
-	defer server.RelayGRPC.Stop()
 	for _, upgrade := range []string{"h2c", "other, h2c"} {
 		t.Run(upgrade, func(t *testing.T) {
 			body := &repeatedBody{}
@@ -113,13 +112,13 @@ func TestGatewayBoundsHTTP1BodiesBeforeRouting(t *testing.T) {
 			request.Header.Set("HTTP2-Settings", "")
 			response := httptest.NewRecorder()
 			server.HTTPHandler.ServeHTTP(response, request)
-			if response.Code < 400 || body.read > maxRelayPayload+1 {
+			if response.Code < 400 || body.read > maxGatewayMessageBytes+1 {
 				t.Fatalf("status=%d read=%d; unbounded upgrade body", response.Code, body.read)
 			}
 		})
 	}
-	request := httptest.NewRequest(http.MethodPost, "http://localhost/healthz", io.LimitReader(&repeatedBody{}, maxRelayPayload+1))
-	request.ContentLength = maxRelayPayload + 1
+	request := httptest.NewRequest(http.MethodPost, "http://localhost/healthz", io.LimitReader(&repeatedBody{}, maxGatewayMessageBytes+1))
+	request.ContentLength = maxGatewayMessageBytes + 1
 	response := httptest.NewRecorder()
 	server.HTTPHandler.ServeHTTP(response, request)
 	if response.Code != http.StatusRequestEntityTooLarge {
@@ -128,6 +127,7 @@ func TestGatewayBoundsHTTP1BodiesBeforeRouting(t *testing.T) {
 }
 
 func TestGatewayClosesIncompleteHTTP2Preface(t *testing.T) {
+	t.Parallel()
 	gateway := &Server{Config: Config{DevInsecure: true}, HTTPHandler: http.NotFoundHandler()}
 	server, err := gateway.httpServer()
 	if err != nil {
@@ -152,13 +152,14 @@ func TestGatewayClosesIncompleteHTTP2Preface(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := io.ReadAll(connection); err != nil {
-		if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
+		if timeout := net.Error(nil); errors.As(err, &timeout) && timeout.Timeout() {
 			t.Fatal("incomplete prior-knowledge HTTP/2 preface outlived the header deadline")
 		}
 	}
 }
 
 func TestGatewayTimesOutPublicUnaryHTTP2Bodies(t *testing.T) {
+	t.Parallel()
 	for _, method := range []string{"BeginDaemonEnrollment", "CompleteDaemonEnrollment", "UnenrollDaemon"} {
 		t.Run(method, func(t *testing.T) {
 			bodyResult := make(chan error, 1)
@@ -178,9 +179,7 @@ func TestGatewayTimesOutPublicUnaryHTTP2Bodies(t *testing.T) {
 			}
 			defer server.Close()
 			go func() { _ = server.Serve(listener) }()
-			transport := &http2.Transport{AllowHTTP: true, DialTLSContext: func(ctx context.Context, network, address string, _ *tls.Config) (net.Conn, error) {
-				return (&net.Dialer{}).DialContext(ctx, network, address)
-			}}
+			transport := &http.Transport{Protocols: unencryptedHTTP2()}
 			defer transport.CloseIdleConnections()
 			reader, writer := io.Pipe()
 			defer reader.Close()
@@ -212,6 +211,7 @@ func TestGatewayTimesOutPublicUnaryHTTP2Bodies(t *testing.T) {
 }
 
 func TestGatewayCapsPublicUnaryBodiesWithoutCappingDaemonFrames(t *testing.T) {
+	t.Parallel()
 	for _, path := range []string{
 		"/dieter.gateway.v1.GatewayService/BeginDaemonEnrollment",
 		"/dieter.gateway.v1.GatewayService/CompleteDaemonEnrollment",
@@ -241,6 +241,7 @@ func TestGatewayCapsPublicUnaryBodiesWithoutCappingDaemonFrames(t *testing.T) {
 }
 
 func TestGatewaySecurityHeaders(t *testing.T) {
+	t.Parallel()
 	for _, insecure := range []bool{false, true} {
 		store, err := OpenStore(t.TempDir())
 		if err != nil {
@@ -253,7 +254,6 @@ func TestGatewaySecurityHeaders(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer server.APIGRPC.Stop()
-		defer server.RelayGRPC.Stop()
 		for _, path := range []string{"/", "/healthz", "/auth/github/callback?state=invalid"} {
 			response := httptest.NewRecorder()
 			server.HTTPHandler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, origin.String()+path, nil))
@@ -281,7 +281,6 @@ func securityTLSProxy(t *testing.T, config Config) (*Server, *httptest.Server) {
 		t.Fatal(err)
 	}
 	t.Cleanup(gateway.APIGRPC.Stop)
-	t.Cleanup(gateway.RelayGRPC.Stop)
 	// Production proxy mode: TLS terminates at the front end, with HTTP/2
 	// prior knowledge over a loopback-only connection to the gateway.
 	backend, err := gateway.httpServer()
@@ -295,10 +294,12 @@ func securityTLSProxy(t *testing.T, config Config) (*Server, *httptest.Server) {
 	go func() { _ = backend.Serve(listener) }()
 	t.Cleanup(func() { _ = backend.Close() })
 	backendURL, _ := url.Parse("http://" + listener.Addr().String())
-	proxy := httputil.NewSingleHostReverseProxy(backendURL)
-	transport := &http2.Transport{AllowHTTP: true, DialTLSContext: func(ctx context.Context, network, address string, _ *tls.Config) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, network, address)
+	proxy := &httputil.ReverseProxy{Rewrite: func(request *httputil.ProxyRequest) {
+		request.SetURL(backendURL)
+		request.Out.Host = request.In.Host
+		request.SetXForwarded()
 	}}
+	transport := &http.Transport{Protocols: unencryptedHTTP2()}
 	t.Cleanup(transport.CloseIdleConnections)
 	proxy.Transport = transport
 	frontend := httptest.NewUnstartedServer(proxy)
@@ -312,6 +313,7 @@ func securityTLSProxy(t *testing.T, config Config) (*Server, *httptest.Server) {
 }
 
 func TestGatewayRejectsStalledUnauthenticatedBodyThroughTLSProxy(t *testing.T) {
+	t.Parallel()
 	_, frontend := securityTLSProxy(t, Config{})
 	client := frontend.Client()
 	client.Timeout = 2 * time.Second
@@ -341,6 +343,7 @@ func TestGatewayRejectsStalledUnauthenticatedBodyThroughTLSProxy(t *testing.T) {
 }
 
 func TestEnrollmentThroughTLSProxyRequiresExplicitBrowserApproval(t *testing.T) {
+	t.Parallel()
 	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/login/oauth/authorize":
@@ -423,4 +426,11 @@ func TestEnrollmentThroughTLSProxyRequiresExplicitBrowserApproval(t *testing.T) 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatal("browser approval was replayable")
 	}
+}
+
+// unencryptedHTTP2 speaks HTTP/2 with prior knowledge over plaintext.
+func unencryptedHTTP2() *http.Protocols {
+	protocols := new(http.Protocols)
+	protocols.SetUnencryptedHTTP2(true)
+	return protocols
 }

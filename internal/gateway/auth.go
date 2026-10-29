@@ -14,22 +14,23 @@ import (
 	"html/template"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/buildinfo"
-	"github.com/dbpprt/dieter/internal/compatibility"
-	"github.com/dbpprt/dieter/internal/linkauth"
+	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	"github.com/dbpprt/dieter/internal/platform/buildinfo"
+	"github.com/dbpprt/dieter/internal/platform/version"
+	"github.com/dbpprt/dieter/internal/security/linkauth"
+	"github.com/dbpprt/dieter/internal/transport/relay"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -50,20 +51,80 @@ type Principal struct {
 }
 
 type Auth struct {
-	config         Config
-	store          *Store
-	client         *http.Client
-	log            *slog.Logger
-	rateMu         sync.Mutex
-	rates          map[string][]time.Time
-	activeSessions chan struct{}
+	config  Config
+	store   *Store
+	client  *http.Client
+	log     *slog.Logger
+	rateMu  sync.Mutex
+	rates   map[string][]time.Time
+	streams streamBudget
+}
+
+// Authenticated streams are bounded per account, so one account's clients and
+// daemons cannot exhaust the gateway for others, and in total.
+const (
+	maxAccountStreams = 256
+	maxGatewayStreams = 4096
+)
+
+type streamBudget struct {
+	mu           sync.Mutex
+	total        int
+	accounts     map[int64]int
+	laneTotals   [4]int
+	laneAccounts [4]map[int64]int
+}
+
+func (b *streamBudget) acquire(account int64) bool {
+	return b.acquireLane(account, relay.Command)
+}
+func (b *streamBudget) release(account int64) { b.releaseLane(account, relay.Command) }
+func (b *streamBudget) acquireLane(account int64, lane relay.Lane) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	accountLimit, globalLimit := maxAccountStreams, maxGatewayStreams
+	if lane == relay.Control || lane == relay.Replication {
+		accountLimit, globalLimit = 64, 512
+	}
+	if b.laneTotals[lane] >= globalLimit || b.laneAccounts[lane][account] >= accountLimit {
+		return false
+	}
+	if b.laneAccounts[lane] == nil {
+		b.laneAccounts[lane] = map[int64]int{}
+	}
+	b.laneTotals[lane]++
+	b.laneAccounts[lane][account]++
+	if lane == relay.Command {
+		b.total++
+		if b.accounts == nil {
+			b.accounts = map[int64]int{}
+		}
+		b.accounts[account]++
+	}
+	return true
+}
+func (b *streamBudget) releaseLane(account int64, lane relay.Lane) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.laneTotals[lane]--
+	b.laneAccounts[lane][account]--
+	if b.laneAccounts[lane][account] == 0 {
+		delete(b.laneAccounts[lane], account)
+	}
+	if lane == relay.Command {
+		b.total--
+		b.accounts[account]--
+		if b.accounts[account] == 0 {
+			delete(b.accounts, account)
+		}
+	}
 }
 
 func NewAuth(config Config, store *Store, logger *slog.Logger) *Auth {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Auth{config: config, store: store, client: &http.Client{Timeout: 12 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, log: logger, rates: map[string][]time.Time{}, activeSessions: make(chan struct{}, 128)}
+	return &Auth{config: config, store: store, client: &http.Client{Timeout: 12 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, log: logger, rates: map[string][]time.Time{}}
 }
 
 func (a *Auth) RegisterHTTP(mux *http.ServeMux) {
@@ -71,6 +132,7 @@ func (a *Auth) RegisterHTTP(mux *http.ServeMux) {
 	mux.HandleFunc("GET /auth/github/start", a.start)
 	mux.HandleFunc("GET /auth/github/callback", a.callback)
 	mux.HandleFunc("POST /auth/enrollment/approve", a.approveEnrollment)
+	mux.HandleFunc("POST /auth/native/approve", a.approveNativeSignIn)
 	mux.HandleFunc("POST /auth/native/exchange", a.nativeExchange)
 	mux.HandleFunc("POST /auth/native/revoke", a.nativeRevoke)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) })
@@ -104,7 +166,16 @@ func (a *Auth) StreamInterceptor(service any, stream grpc.ServerStream, info *gr
 	if len(headers.Get("authorization")) != 1 {
 		return status.Error(codes.Unauthenticated, "authentication required")
 	}
-	ctx, cancel, err := a.AuthenticateSession(stream.Context(), headers.Get("authorization")[0])
+	authorization, lane := headers.Get("authorization")[0], relay.Subscription
+	if info.FullMethod == gatewayv1.RelayService_OpenTunnel_FullMethodName {
+		// A tunnel counts against the stream budget of the lane it opens.
+		opened, err := a.receiveTunnelOpen(stream, authorization)
+		if opened == nil {
+			return err
+		}
+		stream, lane = opened, opened.open.GetLane()
+	}
+	ctx, cancel, err := a.authenticateLane(stream.Context(), authorization, lane)
 	if err != nil {
 		return err
 	}
@@ -119,6 +190,59 @@ func (a *Auth) StreamInterceptor(service any, stream grpc.ServerStream, info *gr
 	}
 }
 
+// tunnelOpenTimeout bounds how long an authenticated tunnel stream may wait
+// for its OPEN frame before it is admitted to a lane's stream budget.
+const tunnelOpenTimeout = 10 * time.Second
+
+// receiveTunnelOpen reads a tunnel's OPEN frame, which names the lane whose
+// stream budget admits it. It returns nil after answering an invalid first
+// frame with CLOSE.
+func (a *Auth) receiveTunnelOpen(stream grpc.ServerStream, authorization string) (*openedTunnelStream, error) {
+	if _, ok := a.AuthenticateBearer(authorization); !ok {
+		return nil, status.Error(codes.Unauthenticated, "authentication required")
+	}
+	open := &gatewayv1.TunnelFrame{}
+	received := make(chan error, 1)
+	// Returning the RPC cancels its transport and releases this receive.
+	go func() { received <- stream.RecvMsg(open) }()
+	timer := time.NewTimer(tunnelOpenTimeout)
+	defer timer.Stop()
+	select {
+	case err := <-received:
+		if err != nil {
+			return nil, err
+		}
+	case <-timer.C:
+		return nil, status.Error(codes.DeadlineExceeded, "tunnel OPEN frame was not received")
+	case <-stream.Context().Done():
+		return nil, status.FromContextError(stream.Context().Err()).Err()
+	}
+	if open.GetKind() != gatewayv1.TunnelFrameKind_TUNNEL_FRAME_KIND_OPEN || !relay.Valid(open.GetLane()) {
+		return nil, stream.SendMsg(tunnelClose(codes.InvalidArgument, "the first tunnel frame must be OPEN with a valid lane"))
+	}
+	return &openedTunnelStream{ServerStream: stream, open: open}, nil
+}
+
+// openedTunnelStream replays the OPEN frame the interceptor read.
+type openedTunnelStream struct {
+	grpc.ServerStream
+	open *gatewayv1.TunnelFrame
+}
+
+func (s *openedTunnelStream) RecvMsg(message any) error {
+	if s.open == nil {
+		return s.ServerStream.RecvMsg(message)
+	}
+	target, ok := message.(*gatewayv1.TunnelFrame)
+	if !ok {
+		return status.Error(codes.Internal, "tunnel stream received an unexpected message type")
+	}
+	proto.Reset(target)
+	proto.Merge(target, s.open)
+	s.open = nil
+	return nil
+}
+
 func (a *Auth) requireCompatibleClient(ctx context.Context) error {
 	values, _ := metadata.FromIncomingContext(ctx)
 	release := consistentMetadataValue(values.Get("x-dieter-client-version"))
@@ -126,8 +250,8 @@ func (a *Auth) requireCompatibleClient(ctx context.Context) error {
 	if err != nil {
 		return status.Error(codes.Internal, "gateway compatibility policy is invalid")
 	}
-	state, current := compatibility.Evaluate(release, policy.MinimumClientVersion)
-	if state == compatibility.StatusCompatible {
+	state, current := version.Evaluate(release, policy.MinimumClientVersion)
+	if state == version.StatusCompatible {
 		return nil
 	}
 	if current == "" {
@@ -164,6 +288,9 @@ func consistentMetadataValue(values []string) string {
 // AuthenticateSession ties a streaming transport to its current session. Polling
 // also closes idle transports after sign-out; canceling it never stops an agent.
 func (a *Auth) AuthenticateSession(ctx context.Context, authorization string) (context.Context, context.CancelFunc, error) {
+	return a.authenticateLane(ctx, authorization, relay.Command)
+}
+func (a *Auth) authenticateLane(ctx context.Context, authorization string, lane relay.Lane) (context.Context, context.CancelFunc, error) {
 	principal, ok := a.AuthenticateBearer(authorization)
 	if !ok {
 		return nil, nil, status.Error(codes.Unauthenticated, "authentication required")
@@ -184,14 +311,12 @@ func (a *Auth) AuthenticateSession(ctx context.Context, authorization string) (c
 		}
 		stillAuthorized = func() bool { return a.daemonEnrollmentCurrent(claims) }
 	}
-	select {
-	case a.activeSessions <- struct{}{}:
-	default:
+	if !a.streams.acquireLane(principal.GitHubID, lane) {
 		return nil, nil, status.Error(codes.ResourceExhausted, "too many authenticated streams")
 	}
 	ctx, cancel := context.WithCancelCause(context.WithValue(ctx, principalKey{}, principal))
 	go func() {
-		defer func() { <-a.activeSessions }()
+		defer a.streams.releaseLane(principal.GitHubID, lane)
 		ticker := time.NewTicker(sessionCheckInterval)
 		defer ticker.Stop()
 		for {
@@ -327,7 +452,7 @@ func (a *Auth) start(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "authentication unavailable", http.StatusInternalServerError)
 		return
 	}
-	pending := OAuthPending{StateHash: a.digest(state), Verifier: verifier, CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(10 * time.Minute)}
+	pending := oauthPending{State: state, Verifier: verifier, ExpiresAt: time.Now().UTC().Add(10 * time.Minute)}
 	nativeRedirect := strings.TrimSpace(r.URL.Query().Get("native_redirect_uri"))
 	nativeChallenge := strings.TrimSpace(r.URL.Query().Get("native_code_challenge"))
 	if nativeRedirect != "" || nativeChallenge != "" {
@@ -350,18 +475,12 @@ func (a *Auth) start(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "a native callback or daemon enrollment is required", http.StatusBadRequest)
 		return
 	}
-	if err := a.store.UpdateAuthState(func(value *AuthState) error {
-		pruneAuthState(value, time.Now().UTC())
-		if len(value.Pending) >= maxAuthRecords {
-			return errAuthCapacity
-		}
-		value.Pending = append(value.Pending, pending)
-		return nil
-	}); err != nil {
+	sealed, err := a.sealPending(pending)
+	if err != nil {
 		http.Error(w, "authentication unavailable", http.StatusInternalServerError)
 		return
 	}
-	http.SetCookie(w, secureCookie(oauthCookie, state, 10*time.Minute))
+	http.SetCookie(w, secureCookie(oauthCookie, sealed, 10*time.Minute))
 	digest := sha256.Sum256([]byte(verifier))
 	query := url.Values{
 		"client_id": {a.config.GitHubClientID}, "redirect_uri": {a.callbackURL()}, "state": {state},
@@ -370,35 +489,30 @@ func (a *Auth) start(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, strings.TrimRight(a.config.GitHubBaseURL, "/")+"/login/oauth/authorize?"+query.Encode(), http.StatusFound)
 }
 
-// nativeRedirectAllowed accepts configured app schemes and RFC 8252 loopback
-// callbacks used by the CLI. The CLI binds the port before starting OAuth and
-// protects the one-time code with PKCE, so an unprivileged local process cannot
-// redeem a callback intended for another login attempt.
+// nativeRedirectAllowed accepts only the exact configured app callbacks. A
+// loopback callback would let any local process start its own sign-in and
+// receive the session; PKCE cannot stop a flow the attacker started.
 func (a *Auth) nativeRedirectAllowed(raw string) bool {
-	if _, ok := a.config.NativeRedirects[raw]; ok {
-		return true
-	}
-	parsed, err := url.Parse(raw)
-	if err != nil || parsed.Scheme != "http" || parsed.User != nil || parsed.Fragment != "" || parsed.RawQuery != "" {
-		return false
-	}
-	if parsed.Hostname() != "127.0.0.1" || parsed.Port() == "" || parsed.Path != "/auth/callback" {
-		return false
-	}
-	port, err := strconv.ParseUint(parsed.Port(), 10, 16)
-	return err == nil && port > 0
+	_, ok := a.config.NativeRedirects[raw]
+	return ok
 }
 
 func (a *Auth) callback(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	state := r.URL.Query().Get("state")
 	cookie, err := r.Cookie(oauthCookie)
-	if err != nil || state == "" || !hmac.Equal([]byte(state), []byte(cookie.Value)) {
+	var pending oauthPending
+	ok := false
+	if err == nil {
+		pending, ok = a.openPending(cookie.Value)
+	}
+	if !ok || state == "" || !hmac.Equal([]byte(state), []byte(pending.State)) {
 		a.completion(w, false, "Authentication state is invalid.")
 		return
 	}
-	pending, ok, err := a.consumePending(state)
-	if err != nil || !ok || r.URL.Query().Get("code") == "" || r.URL.Query().Get("error") != "" {
+	// The sealed attempt is single-use: clear it before anything else can fail.
+	http.SetCookie(w, secureCookie(oauthCookie, "", -time.Hour))
+	if !pending.ExpiresAt.After(time.Now().UTC()) || r.URL.Query().Get("code") == "" || r.URL.Query().Get("error") != "" {
 		a.completion(w, false, "Authentication expired or was rejected.")
 		return
 	}
@@ -409,27 +523,16 @@ func (a *Auth) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, err := a.githubUser(r.Context(), githubToken)
-	githubToken = ""
+	githubToken = "" //nolint:ineffassign // drop the provider token from memory as soon as it is used
 	if err != nil || !a.config.AllowsGitHubUser(user.ID) {
 		a.completion(w, false, "This GitHub account is not allowed.")
 		return
 	}
 	if pending.EnrollmentID != "" {
-		http.SetCookie(w, secureCookie(oauthCookie, "", -time.Hour))
 		a.confirmEnrollment(w, pending, user.ID, user.Login)
 		return
 	}
-	code, err := a.createNativeCode(user.ID, user.Login, pending.NativeChallenge)
-	if err != nil {
-		a.completion(w, false, "Authentication unavailable.")
-		return
-	}
-	redirect, _ := url.Parse(pending.NativeRedirect)
-	query := redirect.Query()
-	query.Set("code", code)
-	redirect.RawQuery = query.Encode()
-	http.SetCookie(w, secureCookie(oauthCookie, "", -time.Hour))
-	http.Redirect(w, r, redirect.String(), http.StatusFound)
+	a.confirmNativeSignIn(w, pending, user.ID, user.Login)
 }
 
 func (a *Auth) completion(w http.ResponseWriter, success bool, message string) {
@@ -529,24 +632,6 @@ func (a *Auth) createNativeCode(id int64, login, challenge string) (string, erro
 	return raw, err
 }
 
-func (a *Auth) consumePending(raw string) (OAuthPending, bool, error) {
-	var found OAuthPending
-	err := a.store.UpdateAuthState(func(state *AuthState) error {
-		pruneAuthState(state, time.Now().UTC())
-		next := state.Pending[:0]
-		for _, pending := range state.Pending {
-			if found.StateHash == "" && hmac.Equal([]byte(pending.StateHash), []byte(a.digest(raw))) {
-				found = pending
-			} else {
-				next = append(next, pending)
-			}
-		}
-		state.Pending = next
-		return nil
-	})
-	return found, found.StateHash != "", err
-}
-
 func (a *Auth) consumeNativeCode(raw, challenge string) (NativeCode, bool, error) {
 	var found NativeCode
 	err := a.store.UpdateAuthState(func(state *AuthState) error {
@@ -573,13 +658,6 @@ func pruneAuthState(state *AuthState, now time.Time) {
 		}
 	}
 	state.Sessions = sessions
-	pending := state.Pending[:0]
-	for _, item := range state.Pending {
-		if item.ExpiresAt.After(now) {
-			pending = append(pending, item)
-		}
-	}
-	state.Pending = pending
 	codes := state.Codes[:0]
 	for _, item := range state.Codes {
 		if item.ExpiresAt.After(now) {
@@ -594,6 +672,13 @@ func pruneAuthState(state *AuthState, now time.Time) {
 		}
 	}
 	state.Approvals = approvals
+	signIns := state.SignIns[:0]
+	for _, item := range state.SignIns {
+		if item.ExpiresAt.After(now) {
+			signIns = append(signIns, item)
+		}
+	}
+	state.SignIns = signIns
 }
 
 func (a *Auth) digest(value string) string {
@@ -625,7 +710,7 @@ func (a *Auth) exchange(ctx context.Context, code, verifier string) (string, err
 	}
 	decodeErr := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&payload)
 	if response.StatusCode != http.StatusOK || decodeErr != nil || payload.AccessToken == "" || payload.Error != "" {
-		return "", fmt.Errorf("GitHub token exchange rejected (status=%d code=%q decode=%v)", response.StatusCode, payload.Error, decodeErr)
+		return "", fmt.Errorf("GitHub token exchange rejected (status=%d code=%q decode=%v)", response.StatusCode, payload.Error, decodeErr) //nolint:errorlint // decodeErr is often nil; the rejection is reported as text, not wrapped
 	}
 	return payload.AccessToken, nil
 }
@@ -655,10 +740,7 @@ func (a *Auth) githubUser(ctx context.Context, token string) (struct {
 }
 
 func (a *Auth) allow(r *http.Request) bool {
-	host := r.RemoteAddr
-	if parsed, _, err := net.SplitHostPort(host); err == nil {
-		host = parsed
-	}
+	host := clientNetworkKey(gatewayClientAddress(r, a.config.ProxyMode))
 	now, cutoff := time.Now(), time.Now().Add(-10*time.Minute)
 	a.rateMu.Lock()
 	defer a.rateMu.Unlock()

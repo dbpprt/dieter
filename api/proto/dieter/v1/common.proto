@@ -1,0 +1,603 @@
+syntax = "proto3";
+
+package dieter.v1;
+
+option go_package = "github.com/dbpprt/dieter/internal/gen/dieter/v1;dieterv1";
+option java_multiple_files = true;
+option java_package = "com.getdieter.api.v1";
+
+import "dieter/v1/screens.proto";
+
+// Types shared by several Dieter services.
+
+// Owner-only, current-boot physical display/input protection. It is independent
+// of viewer sessions and is never replicated as an account setting.
+message MachinePrivacy {
+  enum State {
+    STATE_OFF = 0;
+    STATE_ON = 1;
+    STATE_DEGRADED = 2;
+  }
+  bool supported = 1;
+  bool requested = 2;
+  State state = 3;
+  string reason = 4;
+  uint32 display_count = 5;
+  uint32 input_device_count = 6;
+  bool helper_setup_required = 7;
+}
+
+message State {
+  reserved 9, 10;
+  reserved "archives", "peer_sync_issues";
+
+  string store_path = 1;
+  repeated Project projects = 2;
+  Project project = 3;
+  repeated Board boards = 4;
+  repeated Card cards = 5;
+  repeated Card chats = 6;
+}
+
+message Checkout {
+ string id = 1;
+ string project_id = 2;
+ string daemon_id = 3;
+ string name = 4;
+ string path = 5;
+ bool detached = 6;
+ // Returned only by the owner; never part of the replicated registration.
+ repeated ValidationCommand validation_commands = 7;
+}
+
+message Project {
+ repeated Checkout checkouts = 18;
+ repeated string conflict_keys = 19;
+  reserved 13;
+  reserved "default_workspace_mode";
+
+  string id = 1;
+  string name = 2;
+  string path = 3;
+  string summary = 4;
+  string prompt = 5;
+  bool archived = 6;
+  string created_at = 7;
+  string updated_at = 8;
+  int32 board_count = 9;
+  int32 card_count = 10;
+  int32 chat_count = 11;
+  string prompt_template = 12;
+  string base_remote = 14;
+  string base_branch = 15;
+  repeated ValidationCommand validation_commands = 16;
+  repeated string hostnames = 17;
+}
+
+message Board {
+ repeated string conflict_keys = 15;
+  string id = 1;
+  string project_id = 2;
+  string name = 3;
+  string workflow = 4;
+  string description = 5;
+  string done_archive_policy = 6;
+  string created_at = 7;
+  string updated_at = 8;
+  repeated Label labels = 9;
+  repeated Lane lanes = 10;
+  string prompt_template = 11;
+  string base_remote = 12;
+  string remote_publish_mode = 13;
+  repeated string hostnames = 14;
+  bool retired = 16;
+  string retirement_revision = 17;
+  repeated BoardRetirementVersion retirement_versions = 18;
+  bool retirement_blocked = 19;
+  repeated string retirement_references = 20;
+}
+
+message BoardRetirementVersion {
+  map<string, uint64> clock = 1;
+  string rank = 2;
+  bool retired = 3;
+  bool deleted = 4;
+}
+
+message Label {
+  string id = 1;
+  string name = 2;
+  string color = 3;
+  string instructions = 4;
+}
+
+message Lane {
+  string id = 1;
+  string name = 2;
+}
+
+message TokenUsage {
+  int64 input_tokens = 1;
+  int64 output_tokens = 2;
+  int64 total_tokens = 3;
+  int64 reported_messages = 4;
+  int64 missing_messages = 5;
+  bool partial = 6;
+}
+
+// Causal presentation of the shared placement and runtime registers. Native
+// clients join these frontiers before publishing observations from several
+// replicas. rank is the daemon's deterministic sibling selection key; value
+// contains only the fields belonging to the named register, never owner data.
+message CardStateVersion {
+  map<string, uint64> clock = 1;
+  string rank = 2;
+  Card value = 3;
+  bool deleted = 4;
+}
+
+message CardStateField {
+  string name = 1;
+  string revision = 2;
+  repeated CardStateVersion versions = 3;
+}
+
+message Card {
+ repeated CardStateField state_fields = 46;
+ string owner_daemon_id = 38;
+ string checkout_id = 39;
+ string order_key = 40;
+ string placement_revision = 42;
+ repeated string conflict_keys = 41;
+  string id = 1;
+  string scope = 2;
+  string project_id = 3;
+  string board_id = 4;
+  string lane = 5;
+  int64 position = 6;
+  string title = 7;
+  string initial_prompt = 8;
+  string initial_prompt_sent_at = 9;
+  string phase_changed_at = 10;
+  string provider = 11;
+  string model = 12;
+  string effort = 13;
+  string runtime = 14;
+  string summary = 15;
+  string runtime_updated_at = 16;
+  string last_activity_at = 17;
+  bool archived = 18;
+  bool done_archive_exempt = 19;
+  bool pinned = 20;
+  string created_at = 21;
+  string updated_at = 22;
+  repeated string label_ids = 23;
+  reserved 24;
+  int64 response_seq = 43;
+  string response_message_id = 44;
+  int64 seen_response_seq = 45;
+  CardOrigin origin = 25;
+  repeated Subagent active_subagents = 26;
+  map<string, string> provider_options = 27;
+  string workspace_mode = 28;
+  string workspace_branch = 29;
+  string workspace_base_branch = 30;
+  WorkspaceSummary workspace = 31;
+  PullRequestSummary pull_request = 32;
+  string workspace_base_remote = 33;
+  string remote_publish_mode = 34;
+  TokenUsage token_usage = 35;
+  string merged_into_card_id = 36;
+  // Owner-scoped provider account HMAC used by the latest turn. This is safe
+  // to correlate with credential-free quota snapshots and is not a provider
+  // credential or raw provider account identifier.
+  string provider_account_key = 37;
+  // Owner-local: agent turns of this conversation may use the account vault.
+  // Set only at creation; forks and merges never inherit it.
+  bool vault_access = 47;
+  // Owner-local: agent turns of this conversation may send the user mail.
+  // Set only at creation; forks and merges never inherit it.
+  bool mail_access = 48;
+}
+
+message CardOrigin {
+  string kind = 1;
+  string schedule_id = 2;
+  string schedule_run_id = 3;
+  string scheduled_for = 4;
+}
+
+message CardDetail {
+  Card card = 1;
+  Project project = 2;
+  Board board = 3;
+  reserved 4;
+}
+
+message Author {
+  string kind = 1;
+  string name = 2;
+  string project_id = 3;
+  string card_id = 4;
+  string provider = 5;
+  string model = 6;
+}
+
+message Conversation {
+  int32 projection_version = 1;
+  string card_id = 2;
+  string status = 3;
+  repeated UiMessage messages = 4;
+  repeated PendingTool pending_tools = 5;
+  repeated QueuedMessage queue = 6;
+  int64 last_seq = 7;
+  string updated_at = 8;
+  repeated Subagent subagents = 9;
+  repeated TaskPlan task_plans = 10;
+  repeated MessagePart draft_attachments = 11;
+  ContentPresentation presented_content = 12;
+  ProviderStatus provider_status = 13;
+}
+
+// Transient provider connectivity for the active turn. A harness reports it
+// while its provider stream retries; the daemon clears it when the stream
+// recovers or the turn ends. It is never part of the transcript.
+message ProviderStatus {
+  // "reconnecting" or "waiting-for-network".
+  string state = 1;
+  // 1-based retry attempt and its limit; zero when the provider does not count.
+  int32 attempt = 2;
+  int32 max_attempts = 3;
+  // The provider's own notice, for logs and accessibility.
+  string message = 4;
+  string provider = 5;
+  string message_id = 6;
+  string updated_at = 7;
+}
+
+// Latest explicit presentation request, separate from transcript text. Paths
+// are relative to the conversation's owning workspace; URLs are HTTP(S).
+message ContentPresentation {
+  string id = 1;
+  string path = 2;
+  string url = 3;
+  int32 line = 4;
+  string title = 5;
+}
+
+message Subagent {
+  string id = 1;
+  string provider = 2;
+  string message_id = 3;
+  string parent_tool_call_id = 4;
+  string name = 5;
+  string agent_type = 6;
+  string agent_source = 7;
+  string description = 8;
+  string task = 9;
+  string assignment = 10;
+  string status = 11;
+  string model = 12;
+  string activity = 13;
+  string current_tool = 14;
+  string current_tool_args = 15;
+  int64 tool_count = 16;
+  int64 requests = 17;
+  int64 tokens = 18;
+  int64 context_tokens = 19;
+  int64 context_window = 20;
+  double cost = 21;
+  int64 duration_ms = 22;
+  repeated string recent_output = 23;
+  string retry = 24;
+  string error = 25;
+  bool detached = 26;
+  bool transcript_available = 27;
+  string started_at = 28;
+  string updated_at = 29;
+  string ended_at = 30;
+}
+
+message TaskPlan {
+  string id = 1;
+  string provider = 2;
+  string message_id = 3;
+  int64 revision = 4;
+  string state = 5;
+  string explanation = 6;
+  string source = 7;
+  repeated TaskPlanPhase phases = 8;
+  string updated_at = 9;
+}
+
+message TaskPlanPhase {
+  string name = 1;
+  repeated TaskPlanItem tasks = 2;
+}
+
+message TaskPlanItem {
+  string id = 1;
+  string content = 2;
+  string active_form = 3;
+  string status = 4;
+  string blocker = 5;
+  string priority = 6;
+  int64 order = 7;
+}
+
+message UiMessage {
+  string id = 1;
+  string role = 2;
+  bytes metadata_json = 3;
+  repeated MessagePart parts = 4;
+}
+
+message MessagePart {
+  string type = 1;
+  string text = 2;
+  string media_type = 3;
+  string filename = 4;
+  string url = 5;
+  string state = 6;
+  string tool_call_id = 7;
+  string tool_name = 8;
+  bytes input_json = 9;
+  bytes output_json = 10;
+  string error_text = 11;
+  bytes data = 12;
+  bool has_input = 13;
+  bool has_output = 14;
+  int64 input_size = 15;
+  int64 output_size = 16;
+  string input_preview = 17;
+  string output_preview = 18;
+  string payload_revision = 19;
+  // JSON payload of a "data-*" part, e.g. a data-peer-notice from agent channels.
+  bytes data_json = 20;
+}
+
+message PendingTool {
+  string id = 1;
+  string tool_call_id = 2;
+  string tool_name = 3;
+  bytes input_json = 4;
+  bool has_input = 5;
+  int64 input_size = 6;
+  string input_preview = 7;
+  string payload_revision = 8;
+}
+
+message QueuedMessage {
+  string id = 1;
+  string text = 2;
+  repeated MessagePart parts = 3;
+  string created_at = 4;
+  // Immutable selection admitted with this message, also returned on removal
+  // so editing restores its model, reasoning and provider options.
+  HarnessSelection selection = 5;
+}
+
+message HarnessSelection {
+  string provider = 1;
+  string model = 2;
+  string effort = 3;
+  map<string, string> provider_options = 4;
+}
+
+message ValidationCommand {
+  string name = 1;
+  string executable = 2;
+  repeated string arguments = 3;
+  string working_directory = 4;
+  map<string, string> environment = 5;
+  int32 timeout_seconds = 6;
+}
+
+message BoardRef {
+  string board_id = 1;
+}
+
+message ProjectRef {
+  string checkout_id = 50;
+  string project_id = 1;
+}
+
+message WorkspaceSummary {
+  string mode = 1;
+  string state = 2;
+  string branch = 3;
+  string base_branch = 4;
+  string head_sha = 5;
+  string base_sha = 6;
+  string revision = 7;
+  int32 changed_files = 8;
+  int32 additions = 9;
+  int32 deletions = 10;
+  int32 ahead = 11;
+  int32 behind = 12;
+  string current_operation_id = 13;
+}
+
+message PullRequestSummary {
+  string provider = 1;
+  int32 number = 2;
+  string url = 3;
+  string state = 4;
+  bool draft = 5;
+  bool mergeable = 6;
+  string review_decision = 7;
+  string checks_state = 8;
+  string head_sha = 9;
+  string base_sha = 10;
+  string last_synced_at = 11;
+}
+
+message RemoteDesktopPointerMove {
+  int32 normalized_x = 1;
+  int32 normalized_y = 2;
+}
+
+message RemoteDesktopPointerButton {
+  enum Button {
+    BUTTON_UNSPECIFIED = 0;
+    BUTTON_LEFT = 1;
+    BUTTON_RIGHT = 2;
+    BUTTON_MIDDLE = 3;
+    BUTTON_BACK = 4;
+    BUTTON_FORWARD = 5;
+  }
+  Button button = 1;
+  bool down = 2;
+  int32 click_count = 3;
+  int32 normalized_x = 4;
+  int32 normalized_y = 5;
+  uint32 modifiers = 6;
+}
+
+message RemoteDesktopScroll {
+  int32 delta_x = 1;
+  int32 delta_y = 2;
+  bool precise = 3;
+  uint32 modifiers = 4;
+  double precise_delta_x = 5;
+  double precise_delta_y = 6;
+  uint32 phase = 7;
+  uint32 momentum_phase = 8;
+}
+
+message RemoteDesktopKey {
+  bool down = 2;
+  bool repeat = 3;
+  uint32 modifiers = 4;
+  // Required USB HID keyboard/keypad usage (page 0x07).
+  uint32 physical_key = 5;
+}
+
+message RemoteDesktopText { string text = 1; }
+
+message RemoteDesktopReleaseAll {}
+
+message RemoteDesktopInput {
+  uint32 protocol_version = 1;
+  bytes input_epoch = 2;
+  uint64 sequence = 3;
+  oneof payload {
+    RemoteDesktopPointerMove pointer_move = 4;
+    RemoteDesktopPointerButton pointer_button = 5;
+    RemoteDesktopScroll scroll = 6;
+    RemoteDesktopKey key = 7;
+    RemoteDesktopReleaseAll release_all = 8;
+    RemoteDesktopText text = 12;
+  }
+  uint64 display_generation = 9;
+  uint64 event_ordinal = 10;
+  uint64 state_barrier = 11;
+  // Input is accepted only for the current machine-wide control grant.
+  uint64 control_generation = 13;
+}
+
+// Encrypted on the authenticated session DataChannel; never persisted.
+message RemoteDesktopReceiverFeedback {
+  uint32 protocol_version = 1;
+  bytes input_epoch = 2;
+  uint64 sequence = 3;
+  double frames_per_second = 4;
+  double decode_ms = 5;
+  double jitter_ms = 6;
+  double rtt_ms = 7;
+  double loss_fraction = 8;
+  bool input_active = 9;
+  uint32 rendered_frames = 10;
+  // Mean residence in WebRTC's jitter buffer, distinct from RTP jitter.
+  double jitter_buffer_ms = 11;
+  // Mean decoded-frame arrival to the identified render_measurement endpoint.
+  double render_ms = 12;
+  // Independent of the heartbeat sequence. Zero carries no measurement. Senders
+  // start at one (an empty sample) and advance only when statistics are collected.
+  uint64 measurement_sequence = 13;
+  // Monotonic age of that sample at send time; repeated heartbeats do not refresh it.
+  uint32 measurement_age_ms = 14;
+  // At most eight exact challenges, acknowledged only after decoder output.
+  repeated RemoteDesktopReference decoded_references = 15;
+  RemoteDesktopRenderMeasurement render_measurement = 16;
+  string decoder_implementation = 17; // At most 256 UTF-8 bytes.
+  optional bool decoder_hardware = 18; // Absent means unknown, not software.
+  optional bool decoder_low_latency_accepted = 19; // Acceptance is not a latency measurement.
+  string decoder_configuration_reason = 20; // At most 256 UTF-8 bytes.
+}
+
+message RemoteDesktopCursor {
+  string shape_id = 1;
+  bytes png = 2;
+  double hotspot_x = 3;
+  double hotspot_y = 4;
+  double width = 5;
+  double height = 6;
+  int32 normalized_x = 7;
+  int32 normalized_y = 8;
+  bool visible = 9;
+  uint64 display_generation = 10;
+  uint64 last_input_ordinal = 11;
+}
+
+message RemoteDesktopReference {
+  uint64 generation = 1;
+  uint64 frame_id = 2;
+  uint32 rtp_timestamp = 3;
+}
+
+message RemoteDesktopHostEvent {
+  oneof payload {
+    RemoteDesktopCursor cursor = 1;
+    RemoteDesktopSessionState state = 2;
+    uint64 input_ack = 3;
+    RemoteDesktopReference reference = 4;
+  }
+}
+
+// One sequential transfer per direction; at most 16 KiB per chunk and
+// 8 MiB of binary content (text remains limited to 1 MiB).
+// Final chunks complete one serialized message; incomplete transfers never paste.
+message RemoteDesktopClipboardFrame {
+  string operation_id = 1;
+  bytes data = 2;
+  bool end = 3;
+}
+
+// Account-local leaderless registers. Concurrent versions are preserved, including deletions.
+message PeerVersion {
+  map<string, uint64> clock = 1;
+  bytes value_json = 2;
+  bool deleted = 3;
+  bytes provenance_json = 4;
+  // Deterministic presentation order among concurrent siblings; the highest
+  // rank is shown. Set on WatchChanges records.
+  string rank = 5;
+}
+
+message PeerRecord {
+  string kind = 1;
+  string id = 2;
+  repeated PeerVersion versions = 3;
+  string revision = 4;
+  // Revision of the causal values without proofs, as compare-and-swap
+  // requests on shared card fields expect it. Set on WatchChanges records.
+  string value_revision = 5;
+}
+
+message PeerSyncDiagnostic {
+  string peer_id = 1;
+  string last_attempt_at = 2;
+  string last_success_at = 3;
+  string route = 4;
+  string direction = 5;
+  string failure_code = 6;
+  string record_kind = 7;
+  string record_id = 8;
+  string field = 9;
+  string actor = 10;
+  string pull_epoch = 11;
+  uint64 pull_sequence = 12;
+  string push_epoch = 13;
+  uint64 push_sequence = 14;
+}

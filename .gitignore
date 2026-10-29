@@ -18,23 +18,30 @@ __pycache__/
 # JavaScript dependencies and caches
 /internal/harness/runtime/node_modules/
 /internal/harness/runtime/.npm/
-/apps/android/.kotlin/
-/native/macos-capture/build/
 
 # Dieter state, when DIETER_HOME points at the checkout
 /.dieter/
-/.kanna/
 
 # Local scratch output
 /tmp/
-/.codex-tmp/
-/newsos.zip
-
-# Local design review exports (curated references live under apps/)
-/[Aa]rchive.zip
-/Native Android PWA redesign.pdf
+/.dieter-evidence/
+/.android*/
+/.bundle/
+/vendor/bundle/
+/fastlane/local.json
+/mise.local.toml
+/mise.local.lock
+/fastlane/.private/
+/fastlane/report.xml
+/fastlane/Preview.html
+/dist/
+# SwiftPM output when a package command runs from the repository root
+/.build/
 /screenshots/
-/screenshots-android/
+
+# Local agent tools' state
+/.claude/
+/.kanna/
 
 # Editor and operating-system state
 .DS_Store
@@ -52,3 +59,4 @@ Thumbs.db
 keystore.properties
 **/.swiftpm/configuration/
 **/.swiftpm/security/
+

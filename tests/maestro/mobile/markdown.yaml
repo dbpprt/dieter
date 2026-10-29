@@ -1,0 +1,26 @@
+# Run with configuration:release on iOS to exercise optimized Kotlin/Native parsing.
+appId: ${APP_ID}
+name: Markdown code fences
+tags: [smoke]
+---
+- runFlow: common/launch.yaml
+- tapOn:
+    text: "Chats"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Markdown code fences"
+    timeout: 40000
+- tapOn:
+    text: "Markdown code fences"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible:
+      id: message-input
+    timeout: 30000
+- extendedWaitUntil:
+    visible: "Fence complete\\."
+    timeout: 30000
+- assertVisible: "fenced line one\nfenced line two"
+- assertVisible:
+    id: message-input
+- takeScreenshot: markdown-fences

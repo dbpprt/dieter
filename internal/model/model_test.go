@@ -7,6 +7,7 @@ import (
 )
 
 func TestUIMessagePreservesMetadata(t *testing.T) {
+	t.Parallel()
 	var message UIMessage
 	if err := json.Unmarshal([]byte(`{"id":"m1","role":"user","parts":[{"type":"text","text":"hello"}],"metadata":{"createdAt":"2026-08-11T12:00:00Z"}}`), &message); err != nil {
 		t.Fatal(err)
@@ -21,6 +22,7 @@ func TestUIMessagePreservesMetadata(t *testing.T) {
 }
 
 func TestCanonicalWorkspaceModeHasOnlyProjectAndWorktreeSemantics(t *testing.T) {
+	t.Parallel()
 	for input, want := range map[string]string{
 		"project":  WorkspaceModeProject,
 		"PROJECT":  WorkspaceModeProject,

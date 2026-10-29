@@ -1,0 +1,245 @@
+diff --git a/internal/engine/turn_admission.go b/internal/engine/turn_admission.go
+index a31e1d8e..8f105906 100644
+--- a/internal/engine/turn_admission.go
++++ b/internal/engine/turn_admission.go
+@@ -143,6 +143,7 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
+ 		close(done)
+ 		return nil, err
+ 	}
++	s.Workspaces.SpikeSnapshot(detail.Card.ID, detail.Project.ID, turnID, "start", workspaceValue.Path)
+ 	resolution, err := s.resolveInstructions(detail, workspaceValue)
+ 	if err != nil {
+ 		cancel()
+diff --git a/internal/engine/turn_execution.go b/internal/engine/turn_execution.go
+index 73df6e8a..0399b050 100644
+--- a/internal/engine/turn_execution.go
++++ b/internal/engine/turn_execution.go
+@@ -85,6 +85,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
+ 		finished = true
+ 		refreshCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+ 		defer cancel()
++		s.Workspaces.SpikeSnapshot(detail.Card.ID, detail.Project.ID, turnID, "end", request.ProjectPath)
+ 		_, _ = s.Workspaces.Refresh(refreshCtx, detail.Card.ID, false)
+ 		updateErr := s.finishActive(detail.Card.ID, turnID, func() error {
+ 			if finalCache.Runtime == "" {
+diff --git a/internal/git/workspace/manager.go b/internal/git/workspace/manager.go
+index 7bc62054..a8c7ee86 100644
+--- a/internal/git/workspace/manager.go
++++ b/internal/git/workspace/manager.go
+@@ -192,6 +192,9 @@ func (m *Manager) provision(ctx context.Context, detail model.CardDetail, value
+ 			return value, err
+ 		}
+ 		args := []string{"worktree", "add"}
++		if spikeCloneView() {
++			args = append(args, "--no-checkout")
++		}
+ 		if _, err := m.Git.Run(ctx, projectPath, "show-ref", "--verify", "--quiet", "refs/heads/"+value.Branch); err == nil {
+ 			args = append(args, value.Path, value.Branch)
+ 		} else {
+@@ -200,6 +203,11 @@ func (m *Manager) provision(ctx context.Context, detail model.CardDetail, value
+ 		if _, err := m.Git.Run(ctx, projectPath, args...); err != nil {
+ 			return value, fmt.Errorf("create Git worktree: %w", err)
+ 		}
++		if spikeCloneView() {
++			if err := m.spikePopulateClone(ctx, projectPath, value.Path); err != nil {
++				return value, fmt.Errorf("spike clone view: %w", err)
++			}
++		}
+ 		return value, nil
+ 	default:
+ 		return value, fault.New(fault.Invalid, "unsupported workspace mode")
+diff --git a/internal/git/workspace/spike_view.go b/internal/git/workspace/spike_view.go
+new file mode 100644
+index 00000000..78b23ae9
+--- /dev/null
++++ b/internal/git/workspace/spike_view.go
+@@ -0,0 +1,163 @@
++package workspace
++
++// SPIKE (tools/spikes/workspaces, Phase D): env-gated copy-on-write worktree
++// views and per-turn shadow snapshots. Not for merge.
++
++import (
++	"context"
++	"encoding/json"
++	"fmt"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"strings"
++	"sync"
++	"time"
++)
++
++func spikeCloneView() bool { return os.Getenv("DIETER_SPIKE_WORKSPACE_VIEW") == "clone" }
++
++func spikeSnapshots() bool { return os.Getenv("DIETER_SPIKE_TURN_SNAPSHOTS") == "1" }
++
++// spikePopulateClone fills a `git worktree add --no-checkout` directory with
++// APFS clones of the project checkout's top-level entries (ignored files
++// included), seeds the worktree index from the project index and aligns
++// tracked files with the worktree HEAD without rewriting identical files.
++func (m *Manager) spikePopulateClone(ctx context.Context, projectPath, path string) error {
++	start := time.Now()
++	entries, err := os.ReadDir(projectPath)
++	if err != nil {
++		return err
++	}
++	for _, e := range entries {
++		if e.Name() == ".git" {
++			continue
++		}
++		if err := spikeClone(filepath.Join(projectPath, e.Name()), filepath.Join(path, e.Name())); err != nil {
++			return fmt.Errorf("clone %s: %w", e.Name(), err)
++		}
++	}
++	gitDir, err := m.output(ctx, path, "rev-parse", "--absolute-git-dir")
++	if err != nil {
++		return err
++	}
++	projectIndex, err := m.output(ctx, projectPath, "rev-parse", "--path-format=absolute", "--git-path", "index")
++	if err != nil {
++		return err
++	}
++	if err := spikeClone(projectIndex, filepath.Join(gitDir, "index")); err != nil {
++		return err
++	}
++	cloned := time.Since(start)
++	if _, err := m.Git.Run(ctx, path, "-c", "core.checkStat=minimal", "-c", "core.trustCtime=false", "reset", "-q", "--hard"); err != nil {
++		return err
++	}
++	m.Log.Info("spike clone view", "path", path, "clone", cloned, "total", time.Since(start))
++	return nil
++}
++
++var spikeTurns sync.Map // cardID/turnID -> start commit
++
++func spikeGit(dir string, env []string, args ...string) (string, error) {
++	cmd := exec.Command("git", args...)
++	cmd.Dir = dir
++	cmd.Env = append(os.Environ(), env...)
++	out, err := cmd.Output()
++	if err != nil {
++		if exit, ok := err.(*exec.ExitError); ok {
++			return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, exit.Stderr)
++		}
++		return "", err
++	}
++	return strings.TrimSpace(string(out)), nil
++}
++
++// SpikeSnapshot records the workspace tree at a turn boundary in a shadow
++// repository under DIETER_HOME/spike. At "end" it writes the turn's change
++// set to DIETER_HOME/spike/turns/<card>/<turn>.json.
++func (m *Manager) SpikeSnapshot(cardID, projectID, turnID, phase, path string) {
++	if !spikeSnapshots() || path == "" {
++		return
++	}
++	start := time.Now()
++	root := filepath.Join(filepath.Dir(m.Store.WorktreeRoot()), "spike")
++	shadow := filepath.Join(root, "shadow", projectID+".git")
++	commonDir, err := spikeGit(path, nil, "rev-parse", "--path-format=absolute", "--git-common-dir")
++	if err != nil {
++		m.Log.Warn("spike snapshot", "err", err)
++		return
++	}
++	if _, err := os.Stat(filepath.Join(shadow, "HEAD")); err != nil {
++		if err := os.MkdirAll(shadow, 0o755); err != nil {
++			m.Log.Warn("spike snapshot", "err", err)
++			return
++		}
++		if _, err := spikeGit(shadow, nil, "init", "-q", "--bare", "."); err != nil {
++			m.Log.Warn("spike snapshot", "err", err)
++			return
++		}
++	}
++	_ = os.WriteFile(filepath.Join(shadow, "objects", "info", "alternates"), []byte(filepath.Join(commonDir, "objects")+"\n"), 0o644)
++	index := filepath.Join(root, "idx", cardID+".index")
++	if _, err := os.Stat(index); err != nil {
++		seed, _ := spikeGit(path, nil, "rev-parse", "--path-format=absolute", "--git-path", "index")
++		if b, err := os.ReadFile(seed); err == nil {
++			_ = os.MkdirAll(filepath.Dir(index), 0o755)
++			_ = os.WriteFile(index, b, 0o644)
++		}
++	}
++	env := []string{"GIT_INDEX_FILE=" + index, "GIT_OBJECT_DIRECTORY=" + filepath.Join(shadow, "objects"),
++		"GIT_ALTERNATE_OBJECT_DIRECTORIES=" + filepath.Join(commonDir, "objects"),
++		"GIT_AUTHOR_NAME=Dieter Snapshot", "GIT_AUTHOR_EMAIL=snapshot@dieter.invalid",
++		"GIT_COMMITTER_NAME=Dieter Snapshot", "GIT_COMMITTER_EMAIL=snapshot@dieter.invalid"}
++	cfg := []string{"-c", "core.checkStat=minimal", "-c", "core.trustCtime=false", "-c", "gc.auto=0"}
++	if _, err := spikeGit(path, env, append(cfg, "add", "-A", "--", ".")...); err != nil {
++		m.Log.Warn("spike snapshot", "err", err)
++		return
++	}
++	tree, err := spikeGit(path, env, append(cfg, "write-tree")...)
++	if err != nil {
++		m.Log.Warn("spike snapshot", "err", err)
++		return
++	}
++	key := cardID + "/" + turnID
++	args := []string{"commit-tree", tree, "-m", fmt.Sprintf("%s %s %s", cardID, turnID, phase)}
++	if prev, ok := spikeTurns.Load(key); ok && phase == "end" {
++		args = append(args, "-p", prev.(string))
++	}
++	commit, err := spikeGit(shadow, env, args...)
++	if err != nil {
++		m.Log.Warn("spike snapshot", "err", err)
++		return
++	}
++	_, _ = spikeGit(shadow, nil, "update-ref", fmt.Sprintf("refs/turns/%s/%s-%s", cardID, turnID, phase), commit)
++	took := time.Since(start)
++	if phase == "start" {
++		spikeTurns.Store(key, commit)
++		m.Log.Info("spike snapshot", "card", cardID, "turn", turnID, "phase", phase, "took", took)
++		return
++	}
++	prev, ok := spikeTurns.LoadAndDelete(key)
++	if !ok {
++		return
++	}
++	diff, err := spikeGit(shadow, env, "diff-tree", "-r", "--no-renames", "--name-status", prev.(string), commit)
++	if err != nil {
++		m.Log.Warn("spike snapshot", "err", err)
++		return
++	}
++	var changes []map[string]string
++	for _, line := range strings.Split(diff, "\n") {
++		status, p, ok := strings.Cut(line, "\t")
++		if ok {
++			changes = append(changes, map[string]string{"status": status, "path": p})
++		}
++	}
++	out := map[string]any{"card": cardID, "turn": turnID, "workspace": path, "start": prev, "end": commit,
++		"changes": changes, "snapshotMs": took.Milliseconds()}
++	b, _ := json.MarshalIndent(out, "", "  ")
++	dir := filepath.Join(root, "turns", cardID)
++	_ = os.MkdirAll(dir, 0o755)
++	_ = os.WriteFile(filepath.Join(dir, turnID+".json"), b, 0o644)
++	m.Log.Info("spike turn changes", "card", cardID, "turn", turnID, "changes", len(changes), "took", took)
++}
+diff --git a/internal/git/workspace/spike_view_darwin.go b/internal/git/workspace/spike_view_darwin.go
+new file mode 100644
+index 00000000..05b90550
+--- /dev/null
++++ b/internal/git/workspace/spike_view_darwin.go
+@@ -0,0 +1,7 @@
++package workspace
++
++import "golang.org/x/sys/unix"
++
++func spikeClone(src, dst string) error {
++	return unix.Clonefile(src, dst, unix.CLONE_NOFOLLOW|unix.CLONE_NOOWNERCOPY)
++}
+diff --git a/internal/git/workspace/spike_view_other.go b/internal/git/workspace/spike_view_other.go
+new file mode 100644
+index 00000000..86aaa154
+--- /dev/null
++++ b/internal/git/workspace/spike_view_other.go
+@@ -0,0 +1,7 @@
++//go:build !darwin
++
++package workspace
++
++import "errors"
++
++func spikeClone(src, dst string) error { return errors.ErrUnsupported }

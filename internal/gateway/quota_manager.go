@@ -13,13 +13,13 @@ import (
 	"unicode/utf8"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	"github.com/dbpprt/dieter/internal/transport/relay"
 	"google.golang.org/protobuf/proto"
 )
 
 const (
 	providerQuotaCapability        = "provider_quota_v1"
 	providerQuotaResetCapability   = "provider_quota_reset_v1"
-	providerQuotaRefreshInterval   = time.Minute
 	providerQuotaRequestTimeout    = 15 * time.Second
 	providerQuotaScheduleTick      = time.Second
 	maxProviderAccountsPerDaemon   = 8
@@ -32,6 +32,8 @@ const (
 	maxProviderQuotaFrameBytes     = 64 << 10
 	maxConcurrentProviderRefreshes = 8
 	maxProviderRefreshesPerDaemon  = 2
+	maxRetiredProviderRequests     = 128
+	retiredProviderRequestTTL      = time.Minute
 )
 
 type pendingProviderRefresh struct {
@@ -42,6 +44,11 @@ type pendingProviderRefresh struct {
 	startedAt  time.Time
 	failures   int
 	kind       string
+}
+
+type retiredProviderRequest struct {
+	pendingProviderRefresh
+	retiredAt time.Time
 }
 
 type QuotaManager struct {
@@ -57,6 +64,7 @@ type QuotaManager struct {
 	mu        sync.Mutex
 	pending   map[string]pendingProviderRefresh
 	byAccount map[string]string
+	retired   map[string]retiredProviderRequest
 }
 
 func NewQuotaManager(store *Store, hub *Hub, logger *slog.Logger) *QuotaManager {
@@ -65,7 +73,7 @@ func NewQuotaManager(store *Store, hub *Hub, logger *slog.Logger) *QuotaManager 
 	}
 	return &QuotaManager{
 		store: store, hub: hub, logger: logger, now: time.Now,
-		changed: make(chan struct{}, 1), pending: map[string]pendingProviderRefresh{}, byAccount: map[string]string{},
+		changed: make(chan struct{}, 1), pending: map[string]pendingProviderRefresh{}, byAccount: map[string]string{}, retired: map[string]retiredProviderRequest{},
 	}
 }
 
@@ -230,24 +238,14 @@ func (m *QuotaManager) HandleResult(record DaemonRecord, daemonID, requestID str
 	if requestID == "" || result == nil || proto.Size(result) > maxProviderQuotaFrameBytes {
 		return errors.New("provider quota result is invalid")
 	}
-	m.mu.Lock()
-	pending, exists := m.pending[requestID]
-	if exists {
-		delete(m.pending, requestID)
-		delete(m.byAccount, providerAccountIndex(pending.githubID, pending.provider, pending.accountKey))
-	}
-	m.mu.Unlock()
-	if !exists || pending.githubID != record.GitHubID || pending.daemonID != daemonID {
-		return errors.New("provider quota result does not match a pending request")
-	}
-	if pending.kind != "refresh" {
-		return errors.New("provider quota result has the wrong operation kind")
+	pending, apply, err := m.claimProviderResult(record.GitHubID, daemonID, requestID, "refresh", func(p pendingProviderRefresh) error {
+		return validateProviderResultAccount(p, result.GetSnapshot())
+	})
+	if err != nil || !apply {
+		return err
 	}
 	now := m.now().UTC()
 	if snapshot := result.GetSnapshot(); snapshot != nil {
-		if snapshot.GetProvider() != pending.provider || snapshot.GetAccountKey() != pending.accountKey {
-			return errors.New("provider quota result account does not match its request")
-		}
 		if err := m.store.SaveProviderQuotaSnapshot(record.GitHubID, daemonID, snapshot, now); err != nil {
 			return err
 		}
@@ -258,12 +256,15 @@ func (m *QuotaManager) HandleResult(record DaemonRecord, daemonID, requestID str
 	if code == "" {
 		code = "refresh_failed"
 	}
-	delay := providerFailureBackoff(pending.failures + 1)
+	delay := relay.QuotaFailureBackoff(pending.provider, pending.failures+1)
 	if seconds := result.GetRetryAfterSeconds(); seconds > 0 {
 		delay = time.Duration(seconds) * time.Second
 		if delay > time.Hour {
 			delay = time.Hour
 		}
+	}
+	if pending.provider == gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE {
+		delay = max(delay, relay.QuotaFailureBackoff(pending.provider, pending.failures+1))
 	}
 	if err := m.store.MarkProviderQuotaFailure(record.GitHubID, daemonID, pending.provider, pending.accountKey, code, now.Add(delay)); err != nil {
 		return err
@@ -276,26 +277,24 @@ func (m *QuotaManager) HandleResetResult(record DaemonRecord, daemonID, requestI
 	if requestID == "" || result == nil || proto.Size(result) > maxProviderQuotaFrameBytes {
 		return errors.New("provider quota reset result is invalid")
 	}
-	m.mu.Lock()
-	pending, exists := m.pending[requestID]
-	if exists {
-		delete(m.pending, requestID)
-		delete(m.byAccount, providerAccountIndex(pending.githubID, pending.provider, pending.accountKey))
-	}
-	m.mu.Unlock()
-	if !exists || pending.githubID != record.GitHubID || pending.daemonID != daemonID || pending.kind != "reset" {
-		return errors.New("provider quota reset result does not match a pending request")
+	pending, apply, err := m.claimProviderResult(record.GitHubID, daemonID, requestID, "reset", func(p pendingProviderRefresh) error {
+		if err := validateProviderResultAccount(p, result.GetSnapshot()); err != nil {
+			return err
+		}
+		if result.GetSnapshot() != nil {
+			switch result.GetOutcome() {
+			case "reset", "nothingToReset", "noCredit", "alreadyRedeemed":
+			default:
+				return errors.New("provider quota reset result has an invalid outcome")
+			}
+		}
+		return nil
+	})
+	if err != nil || !apply {
+		return err
 	}
 	now := m.now().UTC()
 	if snapshot := result.GetSnapshot(); snapshot != nil {
-		if snapshot.GetProvider() != pending.provider || snapshot.GetAccountKey() != pending.accountKey {
-			return errors.New("provider quota reset result account does not match its request")
-		}
-		switch result.GetOutcome() {
-		case "reset", "nothingToReset", "noCredit", "alreadyRedeemed":
-		default:
-			return errors.New("provider quota reset result has an invalid outcome")
-		}
 		if err := m.store.SaveProviderQuotaSnapshot(record.GitHubID, daemonID, snapshot, now); err != nil {
 			return err
 		}
@@ -306,7 +305,7 @@ func (m *QuotaManager) HandleResetResult(record DaemonRecord, daemonID, requestI
 	if code == "" {
 		code = "reset_failed"
 	}
-	delay := providerFailureBackoff(pending.failures + 1)
+	delay := relay.QuotaFailureBackoff(pending.provider, pending.failures+1)
 	if seconds := result.GetRetryAfterSeconds(); seconds > 0 {
 		delay = min(time.Duration(seconds)*time.Second, time.Hour)
 	}
@@ -317,23 +316,13 @@ func (m *QuotaManager) HandleResetResult(record DaemonRecord, daemonID, requestI
 	return nil
 }
 
-func providerFailureBackoff(failures int) time.Duration {
-	steps := []time.Duration{time.Minute, 2 * time.Minute, 5 * time.Minute, 15 * time.Minute, time.Hour}
-	if failures <= 1 {
-		return steps[0]
-	}
-	if failures >= len(steps) {
-		return steps[len(steps)-1]
-	}
-	return steps[failures-1]
-}
-
 func (m *QuotaManager) expireRequests() {
 	now := m.now().UTC()
 	var expired []pendingProviderRefresh
 	m.mu.Lock()
 	for requestID, pending := range m.pending {
 		if now.Sub(pending.startedAt) >= providerQuotaRequestTimeout {
+			m.retireProviderRequest(requestID, pending, now)
 			delete(m.pending, requestID)
 			delete(m.byAccount, providerAccountIndex(pending.githubID, pending.provider, pending.accountKey))
 			expired = append(expired, pending)
@@ -341,9 +330,68 @@ func (m *QuotaManager) expireRequests() {
 	}
 	m.mu.Unlock()
 	for _, pending := range expired {
-		_ = m.store.MarkProviderQuotaFailure(pending.githubID, pending.daemonID, pending.provider, pending.accountKey, "timeout", now.Add(providerFailureBackoff(pending.failures+1)))
+		_ = m.store.MarkProviderQuotaFailure(pending.githubID, pending.daemonID, pending.provider, pending.accountKey, "timeout", now.Add(relay.QuotaFailureBackoff(pending.provider, pending.failures+1)))
 		m.signalChanged()
 	}
+}
+
+func validateProviderResultAccount(p pendingProviderRefresh, snapshot *gatewayv1.ProviderQuotaSnapshot) error {
+	if snapshot == nil {
+		return nil
+	}
+	if snapshot.GetProvider() != p.provider || snapshot.GetAccountKey() != p.accountKey {
+		return errors.New("provider quota result account does not match its request")
+	}
+	return validateProviderQuotaSnapshot(snapshot)
+}
+
+// A timed-out or already consumed request may still have one bounded reply in
+// flight. Ignore only a known request from its authorized sender; unsolicited,
+// malformed and cross-account replies remain errors. Validate before consuming
+// the request so an invalid reply cannot cancel someone else's operation.
+func (m *QuotaManager) claimProviderResult(owner int64, daemonID, requestID, kind string, validate func(pendingProviderRefresh) error) (pendingProviderRefresh, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p, exists := m.pending[requestID]
+	if !exists {
+		old, known := m.retired[requestID]
+		if !known || m.now().Sub(old.retiredAt) >= retiredProviderRequestTTL {
+			return p, false, errors.New("provider quota result does not match a pending request")
+		}
+		p = old.pendingProviderRefresh
+	}
+	if p.githubID != owner || p.daemonID != daemonID || p.kind != kind {
+		return p, false, errors.New("provider quota result does not match a pending request")
+	}
+	if err := validate(p); err != nil {
+		return p, false, err
+	}
+	if !exists {
+		return p, false, nil
+	}
+	m.retireProviderRequest(requestID, p, m.now())
+	delete(m.pending, requestID)
+	delete(m.byAccount, providerAccountIndex(p.githubID, p.provider, p.accountKey))
+	return p, true, nil
+}
+
+// Called with mu held. Retain correlation metadata only, never result payloads.
+func (m *QuotaManager) retireProviderRequest(id string, p pendingProviderRefresh, now time.Time) {
+	for key, old := range m.retired {
+		if now.Sub(old.retiredAt) >= retiredProviderRequestTTL {
+			delete(m.retired, key)
+		}
+	}
+	if len(m.retired) >= maxRetiredProviderRequests {
+		oldest := ""
+		for key, old := range m.retired {
+			if oldest == "" || old.retiredAt.Before(m.retired[oldest].retiredAt) {
+				oldest = key
+			}
+		}
+		delete(m.retired, oldest)
+	}
+	m.retired[id] = retiredProviderRequest{pendingProviderRefresh: p, retiredAt: now}
 }
 
 func (m *QuotaManager) schedule(ctx context.Context) {
@@ -396,6 +444,9 @@ func (m *QuotaManager) Refresh(githubID int64, provider gatewayv1.ProviderQuotaP
 
 func (m *QuotaManager) startRefresh(record ProviderQuotaRecord) (bool, error) {
 	if record.Account == nil || record.Account.GetAvailability() != gatewayv1.ProviderQuotaAvailability_PROVIDER_QUOTA_AVAILABILITY_AVAILABLE {
+		return false, nil
+	}
+	if record.Account.GetProvider() == gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE && record.NextAttemptAt.After(m.now()) {
 		return false, nil
 	}
 	accountIndex := providerAccountIndex(record.GitHubID, record.Account.GetProvider(), record.Account.GetAccountKey())
@@ -649,7 +700,7 @@ func (m *QuotaManager) Catalog(githubID int64, provider gatewayv1.ProviderQuotaP
 			snapshot.RefreshState = gatewayv1.ProviderQuotaRefreshState_PROVIDER_QUOTA_REFRESH_STATE_REFRESHING
 		} else if record.LastFailureCode != "" {
 			snapshot.StatusCode = record.LastFailureCode
-			if record.NextAttemptAt.After(now.Add(providerQuotaRefreshInterval)) {
+			if record.NextAttemptAt.After(now.Add(relay.QuotaRefreshInterval(snapshot.GetProvider()))) {
 				snapshot.RefreshState = gatewayv1.ProviderQuotaRefreshState_PROVIDER_QUOTA_REFRESH_STATE_THROTTLED
 			} else {
 				snapshot.RefreshState = gatewayv1.ProviderQuotaRefreshState_PROVIDER_QUOTA_REFRESH_STATE_FAILED

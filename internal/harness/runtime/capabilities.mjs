@@ -15,6 +15,26 @@ function clean(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+const maxProviderNoticeLength = 1024;
+
+/**
+ * Parse Codex's transient provider retry notice. Codex formats these as
+ * "Reconnecting... 2/5" or "Reconnecting... waiting for network", and codex
+ * exec appends " (details)". Other stream errors are not retry notices.
+ */
+export function parseProviderRetryNotice(message) {
+  if (typeof message !== 'string') return undefined;
+  const text = message.trim();
+  const match = text.match(/^Reconnecting\.\.\.(?:\s+(\d+)\/(\d+))?/);
+  if (!match) return undefined;
+  return clean({
+    state: /^Reconnecting\.\.\.\s+waiting for network/.test(text) ? 'waiting-for-network' : 'reconnecting',
+    attempt: match[1] ? Number(match[1]) : undefined,
+    maxAttempts: match[2] ? Number(match[2]) : undefined,
+    message: text.length <= maxProviderNoticeLength ? text : `${text.slice(0, maxProviderNoticeLength - 1)}…`,
+  });
+}
+
 export function createSubagentCapabilityCollector({ provider, adapter = provider, messageId, emit, now = () => new Date().toISOString() }) {
   const subagents = new Map();
   const emittedSubagents = new Map();
@@ -25,6 +45,7 @@ export function createSubagentCapabilityCollector({ provider, adapter = provider
   let taskPlan;
   let taskPlanFingerprint = '';
   let taskPlanRevision = 0;
+  let providerStatusFingerprint = '';
 
   function normalizeTaskStatus(status) {
     if (status === 'in_progress' || status === 'inProgress' || status === 'in-progress' || status === 'running') return 'in_progress';
@@ -297,7 +318,27 @@ export function createSubagentCapabilityCollector({ provider, adapter = provider
     replaceTaskPlan({ tasks: toolCall.rawInput?.todos, source: 'todo_write' });
   }
 
+  function setProviderStatus(notice) {
+    if (!notice) {
+      if (providerStatusFingerprint) emit({ id: 'provider-status', operation: 'clear' });
+      providerStatusFingerprint = '';
+      return;
+    }
+    const status = clean({ ...notice, provider, messageId });
+    const fingerprint = JSON.stringify(status);
+    if (fingerprint === providerStatusFingerprint) return;
+    providerStatusFingerprint = fingerprint;
+    emit({ id: 'provider-status', operation: 'replace', status: { ...status, updatedAt: now() } });
+  }
+
   function consumeHarnessEvent(event) {
+    if (adapter === 'codex' && event?.type === 'raw' && event.rawValue?.type === 'error') {
+      const notice = parseProviderRetryNotice(event.rawValue.message);
+      if (notice) setProviderStatus(notice);
+      return;
+    }
+    // Any other provider event after a retry notice means the stream is back.
+    if (event) setProviderStatus(undefined);
     if (!event || event.type !== 'raw' || !event.rawValue || typeof event.rawValue !== 'object') return;
     const raw = event.rawValue;
     if ((adapter === 'omp-acp' || provider === 'omp') && raw.sessionUpdate === 'plan') {
@@ -344,11 +385,106 @@ const codexTodoForwarder = `    if (item.type === "todo_list") {
       return;
     }
 ${codexTodoNeedle}`;
+const codexAppServerTodoNeedle = '\t\tif (item.type === "agent_message" && typeof item.text === "string") {';
+const codexAppServerPlanNeedle = '\t\t\tif (notification.method === "item/started" && params != null) {';
+const codexAppServerErrorNeedle = '\t\t\t\tif (params.willRetry === true) emitWarning({ message });';
+const codexAppServerStreamNeedle = '\t\tif (event.type === "error") {\n\t\t\temitError({';
+const codexAppServerRetryMarker = 'emitStreamEvent({ type: "error", message, willRetry: true })';
+
+// codex exec emits a top-level `error` for provider retry notices
+// ("Reconnecting... 2/5 (...)", "Reconnecting... waiting for network (...)")
+// and keeps running the turn; it drops app-server's will_retry flag. Only
+// turn.failed or a failed process is terminal. Forward the notice as a
+// structured raw event instead of settling the turn as failed.
+const codexStreamErrorNeedle = `    if (event.type === "error") {
+      emitError({
+        error: event.message ?? "codex error",
+        message: "codex stream error"
+      });
+      return;
+    }`;
+const codexStreamErrorForwarder = `    if (event.type === "error") {
+      send({ type: "raw", rawValue: event });
+      emitWarning({ message: event.message ?? "codex error" });
+      return;
+    }`;
+// With stream errors no longer terminal, a Codex process that exits cleanly
+// without turn.completed or turn.failed must still fail with its last error.
+const codexTurnLoopNeedle = `    for await (const event of events) {
+      if (turn.abortSignal.aborted) break;`;
+const codexTurnLoopTracker = `    let dieterTurnSettled = false;
+    let dieterLastStreamError;
+    for await (const event of events) {
+      if (turn.abortSignal.aborted) break;
+      if (event.type === "turn.completed" || event.type === "turn.failed") dieterTurnSettled = true;
+      if (event.type === "error") dieterLastStreamError = event.message;`;
+const codexTurnEndNeedle = `      emitStreamEvent(event);
+    }
+  } catch (err) {`;
+const codexTurnEndGuard = `      emitStreamEvent(event);
+    }
+    if (!dieterTurnSettled && !turn.abortSignal.aborted) {
+      turn.emitError({
+        error: dieterLastStreamError ?? "codex exited without completing the turn",
+        message: "codex turn ended without a result"
+      });
+      return;
+    }
+  } catch (err) {`;
 
 function patchCodexBridge(content) {
   if (!content.includes('send({ type: "raw", rawValue: event });')) {
-    if (!content.includes(codexTodoNeedle)) throw new Error('Dieter could not find the Codex todo bridge insertion point');
-    content = content.replace(codexTodoNeedle, codexTodoForwarder);
+    if (content.includes(codexAppServerTodoNeedle) && content.includes(codexAppServerPlanNeedle)) {
+      content = content.replace(codexAppServerTodoNeedle, `\t\tif (item.type === "todo_list") {
+\t\t\tsend({ type: "raw", rawValue: event });
+\t\t\tobserveStep();
+\t\t\treturn;
+\t\t}
+${codexAppServerTodoNeedle}`);
+      content = content.replace(codexAppServerPlanNeedle, `\t\t\tif (notification.method === "turn/plan/updated" && params != null && matchesActiveTurn({
+\t\t\t\tparams, activeThreadId, activeTurnId
+\t\t\t})) {
+\t\t\t\temitStreamEvent({
+\t\t\t\t\ttype: "item.updated",
+\t\t\t\t\titem: {
+\t\t\t\t\t\ttype: "todo_list", id: "codex-plan",
+\t\t\t\t\t\titems: Array.isArray(params.plan) ? params.plan.map((step, index) => ({
+\t\t\t\t\t\t\tid: String(index), text: step.step, completed: step.status === "completed"
+\t\t\t\t\t\t})) : []
+\t\t\t\t\t}
+\t\t\t\t});
+\t\t\t\treturn;
+\t\t\t}
+${codexAppServerPlanNeedle}`);
+    } else if (content.includes(codexTodoNeedle)) {
+      content = content.replace(codexTodoNeedle, codexTodoForwarder);
+    } else {
+      throw new Error('Dieter could not find the Codex todo bridge insertion point');
+    }
+  }
+  if (!content.includes(codexAppServerRetryMarker) && content.includes(codexAppServerErrorNeedle) && content.includes(codexAppServerStreamNeedle)) {
+    content = content.replace(codexAppServerErrorNeedle,
+      '\t\t\t\tif (params.willRetry === true) emitStreamEvent({ type: "error", message, willRetry: true });');
+    content = content.replace(codexAppServerStreamNeedle, `\t\tif (event.type === "error") {
+\t\t\tif (event.willRetry === true) {
+\t\t\t\tconst message = event.message?.startsWith("Reconnecting...")
+\t\t\t\t\t? event.message : \`Reconnecting... waiting for network (\${event.message ?? "codex error"})\`;
+\t\t\t\tsend({ type: "raw", rawValue: { type: "error", message } });
+\t\t\t\temitWarning({ message });
+\t\t\t\treturn;
+\t\t\t}
+\t\t\temitError({`);
+  } else if (!content.includes(codexAppServerRetryMarker)) {
+    if (!content.includes(codexStreamErrorForwarder)) {
+      if (!content.includes(codexStreamErrorNeedle)) throw new Error('Dieter could not find the Codex stream error handler');
+      content = content.replace(codexStreamErrorNeedle, codexStreamErrorForwarder);
+    }
+    if (!content.includes('dieterTurnSettled')) {
+      if (!content.includes(codexTurnLoopNeedle) || !content.includes(codexTurnEndNeedle)) {
+        throw new Error('Dieter could not find the Codex turn loop');
+      }
+      content = content.replace(codexTurnLoopNeedle, codexTurnLoopTracker).replace(codexTurnEndNeedle, codexTurnEndGuard);
+    }
   }
   return patchDurableBridge(content);
 }
@@ -364,7 +500,7 @@ function patchDurableBridge(content) {
     'await appendFile(eventLogPath, buf);',
   );
   content = content.replace(
-    'void flushEventsToDisk().finally(resolve);',
+    /(?:void )?flushEventsToDisk\(\)\.finally\(resolve\);/,
     `void flushEventsToDisk().then(resolve, error => {
           process.stderr.write(\`[harness:\${bridgeType}:error] failed to persist bridge replay events: \${error?.message || error}\\n\`);
           process.exitCode = 1;
@@ -376,23 +512,29 @@ function patchDurableBridge(content) {
     /void writeFile\(eventLogPath, (["'])\1\)\.catch\(\(\) => \{\s*\}\);/,
     'await writeFile(eventLogPath, "");',
   );
+  content = content.replace(
+    /writeFile\(eventLogPath, (["'])\1\)\.catch\(\(\) => \{\s*\}\);/,
+    `writeFile(eventLogPath, "").catch(error => {
+          process.stderr.write(\`bridge replay log reset failed: \${error?.message || error}\\n\`);
+          process.exit(1);
+        });`,
+  );
 
-  const replayAssignment = `      eventLog = lines.map((line) => ({
-        seq: JSON.parse(line).seq,
-        line
-      }));`;
-  const replayValidation = `${replayAssignment}
+  const replayValidation = `
       for (let index = 0; index < eventLog.length; index += 1) {
         const seq = eventLog[index].seq;
         if (!Number.isSafeInteger(seq) || seq <= 0 || (index > 0 && seq !== eventLog[index - 1].seq + 1)) {
           throw new Error(\`non-contiguous bridge replay sequence at entry \${index}\`);
         }
       }`;
-  if (!content.includes('non-contiguous bridge replay sequence') && content.includes(replayAssignment)) {
-    content = content.replace(replayAssignment, replayValidation);
+  if (!content.includes('non-contiguous bridge replay sequence')) {
+    content = content.replace(
+      /(eventLog = [^;]*?\.map\(\(line\) => \(\{\s*seq: JSON\.parse\(line\)\.seq,\s*line\s*\}\)\);)/,
+      `$1${replayValidation}`,
+    );
   }
   content = content.replace(
-    /    \} catch \{\s*eventLog = \[\];\s*seqCounter = 0;\s*\}/,
+    /\} catch \{\s*eventLog = \[\];\s*seqCounter = 0;\s*\}/,
     `    } catch (error) {
       throw new Error('bridge replay log is corrupt; refusing to rerun an in-flight turn', { cause: error });
     }`,

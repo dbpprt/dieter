@@ -1,0 +1,89 @@
+name: Nightly
+
+# Full qualification of main (every component, every Maestro flow, iPad), then
+# a dev prerelease and TestFlight build through release.yml, then retention.
+# Only the identity's repository releases; an unchanged, already released main
+# is skipped on schedule.
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  changed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      release: ${{ steps.check.outputs.release }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: check
+        run: |
+          if [[ "$GITHUB_REPOSITORY" != "$(jq -r .repository config/identity.json)" ]]; then
+            echo "release=false" >> "$GITHUB_OUTPUT"; echo "Not the identity repository; nothing to release."; exit 0
+          fi
+          line=$(jq -r .release_line fastlane/release-policy.json)
+          if [[ "$GITHUB_EVENT_NAME" == schedule ]] && git ls-remote --tags origin "refs/tags/v$line.*" | grep -q "^$GITHUB_SHA"; then
+            echo "release=false" >> "$GITHUB_OUTPUT"; echo "$GITHUB_SHA is already released."
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  qualify:
+    needs: changed
+    if: needs.changed.outputs.release == 'true'
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      full: true
+
+  release:
+    needs: qualify
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/release.yml
+    with:
+      channel: dev
+      qualified_by: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    secrets: inherit
+
+  prune:
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      FASTLANE_DISABLE_COLORS: "1"
+      FASTLANE_HIDE_TIMESTAMP: "true"
+      FASTLANE_OPT_OUT_USAGE: "true"
+      FASTLANE_SKIP_UPDATE_CHECK: "true"
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          tools: ruby gem:bundler
+          bundle: "true"
+          cache-scope: release
+      - name: Delete expired dev prereleases (tags stay)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bundle exec fastlane prune

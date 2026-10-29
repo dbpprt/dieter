@@ -13,19 +13,17 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"net"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/buildinfo"
-	"github.com/dbpprt/dieter/internal/compatibility"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
-	"github.com/dbpprt/dieter/internal/linkauth"
-	"github.com/dbpprt/dieter/internal/trust"
+	"github.com/dbpprt/dieter/internal/platform/buildinfo"
+	"github.com/dbpprt/dieter/internal/platform/version"
+	"github.com/dbpprt/dieter/internal/security/linkauth"
+	"github.com/dbpprt/dieter/internal/security/trust"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -41,12 +39,19 @@ type Service struct {
 	config         Config
 	enrollMu       sync.Mutex
 	enrollAttempts map[string][]time.Time
+	enrollActive   map[string][]time.Time
+	rosters        rosterCache
 }
 
-const maxEnrollmentRatePeers = 4096
+const (
+	maxEnrollmentRatePeers = 4096
+	// Pending enrollments share one global table. Each client network may hold
+	// only a few, so filling it takes many networks rather than a handful.
+	maxActiveEnrollmentsPerClient = 8
+)
 
 func NewService(store *Store, auth *Auth, keys *Keys, hub *Hub, config Config) *Service {
-	return &Service{store: store, auth: auth, keys: keys, hub: hub, config: config, enrollAttempts: map[string][]time.Time{}}
+	return &Service{store: store, auth: auth, keys: keys, hub: hub, config: config, enrollAttempts: map[string][]time.Time{}, enrollActive: map[string][]time.Time{}}
 }
 
 func (s *Service) SetQuotaManager(manager *QuotaManager) { s.quota = manager }
@@ -62,7 +67,7 @@ func (s *Service) GetCompatibility(_ context.Context, request *gatewayv1.Compati
 	} else if request.GetComponent() != gatewayv1.CompatibilityComponent_COMPATIBILITY_COMPONENT_CLIENT {
 		return nil, status.Error(codes.InvalidArgument, "compatibility component is required")
 	}
-	value, normalized := compatibility.Evaluate(request.GetReleaseVersion(), minimum)
+	value, normalized := version.Evaluate(request.GetReleaseVersion(), minimum)
 	return &gatewayv1.CompatibilityResponse{
 		Policy: protoCompatibilityPolicy(policy), Status: protoCompatibilityStatus(value),
 		CurrentReleaseVersion: normalized, MinimumReleaseVersion: minimum,
@@ -292,6 +297,9 @@ func (s *Service) BeginDaemonEnrollment(ctx context.Context, request *gatewayv1.
 	_, _ = rand.Read(codeRaw)
 	code := strings.ToUpper(base64.RawURLEncoding.EncodeToString(codeRaw))
 	expires := time.Now().UTC().Add(10 * time.Minute)
+	if !s.reserveEnrollment(ctx, expires) {
+		return nil, status.Error(codes.ResourceExhausted, "too many pending daemon enrollments from this network")
+	}
 	id := randomID("enroll_")
 	if err := s.store.CreateEnrollment(EnrollmentRecord{ID: id, SecretHash: s.auth.digest(secret), UserCode: code, Name: name, PublicKey: request.GetPublicKey(), ExpiresAt: expires}); err != nil {
 		return nil, status.Error(codes.Internal, "create daemon enrollment")
@@ -301,13 +309,7 @@ func (s *Service) BeginDaemonEnrollment(ctx context.Context, request *gatewayv1.
 }
 
 func (s *Service) allowEnrollment(ctx context.Context) bool {
-	host := "unknown"
-	if value, ok := peer.FromContext(ctx); ok && value.Addr != nil {
-		host = value.Addr.String()
-		if parsed, _, err := net.SplitHostPort(host); err == nil {
-			host = parsed
-		}
-	}
+	host := clientNetworkKey(gatewayContextClientAddress(ctx))
 	now := time.Now().UTC()
 	cutoff := now.Add(-time.Minute)
 	s.enrollMu.Lock()
@@ -332,6 +334,35 @@ func (s *Service) allowEnrollment(ctx context.Context) bool {
 		return false
 	}
 	s.enrollAttempts[host] = append(kept, now)
+	return true
+}
+
+// reserveEnrollment counts an enrollment against its client network until it
+// expires; completing it early does not free the slot.
+func (s *Service) reserveEnrollment(ctx context.Context, expires time.Time) bool {
+	host := clientNetworkKey(gatewayContextClientAddress(ctx))
+	now := time.Now().UTC()
+	s.enrollMu.Lock()
+	defer s.enrollMu.Unlock()
+	for peer, active := range s.enrollActive {
+		if len(active) == 0 || !active[len(active)-1].After(now) {
+			delete(s.enrollActive, peer)
+		}
+	}
+	if _, exists := s.enrollActive[host]; !exists && len(s.enrollActive) >= maxEnrollmentRatePeers {
+		return false
+	}
+	kept := s.enrollActive[host][:0]
+	for _, expiry := range s.enrollActive[host] {
+		if expiry.After(now) {
+			kept = append(kept, expiry)
+		}
+	}
+	if len(kept) >= maxActiveEnrollmentsPerClient {
+		s.enrollActive[host] = kept
+		return false
+	}
+	s.enrollActive[host] = append(kept, expires)
 	return true
 }
 
@@ -499,8 +530,15 @@ func (s *Service) RevokeDaemon(ctx context.Context, request *gatewayv1.DaemonRef
 	return &emptypb.Empty{}, nil
 }
 
+// ExchangeDaemonToken issues a short-lived daemon admission token bound to the
+// caller's roster device ID. It is a second factor: the daemon also requires
+// TLS authenticated by that device's roster key, so the token alone grants
+// nothing.
 func (s *Service) ExchangeDaemonToken(ctx context.Context, request *gatewayv1.ExchangeDaemonTokenRequest) (*gatewayv1.DaemonAccessToken, error) {
 	principal, _ := PrincipalFromContext(ctx)
+	if !trust.ValidDeviceID(request.GetClientKeyThumbprint()) {
+		return nil, status.Error(codes.InvalidArgument, "client_key_thumbprint must be the caller's roster device ID")
+	}
 	record, err := s.ownedDaemon(request.GetDaemonId(), principal.GitHubID)
 	if err != nil {
 		return nil, err
@@ -512,6 +550,9 @@ func (s *Service) ExchangeDaemonToken(ctx context.Context, request *gatewayv1.Ex
 	return &gatewayv1.DaemonAccessToken{AccessToken: token, TokenType: "Bearer", ExpiresAt: expires.Format(time.RFC3339Nano), DaemonGeneration: record.Generation}, nil
 }
 
+// ResolveDaemonRoute reports how to reach a daemon: direct candidates, the
+// WebRTC capability and relay lane status. It carries no daemon keys; clients
+// authenticate daemons with the keys pinned in the device roster.
 func (s *Service) ResolveDaemonRoute(ctx context.Context, request *gatewayv1.DaemonRef) (*gatewayv1.DaemonRoute, error) {
 	principal, _ := PrincipalFromContext(ctx)
 	record, err := s.ownedDaemon(request.GetDaemonId(), principal.GitHubID)
@@ -519,7 +560,7 @@ func (s *Service) ResolveDaemonRoute(ctx context.Context, request *gatewayv1.Dae
 		return nil, err
 	}
 	daemon := s.protoDaemon(record)
-	return &gatewayv1.DaemonRoute{ControlWebrtc: s.hub.ControlWebRTC(record.ID), DaemonId: record.ID, RelayAvailable: daemon.Online, DirectCandidates: daemon.DirectCandidates, Generation: record.Generation, DaemonCaPem: s.keys.DaemonCAPEM, DaemonCertificatePem: append([]byte(nil), record.Certificate...)}, nil
+	return &gatewayv1.DaemonRoute{RelayLanes: s.hub.RelayLanes(record.ID), ControlWebrtc: s.hub.ControlWebRTC(record.ID), DaemonId: record.ID, RelayAvailable: daemon.Online, DirectCandidates: daemon.DirectCandidates, Generation: record.Generation}, nil
 }
 
 func (s *Service) GetRTCConfiguration(ctx context.Context, request *gatewayv1.DaemonRef) (*gatewayv1.RTCConfiguration, error) {
@@ -585,17 +626,17 @@ func (s *Service) ownedDaemon(id string, githubID int64) (DaemonRecord, error) {
 
 func (s *Service) protoDaemon(record DaemonRecord) *gatewayv1.Daemon {
 	policy, _ := compatibilityPolicy(s.config)
-	value, _ := compatibility.Evaluate(record.Version, policy.MinimumDaemonVersion)
+	value, _ := version.Evaluate(record.Version, policy.MinimumDaemonVersion)
 	var routes []*gatewayv1.DirectCandidate
-	if value == compatibility.StatusCompatible {
+	if value == version.StatusCompatible {
 		_ = json.Unmarshal(record.RoutesJSON, &routes)
 	}
 	remoteDesktop := &gatewayv1.RemoteDesktopPresence{}
-	if value == compatibility.StatusCompatible {
+	if value == version.StatusCompatible {
 		_ = json.Unmarshal(record.RemoteDesktopJSON, remoteDesktop)
 	}
 	return &gatewayv1.Daemon{
-		Id: record.ID, Name: record.Name, Online: value == compatibility.StatusCompatible && s.hub.Online(record.ID),
+		Id: record.ID, Name: record.Name, Online: value == version.StatusCompatible && s.hub.Online(record.ID),
 		LastSeenAt: record.LastSeenAt.Format(time.RFC3339Nano), ReleaseVersion: record.Version,
 		Generation: record.Generation, DirectCandidates: routes, RemoteDesktop: remoteDesktop,
 		Compatibility: protoCompatibilityStatus(value), MinimumReleaseVersion: policy.MinimumDaemonVersion,
@@ -610,7 +651,7 @@ func (s *Service) credential(record DaemonRecord) *gatewayv1.DaemonCredential {
 			expires = certificate.NotAfter.UTC().Format(time.RFC3339Nano)
 		}
 	}
-	return &gatewayv1.DaemonCredential{DaemonId: record.ID, DaemonName: record.Name, CertificatePem: record.Certificate, DaemonCaPem: s.keys.DaemonCAPEM, GatewaySigningPublicKey: public, ExpiresAt: expires, Generation: record.Generation, GatewayIssuer: s.config.IdentityOrigin()}
+	return &gatewayv1.DaemonCredential{DaemonId: record.ID, DaemonName: record.Name, CertificatePem: record.Certificate, GatewaySigningPublicKey: public, ExpiresAt: expires, Generation: record.Generation, GatewayIssuer: s.config.IdentityOrigin()}
 }
 
 func hmacEqual(left, right string) bool {

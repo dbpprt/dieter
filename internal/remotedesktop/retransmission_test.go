@@ -1,6 +1,7 @@
 package remotedesktop
 
 import (
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -65,7 +66,7 @@ func TestRepairCannotCrossDisplayGenerationOrResurrectExpiredChain(t *testing.T)
 	p := newPacketPacer(1000000)
 	defer p.Close()
 	p.mediaGeneration.Store(2)
-	if _, err := p.Write(&rtp.Header{SSRC: 1}, []byte{1}, interceptor.Attributes{repairGenerationAttribute: uint64(1)}); err != errRepairObsolete {
+	if _, err := p.Write(&rtp.Header{SSRC: 1}, []byte{1}, interceptor.Attributes{repairGenerationAttribute: uint64(1)}); !errors.Is(err, errRepairObsolete) {
 		t.Fatal("pacer accepted obsolete repair", err)
 	}
 }
@@ -141,7 +142,7 @@ func TestPacerDoesNotTransmitRepairAfterQueueDeadline(t *testing.T) {
 	wrote := false
 	writer := interceptor.RTPWriterFunc(func(_ *rtp.Header, _ []byte, _ interceptor.Attributes) (int, error) { wrote = true; return 1, nil })
 	_, err := p.writePacket(&rtp.Header{Version: 2}, []byte{1}, interceptor.Attributes{repairDeadlineAttribute: time.Now().Add(10 * time.Millisecond)}, writer)
-	if err != errRepairExpired || wrote {
+	if !errors.Is(err, errRepairExpired) || wrote {
 		t.Fatalf("obsolete repair transmitted: %v, %v", err, wrote)
 	}
 }

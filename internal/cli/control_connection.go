@@ -9,24 +9,23 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/controlrtc"
-	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
+	"github.com/dbpprt/dieter/internal/link"
+	"github.com/dbpprt/dieter/internal/transport/controlrtc"
+	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-func (c *CLI) dialControl(ctx context.Context, gateway *gatewayTransport, route *gatewayv1.DaemonRoute) (*dieterTransport, error) {
+// dialControl negotiates a data-only WebRTC channel. Signaling runs over
+// signal, an established relay tunnel connection, so the gateway never sees
+// the offer, answer or candidates; the channel then carries the same mutual
+// TLS as every other route.
+func (c *CLI) dialControl(ctx context.Context, gateway *gatewayTransport, route *gatewayv1.DaemonRoute, signal dieterclient.Client, peer *trustedDaemon, credential *directCredential) (*dieterTransport, error) {
 	id := route.GetDaemonId()
-	credential := &directCredential{timeout: c.connectionTimeout(), exchange: func(ctx context.Context) (*gatewayv1.DaemonAccessToken, error) {
-		return gateway.client.ExchangeDaemonToken(ctx, &gatewayv1.ExchangeDaemonTokenRequest{DaemonId: id})
-	}}
 	var mu sync.Mutex
 	var sessionID string
-	bootstrap := dieterv1.NewDieterServiceClient(gateway.conn)
 	dialer := func(ctx context.Context, _ string) (net.Conn, error) {
 		ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
 		defer cancel()
@@ -34,8 +33,8 @@ func (c *CLI) dialControl(ctx context.Context, gateway *gatewayTransport, route 
 		if err != nil {
 			return nil, err
 		}
-		stream, session, err := controlrtc.Dial(ctx, configuration, func(ctx context.Context, r *dieterv1.StartControlConnectionRequest) (*dieterv1.ControlConnection, error) {
-			return bootstrap.StartControlConnection(metadata.AppendToOutgoingContext(ctx, "x-dieter-daemon-id", id), r)
+		stream, session, err := controlrtc.Dial(ctx, configuration, func(ctx context.Context, request *dieterv1.StartControlConnectionRequest) (*dieterv1.ControlConnection, error) {
+			return signal.StartControlConnection(ctx, request)
 		})
 		if err == nil {
 			mu.Lock()
@@ -44,11 +43,11 @@ func (c *CLI) dialControl(ctx context.Context, gateway *gatewayTransport, route 
 		}
 		return stream, err
 	}
-	connection, err := dieterdaemon.DialDirectWithCredentials(ctx, "passthrough:///webrtc-control", id, route.GetDaemonCaPem(), credential, grpc.WithContextDialer(dialer))
+	connection, err := link.DialDaemon(peer.certificate, peer.daemonKey, credential, dialer)
 	if err != nil {
 		return nil, err
 	}
-	client := dieterv1.NewDieterServiceClient(readResumingConn{connection})
+	client := dieterclient.New(readResumingConn{connection})
 	if _, err = client.Health(ctx, &emptypb.Empty{}); err != nil {
 		connection.Close()
 		return nil, err
@@ -75,7 +74,11 @@ func (c *CLI) controlConnectionCommand(args []string) error {
 	if action != "start" && action != "show" && action != "close" {
 		return fmt.Errorf("unknown connection action %q", action)
 	}
-	usage := fmt.Sprintf("Usage: dieter machine connection %s [--request FILE] [SESSION]\n\nStart with a signed RTC configuration and gathered SDP offer; show reports the\nselected ICE mode (direct or turn); close disconnects only this transport.\n", action)
+	usage := map[string]string{
+		"start": "Usage: dieter machine connection start --request FILE\n\nStart data-only WebRTC signaling from protobuf JSON with rtcConfiguration and\nofferSdp (a signed RTC configuration and the gathered SDP offer).\n",
+		"show":  "Usage: dieter machine connection show SESSION\n\nShow the session's selected ICE mode (direct or turn).\n",
+		"close": "Usage: dieter machine connection close SESSION\n\nClose only this data-only transport.\n",
+	}[action]
 	set := flags("machine connection " + action)
 	requestPath := set.String("request", "", "protobuf JSON offer file (start only)")
 	help, err := parse(set, args[1:], usage, c.Out)

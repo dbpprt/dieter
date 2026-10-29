@@ -1,0 +1,29 @@
+# Projects → board → seeded card → its conversation → subagents.
+appId: ${APP_ID}
+name: Board and conversation
+tags: [smoke]
+---
+- runFlow: common/launch.yaml
+- tapOn:
+    text: "Projects"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Main"
+    timeout: 40000
+- tapOn:
+    text: "Main"
+    waitToSettleTimeoutMs: 500
+- assertVisible:
+    id: lane-1
+- tapOn:
+    text: "Design the mobile workspace"
+    waitToSettleTimeoutMs: 500
+- assertVisible: ".*Your board stays within reach.*"
+- tapOn:
+    id: chrome-conversation-menu
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: "Subagents.*"
+    waitToSettleTimeoutMs: 500
+- assertVisible: "Layout scout"
+- takeScreenshot: board-subagents

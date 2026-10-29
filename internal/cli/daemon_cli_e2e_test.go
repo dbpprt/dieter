@@ -1,3 +1,5 @@
+//go:build e2e
+
 package cli
 
 import (
@@ -7,97 +9,34 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"net"
-	"net/http"
-	"net/http/httptest"
-	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/controlrtc"
-	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
-	"github.com/dbpprt/dieter/internal/gateway"
+	"github.com/dbpprt/dieter/internal/api"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/machine"
+	"github.com/dbpprt/dieter/internal/host/machine"
+	"github.com/dbpprt/dieter/internal/link"
 	"github.com/dbpprt/dieter/internal/remotedesktop"
-	"github.com/dbpprt/dieter/internal/server"
+	"github.com/dbpprt/dieter/internal/security/localauth"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
+	"github.com/dbpprt/dieter/internal/testkit"
+	"github.com/dbpprt/dieter/internal/testkit/topology"
+	"github.com/dbpprt/dieter/internal/transport/controlrtc"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-func initTestRepository(t *testing.T, name string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), name)
-	if output, err := exec.Command("git", "init", "-b", "main", path).CombinedOutput(); err != nil {
-		t.Fatalf("git init: %s: %v", output, err)
-	}
-	if err := os.WriteFile(filepath.Join(path, "README.md"), []byte("initial\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	for key, value := range map[string]string{"user.name": "Dieter Test", "user.email": "dieter@example.test"} {
-		if output, err := exec.Command("git", "-C", path, "config", key, value).CombinedOutput(); err != nil {
-			t.Fatalf("git config %s: %s: %v", key, output, err)
-		}
-	}
-	return path
-}
-
-func runCLITestGit(t *testing.T, directory string, args ...string) string {
-	t.Helper()
-	command := exec.Command("git", args...)
-	command.Dir = directory
-	output, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %s: %v", args, output, err)
-	}
-	return strings.TrimSpace(string(output))
-}
-
-func daemonCLIForTest(t *testing.T) (*CLI, *bytes.Buffer, *store.Store) {
-	t.Helper()
-	root := t.TempDir()
-	data := store.New(root)
-	if err := data.Ensure(); err != nil {
-		t.Fatal(err)
-	}
-	application := server.NewWithRunner(data, slog.New(slog.NewTextHandler(io.Discard, nil)), &fakeRunner{})
-	host := httptest.NewServer(application.Handler())
-	t.Cleanup(host.Close)
-	if _, err := dieterdaemon.NewStatusWriter(root, dieterdaemon.RuntimeStatus{
-		PID: os.Getpid(), Version: "test", State: "running", ListenAddress: strings.TrimPrefix(host.URL, "http://"), GatewayState: dieterdaemon.GatewayNotEnrolled,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	output := &bytes.Buffer{}
-	client := New(data)
-
-	client.Timeout = 10 * time.Second
-	client.Out, client.Err = output, output
-	t.Cleanup(client.Close)
-	return client, output, data
-}
-
-func runDaemonCLI(t *testing.T, client *CLI, output *bytes.Buffer, args ...string) string {
-	t.Helper()
-	output.Reset()
-	if err := client.Run(args); err != nil {
-		t.Fatalf("dieter %s: %v\n%s", strings.Join(args, " "), err, output.String())
-	}
-	return output.String()
-}
-
 func TestDaemonCLIControlsLocalDaemonEndToEnd(t *testing.T) {
-	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
+	t.Parallel()
 	client, output, data := daemonCLIForTest(t)
 	repository := initTestRepository(t, "first")
 	remote := filepath.Join(t.TempDir(), "remote.git")
-	runCLITestGit(t, "", "init", "--bare", remote)
-	runCLITestGit(t, repository, "remote", "add", "origin", remote)
+	testkit.RunGit(t, "", "init", "--bare", remote)
+	testkit.RunGit(t, repository, "remote", "add", "origin", remote)
 	createdJSON := runDaemonCLI(
 		t, client, output, "project", "open", "--name", "CLI fixture", "--base-remote", "origin",
 		"--base-branch", "main", "--format", "json", repository,
@@ -135,7 +74,7 @@ func TestDaemonCLIControlsLocalDaemonEndToEnd(t *testing.T) {
 	if err := json.Unmarshal([]byte(cardJSON), &card); err != nil || card.ID == "" || card.WorkspaceBaseRemote != "private" || card.RemotePublishMode != "pull_request" {
 		t.Fatalf("created card JSON=%q err=%v", cardJSON, err)
 	}
-	localProject, err := data.ResolveProject(created.Project.ID)
+	localProject, err := data.Kanban.ResolveProject(created.Project.ID)
 	if err != nil || len(localProject.Checkouts) != 1 {
 		t.Fatalf("local project=%+v err=%v", localProject, err)
 	}
@@ -160,7 +99,7 @@ func TestDaemonCLIControlsLocalDaemonEndToEnd(t *testing.T) {
 	if err := json.Unmarshal([]byte(quickJSON), &quick); err != nil || quick.ID == "" || quick.Title != "Add keyboard navigation" {
 		t.Fatalf("quick task JSON=%q parsed=%#v err=%v", quickJSON, quick, err)
 	}
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(testkit.Budget(30 * time.Second))
 	for {
 		var detail dieterv1.CardDetail
 		raw := runDaemonCLI(t, client, output, "card", "show", quick.ID)
@@ -201,7 +140,7 @@ func TestDaemonCLIControlsLocalDaemonEndToEnd(t *testing.T) {
 	runDaemonCLI(t, client, output, "workspace", "run", "--project", created.Project.ID, "--kind", "push", "--wait")
 	runDaemonCLI(t, client, output, "workspace", "run", "--project", created.Project.ID, "--kind", "update", "--param", "fetch=true", "--param", "validate=false", "--wait")
 	runDaemonCLI(t, client, output, "workspace", "run", "--project", created.Project.ID, "--kind", "validate", "--wait")
-	if local, pushed := runCLITestGit(t, repository, "rev-parse", "HEAD"), runCLITestGit(t, "", "--git-dir="+remote, "rev-parse", "refs/heads/main"); local != pushed {
+	if local, pushed := testkit.RunGit(t, repository, "rev-parse", "HEAD"), testkit.RunGit(t, "", "--git-dir="+remote, "rev-parse", "refs/heads/main"); local != pushed {
 		t.Fatalf("CLI project push did not publish HEAD: local=%s remote=%s", local, pushed)
 	}
 
@@ -351,6 +290,7 @@ func TestDaemonCLIControlsLocalDaemonEndToEnd(t *testing.T) {
 	if !strings.Contains(updated, filepath.Base(relocated)) {
 		t.Fatalf("relocated project response=%s", updated)
 	}
+	assertPrivacyCLI(t, client, output)
 	runDaemonCLI(t, client, output, "machine", "info")
 	statusJSON := runDaemonCLI(t, client, output, "status", "--format", "json")
 	if !strings.Contains(statusJSON, `"route": "local"`) {
@@ -359,16 +299,14 @@ func TestDaemonCLIControlsLocalDaemonEndToEnd(t *testing.T) {
 }
 
 func TestOperationalCLINeverFallsBackToDirectStorage(t *testing.T) {
-	data := store.New(t.TempDir())
-	if err := data.Ensure(); err != nil {
-		t.Fatal(err)
-	}
+	t.Parallel()
+	data := testkit.Store(t)
 	repository := initTestRepository(t, "stored-only")
-	if _, err := data.CreateProject(store.CreateProjectInput{Name: "Must remain hidden", Path: repository}); err != nil {
+	if _, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Must remain hidden", Path: repository}); err != nil {
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
-	client := New(data)
+	client := New(data.Root)
 
 	client.Out, client.Err = &output, &output
 	err := client.Run([]string{"project", "list", "--format", "json"})
@@ -380,62 +318,30 @@ func TestOperationalCLINeverFallsBackToDirectStorage(t *testing.T) {
 	}
 }
 
-func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) { testDaemonRoutes(t, false) }
-func TestDaemonCLIUsesWebRTCControlAndFallback(t *testing.T)     { testDaemonRoutes(t, true) }
+func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
+	t.Parallel()
+	testDaemonRoutes(t, false)
+}
+
+func TestDaemonCLIUsesWebRTCControlAndFallback(t *testing.T) {
+	t.Parallel()
+	testDaemonRoutes(t, true)
+}
 func testDaemonRoutes(t *testing.T, withRTC bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	gatewayListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer gatewayListener.Close()
-	publicURL, _ := url.Parse("http://" + gatewayListener.Addr().String())
-	issuerURL, _ := url.Parse("https://durable-gateway.example.test")
-	configuration := gateway.Config{IssuerURL: issuerURL, Root: t.TempDir(), Address: gatewayListener.Addr().String(), PublicURL: publicURL, GitHubClientID: "test", GitHubSecret: "test", AllowedUserIDs: map[int64]struct{}{42: {}}, AuthSecret: []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour, NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid", DevInsecure: true}
-	gatewayStore, err := gateway.OpenStore(configuration.Root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer gatewayStore.Close()
-	gatewayServer, err := gateway.NewServer(configuration, gatewayStore, logger)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = gatewayServer.Serve(gatewayListener) }()
-
+	g := topology.StartGateway(t, topology.GatewayOptions{Issuer: "https://durable-gateway.example.test"})
+	// The CLI below runs from the enrolled identity's home and targets the
+	// daemon, which keeps its data in a separate store.
 	identityRoot := t.TempDir()
-	identity, err := dieterdaemon.LoadOrCreateEnrollmentIdentity(identityRoot, "CLI remote", publicURL.String())
+	identity, err := g.Enroll(ctx, identityRoot, "CLI remote", topology.Account)
 	if err != nil {
 		t.Fatal(err)
 	}
-	enrollment, err := dieterdaemon.BeginEnrollment(ctx, identity)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := gatewayStore.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), int64(42), "owner"); err != nil {
-		t.Fatal(err)
-	}
-	credential, err := dieterdaemon.CompleteEnrollment(ctx, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
-	if err != nil {
-		t.Fatal(err)
-	}
-	identity.GatewayIssuer = credential.GetGatewayIssuer()
-	if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetDaemonCaPem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
-		t.Fatal(err)
-	}
-
-	remoteStore := store.New(t.TempDir())
-	if err := remoteStore.Ensure(); err != nil {
-		t.Fatal(err)
-	}
+	remoteStore := testkit.Store(t)
 	remoteRepository := initTestRepository(t, "remote-route")
-	remoteProject, err := remoteStore.CreateProject(store.CreateProjectInput{Name: "Remote route", Path: remoteRepository})
-	if err != nil {
-		t.Fatal(err)
-	}
-	localListener, err := net.Listen("tcp", "127.0.0.1:0")
+	remoteProject, err := remoteStore.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Remote route", Path: remoteRepository})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -448,65 +354,35 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 		},
 	})
 	defer screenManager.Shutdown(context.Background())
-	var control *controlrtc.Manager
-	if withRTC {
-		transport, err := newDaemonDirectRoute(identity, localListener.Addr().String(), "control-tls", "127.0.0.1:0", "127.0.0.1", "loopback", 1000)
-		if err != nil {
-			t.Fatal(err)
-		}
-		go func() { _ = transport.server.Serve(transport.listener) }()
-		defer transport.server.Stop()
-		control = controlrtc.New(controlrtc.Identity{DaemonID: identity.ID, GatewayURL: identity.Issuer(), Generation: identity.Generation, GatewaySigningPublicKey: identity.GatewaySigningPublicKey}, transport.listener.Addr().String())
-		defer control.Close()
-	}
-	remoteServer := server.NewWithOptions(remoteStore, logger, server.Options{
-		ControlRTC:    control,
-		RemoteDesktop: screenManager,
-		Runner:        &fakeRunner{},
-		MachineAction: func(_ context.Context, operation machine.Operation) error {
-			powerActions <- operation
-			return nil
-		},
-		MachineCapabilities: func(context.Context) []machine.OperationCapability {
-			return []machine.OperationCapability{
-				{Operation: machine.OperationRestart, Supported: true, Authorized: true},
-				{Operation: machine.OperationShutdown, Supported: true, Authorized: true},
-				{Operation: machine.OperationUpdate, Supported: true, Authorized: true},
-			}
+	daemon := topology.StartDaemon(t, g, topology.DaemonOptions{
+		Identity: identity, Store: remoteStore, Direct: true, ControlWebRTC: withRTC, Logger: logger,
+		API: api.Options{
+			PrivacyDriver: &cliPrivacyFixture{},
+			PrivacyBootID: func(context.Context) (string, error) { return "cli-boot", nil },
+			RemoteDesktop: screenManager,
+			Runner:        newFakeRunner(),
+			MachineAction: func(_ context.Context, operation machine.Operation) error {
+				powerActions <- operation
+				return nil
+			},
+			MachineCapabilities: func(context.Context) []machine.OperationCapability {
+				return []machine.OperationCapability{
+					{Operation: machine.OperationRestart, Supported: true, Authorized: true},
+					{Operation: machine.OperationShutdown, Supported: true, Authorized: true},
+					{Operation: machine.OperationUpdate, Supported: true, Authorized: true},
+				}
+			},
 		},
 	})
-	remoteHTTP := &http.Server{Handler: remoteServer.Handler()}
-	go func() { _ = remoteHTTP.Serve(localListener) }()
-	defer remoteHTTP.Close()
-
-	directRoute, err := newDaemonDirectRoute(identity, localListener.Addr().String(), "cli-e2e", "127.0.0.1:0", "127.0.0.1", "loopback", 1000)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = directRoute.server.Serve(directRoute.listener) }()
-	directClosed := false
-	defer func() {
-		if !directClosed {
-			directRoute.server.Stop()
-			_ = directRoute.listener.Close()
-		}
-	}()
-	tunnel := &dieterdaemon.GatewayClient{ControlWebRTC: withRTC, Identity: identity, LocalTarget: localListener.Addr().String(), Version: "0.4.1-dev", Routes: []*gatewayv1.DirectCandidate{directRoute.candidate}, Log: logger}
-	go func() { _ = tunnel.Run(ctx) }()
-	deadline := time.Now().Add(5 * time.Second)
-	for !gatewayServer.Hub.Online(identity.ID) && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
-	}
-	if !gatewayServer.Hub.Online(identity.ID) {
-		t.Fatal("isolated daemon did not connect to isolated gateway")
-	}
+	control, directRoute := daemon.Control, daemon.Direct
+	publicURL := g.URL
 
 	cliStore := store.New(identityRoot)
 	if err := cliStore.Ensure(); err != nil {
 		t.Fatal(err)
 	}
-	first := New(cliStore)
-	first.Machine, first.GatewayURL = identity.ID, publicURL.String()
+	first := New(cliStore.Root)
+	first.Machine, first.GatewayURL = identity.ID, publicURL
 	first.Timeout = 10 * time.Second
 	var firstOutput bytes.Buffer
 	first.Out, first.Err = &firstOutput, &firstOutput
@@ -518,12 +394,11 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	}
 	if withRTC {
 		first.Close()
-		directRoute.server.Stop()
-		_ = directRoute.listener.Close()
-		directClosed = true
-		peer := New(cliStore)
+		directRoute.Server.Stop()
+		_ = directRoute.Listener.Close()
+		peer := New(cliStore.Root)
 		defer peer.Close()
-		peer.Machine, peer.GatewayURL = identity.ID, publicURL.String()
+		peer.Machine, peer.GatewayURL = identity.ID, publicURL
 		peer.Timeout = 20 * time.Second
 		var output bytes.Buffer
 		peer.Out, peer.Err = &output, &output
@@ -533,7 +408,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 		if peer.transport.route != "webrtc-direct" {
 			t.Fatalf("want WebRTC, got %s", peer.transport.route)
 		}
-		assertSyncCursorCLI(t, peer, &output)
+		assertChangesCLI(t, peer, &output)
 		assertMachineHomeTerminalCLI(t, peer, &output)
 		output.Reset()
 		if err := peer.Run([]string{"project", "update", "--hostname", "rtc.example", remoteProject.ID}); err != nil {
@@ -586,9 +461,9 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 		}
 		peer.Close()
 		control.Close()
-		fallback := New(cliStore)
+		fallback := New(cliStore.Root)
 		defer fallback.Close()
-		fallback.Machine, fallback.GatewayURL = identity.ID, publicURL.String()
+		fallback.Machine, fallback.GatewayURL = identity.ID, publicURL
 		fallback.Out, fallback.Err = io.Discard, io.Discard
 		if err := fallback.Run([]string{"status"}); err != nil {
 			t.Fatal(err)
@@ -598,6 +473,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 		}
 		return
 	}
+	assertPrivacyCLI(t, first, &firstOutput)
 	firstOutput.Reset()
 	if err := first.Run([]string{"machine", "info"}); err != nil || !strings.Contains(firstOutput.String(), `"daemonBuild"`) || !strings.Contains(firstOutput.String(), `"gpu"`) {
 		t.Fatalf("direct machine info output=%q err=%v", firstOutput.String(), err)
@@ -616,7 +492,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 		if operation != machine.OperationRestart {
 			t.Fatalf("direct operation=%q", operation)
 		}
-	case <-time.After(3 * time.Second):
+	case <-time.After(testkit.Budget(30 * time.Second)):
 		t.Fatal("direct restart did not reach the fake executor")
 	}
 	firstOutput.Reset()
@@ -629,7 +505,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 		if operation != machine.OperationUpdate {
 			t.Fatalf("direct update operation=%q", operation)
 		}
-	case <-time.After(3 * time.Second):
+	case <-time.After(testkit.Budget(30 * time.Second)):
 		t.Fatal("direct update did not reach the fake executor")
 	}
 	firstOutput.Reset()
@@ -641,35 +517,39 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	if err := protojson.Unmarshal([]byte(runDaemonCLI(t, first, &firstOutput, "machine", "rtc")), localConfig); err != nil {
 		t.Fatal(err)
 	}
-	localCLIStore := store.New(t.TempDir())
-	if err := localCLIStore.Ensure(); err != nil {
+	localCLIStore := testkit.Store(t)
+	if _, err := link.NewStatusWriter(localCLIStore.Root, link.RuntimeStatus{PID: os.Getpid(), Version: "test", State: "running", ListenAddress: daemon.Address, GatewayState: link.GatewayNotEnrolled}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := dieterdaemon.NewStatusWriter(localCLIStore.Root, dieterdaemon.RuntimeStatus{PID: os.Getpid(), Version: "test", State: "running", ListenAddress: localListener.Addr().String(), GatewayState: dieterdaemon.GatewayNotEnrolled}); err != nil {
+	// This caller root stands in for the daemon user's own CLI.
+	if err := os.WriteFile(localauth.Path(localCLIStore.Root), []byte(testkit.LocalToken(t, remoteStore.Root)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	localCLI := New(localCLIStore)
+	localCLI := New(localCLIStore.Root)
 
 	var localCLIOutput bytes.Buffer
 	localCLI.Out, localCLI.Err = &localCLIOutput, &localCLIOutput
 	assertScreenSessionCLI(t, localCLI, &localCLIOutput, localConfig)
 	localCLI.Close()
-	assertSyncCursorCLI(t, first, &firstOutput)
+	assertChangesCLI(t, first, &firstOutput)
 	assertMachineHomeTerminalCLI(t, first, &firstOutput)
+	assertVaultDirectCLI(t, first, &firstOutput)
 	assertQueueRemovalCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	assertCardMergeCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	assertProjectHostnameCLI(t, first, &firstOutput, remoteProject.ID)
 	assertConversationSelectionCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
+	assertBatchedConversationCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	assertContentPresentationCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	assertConversationReadCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	assertBackgroundProcessCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
+	assertChannelCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
+	assertMailCLI(t, first, &firstOutput, true)
 	first.Close()
 
-	directRoute.server.Stop()
-	_ = directRoute.listener.Close()
-	directClosed = true
-	second := New(cliStore)
-	second.Machine, second.GatewayURL = identity.ID, publicURL.String()
+	directRoute.Server.Stop()
+	_ = directRoute.Listener.Close()
+	second := New(cliStore.Root)
+	second.Machine, second.GatewayURL = identity.ID, publicURL
 	second.Timeout = 10 * time.Second
 	var secondOutput bytes.Buffer
 	second.Out, second.Err = &secondOutput, &secondOutput
@@ -681,7 +561,8 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	if second.transport == nil || second.transport.route != expectedRoute {
 		t.Fatalf("route=%#v want %s", second.transport, expectedRoute)
 	}
-	assertSyncCursorCLI(t, second, &secondOutput)
+	assertChangesCLI(t, second, &secondOutput)
+	assertPrivacyCLI(t, second, &secondOutput)
 	secondOutput.Reset()
 	if err := second.Run([]string{"machine", "info"}); err != nil || !strings.Contains(secondOutput.String(), `"daemonBuild"`) || !strings.Contains(secondOutput.String(), `"gpu"`) {
 		t.Fatalf("relay machine info output=%q err=%v", secondOutput.String(), err)
@@ -696,7 +577,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 		if operation != machine.OperationUpdate {
 			t.Fatalf("relay update operation=%q", operation)
 		}
-	case <-time.After(3 * time.Second):
+	case <-time.After(testkit.Budget(30 * time.Second)):
 		t.Fatal("relay update did not reach the fake executor")
 	}
 	secondOutput.Reset()
@@ -709,7 +590,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 		if operation != machine.OperationShutdown {
 			t.Fatalf("relay operation=%q", operation)
 		}
-	case <-time.After(3 * time.Second):
+	case <-time.After(testkit.Budget(30 * time.Second)):
 		t.Fatal("relay shutdown did not reach the fake executor")
 	}
 	secondOutput.Reset()
@@ -718,14 +599,17 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	}
 	assertScreenSessionCLI(t, second, &secondOutput, nil)
 	assertMachineHomeTerminalCLI(t, second, &secondOutput)
+	assertVaultRelayCLI(t, second, &secondOutput)
 	assertQueueRemovalCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertCardMergeCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertProjectHostnameCLI(t, second, &secondOutput, remoteProject.ID)
 	assertConversationSelectionCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
+	assertBatchedConversationCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertContentPresentationCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertConversationReadCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertBackgroundProcessCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
-
+	assertChannelCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
+	assertMailCLI(t, second, &secondOutput, true)
 }
 
 func assertMachineHomeTerminalCLI(t *testing.T, client *CLI, output *bytes.Buffer) {
@@ -753,21 +637,22 @@ func assertMachineOperationAccepted(t *testing.T, raw []byte) {
 }
 
 func TestDaemonCLICardTokenUsage(t *testing.T) {
+	t.Parallel()
 	client, output, data := daemonCLIForTest(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Path: initTestRepository(t, "usage"), Name: "Usage"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Path: initTestRepository(t, "usage"), Name: "Usage"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	board, err := data.CreateBoard(store.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: "review"})
+	board, err := data.Kanban.CreateBoard(kanban.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: "review"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	card, err := data.CreateCard(store.CreateCardInput{Project: project.ID, Board: board.ID, Title: "Usage", Prompt: "Count"})
+	card, err := data.Kanban.CreateCard(kanban.CreateCardInput{Project: project.ID, Board: board.ID, Title: "Usage", Prompt: "Count"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, raw := range []string{`{"type":"start","messageId":"answer"}`, `{"type":"finish","messageMetadata":{"totalUsage":{"inputTokens":100,"outputTokens":25,"totalTokens":125}}}`} {
-		if _, _, err := data.AppendUIChunk(card.ID, "turn", json.RawMessage(raw)); err != nil {
+		if _, _, err := data.Conversations.AppendUIChunk(card.ID, "turn", json.RawMessage(raw)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -791,6 +676,7 @@ func TestDaemonCLICardTokenUsage(t *testing.T) {
 }
 
 func TestDaemonCLIHostnamePortsEndToEnd(t *testing.T) {
+	t.Parallel()
 	client, output, _ := daemonCLIForTest(t)
 	projectID := strings.TrimSpace(runDaemonCLI(t, client, output, "project", "open", "--format", "id", initTestRepository(t, "hostname-ports")))
 	assertProjectHostnameCLI(t, client, output, projectID)
@@ -851,14 +737,46 @@ func assertProjectHostnameCLI(t *testing.T, client *CLI, output *bytes.Buffer, p
 	}
 }
 
-func assertSyncCursorCLI(t *testing.T, client *CLI, output *bytes.Buffer) {
+func assertChangesCLI(t *testing.T, client *CLI, output *bytes.Buffer) {
 	t.Helper()
-	raw := runDaemonCLI(t, client, output, "watch", "sync", "--count", "1")
-	var frame dieterv1.SyncFrame
+	raw := runDaemonCLI(t, client, output, "watch", "changes", "--count", "1")
+	var frame dieterv1.ChangesFrame
 	if err := protojson.Unmarshal([]byte(raw), &frame); err != nil {
 		t.Fatal(err)
 	}
-	if frame.Snapshot == nil || frame.Cursor.GetProjectionId() == "" || frame.Heartbeat || frame.ProjectionPending {
-		t.Fatalf("CLI did not negotiate complete resumable metadata: %+v", &frame)
+	cursor := frame.GetCursor()
+	if !frame.ResetRecords || !frame.ResetLocal || frame.Heartbeat || cursor.GetRecordsEpoch() == "" || cursor.GetLocalEpoch() == "" || len(frame.Records) == 0 {
+		t.Fatalf("CLI did not start a resumable change stream: %+v", &frame)
+	}
+}
+
+func assertPrivacyCLI(t *testing.T, client *CLI, output *bytes.Buffer) {
+	t.Helper()
+	raw := runDaemonCLI(t, client, output, "machine", "privacy", "setup", "--key", "privacy-test-setup-"+client.transport.route)
+	var setup dieterv1.MachineOperationResponse
+	if err := protojson.Unmarshal([]byte(raw), &setup); err != nil || !setup.Accepted || !strings.Contains(setup.Message, "Input Monitoring") {
+		t.Fatalf("setup=%s err=%v", raw, err)
+	}
+	runDaemonCLI(t, client, output, "machine", "privacy", "on", "--key", "privacy-test-on-"+client.transport.route)
+	locked := &dieterv1.MachinePrivacy{}
+	value := runDaemonCLI(t, client, output, "machine", "privacy", "status")
+	if err := protojson.Unmarshal([]byte(value), locked); err != nil || locked.GetState() != dieterv1.MachinePrivacy_STATE_ON || !locked.GetRequested() {
+		t.Fatalf("privacy state=%s error=%v", value, err)
+	}
+	runDaemonCLI(t, client, output, "machine", "privacy", "off", "--key", "privacy-test-off-"+client.transport.route)
+	unlocked := &dieterv1.MachinePrivacy{}
+	value = runDaemonCLI(t, client, output, "machine", "privacy", "status")
+	if err := protojson.Unmarshal([]byte(value), unlocked); err != nil || unlocked.GetState() != dieterv1.MachinePrivacy_STATE_OFF || unlocked.GetRequested() {
+		t.Fatalf("unlocked state=%s error=%v", value, err)
+	}
+}
+
+func TestPrivacyCLIControlsOnlyTheIsolatedDaemon(t *testing.T) {
+	t.Parallel()
+	client, output, _ := daemonCLIForTest(t)
+	runDaemonCLI(t, client, output, "machine", "privacy", "status")
+	assertPrivacyCLI(t, client, output)
+	if err := client.Run([]string{"machine", "privacy", "status", "--key", "invalid"}); err == nil {
+		t.Fatal("status accepted a mutation key")
 	}
 }

@@ -1,0 +1,143 @@
+# Maestro syntax, run in-app: Maestro has no macOS driver.
+# Sidebar destinations → seeded board → card → transcript → follow-up → live
+# mock reply. One launch covers navigation and the conversation journey.
+appId: com.getdieter.mac
+name: Mac navigation and conversation
+tags: [smoke]
+---
+- launchApp
+- tapOn:
+    id: sidebar.inbox
+- assertVisible:
+    id: destination.Inbox
+- tapOn:
+    id: sidebar.all-chats
+- assertVisible:
+    id: destination.All chats
+- tapOn:
+    id: sidebar.screens
+- assertVisible:
+    id: destination.Screens
+- tapOn:
+    id: sidebar.settings
+- assertVisible:
+    id: destination.Settings
+- tapOn:
+    id: sidebar.inbox
+- assertVisible:
+    id: destination.Inbox
+- assertNotVisible:
+    id: destination.Settings
+- takeScreenshot: mac-navigation
+- tapOn: "Expand Isolated E2E"
+- tapOn:
+    id: 'sidebar\.board\..+'
+- assertVisible:
+    id: destination.Board
+- tapOn:
+    id: 'card\..+'
+    text: "Design the mobile workspace"
+- assertVisible: 'Bring the board and conversation together on phone and tablet\..*'
+- tapOn:
+    id: conversation.composer
+- inputText: "Ping from the Mac"
+- pressKey: Enter
+# Observe admission before completion so the previous turn cannot satisfy the check.
+- extendedWaitUntil:
+    visible:
+      id: conversation.stop
+    timeout: 30000
+# The Inbox must receive completion while the conversation is not open. The
+# mock turn can finish within a second, before the Inbox could show it running;
+# nothing needs attention in the seeded Inbox, so the unread reply is what
+# brings this section up.
+- tapOn:
+    id: sidebar.inbox
+- extendedWaitUntil:
+    visible:
+      id: inbox.section.needs-you
+    timeout: 300000
+- extendedWaitUntil:
+    visible:
+      id: 'inbox\.status\..+\.(RECENT|REVIEW|UNREAD)'
+      text: "Design the mobile workspace · (Recent|Review|Unread reply)"
+    timeout: 300000
+- assertNotVisible:
+    id: 'inbox\.status\..+\.RUNNING'
+    text: "Design the mobile workspace · Running"
+- takeScreenshot: mac-inbox-completed
+- tapOn:
+    id: 'inbox\.title\..+\.Design the mobile workspace'
+# The seeded card is a fork, so the mock echoes its context before the message.
+- extendedWaitUntil:
+    visible: "Mock harness received: .*Ping from the Mac.*"
+    timeout: 300000
+- takeScreenshot: mac-conversation
+# Switching to another card and back must retain the reply just shown.
+- tapOn:
+    id: 'sidebar\.board\..+'
+- tapOn:
+    id: 'card\..+'
+    text: "Make reconnect feel effortless"
+- assertVisible: 'Keep drafts safe while a machine is offline\.'
+- tapOn:
+    id: 'card\..+'
+    text: "Design the mobile workspace"
+- assertVisible: "Mock harness received: .*Ping from the Mac.*"
+- extendedWaitUntil:
+    notVisible:
+      id: conversation.refreshing
+    timeout: 30000
+- takeScreenshot: mac-conversation-returned
+- tapOn:
+    id: sidebar.inbox
+- extendedWaitUntil:
+    visible:
+      id: 'inbox\.status\..+\.(RECENT|REVIEW|UNREAD)'
+      text: "Design the mobile workspace · (Recent|Review|Unread reply)"
+    timeout: 30000
+- assertNotVisible:
+    id: 'inbox\.status\..+\.RUNNING'
+    text: "Design the mobile workspace · Running"
+- tapOn:
+    id: 'inbox\.pin\..+'
+- assertVisible:
+    id: inbox.section.pinned
+- assertVisible: Unpin from inbox
+- takeScreenshot: mac-inbox-pinned
+- tapOn: Unpin from inbox
+- assertNotVisible:
+    id: inbox.section.pinned
+
+# Reuse the expanded project for the large-file journey.
+- tapOn:
+    id: 'sidebar\.files\..+'
+- tapOn:
+    id: files.row.large-viewer.md
+- assertVisible:
+    id: files.markdown.large-source
+- assertNotVisible:
+    id: files.markdown.rich-editor
+- takeScreenshot: mac-large-file
+- tapOn:
+    id: files.row.README.md
+- assertVisible:
+    id: files.markdown.rich-editor
+- tapOn:
+    id: 'sidebar\.board\..+'
+- tapOn:
+    id: 'card\..+'
+    text: "Design the mobile workspace"
+- tapOn:
+    id: conversation.content.close
+- tapOn:
+    id: conversation.content.launch.files
+- tapOn:
+    id: conversation.content.files.row.large-viewer.md
+- assertVisible:
+    id: files.markdown.large-source
+- takeScreenshot: mac-conversation-large-file
+- tapOn:
+    id: conversation.content.files.row.README.md
+- assertVisible:
+    id: files.markdown.rich-editor

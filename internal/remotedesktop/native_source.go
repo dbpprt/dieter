@@ -155,7 +155,9 @@ type nativeHelperSource struct {
 	synthetic, embeddedCursor, inputAllowed bool
 	multiplex                               bool
 	referenceRecovery                       bool
+	frameOverlap                            bool
 	ready                                   chan struct{}
+	displayActivity                         displayActivityFactory
 
 	mu            sync.Mutex
 	writes        chan nativeWrite
@@ -197,7 +199,10 @@ func (s *nativeHelperSource) SetEventHandler(f func(SourceEvent)) {
 
 func (s *nativeHelperSource) send(ctx context.Context, command nativeCommand, acknowledge bool) error {
 	timeout := nativeCommandTimeout
-	if command.Kind == "create" || command.Kind == "remove" || command.Kind == "configure" || command.Kind == "frame_consumed" {
+	if command.Kind == "create" || command.Kind == "remove" || command.Kind == "configure" || command.Kind == "frame_consumed" || command.Kind == "wake_display" {
+		// Waking is the first command sent to a cold helper, before capture
+		// starts. Include process initialization in its lifecycle budget; the
+		// independent liveness watchdog still bounds an unresponsive helper.
 		timeout = nativeStartupTimeout
 	} else if command.Kind == "heartbeat" {
 		// A scheduling stall must not have a shorter lifetime than the native
@@ -340,6 +345,45 @@ func translateNativeInput(value *dieterv1.RemoteDesktopInput) (*nativeInputPaylo
 }
 
 func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample) error) (result error) {
+	// Startup failures (including power acquisition) must unblock multiplexed
+	// viewers with their real cause rather than leaving them waiting for ready.
+	defer func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.writes == nil {
+			s.stoppedErr = result
+		}
+		if s.ready != nil {
+			select {
+			case <-s.ready:
+			default:
+				close(s.ready)
+			}
+		}
+	}()
+	releaseActivity, err := s.beginDisplayActivity(ctx)
+	if releaseActivity != nil {
+		defer func() {
+			if err := releaseActivity(); err != nil {
+				// Retry once without losing the assertion ID; cleanup failures
+				// remain visible even if that retry succeeds.
+				err = errors.Join(err, releaseActivity())
+				if errors.Is(result, errCaptureProbeComplete) {
+					// Completion is a control signal, not a successful cleanup.
+					// ProbeCapture must not hide a failed power release.
+					result = err
+				} else {
+					result = errors.Join(result, err)
+				}
+				if s.logger != nil {
+					s.logger.Error("native capture display activity cleanup failed", "error", err)
+				}
+			}
+		}()
+	}
+	if err != nil {
+		return err
+	}
 	s.mu.Lock()
 	config := s.currentConfigurationLocked()
 	s.mu.Unlock()
@@ -574,7 +618,7 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 			sample.Metadata = meta
 		}
 		metadata := sample.Metadata.(FrameMetadata)
-		if !s.multiplex && s.overlapSupported.Load() && os.Getenv("DIETER_SCREEN_OVERLAP") == "1" {
+		if !s.multiplex && s.overlapSupported.Load() && s.frameOverlap {
 			s.mu.Lock()
 			config = s.currentConfigurationLocked()
 			s.mu.Unlock()

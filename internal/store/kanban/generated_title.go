@@ -1,0 +1,36 @@
+package kanban
+
+import (
+	"strings"
+
+	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/platform/fault"
+	"github.com/dbpprt/dieter/internal/store/home"
+)
+
+// ApplyGeneratedCardTitle updates only the originally saved title. It deliberately
+// preserves conversation identity, task text, runtime, workflow and workspace.
+func (s *Store) ApplyGeneratedCardTitle(ref, expectedTitle string, expectedRevision uint64, title string) (model.Card, error) {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return model.Card{}, fault.New(fault.Invalid, "title is required")
+	}
+	release, err := s.home.BeginWrite()
+	if err != nil {
+		return model.Card{}, err
+	}
+	defer release()
+	item, err := s.ResolveCard(ref)
+	if err != nil {
+		return model.Card{}, err
+	}
+	if item.Title != expectedTitle || item.TitleRevision != expectedRevision || item.Title == title {
+		return item, nil
+	}
+	if item.LastActivityAt == "" {
+		item.LastActivityAt = item.UpdatedAt
+	}
+	item.Title, item.UpdatedAt = title, home.Timestamp()
+	item.TitleRevision++
+	return s.SaveCard(item)
+}

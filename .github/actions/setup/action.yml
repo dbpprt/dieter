@@ -1,0 +1,51 @@
+name: Dieter setup
+description: >-
+  Installs the mise.toml tool pins (jdx/mise-action), and optionally the
+  Fastlane gems and the harness runtime dependencies, with caches keyed by
+  their lockfiles and namespaced by cache-scope.
+inputs:
+  tools:
+    description: Space-separated mise tools to install (empty installs every pin)
+    default: ""
+  bundle:
+    description: Install the Fastlane gems (Gemfile.lock)
+    default: "false"
+  harness:
+    description: Install internal/harness/runtime node_modules
+    default: "false"
+  cache-scope:
+    description: >-
+      Cache namespace. Jobs holding signing secrets or a write token pass
+      "release", so they never restore a cache that CI or a secret-free build
+      job (both run third-party code) wrote.
+    default: ci
+runs:
+  using: composite
+  steps:
+    - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      with:
+        version: 2026.10.2
+        install_args: ${{ inputs.tools }}
+        cache_key_prefix: mise-${{ inputs.cache-scope }}-${{ github.job }}
+    - name: Keep gems outside the checkout
+      if: inputs.bundle == 'true'
+      shell: bash
+      run: echo "BUNDLE_PATH=$HOME/.cache/dieter-gems" >> "$GITHUB_ENV"
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: inputs.bundle == 'true'
+      with:
+        path: ~/.cache/dieter-gems
+        key: gems-${{ inputs.cache-scope }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.ruby-version', 'Gemfile.lock') }}
+    - name: Install gems
+      if: inputs.bundle == 'true'
+      shell: bash
+      run: bundle install --jobs 4 --retry 3
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: inputs.harness == 'true'
+      with:
+        path: ~/.npm
+        key: npm-${{ inputs.cache-scope }}-${{ runner.os }}-${{ hashFiles('internal/harness/runtime/package-lock.json') }}
+    - name: Install harness runtime dependencies
+      if: inputs.harness == 'true'
+      shell: bash
+      run: npm --prefix internal/harness/runtime ci --ignore-scripts --no-audit --no-fund

@@ -1,0 +1,99 @@
+import AppKit
+@preconcurrency import ApplicationServices
+import CoreGraphics
+import Observation
+
+/// OS grants are the source of truth. Never persist a completed-onboarding flag.
+@MainActor
+@Observable
+final class RequiredPermissions {
+    enum Permission: String, CaseIterable {
+        case accessibility, screenRecording
+
+        var title: String {
+            switch self {
+            case .accessibility: "Accessibility"
+            case .screenRecording: "Screen & System Audio Recording"
+            }
+        }
+        var pane: String {
+            switch self {
+            case .accessibility: "Privacy_Accessibility"
+            case .screenRecording: "Privacy_ScreenCapture"
+            }
+        }
+    }
+
+    private(set) var accessibility = false
+    private(set) var screenRecording = false
+    private(set) var settingsError: String?
+    private(set) var setupSkipped = false
+    var isReady: Bool { accessibility && screenRecording }
+    var canUseApp: Bool { isReady || setupSkipped }
+    @ObservationIgnored private let check: (Permission) -> Bool
+    @ObservationIgnored private let request: (Permission) -> Void
+    @ObservationIgnored private let openSettings: (Permission) -> Bool
+
+    init(
+        check: @escaping (Permission) -> Bool,
+        request: @escaping (Permission) -> Void,
+        openSettings: @escaping (Permission) -> Bool
+    ) {
+        self.check = check
+        self.request = request
+        self.openSettings = openSettings
+        refresh()
+    }
+
+    /// The app polls this while it runs; only a change in a grant reaches the
+    /// scenes and the window that read readiness.
+    func refresh() {
+        let accessibility = check(.accessibility)
+        if self.accessibility != accessibility { self.accessibility = accessibility }
+        let screenRecording = check(.screenRecording)
+        if self.screenRecording != screenRecording { self.screenRecording = screenRecording }
+    }
+
+    func grant(_ permission: Permission) {
+        // Only an explicit user action may trigger an OS prompt.
+        request(permission)
+        settingsError =
+            openSettings(permission) ? nil : "Open System Settings → Privacy & Security → \(permission.title)."
+        refresh()
+    }
+
+    func skipSetup() {
+        if !setupSkipped { setupSkipped = true }
+    }
+
+    static func live() -> RequiredPermissions {
+        #if DIETER_E2E
+            if NativeTestSupport.isE2E {
+                return RequiredPermissions(check: { _ in true }, request: { _ in }, openSettings: { _ in true })
+            }
+        #endif
+        return RequiredPermissions(
+            check: { permission in
+                switch permission {
+                case .accessibility: AXIsProcessTrusted()
+                case .screenRecording: CGPreflightScreenCaptureAccess()
+                }
+            },
+            request: { permission in
+                switch permission {
+                case .accessibility:
+                    let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+                    _ = AXIsProcessTrustedWithOptions(options)
+                case .screenRecording:
+                    _ = CGRequestScreenCaptureAccess()
+                }
+            },
+            openSettings: { permission in
+                guard
+                    let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(permission.pane)")
+                else { return false }
+                return NSWorkspace.shared.open(url)
+            }
+        )
+    }
+}

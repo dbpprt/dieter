@@ -1,0 +1,41 @@
+[
+  {
+    "list": "bullet",
+    "items": [
+      {"checked": true, "blocks": [{"paragraph": ["Pin the fixed versions on a branch"]}]},
+      {
+        "checked": false,
+        "blocks": [{"paragraph": ["Run the integration suite against the branch"]}]
+      },
+      {"checked": true, "blocks": [{"paragraph": ["Capital X is done too"]}]},
+      {
+        "checked": false,
+        "blocks": [
+          {"paragraph": ["Nested work:"]},
+          {
+            "list": "bullet",
+            "items": [
+              {"checked": false, "blocks": [{"paragraph": ["child task"]}]},
+              {"blocks": [{"paragraph": ["plain child"]}]}
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "list": "ordered",
+    "start": 1,
+    "items": [
+      {"checked": true, "blocks": [{"paragraph": ["Ordered task"]}]},
+      {"checked": false, "blocks": [{"paragraph": ["Another"]}]}
+    ]
+  },
+  {
+    "list": "bullet",
+    "items": [
+      {"blocks": [{"paragraph": ["[] Not a task"]}]},
+      {"blocks": [{"paragraph": ["[x]Not a task either"]}]}
+    ]
+  }
+]

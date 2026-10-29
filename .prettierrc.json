@@ -1,0 +1,14 @@
+{
+  "printWidth": 100,
+  "endOfLine": "lf",
+  "proseWrap": "preserve",
+  "embeddedLanguageFormatting": "off",
+  "overrides": [
+    {
+      "files": "*.webmanifest",
+      "options": {
+        "parser": "json"
+      }
+    }
+  ]
+}

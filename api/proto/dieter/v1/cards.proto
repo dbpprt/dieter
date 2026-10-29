@@ -1,0 +1,151 @@
+syntax = "proto3";
+
+package dieter.v1;
+
+option go_package = "github.com/dbpprt/dieter/internal/gen/dieter/v1;dieterv1";
+option java_multiple_files = true;
+option java_package = "com.getdieter.api.v1";
+
+import "dieter/v1/common.proto";
+import "google/protobuf/empty.proto";
+
+// Cards and chats: creation, placement and runtime control.
+service CardService {
+  rpc ListArchivedCards(BoardRef) returns (CardsResponse);
+  rpc CreateCard(CreateConversationRequest) returns (Card);
+  rpc CreateChat(CreateConversationRequest) returns (Card);
+  rpc ForkChat(ForkChatRequest) returns (Card);
+  rpc ListChats(ListChatsRequest) returns (ChatsResponse);
+  rpc GetCard(GetCardRequest) returns (CardDetail);
+  rpc MoveCard(MoveCardRequest) returns (Card);
+  rpc MergeCard(MergeCardRequest) returns (Card);
+  // StartCard is an idempotent admission command. It durably admits the
+  // initial turn and returns the fresh card projection without waiting for
+  // the agent turn to finish.
+  rpc StartCard(StartCardRequest) returns (StartCardResponse);
+  rpc SetCardLabels(SetCardLabelsRequest) returns (Card);
+  // CancelCard acknowledges after signaling the active turn. The turn keeps
+  // its runtime barrier until provider cleanup finishes, then promotes the
+  // next durable queued message if one exists.
+  rpc CancelCard(GetCardRequest) returns (google.protobuf.Empty);
+  rpc RenameCard(RenameCardRequest) returns (Card);
+  rpc UpdateCard(UpdateCardRequest) returns (Card);
+  rpc ArchiveCard(ArchiveCardRequest) returns (Card);
+  rpc PinChat(PinChatRequest) returns (Card);
+}
+
+message CardsResponse {
+  repeated Card cards = 1;
+}
+
+message CreateConversationRequest {
+ string checkout_id = 24;
+  string project_id = 1;
+  string board_id = 2;
+  string lane = 3;
+  string title = 4;
+  string prompt = 5;
+  string provider = 6;
+  string model = 7;
+  string effort = 8;
+  repeated string label_ids = 9;
+  bool defer_start = 10;
+  map<string, string> provider_options = 11;
+  string client_id = 12;
+  string command_id = 13;
+  repeated MessagePart attachments = 14;
+  string workspace_mode = 15;
+  string workspace_branch = 16;
+  string workspace_base_branch = 17;
+  // Generate a 4–6 word persisted title from prompt with Dieter's fast title model.
+  // Clients may still send a local placeholder in title for optimistic UI.
+  bool auto_generate_title = 18;
+  string workspace_base_remote = 19;
+  string remote_publish_mode = 20;
+  // Grant this conversation's agent turns access to the account vault.
+  bool vault_access = 25;
+  // Let this conversation's agent turns send the user mail (MailService).
+  // An agent turn may grant it only when its own conversation has it.
+  bool mail_access = 26;
+}
+
+message ListChatsRequest {
+  bool include_archived = 1;
+}
+
+message ForkChatRequest {
+  string source_card_id = 1;
+  string message_id = 2;
+  string title = 3;
+}
+
+message ChatsResponse {
+  repeated Project projects = 1;
+  repeated Card chats = 2;
+}
+
+message GetCardRequest {
+  string card_id = 1;
+}
+
+message MoveCardRequest {
+  string card_id = 1;
+  string lane = 2;
+  reserved 3;
+  string after_card_id = 4;
+  string before_card_id = 5;
+  string expected_revision = 6;
+}
+
+message StartCardRequest {
+  string card_id = 1;
+  string client_id = 2;
+  string command_id = 3;
+}
+
+message StartCardResponse {
+  Card card = 1;
+  bool accepted = 2;
+  bool already_running = 3;
+  bool replayed = 4;
+  string command_id = 5;
+}
+
+message SetCardLabelsRequest {
+  string card_id = 1;
+  repeated string label_ids = 2;
+}
+
+message RenameCardRequest {
+  string card_id = 1;
+  string title = 2;
+}
+
+message MergeCardRequest {
+  string card_id = 1;
+  string target_card_id = 2;
+}
+
+message DraftAgentSettings {
+  string provider = 1;
+  string model = 2;
+  string effort = 3;
+  map<string, string> provider_options = 4;
+}
+
+message UpdateCardRequest {
+  string card_id = 1;
+  string title = 2;
+  string initial_prompt = 3;
+  DraftAgentSettings agent_settings = 4;
+}
+
+message ArchiveCardRequest {
+  string card_id = 1;
+  bool archived = 2;
+}
+
+message PinChatRequest {
+  string card_id = 1;
+  bool pinned = 2;
+}

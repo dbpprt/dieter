@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Fixed JSON protocol for the forced-command deployment SSH identity."""
+
 import base64
 import json
 import os
@@ -14,21 +15,27 @@ def handle(host, request):
     if command == "record-qualification":
         keys(request, ("command", "operation", "report"), "qualification")
         from qualification import record
+
         with host.lock():
             return record(host, request["operation"], request["report"])
     if command == "record-observation":
         keys(request, ("command", "operation", "report"), "observation")
         from qualification import record_observation
+
         with host.lock():
             return record_observation(host, request["operation"], request["report"])
     if command == "qualification-status":
         keys(request, ("command",), "qualification status")
         from common import read_json
+
         path = host.state / "qualification.json"
         return read_json(path) if path.is_file() else {"qualified": False}
     if command == "probe-request":
         keys(request, ("command", "operation", "transport"), "probe")
-        require(host.status(request["operation"])["state"] == "checking", "probes require an active deployment")
+        require(
+            host.status(request["operation"])["state"] == "checking",
+            "probes require an active deployment",
+        )
         transport = request["transport"]
         require(transport in {"udp", "tcp", "tls"}, "invalid probe transport")
         from common import read_json
@@ -36,14 +43,22 @@ def handle(host, request):
         import hashlib
         import hmac
         import time
+
         s = read_json(host.operation(request["operation"]) / "input/settings.json")
         require(transport != "tls" or s["tls"] == "managed", "TURN TLS is not enabled")
         private = secrets(host.etc / "secrets.json")
         username = f"{int(time.time()) + 180}:dieter:{s['allowedUserIDs'][0]}:deployment-probe"
-        password = base64.b64encode(hmac.new(private["turnSharedSecret"].encode(), username.encode(), hashlib.sha1).digest()).decode()
-        return {"address": s["turnIPv4"] + (":443" if transport == "tls" else ":3478"),
-                "serverName": s["turnHost"], "transport": transport, "username": username, "password": password,
-                "expectedRelayIP": s["turnIPv4"]}
+        password = base64.b64encode(
+            hmac.new(private["turnSharedSecret"].encode(), username.encode(), hashlib.sha1).digest()
+        ).decode()
+        return {
+            "address": s["turnIPv4"] + (":443" if transport == "tls" else ":3478"),
+            "serverName": s["turnHost"],
+            "transport": transport,
+            "username": username,
+            "password": password,
+            "expectedRelayIP": s["turnIPv4"],
+        }
     if command == "admit":
         keys(request, ("command", "operation", "files"), "admission")
         operation = request["operation"]
@@ -52,13 +67,15 @@ def handle(host, request):
         required = {ARCHIVE, MANIFEST, SIGNATURE, "settings.json"}
         require(required <= set(files) <= required | {"legacy.caddy"}, "invalid admission file set")
         import tempfile
+
         root = host.state / "incoming"
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
         with tempfile.TemporaryDirectory(prefix=operation + "-", dir=root) as temporary:
             from pathlib import Path
+
             for name, content in files.items():
                 data = base64.b64decode(content, validate=True)
-                require(len(data) <= 32*1024*1024, "admission file too large")
+                require(len(data) <= 32 * 1024 * 1024, "admission file too large")
                 atomic(Path(temporary) / name, data)
             return host.admit(operation, temporary)
     if command == "status":
@@ -85,17 +102,31 @@ def handle(host, request):
     if command == "restore-test-status":
         keys(request, ("command",), "restore test status")
         from common import read_json
+
         path = host.state / "restore-test.json"
         result = read_json(path) if path.is_file() else {"completed": False}
-        result["service"] = run(["systemctl", "show", "dieter-restore-test.service", "--property", "ActiveState,SubState,Result", "--no-pager"]).decode().splitlines()
+        result["service"] = (
+            run(
+                [
+                    "systemctl",
+                    "show",
+                    "dieter-restore-test.service",
+                    "--property",
+                    "ActiveState,SubState,Result",
+                    "--no-pager",
+                ]
+            )
+            .decode()
+            .splitlines()
+        )
         return result
     raise ValueError("unsupported deployment operation")
 
 
 def main():
     require(os.geteuid() == 0, "deployment entrypoint requires its fixed sudo rule")
-    raw = sys.stdin.buffer.read(48*1024*1024 + 1)
-    require(len(raw) <= 48*1024*1024, "deployment request too large")
+    raw = sys.stdin.buffer.read(48 * 1024 * 1024 + 1)
+    require(len(raw) <= 48 * 1024 * 1024, "deployment request too large")
     request = json.loads(raw)
     print(json.dumps(handle(Host("/etc/dieter-deploy/host-policy.json"), request)))
 

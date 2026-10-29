@@ -1,0 +1,167 @@
+package com.getdieter.android
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import com.getdieter.android.data.AndroidDeviceKeys
+import com.getdieter.android.data.DieterCredentialStore
+import com.getdieter.android.data.KeyStoreTls
+import com.getdieter.android.update.AppUpdateManager
+import com.getdieter.client.v1.*
+import com.getdieter.core.*
+import com.getdieter.core.client.ClientApi
+import com.getdieter.core.identity.DistributionIdentity
+import com.getdieter.core.platform.*
+import com.getdieter.mobile.platform.*
+import com.getdieter.mobile.store.*
+import kotlinx.coroutines.*
+import okio.FileSystem
+import okio.Path.Companion.toOkioPath
+import org.bouncycastle.jce.provider.BouncyCastleProvider
+
+/** Keeps the core session and shared drafts/forms alive across Activity recreation. */
+class DieterSession(application: Application) : AndroidViewModel(application) {
+    val runtime: CoreRuntime
+    val store: MobileStore
+    val screenMedia: com.getdieter.android.screens.AndroidScreenMedia
+    var fixtureAdopted = false
+        private set
+
+    val updates = AppUpdateManager(application)
+
+    init {
+        val applicationContext = application
+        val noBackupFilesDir = application.noBackupFilesDir
+        val credentials = DieterCredentialStore(applicationContext)
+        val preferences =
+            application.getSharedPreferences("dieter_core", android.content.Context.MODE_PRIVATE)
+        val deviceKeys = AndroidDeviceKeys()
+        val transport =
+            OkHttpRpcTransport(
+                identity = deviceKeys,
+                providers = KeyStoreTls.providers(BouncyCastleProvider()),
+            )
+        screenMedia = com.getdieter.android.screens.AndroidScreenMedia(applicationContext)
+        runtime =
+            CoreRuntime(
+                Platform(
+                    transport = transport,
+                    tunnels = GrpcTunnelFactory(transport),
+                    deviceKeys = deviceKeys,
+                    secureStore =
+                        object : SecureStore {
+                            override fun read(key: String) = credentials.get(key)
+
+                            override fun write(key: String, value: String) =
+                                credentials.set(key, value)
+
+                            override fun delete(key: String) = credentials.set(key, null)
+                        },
+                    settings =
+                        object : DeviceSettings {
+                            override fun string(key: String) = preferences.getString(key, null)
+
+                            override fun putString(key: String, value: String?) {
+                                preferences.edit().putString(key, value).apply()
+                            }
+                        },
+                    http = OkHttpAuthHttp(),
+                    fileSystem = FileSystem.SYSTEM,
+                    stateDirectory = noBackupFilesDir.resolve("core").toOkioPath(),
+                    controlChannels =
+                        com.getdieter.android.sharedcore.AndroidControlChannels(applicationContext),
+                    signatures =
+                        object : SignatureVerifier {
+                            override fun verifyEd25519(
+                                publicKey: ByteArray,
+                                message: ByteArray,
+                                signature: ByteArray,
+                            ): Boolean = runCatching {
+                                val verifier = org.bouncycastle.crypto.signers.Ed25519Signer()
+                                verifier.init(
+                                    false,
+                                    org.bouncycastle.crypto.params.Ed25519PublicKeyParameters(
+                                        publicKey,
+                                        0,
+                                    ),
+                                )
+                                verifier.update(message, 0, message.size)
+                                verifier.verifySignature(signature)
+                            }
+                                .getOrDefault(false)
+
+                            override fun verifyEcdsaP256(
+                                publicKey: ByteArray,
+                                message: ByteArray,
+                                signature: ByteArray,
+                            ): Boolean = JcaEcdsa.verify(publicKey, message, signature)
+                        },
+                ),
+                RuntimeConfig(
+                    BuildConfig.VERSION_NAME,
+                    "${DistributionIdentity.ANDROID_URL_SCHEME}://oauth/callback",
+                    false,
+                    "android",
+                ),
+            )
+        store =
+            MobileStore(
+                RuntimeMobileCore(
+                    ClientApi(
+                        runtime,
+                        com.getdieter.core.client.ScreenHost(
+                            { screenMedia },
+                            com.getdieter.android.screens.AndroidClipboard(applicationContext),
+                            com.getdieter.core.screens.ScreenConfig(
+                                "Compose Android",
+                                com.getdieter.core.screens.ViewportPolicy.Fixed,
+                            ),
+                        ),
+                    )
+                ),
+                preferences =
+                    MobilePreferences(
+                        { preferences.getString(it, null) },
+                        { key, value -> preferences.edit().putString(key, value).apply() },
+                    ),
+            )
+        AndroidNativeViews.screen = { context, store ->
+            ComposeScreenSurface(context, store, screenMedia)
+        }
+        screenMedia.onDecoderSurfaceReplaced = {
+            store.command(
+                Command(screen = ScreenCommand(scope = MobileStore.SCREEN_SCOPE, resume = Step()))
+            )
+        }
+        runtime.start()
+    }
+
+    /** Maestro flows: the isolated fixture's session and the code its machine approves. */
+    fun adoptFixture(url: String, token: String, pairingCode: String) {
+        if (fixtureAdopted) return
+        fixtureAdopted = true
+        store.action {
+            store.core.dispatch(
+                Command(
+                    adopt_session =
+                        AdoptSession(url, token, "Isolated journey", pairing_code = pairingCode)
+                )
+            )
+            store.creation.agentSelection =
+                com.getdieter.api.v1.HarnessSelection("mock", "mock", "low")
+        }
+    }
+
+    override fun onCleared() {
+        CoroutineScope(Dispatchers.Main).launch {
+            try {
+                store.conversation.flushDrafts()
+            } finally {
+                store.close()
+                runtime.shutdown()
+                screenMedia.close()
+                AndroidNativeViews.screen = null
+            }
+        }
+        super.onCleared()
+    }
+}

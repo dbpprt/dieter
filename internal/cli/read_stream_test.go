@@ -11,11 +11,15 @@ import (
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/remotedesktop"
+	"github.com/dbpprt/dieter/internal/transport/dieterclient"
+	"github.com/dbpprt/dieter/internal/transport/relay"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/reflect/protoregistry"
 )
 
 func readStreamTestConnection(t *testing.T, handler grpc.StreamHandler) *grpc.ClientConn {
@@ -36,6 +40,7 @@ func readStreamTestConnection(t *testing.T, handler grpc.StreamHandler) *grpc.Cl
 }
 
 func TestReadStreamsResumeOnlyDeliveredCheckpoints(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		method           string
 		request, resumed proto.Message
@@ -48,13 +53,10 @@ func TestReadStreamsResumeOnlyDeliveredCheckpoints(t *testing.T) {
 		{"WatchExecution", &dieterv1.WatchExecutionRequest{ExecutionId: "exec"}, &dieterv1.WatchExecutionRequest{ExecutionId: "exec", AfterSequence: 7}, []proto.Message{&dieterv1.ExecutionEvent{Sequence: 7, Data: []byte("data")}, &dieterv1.ExecutionEvent{Sequence: 99, Heartbeat: true}}},
 		{"WatchExecution", &dieterv1.WatchExecutionRequest{ExecutionId: "exec", AfterSequence: 100}, &dieterv1.WatchExecutionRequest{ExecutionId: "exec", AfterSequence: 7}, []proto.Message{&dieterv1.ExecutionEvent{Sequence: 7, Reset_: true}}},
 		{"WatchGitOperation", &dieterv1.WatchGitOperationRequest{OperationId: "op"}, &dieterv1.WatchGitOperationRequest{OperationId: "op", AfterSequence: 7}, []proto.Message{&dieterv1.GitOperationFrame{Logs: []*dieterv1.GitOperationLogEntry{{Sequence: 6}, {Sequence: 7}}}}},
-		{"WatchSync", &dieterv1.SyncRequest{}, &dieterv1.SyncRequest{After: &dieterv1.SyncCursor{Sequence: 7}}, []proto.Message{
-			&dieterv1.SyncFrame{Cursor: &dieterv1.SyncCursor{Sequence: 7}},
-			&dieterv1.SyncFrame{Cursor: &dieterv1.SyncCursor{Sequence: 8}, ProjectionPending: true},
-			&dieterv1.SyncFrame{Cursor: &dieterv1.SyncCursor{Sequence: 9}, Heartbeat: true},
-			&dieterv1.SyncFrame{ObservedCursor: &dieterv1.SyncCursor{Sequence: 99}, TransportOnly: true},
+		{"WatchChanges", &dieterv1.ChangesRequest{HeartbeatMs: 5000}, &dieterv1.ChangesRequest{HeartbeatMs: 5000, After: &dieterv1.ChangesCursor{RecordsEpoch: "peer", RecordsSequence: 9, LocalEpoch: "local", LocalSequence: 3}}, []proto.Message{
+			&dieterv1.ChangesFrame{Cursor: &dieterv1.ChangesCursor{RecordsEpoch: "peer", RecordsSequence: 7, LocalEpoch: "local", LocalSequence: 2}, ResetRecords: true, ResetLocal: true},
+			&dieterv1.ChangesFrame{Cursor: &dieterv1.ChangesCursor{RecordsEpoch: "peer", RecordsSequence: 9, LocalEpoch: "local", LocalSequence: 3}, CaughtUp: true, Heartbeat: true},
 		}},
-		{"WatchState", &dieterv1.WatchStateRequest{IntervalMs: 1000}, &dieterv1.WatchStateRequest{IntervalMs: 1000}, []proto.Message{&dieterv1.State{}}},
 	} {
 		t.Run(test.method, func(t *testing.T) {
 			requests := make(chan proto.Message, 2)
@@ -77,7 +79,7 @@ func TestReadStreamsResumeOnlyDeliveredCheckpoints(t *testing.T) {
 			})
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
-			stream, err := (readResumingConn{connection}).NewStream(ctx, &grpc.StreamDesc{ServerStreams: true}, "/dieter.v1.DieterService/"+test.method)
+			stream, err := (readResumingConn{connection}).NewStream(ctx, &grpc.StreamDesc{ServerStreams: true}, fullDieterMethod(t, test.method))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -111,6 +113,7 @@ func TestReadStreamsResumeOnlyDeliveredCheckpoints(t *testing.T) {
 }
 
 func TestReadRecoveryStopsOnRevocationAndCallerCancellation(t *testing.T) {
+	t.Parallel()
 	for _, code := range []codes.Code{codes.Unauthenticated, codes.PermissionDenied, codes.NotFound, codes.Unavailable} {
 		t.Run(code.String(), func(t *testing.T) {
 			var calls atomic.Int32
@@ -125,8 +128,8 @@ func TestReadRecoveryStopsOnRevocationAndCallerCancellation(t *testing.T) {
 			})
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
-			client := dieterv1.NewDieterServiceClient(readResumingConn{connection})
-			stream, err := client.WatchState(ctx, &dieterv1.WatchStateRequest{})
+			client := dieterclient.New(readResumingConn{connection})
+			stream, err := client.WatchChanges(ctx, &dieterv1.ChangesRequest{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -146,12 +149,13 @@ func TestReadRecoveryStopsOnRevocationAndCallerCancellation(t *testing.T) {
 }
 
 func TestRecoveryNeverReplaysMutationsOrScreenAdmission(t *testing.T) {
+	t.Parallel()
 	var calls atomic.Int32
 	connection := readStreamTestConnection(t, func(_ any, stream grpc.ServerStream) error {
 		calls.Add(1)
 		return status.Error(codes.Unavailable, "response lost after dispatch")
 	})
-	client := dieterv1.NewDieterServiceClient(readResumingConn{connection})
+	client := dieterclient.New(readResumingConn{connection})
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	_, _ = client.StartExecution(ctx, &dieterv1.StartExecutionRequest{})
@@ -168,6 +172,7 @@ func TestRecoveryNeverReplaysMutationsOrScreenAdmission(t *testing.T) {
 }
 
 func TestReadRecoveryHasFiniteFailureBudget(t *testing.T) {
+	t.Parallel()
 	var calls atomic.Int32
 	connection := readStreamTestConnection(t, func(_ any, stream grpc.ServerStream) error {
 		calls.Add(1)
@@ -175,7 +180,7 @@ func TestReadRecoveryHasFiniteFailureBudget(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	stream, err := dieterv1.NewDieterServiceClient(readResumingConn{connection}).WatchState(ctx, &dieterv1.WatchStateRequest{})
+	stream, err := dieterclient.New(readResumingConn{connection}).WatchChanges(ctx, &dieterv1.ChangesRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,4 +188,23 @@ func TestReadRecoveryHasFiniteFailureBudget(t *testing.T) {
 	if status.Code(err) != codes.Unavailable || calls.Load() != 6 || ctx.Err() != nil {
 		t.Fatalf("attempts=%d err=%v caller=%v", calls.Load(), err, ctx.Err())
 	}
+}
+
+// fullDieterMethod returns the gRPC path of the dieter.v1 RPC called name.
+func fullDieterMethod(t *testing.T, name string) string {
+	t.Helper()
+	var path string
+	protoregistry.GlobalFiles.RangeFilesByPackage("dieter.v1", func(file protoreflect.FileDescriptor) bool {
+		for service := 0; service < file.Services().Len(); service++ {
+			if method := file.Services().Get(service).Methods().ByName(protoreflect.Name(name)); method != nil {
+				path = relay.FullMethod(method)
+				return false
+			}
+		}
+		return true
+	})
+	if path == "" {
+		t.Fatalf("no dieter.v1 RPC %s", name)
+	}
+	return path
 }

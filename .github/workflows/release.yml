@@ -1,435 +1,317 @@
 name: Release
 
+# The only workflow that signs Dieter releases. Its identity,
+#   https://github.com/<repository>/.github/workflows/release.yml@refs/heads/main
+# is a public contract: installers and updaters verify SHA256SUMS, the gateway
+# image and the deployment bundle against exactly this signer (Sigstore keyless).
+#
+# dev: nightly.yml calls it after full qualification (or dispatch on main): reserve
+#   the next version, build per signing domain, publish a prerelease, TestFlight.
+# stable: dispatch with the tested dev tag; promotes those exact bytes.
+#
+# Signing jobs run in GitHub environments (apple-signing, android-signing,
+# stable-release) restricted to main, and each environment holds its domain's
+# secrets; the repository has no signing secrets. A reusable builder sees its
+# environment's secrets only when its caller passes `secrets: inherit`, so the
+# builder calls (and nightly.yml's call of this workflow) keep it.
 on:
-  push:
-    branches: [main]
+  workflow_call:
+    inputs:
+      channel:
+        type: string
+        default: dev
+      qualified_by:
+        description: URL of the qualifying run
+        type: string
+        default: ""
   workflow_dispatch:
     inputs:
-      publish:
-        description: Publish a full release; disable to verify signed Mac artifacts only
-        type: boolean
-        default: true
+      channel:
+        description: dev builds and publishes a prerelease of main; stable promotes `tag`; testflight (re)delivers `tag`'s IPA
+        type: choice
+        options: [dev, stable, testflight]
+        default: dev
+      tag:
+        description: "stable and testflight: the published release (vX.Y.Z)"
+        type: string
+        default: ""
 
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ inputs.channel }}-${{ inputs.tag || github.sha }}
+  cancel-in-progress: false
+
+env:
+  FASTLANE_DISABLE_COLORS: "1"
+  FASTLANE_HIDE_TIMESTAMP: "true"
+  FASTLANE_OPT_OUT_USAGE: "true"
+  FASTLANE_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+  LANG: en_US.UTF-8
+  LC_ALL: en_US.UTF-8
+
 jobs:
   version:
-    name: Choose release version
+    if: (inputs.channel == 'dev' || inputs.channel == '') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.version.outputs.tag }}
-      number: ${{ steps.version.outputs.number }}
-      android_code: ${{ steps.version.outputs.android_code }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: extractions/setup-just@v3
-        with:
-          just-version: "1.58.0"
-      - name: Derive version from the latest release line
-        id: version
-        env:
-          RUN_NUMBER: ${{ github.run_number }}
-        run: just release version
-
-  linux-test:
-    name: Native Linux release gate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: internal/harness/runtime/package-lock.json
-      - name: Set up protoc
-        id: setup_protoc
-        continue-on-error: true
-        uses: arduino/setup-protoc@v3
-        with:
-          version: "35.1"
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Retry protoc setup after a transient download failure
-        if: steps.setup_protoc.outcome == 'failure'
-        uses: arduino/setup-protoc@v3
-        with:
-          version: "35.1"
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: extractions/setup-just@v3
-        with:
-          just-version: "1.58.0"
-      - name: Install Linux screen helper build and runtime dependencies
-        run: just daemon linux-ci-dependencies
-      - name: Install harness runtime
-        run: just harness install
-      - name: Run native Linux checks
-        run: just check
-      - name: Test release signing and packaging
-        run: just release test
-
-  go-binaries:
-    name: ${{ matrix.asset }}
-    if: github.event_name != 'workflow_dispatch' || inputs.publish
-    needs: version
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - asset: dieter-linux-amd64
-            component: daemon
-            goos: linux
-            goarch: amd64
-            runner: ubuntu-latest
-          - asset: dieter-linux-arm64
-            component: daemon
-            goos: linux
-            goarch: arm64
-            runner: ubuntu-24.04-arm
-          - asset: dieter-gateway-linux-amd64
-            component: gateway
-            goos: linux
-            goarch: amd64
-            runner: ubuntu-latest
-          - asset: dieter-gateway-linux-arm64
-            component: gateway
-            goos: linux
-            goarch: arm64
-            runner: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - uses: extractions/setup-just@v3
-        with:
-          just-version: "1.58.0"
-      - name: Install Linux screen helper build dependencies
-        if: matrix.component == 'daemon'
-        run: just daemon linux-ci-dependencies
-      - name: Check component vulnerabilities before packaging
-        env:
-          COMPONENT: ${{ matrix.component }}
-        run: just "${COMPONENT}" vulncheck
-      - name: Build and package
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          ASSET: ${{ matrix.asset }}
-          COMPONENT: ${{ matrix.component }}
-          RELEASE_VERSION: ${{ needs.version.outputs.number }}
-        run: just "${COMPONENT}" package-release
-      - name: Execute packaged Linux daemon
-        if: matrix.component == 'daemon'
-        env:
-          GOARCH: ${{ matrix.goarch }}
-          ASSET: ${{ matrix.asset }}
-          RELEASE_VERSION: ${{ needs.version.outputs.number }}
-        run: just daemon smoke-release
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.asset }}
-          path: |
-            dist/${{ matrix.asset }}.tar.gz
-            dist/${{ matrix.asset }}.tar.gz.version
-          if-no-files-found: error
-          retention-days: 1
-
-  linux-distros:
-    name: Linux distribution archive smoke
-    needs: [version, go-binaries]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: extractions/setup-just@v3
-        with:
-          just-version: "1.58.0"
-      - uses: actions/download-artifact@v4
-        with:
-          name: dieter-linux-amd64
-          path: dist
-      - name: Execute static daemon across Linux userlands
-        env:
-          RELEASE_VERSION: ${{ needs.version.outputs.number }}
-        run: just daemon distro-smoke
-
-  macos-daemon:
-    name: macOS daemon and native capture helper
-    needs: version
-    runs-on: macos-26
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - uses: extractions/setup-just@v3
-        with:
-          just-version: "1.58.0"
-      - name: Select Xcode 26.5
-        run: just release select-xcode
-      - name: Build daemon package
-        env:
-          RELEASE_VERSION: ${{ needs.version.outputs.number }}
-        run: just daemon package-macos
-      - name: Check daemon vulnerabilities before signing
-        run: just daemon vulncheck
-      - name: Check signing configuration
-        id: signing
-        env:
-          CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
-          INSTALLER_CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_BASE64 }}
-          INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_PASSWORD }}
-          NOTARY_KEY_BASE64: ${{ secrets.MACOS_NOTARY_KEY_BASE64 }}
-          NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-          NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-        run: just release signing-config true true
-      - name: Sign and notarize daemon package
-        if: steps.signing.outputs.enabled == 'true'
-        env:
-          CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
-          NOTARY_KEY_BASE64: ${{ secrets.MACOS_NOTARY_KEY_BASE64 }}
-          NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-          NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-        run: just --yes daemon sign-notarize-macos
-      - name: Verify signed fixed-runtime service
-        if: steps.signing.outputs.enabled == 'true'
-        run: just daemon test-signed-runtime
-      - name: Build daemon installer
-        if: steps.signing.outputs.enabled == 'true'
-        env:
-          RELEASE_VERSION: ${{ needs.version.outputs.number }}
-        run: just daemon installer-macos
-      - name: Sign and notarize daemon installer
-        if: steps.signing.outputs.enabled == 'true'
-        env:
-          INSTALLER_CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_BASE64 }}
-          INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_PASSWORD }}
-          NOTARY_KEY_BASE64: ${{ secrets.MACOS_NOTARY_KEY_BASE64 }}
-          NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-          NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-        run: just --yes daemon sign-notarize-installer-macos
-      - name: Package daemon
-        run: just daemon archive-macos
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dieter-darwin-arm64
-          path: |
-            dist/dieter-darwin-arm64.tar.gz
-            dist/dieter-darwin-arm64.tar.gz.version
-          if-no-files-found: error
-          retention-days: 1
-      - uses: actions/upload-artifact@v4
-        if: steps.signing.outputs.enabled == 'true'
-        with:
-          name: dieter-macos-installer
-          path: |
-            dist/dieter-darwin-arm64.pkg
-            dist/dieter-darwin-arm64.pkg.version
-          if-no-files-found: error
-          retention-days: 1
-
-  android:
-    name: Android release APK
-    if: github.event_name != 'workflow_dispatch' || inputs.publish
-    needs: version
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-          cache: gradle
-      - uses: android-actions/setup-android@v4
-        with:
-          # Dieter installs its exact SDK packages in the next step. The
-          # action's default still includes the retired `tools` package.
-          packages: ""
-      - uses: extractions/setup-just@v3
-        with:
-          just-version: "1.58.0"
-      - name: Install Android SDK packages
-        run: just android install-sdk
-      - name: Check Android client and test APKs
-        run: just android check
-      - name: Restore Android release keystore
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        run: just android restore-release-keystore
-      - name: Build signed release APK
-        env:
-          DIETER_ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/dieter-android-release.jks
-          DIETER_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          DIETER_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          DIETER_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          DIETER_RELEASE_VERSION: ${{ needs.version.outputs.number }}
-          DIETER_RELEASE_VERSION_CODE: ${{ needs.version.outputs.android_code }}
-        run: just android build-release
-      - name: Package APK
-        env:
-          DIETER_RELEASE_VERSION: ${{ needs.version.outputs.number }}
-        run: just android package-release
-      - name: Verify APK signature
-        env:
-          DIETER_RELEASE_VERSION: ${{ needs.version.outputs.number }}
-        run: just android verify-release
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dieter-android
-          path: |
-            dist/Dieter-Android.apk
-            dist/Dieter-Android.apk.version
-          if-no-files-found: error
-          retention-days: 1
-
-  macos:
-    name: macOS app (Apple Silicon)
-    needs: version
-    runs-on: macos-26
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: extractions/setup-just@v3
-        with:
-          just-version: "1.58.0"
-      - name: Select Xcode 26.5
-        run: just release select-xcode
-      - name: Restore compiled Swift release dependencies
-        uses: actions/cache@v4
-        with:
-          path: apps/mac/.build/dieter-local
-          key: ${{ runner.os }}-${{ runner.arch }}-xcode-26.5-dieter-mac-release-v1-${{ hashFiles('apps/mac/Package.swift', 'apps/mac/Package.resolved', 'apps/mac/Vendor/**/Package.swift') }}
-      - name: Build release app
-        run: just mac build release
-      - name: Set app version
-        env:
-          RELEASE_VERSION: ${{ needs.version.outputs.number }}
-          BUILD_NUMBER: ${{ github.run_number }}
-        run: just mac set-release-version
-      - name: Check signing configuration
-        id: signing
-        env:
-          CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
-          NOTARY_KEY_BASE64: ${{ secrets.MACOS_NOTARY_KEY_BASE64 }}
-          NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-          NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-        run: just release signing-config false true
-      - name: Sign and notarize app
-        if: steps.signing.outputs.enabled == 'true'
-        env:
-          CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
-          NOTARY_KEY_BASE64: ${{ secrets.MACOS_NOTARY_KEY_BASE64 }}
-          NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-          NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-        run: just --yes mac sign-notarize-release
-      - name: Package app bundle
-        run: just mac package-release
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dieter-macos-arm64
-          path: |
-            dist/Dieter-macOS-arm64.zip
-            dist/Dieter-macOS-arm64.zip.version
-          if-no-files-found: error
-          retention-days: 1
-
-  gateway-distribution:
-    name: Signed gateway distribution
-    if: github.event_name != 'workflow_dispatch' || inputs.publish
-    needs: version
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-    uses: ./.github/workflows/gateway-image.yml
-    with:
-      source_revision: ${{ github.sha }}
-      release_version: ${{ needs.version.outputs.number }}
-
-  release:
-    name: Publish release
-    if: github.event_name != 'workflow_dispatch' || inputs.publish
-    needs: [version, linux-test, linux-distros, go-binaries, macos-daemon, android, macos, gateway-distribution]
-    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
-      id-token: write
+    # One reservation at a time keeps the counter monotonic without claim tags.
+    concurrency:
+      group: release-version
+      cancel-in-progress: false
+    outputs:
+      exists: ${{ steps.reserve.outputs.exists }}
+      version: ${{ steps.reserve.outputs.version }}
+      build: ${{ steps.reserve.outputs.build }}
+      tag: ${{ steps.reserve.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          persist-credentials: false
-      - uses: extractions/setup-just@v3
+          persist-credentials: true # pushes the version tag
+      - name: Only the identity's repository releases
+        run: |
+          upstream=$(jq -r .repository config/identity.json)
+          [[ "$GITHUB_REPOSITORY" == "$upstream" ]] || { echo "::error::Releases run only in $upstream (config/identity.json)"; exit 1; }
+      - uses: ./.github/actions/setup
         with:
-          just-version: "1.58.0"
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-      - name: Verify and assemble cross-platform release
-        env:
-          RELEASE_VERSION: ${{ needs.version.outputs.number }}
-        run: just release assemble
-      - name: Create checksums
-        run: just release checksums
-      - uses: sigstore/cosign-installer@v3
-      - name: Sign release manifest
-        run: just release sign-checksums
-      - name: Publish GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ needs.version.outputs.tag }}
-        run: just --yes release publish
-      - name: Keep only the newest two releases
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: just --yes release prune
+          tools: ruby gem:bundler
+          bundle: "true"
+          cache-scope: release
+      - name: Reserve the next version
+        id: reserve
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          bundle exec fastlane version
 
-  homebrew:
-    name: Publish Homebrew packages
-    needs: [version, release]
+  server:
+    needs: version
+    if: needs.version.outputs.exists == 'false'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_build-server.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      build: ${{ needs.version.outputs.build }}
+
+  apple:
+    needs: version
+    if: needs.version.outputs.exists == 'false'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_build-apple.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      build: ${{ needs.version.outputs.build }}
+    secrets: inherit
+
+  android:
+    needs: version
+    if: needs.version.outputs.exists == 'false'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_build-android.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      build: ${{ needs.version.outputs.build }}
+    secrets: inherit
+
+  publish:
+    needs: [version, server, apple, android]
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write # the GitHub release
+      packages: write # the gateway image and deployment bundle
+      id-token: write # Sigstore keyless signing and attestations
+      attestations: write
+    env:
+      DIETER_RELEASE_VERSION: ${{ needs.version.outputs.version }}
+      DIETER_RELEASE_BUILD: ${{ needs.version.outputs.build }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: extractions/setup-just@v3
+      - name: Identity
+        id: identity
+        run: |
+          [[ "$GITHUB_REPOSITORY" == "$(jq -r .repository config/identity.json)" ]]
+          echo "image=$(jq -r .container_registry config/identity.json)/dieter-gateway" >> "$GITHUB_OUTPUT"
+          echo "built_at=$(git show -s --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/setup
         with:
-          just-version: "1.58.0"
-      - uses: actions/download-artifact@v4
+          tools: ruby gem:bundler python cosign oras
+          bundle: "true"
+          cache-scope: release
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: dieter-darwin-arm64
-          path: dist
-      - uses: actions/download-artifact@v4
+          pattern: release-*
+          path: dist/built
+          merge-multiple: true
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
-          name: dieter-macos-arm64
-          path: dist
-      - name: Publish public daemon and app packages and update the tap
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Gateway image
+        id: image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: deploy/gateway/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: mode=max
+          sbom: true
+          tags: ${{ steps.identity.outputs.image }}:${{ env.DIETER_RELEASE_VERSION }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+          build-args: |
+            RELEASE_VERSION=${{ env.DIETER_RELEASE_VERSION }}
+            SOURCE_REVISION=${{ github.sha }}
+            BUILT_AT=${{ steps.identity.outputs.built_at }}
+      - name: Sign the image
         env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          TAP_REPOSITORY: dbpprt/homebrew-tap
-          VERSION: ${{ needs.version.outputs.tag }}
-        run: just --yes release homebrew
+          IMAGE: ${{ steps.identity.outputs.image }}@${{ steps.image.outputs.digest }}
+        run: cosign sign --yes -a "sourceRevision=$GITHUB_SHA" "$IMAGE"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.identity.outputs.image }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+      - name: Signed gateway deployment bundle
+        env:
+          IMAGE: ${{ steps.identity.outputs.image }}@${{ steps.image.outputs.digest }}
+          BUILT_AT: ${{ steps.identity.outputs.built_at }}
+        run: |
+          probes=(); for probe in dist/built/gateway-turn-probe-*; do probes+=(--probe "$probe"); done
+          python3 deploy/gateway/scripts/bundle.py pack --output dist/gateway --revision "$GITHUB_SHA" \
+            --version "$DIETER_RELEASE_VERSION" --image "$IMAGE" --built-at "$BUILT_AT" "${probes[@]}"
+          cosign sign-blob --yes --bundle dist/gateway/gateway-manifest.sigstore.json dist/gateway/gateway-manifest.json
+          python3 deploy/gateway/scripts/bundle.py push dist/gateway --revision "$GITHUB_SHA" --version "$DIETER_RELEASE_VERSION"
+      - name: Assets, SHA256SUMS and its signature
+        run: |
+          mkdir -p dist/release
+          cp dist/built/*.tar.gz dist/built/*.pkg dist/built/*.zip dist/built/*.ipa dist/built/*.apk dist/release/
+          cp deploy/install/install.sh dist/release/
+          cp dist/gateway/dieter-gateway-deploy.tar.gz dist/gateway/gateway-manifest.json \
+            dist/gateway/gateway-manifest.sigstore.json dist/gateway/gateway-release.lock.json dist/release/
+          (cd dist/release && sha256sum -- * > SHA256SUMS)
+          cosign sign-blob --yes --bundle dist/release/SHA256SUMS.sigstore.json dist/release/SHA256SUMS
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: dist/release/SHA256SUMS
+      - name: GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          QUALIFIED_BY: ${{ inputs.qualified_by }}
+        run: bundle exec fastlane publish dist:dist/release channel:dev ${QUALIFIED_BY:+qualified_by:"$QUALIFIED_BY"}
+      - name: Release summary
+        env:
+          IMAGE: ${{ steps.identity.outputs.image }}@${{ steps.image.outputs.digest }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          {
+            echo "### Dieter $DIETER_RELEASE_VERSION (build $DIETER_RELEASE_BUILD) from \`$GITHUB_SHA\`"
+            echo "Release: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG · image \`$IMAGE\` · attestations: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/attestations"
+            echo "| Asset | Bytes | SHA-256 |"
+            echo "|---|---:|---|"
+            while read -r sum name; do echo "| $name | $(stat -c %s "dist/release/$name") | \`$sum\` |"; done < dist/release/SHA256SUMS
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  testflight:
+    needs: [version, publish]
+    runs-on: macos-26
+    timeout-minutes: 60
+    environment: apple-signing
+    permissions:
+      contents: read
+    env:
+      DIETER_RELEASE_VERSION: ${{ needs.version.outputs.version }}
+      DIETER_RELEASE_BUILD: ${{ needs.version.outputs.build }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: '[[ "$GITHUB_REPOSITORY" == "$(jq -r .repository config/identity.json)" ]]'
+      - uses: ./.github/actions/setup
+        with:
+          tools: ruby gem:bundler
+          bundle: "true"
+          cache-scope: release
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-ios
+          path: dist/ios
+      - name: Upload and deliver to internal testers
+        env:
+          IOS_APP_STORE_CONNECT_KEY_BASE64: ${{ secrets.IOS_APP_STORE_CONNECT_KEY_BASE64 }}
+          IOS_APP_STORE_CONNECT_KEY_ID: ${{ secrets.IOS_APP_STORE_CONNECT_KEY_ID }}
+          IOS_APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.IOS_APP_STORE_CONNECT_ISSUER_ID }}
+        run: bundle exec fastlane ios beta ipa:dist/ios/Dieter-iOS.ipa
+
+  # Delivers an already published release's IPA to TestFlight, e.g. to retry
+  # a failed delivery without rebuilding. The lane skips the upload when the
+  # build is already in App Store Connect.
+  testflight-only:
+    if: inputs.channel == 'testflight' && github.ref == 'refs/heads/main'
+    runs-on: macos-26
+    timeout-minutes: 60
+    environment: apple-signing
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: '[[ "$GITHUB_REPOSITORY" == "$(jq -r .repository config/identity.json)" ]]'
+      - uses: ./.github/actions/setup
+        with:
+          tools: ruby gem:bundler
+          bundle: "true"
+          cache-scope: release
+      - name: Release identity and IPA
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.([0-9]+)$ ]] || { echo "::error::tag must be vX.Y.Z"; exit 1; }
+          echo "DIETER_RELEASE_VERSION=${TAG#v}" >> "$GITHUB_ENV"
+          echo "DIETER_RELEASE_BUILD=${BASH_REMATCH[1]}" >> "$GITHUB_ENV"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern Dieter-iOS.ipa --dir dist/ios
+      - name: Upload and deliver to internal testers
+        env:
+          IOS_APP_STORE_CONNECT_KEY_BASE64: ${{ secrets.IOS_APP_STORE_CONNECT_KEY_BASE64 }}
+          IOS_APP_STORE_CONNECT_KEY_ID: ${{ secrets.IOS_APP_STORE_CONNECT_KEY_ID }}
+          IOS_APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.IOS_APP_STORE_CONNECT_ISSUER_ID }}
+        run: bundle exec fastlane ios beta ipa:dist/ios/Dieter-iOS.ipa
+
+  promote:
+    if: inputs.channel == 'stable' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: stable-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: '[[ "$GITHUB_REPOSITORY" == "$(jq -r .repository config/identity.json)" ]]'
+      - uses: ./.github/actions/setup
+        with:
+          tools: ruby gem:bundler cosign
+          bundle: "true"
+          cache-scope: release
+      - name: Verify and promote the tested bytes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: bundle exec fastlane promote tag:"$TAG"

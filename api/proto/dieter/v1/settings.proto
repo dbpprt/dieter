@@ -1,0 +1,131 @@
+syntax = "proto3";
+
+package dieter.v1;
+
+option go_package = "github.com/dbpprt/dieter/internal/gen/dieter/v1;dieterv1";
+option java_multiple_files = true;
+option java_package = "com.getdieter.api.v1";
+
+import "dieter/v1/common.proto";
+import "google/protobuf/empty.proto";
+
+// Daemon settings, prompts and the harness catalog.
+service SettingsService {
+  rpc GetHarnesses(google.protobuf.Empty) returns (HarnessCatalog);
+  rpc GetSettings(google.protobuf.Empty) returns (Settings);
+  rpc GetSettingsOptions(google.protobuf.Empty) returns (SettingsOptions);
+  rpc UpdateSettings(UpdateSettingsRequest) returns (Settings);
+  rpc GetPromptSettings(google.protobuf.Empty) returns (PromptSettings);
+  rpc UpdatePromptSettings(UpdatePromptSettingsRequest) returns (PromptSettings);
+  rpc SetProjectPromptTemplate(SetScopedPromptTemplateRequest) returns (Project);
+  rpc SetBoardPromptTemplate(SetScopedPromptTemplateRequest) returns (Board);
+  rpc PreviewPrompt(PreviewPromptRequest) returns (PromptPreview);
+}
+
+message HarnessCatalog {
+  repeated Harness harnesses = 1;
+}
+
+message Harness {
+  string id = 1;
+  string name = 2;
+  string default_model = 3;
+  repeated HarnessModel models = 4;
+  EffortConfig effort = 5;
+  repeated HarnessCapability capabilities = 6;
+  repeated ProviderOption options = 7;
+}
+
+message ProviderOption {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string type = 4;
+  string default_value = 5;
+  repeated ProviderOptionChoice choices = 6;
+  bool mutable = 7;
+  repeated string models = 8;
+}
+
+message ProviderOptionChoice {
+  string value = 1;
+  string name = 2;
+}
+
+message HarnessCapability {
+  string id = 1;
+  string level = 2;
+}
+
+message HarnessModel {
+  string id = 1;
+  string name = 2;
+  int32 context_window = 3;
+  string default_effort = 4;
+  repeated string efforts = 5;
+}
+
+message EffortConfig {
+  string label = 1;
+  repeated EffortOption options = 2;
+}
+
+message Settings {
+  string prompt_template = 5;
+  string board_skill_template = 6;
+  string chat_skill_template = 7;
+  string updated_at = 4;
+}
+
+message SettingsOptions {
+  repeated Project projects = 1;
+  repeated Board boards = 2;
+  HarnessCatalog agents = 3;
+}
+
+message UpdateSettingsRequest {
+  Settings settings = 1;
+}
+
+message PromptSettings {
+  string prompt_template = 1;
+  string board_skill_template = 2;
+  string chat_skill_template = 3;
+  repeated string variables = 4;
+}
+
+message UpdatePromptSettingsRequest {
+  string prompt_template = 1;
+  string board_skill_template = 2;
+  string chat_skill_template = 3;
+}
+
+message SetScopedPromptTemplateRequest {
+  string scope_id = 1;
+  bool inherit = 2;
+  string prompt_template = 3;
+}
+
+message PreviewPromptRequest {
+  string project_id = 1;
+  string board_id = 2;
+  string card_id = 3;
+  repeated string label_ids = 4;
+  string scope = 5;
+}
+
+message PromptPreview {
+  string source = 1;
+  string prompt_template = 2;
+  string context = 3;
+  string skill = 4;
+  string instructions = 5;
+  repeated Label applied_labels = 6;
+  int32 characters = 7;
+  int32 estimated_tokens = 8;
+}
+
+message EffortOption {
+  string id = 1;
+  string name = 2;
+}

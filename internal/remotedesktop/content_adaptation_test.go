@@ -1,10 +1,11 @@
 package remotedesktop
 
 import (
-	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"math"
 	"testing"
 	"time"
+
+	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 )
 
 func TestCaptureDamageNeverRefreshesFromOldGenerationOrRepeatedSequence(t *testing.T) {

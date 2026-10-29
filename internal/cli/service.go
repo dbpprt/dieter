@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -29,19 +28,3 @@ Actions:
 		return fmt.Errorf("unknown daemon service action %q", args[0])
 	}
 }
-
-func parseNoArgs(outUsage string, args []string) error {
-	for _, arg := range args {
-		if arg == "--help" || arg == "-h" {
-			return errHelpRequested{usage: outUsage}
-		}
-	}
-	if len(args) != 0 {
-		return errors.New(outUsage)
-	}
-	return nil
-}
-
-type errHelpRequested struct{ usage string }
-
-func (e errHelpRequested) Error() string { return e.usage }

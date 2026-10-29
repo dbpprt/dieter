@@ -1,0 +1,10 @@
+{
+  "cardId": "c_2aa951e8957bd8f19e35e1f8",
+  "messageId": "msg_2ce6bc4b543c098423",
+  "toolCallId": "toolu_016kBCDwE3uqRyA5q96PnbLR",
+  "toolName": "bash",
+  "state": "output-available",
+  "inputJson": "eyJjb21tYW5kIjoiZ2l0IGFkZCBzcmMvbW9kdWxlMy5qcyBzcmMvbW9kdWxlNC5qcyBzcmMvbW9kdWxlNi5qcyBzcmMvbW9kdWxlNy5qcyBcdTAwMjZcdTAwMjYgZ2l0IGNvbW1pdCAtcSAtbSBcIkE6IHJldmlldyBoZWFkZXJzXG5cbkNvLUF1dGhvcmVkLUJ5OiBDbGF1ZGUgU29ubmV0IDUuNSBcdTAwM2Nub3JlcGx5QGFudGhyb3BpYy5jb21cdTAwM2VcIiBcdTAwMjZcdTAwMjYgZ2l0IGxvZyAtLW9uZWxpbmUgLTEgXHUwMDI2XHUwMDI2IGdpdCBzdGF0dXMgLS1zaG9ydCJ9",
+  "outputJson": "eyJzdGRvdXQiOiJjNTI2YzIyIEE6IHJldmlldyBoZWFkZXJzXG4gTSBzcmMvbW9kdWxlNS5qcyIsInN0ZGVyciI6IiIsImludGVycnVwdGVkIjpmYWxzZSwiaXNJbWFnZSI6ZmFsc2UsIm5vT3V0cHV0RXhwZWN0ZWQiOmZhbHNlfQ==",
+  "revision": "ecd5ded778295f384cd93fd6"
+}

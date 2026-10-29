@@ -1,0 +1,4 @@
+plain source cold: rc=0 38.22s; SwiftCompile=53 hits=0 misses=0
+plain view build: rc=0 25.28s; SwiftCompile=53 hits=0 misses=0
+  after edit: rc=0 SwiftCompile=3; runs: where=view
+  debug-info source path in view LibA F1.o:

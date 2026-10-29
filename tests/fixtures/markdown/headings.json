@@ -1,0 +1,17 @@
+[
+  {"heading": 1, "inlines": ["Heading one"]},
+  {"heading": 2, "inlines": ["Heading two"]},
+  {"heading": 3, "inlines": ["Heading three"]},
+  {"heading": 4, "inlines": ["Heading four"]},
+  {"heading": 5, "inlines": ["Heading five"]},
+  {"heading": 6, "inlines": ["Heading six"]},
+  {"paragraph": ["####### Seven hashes is a paragraph"]},
+  {"paragraph": ["#Not a heading without a space"]},
+  {"heading": 2, "inlines": ["Closing hashes are dropped"]},
+  {
+    "heading": 3,
+    "inlines": ["Inline ", {"emphasis": ["markup"]}, " and ", {"code": "code"}, " in a heading"]
+  },
+  {"heading": 2, "inlines": ["Up to three spaces of indentation"]},
+  {"heading": 1, "inlines": []}
+]

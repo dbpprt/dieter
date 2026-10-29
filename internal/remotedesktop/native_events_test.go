@@ -30,7 +30,7 @@ func TestNativeEventsCoalesceWithoutLosingShapeStateOrFailure(t *testing.T) {
 	go func() { mailbox.run(ctx, func(event SourceEvent) { received <- event }); close(done) }()
 	select {
 	case event := <-received:
-		if event.State.GetWidth() != 640 || event.Cursor.GetNormalizedX() != 999 || len(event.Cursor.Png) != 2 || event.Err != failure {
+		if event.State.GetWidth() != 640 || event.Cursor.GetNormalizedX() != 999 || len(event.Cursor.Png) != 2 || !errors.Is(event.Err, failure) {
 			t.Fatalf("coalesced event: %+v", event)
 		}
 	case <-time.After(time.Second):

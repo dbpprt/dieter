@@ -1,4 +1,5 @@
 """Small, dependency-free primitives shared by the signed gateway bundle."""
+
 import hashlib
 import json
 import os
@@ -7,8 +8,12 @@ import re
 import subprocess
 import tempfile
 
+from identity import RELEASE_SIGNER
+
 ROOT = Path(__file__).resolve().parents[1]
-IDENTITY = "https://github.com/dbpprt/dieter/.github/workflows/gateway-image.yml@refs/heads/main"
+# The release workflow signs the gateway image, the deployment manifest and the
+# release checksums; nothing else is trusted.
+IDENTITY = RELEASE_SIGNER
 ISSUER = "https://token.actions.githubusercontent.com"
 IMAGE = re.compile(r"[a-z0-9./_-]+@sha256:[a-f0-9]{64}\Z")
 NAME = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9._-]{0,95}\Z")
@@ -31,7 +36,7 @@ def protected_log(data):
         return
     # Bound each operation's diagnostic file, including errors from dependencies
     # which may echo secret-bearing configuration. It is never returned by SSH.
-    if _log_path.exists() and _log_path.stat().st_size > 1024*1024:
+    if _log_path.exists() and _log_path.stat().st_size > 1024 * 1024:
         os.replace(_log_path, _log_path.with_suffix(".previous.log"))
     fd = os.open(_log_path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
     with os.fdopen(fd, "ab") as stream:
@@ -50,6 +55,7 @@ def read_json(path):
             require(key not in result, "duplicate JSON key")
             result[key] = value
         return result
+
     return json.loads(Path(path).read_text(), object_pairs_hook=pairs)
 
 
@@ -68,8 +74,13 @@ def semver_key(value):
     if prerelease is not None:
         for item in prerelease.split("."):
             identifiers.append((0, int(item)) if item.isdigit() else (1, item))
-    return (int(match.group("major")), int(match.group("minor")), int(match.group("patch")),
-            prerelease is None, tuple(identifiers))
+    return (
+        int(match.group("major")),
+        int(match.group("minor")),
+        int(match.group("patch")),
+        prerelease is None,
+        tuple(identifiers),
+    )
 
 
 def validate_compatibility_policy(value, release_version=None):
@@ -79,23 +90,41 @@ def validate_compatibility_policy(value, release_version=None):
     for field in ("minimumClientVersion", "minimumDaemonVersion"):
         selected = semantic_version(value[field])
         if release is not None:
-            require(semver_key(selected) <= semver_key(release), f"{field} is newer than the selected release")
+            require(
+                semver_key(selected) <= semver_key(release),
+                f"{field} is newer than the selected release",
+            )
         result[field] = selected
     return result
 
 
 def validate_gateway_health(health, manifest=None):
-    require(health.get("service") == "dieter-gateway" and health.get("status") == "ok", "gateway is not healthy")
+    require(
+        health.get("service") == "dieter-gateway" and health.get("status") == "ok",
+        "gateway is not healthy",
+    )
     version = semantic_version(health.get("version"))
-    live_policy = validate_compatibility_policy({
-        "minimumClientVersion": health.get("minimumClientVersion"),
-        "minimumDaemonVersion": health.get("minimumDaemonVersion"),
-    })
+    live_policy = validate_compatibility_policy(
+        {
+            "minimumClientVersion": health.get("minimumClientVersion"),
+            "minimumDaemonVersion": health.get("minimumDaemonVersion"),
+        }
+    )
     if manifest is not None:
-        require(version == semantic_version(manifest.get("releaseVersion")), "gateway release differs from signed release")
-        require(live_policy == validate_compatibility_policy(manifest.get("compatibilityPolicy", {}), manifest.get("releaseVersion")),
-                "gateway compatibility policy differs from signed release")
-        require(health.get("revision") == manifest["sourceRevision"], "unexpected live source revision")
+        require(
+            version == semantic_version(manifest.get("releaseVersion")),
+            "gateway release differs from signed release",
+        )
+        require(
+            live_policy
+            == validate_compatibility_policy(
+                manifest.get("compatibilityPolicy", {}), manifest.get("releaseVersion")
+            ),
+            "gateway compatibility policy differs from signed release",
+        )
+        require(
+            health.get("revision") == manifest["sourceRevision"], "unexpected live source revision"
+        )
 
 
 def keys(value, expected, label):
@@ -144,11 +173,17 @@ def pointer(path, target):
     sync_dir(path.parent)
 
 
-def run(argv, *, timeout=120, input=None, capture=True):
+def run(argv, *, timeout=120, input=None, capture=True, cwd=None):
     # Never include argv, stdout or stderr in errors: external tools may echo
     # private configuration. A protected operation log can be inspected locally.
-    result = subprocess.run([str(a) for a in argv], input=input, capture_output=capture,
-                            timeout=timeout, check=False)
+    result = subprocess.run(
+        [str(a) for a in argv],
+        input=input,
+        capture_output=capture,
+        timeout=timeout,
+        check=False,
+        cwd=cwd,
+    )
     if result.returncode and capture:
         protected_log(Path(argv[0]).name.encode() + b": " + (result.stderr or b""))
     require(result.returncode == 0, f"{Path(argv[0]).name} failed (exit {result.returncode})")

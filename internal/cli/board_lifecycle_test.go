@@ -6,13 +6,14 @@ import (
 	"testing"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func TestDaemonCLIBoardRetirement(t *testing.T) {
+	t.Parallel()
 	client, output, data := daemonCLIForTest(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Repo", Path: initTestRepository(t, "repo"), InitialBoardName: "Main"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Repo", Path: initTestRepository(t, "repo"), InitialBoardName: "Main"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,0 +1,14 @@
+# Connect handlers for the daemon API only (dieter.v1). `simple` gives handlers
+# plain (ctx, *Req) (*Res, error) signatures, so internal/api implements the RPCs
+# directly. Run from the repository root.
+version: v2
+inputs:
+  - directory: api/proto
+    paths:
+      - api/proto/dieter/v1
+plugins:
+  - local: protoc-gen-connect-go
+    out: .
+    opt:
+      - module=github.com/dbpprt/dieter
+      - simple

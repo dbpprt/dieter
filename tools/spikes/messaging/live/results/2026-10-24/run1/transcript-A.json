@@ -1,0 +1,245 @@
+{
+  "detail": {
+    "card": {
+      "stateFields": [
+        {
+          "name": "placement",
+          "revision": "f4008122a617d6b8165120f90c95ed3004d7304b9c521a82bb71c422841efe8f",
+          "versions": [
+            {
+              "clock": {
+                "actor_ad88afaf34de": "2"
+              },
+              "rank": "bbc67fa94075daf340175316ba96e04908bc13f67db14bd6c8d9ee8655f94482",
+              "value": {
+                "orderKey": "010000000000dd587f53fbadh",
+                "boardId": "b_d83755b3c1d56f0aa164b2e7",
+                "lane": "running",
+                "phaseChangedAt": "2026-10-24T13:27:02.996673Z"
+              }
+            }
+          ]
+        },
+        {
+          "name": "summary",
+          "revision": "c7a6e2e44d1fb74c54b1d67397d35137273b3da4e188a8ce02eb70915f12f69c",
+          "versions": [
+            {
+              "clock": {
+                "actor_ad88afaf34de": "41"
+              },
+              "rank": "fcdc75127125ad5ab9c1d01229aca2c0ad9d36b31fcbc98fdf00f3b0bb6b5923",
+              "value": {
+                "initialPromptSentAt": "2026-10-24T13:27:02.988423Z",
+                "provider": "claude-code",
+                "model": "sonnet",
+                "effort": "low",
+                "runtime": "idle",
+                "runtimeUpdatedAt": "2026-10-24T13:27:35.817835Z",
+                "lastActivityAt": "2026-10-24T13:27:35.507639Z",
+                "responseSeq": "129",
+                "responseMessageId": "msg_2d90eb691a7fc48f9b"
+              }
+            }
+          ]
+        }
+      ],
+      "ownerDaemonId": "local_6e43e7a721df",
+      "checkoutId": "co_7e85634301d2",
+      "orderKey": "010000000000dd587f53fbadh",
+      "placementRevision": "f4008122a617d6b8165120f90c95ed3004d7304b9c521a82bb71c422841efe8f",
+      "id": "c_7fae999b1d26961dcd8ceb5b",
+      "scope": "board",
+      "projectId": "p_836ae1e2fd21",
+      "boardId": "b_d83755b3c1d56f0aa164b2e7",
+      "lane": "running",
+      "position": "1024",
+      "title": "Review headers of modules 3, 4, 6, 7",
+      "initialPrompt": "For each of src/module3.js, src/module4.js, src/module6.js and src/module7.js, one file at a time: append ' (reviewed)' to the comment on line 1, then run `sleep 3 && echo checked`. When all four are done, commit them with message 'A: review headers'. Commit only the files you changed yourself (git add <files>; never git add -A / . / commit -a).",
+      "initialPromptSentAt": "2026-10-24T13:27:02.988423Z",
+      "phaseChangedAt": "2026-10-24T13:27:02.996673Z",
+      "provider": "claude-code",
+      "model": "sonnet",
+      "effort": "low",
+      "runtime": "idle",
+      "runtimeUpdatedAt": "2026-10-24T13:27:35.817835Z",
+      "lastActivityAt": "2026-10-24T13:27:35.507639Z",
+      "createdAt": "2026-10-24T13:26:51.490211Z",
+      "updatedAt": "2026-10-24T13:27:35.817835Z",
+      "responseSeq": "129",
+      "responseMessageId": "msg_2d90eb691a7fc48f9b",
+      "workspaceMode": "project",
+      "workspace": {
+        "mode": "project",
+        "state": "ready",
+        "branch": "main",
+        "baseBranch": "main",
+        "headSha": "6b845fe39a70b6ed356da2ab8344fedfa4f73c40",
+        "baseSha": "6b845fe39a70b6ed356da2ab8344fedfa4f73c40",
+        "revision": "b7ae26cb1a034a650236ba66bcd62d40"
+      },
+      "remotePublishMode": "manual",
+      "tokenUsage": {
+        "inputTokens": "81102",
+        "outputTokens": "833",
+        "totalTokens": "81935",
+        "reportedMessages": "1"
+      }
+    },
+    "project": {
+      "checkouts": [
+        {
+          "id": "co_7e85634301d2",
+          "projectId": "p_836ae1e2fd21",
+          "daemonId": "local_6e43e7a721df",
+          "name": "project",
+          "path": "/private/tmp/dieter-live-channels-qT0O/run1/project"
+        }
+      ],
+      "id": "p_836ae1e2fd21",
+      "name": "atrium-run1",
+      "path": "/private/tmp/dieter-live-channels-qT0O/run1/project",
+      "createdAt": "2026-10-24T13:25:53.845522Z",
+      "updatedAt": "2026-10-24T13:25:53.845522Z"
+    },
+    "board": {
+      "id": "b_d83755b3c1d56f0aa164b2e7",
+      "projectId": "p_836ae1e2fd21",
+      "name": "Pair run1",
+      "workflow": "direct",
+      "doneArchivePolicy": "never",
+      "createdAt": "2026-10-24T13:25:53.845522Z",
+      "updatedAt": "2026-10-24T13:25:53.845522Z",
+      "lanes": [
+        {
+          "id": "todo",
+          "name": "Todo"
+        },
+        {
+          "id": "running",
+          "name": "Running"
+        },
+        {
+          "id": "done",
+          "name": "Done"
+        }
+      ],
+      "remotePublishMode": "manual",
+      "retirementRevision": "absent"
+    }
+  },
+  "conversation": {
+    "projectionVersion": 6,
+    "cardId": "c_7fae999b1d26961dcd8ceb5b",
+    "status": "idle",
+    "messages": [
+      {
+        "id": "msg_efd871028230d3ada9",
+        "role": "user",
+        "metadataJson": "eyJjcmVhdGVkQXQiOiIyMDI2LTEwLTI0VDEzOjI3OjAyLjg3MTgxNloifQ==",
+        "parts": [
+          {
+            "type": "text",
+            "text": "For each of src/module3.js, src/module4.js, src/module6.js and src/module7.js, one file at a time: append ' (reviewed)' to the comment on line 1, then run `sleep 3 && echo checked`. When all four are done, commit them with message 'A: review headers'. Commit only the files you changed yourself (git add <files>; never git add -A / . / commit -a)."
+          }
+        ]
+      },
+      {
+        "id": "msg_2d90eb691a7fc48f9b",
+        "role": "assistant",
+        "metadataJson": "eyJjcmVhdGVkQXQiOiIyMDI2LTEwLTI0VDEzOjI3OjEwLjE1OFoiLCJ1c2FnZSI6eyJpbnB1dFRva2VucyI6MjA3NzIsImlucHV0VG9rZW5EZXRhaWxzIjp7Im5vQ2FjaGVUb2tlbnMiOjIsImNhY2hlUmVhZFRva2VucyI6MjA1NzIsImNhY2hlV3JpdGVUb2tlbnMiOjE5OH0sIm91dHB1dFRva2VucyI6MTI5LCJvdXRwdXRUb2tlbkRldGFpbHMiOnsidGV4dFRva2VucyI6MTI5fSwidG90YWxUb2tlbnMiOjIwOTAxfSwidG90YWxVc2FnZSI6eyJpbnB1dFRva2VucyI6ODExMDIsImlucHV0VG9rZW5EZXRhaWxzIjp7Im5vQ2FjaGVUb2tlbnMiOjgsImNhY2hlUmVhZFRva2VucyI6NzI2MTMsImNhY2hlV3JpdGVUb2tlbnMiOjg0ODF9LCJvdXRwdXRUb2tlbnMiOjgzMywib3V0cHV0VG9rZW5EZXRhaWxzIjp7InRleHRUb2tlbnMiOjgzM30sInRvdGFsVG9rZW5zIjo4MTkzNX19",
+        "parts": [
+          {
+            "type": "dynamic-tool",
+            "state": "output-available",
+            "toolCallId": "toolu_01T2YK2akSG8X11CSoZqqDHJ",
+            "toolName": "bash",
+            "hasInput": true,
+            "hasOutput": true,
+            "inputSize": "81",
+            "outputSize": "378",
+            "inputPreview": "head -1 src/module3.js src/module4.js src/module6.js src/module7.js",
+            "outputPreview": "{\"interrupted\":false,\"isImage\":false,\"noOutputExpected\":false,\"stderr\":\"\",\"stdout\":\"==\\u003e src/module3.js \\u003c==\\n// module 3: inventory pricing rules\\n\\n=…",
+            "payloadRevision": "c5f2e9289f1466168e5f4dba"
+          },
+          {
+            "type": "dynamic-tool",
+            "state": "output-available",
+            "toolCallId": "toolu_01RuSvXuL7eSXB3qPYMVsW6n",
+            "toolName": "bash",
+            "hasInput": true,
+            "hasOutput": true,
+            "inputSize": "105",
+            "outputSize": "93",
+            "inputPreview": "sed -i '' '1s/$/ (reviewed)/' src/module3.js && sleep 3 && echo checked",
+            "outputPreview": "{\"interrupted\":false,\"isImage\":false,\"noOutputExpected\":false,\"stderr\":\"\",\"stdout\":\"checked\"}",
+            "payloadRevision": "e8f3b6ef44d525e3b7abd325"
+          },
+          {
+            "type": "dynamic-tool",
+            "state": "output-available",
+            "toolCallId": "toolu_01VPS31ewq2rRQZZiL6Tsd5D",
+            "toolName": "bash",
+            "hasInput": true,
+            "hasOutput": true,
+            "inputSize": "105",
+            "outputSize": "93",
+            "inputPreview": "sed -i '' '1s/$/ (reviewed)/' src/module4.js && sleep 3 && echo checked",
+            "outputPreview": "{\"interrupted\":false,\"isImage\":false,\"noOutputExpected\":false,\"stderr\":\"\",\"stdout\":\"checked\"}",
+            "payloadRevision": "9ff146bbca469f7490fd8456"
+          },
+          {
+            "type": "dynamic-tool",
+            "state": "output-available",
+            "toolCallId": "toolu_01AnpwL8kshmBJYFLrXW2LT4",
+            "toolName": "bash",
+            "hasInput": true,
+            "hasOutput": true,
+            "inputSize": "105",
+            "outputSize": "93",
+            "inputPreview": "sed -i '' '1s/$/ (reviewed)/' src/module6.js && sleep 3 && echo checked",
+            "outputPreview": "{\"interrupted\":false,\"isImage\":false,\"noOutputExpected\":false,\"stderr\":\"\",\"stdout\":\"checked\"}",
+            "payloadRevision": "29f88f3ef18a1fac8051c11a"
+          },
+          {
+            "type": "dynamic-tool",
+            "state": "output-available",
+            "toolCallId": "toolu_01EeKPjTzRwBHR6V64oXrAed",
+            "toolName": "bash",
+            "hasInput": true,
+            "hasOutput": true,
+            "inputSize": "105",
+            "outputSize": "93",
+            "inputPreview": "sed -i '' '1s/$/ (reviewed)/' src/module7.js && sleep 3 && echo checked",
+            "outputPreview": "{\"interrupted\":false,\"isImage\":false,\"noOutputExpected\":false,\"stderr\":\"\",\"stdout\":\"checked\"}",
+            "payloadRevision": "5bc178002d5deb09b3c7dbd5"
+          },
+          {
+            "type": "dynamic-tool",
+            "state": "output-available",
+            "toolCallId": "toolu_014Z4fmLX7ibrVpcn4Javo7a",
+            "toolName": "bash",
+            "hasInput": true,
+            "hasOutput": true,
+            "inputSize": "238",
+            "outputSize": "111",
+            "inputPreview": "git add src/module3.js src/module4.js src/module6.js src/module7.js && git commit -q -m \"A: review headers Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic…",
+            "outputPreview": "{\"interrupted\":false,\"isImage\":false,\"noOutputExpected\":false,\"stderr\":\"\",\"stdout\":\"6b845fe A: review headers\"}",
+            "payloadRevision": "dc5ec6917112d1dc3cbd071d"
+          },
+          {
+            "type": "text",
+            "text": "I appended ` (reviewed)` to the line 1 comment in `src/module3.js`, `src/module4.js`, `src/module6.js` and `src/module7.js`. I did one file at a time, and `sleep 3 && echo checked` printed `checked` for each.\n\nI then committed just those four files as `6b845fe` with the message \"A: review headers\".\n\nI didn't move the card to Done.",
+            "state": "done"
+          }
+        ]
+      }
+    ],
+    "lastSeq": "130",
+    "updatedAt": "2026-10-24T13:27:35.507639Z"
+  },
+  "page": {
+    "end": 2,
+    "total": 2
+  }
+}

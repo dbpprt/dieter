@@ -13,6 +13,7 @@ import (
 	"text/tabwriter"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 )
 
 const remoteHelp = `Usage: dieter remote <action>
@@ -325,7 +326,7 @@ func resolveExecution(items []*dieterv1.Execution, reference string) (*dieterv1.
 	return matches[0], nil
 }
 
-func (c *CLI) resolveExecution(rpcCtx context.Context, client dieterv1.DieterServiceClient, reference string) (*dieterv1.Execution, error) {
+func (c *CLI) resolveExecution(rpcCtx context.Context, client dieterclient.Client, reference string) (*dieterv1.Execution, error) {
 	if strings.HasPrefix(reference, "exec_") {
 		return client.GetExecution(rpcCtx, &dieterv1.ExecutionRef{ExecutionId: reference})
 	}
@@ -448,7 +449,7 @@ func (c *CLI) rpcRemoteWatch(args []string, attach, propagateExit bool) error {
 	return c.watchRemoteExecution(ctx, client, rpcCtx, value, *after, *format, *count, attach, propagateExit)
 }
 
-func (c *CLI) watchRemoteExecution(ctx context.Context, client dieterv1.DieterServiceClient, rpcCtx context.Context, execution *dieterv1.Execution, after uint64, format string, count int, attach, propagateExit bool) error {
+func (c *CLI) watchRemoteExecution(ctx context.Context, client dieterclient.Client, rpcCtx context.Context, execution *dieterv1.Execution, after uint64, format string, count int, attach, propagateExit bool) error {
 	if attach && execution.GetStatus() == "running" {
 		go c.forwardRemoteInput(rpcCtx, client, execution.GetId())
 	}
@@ -505,7 +506,7 @@ func remoteExecutionSucceeded(value *dieterv1.Execution) bool {
 	return value != nil && value.GetStatus() == "exited" && value.ExitCode != nil && value.GetExitCode() == 0
 }
 
-func (c *CLI) forwardRemoteInput(rpcCtx context.Context, client dieterv1.DieterServiceClient, id string) {
+func (c *CLI) forwardRemoteInput(rpcCtx context.Context, client dieterclient.Client, id string) {
 	buffer := make([]byte, 32<<10)
 	for {
 		count, err := c.In.Read(buffer)

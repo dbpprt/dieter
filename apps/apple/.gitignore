@@ -1,0 +1,9 @@
+.build/
+build/
+*.xcuserstate
+xcuserdata/
+.swiftpm/xcode/package.xcworkspace/xcuserdata/
+# The Kotlin core framework, assembled from apps/kotlin (see README.md).
+/Frameworks/
+# Built by mac/scripts/build-markdown-preview.sh from mac/MarkdownPreview.
+/mac/Sources/DieterMacKit/Resources/MarkdownPreview/

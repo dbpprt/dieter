@@ -8,7 +8,92 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+func TestClaudeQuotaPresenceAndRefreshRespectFiveAndTenMinuteWindows(t *testing.T) {
+	t.Parallel()
+	store, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	const owner int64 = 91
+	const daemonID = "daemon-claude-polling"
+	start := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	now := start
+	if _, err := store.DB.Exec(`INSERT INTO daemons(id, name, github_id, login, public_key, certificate, created_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?)`, daemonID, "quota test", owner, "owner", []byte("key"), []byte("cert"), start.Format(time.RFC3339Nano)); err != nil {
+		t.Fatal(err)
+	}
+	hub := NewHub(store, Config{})
+	link := &daemonLink{id: daemonID, quota: make(chan *gatewayv1.DaemonLinkFrame, 1), done: make(chan struct{}), capabilities: map[string]bool{providerQuotaCapability: true}}
+	link.markSeen(time.Now())
+	hub.links[daemonID] = link
+	manager := NewQuotaManager(store, hub, nil)
+	manager.now = func() time.Time { return now }
+	provider := gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE
+	account := &gatewayv1.ProviderAccountPresence{Provider: provider, AccountKey: "account_key_aaaaaaaaaaaaaaaaaaaa", AccountKind: gatewayv1.ProviderAccountKind_PROVIDER_ACCOUNT_KIND_SUBSCRIPTION, Availability: gatewayv1.ProviderQuotaAvailability_PROVIDER_QUOTA_AVAILABILITY_AVAILABLE, RefreshSupported: true}
+	record := DaemonRecord{GitHubID: owner}
+	presence := func() {
+		t.Helper()
+		if err := manager.HandlePresence(record, daemonID, &gatewayv1.ProviderAccountsPresence{Accounts: []*gatewayv1.ProviderAccountPresence{account}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	request := func() *gatewayv1.DaemonLinkFrame {
+		t.Helper()
+		select {
+		case frame := <-link.quota:
+			return frame
+		default:
+			t.Fatal("expected a refresh request")
+			return nil
+		}
+	}
+	noRequest := func() {
+		t.Helper()
+		select {
+		case frame := <-link.quota:
+			t.Fatalf("refresh escaped the polling cooldown: %v", frame)
+		default:
+		}
+	}
+	presence()
+	frame := request()
+	if err := manager.HandleResult(record, daemonID, frame.GetRequestId(), &gatewayv1.ProviderQuotaRefreshResult{Snapshot: &gatewayv1.ProviderQuotaSnapshot{Provider: provider, AccountKey: account.GetAccountKey(), AccountKind: account.GetAccountKind(), Availability: account.GetAvailability(), Windows: []*gatewayv1.ProviderQuotaWindow{{Id: "weekly", RemainingPercent: proto.Uint32(76)}}}}); err != nil {
+		t.Fatal(err)
+	}
+	now = start.Add(4*time.Minute + 59*time.Second)
+	presence()
+	if accepted, err := manager.Refresh(owner, provider, account.GetAccountKey()); err != nil || accepted {
+		t.Fatalf("early refresh = %v, %v", accepted, err)
+	}
+	noRequest()
+	groups, err := manager.Catalog(owner, provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if groups[0].GetSummary().GetFreshness() != gatewayv1.ProviderQuotaFreshness_PROVIDER_QUOTA_FRESHNESS_FRESH {
+		t.Fatal("Claude data became stale before its next scheduled probe")
+	}
+	if got := parseStoredTime(groups[0].GetAccounts()[0].GetNextRefreshAt()); !got.Equal(start.Add(5 * time.Minute)) {
+		t.Fatalf("next refresh = %s", got)
+	}
+	now = start.Add(5 * time.Minute)
+	presence()
+	frame = request()
+	if err := manager.HandleResult(record, daemonID, frame.GetRequestId(), &gatewayv1.ProviderQuotaRefreshResult{ErrorCode: "temporarily_unavailable", RetryAfterSeconds: 1}); err != nil {
+		t.Fatal(err)
+	}
+	now = start.Add(15*time.Minute - time.Second)
+	presence()
+	_, _ = manager.Refresh(owner, provider, account.GetAccountKey())
+	noRequest()
+	now = start.Add(15 * time.Minute)
+	presence()
+	request()
+}
+
 func TestSummarizeProviderQuotasUsesLowestDistinctAccountWindow(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
 	firstReset := now.Add(90 * time.Minute).Format(time.RFC3339)
 	secondReset := now.Add(3 * time.Hour).Format(time.RFC3339)
@@ -48,6 +133,7 @@ func TestSummarizeProviderQuotasUsesLowestDistinctAccountWindow(t *testing.T) {
 }
 
 func TestSummarizeProviderQuotasExcludesOptedOutAccounts(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
 	accounts := []*gatewayv1.ProviderQuotaSnapshot{
 		{AccountKey: "account_key_aaaaaaaaaaaaaaaaaaaa", Availability: gatewayv1.ProviderQuotaAvailability_PROVIDER_QUOTA_AVAILABILITY_AVAILABLE,
@@ -67,6 +153,7 @@ func TestSummarizeProviderQuotasExcludesOptedOutAccounts(t *testing.T) {
 }
 
 func TestSummarizeProviderQuotasReportsUnavailableAccountsAndStaleSelection(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
 	accounts := []*gatewayv1.ProviderQuotaSnapshot{
 		{
@@ -95,6 +182,7 @@ func TestSummarizeProviderQuotasReportsUnavailableAccountsAndStaleSelection(t *t
 }
 
 func TestValidateProviderQuotaSnapshotRejectsInconsistentPercentages(t *testing.T) {
+	t.Parallel()
 	snapshot := &gatewayv1.ProviderQuotaSnapshot{
 		Provider:     gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX,
 		AccountKey:   "account_key_aaaaaaaaaaaaaaaaaaaa",
@@ -109,6 +197,7 @@ func TestValidateProviderQuotaSnapshotRejectsInconsistentPercentages(t *testing.
 }
 
 func TestValidateProviderQuotaSnapshotRejectsDaemonSuppliedMachines(t *testing.T) {
+	t.Parallel()
 	snapshot := &gatewayv1.ProviderQuotaSnapshot{
 		Provider:     gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX,
 		AccountKey:   "account_key_aaaaaaaaaaaaaaaaaaaa",
@@ -121,6 +210,7 @@ func TestValidateProviderQuotaSnapshotRejectsDaemonSuppliedMachines(t *testing.T
 }
 
 func TestStartResetRoutesExactAccountAndIdempotencyKey(t *testing.T) {
+	t.Parallel()
 	store, err := OpenStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)

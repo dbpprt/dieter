@@ -1,0 +1,76 @@
+name: Prepare gateway deployment
+
+# Verifies a promoted stable release's signed gateway bytes and retains them,
+# with a deployment plan, for admission through the restricted host
+# controller. It never activates a service.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Promoted stable release (vX.Y.Z)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gateway-production-preparation
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: gateway-production
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: '[[ "$GITHUB_REPOSITORY" == "$(jq -r .repository config/identity.json)" ]]'
+      - uses: ./.github/actions/setup
+        with:
+          tools: python cosign oras
+          cache-scope: release
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify the signed release and gateway bundle
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          repository=$(jq -r .repository config/identity.json)
+          signer="https://github.com/$repository/.github/workflows/release.yml@refs/heads/main"
+          [[ "$(gh release view "$TAG" --repo "$repository" --json isPrerelease,isDraft --jq '.isPrerelease or .isDraft')" == false ]] \
+            || { echo "::error::$TAG is not a promoted stable release"; exit 1; }
+          gh release download "$TAG" --repo "$repository" --dir out --pattern SHA256SUMS --pattern SHA256SUMS.sigstore.json \
+            --pattern dieter-gateway-deploy.tar.gz --pattern 'gateway-*'
+          cosign verify-blob --bundle out/SHA256SUMS.sigstore.json --certificate-identity "$signer" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com out/SHA256SUMS
+          for name in dieter-gateway-deploy.tar.gz gateway-manifest.json gateway-manifest.sigstore.json gateway-release.lock.json; do
+            grep -q "  $name\$" out/SHA256SUMS || { echo "::error::$name is not in the signed SHA256SUMS"; exit 1; }
+          done
+          (cd out && sha256sum --check --ignore-missing --strict SHA256SUMS)
+          python3 deploy/gateway/scripts/bundle.py verify out --revision "$(jq -r .sourceRevision out/gateway-release.lock.json)" \
+            --image "$(jq -r .image out/gateway-release.lock.json)"
+          jq --arg tag "$TAG" '{schema_version: 1, release_tag: $tag, source_revision: .sourceRevision, image, artifact,
+            bundle_sha256: .bundleSHA256, state: "verified-awaiting-operator-admission"}' out/gateway-release.lock.json > out/gateway-deployment-plan.json
+          echo "Verified $TAG; admit it through the restricted host controller with authenticated readiness and rollback." >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verified-gateway-distribution
+          path: |
+            out/dieter-gateway-deploy.tar.gz
+            out/gateway-manifest.json
+            out/gateway-manifest.sigstore.json
+            out/gateway-release.lock.json
+            out/gateway-deployment-plan.json
+          retention-days: 90
+          if-no-files-found: error

@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/pion/webrtc/v4/pkg/media"
-	"google.golang.org/protobuf/proto"
 	"os"
 	"testing"
 	"time"
+
+	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/pion/webrtc/v4/pkg/media"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestNativeReferenceRecovery(t *testing.T) {

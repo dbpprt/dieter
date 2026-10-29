@@ -1,0 +1,59 @@
+[
+  {
+    "table": {
+      "alignments": ["start", "start", "start"],
+      "header": [["a"], ["b"], ["c"]],
+      "rows": [
+        [["only one"], [], []],
+        [["1"], ["2"], ["3"]],
+        [[{"code": "x|y"}], ["a | b"], [{"code": "a | b"}]],
+        [["`not code"], ["split"], ["here"]]
+      ]
+    }
+  },
+  {"table": {"alignments": ["start", "start"], "header": [["a"], ["b"]], "rows": []}},
+  {
+    "paragraph": [
+      "| one | two |",
+      {"break": "soft"},
+      "| --- |",
+      {"break": "soft"},
+      "| mismatched delimiter rows are text |"
+    ]
+  },
+  {
+    "table": {
+      "alignments": ["center", "end"],
+      "header": [["Escaped | pipe in a header"], [{"code": "|"}]],
+      "rows": [[["*literal*"], [{"strong": ["bold | pipe"]}]]]
+    }
+  },
+  {
+    "list": "bullet",
+    "items": [
+      {"blocks": []},
+      {"blocks": [{"paragraph": ["an empty item above"]}]},
+      {
+        "blocks": [{"paragraph": ["item with a fence:"]}, {"code": "{\"ok\": true}", "language": "json"}]
+      },
+      {"blocks": [{"paragraph": ["after the fence"]}]}
+    ]
+  },
+  {
+    "quote": [
+      {"paragraph": ["one"]},
+      {"quote": [{"paragraph": ["two"]}, {"quote": [{"paragraph": ["three levels"]}]}]}
+    ]
+  },
+  {
+    "paragraph": [
+      "<div align=\"center\">",
+      {"break": "soft"},
+      "<strong>HTML blocks stay text</strong>",
+      {"break": "soft"},
+      "</div>"
+    ]
+  },
+  {"paragraph": ["An *unclosed emphasis and a [dangling bracket and a ![dangling image."]},
+  {"code": "an unclosed fence runs to the end\n| not | a | table |", "language": "js"}
+]

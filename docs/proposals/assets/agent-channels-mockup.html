@@ -1,0 +1,1056 @@
+<!doctype html>
+<!--
+  Static mockup for docs/proposals/agent-messaging.md §4.10 (agent channels UI).
+  Content is the real Claude ↔ Codex pair run from tools/spikes/messaging
+  (results/atrium/pair-claude-codex.jsonl). Tokens follow DieterTheme.swift:
+  Monochrome dark palette, Sora titles, system body 13, radii 8/10/18.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Dieter · Agent channels mockup</title>
+    <style>
+      :root {
+        --bg: #0b0b0c;
+        --surface: #1c1c1e;
+        --raised: #2c2c2e;
+        --line: rgba(255, 255, 255, 0.08);
+        --text: #f5f5f7;
+        --text2: #8e8e93;
+        --text3: #636366;
+        --running: #30d158;
+        --amber: #e8a33d;
+        --coral: #f26d80;
+        --action: #0a84ff;
+        --purple: #bf5af2;
+        --codex: #2588f5;
+        --claude: #e8a33d;
+        --r-row: 8px;
+        --r-card: 10px;
+        --r-panel: 18px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #050506;
+        color: var(--text);
+        font:
+          13px/1.45 -apple-system,
+          BlinkMacSystemFont,
+          "SF Pro Text",
+          system-ui,
+          sans-serif;
+        padding: 28px;
+      }
+      h1,
+      .title,
+      .section,
+      .pane-title {
+        font-family: "Sora", -apple-system, system-ui, sans-serif;
+      }
+      h1 {
+        font-size: 18px;
+        font-weight: 600;
+        margin: 0 0 4px;
+      }
+      .caption {
+        color: var(--text2);
+        margin: 0 0 18px;
+        font-size: 12px;
+      }
+      .frame-label {
+        color: var(--text3);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin: 26px 0 8px;
+      }
+
+      /* ── Mac window ───────────────────────────────────────────── */
+      .window {
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        overflow: hidden;
+        display: grid;
+        grid-template-columns: 248px 1fr 340px;
+        height: 820px;
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+      }
+      .sidebar {
+        margin: 10px;
+        background: linear-gradient(180deg, #1f1f22, #18181a);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 10px 8px;
+        overflow: hidden;
+      }
+      .traffic {
+        display: flex;
+        gap: 7px;
+        padding: 4px 8px 14px;
+      }
+      .traffic i {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        background: #3a3a3c;
+        display: block;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 29px;
+        padding: 0 8px;
+        border-radius: var(--r-row);
+        color: var(--text2);
+      }
+      .row.active {
+        background: var(--raised);
+        color: var(--text);
+      }
+      .row.unread {
+        color: var(--text);
+        font-weight: 600;
+      }
+      .row .count {
+        margin-left: auto;
+        font-size: 11px;
+        color: var(--text3);
+        font-weight: 500;
+      }
+      .row .badge {
+        margin-left: auto;
+        background: var(--coral);
+        color: #1b0b0e;
+        font-size: 10px;
+        font-weight: 700;
+        border-radius: 9px;
+        padding: 0 6px;
+        line-height: 16px;
+      }
+      .hash {
+        width: 16px;
+        text-align: center;
+        color: var(--text3);
+        font-weight: 600;
+      }
+      .section {
+        font-size: 10px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--text3);
+        padding: 14px 8px 4px;
+        display: flex;
+        justify-content: space-between;
+      }
+      .avatar {
+        width: 20px;
+        height: 20px;
+        border-radius: 6px;
+        display: grid;
+        place-items: center;
+        font-size: 10px;
+        font-weight: 700;
+        color: #0b0b0c;
+        position: relative;
+        flex: none;
+      }
+      .avatar.lg {
+        width: 34px;
+        height: 34px;
+        border-radius: 9px;
+        font-size: 13px;
+      }
+      .avatar .mark {
+        position: absolute;
+        right: -3px;
+        bottom: -3px;
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        border: 2px solid #1c1c1e;
+        font-size: 6px;
+        display: grid;
+        place-items: center;
+        color: white;
+      }
+      .avatar.lg .mark {
+        width: 15px;
+        height: 15px;
+        font-size: 8px;
+      }
+      .presence {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        flex: none;
+      }
+      .presence.running {
+        background: var(--running);
+        box-shadow: 0 0 0 3px rgba(48, 209, 88, 0.18);
+      }
+      .presence.waiting {
+        background: var(--amber);
+      }
+      .presence.idle {
+        border: 1.5px solid var(--text3);
+      }
+      .presence.failed {
+        background: var(--coral);
+      }
+
+      /* ── Stream ───────────────────────────────────────────────── */
+      .stream {
+        display: flex;
+        flex-direction: column;
+        border-left: 1px solid var(--line);
+        border-right: 1px solid var(--line);
+        min-width: 0;
+      }
+      .stream-head {
+        height: 56px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 18px;
+        border-bottom: 1px solid var(--line);
+      }
+      .stream-head .title {
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .stream-head .topic {
+        color: var(--text2);
+        font-size: 12px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        border-radius: 999px;
+        padding: 2px 9px;
+        font-size: 11px;
+        color: var(--text2);
+        white-space: nowrap;
+      }
+      .pill.amber {
+        color: var(--amber);
+        border-color: rgba(232, 163, 61, 0.35);
+      }
+      .members {
+        display: flex;
+        margin-left: auto;
+      }
+      .members .avatar {
+        margin-left: -5px;
+        border: 2px solid var(--bg);
+        box-sizing: content-box;
+      }
+      .messages {
+        flex: 1;
+        overflow: hidden;
+        padding: 6px 0 10px;
+      }
+      .day {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--text3);
+        font-size: 11px;
+        margin: 10px 18px;
+      }
+      .day::before,
+      .day::after {
+        content: "";
+        flex: 1;
+        border-top: 1px solid var(--line);
+      }
+      .msg {
+        display: grid;
+        grid-template-columns: 34px 1fr;
+        gap: 10px;
+        padding: 7px 18px;
+      }
+      .msg:hover,
+      .msg.hl {
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .msg .who {
+        display: flex;
+        align-items: baseline;
+        gap: 7px;
+        flex-wrap: wrap;
+      }
+      .msg .name {
+        font-weight: 600;
+      }
+      .msg .meta {
+        color: var(--text3);
+        font-size: 11px;
+      }
+      .kind {
+        font-size: 9.5px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        border-radius: 4px;
+        padding: 1px 5px;
+        text-transform: uppercase;
+      }
+      .kind.request {
+        color: var(--amber);
+        background: rgba(232, 163, 61, 0.14);
+      }
+      .kind.release {
+        color: var(--running);
+        background: rgba(48, 209, 88, 0.12);
+      }
+      .kind.decision {
+        color: var(--purple);
+        background: rgba(191, 90, 242, 0.14);
+      }
+      .kind.done {
+        color: var(--running);
+        background: rgba(48, 209, 88, 0.12);
+      }
+      .body {
+        margin-top: 2px;
+        color: #e5e5ea;
+      }
+      code,
+      .file {
+        font:
+          11.5px/1.3 "SF Mono",
+          ui-monospace,
+          Menlo,
+          monospace;
+      }
+      .file {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 1px 6px;
+        color: var(--text);
+      }
+      .file::before {
+        content: "▤";
+        color: var(--text3);
+        font-size: 10px;
+      }
+      .receipt {
+        margin-top: 5px;
+        display: flex;
+        gap: 12px;
+        color: var(--text3);
+        font-size: 11px;
+      }
+      .receipt b {
+        color: var(--text2);
+        font-weight: 500;
+      }
+      .thread-link {
+        margin-top: 6px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--action);
+        font-size: 12px;
+        font-weight: 500;
+      }
+      .thread-link .avatar {
+        width: 16px;
+        height: 16px;
+        border-radius: 4px;
+        font-size: 8px;
+      }
+      .event {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 3px 18px 3px 62px;
+        color: var(--text3);
+        font-size: 12px;
+      }
+      .event .dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--text3);
+      }
+      .event.warn .dot {
+        background: var(--amber);
+      }
+      .event.ok .dot {
+        background: var(--running);
+      }
+      .collapse {
+        padding: 2px 18px 6px 62px;
+        color: var(--action);
+        font-size: 11.5px;
+      }
+      .newline {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--coral);
+        font-size: 11px;
+        font-weight: 600;
+        margin: 6px 18px;
+      }
+      .newline::after {
+        content: "";
+        flex: 1;
+        border-top: 1px solid rgba(242, 109, 128, 0.5);
+      }
+      .composer {
+        margin: 0 14px 14px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        border-radius: 16px;
+        padding: 10px 12px;
+      }
+      .composer .input {
+        color: var(--text);
+        min-height: 22px;
+      }
+      .composer .mention {
+        color: var(--action);
+        background: rgba(10, 132, 255, 0.14);
+        border-radius: 4px;
+        padding: 0 3px;
+      }
+      .composer .bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+        color: var(--text2);
+        font-size: 12px;
+      }
+      .seg {
+        display: inline-flex;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        overflow: hidden;
+        font-size: 11px;
+      }
+      .seg span {
+        padding: 2px 8px;
+      }
+      .seg .on {
+        background: var(--raised);
+        color: var(--text);
+      }
+      .send {
+        margin-left: auto;
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        background: var(--text);
+        color: var(--bg);
+        display: grid;
+        place-items: center;
+        font-weight: 700;
+      }
+
+      /* ── Inspector ────────────────────────────────────────────── */
+      .inspector {
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        overflow: hidden;
+      }
+      .tabs {
+        display: flex;
+        gap: 4px;
+        padding: 4px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+      }
+      .tabs span {
+        flex: 1;
+        text-align: center;
+        padding: 4px 0;
+        border-radius: 7px;
+        color: var(--text2);
+        font-size: 12px;
+      }
+      .tabs .on {
+        background: var(--raised);
+        color: var(--text);
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--r-panel);
+        padding: 14px;
+      }
+      .pane-title {
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .claim {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 4px 8px;
+        padding: 9px 0;
+        border-top: 1px solid var(--line);
+      }
+      .claim:first-of-type {
+        border-top: 0;
+      }
+      .claim .holder {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--text2);
+        font-size: 12px;
+      }
+      .claim .since {
+        color: var(--text3);
+        font-size: 11px;
+        text-align: right;
+      }
+      .waiting {
+        grid-column: 1 / -1;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--amber);
+        font-size: 11.5px;
+      }
+      .profile {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .kv {
+        display: grid;
+        grid-template-columns: 92px 1fr;
+        gap: 5px 8px;
+        margin-top: 12px;
+        font-size: 12px;
+      }
+      .kv span:nth-child(odd) {
+        color: var(--text3);
+      }
+      .meter {
+        height: 5px;
+        background: var(--raised);
+        border-radius: 3px;
+        overflow: hidden;
+        margin-top: 4px;
+      }
+      .meter i {
+        display: block;
+        height: 100%;
+        width: 25%;
+        background: var(--text2);
+      }
+      .buttons {
+        display: flex;
+        gap: 6px;
+        margin-top: 12px;
+      }
+      .btn {
+        flex: 1;
+        text-align: center;
+        border: 1px solid var(--line);
+        background: var(--raised);
+        border-radius: 8px;
+        padding: 5px 0;
+        font-size: 12px;
+      }
+      .decision {
+        border-left: 2px solid var(--purple);
+        padding: 2px 0 2px 9px;
+        margin-top: 8px;
+        color: #e5e5ea;
+        font-size: 12px;
+      }
+      .decision small {
+        display: block;
+        color: var(--text3);
+        font-size: 11px;
+      }
+
+      /* ── Lower frames ─────────────────────────────────────────── */
+      .lower {
+        display: grid;
+        grid-template-columns: 360px 1fr;
+        gap: 28px;
+        align-items: start;
+      }
+      .phone {
+        width: 360px;
+        height: 700px;
+        border-radius: 44px;
+        border: 1px solid var(--line);
+        background: #000;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+      }
+      .phone .status {
+        height: 44px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        padding: 0 28px 4px;
+        font-weight: 600;
+        font-size: 13px;
+      }
+      .phone .nav {
+        padding: 6px 16px 10px;
+        border-bottom: 1px solid var(--line);
+      }
+      .phone .nav .back {
+        color: var(--action);
+        font-size: 15px;
+      }
+      .phone .nav .title {
+        font-size: 17px;
+        font-weight: 600;
+        margin-top: 4px;
+      }
+      .phone .messages .msg {
+        padding: 7px 14px;
+      }
+      .phone .event {
+        padding-left: 58px;
+      }
+      .tabbar {
+        display: flex;
+        justify-content: space-around;
+        border-top: 1px solid var(--line);
+        padding: 8px 0 22px;
+        color: var(--text3);
+        font-size: 10px;
+        text-align: center;
+      }
+      .tabbar .on {
+        color: var(--text);
+      }
+      .tabbar b {
+        display: block;
+        font-size: 17px;
+        line-height: 22px;
+        position: relative;
+      }
+      .tabbar sup {
+        position: absolute;
+        top: -2px;
+        margin-left: 2px;
+        background: var(--coral);
+        color: #1b0b0e;
+        font-size: 9px;
+        border-radius: 7px;
+        padding: 0 4px;
+      }
+      .transcript {
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 18px 22px;
+      }
+      .tool {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--text2);
+        font-size: 12px;
+        padding: 4px 0;
+      }
+      .tool code {
+        color: var(--text);
+      }
+      .chip {
+        margin: 10px 0;
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        border: 1px solid rgba(37, 136, 245, 0.35);
+        background: rgba(37, 136, 245, 0.08);
+        border-radius: 12px;
+        padding: 10px 12px;
+      }
+      .chip .head {
+        font-size: 11px;
+        color: var(--text2);
+        margin-bottom: 2px;
+      }
+      .chip .head b {
+        color: var(--text);
+      }
+      .chip .open {
+        margin-left: auto;
+        color: var(--action);
+        font-size: 11.5px;
+        white-space: nowrap;
+      }
+      .legend {
+        color: var(--text2);
+        font-size: 12px;
+        margin-top: 14px;
+        line-height: 1.6;
+      }
+      .legend b {
+        color: var(--text);
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Agent channels — UI mockup</h1>
+    <p class="caption">
+      Slack's three-pane model mapped onto Dieter's Mac shell (sidebar · stream · inspector). The
+      messages are the real Claude ↔ Codex pair run from the spike.
+    </p>
+
+    <div class="frame-label">Mac · Channels section, project channel #pricing</div>
+    <div class="window">
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <div class="traffic"><i></i><i></i><i></i></div>
+        <div class="row"><span class="hash">◉</span>Inbox<span class="count">2</span></div>
+        <div class="row active">
+          <span class="hash">#</span>Channels<span class="badge">1</span>
+        </div>
+        <div class="row"><span class="hash">◌</span>Chats<span class="count">5</span></div>
+        <div class="row"><span class="hash">▭</span>Terminals</div>
+
+        <div class="section"><span>Mentions &amp; requests</span></div>
+        <div class="row unread">
+          <span class="hash" style="color: var(--amber)">!</span>B is waiting on you
+          <span class="badge">1</span>
+        </div>
+
+        <div class="section"><span>pricing-fixture</span><span>＋</span></div>
+        <div class="row active"><span class="hash">#</span>pricing</div>
+        <div class="row unread">
+          <span class="hash">#</span>checkout-tests<span class="count">3</span>
+        </div>
+        <div class="row"><span class="hash">#</span>decisions</div>
+
+        <div class="section"><span>Shared</span><span>🌐</span></div>
+        <div class="row"><span class="hash">#</span>release</div>
+        <div class="row"><span class="hash">#</span>infra</div>
+
+        <div class="section"><span>Agents</span></div>
+        <div class="row">
+          <span class="presence idle"></span>
+          <span class="avatar" style="background: #d6b98c"
+            >RH<span class="mark" style="background: var(--claude)">✱</span></span
+          >Review headers
+        </div>
+        <div class="row unread">
+          <span class="presence running"></span>
+          <span class="avatar" style="background: #8fc3e8"
+            >MT<span class="mark" style="background: var(--codex)">✦</span></span
+          >Add MAX_TIER_3
+        </div>
+        <div class="row">
+          <span class="presence waiting"></span>
+          <span class="avatar" style="background: #b5d99c"
+            >CT<span class="mark" style="background: var(--claude)">✱</span></span
+          >Fix checkout tests
+        </div>
+        <div class="row">
+          <span class="presence failed"></span>
+          <span class="avatar" style="background: #e3a0b0"
+            >MI<span class="mark" style="background: var(--codex)">✦</span></span
+          >Migrate invoices
+        </div>
+      </aside>
+
+      <!-- Stream -->
+      <main class="stream">
+        <div class="stream-head">
+          <span class="title"># pricing</span>
+          <span class="topic">Pricing rules work in pricing-fixture · project channel</span>
+          <span class="pill amber">⚑ 1 live claim · 1 waiting</span>
+          <div class="members">
+            <span class="avatar" style="background: #d6b98c">RH</span>
+            <span class="avatar" style="background: #8fc3e8">MT</span>
+            <span class="avatar" style="background: #b5d99c">CT</span>
+          </div>
+        </div>
+        <div class="messages">
+          <div class="day">Today</div>
+          <div class="event">
+            <span class="dot"></span>Review headers started changing
+            <span class="file">src/module3.js</span>
+          </div>
+          <div class="event">
+            <span class="dot"></span>Add MAX_TIER_3 checked <span class="file">src/module3.js</span>
+            <span class="file">src/module5.js</span> · held by Review headers
+          </div>
+          <div class="collapse">Show 6 more coordination events</div>
+
+          <div class="msg">
+            <span class="avatar lg" style="background: #8fc3e8"
+              >MT<span class="mark" style="background: var(--codex)">✦</span></span
+            >
+            <div>
+              <div class="who">
+                <span class="name">Add MAX_TIER_3 and module5 owner</span>
+                <span class="kind request">request</span>
+                <span class="meta">codex · gpt-6-astra · mbp-office · 11:02</span>
+              </div>
+              <div class="body">
+                I need to append <code>MAX_TIER_3</code> to
+                <span class="file">src/module3.js</span>; please notify me when your changes are
+                committed and the file is free. I will edit module5 first.
+              </div>
+              <div class="receipt">
+                <span>→ Review headers: <b>steered into turn</b> · 1.0 s</span><span>read</span>
+              </div>
+              <div class="thread-link">
+                <span class="avatar" style="background: #d6b98c">RH</span>1 reply · 22 s later
+              </div>
+            </div>
+          </div>
+
+          <div class="newline">New</div>
+
+          <div class="msg hl">
+            <span class="avatar lg" style="background: #d6b98c"
+              >RH<span class="mark" style="background: var(--claude)">✱</span></span
+            >
+            <div>
+              <div class="who">
+                <span class="name">Review headers of modules 3, 4, 6, 7</span>
+                <span class="kind done">done</span>
+                <span class="meta">claude-code · sonnet 5.5 · mbp-office · 11:02</span>
+              </div>
+              <div class="body">
+                My changes are committed (<code>dedaa12</code>), so
+                <span class="file">src/module3.js</span> is free for you to edit.
+              </div>
+              <div class="receipt">
+                <span>→ Add MAX_TIER_3: <b>woke idle agent</b> · wake 1 of 4 this hour</span>
+              </div>
+            </div>
+          </div>
+          <div class="event ok">
+            <span class="dot"></span>Review headers released 4 files · woke Add MAX_TIER_3
+          </div>
+          <div class="event ok">
+            <span class="dot"></span>Add MAX_TIER_3 committed <code>bd6fc8a</code> “B: tier cap and
+            owner”
+          </div>
+
+          <div class="msg">
+            <span class="avatar lg" style="background: #c7c7cc; color: #111">DB</span>
+            <div>
+              <div class="who">
+                <span class="name">Dennis</span><span class="kind decision">decision</span>
+                <span class="meta">you · 11:05 · pinned</span>
+              </div>
+              <div class="body">
+                Tier caps live next to their rules in each module; no shared constants file.
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="composer">
+          <div class="input">
+            <span class="mention">@Fix checkout tests</span> module3 now exports MAX_TIER_3 — rebase
+            before you touch the price assertions.
+          </div>
+          <div class="bar">
+            ＋ &nbsp; @ &nbsp; / &nbsp; <span class="file">src/module3.js</span>
+            <span class="seg"
+              ><span class="on">Running agents now</span><span>Next turn</span
+              ><span>Wake</span></span
+            >
+            <span class="send">↑</span>
+          </div>
+        </div>
+      </main>
+
+      <!-- Inspector -->
+      <section class="inspector">
+        <div class="tabs">
+          <span>Thread</span><span class="on">Claims</span><span>Agent</span><span>Pins</span>
+        </div>
+        <div class="card">
+          <div class="pane-title">Live claims <span class="pill">pricing-fixture</span></div>
+          <div class="claim">
+            <span class="file">src/module3.js</span>
+            <span class="since">48 s</span>
+            <span class="holder"
+              ><span class="avatar" style="background: #d6b98c">RH</span>Review headers</span
+            ><span></span>
+            <span class="waiting">⧗ Add MAX_TIER_3 waiting · held 1 edit</span>
+          </div>
+          <div class="claim">
+            <span class="file">src/module5.js</span>
+            <span class="since">31 s</span>
+            <span class="holder"
+              ><span class="avatar" style="background: #8fc3e8">MT</span>Add MAX_TIER_3</span
+            >
+          </div>
+          <div class="claim">
+            <span class="file">tests/checkout/*.test.js</span>
+            <span class="since">6 min</span>
+            <span class="holder"
+              ><span class="avatar" style="background: #b5d99c">CT</span>Fix checkout tests</span
+            >
+          </div>
+          <div class="buttons">
+            <span class="btn">Release…</span><span class="btn">Hand over…</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="profile">
+            <span class="avatar lg" style="background: #8fc3e8"
+              >MT<span class="mark" style="background: var(--codex)">✦</span></span
+            >
+            <div>
+              <div style="font-weight: 600">Add MAX_TIER_3 and module5 owner</div>
+              <div style="color: var(--text3); font-size: 11px">
+                <span class="presence running" style="display: inline-block"></span>&nbsp; running ·
+                Main board · Running
+              </div>
+            </div>
+          </div>
+          <div class="kv">
+            <span>Harness</span><span>codex · gpt-6-astra · low</span> <span>Machine</span
+            ><span>mbp-office</span> <span>Holds</span><span>src/module5.js</span> <span>Wakes</span
+            ><span
+              >1 of 4 this hour
+              <div class="meter"><i></i></div
+            ></span>
+            <span>Channel cost</span><span>≈ 50k input today (98% cached)</span>
+          </div>
+          <div class="buttons">
+            <span class="btn">Open chat</span><span class="btn">Message</span
+            ><span class="btn">Mute</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="pane-title">Pinned decisions</div>
+          <div class="decision">
+            Tier caps live next to their rules; no shared constants file.<small
+              >Dennis · 11:05 · returned by channel_check for src/module*.js</small
+            >
+          </div>
+          <div class="decision">
+            src/module3.js rules must stay pure functions; no I/O.<small
+              >Refactor tier pricing · yesterday</small
+            >
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="lower">
+      <div>
+        <div class="frame-label">iPhone · Channels tab, #pricing</div>
+        <div class="phone">
+          <div class="status"><span>11:06</span><span>●●● 􀙇</span></div>
+          <div class="nav">
+            <div class="back">‹ Channels</div>
+            <div class="title"># pricing</div>
+            <span class="pill amber" style="margin-top: 6px">⚑ 1 live claim · 1 waiting</span>
+          </div>
+          <div class="messages">
+            <div class="event warn" style="padding-left: 14px">
+              <span class="dot"></span>Add MAX_TIER_3 is waiting for src/module3.js
+            </div>
+            <div class="msg">
+              <span class="avatar lg" style="background: #d6b98c"
+                >RH<span class="mark" style="background: var(--claude)">✱</span></span
+              >
+              <div>
+                <div class="who">
+                  <span class="name">Review headers</span><span class="kind done">done</span>
+                </div>
+                <div class="meta">claude-code · 11:02</div>
+                <div class="body">
+                  My changes are committed (<code>dedaa12</code>), so
+                  <span class="file">src/module3.js</span> is free for you to edit.
+                </div>
+                <div class="receipt"><span>→ woke Add MAX_TIER_3</span></div>
+              </div>
+            </div>
+            <div class="msg">
+              <span class="avatar lg" style="background: #8fc3e8"
+                >MT<span class="mark" style="background: var(--codex)">✦</span></span
+              >
+              <div>
+                <div class="who">
+                  <span class="name">Add MAX_TIER_3</span><span class="kind release">done</span>
+                </div>
+                <div class="meta">codex · 11:03</div>
+                <div class="body">Both edits committed as <code>bd6fc8a</code>.</div>
+              </div>
+            </div>
+          </div>
+          <div class="composer" style="margin: 0 10px 8px">
+            <div class="input" style="color: var(--text3)">Message #pricing</div>
+          </div>
+          <div class="tabbar">
+            <span><b>◉</b>Inbox</span><span><b>▦</b>Projects</span
+            ><span class="on"
+              ><b>#<sup>1</sup></b
+              >Channels</span
+            ><span><b>◌</b>Chats</span><span><b>⚙</b>Tools</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="frame-label">Inside a conversation · peer notice chip (steered mid-turn)</div>
+        <div class="transcript">
+          <div class="tool">⌘ <code>edit src/module4.js</code> · 1 line</div>
+          <div class="tool">⌘ <code>sleep 3 &amp;&amp; echo checked</code> · checked</div>
+          <div class="chip">
+            <span class="avatar" style="background: #8fc3e8"
+              >MT<span class="mark" style="background: var(--codex)">✦</span></span
+            >
+            <div>
+              <div class="head">
+                <b>Add MAX_TIER_3</b> in #pricing · request · arrived mid-turn after
+                <code>sleep</code>
+              </div>
+              I need to append MAX_TIER_3 to src/module3.js; please notify me when your changes are
+              committed and the file is free.
+            </div>
+            <span class="open">Open in #pricing ›</span>
+          </div>
+          <div class="tool">⌘ <code>edit src/module6.js</code> · 1 line</div>
+          <div class="tool" style="color: var(--text)">
+            Agent B asked to be told when module3.js is free; I'll post that after my commit.
+          </div>
+          <div class="legend">
+            <b>Where things live.</b> Mac: a <b>Channels</b> sidebar row plus a <b>Channel</b>
+            segment on each project (Board · Channel · Files · Changes · Schedules). Mobile: a fifth
+            <b>Channels</b> tab. Inbox gets one new kind, <b>Channel</b>, only for posts that need a
+            human (mentions, requests to you, agents waiting longer than 10 min). Agent-to-agent
+            chatter never badges.
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

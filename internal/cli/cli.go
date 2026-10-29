@@ -12,36 +12,20 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log/slog"
-	"net"
-	"net/http"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/app"
-	"github.com/dbpprt/dieter/internal/attachments"
-	"github.com/dbpprt/dieter/internal/buildinfo"
-	"github.com/dbpprt/dieter/internal/compatibility"
-	"github.com/dbpprt/dieter/internal/controlrtc"
-	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
-	"github.com/dbpprt/dieter/internal/envfile"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
-	"github.com/dbpprt/dieter/internal/harness"
-	"github.com/dbpprt/dieter/internal/linkauth"
-	"github.com/dbpprt/dieter/internal/machine"
+	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/link"
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/providerquota"
-	"github.com/dbpprt/dieter/internal/remotedesktop"
-	"github.com/dbpprt/dieter/internal/server"
-	"github.com/dbpprt/dieter/internal/serviceruntime"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/platform/buildinfo"
+	"github.com/dbpprt/dieter/internal/platform/config"
+	"github.com/dbpprt/dieter/internal/security/linkauth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -51,87 +35,54 @@ var Version = buildinfo.ReleaseVersion
 type CLI struct {
 	Out, Err io.Writer
 	In       io.Reader
-	Store    *store.Store
-	Runner   harness.Runner
+	// Root is the local DIETER_HOME holding this machine's enrollment and
+	// local API credentials. Commands never read central storage directly.
+	Root string
+	env  config.Client
 
 	GatewayURL string
 	Machine    string
 	Timeout    time.Duration
 	transport  *dieterTransport
 	gateway    *gatewayTransport
+	// chatScope is set while a "dieter chat" action runs a shared card
+	// implementation, so its help names the chat command.
+	chatScope bool
 }
 
-func New(data *store.Store) *CLI {
-	return &CLI{Out: os.Stdout, Err: os.Stderr, In: os.Stdin, Store: data, Runner: harness.NewSubprocessRunner(data.Root)}
+// New returns a CLI for the local DIETER_HOME root.
+func New(root string) *CLI {
+	return &CLI{Out: os.Stdout, Err: os.Stderr, In: os.Stdin, Root: config.ResolveHome(root), env: config.LoadClient(config.Environ())}
 }
-func (c *CLI) service() *app.Service { return app.New(c.Store, c.Runner) }
 
+// Main runs one client command and returns the process exit code. The daemon
+// entry points (serve, daemon start, and hidden workers) are dispatched to
+// internal/daemon by cmd/dieter before Main is called.
 func Main(args []string) int {
-	if len(args) > 0 && args[0] == "__service-stage" {
-		if err := stageServiceRuntime(args[1:], os.Stderr); err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
-			return 1
-		}
-		return 0
-	}
-	if len(args) > 0 && args[0] == "__harness-prepare" {
-		if err := prepareHarnessRuntime(args[1:], os.Stderr); err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
-			return 1
-		}
-		return 0
-	}
-	if len(args) > 0 && args[0] == "__daemon-update-worker" {
-		if err := machine.RunDaemonUpdateWorker(args[1:], os.Stderr); err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
-			return 1
-		}
-		return 0
-	}
-	if len(args) > 0 && args[0] == "__linux-update-worker" {
-		if err := machine.RunLinuxDaemonUpdateWorker(args[1:], os.Stderr); err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
-			return 1
-		}
-		return 0
-	}
-	global := flag.NewFlagSet("dieter", flag.ContinueOnError)
-	global.SetOutput(io.Discard)
-	root := global.String("store", store.DefaultRoot(), "DIETER_HOME data directory")
-	short := global.String("s", "", "DIETER_HOME data directory")
-	harnessConfig := global.String("harness-config", "", "harness registry YAML")
-	gatewayURL := global.String("gateway", "", "gateway origin; must match the local daemon enrollment")
-	machine := global.String("machine", "", "target enrolled daemon ID or exact name")
-	timeout := global.Duration("timeout", 15*time.Second, "command timeout")
-	help := global.Bool("help", false, "help")
-	global.BoolVar(help, "h", false, "help")
-	version := global.Bool("version", false, "version")
-	if err := global.Parse(args); err != nil {
+	globals, rest, err := config.ParseGlobals(args)
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
-	if *short != "" {
-		*root = *short
-	}
-	client := New(store.New(*root))
-	client.GatewayURL, client.Machine, client.Timeout = *gatewayURL, *machine, *timeout
+	client := New(globals.Home)
+	client.GatewayURL, client.Machine, client.Timeout = globals.Gateway, globals.Machine, globals.Timeout
 	defer client.Close()
-	if *help {
+	if globals.Help {
 		client.rootHelp()
 		return 0
 	}
-	if *version {
+	if globals.Version {
 		fmt.Fprintln(client.Out, Version)
 		return 0
 	}
-	if err := configureHarnessCatalog(client.Store.Root, *harnessConfig); err != nil {
-		fmt.Fprintln(client.Err, "error:", err)
-		return 1
-	}
-	if err := client.Run(global.Args()); err != nil {
+	if err := client.Run(rest); err != nil {
 		var remoteExit *remoteExitError
 		if errors.As(err, &remoteExit) {
 			return remoteExit.Code()
+		}
+		var childExit *exitStatusError
+		if errors.As(err, &childExit) {
+			return childExit.code
 		}
 		fmt.Fprintln(client.Err, "error:", err)
 		return 1
@@ -151,24 +102,12 @@ func (c *CLI) Run(args []string) error {
 		}
 		args = append(append([]string(nil), args[1:]...), "--help")
 	}
-	if handled, err := c.runDaemonCommand(args); handled {
-		return err
+	for _, command := range commandTable() {
+		if command.matches(args[0]) {
+			return command.run(c, args[1:])
+		}
 	}
-	switch args[0] {
-	case "setup":
-		return c.setup(args[1:])
-	case "doctor":
-		return c.doctor(args[1:])
-	case "serve":
-		return c.daemonStart(args[1:])
-	case "daemon":
-		return c.daemon(args[1:])
-	case "version":
-		fmt.Fprintln(c.Out, Version)
-		return nil
-	default:
-		return fmt.Errorf("unknown command %q; run dieter --help", args[0])
-	}
+	return fmt.Errorf("unknown command %q; run dieter --help", args[0])
 }
 
 func (c *CLI) rootHelp() {
@@ -187,32 +126,11 @@ Global options:
   --version                Print the version
 
 Commands:
-  machine      List, route, rename, revoke, inspect, or control machines
-  status       Show target daemon health, runtime, route, and state counts
-  harness      List target daemon harnesses, models, and options
-  quota        Show, summarize, refresh, and reset provider-account quotas
-  project      Create, browse, map hostnames, relocate, archive, and restore projects
-  board        Manage boards, retirement/restore, hostnames, workflows, and labels
-  card         Create, edit, read, present files, merge, and manage board conversations
-  chat         Manage standalone conversations and present files or URLs
-  workspace    Inspect changes and run durable Git/SCM operations
-  file         Browse and edit project/workspace files with revision checks
-  terminal     Create, attach, control, and close daemon-host PTYs
-  remote       Run resumable commands and native shells on a daemon host
-  screen       Share screens/clipboard, tune quality, inspect latency and recovery
-  schedule     Create, preview, dispatch, pause, and inspect schedules
-  kv           Shared portable JSON, ordering, and live account subscriptions
-  peer         Inspect and edit account peer settings (leaderless sync)
-  settings     Inspect and update prompt and daemon settings
-  prompt       Inspect, update, scope, and preview prompt templates
-  watch        Stream daemon state or sync frames as JSON Lines
-  storage      Print the target daemon's central storage path
-  doctor       Check local Linux/macOS runtime and service prerequisites
-  setup        Authorize, enroll, and install this local daemon service
-  daemon       Start, enroll, recover, inspect, or manage this local daemon service
-  serve        Alias for "dieter daemon start"
-  version      Print the version
-
+`)
+	for _, command := range commandTable() {
+		fmt.Fprintf(c.Out, "  %-13s%s\n", command.name, command.summary)
+	}
+	fmt.Fprint(c.Out, `
 Without --machine, operational commands use the running local daemon API. With
 --machine, the CLI uses the local daemon's enrollment to authenticate to the
 gateway, prefers direct TLS, then tries WebRTC (direct or TURN), and falls back
@@ -224,22 +142,6 @@ process starts are never replayed by watch recovery.
 
 Run "dieter help <command> [action]" or append --help at any command depth.
 `)
-}
-
-func configureHarnessCatalog(root, explicit string) error {
-	path := strings.TrimSpace(explicit)
-	if path == "" {
-		path = strings.TrimSpace(os.Getenv("DIETER_HARNESS_CONFIG"))
-	}
-	if path == "" {
-		candidate := filepath.Join(root, "harnesses.yaml")
-		if _, err := os.Stat(candidate); err == nil {
-			path = candidate
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("inspect harness config %q: %w", candidate, err)
-		}
-	}
-	return harness.ConfigureCatalog(path)
 }
 
 func flags(name string) *flag.FlagSet {
@@ -269,8 +171,7 @@ func interspersed(set *flag.FlagSet, args []string) []string {
 		if strings.HasPrefix(arg, "-") && arg != "-" {
 			opts = append(opts, arg)
 			name := strings.TrimLeft(arg, "-")
-			if before, _, ok := strings.Cut(name, "="); ok {
-				name = before
+			if strings.Contains(name, "=") {
 				continue
 			}
 			field := set.Lookup(name)
@@ -334,22 +235,26 @@ func attachmentParts(paths []string) ([]model.UIMessagePart, error) {
 		if !info.Mode().IsRegular() {
 			return nil, fmt.Errorf("attachment %q is not a regular file", path)
 		}
-		if info.Size() > attachments.MaxFileBytes {
+		if info.Size() > model.MaxAttachmentBytes {
 			return nil, fmt.Errorf("attachment %q must be at most 5 MB", path)
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return nil, fmt.Errorf("read attachment %q: %w", path, err)
 		}
-		parts = append(parts, attachments.FilePart(filepath.Base(path), "", data))
+		parts = append(parts, model.AttachmentPart(filepath.Base(path), "", data))
 	}
-	return attachments.NormalizeMessageParts(parts)
+	return model.NormalizeMessageParts(parts)
 }
 func jsonOut(out io.Writer, value any) error {
 	enc := json.NewEncoder(out)
 	enc.SetIndent("", "  ")
 	return enc.Encode(value)
 }
+
+// errDaemonEntryPoint is returned when a daemon entry point reaches the
+// client dispatcher; cmd/dieter routes those to internal/daemon.
+var errDaemonEntryPoint = errors.New("the daemon runs through the dieter executable; use `dieter daemon start`")
 
 func (c *CLI) daemon(args []string) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
@@ -369,7 +274,7 @@ Actions:
 	}
 	switch args[0] {
 	case "start":
-		return c.daemonStart(args[1:])
+		return errDaemonEntryPoint
 	case "service":
 		return c.daemonService(args[1:])
 	case "enroll":
@@ -389,351 +294,16 @@ Actions:
 	}
 }
 
-func (c *CLI) daemonStart(args []string) error {
-	const usage = `Usage: dieter daemon start [--addr ADDRESS] [--direct-addr ADDRESS --direct-host HOST] [--env-file PATH] [--service [--runtime PATH]] [--verbose]
-
-Run the machine-local Dieter data plane and, when enrolled, its persistent
-outbound gateway tunnel. The local API is always loopback-only. An enrolled
-daemon automatically advertises an authenticated loopback route; direct flags
-add an optional LAN, Tailscale, or public route.
-A package manager may supply --runtime with a fixed executable directory.
-Service startup activates a staged verified release there before workers begin.
-An enrolled daemon also verifies any gateway-signed endpoint relocation at startup,
-preserving its enrolled identity and shared account. Discovery failure retains
-its current address. Status reports the selected network endpoint.
-`
-	set := flags("daemon start")
-	addr := set.String("addr", "127.0.0.1:4242", "listen address")
-	directAddr := set.String("direct-addr", "", "optional authenticated TLS listen address")
-	directHost := set.String("direct-host", "", "host advertised for the direct TLS route")
-	directNetwork := set.String("direct-network", "lan", "direct route kind: loopback, lan, tailscale, or public")
-	envFile := set.String("env-file", "", "environment file (default DIETER_HOME/.env)")
-	serviceMode := set.Bool("service", false, "run as a managed service with bounded file logs")
-	runtimePath := set.String("runtime", "", "fixed service runtime; requires --service")
-	verbose := set.Bool("verbose", false, "verbose logs")
-	help, err := parse(set, args, usage, c.Out)
-	if help || err != nil {
-		return err
-	}
-	if err := c.Store.Ensure(); err != nil {
-		return err
-	}
-	runtimeLock, err := dieterdaemon.AcquireRuntimeLock(c.Store.Root)
-	if err != nil {
-		return err
-	}
-	defer runtimeLock.Close()
-	var serviceRuntime *serviceruntime.Service
-	if *runtimePath != "" {
-		if !*serviceMode {
-			return errors.New("--runtime requires --service")
-		}
-		executable, err := os.Executable()
-		if err != nil {
-			return err
-		}
-		if executable != filepath.Join(*runtimePath, "bin", "dieter") {
-			return errors.New("--runtime must be started directly from its fixed bin/dieter executable")
-		}
-		startupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
-		var reexec bool
-		serviceRuntime, reexec, err = serviceruntime.PlatformRuntime(*runtimePath).Start(startupCtx)
-		cancel()
-		if err != nil {
-			return fmt.Errorf("start fixed service runtime: %w", err)
-		}
-		defer serviceRuntime.Close()
-		if reexec {
-			return serviceRuntime.Exec(os.Args)
-		}
-	}
-	if err := envfile.Load(c.Store.Root, *envFile); err != nil {
-		return err
-	}
-	host, _, splitErr := net.SplitHostPort(*addr)
-	if splitErr != nil {
-		return fmt.Errorf("invalid listen address: %w", splitErr)
-	}
-	ip := net.ParseIP(host)
-	if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
-		return errors.New("unrestricted local harnesses require a loopback listen address")
-	}
-	logger, logPath, closeLog, err := daemonLogger(c.Store.Root, *serviceMode, *verbose, c.Err)
-	if err != nil {
-		return fmt.Errorf("open daemon log: %w", err)
-	}
-	defer closeLog()
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-	identity, identityErr := dieterdaemon.LoadIdentity(c.Store.Root)
-	enrolled := identityErr == nil && identity.Enrolled()
-	if enrolled {
-		discovery, done := context.WithTimeout(ctx, 10*time.Second)
-		endpoint, resolveErr := dieterdaemon.ResolveGatewayEndpoint(discovery, identity)
-		done()
-		if resolveErr != nil {
-			logger.Warn("gateway endpoint discovery unavailable; retaining enrolled endpoint", "error", resolveErr)
-		} else if endpoint != identity.GatewayURL {
-			if err := c.Store.RelocateDaemonGateway(identity.ID, identity.GatewayURL, identity.Issuer(), endpoint, identity.GatewaySigningPublicKey); err != nil {
-				return fmt.Errorf("persist verified gateway endpoint: %w", err)
-			}
-			identity, identityErr = dieterdaemon.LoadIdentity(c.Store.Root)
-			if identityErr != nil {
-				return identityErr
-			}
-			logger.Info("gateway endpoint relocated with enrollment preserved", "gateway", endpoint)
-		}
-	}
-	remoteDesktopOptions := remotedesktop.Options{Logger: logger, Source: remoteDesktopSourceOptions(logger)}
-	remoteDesktopOptions.Source.ClipboardDirectory = filepath.Join(c.Store.Root, "clipboard")
-	if runtime.GOOS == "linux" {
-		remoteDesktopOptions.Source.PortalStatePath = filepath.Join(c.Store.Root, "screen", "linux-portal-token")
-	}
-	if enrolled {
-		remoteDesktopOptions.Identity = remotedesktop.Identity{
-			DaemonID: identity.ID, GatewayURL: identity.Issuer(), Generation: identity.Generation,
-			PrivateKey: identity.PrivateKey, GatewaySigningPublicKey: identity.GatewaySigningPublicKey,
-		}
-	}
-	remoteDesktop := remotedesktop.New(remoteDesktopOptions)
-	remoteDesktopPresence := remoteDesktop.Presence
-	startedAt := time.Now().UTC().Format(time.RFC3339Nano)
-	gatewayState := dieterdaemon.GatewayNotEnrolled
-	if enrolled {
-		gatewayState = dieterdaemon.GatewayConnecting
-	}
-	serviceManager := strings.TrimSpace(os.Getenv("DIETER_SERVICE_MANAGER"))
-	if *serviceMode && serviceManager == "" {
-		if runtime.GOOS == "darwin" && *runtimePath != "" {
-			serviceManager = "homebrew"
-		} else {
-			serviceManager = "managed"
-		}
-	}
-	runtimeStatus := dieterdaemon.RuntimeStatus{
-		PID: os.Getpid(), Version: Version, State: "starting", StartedAt: startedAt,
-		ListenAddress: *addr, ServiceManaged: *serviceMode, ServiceManager: serviceManager, LogPath: logPath,
-		Enrolled: enrolled, GatewayState: gatewayState,
-	}
-	if enrolled {
-		runtimeStatus.DaemonID, runtimeStatus.DaemonName = identity.ID, identity.Name
-		runtimeStatus.GatewayURL = identity.GatewayURL
-	}
-	statusWriter, err := dieterdaemon.NewStatusWriter(c.Store.Root, runtimeStatus)
-	if err != nil {
-		return fmt.Errorf("initialize daemon status: %w", err)
-	}
-	defer func() { _ = statusWriter.Stop() }()
-	go runStatusHeartbeat(ctx, statusWriter)
-	var quotaSource *providerquota.Manager
-
-	var controlRTC *controlrtc.Manager
-	if enrolled {
-		var quotaRuntime interface {
-			RuntimeDirectory(context.Context) (string, error)
-		}
-		if shared, ok := c.Runner.(interface {
-			RuntimeDirectory(context.Context) (string, error)
-		}); ok {
-			quotaRuntime = shared
-		}
-		quotaSource = providerquota.NewWithRuntime(c.Store.Root, logger, quotaRuntime)
-		var routes []*gatewayv1.DirectCandidate
-		loopback, loopbackErr := newDaemonDirectRoute(identity, *addr, "loopback", "127.0.0.1:0", "127.0.0.1", "loopback", 1000)
-		if loopbackErr != nil {
-			logger.Warn("automatic local route is unavailable; clients will use the gateway relay", "error", loopbackErr)
-		} else {
-			routes = append(routes, loopback.candidate)
-			controlRTC = controlrtc.New(controlrtc.Identity{DaemonID: identity.ID, GatewayURL: identity.Issuer(), Generation: identity.Generation, GatewaySigningPublicKey: identity.GatewaySigningPublicKey}, loopback.listener.Addr().String())
-			serveDaemonDirectRoute(ctx, cancel, logger, loopback)
-			logger.Info("automatic authenticated local route enabled", "address", loopback.listener.Addr().String())
-		}
-		if strings.TrimSpace(*directAddr) != "" {
-			if strings.TrimSpace(*directHost) == "" {
-				return errors.New("--direct-host is required with --direct-addr")
-			}
-			direct, directErr := newDaemonDirectRoute(identity, *addr, "direct", *directAddr, *directHost, *directNetwork, 100)
-			if directErr != nil {
-				return directErr
-			}
-			routes = append(routes, direct.candidate)
-			serveDaemonDirectRoute(ctx, cancel, logger, direct)
-		}
-		go func() {
-			onCompatibilityPolicy := func(policy *gatewayv1.CompatibilityPolicy) error {
-				if policy == nil || policy.GetRevision() == "" || policy.GetMinimumClientVersion() == "" || policy.GetMinimumDaemonVersion() == "" {
-					return errors.New("gateway returned an incomplete compatibility policy")
-				}
-				if err := c.Store.SaveGatewayCompatibilityPolicy(store.GatewayCompatibilityPolicy{
-					GatewayReleaseVersion: policy.GetGatewayReleaseVersion(),
-					MinimumClientVersion:  policy.GetMinimumClientVersion(),
-					MinimumDaemonVersion:  policy.GetMinimumDaemonVersion(),
-					Revision:              policy.GetRevision(),
-				}); err != nil {
-					return err
-				}
-				return statusWriter.Update(func(value *dieterdaemon.RuntimeStatus) {
-					value.GatewayReleaseVersion = policy.GetGatewayReleaseVersion()
-					value.MinimumClientVersion = policy.GetMinimumClientVersion()
-					value.MinimumDaemonVersion = policy.GetMinimumDaemonVersion()
-					value.CompatibilityPolicyRevision = policy.GetRevision()
-				})
-			}
-			onUpdateRequired := func(policy *gatewayv1.CompatibilityPolicy) error {
-				if policy == nil || policy.GetRevision() == "" || policy.GetMinimumDaemonVersion() == "" {
-					return errors.New("gateway returned an incomplete compatibility policy")
-				}
-				key := compatibility.UpdateAttemptKey(identity.Issuer(), policy.GetRevision(), Version, policy.GetMinimumDaemonVersion())
-				receipt := store.CompatibilityUpdateReceipt{
-					Key: key, GatewayIssuer: identity.Issuer(), PolicyRevision: policy.GetRevision(),
-					InstalledVersion: Version, MinimumDaemonVersion: policy.GetMinimumDaemonVersion(),
-				}
-				admitted, err := c.Store.BeginCompatibilityUpdate(receipt)
-				if err != nil {
-					return fmt.Errorf("record automatic update attempt: %w", err)
-				}
-				if !admitted {
-					return errors.New("automatic update was already attempted for this gateway policy and installed release")
-				}
-				_ = statusWriter.Update(func(value *dieterdaemon.RuntimeStatus) {
-					value.GatewayReleaseVersion = policy.GetGatewayReleaseVersion()
-					value.MinimumClientVersion = policy.GetMinimumClientVersion()
-					value.MinimumDaemonVersion = policy.GetMinimumDaemonVersion()
-					value.CompatibilityPolicyRevision = policy.GetRevision()
-					value.AutomaticUpdateAttemptedAt = time.Now().UTC().Format(time.RFC3339Nano)
-					value.AutomaticUpdateOutcome = "admitted"
-				})
-				updateCtx, updateCancel := context.WithTimeout(context.Background(), 30*time.Second)
-				defer updateCancel()
-				err = machine.ExecuteRequiredUpdateAtRoot(updateCtx, c.Store.Root, policy.GetMinimumDaemonVersion())
-				outcome, message := "started", ""
-				if err != nil {
-					outcome, message = "failed", err.Error()
-				}
-				if finishErr := c.Store.FinishCompatibilityUpdate(key, outcome, message); finishErr != nil && err == nil {
-					err = finishErr
-				}
-				_ = statusWriter.Update(func(value *dieterdaemon.RuntimeStatus) { value.AutomaticUpdateOutcome = outcome })
-				return err
-			}
-			client := &dieterdaemon.GatewayClient{
-				Identity: identity, LocalTarget: *addr, Version: Version, Routes: routes,
-				Log: logger, OnStatus: statusWriter.Gateway, OnAcknowledged: statusWriter.GatewayAcknowledged,
-				OnCompatibilityPolicy: onCompatibilityPolicy, OnUpdateRequired: onUpdateRequired,
-				RemoteDesktopPresence: remoteDesktopPresence, ProviderQuotas: quotaSource,
-				ControlWebRTC: controlRTC != nil,
-			}
-			if tunnelErr := client.Run(ctx); tunnelErr != nil && ctx.Err() == nil {
-				var updateRequired *dieterdaemon.UpdateRequiredError
-				if errors.As(tunnelErr, &updateRequired) {
-					logger.Warn("gateway requires a daemon update", "error", tunnelErr)
-					return
-				}
-				logger.Error("gateway tunnel stopped", "error", tunnelErr)
-				cancel()
-			}
-		}()
-		go (&dieterdaemon.PeerSync{Identity: identity, Store: c.Store, Log: logger}).Run(ctx)
-	} else if identityErr != nil && !errors.Is(identityErr, os.ErrNotExist) {
-		return identityErr
-	} else {
-		logger.Warn("daemon is not enrolled; serving the loopback API only", "command", "dieter daemon enroll")
-	}
-	if err := statusWriter.Update(func(value *dieterdaemon.RuntimeStatus) { value.State = "running" }); err != nil {
-		return err
-	}
-	ready := func() error {
-		if err := notifyServiceReady(serviceManager); err != nil {
-			return err
-		}
-		return serviceRuntime.Ready()
-	}
-	var providerAccountKey func(string) string
-	if quotaSource != nil {
-		providerAccountKey = quotaSource.ActiveAccountKey
-	}
-	err = server.ListenDaemonReady(ctx, *addr, c.Store, c.Runner, logger, remoteDesktop, serviceRuntime.Activating(), ready, providerAccountKey, controlRTC)
-	if errors.Is(err, http.ErrServerClosed) {
-		return nil
-	}
-	return err
-}
-
-func remoteDesktopSourceOptions(logger *slog.Logger) remotedesktop.SourceOptions {
-	return remotedesktop.SourceOptions{
-		Kind:       strings.TrimSpace(os.Getenv("DIETER_REMOTE_DESKTOP_SOURCE")),
-		HelperPath: strings.TrimSpace(os.Getenv("DIETER_REMOTE_DESKTOP_HELPER")),
-		Display:    strings.TrimSpace(os.Getenv("DIETER_REMOTE_DESKTOP_DISPLAY")),
-		Logger:     logger,
-	}
-}
-
-type daemonDirectRoute struct {
-	listener  net.Listener
-	server    *dieterdaemon.DirectServer
-	candidate *gatewayv1.DirectCandidate
-}
-
-func newDaemonDirectRoute(identity *dieterdaemon.Identity, localTarget, id, listenAddress, advertisedHost, network string, priority int32) (*daemonDirectRoute, error) {
-	listener, err := net.Listen("tcp", strings.TrimSpace(listenAddress))
-	if err != nil {
-		return nil, err
-	}
-	closeListener := true
-	defer func() {
-		if closeListener {
-			_ = listener.Close()
-		}
-	}()
-	_, portText, err := net.SplitHostPort(listener.Addr().String())
-	if err != nil {
-		return nil, fmt.Errorf("resolve direct listener port: %w", err)
-	}
-	port, err := strconv.Atoi(portText)
-	if err != nil || port < 1 || port > 65535 {
-		return nil, fmt.Errorf("resolve direct listener port: invalid port %q", portText)
-	}
-	direct, err := dieterdaemon.NewDirectServer(identity, localTarget)
-	if err != nil {
-		return nil, err
-	}
-	closeListener = false
-	return &daemonDirectRoute{
-		listener: listener,
-		server:   direct,
-		candidate: &gatewayv1.DirectCandidate{
-			Id:                  strings.TrimSpace(id),
-			Host:                strings.TrimSpace(advertisedHost),
-			Port:                uint32(port),
-			Network:             strings.TrimSpace(network),
-			Priority:            priority,
-			CertificateIdentity: identity.ID,
-		},
-	}, nil
-}
-
-func serveDaemonDirectRoute(ctx context.Context, cancel context.CancelFunc, logger *slog.Logger, route *daemonDirectRoute) {
-	go func() {
-		if err := route.server.Serve(route.listener); err != nil && ctx.Err() == nil {
-			logger.Error("direct daemon listener stopped", "route", route.candidate.GetId(), "error", err)
-			cancel()
-		}
-	}()
-	go func() {
-		<-ctx.Done()
-		route.server.Stop()
-		_ = route.listener.Close()
-	}()
-}
-
 func (c *CLI) daemonEnroll(args []string) error {
 	const usage = `Usage: dieter daemon enroll [--gateway URL] [--name NAME] [--no-open]
 
 Enroll this machine with the GitHub account configured by the Dieter gateway.
+Retry incomplete enrollment with --gateway to correct the origin without changing
+the machine key. Completed enrollments retain their identity.
 Gateway URLs require HTTPS; HTTP is allowed only on literal loopback addresses.
 `
 	set := flags("daemon enroll")
-	gatewayURL := set.String("gateway", "https://gateway.getdieter.com", "gateway origin")
+	gatewayURL := set.String("gateway", buildinfo.DefaultGatewayURL, "gateway origin")
 	hostname, _ := os.Hostname()
 	name := set.String("name", hostname, "machine display name")
 	noOpen := set.Bool("no-open", false, "do not open the verification URL")
@@ -741,7 +311,7 @@ Gateway URLs require HTTPS; HTTP is allowed only on literal loopback addresses.
 	if help || err != nil {
 		return err
 	}
-	identity, err := dieterdaemon.LoadOrCreateEnrollmentIdentity(c.Store.Root, strings.TrimSpace(*name), strings.TrimRight(strings.TrimSpace(*gatewayURL), "/"))
+	identity, err := link.LoadOrCreateEnrollmentIdentity(c.Root, strings.TrimSpace(*name), strings.TrimRight(strings.TrimSpace(*gatewayURL), "/"))
 	if err != nil {
 		return err
 	}
@@ -750,9 +320,10 @@ Gateway URLs require HTTPS; HTTP is allowed only on literal loopback addresses.
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
 	defer cancel()
-	enrollment, err := dieterdaemon.BeginEnrollment(ctx, identity)
+	fmt.Fprintf(c.Out, "Enrollment gateway: %s\n", identity.GatewayURL)
+	enrollment, err := link.BeginEnrollment(ctx, identity)
 	if err != nil {
-		return err
+		return fmt.Errorf("begin enrollment at %s: %w", identity.GatewayURL, err)
 	}
 	fmt.Fprintf(c.Out, "Authorize this daemon with GitHub:\n%s\n\nCode: %s\n", enrollment.GetVerificationUrl(), enrollment.GetUserCode())
 	if !*noOpen {
@@ -765,13 +336,14 @@ Gateway URLs require HTTPS; HTTP is allowed only on literal loopback addresses.
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {
-		credential, completeErr := dieterdaemon.CompleteEnrollment(ctx, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
+		credential, completeErr := link.CompleteEnrollment(ctx, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
 		if completeErr == nil {
 			identity.GatewayIssuer = credential.GetGatewayIssuer()
-			if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetDaemonCaPem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
+			if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
 				return err
 			}
 			fmt.Fprintf(c.Out, "Enrolled %s as %s.\n", credential.GetDaemonName(), credential.GetDaemonId())
+			fmt.Fprintln(c.Out, "Next: start the daemon (`dieter setup` installs the service), then run `dieter device status`. On the account's first machine, `dieter device init` starts the device roster; any other machine shows a one-time code to type on a trusted device.")
 			return nil
 		}
 		if status.Code(completeErr) != codes.FailedPrecondition {
@@ -850,23 +422,22 @@ verify the restored daemon before revoking the replacement ID.
 	if err := validateRecoveredCredential(identity, *oldID, state.GetRevokedGeneration(), credential); err != nil {
 		return fmt.Errorf("gateway returned invalid recovered credential (local credential unchanged): %w", err)
 	}
-	if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetDaemonCaPem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
+	if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
 		return fmt.Errorf("save recovered daemon credential: %w", err)
 	}
 	fmt.Fprintf(c.Out, "Recovered %s from replacement %s. Restart the daemon service manually, verify %s is connected and working, then use `dieter machine revoke %s` only after that verification. The replacement is still active until revoked.\n", *oldID, replacementID, *oldID, replacementID)
 	return nil
 }
 
-func validateRecoveredCredential(identity *dieterdaemon.Identity, oldID string, expectedGeneration uint64, credential *gatewayv1.DaemonCredential) error {
+func validateRecoveredCredential(identity *link.Identity, oldID string, expectedGeneration uint64, credential *gatewayv1.DaemonCredential) error {
 	if credential == nil || credential.GetDaemonId() != oldID || expectedGeneration < 2 || credential.GetGeneration() != expectedGeneration {
 		return errors.New("daemon ID or generation does not match the revoked identity")
 	}
 	if credential.GetGatewayIssuer() != identity.Issuer() {
 		return errors.New("gateway issuer does not match this enrollment")
 	}
-	if !bytes.Equal(credential.GetDaemonCaPem(), identity.DaemonCAPEM) ||
-		!bytes.Equal(credential.GetGatewaySigningPublicKey(), identity.GatewaySigningPublicKey) {
-		return errors.New("gateway trust anchors do not match this enrollment")
+	if !bytes.Equal(credential.GetGatewaySigningPublicKey(), identity.GatewaySigningPublicKey) {
+		return errors.New("gateway signing key does not match this enrollment")
 	}
 	block, rest := pem.Decode(credential.GetCertificatePem())
 	if block == nil || block.Type != "CERTIFICATE" || len(rest) != 0 {
@@ -876,17 +447,11 @@ func validateRecoveredCredential(identity *dieterdaemon.Identity, oldID string, 
 	if err != nil {
 		return fmt.Errorf("parse recovered daemon certificate: %w", err)
 	}
+	// The enrollment certificate only authenticates this machine to the
+	// gateway; clients and peers trust the device roster instead.
 	public, ok := certificate.PublicKey.(ed25519.PublicKey)
-	if !ok || !public.Equal(identity.PublicKey) || certificate.Subject.CommonName != oldID ||
-		len(certificate.URIs) != 1 || certificate.URIs[0].String() != "spiffe://board/daemon/"+oldID {
+	if !ok || !public.Equal(identity.PublicKey) || certificate.Subject.CommonName != oldID {
 		return errors.New("recovered daemon certificate does not match the old ID and local key")
-	}
-	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM(identity.DaemonCAPEM) {
-		return errors.New("saved gateway daemon CA is invalid")
-	}
-	if _, err := certificate.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}); err != nil {
-		return fmt.Errorf("recovered daemon certificate is not valid under gateway CA: %w", err)
 	}
 	expires, err := time.Parse(time.RFC3339Nano, credential.GetExpiresAt())
 	if err != nil || !expires.Equal(certificate.NotAfter) || !expires.After(time.Now()) {
@@ -898,8 +463,10 @@ func validateRecoveredCredential(identity *dieterdaemon.Identity, oldID string, 
 func (c *CLI) daemonUnenroll(args []string) error {
 	const usage = `Usage: dieter daemon unenroll
 
-Revoke this machine at its Dieter gateway and remove the local enrollment
-credential. Projects, conversations, schedules, and harness settings remain.
+Revoke this machine at its Dieter gateway, remove it from the account's
+trusted devices, and delete its enrollment key and credential. A later
+enrollment creates a new key that a trusted device approves again. Projects,
+conversations, schedules, and harness settings remain.
 `
 	set := flags("daemon unenroll")
 	help, err := parse(set, args, usage, c.Out)
@@ -909,7 +476,7 @@ credential. Projects, conversations, schedules, and harness settings remain.
 	if set.NArg() != 0 {
 		return fmt.Errorf("daemon unenroll does not accept arguments\n\n%s", usage)
 	}
-	identity, err := dieterdaemon.LoadIdentity(c.Store.Root)
+	identity, err := link.LoadIdentity(c.Root)
 	if errors.Is(err, os.ErrNotExist) {
 		return errors.New("this daemon is not enrolled")
 	}
@@ -919,14 +486,25 @@ credential. Projects, conversations, schedules, and harness settings remain.
 	if !identity.Enrolled() {
 		return errors.New("this daemon is not enrolled")
 	}
+	if c.env.TurnToken != "" {
+		return errors.New("agents cannot unenroll this machine; ask the operator")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	name, id := identity.Name, identity.ID
-	if err := dieterdaemon.Unenroll(ctx, identity); err != nil {
+	// Leave the device roster while the enrollment can still sign. A machine
+	// that is not a trusted device has nothing to remove.
+	if trust, err := link.OpenTrust(identity, nil); err == nil && trust.State() == dieterv1.TrustState_TRUST_STATE_TRUSTED {
+		if _, err := trust.Revoke(ctx, trust.DeviceID()); err != nil {
+			fmt.Fprintf(c.Err, "Could not remove this machine from the trusted devices (%v); revoke it from a trusted device with `dieter device revoke %s`.\n", err, trust.DeviceID())
+		}
+		trust.Close()
+	}
+	if err := link.Unenroll(ctx, identity); err != nil {
 		return fmt.Errorf("unenroll daemon: %w", err)
 	}
-	if err := identity.ClearCredential(); err != nil {
-		return fmt.Errorf("remove local daemon credential after gateway unenrollment: %w", err)
+	if err := identity.Forget(); err != nil {
+		return fmt.Errorf("remove the local enrollment after gateway unenrollment: %w", err)
 	}
 	fmt.Fprintf(c.Out, "Unenrolled %s (%s). Restart the daemon before enrolling it again.\n", name, id)
 	return nil

@@ -1,0 +1,27 @@
+name: Dependabot auto-merge
+
+# Dependabot's daily "agents" and "agents-adapters" groups (agent CLIs and AI
+# SDK harness adapters in the harness runtime) merge as soon as a code owner
+# approves them and the required ci-ok check passes, so an approved bump ships
+# with the next nightly. Nothing merges unreviewed: their code runs in the
+# release builders.
+on: pull_request
+
+permissions: {}
+
+jobs:
+  agents:
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      startsWith(github.head_ref, 'dependabot/npm_and_yarn/internal/harness/runtime/agents-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Merge once approved and ci-ok passes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PR_URL"

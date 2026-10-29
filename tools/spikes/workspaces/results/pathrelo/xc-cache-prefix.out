@@ -1,0 +1,4 @@
+cache-prefix source cold: rc=0 29.55s; SwiftCompile=53 hits=0 misses=186
+cache-prefix view build: rc=0 20.49s; SwiftCompile=53 hits=68 misses=84
+  after edit: rc=0 SwiftCompile=3; runs: where=view
+  debug-info source path in view LibA F1.o: /^src

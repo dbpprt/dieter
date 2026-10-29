@@ -15,12 +15,29 @@ import (
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/remotedesktop"
+	"github.com/dbpprt/dieter/internal/testkit"
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
 var errScreenAnswerCollected = errors.New("fixture collected screen answer")
+
+func TestVirtualDisplayCLIRejectsInvalidDimensionsAndPresentationFlags(t *testing.T) {
+	t.Parallel()
+	client := &CLI{Out: &bytes.Buffer{}}
+	for _, args := range [][]string{
+		{"set", "session", "--width", "4294968576", "--height", "720"},
+		{"set", "session", "--width", "1282", "--height", "720", "--scale", "2"},
+		{"set", "session", "--width", "1280", "--height", "720", "--scale", "0"},
+		{"presented", "session", "--display", "virtual", "--generation", "2", "--scale", "1"},
+		{"presented", "session", "--display", "virtual", "--generation", "0"},
+	} {
+		if err := client.rpcVirtualDisplay(args); err == nil || !strings.Contains(err.Error(), "Usage:") {
+			t.Fatalf("invalid arguments reached daemon: %v: %v", args, err)
+		}
+	}
+}
 
 type screenAnswerOutput struct{ *bytes.Buffer }
 
@@ -92,6 +109,10 @@ func assertScreenSessionCLI(t *testing.T, client *CLI, output *bytes.Buffer, con
 	}
 	settings := webrtc.SettingEngine{}
 	settings.SetIncludeLoopbackCandidate(true)
+	// This in-process fixture must not depend on physical/VPN interfaces or
+	// external IPv6 routes on the operator's host.
+	settings.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4})
+	settings.SetInterfaceFilter(func(name string) bool { return name == "lo0" || name == "lo" })
 	viewer, err := webrtc.NewAPI(webrtc.WithSettingEngine(settings)).NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
 		t.Fatal(err)
@@ -110,7 +131,7 @@ func assertScreenSessionCLI(t *testing.T, client *CLI, output *bytes.Buffer, con
 	}
 	select {
 	case <-gathered:
-	case <-time.After(5 * time.Second):
+	case <-time.After(testkit.Budget(30 * time.Second)):
 		t.Fatal("fixture ICE gathering timed out")
 	}
 	offer = *viewer.LocalDescription()
@@ -222,6 +243,22 @@ func assertScreenSessionCLI(t *testing.T, client *CLI, output *bytes.Buffer, con
 	if err := protojson.Unmarshal([]byte(restored), &modes); err != nil || modes.Temporary || modes.CurrentModeId != "1080" {
 		t.Fatalf("restore display: %v %v", &modes, err)
 	}
+	// Virtual desktop mutations take the same local/direct-TLS/relay route.
+	var virtual dieterv1.RemoteDesktopVirtualDisplay
+	if err := protojson.Unmarshal([]byte(runDaemonCLI(t, client, output, "screen", "virtual", "status", id)), &virtual); err != nil || virtual.Active {
+		t.Fatalf("initial virtual state: %v %v", &virtual, err)
+	}
+	created := runDaemonCLI(t, client, output, "screen", "virtual", "set", id, "--width", "1280", "--height", "720", "--scale", "2", "--disable-physical")
+	if err := protojson.Unmarshal([]byte(created), &virtual); err != nil || !virtual.Active || !virtual.AwaitingPresentation || virtual.PhysicalDisabled {
+		t.Fatalf("virtual set: %v %v", &virtual, err)
+	}
+	if err := client.Run([]string{"screen", "virtual", "presented", id, "--display", "stale", "--generation", "1"}); err == nil {
+		t.Fatal("stale presentation crossed CLI route")
+	}
+	restoredVirtual := runDaemonCLI(t, client, output, "screen", "virtual", "restore", id)
+	if err := protojson.Unmarshal([]byte(restoredVirtual), &virtual); err != nil || virtual.Active {
+		t.Fatalf("virtual restore: %v %v", &virtual, err)
+	}
 	var state dieterv1.RemoteDesktopSessionState
 	if err = protojson.Unmarshal([]byte(runDaemonCLI(t, client, output, "screen", "status", id)), &state); err != nil {
 		t.Fatal(err)
@@ -238,7 +275,7 @@ func assertScreenSessionCLI(t *testing.T, client *CLI, output *bytes.Buffer, con
 	}
 	// Encoder diagnostics are asynchronous, and only exist after ICE starts
 	// the capture source. Exercise the real status operation on every route.
-	for deadline := time.Now().Add(10 * time.Second); state.GetEncoderConfiguration() == "" && time.Now().Before(deadline); {
+	for deadline := time.Now().Add(testkit.Budget(30 * time.Second)); state.GetEncoderConfiguration() == "" && time.Now().Before(deadline); {
 		time.Sleep(20 * time.Millisecond)
 		if err := protojson.Unmarshal([]byte(runDaemonCLI(t, client, output, "screen", "status", id)), &state); err != nil {
 			t.Fatal(err)
@@ -339,6 +376,7 @@ func assertScreenSessionCLI(t *testing.T, client *CLI, output *bytes.Buffer, con
 }
 
 func TestScreenClipboardRecognizesNativeTIFF(t *testing.T) {
+	t.Parallel()
 	for _, header := range []string{"II*\x00", "MM\x00*"} {
 		if got := screenClipboardMIME([]byte(header)); got != "image/tiff" {
 			t.Fatalf("TIFF identified as %s", got)
@@ -350,6 +388,7 @@ func TestScreenClipboardRecognizesNativeTIFF(t *testing.T) {
 }
 
 func TestScreenStartRejectsInvalidCodecOffline(t *testing.T) {
+	t.Parallel()
 	client := &CLI{Out: &bytes.Buffer{}}
 	err := client.rpcScreenStart([]string{"--request", "not-read.json", "--codec", "av1"})
 	if err == nil || err.Error() != "codec must be auto, h264, or hevc" {

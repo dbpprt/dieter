@@ -1,0 +1,7 @@
+trim source cold build:      535 pkgs, 98.3s
+clone: 4.12s
+trim view build:        1 pkgs rebuilt (1 module pkgs), 7.0s
+trim view go test: 4 cached / 4 ok
+vet rc=0
+trim after edit:        2 pkgs rebuilt: github.com/dbpprt/dieter/internal/cli github.com/dbpprt/dieter/cmd/dieter
+  cache: 476M	/Volumes/External/dieter-spike/pathrelo/go/cache-trim

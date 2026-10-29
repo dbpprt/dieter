@@ -1,3 +1,5 @@
+//go:build e2e
+
 package cli
 
 import (
@@ -10,23 +12,27 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/controlrtc"
-	"github.com/dbpprt/dieter/internal/daemon"
+	"github.com/dbpprt/dieter/internal/api"
 	"github.com/dbpprt/dieter/internal/gateway"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/linkauth"
-	"github.com/dbpprt/dieter/internal/peerstore"
-	"github.com/dbpprt/dieter/internal/server"
+	"github.com/dbpprt/dieter/internal/link"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
+	"github.com/dbpprt/dieter/internal/replication/peersync"
+	"github.com/dbpprt/dieter/internal/replication/schema"
+	"github.com/dbpprt/dieter/internal/security/linkauth"
+	"github.com/dbpprt/dieter/internal/security/localauth"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
+	"github.com/dbpprt/dieter/internal/testkit"
+	"github.com/dbpprt/dieter/internal/testkit/topology"
+	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 	"github.com/pion/turn/v5"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -38,24 +44,23 @@ import (
 )
 
 func TestPeerMachineSynchronizationRoutes(t *testing.T) {
-	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
+	t.Parallel()
 	for _, route := range []string{"direct-tls", "webrtc-direct", "webrtc-turn", "relay"} {
-		t.Run(route, func(t *testing.T) { testPeerMachines(t, route) })
+		t.Run(route, func(t *testing.T) {
+			t.Parallel()
+			testPeerMachines(t, route)
+		})
 	}
 }
 func testPeerMachines(t *testing.T, wantRoute string) {
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancel()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer listener.Close()
-	origin, _ := url.Parse("http://" + listener.Addr().String())
-	issuerURL, _ := url.Parse("https://durable-gateway.example.test")
-	config := gateway.Config{IssuerURL: issuerURL, Root: t.TempDir(), Address: listener.Addr().String(), PublicURL: origin, GitHubClientID: "test", GitHubSecret: "test", AllowedUserIDs: map[int64]struct{}{42: {}, 43: {}}, AuthSecret: []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour, NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid", DevInsecure: true, RTCTTL: 5 * time.Minute}
-	if wantRoute == "webrtc-turn" {
+	const issuer = "https://durable-gateway.example.test"
+	g := topology.StartGateway(t, topology.GatewayOptions{Accounts: []int64{42, 43}, Issuer: issuer, Configure: func(config *gateway.Config) {
+		if wantRoute != "webrtc-turn" {
+			return
+		}
 		socket, e := net.ListenPacket("udp4", "127.0.0.1:0")
 		if e != nil {
 			t.Fatal(e)
@@ -71,121 +76,53 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		defer turnServer.Close()
-	}
-	gatewayStore, err := gateway.OpenStore(config.Root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer gatewayStore.Close()
-	gatewayServer, err := gateway.NewServer(config, gatewayStore, logger)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = gatewayServer.Serve(listener) }()
-	defer gatewayServer.APIGRPC.Stop()
-	defer gatewayServer.RelayGRPC.Stop()
-	enroll := func(name string, account int64) *daemon.Identity {
-		t.Helper()
-		identity, e := daemon.LoadOrCreateEnrollmentIdentity(t.TempDir(), name, origin.String())
-		if e != nil {
-			t.Fatal(e)
-		}
-		enrollment, e := daemon.BeginEnrollment(ctx, identity)
-		if e != nil {
-			t.Fatal(e)
-		}
-		if e = gatewayStore.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), account, "owner"); e != nil {
-			t.Fatal(e)
-		}
-		credential, e := daemon.CompleteEnrollment(ctx, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
-		if e != nil {
-			t.Fatal(e)
-		}
-		identity.GatewayIssuer = credential.GetGatewayIssuer()
-		if e = identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetDaemonCaPem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); e != nil {
-			t.Fatal(e)
-		}
-		return identity
-	}
-	a, b, other := enroll("A", 42), enroll("B", 42), enroll("Other", 43)
-	scope := peerstore.Revision([]string{issuerURL.String(), "github:42"})
+		t.Cleanup(func() { _ = turnServer.Close() })
+	}})
+	a, b, other := topology.Machine(t, g, "A", 42), topology.Machine(t, g, "B", 42), topology.Machine(t, g, "Other", 43)
+	scope := crdt.Revision([]string{issuer, "github:42"})
 	sa, sb := store.New(a.Root), store.New(b.Root)
-	ba, err := sa.BindPeerAccount(scope, "github:42", a.ID, a.Issuer())
+	ba, err := sa.Replica.BindPeerAccount(scope, "github:42", a.ID, a.Issuer())
 	if err != nil {
 		t.Fatal(err)
 	}
-	bb, err := sb.BindPeerAccount(scope, "github:42", b.ID, b.Issuer())
+	bb, err := sb.Replica.BindPeerAccount(scope, "github:42", b.ID, b.Issuer())
 	if err != nil {
 		t.Fatal(err)
 	}
-	localListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	direct, err := newDaemonDirectRoute(b, localListener.Addr().String(), "peer-test", "127.0.0.1:0", "127.0.0.1", "loopback", 1000)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = direct.server.Serve(direct.listener) }()
-	defer direct.server.Stop()
-	defer direct.listener.Close()
-	var control *controlrtc.Manager
 	rtc := wantRoute == "webrtc-direct" || wantRoute == "webrtc-turn"
-	if rtc {
-		control = controlrtc.New(controlrtc.Identity{DaemonID: b.ID, GatewayURL: b.Issuer(), Generation: b.Generation, GatewaySigningPublicKey: b.GatewaySigningPublicKey}, direct.listener.Addr().String())
-		defer control.Close()
-	}
-	application := server.NewWithOptions(sb, logger, server.Options{ControlRTC: control, Runner: &fakeRunner{}})
-	httpServer := &http.Server{Handler: application.Handler()}
-	go func() { _ = httpServer.Serve(localListener) }()
-	defer httpServer.Close()
-	var routes []*gatewayv1.DirectCandidate
-	if wantRoute == "direct-tls" {
-		routes = []*gatewayv1.DirectCandidate{direct.candidate}
-	}
-	tunnelCtx, stopTunnel := context.WithCancel(ctx)
-	defer stopTunnel()
-	tunnelDone := make(chan struct{})
-	go func() {
-		defer close(tunnelDone)
-		_ = (&daemon.GatewayClient{Identity: b, LocalTarget: localListener.Addr().String(), Version: "0.4.1-dev", Routes: routes, ControlWebRTC: rtc, Log: logger}).Run(tunnelCtx)
-	}()
-	defer func() { stopTunnel(); <-tunnelDone }()
-	deadline := time.Now().Add(5 * time.Second)
-	for !gatewayServer.Hub.Online(b.ID) && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
-	if !gatewayServer.Hub.Online(b.ID) {
-		t.Fatal("peer not connected")
-	}
-	left, err := sa.PutPeerRecord(ba, "project-settings", "shared", "", []byte(`{"name":"From A"}`), false)
+	daemonB := topology.StartDaemon(t, g, topology.DaemonOptions{
+		Identity: b, Store: sb, Direct: wantRoute == "direct-tls", ControlWebRTC: rtc,
+		API: api.Options{Runner: newFakeRunner(), Catalog: testkit.MockCatalog()}, Logger: logger,
+	})
+	left, err := sa.Replica.PutPeerRecord(ba, "project-settings", "shared", "", []byte(`{"name":"From A"}`), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = sb.PutPeerRecord(bb, "project-settings", "shared", "", []byte(`{"name":"From B"}`), false)
+	_, err = sb.Replica.PutPeerRecord(bb, "project-settings", "shared", "", []byte(`{"name":"From B"}`), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner := &daemon.PeerSync{Identity: a, Store: sa, RelayOnly: wantRoute == "webrtc-turn"}
+	// A's daemon is played by this test: its device trust joins B's roster.
+	trustA := topology.Join(t, g, daemonB, a)
+	runner := &peersync.PeerSync{Identity: a, Trust: trustA, Store: sa, RelayOnly: wantRoute == "webrtc-turn"}
 	if err = runner.Round(ctx); err != nil {
 		t.Fatal(err)
 	}
-	da, err := sa.PeerData(scope)
+	da, err := sa.Replica.PeerData(scope)
 	if err != nil {
 		t.Fatal(err)
 	}
-	db, err := sb.PeerData(scope)
+	db, err := sb.Replica.PeerData(scope)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if da.LastRoute != wantRoute || peerstore.Revision(da.State) != peerstore.Revision(db.State) || len(da.Records["project-settings/shared"].Versions) != 2 {
+	if da.LastRoute != wantRoute || crdt.Revision(da.State) != crdt.Revision(db.State) || len(da.Records["project-settings/shared"].Versions) != 2 {
 		t.Fatalf("route=%s wanted=%s A=%+v B=%+v", da.LastRoute, wantRoute, da.State, db.State)
 	}
-	if _, err = sa.PutPeerRecord(ba, "project-settings", "shared", left.Revision(), []byte(`{}`), false); err == nil {
+	if _, err = sa.Replica.PutPeerRecord(ba, "project-settings", "shared", left.Revision(), []byte(`{}`), false); err == nil {
 		t.Fatal("stale write accepted")
 	}
-	resolved, err := sa.PutPeerRecord(ba, "project-settings", "shared", da.Records["project-settings/shared"].Revision(), []byte(`{"name":"Resolved"}`), false)
+	resolved, err := sa.Replica.PutPeerRecord(ba, "project-settings", "shared", da.Records["project-settings/shared"].Revision(), []byte(`{"name":"Resolved"}`), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,16 +131,16 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	if err = runner.Round(ctx); err != nil {
 		t.Fatal(err)
 	}
-	db, err = sb.PeerData(scope)
+	db, err = sb.Replica.PeerData(scope)
 	if err != nil || db.Records["project-settings/shared"].Revision() != resolved.Revision() {
 		t.Fatal(db, err)
 	}
 	// Exercise the actual CLI over local and routed transports.
 	cliRoot := store.New(a.Root)
-	client := New(cliRoot)
+	client := New(cliRoot.Root)
 
 	client.Machine = b.ID
-	client.GatewayURL = origin.String()
+	client.GatewayURL = g.URL
 	client.Timeout = 15 * time.Second
 	var output bytes.Buffer
 	client.Out = &output
@@ -263,44 +200,69 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	if err = runner.Round(ctx); err != nil {
 		t.Fatal(err)
 	}
-	shared, e := sa.PeerData(scope)
-	if e != nil || !peerstore.SelectedKV(shared.Records["kv.navigation/projects-folder.fixture.name"]).Deleted {
+	shared, e := sa.Replica.PeerData(scope)
+	if e != nil || !schema.SelectedKV(shared.Records["kv.navigation/projects-folder.fixture.name"]).Deleted {
 		t.Fatal(shared, e)
 	}
-	// Real raw local API, with no remote credentials, has the same record view.
-	local, err := grpc.NewClient(localListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	// Inbox pins use the same public KV command over the selected route.
+	for _, value := range []string{"true", "false"} {
+		if err = os.WriteFile(file, []byte(value), 0600); err != nil {
+			t.Fatal(err)
+		}
+		output.Reset()
+		args := []string{"kv", "put", "--namespace", "navigation", "--key", "inbox-pin.fixture.pinned", "--file", file, "--operation", "inbox-pin-" + value}
+		if value == "false" {
+			args = append(args, "--revision", entry.Revision)
+		}
+		if err = client.Run(args); err != nil {
+			t.Fatal(err)
+		}
+		entry.Reset()
+		if err = protojson.Unmarshal(output.Bytes(), &entry); err != nil {
+			t.Fatal(err)
+		}
+		if err = runner.Round(ctx); err != nil {
+			t.Fatal(err)
+		}
+		shared, e = sa.Replica.PeerData(scope)
+		if e != nil || string(schema.SelectedKV(shared.Records["kv.navigation/inbox-pin.fixture.pinned"]).Value) != value {
+			t.Fatal(shared, e)
+		}
+	}
+	// Real raw local API, with only the local token, has the same record view.
+	local, err := grpc.NewClient(daemonB.Address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithPerRPCCredentials(localauth.FileCredentials{Root: sb.Root}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer local.Close()
-	if _, err = dieterv1.NewDieterServiceClient(local).ListPeerRecords(ctx, &dieterv1.PeerSnapshotRequest{}); err != nil {
+	if _, err = dieterclient.New(local).ListPeerRecords(ctx, &dieterv1.PeerSnapshotRequest{}); err != nil {
 		t.Fatal(err)
 	}
 
 	// One logical project over real transports: attach a second machine, edit
 	// from its replica, and keep all execution/file operations on their owner.
-	if _, err := sa.CreateProject(store.CreateProjectInput{Name: "aaa-default", Path: initTestRepository(t, "default"), InitialBoardName: "Main"}); err != nil {
+	if _, err := sa.Kanban.CreateProject(kanban.CreateProjectInput{Name: "aaa-default", Path: initTestRepository(t, "default"), InitialBoardName: "Main"}); err != nil {
 		t.Fatal(err)
 	}
-	project, err := sa.CreateProject(store.CreateProjectInput{Name: "Shared repo", Path: initTestRepository(t, "owner-a"), InitialBoardName: "Main"})
+	project, err := sa.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Shared repo", Path: initTestRepository(t, "owner-a"), InitialBoardName: "Main"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	board, err := sa.InitialBoard(project.ID)
+	board, err := sa.Kanban.InitialBoard(project.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ownedA, err := sa.CreateChat(store.CreateCardInput{Project: project.ID, Title: "A conversation", WorkspaceMode: "project"})
+	ownedA, err := sa.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "A conversation", WorkspaceMode: "project"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Persist a real owner-signed pre-removal summary. Sync must validate its
 	// original bytes and proof, including when the owner is later offline.
-	beforeLegacy, err := sa.PeerData(scope)
+	beforeLegacy, err := sa.Replica.PeerData(scope)
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldSummary := beforeLegacy.Records[peerstore.Key("item", ownedA.ID+".summary")]
+	oldSummary := beforeLegacy.Records[crdt.Key("item", ownedA.ID+".summary")]
 	var legacyFields map[string]json.RawMessage
 	if err := json.Unmarshal(oldSummary.Versions[0].Value, &legacyFields); err != nil {
 		t.Fatal(err)
@@ -310,15 +272,15 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	}
 	legacyFields["commentCount"] = json.RawMessage("0")
 	legacyJSON, _ := json.Marshal(legacyFields)
-	legacyRecord, err := sa.PutPeerRecord(ba, "item", oldSummary.ID, oldSummary.Revision(), legacyJSON, false)
+	legacyRecord, err := sa.Replica.PutPeerRecord(ba, "item", oldSummary.ID, oldSummary.Revision(), legacyJSON, false)
 	if err != nil || len(legacyRecord.Versions[0].Provenance) == 0 {
 		t.Fatalf("signed legacy summary: %v", err)
 	}
 	if err = runner.Round(ctx); err != nil {
 		t.Fatal(err)
 	}
-	afterLegacy, err := sb.PeerData(scope)
-	if err != nil || afterLegacy.Records[peerstore.Key("item", oldSummary.ID)].Revision() != legacyRecord.Revision() {
+	afterLegacy, err := sb.Replica.PeerData(scope)
+	if err != nil || afterLegacy.Records[crdt.Key("item", oldSummary.ID)].Revision() != legacyRecord.Revision() {
 		t.Fatalf("legacy summary changed in transit: %v", err)
 	}
 	output.Reset()
@@ -332,7 +294,7 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	}
 	runDaemonCLI(t, client, &output, "board", "show", board.ID)
 	assertBoardRetirementCLI(t, client, &output, project.ID)
-	localAPIForProjects := dieterv1.NewDieterServiceClient(local)
+	localAPIForProjects := dieterclient.New(local)
 	created, err := localAPIForProjects.CreateCard(ctx, &dieterv1.CreateConversationRequest{ProjectId: project.ID, BoardId: board.ID, CheckoutId: checkout.Id, Title: "B conversation", Prompt: "Draft only", WorkspaceMode: "project", DeferStart: true, Provider: "mock", Model: "mock", CommandId: "shared-project-card", ClientId: "peer-test"})
 	if err != nil {
 		t.Fatal(err)
@@ -354,7 +316,7 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	if !bytes.Contains(output.Bytes(), []byte("initial")) {
 		t.Fatal(output.String())
 	}
-	second, err := sb.AttachCheckout(project.ID, initTestRepository(t, "owner-b-second"), "Second B checkout")
+	second, err := sb.Kanban.AttachCheckout(project.ID, initTestRepository(t, "owner-b-second"), "Second B checkout")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -365,31 +327,52 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 		t.Fatal(err)
 	}
 	name := "Edited without project creator"
-	if _, err = sb.UpdateProject(project.ID, &name, nil, nil); err != nil {
+	if _, err = sb.Kanban.UpdateProject(project.ID, &name, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err = runner.Round(ctx); err != nil {
 		t.Fatal(err)
 	}
-	mergedProject, err := sa.ResolveProject(project.ID)
+	mergedProject, err := sa.Kanban.ResolveProject(project.ID)
 	if err != nil || mergedProject.Name != name || len(mergedProject.Checkouts) != 3 {
 		t.Fatalf("shared project: %+v %v", mergedProject, err)
 	}
-	if _, err = sa.CardDetail(created.GetId()); err == nil {
+	if _, err = sa.Kanban.CardDetail(created.GetId()); err == nil {
 		t.Fatal("replication moved conversation ownership")
 	}
 	// Multi-page snapshots and unattended Run catch up without a native client.
-	for n := 0; n <= peerstore.PageSize; n++ {
-		if _, err = sb.PutPeerRecord(bb, "project-settings", "page_"+strconv.Itoa(n), "", []byte(`{"name":"Paged"}`), false); err != nil {
+	for n := 0; n <= crdt.PageSize; n++ {
+		if _, err = sb.Replica.PutPeerRecord(bb, "project-settings", "page_"+strconv.Itoa(n), "", []byte(`{"name":"Paged"}`), false); err != nil {
 			t.Fatal(err)
 		}
 	}
-	localAPI := dieterv1.NewDieterServiceClient(local)
+	localAPI := dieterclient.New(local)
 	first, err := localAPI.ListPeerRecords(ctx, &dieterv1.PeerSnapshotRequest{})
 	if err != nil || first.GetNextKey() == "" {
 		t.Fatal(first, err)
 	}
-	if _, err = sb.PutPeerRecord(bb, "project-settings", "changed_page", "", []byte(`{}`), false); err != nil {
+	// CLI pagination uses the same bounded SQL snapshots over every routed
+	// transport. The native clients use this core through the Connect adapter.
+	output.Reset()
+	if err = client.Run([]string{"peer", "list"}); err != nil {
+		t.Fatal(err)
+	}
+	var routedFirst dieterv1.PeerSnapshot
+	if err = protojson.Unmarshal(output.Bytes(), &routedFirst); err != nil || len(routedFirst.Records) != crdt.PageSize || routedFirst.NextKey == "" {
+		t.Fatalf("routed first page: %v", err)
+	}
+	output.Reset()
+	if err = client.Run([]string{"peer", "list", "--after", routedFirst.NextKey, "--snapshot", routedFirst.SnapshotRevision}); err != nil {
+		t.Fatal(err)
+	}
+	var routedNext dieterv1.PeerSnapshot
+	if err = protojson.Unmarshal(output.Bytes(), &routedNext); err != nil || len(routedNext.Records) == 0 {
+		t.Fatalf("routed continuation: %v", err)
+	}
+	if crdt.Key(routedNext.Records[0].Kind, routedNext.Records[0].Id) <= routedFirst.NextKey {
+		t.Fatal("routed continuation repeated a record")
+	}
+	if _, err = sb.Replica.PutPeerRecord(bb, "project-settings", "changed_page", "", []byte(`{}`), false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = localAPI.ListPeerRecords(ctx, &dieterv1.PeerSnapshotRequest{AfterKey: first.GetNextKey(), SnapshotRevision: first.GetSnapshotRevision()}); status.Code(err) != codes.Aborted {
@@ -406,7 +389,7 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	until := time.Now().Add(15 * time.Second)
 	caughtUp := false
 	for time.Now().Before(until) {
-		data, e := sa.PeerData(scope)
+		data, e := sa.Replica.PeerData(scope)
 		if e == nil && data.Records["project-settings/changed_page"].ID != "" {
 			caughtUp = true
 			break
@@ -419,13 +402,13 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 		t.Fatal("background sync did not catch up")
 	}
 	// Possession proof does not authorize another account or a revoked enrollment.
-	gatewayConn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	gatewayConn, err := grpc.NewClient(g.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer gatewayConn.Close()
 	gw := gatewayv1.NewGatewayServiceClient(gatewayConn)
-	auth := func(i *daemon.Identity) context.Context {
+	auth := func(i *link.Identity) context.Context {
 		return metadata.AppendToOutgoingContext(ctx,
 			"authorization", "Bearer "+linkauth.SignPeer(i.PrivateKey, i.ID, i.Issuer(), i.Generation, time.Now()),
 			"x-dieter-client-version", "0.4.1-dev",
@@ -434,7 +417,7 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	if _, err = gw.ResolveDaemonRoute(auth(other), &gatewayv1.DaemonRef{DaemonId: b.ID}); status.Code(err) != codes.NotFound {
 		t.Fatalf("cross-account route: %v", err)
 	}
-	if _, err = gatewayStore.RevokeDaemon(a.ID, 42); err != nil {
+	if _, err = g.Store.RevokeDaemon(a.ID, 42); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = gw.GetAccount(auth(a), &emptypb.Empty{}); status.Code(err) != codes.Unauthenticated {

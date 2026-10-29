@@ -1,111 +1,124 @@
+// Package store is the composition root of the central DIETER_HOME storage.
+// Each aggregate lives in a subpackage and imports only the aggregates named
+// in its parentheses, all listed above it, so the graph stays acyclic
+// (.golangci.yml enforces it with depguard):
+//
+//	home           DIETER_HOME paths, writer lock and admission, storage schema,
+//	               change counter and notifications, SQLite opener, file helpers
+//	replica        the account's peer replica: identity and binding, record
+//	               database, views, WAL effects, merge, order keys (home)
+//	leases         runtime turn leases (home)
+//	kv             replicated client key-value records (home, replica)
+//	settings       settings.yaml (home)
+//	commands       idempotent command results (home)
+//	channels       agent channel messages, deliveries and read state (home)
+//	mail           agent mail: message records, bodies and their state (home)
+//	kanban         the shared work directory: projects, checkouts, boards,
+//	               labels, cards and chats, turn admission (home, replica, leases)
+//	workspaces     workspaces, Git operations, pull requests, change comments
+//	               (home, kanban, leases)
+//	conversations  transcripts, journals, checkpoints, and the operations that
+//	               span a conversation and its card (home, replica, kanban, leases)
+//	schedules      schedules.db, occurrences, and the shared schedule outbox
+//	               (home, replica, kanban)
+//
+// New wires the hooks through which a lower aggregate reaches a higher one:
+// the writer flushes the schedule outbox before each change commits and
+// conversation checkpoints after it releases the lock; the replica validates
+// peer writes and adopts checkout records through kanban and schedule owners
+// through schedules; kanban reads workspace, pull request, token usage and
+// schedule summaries and calls Ensure. Ensure, Recover, RecoverEvery and Close
+// act on the composed store. The vaults and daemonstate packages build on the
+// composed store.
 package store
 
 import (
 	"context"
-	"crypto/rand"
-	"database/sql"
-	"encoding/hex"
 	"errors"
-	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sort"
-	"strings"
-	"sync"
 	"time"
 
-	md "github.com/dbpprt/dieter/internal/markdown"
-	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/store/channels"
+	"github.com/dbpprt/dieter/internal/store/commands"
+	"github.com/dbpprt/dieter/internal/store/conversations"
+	"github.com/dbpprt/dieter/internal/store/home"
+	"github.com/dbpprt/dieter/internal/store/kanban"
+	"github.com/dbpprt/dieter/internal/store/kv"
+	"github.com/dbpprt/dieter/internal/store/leases"
+	"github.com/dbpprt/dieter/internal/store/mail"
+	"github.com/dbpprt/dieter/internal/store/replica"
+	"github.com/dbpprt/dieter/internal/store/schedules"
+	"github.com/dbpprt/dieter/internal/store/settings"
+	"github.com/dbpprt/dieter/internal/store/workspaces"
 )
 
-var (
-	ErrNotFound = errors.New("not found")
-	writeMu     contextMutex
-)
-
+// Store composes the aggregates of one DIETER_HOME. The embedded home.Dir
+// carries the root, the writer lock and the change counter that every
+// aggregate shares.
 type Store struct {
-	peerWakeOnce     sync.Once
-	peerWake         chan struct{}
-	peerCacheMu      sync.Mutex
-	peerCacheAccount string
-	peerDBMu         sync.Mutex
-	peerDBs          map[string]*sql.DB
-	peerCacheData    PeerData
-	Root             string
-
-	conversations conversationCache
-	statuses      conversationStatusCache
-	checkpoints   conversationCheckpoints
-	syncJournal   syncJournalCache
-	notifications changeNotifications
-
-	usageMu             sync.Mutex
-	usageCache          map[string]cardUsageCacheEntry
-	compatibilityMu     sync.RWMutex
-	compatibilityPolicy *GatewayCompatibilityPolicy
-
-	scheduleDBMu           sync.Mutex
-	scheduleDB             *sql.DB
-	globalStateMu          contextMutex
-	globalStateCursor      SyncCursor
-	globalStateSnapshot    *model.State
-	globalStateMetadataKey string
+	*home.Dir
+	Replica       *replica.Store
+	Leases        *leases.Store
+	Kanban        *kanban.Store
+	Workspaces    *workspaces.Store
+	Conversations *conversations.Store
+	Schedules     *schedules.Store
+	KV            *kv.Store
+	Settings      *settings.Store
+	Commands      *commands.Store
+	Channels      *channels.Store
+	Mail          *mail.Store
 }
 
-func DefaultRoot() string {
-	if value := os.Getenv("DIETER_HOME"); value != "" {
-		return value
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ".dieter"
-	}
-	return filepath.Join(home, ".dieter")
-}
-
+// New opens the central store rooted at the absolute DIETER_HOME root. The
+// composition root resolves DIETER_HOME; an empty root is a programming error.
 func New(root string) *Store {
-	if root == "" {
-		root = DefaultRoot()
-	}
-	if !filepath.IsAbs(root) {
-		if absolute, err := filepath.Abs(root); err == nil {
-			root = absolute
-		}
-	}
-	return &Store{Root: root}
+	dir := home.New(root)
+	peers := replica.New(dir)
+	turns := leases.New(dir)
+	board := kanban.New(dir, peers, turns)
+	s := &Store{Dir: dir, Replica: peers, Leases: turns, Kanban: board,
+		Workspaces:    workspaces.New(dir, board, turns),
+		Conversations: conversations.New(dir, peers, board, turns),
+		Schedules:     schedules.New(dir, peers, board),
+		KV:            kv.New(dir, peers), Settings: settings.New(dir), Commands: commands.New(dir),
+		Channels: channels.New(dir), Mail: mail.New(dir)}
+	s.SetHooks(home.Hooks{
+		BeforeCommit: func() {
+			if err := s.Schedules.FlushOutbox(); err != nil {
+				slog.Error("schedule publication deferred to recovery", "error", err)
+			}
+		},
+		AfterRelease: s.Conversations.FlushCheckpoints,
+	})
+	s.Replica.SetHooks(replica.Hooks{
+		ValidateWrite: s.Kanban.ValidatePeerWrite,
+		AdoptRecord:   s.Kanban.AdoptOwnerRecord,
+		AdoptLocal:    s.Schedules.AdoptOwner,
+	})
+	s.Kanban.SetHooks(kanban.Hooks{
+		Ensure:             s.Ensure,
+		WorkspaceSummary:   s.Workspaces.WorkspaceSummary,
+		PullRequestSummary: s.Workspaces.PullRequestSummary,
+		TokenUsage:         s.Conversations.TokenUsage,
+		ScheduleOnBoard:    s.Schedules.OnBoard,
+	})
+	return s
 }
 
 // Close releases database handles owned by the store. Callers must stop
 // background work before closing the store.
 func (s *Store) Close() error {
-	s.closeNotifications()
-	s.peerDBMu.Lock()
-	peerDBs := s.peerDBs
-	s.peerDBs = nil
-	s.peerDBMu.Unlock()
-
-	s.scheduleDBMu.Lock()
-	scheduleDB := s.scheduleDB
-	s.scheduleDB = nil
-	s.scheduleDBMu.Unlock()
-
-	errs := make([]error, 0, len(peerDBs)+1)
-	for _, database := range peerDBs {
-		if err := database.Close(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	if scheduleDB != nil {
-		if err := scheduleDB.Close(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
+	s.CloseNotifications()
+	return errors.Join(s.Replica.Close(), s.Schedules.Close())
 }
 
+// Ensure checks the storage schema, creates the private DIETER_HOME layout,
+// rehardens its permissions, stamps the sync epoch and runs Recover.
 func (s *Store) Ensure() error {
-	if err := s.checkStorageSchema(); err != nil {
+	if err := s.CheckStorageSchema(); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(s.Root, 0o700); err != nil {
@@ -115,8 +128,8 @@ func (s *Store) Ensure() error {
 		return err
 	}
 	for _, dir := range []string{
-		s.cardDir(), s.archivedCardDir(), s.conversationDir(), s.runtimeDir(), s.syncDir(),
-		s.workspaceDir(), s.gitOperationDir(), s.pullRequestDir(), s.changeCommentDir(), s.recoveryDir(), filepath.Join(s.Root, "logs"), filepath.Join(s.runtimeDir(), "leases"),
+		s.CardDir(), s.ArchivedCardDir(), s.ConversationDir(), s.RuntimeDir(), s.SyncDir(),
+		s.WorkspaceDir(), s.GitOperationDir(), s.PullRequestDir(), s.ChangeCommentDir(), s.RecoveryDir(), filepath.Join(s.Root, "logs"), filepath.Join(s.RuntimeDir(), "leases"),
 	} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return err
@@ -125,247 +138,43 @@ func (s *Store) Ensure() error {
 			return err
 		}
 	}
-	if err := s.ensurePrivateMetadataPermissions(); err != nil {
+	if err := s.EnsurePrivateMetadataPermissions(); err != nil {
 		return err
 	}
-	if _, err := s.ensureSyncEpoch(); err != nil {
+	if err := s.EnsureSyncEpoch(); err != nil {
 		return err
 	}
-	release, err := s.beginWriteLock()
+	return s.Recover()
+}
+
+// Recover completes work a crashed or failed writer left behind: local file
+// effects of committed peer transactions, an uncommitted change counter, and
+// the schedule publication outbox. Ensure runs it at startup and the daemon
+// sweeps periodically (RecoverEvery). Writers do not repeat it: every peer
+// transaction applies all pending effects after its own commit, and every new
+// change first commits a pending predecessor (home.Dir.PrepareMutation).
+func (s *Store) Recover() error {
+	release, err := s.BeginWriteLock()
 	if err != nil {
 		return err
 	}
 	defer release()
-	return s.recoverCardWrites()
+	return errors.Join(s.Replica.RecoverEffects(), s.RecoverMutation(), s.Schedules.FlushOutbox())
 }
 
-// beginWriteLock serializes access both within the process and across CLI/server
-// processes without publishing a sync mutation. Conditional writers use it to
-// revalidate that a domain change is still necessary before advancing the sync
-// journal. Kernel file locking releases the cross-process lock on process exit.
-func (s *Store) beginWriteLock() (func(), error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	return s.beginWriteLockContext(ctx)
-}
-
-func (s *Store) beginWriteLockContext(ctx context.Context) (func(), error) {
-	requestedAt := time.Now()
-	if err := writeMu.LockContext(ctx); err != nil {
-		return nil, err
-	}
-	releaseProcess := true
-	defer func() {
-		if releaseProcess {
-			writeMu.Unlock()
-		}
-	}()
-	if err := os.MkdirAll(s.Root, 0o700); err != nil {
-		return nil, err
-	}
-	unlockAdmission, err := s.writerAdmission(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if releaseProcess {
-			unlockAdmission()
-		}
-	}()
-	if err := s.establishStorageSchema(); err != nil {
-		return nil, err
-	}
-	acquiredAt := time.Now()
-	releaseProcess = false
-	return func() {
-		held := time.Since(acquiredAt)
-		if held > 100*time.Millisecond || acquiredAt.Sub(requestedAt) > 100*time.Millisecond {
-			slog.Debug("store writer lock", "waitMs", acquiredAt.Sub(requestedAt).Milliseconds(), "heldMs", held.Milliseconds())
-		}
-		unlockAdmission()
-		writeMu.Unlock()
-	}, nil
-}
-
-// beginWrite acquires the central writer lock and publishes a durable sync
-// invalidation before the caller changes domain files.
-func (s *Store) beginWrite() (func(), error) {
-	return s.beginWriteKind("store_changed")
-}
-
-func (s *Store) beginWriteKind(kind string) (func(), error) {
-	release, err := s.beginWriteLock()
-	if err != nil {
-		return nil, err
-	}
-	if err := s.flushScheduleOutbox(); err != nil {
-		release()
-		return nil, err
-	}
-	if err := s.recoverCardWrites(); err != nil {
-		release()
-		return nil, err
-	}
-	event, err := s.prepareSyncMutation(kind)
-	if err != nil {
-		release()
-		return nil, err
-	}
-	return func() {
-		if err := s.flushScheduleOutbox(); err != nil {
-			slog.Error("schedule publication deferred to recovery", "error", err)
-		}
-		// A failed publication leaves the durable pending marker for reader/next
-		// writer recovery. Domain data is already durable; never hide a partial write.
-		if err := s.commitSyncMutation(event); err != nil {
-			slog.Error("sync commit deferred to recovery", "error", err)
-		}
-		release()
-		s.notifyChanges()
-		s.flushConversationCheckpoints()
-	}, nil
-}
-
-func (s *Store) cardDir() string              { return filepath.Join(s.Root, "cards") }
-func (s *Store) archivedCardDir() string      { return filepath.Join(s.Root, "archived-cards") }
-func (s *Store) conversationDir() string      { return filepath.Join(s.Root, "conversations") }
-func (s *Store) runtimeDir() string           { return filepath.Join(s.Root, "runtime") }
-func (s *Store) scheduleDatabasePath() string { return filepath.Join(s.Root, "schedules.db") }
-func (s *Store) workspaceDir() string         { return filepath.Join(s.Root, "workspaces") }
-func (s *Store) gitOperationDir() string      { return filepath.Join(s.Root, "git-operations") }
-func (s *Store) pullRequestDir() string       { return filepath.Join(s.Root, "pull-requests") }
-func (s *Store) changeCommentDir() string     { return filepath.Join(s.Root, "change-comments") }
-func (s *Store) recoveryDir() string          { return filepath.Join(s.Root, "recovery") }
-
-func (s *Store) settingsPath() string { return filepath.Join(s.Root, "settings.yaml") }
-
-func (s *Store) RuntimeDir() string { return s.runtimeDir() }
-
-func (s *Store) WorktreeRoot() string { return filepath.Join(s.Root, "worktrees") }
-
-func (s *Store) RecoveryDir() string { return s.recoveryDir() }
-
-func timestamp() string { return time.Now().UTC().Format(time.RFC3339Nano) }
-
-func newID(prefix string) string {
-	buffer := make([]byte, 6)
-	if _, err := rand.Read(buffer); err != nil {
-		return fmt.Sprintf("%s%x", prefix, time.Now().UnixNano())
-	}
-	return prefix + hex.EncodeToString(buffer)
-}
-
-func atomicWrite(path string, data []byte) error {
-	return atomicWriteMode(path, data, 0o600)
-}
-
-func atomicWriteMode(path string, data []byte, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".dieter-write-*")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	if err := tmp.Chmod(mode); err != nil {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		return err
-	}
-	dir, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
-}
-
-func writeMarkdown(path string, value any, body string) error {
-	data, err := md.Marshal(value, body)
-	if err != nil {
-		return err
-	}
-	return atomicWrite(path, data)
-}
-
-func readMarkdown(path string, value any) (string, error) {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return "", ErrNotFound
-	}
-	if err != nil {
-		return "", err
-	}
-	return md.Unmarshal(data, value)
-}
-
-func listMarkdown(dir string) ([]string, error) {
-	entries, err := os.ReadDir(dir)
-	if errors.Is(err, os.ErrNotExist) {
-		return []string{}, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	paths := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md") {
-			paths = append(paths, filepath.Join(dir, entry.Name()))
+// RecoverEvery runs Recover every interval until ctx ends. Failures are
+// retried on the next tick; the store stays usable meanwhile.
+func (s *Store) RecoverEvery(ctx context.Context, interval time.Duration, logger *slog.Logger) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := s.Recover(); err != nil && ctx.Err() == nil {
+				logger.Warn("storage recovery sweep failed; retrying", "error", err)
+			}
 		}
 	}
-	sort.Strings(paths)
-	return paths, nil
-}
-
-func hasGitDirectory(path string) bool {
-	info, err := os.Stat(filepath.Join(path, ".git"))
-	return err == nil && (info.IsDir() || info.Mode().IsRegular())
-}
-
-func normalizePath(path string) (string, error) {
-	if path == "" {
-		return "", errors.New("project path is required")
-	}
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return "", err
-	}
-	resolved, err := filepath.EvalSymlinks(abs)
-	if err == nil {
-		abs = resolved
-	}
-	info, err := os.Stat(abs)
-	if err != nil {
-		return "", fmt.Errorf("project path: %w", err)
-	}
-	if !info.IsDir() {
-		return "", errors.New("project path must be a directory")
-	}
-	if !hasGitDirectory(abs) {
-		return "", errors.New("project path must be a Git working tree (missing .git)")
-	}
-	return abs, nil
-}
-
-func matchRef(ref, id, name string) bool {
-	return ref == id || strings.EqualFold(ref, name)
-}
-
-func containsFold(value, query string) bool {
-	return strings.Contains(strings.ToLower(value), strings.ToLower(query))
 }

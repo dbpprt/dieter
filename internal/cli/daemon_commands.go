@@ -13,6 +13,7 @@ import (
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -50,58 +51,6 @@ func protoJSONLine(out io.Writer, value proto.Message) error {
 	}
 	_, err = fmt.Fprintf(out, "%s\n", raw)
 	return err
-}
-
-func (c *CLI) runDaemonCommand(args []string) (bool, error) {
-	if len(args) == 0 {
-		return false, nil
-	}
-	switch args[0] {
-	case "setup", "serve", "daemon", "version":
-		return false, nil
-	case "machine", "machines":
-		return true, c.machineCommand(args[1:])
-	case "quota", "quotas":
-		return true, c.quotaCommand(args[1:])
-	case "status":
-		return true, c.daemonBackedStatus(args[1:])
-	case "storage":
-		return true, c.daemonBackedStorage(args[1:])
-	case "harness", "harnesses":
-		return true, c.harnessCommand(args[1:])
-	case "project", "projects":
-		return true, c.rpcProject(args[1:])
-	case "board", "boards":
-		return true, c.rpcBoard(args[1:])
-	case "card", "cards":
-		return true, c.rpcCard(args[1:], false)
-	case "chat", "chats":
-		return true, c.rpcCard(args[1:], true)
-	case "workspace", "workspaces", "git":
-		return true, c.rpcWorkspace(args[1:])
-	case "schedule", "schedules":
-		return true, c.rpcSchedule(args[1:])
-	case "kv":
-		return true, c.rpcKV(args[1:])
-	case "peer":
-		return true, c.rpcPeer(args[1:])
-	case "settings":
-		return true, c.rpcSettings(args[1:])
-	case "prompt", "prompts":
-		return true, c.rpcPrompt(args[1:])
-	case "file", "files":
-		return true, c.rpcFile(args[1:])
-	case "terminal", "terminals":
-		return true, c.rpcTerminal(args[1:])
-	case "remote":
-		return true, c.rpcRemote(args[1:])
-	case "screen", "screens":
-		return true, c.rpcScreen(args[1:])
-	case "watch":
-		return true, c.rpcWatch(args[1:])
-	default:
-		return false, nil
-	}
 }
 
 func (c *CLI) daemonBackedStatus(args []string) error {
@@ -170,20 +119,22 @@ func (c *CLI) daemonBackedStorage(args []string) error {
 const machineHelp = `Usage: dieter machine <action>
 
 Actions:
-  list [--format table|json|jsonl|ids]       List enrolled machines
-  gateway                                    Show the connected gateway build
-  watch [--count N]                          Stream gateway presence as JSON Lines
-  show [MACHINE]                             Show gateway presence and route
-  info [MACHINE]                             Show live host telemetry (local by default)
-  rename --name NAME [MACHINE]               Rename an enrolled machine
-  revoke --confirm MACHINE_ID [MACHINE]       Revoke an enrolled machine
-  restart --confirm RESTART [MACHINE]
-  shutdown --confirm "SHUT DOWN" [MACHINE]
-  update --confirm UPDATE [MACHINE]           Update a managed daemon service
-  rtc [MACHINE]                              Get signed WebRTC configuration
-  connection <start|show|close>               Manage data-only WebRTC signaling
+  list [--format table|json|jsonl|ids]      List enrolled machines
+  gateway                                   Show the connected gateway build
+  watch [--count N]                         Stream gateway presence as JSON Lines
+  show [MACHINE]                            Show gateway presence and route
+  route [MACHINE]                           Inspect direct routes and relay channel health
+  info [MACHINE]                            Show live host telemetry
+  rename --name NAME [MACHINE]              Rename an enrolled machine
+  revoke --confirm MACHINE_ID [MACHINE]     Revoke an enrolled machine
+  restart --confirm RESTART [MACHINE]       Restart the machine
+  shutdown --confirm "SHUT DOWN" [MACHINE]  Shut the machine down
+  update --confirm UPDATE [MACHINE]         Update a managed daemon service
+  rtc [MACHINE]                             Get signed WebRTC configuration
+  connection <start|show|close>             Manage data-only WebRTC signaling
+  privacy <status|setup|on|off> [--key ID]  Control macOS local display/input privacy
 
-Pass MACHINE or global --machine to select a remote daemon. Info, restart, and
+Pass MACHINE or global --machine to select a remote daemon. Info, restart,
 shutdown and update target the local daemon when MACHINE is omitted. Update is
 non-interactive and available to Homebrew-managed macOS services and
 Dieter-managed Linux systemd user services.
@@ -216,6 +167,9 @@ func (c *CLI) gatewayMachine(ctx context.Context, reference string) (*gatewayTra
 }
 
 func (c *CLI) machineCommand(args []string) error {
+	if len(args) > 0 && args[0] == "privacy" {
+		return c.machinePrivacyCommand(args[1:])
+	}
 	if len(args) > 0 && args[0] == "connection" {
 		return c.controlConnectionCommand(args[1:])
 	}
@@ -326,8 +280,21 @@ func (c *CLI) machineCommand(args []string) error {
 	}
 }
 
+// machineActionUsage is the help of each machine action that names one machine.
+var machineActionUsage = map[string]string{
+	"show":     "Usage: dieter machine show [MACHINE]\n\nShow the machine's gateway presence and route as JSON.\n",
+	"route":    "Usage: dieter machine route [MACHINE]\n\nShow the machine's direct routes and relay channel health as JSON.\n",
+	"info":     "Usage: dieter machine info [MACHINE]\n\nShow live host telemetry; the local daemon when MACHINE is omitted.\n",
+	"rename":   "Usage: dieter machine rename --name NAME [MACHINE]\n",
+	"revoke":   "Usage: dieter machine revoke --confirm MACHINE_ID [MACHINE]\n\n--confirm must equal the machine's exact ID.\n",
+	"restart":  "Usage: dieter machine restart --confirm RESTART [MACHINE]\n",
+	"shutdown": "Usage: dieter machine shutdown --confirm \"SHUT DOWN\" [MACHINE]\n",
+	"update":   "Usage: dieter machine update --confirm UPDATE [MACHINE]\n\nUpdate a Homebrew-managed macOS or Dieter-managed Linux daemon service.\n",
+	"rtc":      "Usage: dieter machine rtc [MACHINE]\n\nPrint a signed WebRTC (ICE) configuration for the machine as JSON.\n",
+}
+
 func (c *CLI) machineAction(action string, args []string) error {
-	usage := fmt.Sprintf("Usage: dieter machine %s [options] [MACHINE]\n", action)
+	usage := machineActionUsage[action]
 	set := flags("machine " + action)
 	name := set.String("name", "", "new machine name")
 	confirmation := set.String("confirm", "", "required destructive-action confirmation")
@@ -395,7 +362,7 @@ func (c *CLI) machineAction(action string, args []string) error {
 	return nil
 }
 
-func (c *CLI) machineRPCAction(client dieterv1.DieterServiceClient, ctx context.Context, action, confirmation string) error {
+func (c *CLI) machineRPCAction(client dieterclient.Client, ctx context.Context, action, confirmation string) error {
 	if action == "info" {
 		value, err := client.GetMachineInformation(ctx, &emptypb.Empty{})
 		if err != nil {
@@ -461,24 +428,34 @@ func (c *CLI) harnessCommand(args []string) error {
 }
 
 func (c *CLI) rpcWatch(args []string) error {
-	const usage = `Usage: dieter watch state [--interval MS] [--count N]
-       dieter watch sync [--count N]
+	const usage = `Usage: dieter watch changes [--count N]
 
-Stream daemon state or durable sync frames as JSON Lines until interrupted.
-Sync sends workspace metadata, then deltas. Transport-only heartbeats prove
-reachability; observedCursor is diagnostic. Persist cursor only with a complete
-projection (projectionPending=false), never from a heartbeat.
+Stream this machine's change frames as JSON Lines until interrupted, the same
+stream native clients hold for every online machine. Frames name the
+machine's peer identity and account and carry its replica of the account's
+shared records (projects, boards, labels, cards, checkouts and KV, with every
+causal sibling and its rank), then what only it knows: owner-only details of
+the cards it runs and of its checkouts (paths, validation commands), the live
+activity of its conversations and its peer replication issues.
+resetRecords or resetLocal replaces what was received for that half. A frame
+with caughtUp has delivered everything the machine held; heartbeats repeat the
+cursor. Use --machine to watch another machine.
 ` + readRecoveryHelp
 	if groupHelp(args) {
 		fmt.Fprint(c.Out, usage)
 		return nil
 	}
-	set := flags("watch " + args[0])
-	interval := set.Int("interval", 1000, "minimum interval between state updates in milliseconds")
+	if args[0] != "changes" {
+		return fmt.Errorf("unknown watch action %q", args[0])
+	}
+	set := flags("watch changes")
 	count := set.Int("count", 0, "stop after N frames; zero streams until interrupted")
 	help, err := parse(set, args[1:], usage, c.Out)
 	if help || err != nil {
 		return err
+	}
+	if set.NArg() != 0 {
+		return errors.New("watch changes does not accept positional arguments")
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -486,46 +463,22 @@ projection (projectionPending=false), never from a heartbeat.
 	if err != nil {
 		return err
 	}
-	emitted := 0
-	switch args[0] {
-	case "state":
-		stream, err := client.WatchState(rpcCtx, &dieterv1.WatchStateRequest{IntervalMs: int32(*interval)})
+	stream, err := client.WatchChanges(rpcCtx, &dieterv1.ChangesRequest{HeartbeatMs: 5_000})
+	if err != nil {
+		return err
+	}
+	for emitted := 0; ; {
+		value, err := stream.Recv()
 		if err != nil {
+			return streamEnd(err, ctx)
+		}
+		if err := protoJSONLine(c.Out, value); err != nil {
 			return err
 		}
-		for {
-			value, err := stream.Recv()
-			if err != nil {
-				return streamEnd(err, ctx)
-			}
-			if err := protoJSONLine(c.Out, value); err != nil {
-				return err
-			}
-			emitted++
-			if *count > 0 && emitted >= *count {
-				return nil
-			}
+		emitted++
+		if *count > 0 && emitted >= *count {
+			return nil
 		}
-	case "sync":
-		stream, err := client.WatchSync(rpcCtx, &dieterv1.SyncRequest{HeartbeatMs: 5_000})
-		if err != nil {
-			return err
-		}
-		for {
-			value, err := stream.Recv()
-			if err != nil {
-				return streamEnd(err, ctx)
-			}
-			if err := protoJSONLine(c.Out, value); err != nil {
-				return err
-			}
-			emitted++
-			if *count > 0 && emitted >= *count {
-				return nil
-			}
-		}
-	default:
-		return fmt.Errorf("unknown watch action %q", args[0])
 	}
 }
 
@@ -537,4 +490,71 @@ func streamEnd(err error, ctx context.Context) error {
 		return nil
 	}
 	return err
+}
+
+// Privacy uses the same authenticated daemon routes as every machine operation.
+func (c *CLI) machinePrivacyCommand(args []string) error {
+	const group = "Usage: dieter [--machine ID|NAME] machine privacy <status|setup|on|off> [--key ID]\n\nBlack out local displays and block physical input while agents and remote control continue.\nSetup registers the privileged input helper; approve it and grant Input Monitoring on the target Mac.\nRequires macOS Accessibility permission. Stays on across disconnects and daemon restarts;\nunlock explicitly or reboot to clear. This is session privacy, not an authentication lock.\n"
+	if groupHelp(args) {
+		fmt.Fprint(c.Out, group)
+		return nil
+	}
+	action := args[0]
+	if action != "status" && action != "on" && action != "off" && action != "setup" {
+		return fmt.Errorf("unknown privacy action %q", action)
+	}
+	options := " [--key ID]"
+	if action == "status" {
+		options = ""
+	}
+	detail := map[string]string{
+		"status": "Show the privacy state (off, on or degraded) and whether its input helper needs setup, as JSON.",
+		"setup":  "Register the privileged input helper; approve it and grant Input Monitoring on the target Mac.",
+		"on":     "Black out local displays and block physical input; agents and remote control continue.\nIt stays on across disconnects and daemon restarts until off or a reboot.",
+		"off":    "Restore local displays and physical input.",
+	}[action]
+	if action != "status" {
+		detail += "\n--key is an idempotency key: reuse it only to retry this operation on this daemon."
+	}
+	usage := fmt.Sprintf("Usage: dieter [--machine ID|NAME] machine privacy %s%s\n\n%s\n", action, options, detail)
+	set := flags("machine privacy " + action)
+	key := new(string)
+	if action != "status" {
+		key = set.String("key", "", "idempotency key; reuse only for the same operation on the same daemon")
+	}
+	help, err := parse(set, args[1:], usage, c.Out)
+	if help || err != nil {
+		return err
+	}
+	if set.NArg() != 0 {
+		return errors.New("privacy does not accept positional arguments; use global --machine")
+	}
+	ctx, cancel := c.commandContext()
+	defer cancel()
+	client, rpcCtx, err := c.rpc(ctx)
+	if err != nil {
+		return err
+	}
+	if action == "status" {
+		value, err := client.GetMachineInformation(rpcCtx, &emptypb.Empty{})
+		if err != nil {
+			return err
+		}
+		if value.GetPrivacy() == nil {
+			return errors.New("daemon did not report privacy state")
+		}
+		return protoJSONOut(c.Out, value.GetPrivacy())
+	}
+	wire := dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_ON
+	if action == "off" {
+		wire = dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_OFF
+	}
+	if action == "setup" {
+		wire = dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_SETUP
+	}
+	value, err := client.PerformMachineOperation(rpcCtx, &dieterv1.MachineOperationRequest{Action: wire, IdempotencyKey: *key})
+	if err != nil {
+		return err
+	}
+	return protoJSONOut(c.Out, value)
 }
