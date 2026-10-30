@@ -809,6 +809,13 @@ func (runner *isolatedRunner) run(ctx context.Context, request harness.Request, 
 		defer timer.Stop()
 		select {
 		case <-ctx.Done():
+			if strings.Contains(request.Prompt, "mock-queue-slow-stop") {
+				// Model a provider finishing cleanup after acknowledging cancellation.
+				// Only this disposable fixture opts into the bounded delay.
+				cleanup := time.NewTimer(10 * time.Second)
+				defer cleanup.Stop()
+				<-cleanup.C
+			}
 			return ctx.Err()
 		case <-timer.C:
 		}

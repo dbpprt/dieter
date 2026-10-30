@@ -15,6 +15,86 @@ class MobileJourneyTest : EndToEnd() {
     @AfterTest fun cleanup() = tearDownRuntimes()
 
     @Test
+    fun sendNowWaitsForCleanupAndStartsTheQueuedMessageOnce() = e2e {
+        val fixture = fixture()
+        val runtime = runtime(fixture)
+        runtime.awaitConnected()
+        runtime.awaitLoaded(fixture)
+        val local =
+            runtime.createConversation(
+                com.getdieter.api.v1.CreateConversationRequest(
+                    project_id = fixture.projectId,
+                    title = "Send now",
+                    prompt = "mock-queue-hold mock-queue-slow-stop",
+                    provider = "mock",
+                    model = "mock",
+                    workspace_mode = "project",
+                ),
+                chat = true,
+            )
+        val store =
+            MobileStore(
+                RuntimeMobileCore(ClientApi(runtime)),
+                coroutineContext[ContinuationInterceptor] as CoroutineDispatcher,
+            )
+        try {
+            store.openConversation(local.id)
+            store.conversation.slice.await(30.seconds) {
+                it.state?.active_turn == true && !it.pending
+            }
+            store.conversation.send("mock-activity-reply")
+            val queued =
+                store.conversation.slice
+                    .await(20.seconds) {
+                        it.state?.queued_messages?.singleOrNull()?.can_send_now == true
+                    }
+                    .conversation!!
+                    .queue
+                    .single()
+            store.conversation.sendNow(queued.id)
+            store.conversation.sendNow(queued.id)
+            assertEquals(QueueActionPhase.WAITING, store.conversation.queueAction.value?.phase)
+            store.conversation.queueAction.await(
+                15.seconds,
+                describe = {
+                    "queue action: ${store.conversation.queueAction.value}; runtime: ${store.conversation.slice.value.state?.runtime}; error: ${store.error.value}"
+                },
+            ) {
+                it?.phase == QueueActionPhase.STOPPING
+            }
+            val stopping =
+                store.conversation.slice.await(10.seconds) { it.state?.runtime == "cancelling" }
+            assertEquals("", stopping.state?.steerable_id)
+            assertEquals(listOf(queued.id), stopping.conversation!!.queue.map { it.id })
+            // Even a duplicate caller using the core directly cannot cancel the queued turn.
+            store.core.dispatch(
+                Command(
+                    steer_conversation =
+                        SteerConversation(store.conversation.selectedCard.value, queued.id)
+                )
+            )
+            store.conversation.slice.await(30.seconds) { view ->
+                view.conversation?.queue?.isEmpty() == true &&
+                    view.messages.any {
+                        it.role == "assistant" &&
+                            it.parts.any { part -> part.text == "Activity reply ready to read." }
+                    } &&
+                    view.state?.working == false
+            }
+            assertEquals(
+                1,
+                store.conversation.slice.value.messages.count {
+                    it.role == "user" && it.parts.any { part -> part.text == "mock-activity-reply" }
+                },
+            )
+            store.conversation.queueAction.await { it == null }
+            assertEquals("", store.error.value)
+        } finally {
+            store.close()
+        }
+    }
+
+    @Test
     fun overviewTerminalStreamsWhileTheConversationSurfaceIsAlsoObserved() = e2e {
         val fixture = fixture()
         val runtime = runtime(fixture)

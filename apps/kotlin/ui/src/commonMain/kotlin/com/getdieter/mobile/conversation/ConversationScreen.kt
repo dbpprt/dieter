@@ -27,7 +27,9 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
@@ -156,6 +158,7 @@ private fun Transcript(
 ) {
     val busy by store.busy.collectAsState()
     val drafts by store.conversation.draftTexts.collectAsState()
+    val queueAction by store.conversation.queueAction.collectAsState()
     var draft by rememberSaveable(selected) { mutableStateOf(drafts[selected].orEmpty()) }
     LaunchedEffect(drafts[selected]) { if (draft.isEmpty()) draft = drafts[selected].orEmpty() }
     var agentSheet by remember(selected) { mutableStateOf(false) }
@@ -165,6 +168,7 @@ private fun Transcript(
     val coroutine = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
     var attachments by remember(selected) { mutableStateOf<List<MessagePart>>(emptyList()) }
+    var sending by remember(selected) { mutableStateOf(false) }
     val shares by store.sharing.composerShares.collectAsState()
     // Items shared from another app wait here for this conversation's composer.
     LaunchedEffect(selected, shares[selected]) {
@@ -330,44 +334,28 @@ private fun Transcript(
                         )
                     }
                 }
-                items(view.conversation?.queue.orEmpty(), key = { "queue-${it.id}" }) { queued ->
+                val queue = view.conversation?.queue.orEmpty()
+                items(queue, key = { "queue-${it.id}" }) { queued ->
+                    val action = queueAction?.takeIf { it.cardId == selected }
                     QueuedMessage(
-                        queued.text,
-                        canSteer = state?.steerable_id == queued.id,
+                        queued.id,
+                        queued.text.ifBlank {
+                            queued.parts
+                                .map { it.filename }
+                                .filter { it.isNotBlank() }
+                                .joinToString()
+                        },
+                        state = state?.queued_messages?.firstOrNull { it.id == queued.id },
+                        action = action?.takeIf { it.messageId == queued.id },
+                        enabled = action?.pending != true,
                         onEdit = {
-                            store.action {
-                                store.core
-                                    .dispatch(
-                                        Command(
-                                            remove_queued_message =
-                                                RemoveQueuedMessage(
-                                                    selected,
-                                                    queued.id,
-                                                    edit = true,
-                                                )
-                                        )
-                                    )
-                                    .queued_message
-                                    ?.let {
-                                        draft = it.text
-                                        attachments =
-                                            it.parts.filter { part -> part.type != "text" }
-                                        store.conversation.saveDraft(selected, draft)
-                                    }
+                            store.conversation.editQueued(queued.id) {
+                                draft = it.text
+                                attachments = it.parts.filter { part -> part.type != "text" }
                             }
                         },
-                        onRemove = {
-                            store.command(
-                                Command(
-                                    remove_queued_message = RemoveQueuedMessage(selected, queued.id)
-                                )
-                            )
-                        },
-                        onSteer = {
-                            store.command(
-                                Command(steer_conversation = SteerConversation(selected, queued.id))
-                            )
-                        },
+                        onRemove = { store.conversation.removeQueued(queued.id) },
+                        onSteer = { store.conversation.sendNow(queued.id) },
                     )
                 }
                 item("end") { Spacer(Modifier.height(1.dp)) }
@@ -440,16 +428,24 @@ private fun Transcript(
             },
             onAttach = pick,
             busy = busy,
+            sending = sending,
             bottomInset = padding.calculateBottomPadding(),
             onAgent = { agentSheet = true },
             onSend = {
-                val text = draft
-                val parts = attachments
-                store.action {
-                    store.conversation.send(text, selected, parts)
-                    draft = ""
-                    attachments = emptyList()
-                    following = true
+                if (!sending) {
+                    sending = true
+                    val text = draft
+                    val parts = attachments
+                    store.action {
+                        try {
+                            store.conversation.send(text, selected, parts)
+                            if (draft == text) draft = ""
+                            if (attachments == parts) attachments = emptyList()
+                            following = true
+                        } finally {
+                            sending = false
+                        }
+                    }
                 }
             },
         )
@@ -527,12 +523,35 @@ private fun WorkingIndicator(state: ConversationState) {
 
 @Composable
 private fun QueuedMessage(
+    id: String,
     text: String,
-    canSteer: Boolean,
+    state: QueuedMessageState?,
+    action: QueueActionState?,
+    enabled: Boolean,
     onEdit: () -> Unit,
     onRemove: () -> Unit,
     onSteer: () -> Unit,
 ) {
+    val pending = action?.pending == true
+    val stopping = state?.stopping == true
+    val sendingNow = pending && action.action == QueueAction.SEND_NOW
+    val status =
+        when {
+            action?.phase == QueueActionPhase.WAITING ->
+                when (action.action) {
+                    QueueAction.SEND_NOW -> "Waiting to send…"
+                    QueueAction.EDIT -> "Waiting to edit…"
+                    QueueAction.REMOVE -> "Waiting to remove…"
+                }
+            action?.phase == QueueActionPhase.SENDING ->
+                when (action.action) {
+                    QueueAction.SEND_NOW -> "Requesting send now…"
+                    QueueAction.EDIT -> "Returning to composer…"
+                    QueueAction.REMOVE -> "Removing…"
+                }
+            action?.phase == QueueActionPhase.STOPPING || stopping -> "Waiting for agent to stop…"
+            else -> state?.delivery_label.orEmpty()
+        }
     Column(
         Modifier.fillMaxWidth().padding(horizontal = ScreenMargin),
         horizontalAlignment = Alignment.End,
@@ -552,14 +571,69 @@ private fun QueuedMessage(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Glyph.CLOCK, null, tint = palette.secondaryLabel, size = 13.dp)
-            Spacer(Modifier.width(4.dp))
-            Text("Queued", style = type.footnote, color = palette.secondaryLabel)
-            Spacer(Modifier.width(4.dp))
-            DButton("Edit", onEdit, kind = ButtonKind.PLAIN)
-            DButton("Remove", onRemove, kind = ButtonKind.PLAIN)
-            if (canSteer) DButton("Send now", onSteer, kind = ButtonKind.PLAIN)
+        Row(
+            Modifier.padding(top = 8.dp).testTag("queue-status-$id").semantics(
+                mergeDescendants = true
+            ) {
+                liveRegion = LiveRegionMode.Polite
+            },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            if (pending || stopping || state?.pending_delivery == true)
+                Spinner(Modifier.size(13.dp))
+            else Icon(Glyph.CLOCK, null, tint = palette.secondaryLabel, size = 13.dp)
+            Text(status, style = type.footnote, color = palette.secondaryLabel)
+        }
+        if (sendingNow || stopping)
+            Text(
+                "The current turn must stop before this message starts.",
+                Modifier.padding(top = 4.dp),
+                style = type.caption,
+                color = palette.secondaryLabel,
+            )
+        action
+            ?.error
+            ?.takeIf { it.isNotBlank() }
+            ?.let {
+                Text(
+                    it,
+                    Modifier.padding(top = 6.dp).semantics { liveRegion = LiveRegionMode.Polite },
+                    style = type.footnote,
+                    color = palette.destructive,
+                )
+            }
+        FlowRow(
+            Modifier.padding(top = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            DButton(
+                "Edit",
+                onEdit,
+                Modifier.heightIn(min = 44.dp).testTag("queue-edit-$id"),
+                kind = ButtonKind.PLAIN,
+                enabled = enabled && state?.can_edit == true,
+                loading = pending && action.action == QueueAction.EDIT,
+            )
+            DButton(
+                "Remove",
+                onRemove,
+                Modifier.heightIn(min = 44.dp).testTag("queue-remove-$id"),
+                kind = ButtonKind.PLAIN,
+                enabled = enabled && state?.can_remove == true,
+                loading = pending && action.action == QueueAction.REMOVE,
+            )
+            if (state?.can_send_now == true || sendingNow)
+                DButton(
+                    if (sendingNow) "Sending…" else "Send now",
+                    onSteer,
+                    Modifier.heightIn(min = 44.dp).testTag("queue-send-now-$id"),
+                    kind = ButtonKind.TONAL,
+                    glyph = Glyph.ARROW_UP,
+                    enabled = enabled && state?.can_send_now == true,
+                    loading = sendingNow,
+                )
         }
     }
 }
