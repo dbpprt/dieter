@@ -56,7 +56,7 @@ interface MobileNativeViews {
 
     fun screen(scope: String, input: MobileScreenInput): MobileScreenSurface
 
-    /** Shows a UIMenu anchored to a rectangle (points) in [view]. */
+    /** Shows native choices anchored to a rectangle in [view]'s window (points). */
     fun showMenu(
         sections: List<NativeMenuSection>,
         view: UIView,

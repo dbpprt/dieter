@@ -50,7 +50,14 @@ class MobileStore(
     val schedules: SchedulesModel = SchedulesModel(context)
     val review: ReviewModel = ReviewModel(context, workspace.slice, boards, creation.defaults)
     val machines: MachinesModel = MachinesModel(context)
-    val terminals: TerminalsModel = TerminalsModel(context) { conversation.showsTerminal }
+    val terminals: TerminalsModel =
+        TerminalsModel(context) {
+            when (val top = routes.value.top) {
+                is MobileRoute.TerminalSession -> top.cardId.isNotEmpty()
+                is MobileRoute.Pane -> top.pane == CardPane.TERMINAL
+                else -> false
+            }
+        }
     val screens: ScreensModel = ScreensModel(context)
     val devices: DevicesModel = DevicesModel(context)
     val channels: ChannelsModel = ChannelsModel(context)
@@ -210,6 +217,7 @@ class MobileStore(
         screens.foreground(active)
         if (
             (routes.value.top as? MobileRoute.Tool)?.page == ToolPage.TERMINALS ||
+                routes.value.top is MobileRoute.TerminalSession ||
                 conversation.showsTerminal
         )
             terminals.foreground(active)
@@ -352,6 +360,7 @@ class MobileStore(
         const val SCHEDULES_SCOPE = "mobile-schedules"
         const val REVIEW_SCOPE = "mobile-review"
         const val TERMINAL_SCOPE = "mobile-terminals"
+        const val TERMINAL_OVERVIEW_SCOPE = "mobile-terminal-overview"
         const val PROJECT_CHANGES_SCOPE = "mobile-project-changes"
         const val PROCESSES_SCOPE = "mobile-processes"
         const val SCREEN_SCOPE = "mobile-screen"
