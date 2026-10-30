@@ -1,0 +1,57 @@
+# An overview shell must connect while the app also observes conversation terminals.
+appId: ${APP_ID}
+name: Terminals
+tags: [full]
+---
+- runFlow: common/launch.yaml
+- runFlow:
+    file: common/tab.yaml
+    env:
+      TAB: "Tools"
+- scrollUntilVisible:
+    element:
+      id: tool-terminals
+- tapOn:
+    id: tool-terminals
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: chrome-new-terminal
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: terminal-name
+- inputText: "Maestro terminal"
+- tapOn:
+    id: chrome-create-terminal
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Maestro terminal"
+    timeout: 20000
+- tapOn:
+    text: "Maestro terminal"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible:
+      id: terminal-view
+    timeout: 20000
+- waitForAnimationToEnd:
+    timeout: 2000
+- extendedWaitUntil:
+    visible: "Isolated E2E machine · Connected"
+    timeout: 20000
+- assertNotVisible: ".*Reconnecting.*"
+- takeScreenshot: terminal-connected
+- runFlow: common/back.yaml
+- tapOn:
+    text: "Maestro terminal"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible:
+      id: terminal-view
+    timeout: 20000
+- waitForAnimationToEnd:
+    timeout: 2000
+- extendedWaitUntil:
+    visible: "Isolated E2E machine · Connected"
+    timeout: 20000
+- assertNotVisible: ".*Reconnecting.*"
+- takeScreenshot: terminal-reopened

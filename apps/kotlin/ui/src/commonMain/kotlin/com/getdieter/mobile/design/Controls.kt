@@ -32,6 +32,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -503,6 +504,7 @@ internal fun PickerRow(
     onSelect: (String) -> Unit,
 ) {
     val menu = rememberMenuState()
+    val focus = LocalFocusManager.current
     var choosing by remember { mutableStateOf(false) }
     val nativeMenu = apple
     if (choosing && !nativeMenu) {
@@ -550,7 +552,10 @@ internal fun PickerRow(
             enabled = enabled && options.isNotEmpty(),
             onClick = {
                 if (!nativeMenu) choosing = true
-                else
+                else {
+                    // UIKit restores a focused Compose text field when its menu closes.
+                    // End that focus before presenting so the keyboard cannot cover choices.
+                    focus.clearFocus()
                     menu.show(
                         listOf(
                             MenuSection(
@@ -566,6 +571,7 @@ internal fun PickerRow(
                             )
                         )
                     )
+                }
             },
             trailing = {
                 Row(verticalAlignment = Alignment.CenterVertically) {

@@ -75,8 +75,32 @@ final class ComposeNativeViews: NSObject, @preconcurrency MobileNativeViews {
     private var menuAnchor: MenuAnchorButton?
 
     func showMenu(sections: [NativeMenuSection], view: UIView, x: Double, y: Double, width: Double, height: Double) {
+        // Compose focus and UIKit's active text input can settle on different frames.
+        // Dismiss native editing before the menu so the keyboard cannot cover its actions.
+        view.window?.endEditing(true)
         menuAnchor?.removeFromSuperview()
-        let button = MenuAnchorButton(frame: CGRect(x: x, y: y, width: max(width, 1), height: max(height, 1)))
+        let windowFrame = CGRect(x: x, y: y, width: max(width, 1), height: max(height, 1))
+        let localFrame = view.convert(windowFrame, from: view.window)
+        let actions = sections.flatMap(\.actions)
+        if actions.allSatisfy({ $0.sections.isEmpty }) {
+            // A native choice sheet stays in the presenting modal's hierarchy. A
+            // programmatic UIButton menu can move behind that modal and its keyboard.
+            let chooser = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
+            for action in actions {
+                let title = action.checked ? "✓ \(action.title)" : action.title
+                let choice = UIAlertAction(title: title, style: action.destructive ? .destructive : .default) { _ in
+                    action.perform()
+                }
+                choice.isEnabled = action.enabled
+                chooser.addAction(choice)
+            }
+            chooser.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+            chooser.popoverPresentationController?.sourceView = view
+            chooser.popoverPresentationController?.sourceRect = localFrame
+            Self.presenter(for: view)?.present(chooser, animated: true)
+            return
+        }
+        let button = MenuAnchorButton(frame: localFrame)
         button.menu = RouteChrome.menu(sections)
         button.showsMenuAsPrimaryAction = true
         button.backgroundColor = .clear

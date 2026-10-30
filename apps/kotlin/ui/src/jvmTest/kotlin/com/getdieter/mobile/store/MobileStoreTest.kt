@@ -5,6 +5,7 @@ import com.getdieter.api.v1.Project
 import com.getdieter.client.v1.*
 import com.getdieter.mobile.navigation.*
 import kotlin.test.*
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.*
@@ -174,6 +175,7 @@ class MobileStoreTest {
     @Test
     fun submittingWaitsForTheLastAgentChoice() = runTest {
         val chosen = com.getdieter.api.v1.HarnessSelection("codex", "new-model", "high")
+        val releasePreview = CompletableDeferred<Unit>()
         val core = FakeMobileCore { command ->
             when {
                 command.creation_preview != null ->
@@ -189,7 +191,14 @@ class MobileStoreTest {
                 else -> Result(done = Done())
             }
         }
-        val store = store(core)
+        val delayedCore =
+            object : MobileCore by core {
+                override suspend fun dispatch(command: Command): Result {
+                    if (command.creation_preview != null) releasePreview.await()
+                    return core.dispatch(command)
+                }
+            }
+        val store = MobileStore(delayedCore, StandardTestDispatcher(testScheduler))
         try {
             store.creation.agentSelection =
                 com.getdieter.api.v1.HarnessSelection("mock", "mock", "low")
@@ -202,7 +211,7 @@ class MobileStoreTest {
             }
             runCurrent()
             assertTrue(core.sentOf { it.create_conversation }.isEmpty())
-            advanceTimeBy(100)
+            releasePreview.complete(Unit)
             runCurrent()
             assertEquals("created", submission.await())
             val sent = core.sentOf { it.create_conversation }.single().intent!!
@@ -257,7 +266,7 @@ class MobileStoreTest {
             )
             runCurrent()
             val grids = core.sentOf { it.terminals }
-            assertTrue(grids.all { it.scope == MobileStore.TERMINAL_SCOPE })
+            assertTrue(grids.all { it.scope == MobileStore.TERMINAL_OVERVIEW_SCOPE })
             assertEquals((0 until 64).toList(), grids.map { it.grid?.columns })
         } finally {
             store.close()
