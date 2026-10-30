@@ -1,4 +1,4 @@
-# A queued follow-up visibly waits for slow provider cleanup, then runs once.
+# Queued input stays pinned while browsing history, then runs after slow cleanup.
 appId: ${APP_ID}
 name: Send queued message now
 tags: [full]
@@ -23,7 +23,24 @@ tags: [full]
 - tapOn:
     id: task-prompt
     waitToSettleTimeoutMs: 500
-- inputText: "mock-queue-hold mock-queue-slow-stop"
+- inputText: |-
+    mock-queue-hold mock-queue-slow-stop
+
+    Earlier context one.
+
+    Earlier context two.
+
+    Earlier context three.
+
+    Earlier context four.
+
+    Earlier context five.
+
+    Earlier context six.
+
+    Earlier context seven.
+
+    Earlier context eight.
 - tapOn:
     id: chrome-start-working
     waitToSettleTimeoutMs: 500
@@ -43,6 +60,28 @@ tags: [full]
     timeout: 20000
 - takeScreenshot: message-queued
 - assertVisible: "mock-activity-reply"
+- assertVisible:
+    id: composer-queue
+    containsChild:
+      text: "mock-activity-reply"
+- assertNotVisible:
+    id: conversation-timeline
+    containsChild:
+      text: "mock-activity-reply"
+- swipe:
+    from:
+      id: conversation-timeline
+    direction: DOWN
+- extendedWaitUntil:
+    visible: "Jump to latest"
+    timeout: 5000
+- assertVisible:
+    id: composer-queue
+    containsChild:
+      id: queue-send-now-.*
+- assertVisible:
+    id: message-input
+- takeScreenshot: message-queued-scrolled
 - tapOn:
     id: queue-send-now-.*
     waitToSettleTimeoutMs: 500
@@ -54,6 +93,9 @@ tags: [full]
     id: queue-send-now-.*
     enabled: false
 - takeScreenshot: send-now-stopping
+- tapOn:
+    text: "Jump to latest"
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: "Activity reply ready to read."
     timeout: 30000
@@ -61,4 +103,6 @@ tags: [full]
 - assertNotVisible: "Waiting for agent to stop…"
 - assertNotVisible:
     id: queue-send-now-.*
+- assertNotVisible:
+    id: composer-queue
 - takeScreenshot: send-now-delivered
