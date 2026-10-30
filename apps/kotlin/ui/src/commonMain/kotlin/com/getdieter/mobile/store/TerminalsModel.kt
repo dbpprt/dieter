@@ -19,6 +19,13 @@ internal constructor(
     internal val keys = MutableSharedFlow<TerminalKey>(extraBufferCapacity = 8)
     val screens = MutableStateFlow<Map<String, TerminalScreen>>(emptyMap())
 
+    private fun scope(inCard: Boolean = showsCard()) =
+        if (inCard) MobileStore.TERMINAL_SCOPE else MobileStore.TERMINAL_OVERVIEW_SCOPE
+
+    /** Capture the owning surface before queuing, including when a departing view deactivates. */
+    fun command(value: TerminalsCommand, inCard: Boolean = showsCard()) =
+        context.command(Command(terminals = value.copy(scope = scope(inCard))))
+
     internal fun subscribe() {
         context.observeAlways(Slice.SLICE_TERMINALS, MobileStore.TERMINAL_SCOPE) { update ->
             update.terminals?.let { value ->
@@ -31,7 +38,8 @@ internal constructor(
                 card.value = value.copy(output = emptyList())
             }
         }
-        context.observeAlways(Slice.SLICE_TERMINAL_OVERVIEW, MobileStore.TERMINAL_SCOPE) { update ->
+        context.observeAlways(Slice.SLICE_TERMINAL_OVERVIEW, MobileStore.TERMINAL_OVERVIEW_SCOPE) {
+            update ->
             update.terminal_overview?.let { value ->
                 if (!showsCard()) {
                     // Reduce every output delta before publishing conflatable snapshots.
@@ -64,7 +72,7 @@ internal constructor(
             Command(
                 terminals =
                     TerminalsCommand(
-                        scope = MobileStore.TERMINAL_SCOPE,
+                        scope = scope(),
                         input = TerminalInput(okio.ByteString.of(*data)),
                     )
             )
@@ -75,7 +83,7 @@ internal constructor(
             Command(
                 terminals =
                     TerminalsCommand(
-                        scope = MobileStore.TERMINAL_SCOPE,
+                        scope = scope(),
                         grid = TerminalGrid(columns, rows),
                     )
             )
@@ -86,7 +94,7 @@ internal constructor(
             Command(
                 terminal_overview =
                     TerminalOverviewCommand(
-                        scope = MobileStore.TERMINAL_SCOPE,
+                        scope = MobileStore.TERMINAL_OVERVIEW_SCOPE,
                         load = TerminalOverviewLoad(),
                     )
             )
@@ -107,14 +115,14 @@ internal constructor(
                 Command(
                     terminal_overview =
                         TerminalOverviewCommand(
-                            scope = MobileStore.TERMINAL_SCOPE,
+                            scope = MobileStore.TERMINAL_OVERVIEW_SCOPE,
                             select = TerminalId(terminalId),
                         )
                 )
         )
 
-    internal fun bindCard(daemonId: String, projectId: String, cardId: String) =
-        context.command(
+    internal fun bindCard(daemonId: String, projectId: String, cardId: String) = context.action {
+        context.core.dispatch(
             Command(
                 terminals =
                     TerminalsCommand(
@@ -129,13 +137,14 @@ internal constructor(
                     )
             )
         )
+        context.core.dispatch(
+            Command(terminals = TerminalsCommand(scope = MobileStore.TERMINAL_SCOPE, load = Step()))
+        )
+    }
 
     internal suspend fun foreground(active: Boolean) {
         context.core.dispatch(
-            Command(
-                terminals =
-                    TerminalsCommand(scope = MobileStore.TERMINAL_SCOPE, active = Toggle(active))
-            )
+            Command(terminals = TerminalsCommand(scope = scope(), active = Toggle(active)))
         )
     }
 

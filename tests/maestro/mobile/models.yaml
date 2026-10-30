@@ -1,0 +1,95 @@
+# Native picker callbacks apply promptly and keep working after changing agents.
+appId: ${APP_ID}
+name: Agent and model pickers
+tags: [full]
+---
+- runFlow: common/launch.yaml
+- tapOn:
+    text: "Projects"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Main"
+    timeout: 40000
+- tapOn:
+    text: "Main"
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: chrome-new-task
+    waitToSettleTimeoutMs: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+- takeScreenshot: model-form-opened
+- scrollUntilVisible:
+    element:
+      id: picker-agent
+- tapOn:
+    id: picker-agent
+    waitToSettleTimeoutMs: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+- takeScreenshot: model-agent-choices
+- tapOn:
+    text: "Claude Code"
+    waitToSettleTimeoutMs: 500
+- takeScreenshot: model-agent-selected
+- extendedWaitUntil:
+    visible:
+      id: picker-agent
+      containsChild:
+        text: "Claude Code"
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      id: picker-model
+- tapOn:
+    id: picker-model
+    waitToSettleTimeoutMs: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+- takeScreenshot: model-choices
+- tapOn:
+    text: "Opus"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible:
+      id: picker-model
+      containsChild:
+        text: "Opus"
+    timeout: 20000
+- tapOn:
+    id: picker-agent
+    waitToSettleTimeoutMs: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn:
+    text: "Codex"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible:
+      id: picker-agent
+      containsChild:
+        text: "Codex"
+    timeout: 20000
+- tapOn:
+    id: picker-model
+    waitToSettleTimeoutMs: 500
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn:
+    text: "GPT-6 Astra"
+    waitToSettleTimeoutMs: 500
+- takeScreenshot: model-picker-recovered
+- tapOn:
+    id: chrome-cancel-creation
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: chrome-new-task
+    waitToSettleTimeoutMs: 500
+- scrollUntilVisible:
+    element:
+      id: picker-model
+- assertVisible:
+    id: picker-model
+    containsChild:
+      text: "GPT-6 Astra"
+- takeScreenshot: model-picker-remembered

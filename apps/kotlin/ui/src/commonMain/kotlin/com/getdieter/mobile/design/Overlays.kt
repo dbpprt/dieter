@@ -25,7 +25,7 @@ import com.getdieter.mobile.app.*
 
 /** Native presentations for one iOS screen: UIMenu, UIAlertController and sheets. */
 internal interface NativeOverlays {
-    /** [x], [y], [width] and [height] are points in the screen's Compose view. */
+    /** [x], [y], [width] and [height] are points in the Compose view's native window. */
     fun showMenu(
         sections: List<MenuSection>,
         x: Double,

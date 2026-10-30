@@ -139,9 +139,9 @@ internal fun TerminalSessionScreen(store: MobileStore, terminalId: String, cardI
                     )
                 }
         else view.entries.firstOrNull { it.id == terminalId }
-    fun send(value: TerminalsCommand) =
-        store.command(Command(terminals = value.copy(scope = MobileStore.TERMINAL_SCOPE)))
-    DisposableEffect(store) {
+    val shellId = entry?.terminal?.id ?: terminalId
+    fun send(value: TerminalsCommand) = store.terminals.command(value, inCard = cardId.isNotEmpty())
+    DisposableEffect(store, cardId) {
         send(TerminalsCommand(active = Toggle(true)))
         onDispose { send(TerminalsCommand(active = Toggle(false))) }
     }
@@ -214,7 +214,7 @@ internal fun TerminalSessionScreen(store: MobileStore, terminalId: String, cardI
             entry?.terminal?.name.orEmpty(),
             "Save",
             {
-                send(TerminalsCommand(rename = TerminalRename(terminalId, it)))
+                send(TerminalsCommand(rename = TerminalRename(shellId, it)))
                 rename = false
             },
             { rename = false },
@@ -226,7 +226,7 @@ internal fun TerminalSessionScreen(store: MobileStore, terminalId: String, cardI
                 ?: "This ends the shell and clears its scrollback.",
             "Close",
             {
-                send(TerminalsCommand(close = TerminalId(terminalId)))
+                send(TerminalsCommand(close = TerminalId(shellId)))
                 closing = false
                 store.pop()
             },
@@ -311,7 +311,7 @@ internal fun TerminalEditor(store: MobileStore, onDismiss: () -> Unit) {
                         Command(
                             terminal_overview =
                                 TerminalOverviewCommand(
-                                    scope = MobileStore.TERMINAL_SCOPE,
+                                    scope = MobileStore.TERMINAL_OVERVIEW_SCOPE,
                                     create =
                                         CreateOverviewTerminal(
                                             daemon_id = machine,
@@ -364,7 +364,7 @@ internal fun TerminalEditor(store: MobileStore, onDismiss: () -> Unit) {
             MobileTextField(
                 name,
                 { name = it },
-                Modifier.fillMaxWidth(),
+                Modifier.fillMaxWidth().testTag("terminal-name"),
                 label = { Text("Name") },
                 placeholder = { Text("Terminal name (optional)") },
                 singleLine = true,
