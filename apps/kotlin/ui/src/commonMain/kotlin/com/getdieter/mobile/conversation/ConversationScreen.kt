@@ -334,30 +334,6 @@ private fun Transcript(
                         )
                     }
                 }
-                val queue = view.conversation?.queue.orEmpty()
-                items(queue, key = { "queue-${it.id}" }) { queued ->
-                    val action = queueAction?.takeIf { it.cardId == selected }
-                    QueuedMessage(
-                        queued.id,
-                        queued.text.ifBlank {
-                            queued.parts
-                                .map { it.filename }
-                                .filter { it.isNotBlank() }
-                                .joinToString()
-                        },
-                        state = state?.queued_messages?.firstOrNull { it.id == queued.id },
-                        action = action?.takeIf { it.messageId == queued.id },
-                        enabled = action?.pending != true,
-                        onEdit = {
-                            store.conversation.editQueued(queued.id) {
-                                draft = it.text
-                                attachments = it.parts.filter { part -> part.type != "text" }
-                            }
-                        },
-                        onRemove = { store.conversation.removeQueued(queued.id) },
-                        onSteer = { store.conversation.sendNow(queued.id) },
-                    )
-                }
                 item("end") { Spacer(Modifier.height(1.dp)) }
             }
             JumpToLatest(
@@ -411,6 +387,52 @@ private fun Transcript(
             ) {
                 Spinner(Modifier.size(14.dp))
                 Text("Refreshing…", style = type.caption, color = palette.secondaryLabel)
+            }
+        }
+        val queue = view.conversation?.queue.orEmpty()
+        if (queue.isNotEmpty()) {
+            // Keep pending input beside the composer, independent of transcript scrolling.
+            // A long queue scrolls within its own bounded area so the input stays reachable.
+            BoxWithConstraints(Modifier.fillMaxWidth().background(palette.background)) {
+                Column(Modifier.fillMaxWidth().heightIn(max = minOf(220.dp, maxHeight * .4f))) {
+                    if (queue.size > 1)
+                        Text(
+                            "${queue.size} queued messages",
+                            Modifier.padding(horizontal = ScreenMargin, vertical = 4.dp),
+                            style = type.footnote,
+                            color = palette.secondaryLabel,
+                        )
+                    LazyColumn(
+                        Modifier.fillMaxWidth().weight(1f, fill = false).testTag("composer-queue"),
+                        contentPadding = PaddingValues(vertical = 6.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(queue, key = { it.id }) { queued ->
+                            val action = queueAction?.takeIf { it.cardId == selected }
+                            QueuedMessage(
+                                queued.id,
+                                queued.text.ifBlank {
+                                    queued.parts
+                                        .map { it.filename }
+                                        .filter { it.isNotBlank() }
+                                        .joinToString()
+                                },
+                                state = state?.queued_messages?.firstOrNull { it.id == queued.id },
+                                action = action?.takeIf { it.messageId == queued.id },
+                                enabled = action?.pending != true,
+                                onEdit = {
+                                    store.conversation.editQueued(queued.id) {
+                                        draft = it.text
+                                        attachments =
+                                            it.parts.filter { part -> part.type != "text" }
+                                    }
+                                },
+                                onRemove = { store.conversation.removeQueued(queued.id) },
+                                onSteer = { store.conversation.sendNow(queued.id) },
+                            )
+                        }
+                    }
+                }
             }
         }
         Composer(
@@ -567,7 +589,7 @@ private fun QueuedMessage(
                 text,
                 style = type.body,
                 color = palette.secondaryLabel,
-                maxLines = 6,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
         }
