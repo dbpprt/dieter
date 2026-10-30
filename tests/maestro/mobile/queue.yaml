@@ -1,0 +1,64 @@
+# A queued follow-up visibly waits for slow provider cleanup, then runs once.
+appId: ${APP_ID}
+name: Send queued message now
+tags: [full]
+---
+- runFlow: common/launch.yaml
+- tapOn:
+    text: "Projects"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Main"
+    timeout: 40000
+- tapOn:
+    text: "Main"
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: chrome-new-task
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: task-title
+    waitToSettleTimeoutMs: 500
+- inputText: "Send now test"
+- tapOn:
+    id: task-prompt
+    waitToSettleTimeoutMs: 500
+- inputText: "mock-queue-hold mock-queue-slow-stop"
+- tapOn:
+    id: chrome-start-working
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible:
+      id: stop-agent
+    timeout: 60000
+- tapOn:
+    id: message-input
+    waitToSettleTimeoutMs: 500
+- inputText: "mock-activity-reply"
+- tapOn:
+    id: send-message
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Queued · runs after the current turn"
+    timeout: 20000
+- takeScreenshot: message-queued
+- assertVisible: "mock-activity-reply"
+- tapOn:
+    id: queue-send-now-.*
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Waiting for agent to stop…"
+    timeout: 10000
+- assertVisible: "The current turn must stop before this message starts."
+- assertVisible:
+    id: queue-send-now-.*
+    enabled: false
+- takeScreenshot: send-now-stopping
+- extendedWaitUntil:
+    visible: "Activity reply ready to read."
+    timeout: 30000
+- assertNotVisible: "Queued · runs after the current turn"
+- assertNotVisible: "Waiting for agent to stop…"
+- assertNotVisible:
+    id: queue-send-now-.*
+- takeScreenshot: send-now-delivered

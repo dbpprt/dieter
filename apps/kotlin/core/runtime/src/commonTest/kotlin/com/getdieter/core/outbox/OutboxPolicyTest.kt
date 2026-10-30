@@ -258,6 +258,11 @@ class OutboxPolicyTest {
             result.conversation!!.messages.map { it.id },
         )
         assertEquals(listOf("m_queued"), result.conversation!!.queue.map { it.id })
+        assertEquals(
+            "queued",
+            result.conversation!!.queue.single().text,
+            "the local queue keeps its visible message text",
+        )
 
         // A send the daemon already queued is not shown twice.
         val serverQueued =

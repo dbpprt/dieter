@@ -41,13 +41,15 @@ internal fun Composer(
     onRemoveAttachment: (Int) -> Unit,
     onAttach: () -> Unit,
     busy: Boolean,
+    sending: Boolean,
     bottomInset: androidx.compose.ui.unit.Dp,
     onAgent: () -> Unit,
     onSend: () -> Unit,
 ) {
     val state = view.state
     val agent = state?.agent
-    val canSend = (draft.isNotBlank() || attachments.isNotEmpty()) && !busy && view.card != null
+    val canSend =
+        (draft.isNotBlank() || attachments.isNotEmpty()) && !busy && !sending && view.card != null
     val showStop = state?.can_halt == true && draft.isBlank() && attachments.isEmpty()
     val reviewable =
         view.card?.scope != "chat" &&
@@ -218,10 +220,11 @@ internal fun Composer(
                     else
                         SendButton(
                             Glyph.ARROW_UP,
-                            "Send message",
+                            if (sending) "Sending message" else "Send message",
                             onSend,
                             enabled = canSend,
                             size = sendSize,
+                            loading = sending,
                         )
                 }
             }
@@ -237,6 +240,7 @@ internal fun SendButton(
     enabled: Boolean,
     size: androidx.compose.ui.unit.Dp,
     destructive: Boolean = false,
+    loading: Boolean = false,
     tag: String = if (glyph == Glyph.STOP) "stop-agent" else "send-message",
 ) {
     val container =
@@ -254,21 +258,27 @@ internal fun SendButton(
             else -> colors.onPrimary
         }
     Box(
-        Modifier.size(size)
+        Modifier.size(size.coerceAtLeast(44.dp))
             .clip(CircleShape)
-            .background(container)
-            .pressable(onClick = onClick, enabled = enabled)
+            .pressable(onClick = onClick, enabled = enabled && !loading, scaleOnPress = true)
             .semantics { contentDescription = description }
             .testTag(tag),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            glyph,
-            null,
-            tint = content,
-            size = size * (if (glyph == Glyph.STOP) .42f else .55f),
-            weight = GlyphWeight.BOLD,
-        )
+        Box(
+            Modifier.size(size).background(container, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (loading) Spinner(Modifier.size(size * .55f), color = content)
+            else
+                Icon(
+                    glyph,
+                    null,
+                    tint = content,
+                    size = size * (if (glyph == Glyph.STOP) .42f else .55f),
+                    weight = GlyphWeight.BOLD,
+                )
+        }
     }
 }
 

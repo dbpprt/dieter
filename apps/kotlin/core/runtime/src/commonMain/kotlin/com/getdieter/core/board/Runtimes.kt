@@ -167,8 +167,8 @@ object Runtimes {
             }
 
     /**
-     * The runtime to display: a local start or cancel wins, then an active conversation status,
-     * then an active card runtime, then any known value.
+     * The runtime to display: a local start or cancel wins, then stopping, then an active
+     * conversation status, then an active card runtime, then any known value.
      */
     fun resolved(
         cardRuntime: String?,
@@ -180,6 +180,8 @@ object Runtimes {
         val status = conversationStatus?.trim().orEmpty()
         val runtime = cardRuntime?.trim().orEmpty()
         return when {
+            classify(status) == RuntimeState.STOPPING ||
+                classify(runtime) == RuntimeState.STOPPING -> "cancelling"
             isActive(status) -> status.lowercase()
             isActive(runtime) -> runtime.lowercase()
             runtime.isNotEmpty() -> runtime.lowercase()

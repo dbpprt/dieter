@@ -421,6 +421,8 @@ object OutboxPolicy {
             queue +=
                 QueuedMessage(
                     id = entry.optimistic_id,
+                    text =
+                        request.parts.filter { it.type == "text" }.joinToString("\n") { it.text },
                     parts = request.parts,
                     created_at = Instant.fromEpochMilliseconds(entry.created_at_millis).toString(),
                     selection =
