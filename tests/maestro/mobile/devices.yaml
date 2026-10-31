@@ -1,4 +1,4 @@
-# Tools → Devices: the fixture's machine approved this app's pairing code, so
+# More → Devices: the fixture's machine approved this app's pairing code, so
 # the account's trusted devices list this device and that machine.
 appId: ${APP_ID}
 name: Devices
@@ -6,15 +6,9 @@ tags: [smoke]
 ---
 - runFlow: common/launch.yaml
 - runFlow:
-    file: common/tab.yaml
+    file: common/more.yaml
     env:
-      TAB: "Tools"
-- scrollUntilVisible:
-    element:
-      id: tool-devices
-- tapOn:
-    id: tool-devices
-    waitToSettleTimeoutMs: 500
+      PLACE: devices
 - extendedWaitUntil:
     visible:
       id: device-this

@@ -59,7 +59,7 @@ have a blue bar, important ones a red **!**. The message opens on the right.
 - Keyboard: ⌘⌫ moves the selection to the Trash, ⌃⌘A archives it, ⇧⌘U marks
   it read or unread, and ⇧⌘L flags it.
 
-On Android, iPhone and iPad, use the **Mail** tab. Swipe a message left to
+On Android, iPhone and iPad, open **More → Mail**. Swipe a message left to
 archive it and right to mark it read or unread; each swipe can be undone. Touch
 and hold a message to select several. On tablets and iPads the message opens
 next to the list.
@@ -73,8 +73,8 @@ after 30 days.
 
 ## Notifications and badges
 
-The **Mail** sidebar row and the **Mail** tab show how many Inbox messages are
-unread. On the Mac, **Settings → Notifications** has three mail options:
+The **Mail** sidebar row on the Mac, and **Mail** in More on Android and iOS,
+show how many Inbox messages are unread; the **More** badge includes them. On the Mac, **Settings → Notifications** has three mail options:
 
 - **New mail** posts a notification for each new message. Its **Mark as Read**
   and **Archive** actions work without opening the app, and clicking it opens

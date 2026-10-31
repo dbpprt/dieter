@@ -53,7 +53,7 @@ also requires the daemon's Screen Recording and Accessibility permissions. Run
 ## A device is not trusted
 
 Machines answer only the devices in your account's device roster. Open
-**Devices** in an app (**Tools › Devices** on Android, iPhone and iPad,
+**Devices** in an app (**More › Devices** on Android, iPhone and iPad,
 **Settings › Devices** on Mac), or run `dieter device status` on a machine, and
 act on its state:
 

@@ -120,9 +120,13 @@ schema lives in `api/proto/dieter/client/v1` (Wire reads all schemas from
 ## Shared mobile UI (`:ui`)
 
 The Android and iOS apps share one Compose Multiplatform UI, organized as
-**Inbox / Projects / Chats / Tools**, with compact task cards, project folders,
+**Inbox / Projects / Chats / More**, with compact task cards, project folders,
 agent controls, transcript tools, files, Git review, schedules, terminals,
-screens and machine tools. Native code supplies credentials, transport,
+screens and machine tools. More holds Mail, Channels, Terminals, the machines,
+Usage, Devices and Settings (`app/More.kt`). Tools live with their scope:
+Files, Changes and Schedules open from a project and carry its ID (and Files
+and Changes a checkout), a machine's page shows its screen, terminals and
+checkouts, and nothing falls back to the last project opened. Native code supplies credentials, transport,
 attachments, terminal emulation, screen video/input and, on iOS, navigation
 chrome.
 
@@ -140,14 +144,17 @@ commands are shared.
 - **Android:** Material 3 throughout. Colors come from the wallpaper (dynamic
   color, Android 12+, switchable in Settings) or from tonal schemes built from
   the eight Dieter palettes; Monochrome is the default. Navigation is a
-  navigation bar (rail from 600 dp); system back pops the visible tab stack.
+  navigation bar whose More item slides up a sheet with the bar docked below
+  it (a rail from 840 dp); system back pops the visible tab stack.
 - **iOS:** UIKit owns navigation: a `UITabBarController` holds one
   `UINavigationController` per tab (a sidebar-adaptable tab bar on iPad), so
   titles, back gestures and bar buttons are the system's own. Compose draws
   each screen's content with iOS system colors, Dynamic Type sizes, SF Symbols
   and inset-grouped lists.
-- **Adaptive layouts:** Android shows list and detail side by side from 840 dp;
-  iPad uses a split view in regular width. A board shows parallel lanes from
+- **Adaptive layouts:** Android shows list and detail side by side from 600 dp
+  wide and 480 dp tall (unfolded foldables, tablets), split by a draggable
+  handle whose position `LayoutModel` keeps; iPad uses a split view in regular
+  width. `MobileRoute.list` decides which routes stay in the list column on both. A board shows parallel lanes from
   700 dp and swipeable lane tabs below that.
 
 | Surface                                                                      | Shared implementation                           | Native boundary                                    |
@@ -164,9 +171,9 @@ commands are shared.
 
 Machines answer only a trusted device, so until the session's `device_trust` is
 trusted (or still unknown) both apps show the pairing screen instead of the
-tabs: the one-time code to type on a trusted device (Tools › Devices, or
+tabs: the one-time code to type on a trusted device (More › Devices, or
 `dieter device approve CODE` on a machine), or Reset after this device was
-removed or saw a conflicting roster. Tools › Devices lists the account's
+removed or saw a conflicting roster. More › Devices lists the account's
 devices, adds one by the code it shows, and removes one.
 
 Items shared from other apps reach `MobileStore.share` as `SharedItems` once the

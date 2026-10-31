@@ -24,6 +24,10 @@ internal actual val platformSupportsDynamicColor: Boolean
 
 @Composable internal actual fun SystemBackHandler(enabled: Boolean, onBack: () -> Unit) = Unit
 
+@Composable
+internal actual fun androidx.compose.ui.Modifier.exposingTestTags(): androidx.compose.ui.Modifier =
+    this
+
 private val monospace: androidx.compose.ui.text.font.FontFamily by lazy {
     val typeface =
         listOf("SFMono-Regular", ".AppleSystemUIFontMonospaced", "Menlo-Regular")

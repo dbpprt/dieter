@@ -11,8 +11,8 @@ class FilesModel
 internal constructor(
     private val context: StoreContext,
     private val workspace: StateFlow<WorkspaceSlice>,
-    private val boards: BoardsModel,
     private val defaults: StateFlow<CreationSlice>,
+    private val available: (daemonId: String) -> Boolean,
 ) {
     val slice = MutableStateFlow(FilesSlice())
     val buffers = MutableStateFlow<Map<String, MobileFileBuffer>>(emptyMap())
@@ -30,17 +30,18 @@ internal constructor(
     fun command(value: FilesCommand) =
         context.command(Command(files = value.copy(scope = MobileStore.FILES_SCOPE)))
 
-    /** Binds Files to the current project's checkout. */
-    fun bindProject() {
-        val project =
-            workspace.value.projects.firstOrNull { it.id == boards.currentProjectId() } ?: return
+    /**
+     * Binds Files to [projectId]'s checkout [checkoutId], or the project's default checkout when
+     * empty; see [toolCheckout].
+     */
+    fun bindProject(projectId: String, checkoutId: String = "") {
+        val project = workspace.value.projects.firstOrNull { it.id == projectId } ?: return
         val checkout =
-            project.checkouts.firstOrNull {
-                it.id ==
-                    boards.selectedCheckout.value.ifEmpty {
-                        defaults.value.checkouts[project.id].orEmpty()
-                    }
-            } ?: project.checkouts.singleOrNull() ?: return
+            project.toolCheckout(
+                checkoutId,
+                defaults.value.checkouts[project.id].orEmpty(),
+                available,
+            ) ?: return
         bind(
             FilesTarget(
                 daemon_id = checkout.daemon_id,

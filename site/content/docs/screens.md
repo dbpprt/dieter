@@ -19,7 +19,9 @@ graphical session and the platform's capture and control permissions.
 
 ## Open a screen
 
-Choose **Screens**, select an enrolled machine, and choose a display and quality.
+Choose **Screens** on the Mac, or on Android and iOS open the machine from
+**More** and choose **Screen** (Android's More sheet also has a screen button on
+each machine). Then choose a display and quality.
 The first control-capable viewer receives control. Use **Take Control** to request
 handoff from another viewer, or **Release Control** to keep watching without input.
 Up to four viewers can connect; only one controls the machine at a time.

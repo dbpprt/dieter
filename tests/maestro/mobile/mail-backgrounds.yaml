@@ -4,21 +4,10 @@ tags:
   - full
 ---
 - runFlow: common/launch.yaml
-- tapOn:
-    waitToSettleTimeoutMs: 500
-    text: Tools
 - runFlow:
-    when:
-      notVisible:
-        id: appearance-1
-    commands:
-      - scrollUntilVisible:
-          element:
-            id: tool-settings
-          direction: DOWN
-      - tapOn:
-          id: tool-settings
-          waitToSettleTimeoutMs: 500
+    file: common/more.yaml
+    env:
+      PLACE: settings
 - scrollUntilVisible:
     element:
       id: appearance-1
@@ -26,9 +15,10 @@ tags:
 - tapOn:
     waitToSettleTimeoutMs: 500
     id: appearance-1
-- tapOn:
-    waitToSettleTimeoutMs: 500
-    text: Mail
+- runFlow:
+    file: common/more.yaml
+    env:
+      PLACE: mail
 - extendedWaitUntil:
     visible: Chart background comparison
     timeout: 40000
@@ -160,21 +150,10 @@ tags:
       platform: iOS
     commands:
       - hideKeyboard
-- tapOn:
-    waitToSettleTimeoutMs: 500
-    text: Tools
 - runFlow:
-    when:
-      notVisible:
-        id: appearance-1
-    commands:
-      - scrollUntilVisible:
-          element:
-            id: tool-settings
-          direction: DOWN
-      - tapOn:
-          id: tool-settings
-          waitToSettleTimeoutMs: 500
+    file: common/more.yaml
+    env:
+      PLACE: settings
 - scrollUntilVisible:
     element:
       id: appearance-1
@@ -182,9 +161,10 @@ tags:
 - tapOn:
     waitToSettleTimeoutMs: 500
     id: appearance-2
-- tapOn:
-    waitToSettleTimeoutMs: 500
-    text: Mail
+- runFlow:
+    file: common/more.yaml
+    env:
+      PLACE: mail
 - extendedWaitUntil:
     visible: Chart background comparison
     timeout: 40000

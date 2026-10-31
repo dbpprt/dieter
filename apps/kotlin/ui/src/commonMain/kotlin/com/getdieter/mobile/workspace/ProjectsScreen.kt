@@ -541,11 +541,21 @@ internal fun ProjectScreen(store: MobileStore, projectId: String) {
             itemsIndexed(project.checkouts, key = { _, checkout -> checkout.id }) { index, checkout
                 ->
                 val machine = session.machines.firstOrNull { it.id == checkout.daemon_id }
+                // A checkout opens its own Files, so the machine is never a guess.
                 ListRow(
                     machine?.display_name ?: checkout.name,
+                    Modifier.testTag("project-checkout-${checkout.id}"),
                     position = Position.of(index, project.checkouts.size),
                     subtitle = checkout.path,
                     glyph = Glyph.MACHINE,
+                    accessory = if (checkout.detached) Accessory.NONE else Accessory.CHEVRON,
+                    enabled = !checkout.detached,
+                    onClick = {
+                        store.showFrom(
+                            MobileRoute.Project(projectId),
+                            MobileRoute.Tool(ToolPage.FILES, projectId, checkout.id),
+                        )
+                    },
                     trailing = {
                         Box(
                             Modifier.size(8.dp)

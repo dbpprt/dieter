@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.getdieter.mobile.app.*
+import com.getdieter.mobile.platform.exposingTestTags
 
 /** Native presentations for one iOS screen: UIMenu, UIAlertController and sheets. */
 internal interface NativeOverlays {
@@ -284,7 +285,12 @@ internal fun Sheet(
         return
     }
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = size == SheetSize.LARGE)
-    ModalBottomSheet(onDismiss, sheetState = state, containerColor = colors.surfaceContainerLow) {
+    ModalBottomSheet(
+        onDismiss,
+        Modifier.exposingTestTags(),
+        sheetState = state,
+        containerColor = colors.surfaceContainerLow,
+    ) {
         Row(
             Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,

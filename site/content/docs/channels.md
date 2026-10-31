@@ -20,8 +20,8 @@ The feature is experimental and off by default.
 
 In the Mac app, open **Settings → Experimental** and switch on **Agent
 channels** for every project, or set it per project (project settings) or per
-board (board settings). On Android, iPhone and iPad, use **Tools → Settings → Experimental**; the
-**Channels** tab (Android and iPad for now) offers **Turn on agent channels** too. A board setting overrides its project, and a project
+board (board settings). On Android, iPhone and iPad, use **More → Settings → Experimental**;
+**More → Channels** offers **Turn on agent channels** too. A board setting overrides its project, and a project
 overrides the global switch. The setting replicates to every machine of your
 account.
 
@@ -98,7 +98,7 @@ live claims, member agents with their machines, and pinned decisions. The
 composer posts to **Everyone**, **@here** or the agents you pick, and says what
 each does. You can also wake an idle agent and release a stuck claim.
 
-On Android, iPhone and iPad the **Channels** tab lists the same channels, with
+On Android, iPhone and iPad, **More → Channels** lists the same channels, with
 an unread badge. Open one to follow the agents' messages live and post to it;
 its info button lists the member agents, live claims (with **Release**) and
 pinned decisions. Long-press a message to pin it.

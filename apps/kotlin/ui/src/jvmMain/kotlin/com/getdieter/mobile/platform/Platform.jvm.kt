@@ -17,5 +17,9 @@ internal actual fun platformSymbolPainter(symbol: String, size: Dp, weight: Glyp
 
 @Composable internal actual fun SystemBackHandler(enabled: Boolean, onBack: () -> Unit) = Unit
 
+@Composable
+internal actual fun androidx.compose.ui.Modifier.exposingTestTags(): androidx.compose.ui.Modifier =
+    this
+
 internal actual fun platformMonospace(): androidx.compose.ui.text.font.FontFamily =
     androidx.compose.ui.text.font.FontFamily.Monospace

@@ -88,8 +88,11 @@ host telemetry without losing your board.
 
 **Inbox** is the starting point on Android, iPhone, and iPad. It brings task and
 chat activity together so you can find recent work without first choosing a
-board. The tab bar keeps **Projects**, **Chats**, [**Mail**](/docs/mail/), **Tools**, and (on Android and iPad)
-**Channels** nearby.
+board. Next to it are **Projects** and **Chats**. **More** holds everything
+else: [**Mail**](/docs/mail/), **Channels**, **Terminals**, your machines,
+**Usage**, **Devices** and **Settings**. On Android, More slides up as a sheet
+above the bar; on iPhone and iPad it is a tab. Its badge counts unread mail and
+channel messages.
 Completed replies that you have not viewed appear under **Needs you**. Opening
 the latest reply clears that state across clients; questions waiting for your
 answer continue to need attention.
@@ -123,9 +126,13 @@ app leaves the host working.
 {{< screenshot src="android-chats.png" kind="phone" width="1080" height="2400" alt="Android Chats with a pinned chat and standalone chats grouped by project" caption="Standalone chats on Android." >}}
 {{< /shots >}}
 
-**Tools → Changes** opens a project's shared checkout, with the same staging and
-diff review as the desktop. **Tools → Machines** lists enrolled hosts and their
-availability. Clients check compatibility before connecting and reject a
+A project's page opens its **Files**, **Changes** and **Schedules**. Changes
+shows a project's shared checkout, with the same staging and diff review as the
+desktop. Tap a checkout to browse that machine's copy; with several checkouts,
+the **Checkout** menu switches between them, and the title always names the
+project and machine. **More** lists your enrolled machines and their
+availability. A machine's page shows its screen, its terminals and the projects
+checked out on it. Clients check compatibility before connecting and reject a
 mismatched release compatibility policy.
 
 {{< shots >}}
@@ -133,7 +140,9 @@ mismatched release compatibility policy.
 {{< screenshot src="android-machines.png" kind="phone" width="1080" height="2400" alt="Android Machines with Home mini and Office mini online through the relay and MacBook Pro offline" caption="Machines on Android." >}}
 {{< /shots >}}
 
-On iPad, a board and the open task sit side by side.
+On iPad, and on Android tablets and unfolded foldables, a list and what you
+open from it sit side by side. On Android, drag the handle between them to
+resize the list, or double-tap it to reset the split; the app remembers it.
 
 {{< screenshot src="ipad-conversation.png" kind="tablet" width="2048" height="2732" alt="iPad with the Atlas API board on the left and a running task's reply, rate-limit table, and plan on the right" caption="The board and a running task, side by side on iPad." >}}
 

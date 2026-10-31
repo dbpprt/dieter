@@ -3,9 +3,10 @@ name: Mail offline graphics
 tags: [smoke]
 ---
 - runFlow: common/launch.yaml
-- tapOn:
-    text: "Mail"
-    waitToSettleTimeoutMs: 500
+- runFlow:
+    file: common/more.yaml
+    env:
+      PLACE: mail
 - scrollUntilVisible:
     element:
       text: "Release smoke results: all platforms passed"
@@ -79,21 +80,17 @@ tags: [smoke]
       platform: iOS
     commands:
       - hideKeyboard
-- tapOn:
-    text: "Tools"
-    waitToSettleTimeoutMs: 500
-- scrollUntilVisible:
-    element:
-      id: tool-settings
-- tapOn:
-    id: tool-settings
-    waitToSettleTimeoutMs: 500
+- runFlow:
+    file: common/more.yaml
+    env:
+      PLACE: settings
 - tapOn:
     id: appearance-2
     waitToSettleTimeoutMs: 500
-- tapOn:
-    text: "Mail"
-    waitToSettleTimeoutMs: 500
+- runFlow:
+    file: common/more.yaml
+    env:
+      PLACE: mail
 - tapOn:
     text: "Release smoke results: all platforms passed"
     waitToSettleTimeoutMs: 500

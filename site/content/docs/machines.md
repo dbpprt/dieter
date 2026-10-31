@@ -82,7 +82,7 @@ Sign in to the app. Until another device approves it, the app shows a pairing
 screen with a one-time code instead of your machines. On a device you already
 trust, type that code:
 
-- in an app, under **Add a device** in **Tools › Devices** (Android, iPhone and
+- in an app, under **Add a device** in **More › Devices** (Android, iPhone and
   iPad) or **Settings › Devices** (Mac);
 - on a machine, with `dieter device approve CODE`, where `CODE` is the code the
   app shows (for example `ABCD-EFGH-JKMN-PQRS`; case and hyphens do not matter).

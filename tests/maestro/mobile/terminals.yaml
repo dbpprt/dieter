@@ -1,19 +1,15 @@
 # An overview shell must connect while the app also observes conversation terminals.
+# The session's title says when it is connected; Android's native terminal view
+# does not expose its test tag.
 appId: ${APP_ID}
 name: Terminals
 tags: [full]
 ---
 - runFlow: common/launch.yaml
 - runFlow:
-    file: common/tab.yaml
+    file: common/more.yaml
     env:
-      TAB: "Tools"
-- scrollUntilVisible:
-    element:
-      id: tool-terminals
-- tapOn:
-    id: tool-terminals
-    waitToSettleTimeoutMs: 500
+      PLACE: terminals
 - tapOn:
     id: chrome-new-terminal
     waitToSettleTimeoutMs: 500
@@ -21,7 +17,7 @@ tags: [full]
     id: terminal-name
 - inputText: "Maestro terminal"
 - tapOn:
-    id: chrome-create-terminal
+    id: "chrome-create-terminal|sheet-create-terminal"
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: "Maestro terminal"
@@ -29,10 +25,6 @@ tags: [full]
 - tapOn:
     text: "Maestro terminal"
     waitToSettleTimeoutMs: 500
-- extendedWaitUntil:
-    visible:
-      id: terminal-view
-    timeout: 20000
 - waitForAnimationToEnd:
     timeout: 2000
 - extendedWaitUntil:
@@ -44,10 +36,6 @@ tags: [full]
 - tapOn:
     text: "Maestro terminal"
     waitToSettleTimeoutMs: 500
-- extendedWaitUntil:
-    visible:
-      id: terminal-view
-    timeout: 20000
 - waitForAnimationToEnd:
     timeout: 2000
 - extendedWaitUntil:

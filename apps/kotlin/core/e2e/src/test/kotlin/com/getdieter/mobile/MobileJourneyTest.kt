@@ -275,7 +275,7 @@ class MobileJourneyTest : EndToEnd() {
                     message.parts.any { part -> part.text.contains("Continue in the same task") }
                 }
             }
-            first.push(MobileRoute.Tool(ToolPage.FILES))
+            first.push(MobileRoute.Tool(ToolPage.FILES, fixture.projectId))
             first.files.slice.await { it.entries.any { entry -> entry.name == "README.md" } }
             first.core.dispatch(
                 Command(
@@ -287,7 +287,7 @@ class MobileJourneyTest : EndToEnd() {
                 )
             )
             first.files.slice.await { it.document?.content?.contains("# Isolated E2E") == true }
-            first.push(MobileRoute.Tool(ToolPage.SCHEDULES))
+            first.push(MobileRoute.Tool(ToolPage.SCHEDULES, fixture.projectId))
             first.schedules.slice.await { it.loaded }
             assertTrue(first.schedules.slice.value.error.isEmpty())
             val selectionBeforeRefresh = first.conversation.selectedCard.value

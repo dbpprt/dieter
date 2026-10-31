@@ -4,14 +4,15 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import com.getdieter.mobile.design.*
 
-/** The primary destinations, in navigation order. */
+/**
+ * The primary destinations, in navigation order. More holds everything else: mail, channels,
+ * terminals, the machines and the account pages.
+ */
 enum class MobileTab(val title: String) {
     INBOX("Inbox"),
     PROJECTS("Projects"),
     CHATS("Chats"),
-    MAIL("Mail"),
-    TOOLS("Tools"),
-    CHANNELS("Channels"),
+    MORE("More"),
 }
 
 internal val MobileTab.glyph: Glyph
@@ -20,9 +21,7 @@ internal val MobileTab.glyph: Glyph
             MobileTab.INBOX -> Glyph.INBOX
             MobileTab.PROJECTS -> Glyph.PROJECTS
             MobileTab.CHATS -> Glyph.CHATS
-            MobileTab.MAIL -> Glyph.MAIL
-            MobileTab.CHANNELS -> Glyph.TAG
-            MobileTab.TOOLS -> Glyph.TOOLS
+            MobileTab.MORE -> Glyph.TOOLS
         }
 
 /** What a tablet's empty detail column shows for each tab. */
@@ -41,17 +40,27 @@ internal val MobileTab.emptyDetail: EmptyDetail
                 EmptyDetail(Glyph.BOARD, "No task selected", "Open a board and choose a task.")
             MobileTab.CHATS ->
                 EmptyDetail(Glyph.CHATS, "No chat selected", "Choose a chat or start a new one.")
-            MobileTab.MAIL ->
-                EmptyDetail(Glyph.MAIL, "No message selected", "Choose a message to read it.")
-            MobileTab.CHANNELS ->
+            MobileTab.MORE ->
                 EmptyDetail(
-                    Glyph.TAG,
-                    "No channel selected",
-                    "Choose a channel to read what its agents tell each other.",
+                    Glyph.TOOLS,
+                    "Nothing selected",
+                    "Choose mail, a channel, a machine or a setting.",
                 )
-            MobileTab.TOOLS ->
-                EmptyDetail(Glyph.TOOLS, "No tool selected", "Choose a tool to open it here.")
         }
+
+/** A list's empty detail column, where the list has its own wording. */
+internal fun MobileRoute.emptyDetail(tab: MobileTab): EmptyDetail =
+    when (this) {
+        is MobileRoute.Mailbox ->
+            EmptyDetail(Glyph.MAIL, "No message selected", "Choose a message to read it.")
+        is MobileRoute.Channels ->
+            EmptyDetail(
+                Glyph.TAG,
+                "No channel selected",
+                "Choose a channel to read what its agents tell each other.",
+            )
+        else -> tab.emptyDetail
+    }
 
 /** Secondary views of an open conversation. */
 enum class CardPane(val title: String, internal val glyph: Glyph) {
@@ -62,11 +71,12 @@ enum class CardPane(val title: String, internal val glyph: Glyph) {
     PROCESSES("Processes", Glyph.PROCESSES),
 }
 
-/** Machine, workspace and app tools. */
+/**
+ * Pages opened from a context. Files, Changes and Schedules belong to a project and always carry
+ * its ID; Terminals lists every machine's shells; the rest are account pages in More.
+ */
 enum class ToolPage(val title: String, internal val glyph: Glyph, internal val tint: Long) {
-    MACHINES("Machines", Glyph.MACHINE, 0xFF0A84FF),
     TERMINALS("Terminals", Glyph.TERMINAL, 0xFF3A3A3C),
-    SCREENS("Screens", Glyph.SCREENS, 0xFF5E5CE6),
     FILES("Files", Glyph.FOLDER, 0xFF0A9EF5),
     CHANGES("Changes", Glyph.CHANGES, 0xFFFF9F0A),
     SCHEDULES("Schedules", Glyph.SCHEDULES, 0xFFFF453A),
@@ -74,6 +84,10 @@ enum class ToolPage(val title: String, internal val glyph: Glyph, internal val t
     DEVICES("Devices", Glyph.DEVICES, 0xFF32ADE6),
     SETTINGS("Settings", Glyph.SETTINGS, 0xFF8E8E93),
 }
+
+/** Tools that need a project. */
+internal val ToolPage.projectScoped: Boolean
+    get() = this == ToolPage.FILES || this == ToolPage.CHANGES || this == ToolPage.SCHEDULES
 
 internal val ToolPage.color: Color
     get() = Color(tint)
@@ -111,6 +125,18 @@ sealed class MobileRoute {
         override val immersive = true
     }
 
+    /** The account's project channels; opened from More. */
+    data object Channels : MobileRoute() {
+        override val key = "channels"
+        override val list = true
+    }
+
+    /** Mail folders and the message list; opened from More. */
+    data object Mailbox : MobileRoute() {
+        override val key = "mailbox"
+        override val list = true
+    }
+
     /** A project's agent channel: its stream, composer and members. */
     data class Channel(val projectId: String) : MobileRoute() {
         override val key = "channel/$projectId"
@@ -122,8 +148,13 @@ sealed class MobileRoute {
         override val immersive = true
     }
 
-    data class Tool(val page: ToolPage, val projectId: String = "") : MobileRoute() {
-        override val key = "tool/${page.name.lowercase()}/$projectId"
+    /**
+     * A tool page. Project tools carry their [projectId]; Files and Changes also the [checkoutId]
+     * they show, empty for the project's default.
+     */
+    data class Tool(val page: ToolPage, val projectId: String = "", val checkoutId: String = "") :
+        MobileRoute() {
+        override val key = "tool/${page.name.lowercase()}/$projectId/$checkoutId"
     }
 
     data class NewTask(val chat: Boolean) : MobileRoute() {

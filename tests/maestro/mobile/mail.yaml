@@ -1,4 +1,4 @@
-# Agent mail: the seeded audit report opens from the Mail tab; its wide table
+# Agent mail: the seeded audit report opens from More → Mail; its wide table
 # scrolls sideways on its own while the message stays put. Swiping a message
 # left archives it with an undo, the Archive mailbox lists archived mail, and
 # the New task form offers the mail toggle.
@@ -7,9 +7,10 @@ name: Mail
 tags: [smoke]
 ---
 - runFlow: common/launch.yaml
-- tapOn:
-    text: "Mail"
-    waitToSettleTimeoutMs: 500
+- runFlow:
+    file: common/more.yaml
+    env:
+      PLACE: mail
 - extendedWaitUntil:
     visible: "Dependency audit — 3 critical, 7 outdated"
     timeout: 40000

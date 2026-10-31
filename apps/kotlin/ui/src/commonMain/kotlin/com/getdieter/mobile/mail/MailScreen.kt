@@ -48,14 +48,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * The Mail tab: one mailbox (Inbox, Flagged, Unread, Archive or Trash) of every machine's mail,
- * newest first in date groups, with search, a filter, swipe actions with undo and multi-select. The
- * core words, groups and counts everything; rows open the message beside the list on wide layouts.
+ * Mail, opened from More: one mailbox (Inbox, Flagged, Unread, Archive or Trash) of every machine's
+ * mail, newest first in date groups, with search, a filter, swipe actions with undo and
+ * multi-select. The core words, groups and counts everything; rows open the message beside the list
+ * on wide layouts.
  */
 @Composable
 internal fun MailScreen(store: MobileStore) {
     val slice by store.mail.slice.collectAsState()
-    val root = MobileRoute.Root(MobileTab.MAIL)
+    val root = MobileRoute.Mailbox
     val rows = slice.sections.flatMap { it.rows }
     var searching by rememberSaveable { mutableStateOf(slice.search.isNotEmpty()) }
     var query by rememberSaveable { mutableStateOf(slice.search) }

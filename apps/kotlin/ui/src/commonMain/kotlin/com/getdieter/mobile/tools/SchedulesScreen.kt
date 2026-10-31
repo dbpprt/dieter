@@ -28,33 +28,14 @@ import com.getdieter.mobile.design.Tone
 import com.getdieter.mobile.store.*
 
 @Composable
-internal fun SchedulesScreen(store: MobileStore) {
+internal fun SchedulesScreen(store: MobileStore, projectId: String) {
     val view by store.schedules.slice.collectAsState()
     val workspace by store.workspace.slice.collectAsState()
     var editorId by remember { mutableStateOf<String?>(null) }
     var deleteId by remember { mutableStateOf("") }
     fun command(value: SchedulesCommand) =
         store.command(Command(schedules = value.copy(scope = MobileStore.SCHEDULES_SCOPE)))
-    fun rebind() {
-        val projectId = store.boards.currentProjectId()
-        store.action {
-            store.core.dispatch(
-                Command(
-                    schedules =
-                        SchedulesCommand(
-                            scope = MobileStore.SCHEDULES_SCOPE,
-                            bind = ScheduleProject(projectId),
-                        )
-                )
-            )
-            store.core.dispatch(
-                Command(
-                    schedules = SchedulesCommand(scope = MobileStore.SCHEDULES_SCOPE, load = Step())
-                )
-            )
-        }
-    }
-    val project = workspace.projects.firstOrNull { it.id == store.boards.currentProjectId() }
+    val project = workspace.projects.firstOrNull { it.id == projectId }
     Screen(
         ScreenChrome(
             "Schedules",
@@ -77,8 +58,7 @@ internal fun SchedulesScreen(store: MobileStore) {
                                             command(SchedulesCommand(load = Step()))
                                         }
                                     )
-                                ),
-                                MenuSection(projectScopeMenu(store, ::rebind).take(1)),
+                                )
                             ),
                     ),
                     ChromeAction("new-schedule", "New schedule", Glyph.ADD) { editorId = "" },

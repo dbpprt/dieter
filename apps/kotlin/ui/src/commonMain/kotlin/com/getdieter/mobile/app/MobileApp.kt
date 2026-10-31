@@ -15,6 +15,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.getdieter.client.v1.SessionSlice
@@ -93,12 +95,14 @@ private fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
         PairingScreen(store)
         return
     }
+    var moreOpen by remember { mutableStateOf(false) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val rail = maxWidth >= 600.dp
-        val twoPane = maxWidth >= 840.dp
+        // Unfolded foldables and tablets show a list beside its detail; landscape phones don't.
+        val twoPane = maxWidth >= 600.dp && maxHeight >= 480.dp
+        val rail = maxWidth >= 840.dp
         val immersive = !twoPane && navigation.top.immersive
         Row(Modifier.fillMaxSize()) {
-            if (rail) NavigationRailBar(store, navigation)
+            if (rail) NavigationRailBar(store, navigation) { moreOpen = true }
             Column(Modifier.weight(1f)) {
                 val bottomInsets =
                     if (rail || immersive) WindowInsets.navigationBars else WindowInsets(0, 0, 0, 0)
@@ -116,7 +120,7 @@ private fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
                     enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
                     exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
                 ) {
-                    BottomBar(store, navigation)
+                    BottomBar(store, navigation) { moreOpen = true }
                 }
             }
         }
@@ -126,6 +130,7 @@ private fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
                 .navigationBarsPadding()
                 .padding(bottom = if (!rail && !immersive) 80.dp else 16.dp),
         )
+        if (moreOpen) MoreSheet(store, navigation, showBar = !rail) { moreOpen = false }
         val modal = navigation.modal
         AnimatedVisibility(
             modal != null,
@@ -144,7 +149,7 @@ private fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
     }
 }
 
-/** Each tab's badge: Inbox attention, unread mail and unread channel messages. */
+/** Each tab's badge: Inbox attention; More counts unread mail and channel messages. */
 @Composable
 private fun rememberTabBadges(store: MobileStore): (MobileTab) -> String {
     val activity by store.workspace.activity.collectAsState()
@@ -154,38 +159,61 @@ private fun rememberTabBadges(store: MobileStore): (MobileTab) -> String {
     return { tab ->
         when (tab) {
             MobileTab.INBOX -> if (attention > 0) attention.toString() else ""
-            MobileTab.MAIL -> mail.unread_label
-            MobileTab.CHANNELS -> channels.unread_label
+            MobileTab.MORE -> moreBadge(mail.unread, channels.unread)
             else -> ""
         }
     }
 }
 
+/** More shows a grid until its sheet is open, then the chevron that closes it. */
 @Composable
-private fun TabIcon(tab: MobileTab, badge: String) {
-    BadgedBox(badge = { if (badge.isNotEmpty()) Badge { Text(badge) } }) {
-        Icon(tab.glyph, null, size = 24.dp)
+private fun TabIcon(tab: MobileTab, badge: String, moreOpen: Boolean) {
+    BadgedBox(badge = { if (badge.isNotEmpty() && !moreOpen) Badge { Text(badge) } }) {
+        Crossfade(tab == MobileTab.MORE && moreOpen, label = "more") { open ->
+            Icon(if (open) Glyph.CHEVRON_DOWN else tab.glyph, null, size = 24.dp)
+        }
+    }
+}
+
+/** The bar's items; More opens its sheet instead of switching tabs. */
+@Composable
+internal fun RowScope.NavigationItems(
+    store: MobileStore,
+    navigation: MobileNavigation,
+    moreOpen: Boolean,
+    onSelect: (MobileTab) -> Unit,
+) {
+    val badge = rememberTabBadges(store)
+    MobileTab.entries.forEach { tab ->
+        NavigationBarItem(
+            selected = if (moreOpen) tab == MobileTab.MORE else navigation.tab == tab,
+            onClick = { onSelect(tab) },
+            icon = { TabIcon(tab, badge(tab), moreOpen) },
+            label = { Text(tab.title) },
+            modifier =
+                Modifier.testTag("nav-${tab.name.lowercase()}").semantics {
+                    if (tab == MobileTab.MORE)
+                        contentDescription = if (moreOpen) "Close More" else "Open More"
+                },
+        )
     }
 }
 
 @Composable
-private fun BottomBar(store: MobileStore, navigation: MobileNavigation) {
-    val badge = rememberTabBadges(store)
+private fun BottomBar(store: MobileStore, navigation: MobileNavigation, onMore: () -> Unit) {
     NavigationBar(containerColor = colors.surfaceContainer) {
-        MobileTab.entries.forEach { tab ->
-            NavigationBarItem(
-                selected = navigation.tab == tab,
-                onClick = { store.selectTab(tab) },
-                icon = { TabIcon(tab, badge(tab)) },
-                label = { Text(tab.title) },
-                modifier = Modifier.testTag("nav-${tab.name.lowercase()}"),
-            )
+        NavigationItems(store, navigation, moreOpen = false) { tab ->
+            if (tab == MobileTab.MORE) onMore() else store.selectTab(tab)
         }
     }
 }
 
 @Composable
-private fun NavigationRailBar(store: MobileStore, navigation: MobileNavigation) {
+private fun NavigationRailBar(
+    store: MobileStore,
+    navigation: MobileNavigation,
+    onMore: () -> Unit,
+) {
     val badge = rememberTabBadges(store)
     NavigationRail(
         containerColor = colors.surfaceContainer,
@@ -209,8 +237,8 @@ private fun NavigationRailBar(store: MobileStore, navigation: MobileNavigation) 
         MobileTab.entries.forEach { tab ->
             NavigationRailItem(
                 selected = navigation.tab == tab,
-                onClick = { store.selectTab(tab) },
-                icon = { TabIcon(tab, badge(tab)) },
+                onClick = { if (tab == MobileTab.MORE) onMore() else store.selectTab(tab) },
+                icon = { TabIcon(tab, badge(tab), moreOpen = false) },
                 label = { Text(tab.title) },
                 modifier = Modifier.testTag("nav-${tab.name.lowercase()}"),
             )
@@ -233,16 +261,17 @@ private fun TabStack(
         val list = stack[listIndex]
         val details = stack.drop(listIndex + 1)
         val detail = details.lastOrNull()
-        Row(Modifier.fillMaxSize()) {
-            Box(Modifier.width(400.dp).fillMaxHeight()) {
+        ListDetailSplit(
+            store,
+            list = {
                 CompositionLocalProvider(
                     LocalBackAction provides if (listIndex > 0) store::pop else null
                 ) {
                     holder.SaveableStateProvider(list.key) { RouteContent(store, list, openUrl) }
                 }
-            }
-            VerticalDivider(color = colors.outlineVariant)
-            Box(Modifier.weight(1f).fillMaxHeight()) {
+            },
+        ) {
+            Box(Modifier.fillMaxSize()) {
                 CompositionLocalProvider(
                     LocalBackAction provides if (details.size > 1) store::pop else null
                 ) {
@@ -255,7 +284,7 @@ private fun TabStack(
                                 Modifier.fillMaxSize().background(palette.background),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                val empty = navigation.tab.emptyDetail
+                                val empty = list.emptyDetail(navigation.tab)
                                 EmptyState(empty.glyph, empty.title, empty.message)
                             }
                         else
@@ -306,17 +335,17 @@ internal fun RouteContent(store: MobileStore, route: MobileRoute, openUrl: (Stri
                 MobileTab.INBOX -> InboxScreen(store)
                 MobileTab.PROJECTS -> ProjectsScreen(store)
                 MobileTab.CHATS -> ChatsScreen(store)
-                MobileTab.MAIL -> MailScreen(store)
-                MobileTab.CHANNELS -> ChannelsScreen(store)
-                MobileTab.TOOLS -> ToolsScreen(store)
+                MobileTab.MORE -> MoreScreen(store)
             }
+        is MobileRoute.Mailbox -> MailScreen(store)
+        is MobileRoute.Channels -> ChannelsScreen(store)
         is MobileRoute.Project -> ProjectScreen(store, route.projectId)
         is MobileRoute.Board -> BoardScreen(store, route.boardId)
         is MobileRoute.Conversation -> ConversationScreen(store, card(route.cardId), openUrl)
         is MobileRoute.Channel -> ChannelScreen(store, route.projectId, openUrl)
         is MobileRoute.MailMessage -> MailMessageScreen(store, route, openUrl)
         is MobileRoute.Pane -> CardPaneScreen(store, card(route.cardId), route.pane, openUrl)
-        is MobileRoute.Tool -> ToolScreen(store, route.page)
+        is MobileRoute.Tool -> ToolScreen(store, route)
         is MobileRoute.NewTask -> CreationScreen(store, route.chat)
         is MobileRoute.ShareTarget -> ShareTargetScreen(store, route.chat)
         is MobileRoute.FilePath ->

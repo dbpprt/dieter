@@ -15,7 +15,7 @@ class ChannelsModelTest {
         core.sentOf { it.channels }.filter { it.set_setting == null }
 
     @Test
-    fun theChannelsTabWatchesOnlyTheOpenChannel() = runTest {
+    fun theChannelListWatchesOnlyTheOpenChannel() = runTest {
         val core = FakeMobileCore()
         val store = store(core)
         try {
@@ -23,14 +23,11 @@ class ChannelsModelTest {
             // The list and the switch are observed for the badge and Settings.
             assertTrue(core.observing(Slice.SLICE_CHANNELS, MobileStore.CHANNELS_SCOPE))
             assertTrue(core.observing(Slice.SLICE_CHANNEL_SETTINGS))
-            store.selectTab(MobileTab.CHANNELS)
+            store.openMore(MobileRoute.Channels)
             runCurrent()
             assertEquals(listOf(Step()), channels(core).mapNotNull { it.refresh })
 
-            store.showFrom(
-                MobileRoute.Root(MobileTab.CHANNELS),
-                MobileRoute.Channel("p_pricing"),
-            )
+            store.showFrom(MobileRoute.Channels, MobileRoute.Channel("p_pricing"))
             runCurrent()
             val opened = channels(core).drop(1)
             assertEquals(listOf("p_pricing"), opened.mapNotNull { it.select?.project_id })
@@ -47,16 +44,22 @@ class ChannelsModelTest {
     }
 
     @Test
-    fun aChannelMessageInATurnOpensItsChannel() = runTest {
+    fun aChannelMessageInATurnOpensItsChannelAboveTheConversation() = runTest {
         val core = FakeMobileCore()
         val store = store(core)
         try {
             store.selectTab(MobileTab.CHATS)
+            store.openConversation("c_chat")
             store.openChannel("p_pricing")
             runCurrent()
-            assertEquals(MobileTab.CHANNELS, store.routes.value.tab)
+            // Every layout has the tab it opened from, so back returns to the conversation.
+            assertEquals(MobileTab.CHATS, store.routes.value.tab)
             assertEquals(
-                listOf(MobileRoute.Root(MobileTab.CHANNELS), MobileRoute.Channel("p_pricing")),
+                listOf(
+                    MobileRoute.Root(MobileTab.CHATS),
+                    MobileRoute.Conversation("c_chat"),
+                    MobileRoute.Channel("p_pricing"),
+                ),
                 store.routes.value.stack,
             )
             assertEquals("p_pricing", channels(core).mapNotNull { it.select }.single().project_id)

@@ -8,7 +8,33 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
-Nothing yet.
+### Changed
+
+- Android, iPhone and iPad navigate with four destinations: **Inbox**,
+  **Projects**, **Chats** and **More**. On Android, More slides up a sheet above
+  the navigation bar with Mail, Channels, Terminals, Usage, Devices, Settings
+  and every machine (with a screen shortcut); on iPhone and iPad it is a tab
+  with the same entries. Its badge counts unread mail and channel messages, and
+  iPhone now reaches Channels too.
+- Tools open where their scope is, so they never show whichever project was
+  opened last. A project's page opens its Files, Changes and Schedules; tapping
+  one of its checkouts opens that machine's copy, and a **Checkout** menu
+  switches between checkouts. Their titles name the project and machine. A
+  machine's page shows its screen, its terminals (with **New terminal** on that
+  machine) and the projects checked out on it, and Terminals in More groups
+  shells by machine.
+- Android tablets and unfolded foldables such as the Galaxy Z Fold show lists
+  beside their detail from 600 dp wide. Drag the handle between the panes to
+  resize them or double-tap it to reset; the app remembers the split.
+
+### Fixed
+
+- Pins and other navigation edits made on a phone reach your other devices
+  again. Edits now go to the next machine that is up to date when the first one
+  the phone tries is behind or busy, instead of waiting on it indefinitely.
+- Tapping a channel message in a conversation opens the channel above the
+  conversation on every device, including iPhone.
+- A task's Processes pane lists the processes of the task's own project.
 
 ## 0.6.431
 

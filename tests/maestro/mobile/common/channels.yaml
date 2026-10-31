@@ -1,10 +1,10 @@
-# The body of the Channels flow, run only where the Channels tab exists.
+# The body of the Channels flow.
 appId: ${APP_ID}
 ---
 - runFlow:
-    file: tab.yaml
+    file: more.yaml
     env:
-      TAB: "Channels"
+      PLACE: channels
 - extendedWaitUntil:
     visible: "Agent channels are off"
     timeout: 30000
@@ -49,6 +49,7 @@ appId: ${APP_ID}
       id: peer-notice-m_e2e_notice
     direction: UP
 - takeScreenshot: channels-peer-notice
+# The channel opens above the conversation, so back returns to it.
 - tapOn:
     id: peer-notice-open-m_e2e_notice
     waitToSettleTimeoutMs: 500
@@ -57,16 +58,14 @@ appId: ${APP_ID}
       id: channel-audience-hint
     timeout: 30000
 - runFlow: back.yaml
+- extendedWaitUntil:
+    visible: "From agent channels"
+    timeout: 30000
+- runFlow: back.yaml
 - runFlow:
-    file: tab.yaml
+    file: more.yaml
     env:
-      TAB: "Tools"
-- scrollUntilVisible:
-    element:
-      id: tool-settings
-- tapOn:
-    id: tool-settings
-    waitToSettleTimeoutMs: 500
+      PLACE: settings
 - scrollUntilVisible:
     element:
       id: settings-channels

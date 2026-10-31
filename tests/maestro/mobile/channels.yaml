@@ -1,5 +1,5 @@
-# Agent channels (experimental): off by default and turned on from the
-# Channels tab; the seeded project's channel opens and a post from the phone
+# Agent channels (experimental): off by default and turned on from More →
+# Channels; the seeded project's channel opens and a post from the phone
 # shows in its live stream. A conversation highlights the channel message that
 # joined its turn and the turn a channel message woke, and opens the channel.
 # The switch is turned off again in Settings for the other flows.
@@ -8,9 +8,4 @@ name: Channels
 tags: [full]
 ---
 - runFlow: common/launch.yaml
-# iPhone leaves the experimental Channels tab out (see ShellController), so
-# there is nothing to test there.
-- runFlow:
-    when:
-      visible: "Channels"
-    file: common/channels.yaml
+- runFlow: common/channels.yaml

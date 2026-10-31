@@ -9,8 +9,8 @@ class ReviewModel
 internal constructor(
     private val context: StoreContext,
     private val workspace: StateFlow<WorkspaceSlice>,
-    private val boards: BoardsModel,
     private val defaults: StateFlow<CreationSlice>,
+    private val available: (daemonId: String) -> Boolean,
 ) {
     val slice = MutableStateFlow(ReviewSlice())
     val projectChanges = MutableStateFlow(ProjectChangesSlice())
@@ -37,17 +37,15 @@ internal constructor(
         }
     }
 
-    /** Binds project changes to the current project's checkout. */
-    fun bindProjectChanges() {
-        val project =
-            workspace.value.projects.firstOrNull { it.id == boards.currentProjectId() } ?: return
+    /** Binds project changes to [projectId]'s checkout [checkoutId] or its default checkout. */
+    fun bindProjectChanges(projectId: String, checkoutId: String = "") {
+        val project = workspace.value.projects.firstOrNull { it.id == projectId } ?: return
         val checkout =
-            project.checkouts.firstOrNull {
-                it.id ==
-                    boards.selectedCheckout.value.ifEmpty {
-                        defaults.value.checkouts[project.id].orEmpty()
-                    }
-            } ?: project.checkouts.singleOrNull() ?: return
+            project.toolCheckout(
+                checkoutId,
+                defaults.value.checkouts[project.id].orEmpty(),
+                available,
+            ) ?: return
         context.action {
             context.core.dispatch(
                 Command(

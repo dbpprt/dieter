@@ -1,0 +1,26 @@
+# Opens ${PLACE} from More: on Android the More button's sheet, on iOS the More
+# tab's page (tapping More again returns to it). PLACE is a More entry's ID
+# suffix: mail, channels, terminals, usage, devices, settings or machine-<id>.
+appId: ${APP_ID}
+---
+- tapOn:
+    text: "More"
+    waitToSettleTimeoutMs: 500
+# On iOS, More returns to where its stack was left; tapping it again (or the
+# back button labelled More) returns to the More page.
+- repeat:
+    while:
+      notVisible:
+        id: "more-${PLACE}"
+    times: 3
+    commands:
+      - tapOn:
+          text: "More"
+          waitToSettleTimeoutMs: 500
+- scrollUntilVisible:
+    element:
+      id: "more-${PLACE}"
+    timeout: 10000
+- tapOn:
+    id: "more-${PLACE}"
+    waitToSettleTimeoutMs: 500

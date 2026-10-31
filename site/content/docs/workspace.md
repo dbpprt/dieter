@@ -10,7 +10,8 @@ slug: "workspace"
 The Mac conversation workspace opens files, web pages, terminals, changes, and
 registered processes beside the chat. Use **Split conversation and workspace** in
 the conversation header to show it, and **+** to open another workspace tab. The
-Android and iOS app offers the same tools through **Tools** and each task's panes.
+Android and iOS app offers the same tools in each task's panes, on each project's
+page (Files, Changes, Schedules) and on each machine's page (screen, terminals).
 
 {{< screenshot src="macos-conversation.png" width="1380" height="870" alt="A running Atlas API task with its reply and plan progress on the left and the limiter.go diff in the Changes tab on the right" caption="A running task with its Git changes open beside the conversation." >}}
 
@@ -71,7 +72,7 @@ and Copy as Markdown work for a selection or the whole document.
 
 Changes behaves like a source-control panel, not a per-agent report.
 New-worktree conversations own their Changes view. For project-directory work,
-open the project's **Changes** (on Android and iOS, **Tools → Changes**), which
+open the project's **Changes** (on Android and iOS, the project's page → **Changes**), which
 shows the shared checkout. The
 daemon reads one lightweight status snapshot, loads diffs on selection, and owns
 staging, commits, updates, validation, integration and explicit publishing, so

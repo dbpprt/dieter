@@ -1,4 +1,6 @@
-# Machines, files with markdown preview, schedules and dark appearance.
+# Tools live where their scope is: a machine's page lists the projects checked
+# out on it, and a checkout opens its Files with the markdown preview; the
+# project's page opens its Schedules; More opens Settings for dark appearance.
 appId: ${APP_ID}
 name: Tools
 tags: [full]
@@ -10,39 +12,60 @@ tags: [full]
 - extendedWaitUntil:
     visible: "Mobile release checklist"
     timeout: 40000
-- runFlow:
-    file: common/tab.yaml
-    env:
-      TAB: "Tools"
 - tapOn:
-    id: tool-machines
+    text: "More"
     waitToSettleTimeoutMs: 500
+- scrollUntilVisible:
+    element:
+      text: "Isolated E2E machine"
+- tapOn:
+    text: "Isolated E2E machine"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible:
+      id: machine-detail
+    timeout: 20000
 - assertVisible: "Isolated E2E machine"
-- runFlow: common/back.yaml
+- scrollUntilVisible:
+    element:
+      id: "machine-checkout-.+"
 - tapOn:
-    id: tool-files
+    id: "machine-checkout-.+"
     waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "README.md"
+    timeout: 20000
+# Files names its project and machine (iOS shows it in the navigation bar).
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - assertVisible: "Isolated E2E · Isolated E2E machine"
 - tapOn:
     text: "README.md"
     waitToSettleTimeoutMs: 500
 - assertVisible: ".*One durable conversation.*"
 - runFlow: common/back.yaml
 - runFlow: common/back.yaml
-# The last Workspace row can sit below the fold on phone-sized screens.
+- tapOn:
+    text: "Projects"
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: "Isolated E2E"
+    waitToSettleTimeoutMs: 500
+# The project's Schedules row can sit below the fold on phone-sized screens.
 - scrollUntilVisible:
     element:
-      id: tool-schedules
+      id: project-tool-schedules
 - tapOn:
-    id: tool-schedules
+    id: project-tool-schedules
     waitToSettleTimeoutMs: 500
 - assertVisible: "Daily workspace review"
 - runFlow: common/back.yaml
-- scrollUntilVisible:
-    element:
-      id: tool-settings
-- tapOn:
-    id: tool-settings
-    waitToSettleTimeoutMs: 500
+- runFlow:
+    file: common/more.yaml
+    env:
+      PLACE: settings
 - tapOn:
     id: appearance-2
     waitToSettleTimeoutMs: 500

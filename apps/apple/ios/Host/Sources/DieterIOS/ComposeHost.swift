@@ -139,12 +139,9 @@ public final class ShellController: UIViewController, UINavigationControllerDele
     }
 
     /// Shows [shown] in the shared order. Tabs that stay keep their container, stack and UITab;
-    /// a tab that goes takes its stack with it.
-    private func rebuildTabs(_ all: [NativeTab]) {
-        // A sixth tab on iPhone lands in UIKit's More list, where taps inside the tab's stack do
-        // not navigate. The experimental Channels tab is last, so compact width leaves it out and
-        // no other tab's index moves; iPad and Android show it.
-        let shown = regular ? all : all.filter { $0.key != "channels" }
+    /// a tab that goes takes its stack with it. Every layout shows the same four tabs, so UIKit's
+    /// own More list never appears and tab indices always match the shared ones.
+    private func rebuildTabs(_ shown: [NativeTab]) {
         let ids = shown.map(\.key)
         guard ids != tabIDs else { return }
         let existing = Dictionary(uniqueKeysWithValues: zip(tabIDs, zip(containers, tabs.tabs)))
@@ -171,12 +168,11 @@ public final class ShellController: UIViewController, UINavigationControllerDele
         tabs.tabs = nextTabs
     }
 
-    /// Inbox attention, unread mail and unread channel messages.
+    /// Inbox attention; More counts unread mail and channel messages.
     private static func badge(_ id: String, _ navigation: NativeNavigation) -> String? {
         switch id {
         case "inbox": navigation.attention > 0 ? "\(navigation.attention)" : nil
-        case "mail": navigation.mailUnread.isEmpty ? nil : navigation.mailUnread
-        case "channels": navigation.channelsUnread.isEmpty ? nil : navigation.channelsUnread
+        case "more": navigation.moreUnread.isEmpty ? nil : navigation.moreUnread
         default: nil
         }
     }
@@ -319,6 +315,15 @@ public final class ShellController: UIViewController, UINavigationControllerDele
         item.backgroundConfiguration = background
     }
 
+    /// Tapping the selected tab again returns it to its first page, as the system apps do; More
+    /// then shows its list of places again.
+    public func tabBarController(_ tabBarController: UITabBarController, shouldSelectTab tab: UITab) -> Bool {
+        if !applying, tab == tabBarController.selectedTab, let index = tabs.tabs.firstIndex(of: tab) {
+            host.selectTab(index: Int32(index))
+        }
+        return true
+    }
+
     public func tabBarController(
         _ tabBarController: UITabBarController, didSelectTab selectedTab: UITab, previousTab: UITab?
     ) {
@@ -343,7 +348,8 @@ final class TabContainer: UIViewController {
     private var keys: [[String]] = []
     private var split: UISplitViewController?
     private let placeholder = PlaceholderController()
-    private var placeholderShown = false
+    /// The list the placeholder last described; its wording follows the list beside it.
+    private var placeholderList: String?
     /// Set when a change waited for a transition; `settle` reapplies the latest navigation.
     var deferred = false
     var settle: (() -> Void)?
@@ -356,11 +362,6 @@ final class TabContainer: UIViewController {
         super.init(nibName: nil, bundle: nil)
     }
     required init?(coder: NSCoder) { nil }
-
-    /// Routes that list things stay in the primary column on regular width.
-    static func isList(_ key: String) -> Bool {
-        key.hasPrefix("root/") || key.hasPrefix("project/") || key.hasPrefix("board/")
-    }
 
     func configure(regular: Bool) {
         guard !configured || regular != self.regular else { return }
@@ -405,15 +406,17 @@ final class TabContainer: UIViewController {
 
     func sync(routes: [MobileRouteHandle], host: MobileHost, animated: Bool) {
         loadViewIfNeeded()
-        if !placeholderShown {
+        // Routes that list things stay in the primary column on regular width.
+        let boundary = routes.lastIndex { $0.list } ?? 0
+        let list = routes.indices.contains(boundary) ? routes[boundary].key : ""
+        if placeholderList != list {
             placeholder.show(host.emptyDetail(tab: Int32(index)))
-            placeholderShown = true
+            placeholderList = list
         }
         if !regular {
             sync(0, routes: routes, host: host, animated: animated)
             return
         }
-        let boundary = routes.lastIndex { Self.isList($0.key) } ?? 0
         sync(0, routes: Array(routes[...boundary]), host: host, animated: animated)
         sync(1, routes: Array(routes[(boundary + 1)...]), host: host, animated: animated)
     }
@@ -427,9 +430,8 @@ final class TabContainer: UIViewController {
                 if context.isCancelled {
                     self?.settle?()
                 } else {
-                    // A stack inside the iPhone More list never reports its own transitions to the
-                    // shell, so nothing else would apply the change that waited for this one. Pops
-                    // are recorded by then; `settle` only acts while a change is deferred.
+                    // Nothing else may follow to apply the change that waited for this transition.
+                    // Pops are recorded by then; `settle` only acts while a change is deferred.
                     DispatchQueue.main.async { self?.settle?() }
                 }
             }

@@ -49,8 +49,11 @@ internal fun ChannelsScreen(store: MobileStore) {
     val slice by store.channels.slice.collectAsState()
     val settings by store.channels.settings.collectAsState()
     val navigation by store.routes.collectAsState()
-    val open = (navigation.stacks[MobileTab.CHANNELS]?.lastOrNull() as? MobileRoute.Channel)
-    val root = MobileRoute.Root(MobileTab.CHANNELS)
+    val root = MobileRoute.Channels
+    val open =
+        navigation.stack
+            .let { stack -> stack.getOrNull(stack.indexOf(root) + 1) }
+            .takeIf { root in navigation.stack } as? MobileRoute.Channel
     Screen(ScreenChrome("Channels", large = true)) {
         RefreshableList(
             refreshing = slice.loading,

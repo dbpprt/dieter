@@ -2,12 +2,19 @@ package com.getdieter.mobile.platform
 
 import androidx.compose.material3.ColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Dp
 import com.getdieter.mobile.design.*
 
 // System integration each platform supplies to the shared theme, icons and navigation.
+
+/**
+ * Debuggable Android builds expose test tags as resource IDs for UI flows. A window of its own,
+ * such as a modal sheet, does not inherit that from the activity's content.
+ */
+@Composable internal expect fun Modifier.exposingTestTags(): Modifier
 
 /** Platform hook for system back (Android predictive back). No-op elsewhere. */
 @Composable internal expect fun SystemBackHandler(enabled: Boolean, onBack: () -> Unit)

@@ -55,6 +55,8 @@ binary for `maestro studio` or `maestro hierarchy` while writing a flow.
 
 - Select by the shared Compose `testTag`s (`id:`), which Android exposes as
   resource ids in debug builds. Use text only for tabs and seeded content.
+  Open Mail, Channels, Terminals, a machine or an account page through
+  `common/more.yaml` (`PLACE: settings`), which works on every layout.
 - `id:` and `text:` are regular expressions matched against the whole value.
   iOS uses the system back button: tap `id: "chrome-back|BackButton"`.
 - Every tap costs about 1–3 s on Android, and typing costs time per character.

@@ -33,6 +33,8 @@ internal fun FilesScreen(
     store: MobileStore,
     inConversation: Boolean = false,
     route: MobileRoute.FilePath? = null,
+    /** The project tool route when this is a project's Files page. */
+    tool: MobileRoute.Tool? = null,
 ) {
     if (route?.file == true) {
         DocumentScreen(store, route)
@@ -40,22 +42,21 @@ internal fun FilesScreen(
     }
     val view by store.files.slice.collectAsState()
     val conversation by store.conversation.slice.collectAsState()
-    val workspace by store.workspace.slice.collectAsState()
     var create by remember { mutableStateOf<Boolean?>(null) }
     var moving by remember { mutableStateOf<com.getdieter.api.v1.FileEntry?>(null) }
     var deleting by remember { mutableStateOf<com.getdieter.api.v1.FileEntry?>(null) }
     val buffers by store.files.buffers.collectAsState()
     val path = route?.path.orEmpty()
-    val ready = route == null || view.directory.trimSlashes() == path.trimSlashes()
+    // A project's page waits until Files shows its checkout, never the previous binding.
+    val checkout = tool?.let { store.toolCheckout(it) }
+    val ready =
+        (route == null || view.directory.trimSlashes() == path.trimSlashes()) &&
+            (tool == null || view.target?.checkout_id == checkout?.id)
     val cardId = if (inConversation) store.conversation.selectedCard.value else ""
     val title = path.trimSlashes().substringAfterLast('/').ifEmpty { "Files" }
     val subtitle =
         if (inConversation) conversation.card?.title.orEmpty()
-        else
-            workspace.projects
-                .firstOrNull { it.id == store.boards.currentProjectId() }
-                ?.name
-                .orEmpty()
+        else view.target?.let { scopeSubtitle(store, it.project_id, it.daemon_id) }.orEmpty()
     val chrome =
         ScreenChrome(
             title,
@@ -99,22 +100,24 @@ internal fun FilesScreen(
                                         },
                                     )
                                 ),
-                                if (!inConversation && route == null)
-                                    MenuSection(
-                                        projectScopeMenu(store) { store.files.bindProject() }
-                                    )
-                                else null,
+                                tool
+                                    ?.let { checkoutMenu(store, it) }
+                                    ?.let { MenuSection(listOf(it)) },
                             ),
                     )
                 ),
         )
+    if (tool != null && checkout == null) {
+        Screen(chrome) { NoCheckout(store, tool.projectId) }
+        return
+    }
     Screen(chrome) {
         LazyColumn(
             Modifier.fillMaxSize().testTag("files-list"),
             state = listState,
             contentPadding = padding,
         ) {
-            if (view.listing_error.isNotEmpty())
+            if (view.listing_error.isNotEmpty() && ready)
                 item("error") {
                     Banner(
                         "Files unavailable",
@@ -468,4 +471,26 @@ private fun DocumentScreen(store: MobileStore, route: MobileRoute.FilePath) {
             },
             { moving = false },
         )
+}
+
+/** A project tool's page when the project has no checkout on any machine. */
+@Composable
+internal fun NoCheckout(store: MobileStore, projectId: String) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        EmptyState(
+            Glyph.MACHINE,
+            "No checkout",
+            "Attach this project to a folder on one of your machines to browse it here.",
+        ) {
+            DButton(
+                "Open project",
+                {
+                    store.showFrom(
+                        MobileRoute.Root(MobileTab.PROJECTS),
+                        MobileRoute.Project(projectId),
+                    )
+                },
+            )
+        }
+    }
 }

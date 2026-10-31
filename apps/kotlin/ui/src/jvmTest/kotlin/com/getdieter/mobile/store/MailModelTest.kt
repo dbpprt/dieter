@@ -14,10 +14,10 @@ class MailModelTest {
 
     private fun mail(core: FakeMobileCore) = core.sentOf { it.mail }
 
-    private val root = MobileRoute.Root(MobileTab.MAIL)
+    private val root = MobileRoute.Mailbox
 
     @Test
-    fun theMailboxIsWatchedForTheBadgeAndActiveOnlyOnTheMailTab() = runTest {
+    fun theMailboxIsWatchedForTheBadgeAndActiveOnlyWhileMailIsOpen() = runTest {
         val core = FakeMobileCore()
         val store = store(core)
         try {
@@ -33,7 +33,7 @@ class MailModelTest {
             runCurrent()
             assertEquals("4", store.mail.slice.value.unread_label)
 
-            store.selectTab(MobileTab.MAIL)
+            store.openMore(root)
             runCurrent()
             store.selectTab(MobileTab.CHATS)
             runCurrent()
@@ -49,7 +49,7 @@ class MailModelTest {
         val core = FakeMobileCore()
         val store = store(core)
         try {
-            store.selectTab(MobileTab.MAIL)
+            store.openMore(root)
             store.showFrom(root, MobileRoute.MailMessage("d_studio", "ml_audit"))
             runCurrent()
             assertEquals(
@@ -60,18 +60,18 @@ class MailModelTest {
             store.openConversation("c_mail_audit")
             runCurrent()
             assertEquals(1, mail(core).mapNotNull { it.select }.size)
-            assertIs<MobileRoute.MailMessage>(store.routes.value.stack[1])
+            assertIs<MobileRoute.MailMessage>(store.routes.value.stack[2])
 
             // Another tab keeps the selection; popping back to the list clears it.
             store.selectTab(MobileTab.INBOX)
-            store.selectTab(MobileTab.MAIL)
-            store.popTo(MobileTab.MAIL, 2)
+            store.selectTab(MobileTab.MORE)
+            store.popTo(MobileTab.MORE, 3)
             runCurrent()
             assertEquals(1, mail(core).mapNotNull { it.select }.size)
             store.pop()
             runCurrent()
             assertEquals(MailMessageRef(), mail(core).mapNotNull { it.select }.last())
-            assertEquals(listOf(root), store.routes.value.stack)
+            assertEquals(listOf(MobileRoute.Root(MobileTab.MORE), root), store.routes.value.stack)
         } finally {
             store.close()
         }
@@ -124,7 +124,7 @@ class MailModelTest {
         val core = FakeMobileCore()
         val store = store(core)
         try {
-            store.selectTab(MobileTab.MAIL)
+            store.openMore(root)
             store.showFrom(root, MobileRoute.MailMessage("d_studio", "ml_audit"))
             store.push(
                 MobileRoute.FilePath(
