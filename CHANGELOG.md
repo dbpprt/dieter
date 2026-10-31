@@ -8,6 +8,10 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.6.432
+
 ### Changed
 
 - Android, iPhone and iPad navigate with four destinations: **Inbox**,
