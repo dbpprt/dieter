@@ -12,6 +12,7 @@ import com.getdieter.api.v1.TaskPlan
 import com.getdieter.api.v1.TaskPlanItem
 import com.getdieter.api.v1.UiMessage
 import com.getdieter.client.v1.ConversationState
+import com.getdieter.client.v1.QueuedMessageState
 import com.getdieter.core.board.CardOperation
 import com.getdieter.core.board.CardPolicy
 import com.getdieter.core.board.Cards
@@ -201,8 +202,13 @@ object ConversationPresenter {
             unsentTask = card?.let { unsentTask(it, messages) },
             draftAttachments = draftAttachments,
             queue = queue,
-            steerableId = queue.firstOrNull()?.id?.takeIf { activeTurn },
-            interrupting = inFlight == CardOperation.CANCELLING,
+            steerableId =
+                queue.firstOrNull()?.id?.takeIf {
+                    activeTurn &&
+                        Runtimes.classify(runtime) != RuntimeState.STOPPING &&
+                        it !in outbox.pendingMessageIds
+                },
+            interrupting = Runtimes.classify(runtime) == RuntimeState.STOPPING,
             readyForReview = card != null && Lanes.isReview(card.lane),
             canStart =
                 card != null && CardPolicy.canStart(card, board, draftAttachments.isNotEmpty()),
@@ -278,6 +284,26 @@ object ConversationPresenter {
             can_halt = presented.canHalt,
             chat = presented.chat,
             show_reasoning = presented.showReasoning,
+            queued_messages =
+                presented.queue.mapIndexed { index, message ->
+                    val pending = presented.unconfirmed(message.id)
+                    val stopping = index == 0 && presented.interrupting
+                    QueuedMessageState(
+                        id = message.id,
+                        delivery_label =
+                            when {
+                                pending -> Delivery.label(presented.delivery(message.id))
+                                stopping -> "Waiting for agent to stop…"
+                                index == 0 -> "Queued · runs after the current turn"
+                                else -> "Queued · runs after earlier messages"
+                            },
+                        pending_delivery = pending,
+                        stopping = stopping,
+                        can_edit = !pending && !stopping,
+                        can_remove = !pending && !stopping,
+                        can_send_now = message.id == presented.steerableId,
+                    )
+                },
         )
 
     const val CLAUDE_CODE = "claude-code"

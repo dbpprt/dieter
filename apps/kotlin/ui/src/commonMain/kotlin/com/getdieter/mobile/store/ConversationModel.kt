@@ -12,6 +12,30 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
+enum class QueueAction {
+    SEND_NOW,
+    EDIT,
+    REMOVE,
+}
+
+enum class QueueActionPhase {
+    WAITING,
+    SENDING,
+    STOPPING,
+    FAILED,
+}
+
+data class QueueActionState(
+    val cardId: String,
+    val messageId: String,
+    val action: QueueAction,
+    val phase: QueueActionPhase = QueueActionPhase.WAITING,
+    val error: String = "",
+) {
+    val pending: Boolean
+        get() = phase != QueueActionPhase.FAILED
+}
+
 /** The open conversation: its scope, detail tab, drafts, and the commands it sends. */
 class ConversationModel
 internal constructor(
@@ -22,6 +46,8 @@ internal constructor(
     val selectedCard = MutableStateFlow("")
     val detailTab = MutableStateFlow("Conversation")
     val draftTexts = MutableStateFlow<Map<String, String>>(emptyMap())
+    val queueAction = MutableStateFlow<QueueActionState?>(null)
+    private var queueGeneration = 0
     private var subscription: ClientSubscription? = null
     private var boundScope = ""
     private val resolvedScopes = mutableMapOf<String, String>()
@@ -74,6 +100,7 @@ internal constructor(
                 if (current == generation && !context.closed) {
                     update.conversation?.let { slice.value = it }
                     update.conversation_delta?.let { slice.value = fold(slice.value, it) }
+                    settleQueueAction()
                     update.failure?.let { context.error.value = it.message }
                 }
             }
@@ -109,7 +136,7 @@ internal constructor(
         context.core.dispatch(
             Command(send_message = SendMessage(card_id = cardId, text = text, parts = parts))
         )
-        saveDraft(cardId, "")
+        if (draftTexts.value[cardId].orEmpty() == text) saveDraft(cardId, "")
     }
 
     fun move(lane: String) {
@@ -143,6 +170,81 @@ internal constructor(
         context.action {
             context.core.dispatch(Command(retry_failed_turn = RetryFailedTurn(card_id = id)))
         }
+    }
+
+    /** Mark the tap before serializing it, so repeated taps cannot enqueue another mutation. */
+    fun sendNow(messageId: String) = queuedAction(messageId, QueueAction.SEND_NOW)
+
+    fun removeQueued(messageId: String) = queuedAction(messageId, QueueAction.REMOVE)
+
+    fun editQueued(messageId: String, onEdited: (com.getdieter.api.v1.QueuedMessage) -> Unit) =
+        queuedAction(messageId, QueueAction.EDIT, onEdited)
+
+    private fun queuedAction(
+        messageId: String,
+        action: QueueAction,
+        onEdited: (com.getdieter.api.v1.QueuedMessage) -> Unit = {},
+    ) {
+        val id = selectedCard.value
+        if (context.closed || queueAction.value?.let { it.cardId == id && it.pending } == true)
+            return
+        val request = QueueActionState(id, messageId, action)
+        val current = ++queueGeneration
+        queueAction.value = request
+        context.action {
+            if (current == queueGeneration)
+                queueAction.value = request.copy(phase = QueueActionPhase.SENDING)
+            try {
+                val result =
+                    context.core.dispatch(
+                        if (action == QueueAction.SEND_NOW)
+                            Command(steer_conversation = SteerConversation(id, messageId))
+                        else
+                            Command(
+                                remove_queued_message =
+                                    RemoveQueuedMessage(
+                                        id,
+                                        messageId,
+                                        edit = action == QueueAction.EDIT,
+                                    )
+                            )
+                    )
+                if (action == QueueAction.EDIT)
+                    result.queued_message?.let { removed ->
+                        saveDraft(id, removed.text)
+                        if (selectedCard.value == id) onEdited(removed)
+                    }
+                if (current == queueGeneration) {
+                    queueAction.value =
+                        if (action == QueueAction.SEND_NOW)
+                            request.copy(phase = QueueActionPhase.STOPPING)
+                        else null
+                    settleQueueAction()
+                }
+            } catch (cancelled: CancellationException) {
+                if (current == queueGeneration) queueAction.value = null
+                throw cancelled
+            } catch (failure: Throwable) {
+                if (current == queueGeneration)
+                    queueAction.value =
+                        request.copy(
+                            phase = QueueActionPhase.FAILED,
+                            error =
+                                failure.message
+                                    ?: "The queued message could not be changed. Try again.",
+                        )
+            }
+        }
+    }
+
+    private fun settleQueueAction() {
+        val action = queueAction.value ?: return
+        if (
+            action.cardId == selectedCard.value &&
+                action.phase == QueueActionPhase.STOPPING &&
+                slice.value.conversation?.queue?.none { it.id == action.messageId } == true
+        )
+            queueAction.value = null
     }
 
     fun saveDraft(id: String, text: String) {

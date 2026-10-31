@@ -61,6 +61,15 @@ queued message into the composer with its attachments and selection; Remove
 discards it. Steering the next message requests cancellation first, then waits
 for provider cleanup before the queued turn starts.
 
+On iOS and Android, **Send now** shows its progress beside the queued message.
+Queued messages stay above the chat input while you scroll through the conversation.
+A longer queue scrolls in its own area so the input stays within reach.
+**Waiting to send** means the message is saved on your device and has not
+reached its machine. Queue actions become available after the machine confirms it.
+**Waiting for agent to stop…** means the request was accepted and provider
+cleanup is still running; the message stays queued until its turn starts.
+An unsuccessful action shows an error beside the message so you can retry.
+
 Send a human message to ask for more work.
 
 Completed replies you have not viewed, and questions waiting for an answer,
