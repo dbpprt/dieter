@@ -411,14 +411,19 @@ internal val MailBox.glyph: Glyph
  * Android.
  */
 @Composable
-internal fun overflow(id: String, actions: List<ChromeAction>): List<ChromeAction> =
+internal fun overflow(
+    id: String,
+    actions: List<ChromeAction>,
+    title: String = "Mail actions",
+): List<ChromeAction> =
     when {
         actions.isEmpty() -> emptyList()
         apple ->
             listOf(
                 ChromeAction(
                     id,
-                    "More",
+                    // Not "More": that names the tab, for VoiceOver as for UI flows.
+                    title,
                     Glyph.MORE_HORIZONTAL,
                     menu = listOf(MenuSection(actions)),
                 )
