@@ -5,6 +5,7 @@ import com.getdieter.api.v1.KVEntry
 import com.getdieter.api.v1.KVMoveRequest
 import com.getdieter.api.v1.KVPutRequest
 import com.getdieter.api.v1.KVRef
+import com.getdieter.api.v1.KVServiceClient
 import com.getdieter.core.runtime.Backoff
 import com.getdieter.core.runtime.CoreException
 import com.getdieter.core.runtime.CoreLogger
@@ -58,16 +59,29 @@ data class KvPosition(val parent: String, val rank: String)
 /** A machine as a KV mutation names it: its peer account and identity. */
 data class KvAcceptor(val account: String, val daemonId: String)
 
+/** Reaches one machine's KV service. */
+interface KvMachines {
+    suspend fun <T> call(machineId: String, block: suspend (KVServiceClient) -> T): T
+}
+
+/** [KvMachines] over this device's shared data planes. */
+fun MachineSessions.kvMachines(): KvMachines =
+    object : KvMachines {
+        override suspend fun <T> call(machineId: String, block: suspend (KVServiceClient) -> T): T =
+            this@kvMachines.call(machineId, block)
+    }
+
 /**
  * An account-wide, replicated key-value namespace on the daemons (SharedKV). Its entries are the
  * account view's joined records ([apply]). Edits are queued durably per gateway and delivered in
- * order to a reachable machine, this device's first; a machine that has not yet seen what this
- * client shows is waited for, so a lagging machine never rolls a change back. Confined to the core
- * dispatcher.
+ * order to a reachable machine, this device's first. A machine that has not yet seen what this
+ * client shows of the key (or of a move's neighbours) never receives the edit, so a lagging machine
+ * never rolls a change back: the next reachable machine that has seen it takes the edit, and only
+ * when none has is the edit waited on. Confined to the core dispatcher.
  */
 class SharedKv(
     private val namespace: String,
-    private val sessions: MachineSessions,
+    private val machines: KvMachines,
     /** The peer account and identity of a machine whose view is applied, else null. */
     private val acceptor: (machineId: String) -> KvAcceptor?,
     private val logger: CoreLogger,
@@ -202,10 +216,20 @@ class SharedKv(
 
     private suspend fun deliver(targets: StateFlow<List<String>>): Nothing {
         var attempt = 0
+        // Machines passed over for the head edit: behind what this client shows, or failing before
+        // the edit was prepared for them. Each edit asks this device's preferred machine first.
+        var head = ""
+        val passed = HashSet<String>()
+        var failing = false
         while (true) {
             val intent = pending.firstOrNull()
-            val target = intent?.let { target(it, targets.value) }
-            if (intent == null || target == null) {
+            if (intent?.id != head) {
+                head = intent?.id.orEmpty()
+                passed.clear()
+                failing = false
+            }
+            val candidates = intent?.let { candidates(it, targets.value) }.orEmpty()
+            if (intent == null || candidates.isEmpty()) {
                 if (intent != null && intent.daemon_id.isNotEmpty()) {
                     mutableStatus.update {
                         it.copy(
@@ -217,15 +241,43 @@ class SharedKv(
                 wake.receive()
                 continue
             }
+            val target = candidates.firstOrNull { it.first !in passed }
+            if (target == null) {
+                // No reachable machine can take the edit yet: wait, then ask them all again.
+                if (!failing) {
+                    mutableStatus.update {
+                        it.copy(
+                            deliveryError =
+                                "Waiting for a machine to receive earlier navigation edits."
+                        )
+                    }
+                }
+                delay(if (failing) Backoff.NAVIGATION.delay(attempt++) else COVER_WAIT)
+                passed.clear()
+                failing = false
+                continue
+            }
             val (machineId, accepting) = target
             val gen = generation
+            // Once prepared, the edit belongs to this machine: only its receipt makes a retry
+            // idempotent.
+            var bound = intent.prepared.size > 0
             try {
                 val prepared =
-                    if (intent.prepared.size > 0) intent
-                    else prepare(machineId, accepting, intent) ?: continue
+                    if (bound) intent
+                    else
+                        when (val preparation = prepare(machineId, accepting, intent)) {
+                            Preparation.Dropped -> continue
+                            Preparation.Behind -> {
+                                passed += machineId
+                                continue
+                            }
+                            is Preparation.Ready -> preparation.intent
+                        }
+                bound = true
                 if (gen != generation) continue
                 val result =
-                    sessions.call(machineId) { client ->
+                    machines.call(machineId) { client ->
                         when {
                             prepared.move != null ->
                                 client
@@ -276,6 +328,13 @@ class SharedKv(
                         }
                         wake.receive()
                     }
+                    // Nothing was sent for this edit yet, e.g. the machine is too busy to read
+                    // the key: the next reachable machine may take it.
+                    !bound -> {
+                        passed += machineId
+                        failing = true
+                        mutableStatus.update { it.copy(deliveryError = Failures.message(error)) }
+                    }
                     else -> {
                         mutableStatus.update { it.copy(deliveryError = Failures.message(error)) }
                         delay(Backoff.NAVIGATION.delay(attempt++))
@@ -286,40 +345,41 @@ class SharedKv(
     }
 
     /**
-     * Where [intent] goes: a prepared edit only to the machine it was prepared for, since only that
-     * machine's receipt makes a retry idempotent; a new one to the first reachable machine with an
-     * applied view.
+     * Where [intent] may go, preferred first: a prepared edit only to the machine it was prepared
+     * for, since only that machine's receipt makes a retry idempotent; a new one to any reachable
+     * machine with an applied view.
      */
-    private fun target(intent: KvIntent, reachable: List<String>): Pair<String, KvAcceptor>? =
-        reachable.firstNotNullOfOrNull { machineId ->
-            acceptor(machineId)
-                ?.takeIf { intent.daemon_id.isEmpty() || it.daemonId == intent.daemon_id }
-                ?.let { machineId to it }
-        }
+    private fun candidates(
+        intent: KvIntent,
+        reachable: List<String>,
+    ): List<Pair<String, KvAcceptor>> = reachable.mapNotNull { machineId ->
+        acceptor(machineId)
+            ?.takeIf { intent.daemon_id.isEmpty() || it.daemonId == intent.daemon_id }
+            ?.let { machineId to it }
+    }
 
-    /**
-     * Builds the exact request for [intent] against the key's current revision, or null when it was
-     * dropped.
-     */
+    private sealed interface Preparation {
+        /** The exact request, persisted for the machine it was prepared for. */
+        data class Ready(val intent: KvIntent) : Preparation
+
+        /** The machine has not seen what this client shows of the key or a move's neighbours. */
+        data object Behind : Preparation
+
+        /** The edit no longer applies and left the queue. */
+        data object Dropped : Preparation
+    }
+
+    /** Builds the exact request for [intent] against the key's current revision on [machineId]. */
     private suspend fun prepare(
         machineId: String,
         accepting: KvAcceptor,
         intent: KvIntent,
-    ): KvIntent? {
+    ): Preparation {
         val current = get(machineId, accepting.account, intent.key)
-        val shown = acknowledged[intent.key] ?: entries[intent.key]
-        if (shown != null && !covers(current, shown)) {
-            mutableStatus.update {
-                it.copy(
-                    deliveryError = "Waiting for this machine to receive earlier navigation edits."
-                )
-            }
-            delay(COVER_WAIT)
-            return null
-        }
+        if (!seen(intent.key, current)) return Preparation.Behind
         if (intent.put?.requires_existing == true && (current == null || current.deleted)) {
             pop(intent.id)
-            return null
+            return Preparation.Dropped
         }
         val ref = KVRef(namespace = namespace, key = intent.key, account = accepting.account)
         val revision = current?.revision.orEmpty()
@@ -327,8 +387,17 @@ class SharedKv(
         val bytes =
             when {
                 move != null -> {
-                    var after = anchor(machineId, accepting.account, move.after, move.parent)
-                    val before = anchor(machineId, accepting.account, move.before, move.parent)
+                    // A move anchors on its neighbours as this client shows them, e.g. where an
+                    // earlier edit of this client placed them.
+                    val afterEntry = get(machineId, accepting.account, move.after)
+                    val beforeEntry = get(machineId, accepting.account, move.before)
+                    if (
+                        (move.after.isNotEmpty() && !seen(move.after, afterEntry)) ||
+                            (move.before.isNotEmpty() && !seen(move.before, beforeEntry))
+                    )
+                        return Preparation.Behind
+                    var after = anchor(move.after, afterEntry, move.parent)
+                    val before = anchor(move.before, beforeEntry, move.parent)
                     // Neighbours that crossed meanwhile: keep the position relative to the later
                     // one.
                     if (after != null && before != null && after.second >= before.second)
@@ -368,30 +437,35 @@ class SharedKv(
         val prepared = intent.copy(prepared = bytes.toByteString(), daemon_id = accepting.daemonId)
         // Persist before sending, so a crash retries the same operation.
         replaceHead(intent.id) { prepared }
-        return prepared
+        return Preparation.Ready(prepared)
     }
 
-    /** A usable neighbour: it exists, is live, is a position, and shares the parent. */
-    private suspend fun anchor(
-        machineId: String,
-        account: String,
-        key: String,
-        parent: String,
-    ): Pair<String, String>? {
-        if (key.isEmpty()) return null
-        val entry = get(machineId, account, key)?.takeUnless { it.deleted } ?: return null
+    /** Whether a machine holding [current] for [key] has seen everything this client shows. */
+    private fun seen(key: String, current: KVEntry?): Boolean {
+        val shown = acknowledged[key] ?: entries[key] ?: return true
+        return covers(current, shown)
+    }
+
+    /**
+     * [key] with its rank when [entry] is a usable neighbour: it exists, is live, is a position,
+     * and shares the parent.
+     */
+    private fun anchor(key: String, entry: KVEntry?, parent: String): Pair<String, String>? {
+        if (key.isEmpty() || entry == null || entry.deleted) return null
         val position = decodePosition(entry.value_json) ?: return null
         return if (position.parent == parent) key to position.rank else null
     }
 
-    private suspend fun get(machineId: String, account: String, key: String): KVEntry? =
-        try {
-            sessions.call(machineId) {
+    private suspend fun get(machineId: String, account: String, key: String): KVEntry? {
+        if (key.isEmpty()) return null
+        return try {
+            machines.call(machineId) {
                 it.GetKV().execute(KVRef(namespace = namespace, key = key, account = account))
             }
         } catch (error: GrpcException) {
             if (error.grpcStatus == GrpcStatus.NOT_FOUND) null else throw error
         }
+    }
 
     private fun pop(id: String) {
         pending = pending.filterNot { it.id == id }

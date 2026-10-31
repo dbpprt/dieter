@@ -26,9 +26,10 @@ class NavigationTest {
      * A namespace bound to a gateway but never connected: edits stay pending and project locally.
      */
     private fun offlineKv(): SharedKv =
-        SharedKv("navigation", offlineSessions(), acceptor = { null }, SilentLogger).also {
-            it.bind(CoreStorage(fileSystem, "/state".toPath()))
-        }
+        SharedKv("navigation", offlineSessions().kvMachines(), acceptor = { null }, SilentLogger)
+            .also {
+                it.bind(CoreStorage(fileSystem, "/state".toPath()))
+            }
 
     private fun layout(kv: SharedKv) = NavigationLayout(kv.values.value)
 
@@ -265,7 +266,13 @@ class NavigationTest {
         val restored = offlineKv()
         assertEquals(1, restored.status.value.pending)
         assertFalse(NavigationLayout(restored.values.value).laneDescending("b", "l"))
-        val unbound = SharedKv("navigation", offlineSessions(), acceptor = { null }, SilentLogger)
+        val unbound =
+            SharedKv(
+                "navigation",
+                offlineSessions().kvMachines(),
+                acceptor = { null },
+                SilentLogger,
+            )
         assertFailsWith<CoreException> {
             NavigationEditor(unbound).setLaneDescending("b", "l", false)
         }

@@ -52,6 +52,7 @@ import com.getdieter.core.navigation.KvAcceptor
 import com.getdieter.core.navigation.NavigationEditor
 import com.getdieter.core.navigation.NavigationLayout
 import com.getdieter.core.navigation.SharedKv
+import com.getdieter.core.navigation.kvMachines
 import com.getdieter.core.notifications.NotificationPlanner
 import com.getdieter.core.notifications.NotificationSettings
 import com.getdieter.core.outbox.Outbox
@@ -229,7 +230,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
     val navigationKv =
         SharedKv(
             NAVIGATION_NAMESPACE,
-            sessions,
+            sessions.kvMachines(),
             acceptor = { machineId ->
                 accountSync
                     .replica(machineId)
