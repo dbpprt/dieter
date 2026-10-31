@@ -120,9 +120,9 @@ schema lives in `api/proto/dieter/client/v1` (Wire reads all schemas from
 ## Shared mobile UI (`:ui`)
 
 The Android and iOS apps share one Compose Multiplatform UI, organized as
-**Inbox / Projects / Chats / More**, with compact task cards, project folders,
+**Inbox / Mail / Projects / Chats / More**, with compact task cards, project folders,
 agent controls, transcript tools, files, Git review, schedules, terminals,
-screens and machine tools. More holds Mail, Channels, Terminals, the machines,
+screens and machine tools. More holds Channels, Terminals, the machines,
 Usage, Devices and Settings (`app/More.kt`). Tools live with their scope:
 Files, Changes and Schedules open from a project and carry its ID (and Files
 and Changes a checkout), a machine's page shows its screen, terminals and
@@ -153,7 +153,10 @@ commands are shared.
   and inset-grouped lists.
 - **Adaptive layouts:** Android shows list and detail side by side from 600 dp
   wide and 480 dp tall (unfolded foldables, tablets), split by a draggable
-  handle whose position `LayoutModel` keeps; iPad uses a split view in regular
+  handle (`app/PaneSplit.kt`). Dragging a pane well past its minimum width
+  collapses it (`PaneCollapse`): without the list, the open page fills the
+  window and goes back to the list; without the detail, the list fills the
+  window until something opens. `LayoutModel` keeps the split; iPad uses a split view in regular
   width. `MobileRoute.list` decides which routes stay in the list column on both. A board shows parallel lanes from
   700 dp and swipeable lane tabs below that.
 

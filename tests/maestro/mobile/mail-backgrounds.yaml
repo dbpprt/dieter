@@ -15,10 +15,9 @@ tags:
 - tapOn:
     waitToSettleTimeoutMs: 500
     id: appearance-1
-- runFlow:
-    file: common/more.yaml
-    env:
-      PLACE: mail
+- tapOn:
+    text: "Mail"
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: Chart background comparison
     timeout: 40000
@@ -161,10 +160,9 @@ tags:
 - tapOn:
     waitToSettleTimeoutMs: 500
     id: appearance-2
-- runFlow:
-    file: common/more.yaml
-    env:
-      PLACE: mail
+- tapOn:
+    text: "Mail"
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: Chart background comparison
     timeout: 40000

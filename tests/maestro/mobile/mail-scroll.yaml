@@ -10,10 +10,9 @@ tags: [full]
 - tapOn:
     id: appearance-2
     waitToSettleTimeoutMs: 500
-- runFlow:
-    file: common/more.yaml
-    env:
-      PLACE: mail
+- tapOn:
+    text: "Mail"
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: "Release smoke results: all platforms passed"
     timeout: 40000

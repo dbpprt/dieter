@@ -8,7 +8,18 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
-Nothing yet.
+### Changed
+
+- **Mail** is back in the navigation bar on Android, iPhone and iPad, next to
+  Inbox: Inbox, Mail, Projects, Chats and More. Its badge counts unread mail;
+  More's counts unread channel messages.
+- On Android tablets and unfolded foldables, drag the handle between the list
+  and the open page all the way to one side to hide that pane on every screen.
+  Without the list, whatever you open fills the screen (a conversation hides
+  the navigation bar, as on a phone) and back returns to the list; without the
+  open page, the list fills the screen until you open something. The handle
+  stays at the edge to pull the pane back, a double-tap restores both panes,
+  and the app remembers the choice.
 
 ## 0.6.432
 

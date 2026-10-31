@@ -279,15 +279,15 @@ class MobileStore(
             screens.open(screen.machineId)
         machines.select((stack.lastOrNull() as? MobileRoute.Machine)?.machineId.orEmpty())
         channels.show((state.top as? MobileRoute.Channel)?.projectId)
-        // The message open in Mail stays selected beneath a conversation it opened.
-        val more = state.stacks.getValue(MobileTab.MORE)
+        // The message open in the Mail tab stays selected beneath a conversation it opened.
         mail.show(
-            more
+            state.stacks
+                .getValue(MobileTab.MAIL)
                 .lastOrNull { it is MobileRoute.MailMessage }
                 ?.let { it as MobileRoute.MailMessage }
                 ?.let { MailMessageRef(daemon_id = it.daemonId, id = it.id) }
         )
-        mail.setActive(state.tab == MobileTab.MORE && MobileRoute.Mailbox in more)
+        mail.setActive(state.tab == MobileTab.MAIL)
         val top = state.modal ?: state.top
         if (top.key == activeTop) return
         activeTop = top.key

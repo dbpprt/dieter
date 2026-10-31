@@ -8,8 +8,8 @@ import kotlinx.coroutines.flow.first
 /**
  * Debug builds only: replays navigation steps so screenshots of any screen can be taken without
  * touch automation. Steps are separated by ";", e.g. "tab projects; board Main; card Design; pane
- * subagents", "channel Pricing", "more mailbox; mail Dependency audit" or "project Atlas; tool
- * files". `more` opens mailbox, channels, terminals, usage, devices or settings in More.
+ * subagents", "channel Pricing", "mail Dependency audit" or "project Atlas; tool files". `more`
+ * opens channels, terminals, usage, devices or settings in More.
  */
 internal suspend fun MobileStore.runDebugScript(script: String) {
     workspace.slice.first { it.loaded }
@@ -24,8 +24,6 @@ internal suspend fun MobileStore.runDebugScript(script: String) {
             "more" ->
                 openMore(
                     when (argument.lowercase()) {
-                        "mailbox",
-                        "mail" -> MobileRoute.Mailbox
                         "channels" -> MobileRoute.Channels
                         else -> MobileRoute.Tool(ToolPage.valueOf(argument.uppercase()))
                     }
@@ -48,9 +46,11 @@ internal suspend fun MobileStore.runDebugScript(script: String) {
                     .firstOrNull { it.subject.startsWith(argument, true) }
                     ?.ref
                     ?.let {
-                        if (MobileRoute.Mailbox !in routes.value.stack)
-                            openMore(MobileRoute.Mailbox)
-                        showFrom(MobileRoute.Mailbox, MobileRoute.MailMessage(it.daemon_id, it.id))
+                        if (routes.value.tab != MobileTab.MAIL) selectTab(MobileTab.MAIL)
+                        showFrom(
+                            MobileRoute.Root(MobileTab.MAIL),
+                            MobileRoute.MailMessage(it.daemon_id, it.id),
+                        )
                     }
             "card",
             "chat" ->

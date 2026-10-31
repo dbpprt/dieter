@@ -3,6 +3,7 @@ package com.getdieter.mobile.store
 import com.getdieter.api.v1.Checkout
 import com.getdieter.api.v1.Project
 import com.getdieter.client.v1.*
+import com.getdieter.mobile.app.shown
 import com.getdieter.mobile.navigation.*
 import kotlin.test.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -20,9 +21,9 @@ class NavigationOverhaulTest {
         val store = store(FakeMobileCore())
         try {
             store.selectTab(MobileTab.PROJECTS)
-            store.openMore(MobileRoute.Mailbox)
+            store.openMore(MobileRoute.Channels)
             assertEquals(MobileTab.MORE, store.routes.value.tab)
-            assertEquals(listOf(more, MobileRoute.Mailbox), store.routes.value.stack)
+            assertEquals(listOf(more, MobileRoute.Channels), store.routes.value.stack)
             // Choosing another place replaces the open one.
             store.openMore(MobileRoute.Tool(ToolPage.SETTINGS))
             assertEquals(
@@ -137,9 +138,33 @@ class NavigationOverhaulTest {
     }
 
     @Test
-    fun moreCountsUnreadMailAndChannelMessages() {
-        assertEquals("", com.getdieter.mobile.app.moreBadge(0, 0))
-        assertEquals("5", com.getdieter.mobile.app.moreBadge(3, 2))
-        assertEquals("99+", com.getdieter.mobile.app.moreBadge(90, 12))
+    fun aPaneDraggedFarEnoughGoesAwayAndTheChoiceIsKept() {
+        // Released well below its 280 dp minimum, the list goes; near it, the split snaps back.
+        assertEquals(PaneCollapse.LIST, PaneSplit.collapse(750f, 120f))
+        assertEquals(PaneCollapse.NONE, PaneSplit.collapse(750f, 200f))
+        // The same for the detail's 320 dp.
+        assertEquals(PaneCollapse.DETAIL, PaneSplit.collapse(750f, 600f))
+        assertEquals(PaneCollapse.NONE, PaneSplit.collapse(750f, 540f))
+
+        val saved = mutableMapOf<String, String>()
+        val preferences = MobilePreferences(saved::get) { key, value -> saved[key] = value }
+        val layout = LayoutModel(preferences)
+        layout.settle(750f, 100f)
+        assertEquals(PaneCollapse.LIST, layout.paneCollapse.value)
+        assertEquals(PaneCollapse.LIST, LayoutModel(preferences).paneCollapse.value)
+        assertEquals(0f, PaneSplit.shownWidth(750f, layout.paneFraction.value, PaneCollapse.LIST))
+        // A list sent away shows again while nothing is open beside it.
+        assertEquals(PaneCollapse.NONE, PaneCollapse.LIST.shown(detailOpen = false))
+        layout.settle(750f, 400f)
+        assertEquals(PaneCollapse.NONE, layout.paneCollapse.value)
+        assertEquals(400f / 750f, layout.paneFraction.value, .001f)
+        layout.settle(750f, 700f)
+        assertEquals(
+            750f,
+            PaneSplit.shownWidth(750f, layout.paneFraction.value, PaneCollapse.DETAIL),
+        )
+        layout.resetPanes()
+        assertEquals(PaneCollapse.NONE, LayoutModel(preferences).paneCollapse.value)
+        assertEquals(PaneSplit.DEFAULT_FRACTION, LayoutModel(preferences).paneFraction.value)
     }
 }

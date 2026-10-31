@@ -96,11 +96,14 @@ private fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
         return
     }
     var moreOpen by remember { mutableStateOf(false) }
+    val collapse by store.layout.paneCollapse.collectAsState()
     BoxWithConstraints(Modifier.fillMaxSize()) {
         // Unfolded foldables and tablets show a list beside its detail; landscape phones don't.
         val twoPane = maxWidth >= 600.dp && maxHeight >= 480.dp
         val rail = maxWidth >= 840.dp
-        val immersive = !twoPane && navigation.top.immersive
+        // With its list sent away, an open conversation fills the screen as on a phone.
+        val listHidden = twoPane && collapse.shown(navigation.detailOpen) == PaneCollapse.LIST
+        val immersive = (!twoPane || listHidden) && navigation.top.immersive
         Row(Modifier.fillMaxSize()) {
             if (rail) NavigationRailBar(store, navigation) { moreOpen = true }
             Column(Modifier.weight(1f)) {
@@ -149,7 +152,7 @@ private fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
     }
 }
 
-/** Each tab's badge: Inbox attention; More counts unread mail and channel messages. */
+/** Each tab's badge: Inbox attention, unread mail, and unread channel messages on More. */
 @Composable
 private fun rememberTabBadges(store: MobileStore): (MobileTab) -> String {
     val activity by store.workspace.activity.collectAsState()
@@ -159,7 +162,8 @@ private fun rememberTabBadges(store: MobileStore): (MobileTab) -> String {
     return { tab ->
         when (tab) {
             MobileTab.INBOX -> if (attention > 0) attention.toString() else ""
-            MobileTab.MORE -> moreBadge(mail.unread, channels.unread)
+            MobileTab.MAIL -> mail.unread_label
+            MobileTab.MORE -> channels.unread_label
             else -> ""
         }
     }
@@ -261,8 +265,25 @@ private fun TabStack(
         val list = stack[listIndex]
         val details = stack.drop(listIndex + 1)
         val detail = details.lastOrNull()
+        val collapse by store.layout.paneCollapse.collectAsState()
+        // Opening something from a list that fills the window brings the detail back.
+        var opened by remember { mutableStateOf(navigation.tab to detail?.key) }
+        LaunchedEffect(navigation.tab, detail?.key) {
+            val now = navigation.tab to detail?.key
+            if (
+                now != opened &&
+                    now.first == opened.first &&
+                    now.second != null &&
+                    store.layout.paneCollapse.value == PaneCollapse.DETAIL
+            )
+                store.layout.setPaneCollapse(PaneCollapse.NONE)
+            opened = now
+        }
+        // Without its list beside it, the open page goes back to the list.
+        val listHidden = collapse.shown(detail != null) == PaneCollapse.LIST
         ListDetailSplit(
             store,
+            detailOpen = detail != null,
             list = {
                 CompositionLocalProvider(
                     LocalBackAction provides if (listIndex > 0) store::pop else null
@@ -273,7 +294,9 @@ private fun TabStack(
         ) {
             Box(Modifier.fillMaxSize()) {
                 CompositionLocalProvider(
-                    LocalBackAction provides if (details.size > 1) store::pop else null
+                    LocalBackAction provides
+                        if (details.size > 1 || (listHidden && details.isNotEmpty())) store::pop
+                        else null
                 ) {
                     AnimatedContent(
                         detail,
@@ -320,6 +343,10 @@ private fun TabStack(
     }
 }
 
+/** Something is open after the stack's last list, i.e. beside it on wide layouts. */
+private val MobileNavigation.detailOpen: Boolean
+    get() = stack.indexOfLast { it.list }.let { it >= 0 && it < stack.lastIndex }
+
 private fun depthOf(store: MobileStore, route: MobileRoute): Int =
     store.routes.value.stack.indexOf(route).let { if (it < 0) Int.MAX_VALUE / 2 else it }
 
@@ -334,10 +361,10 @@ internal fun RouteContent(store: MobileStore, route: MobileRoute, openUrl: (Stri
             when (route.tab) {
                 MobileTab.INBOX -> InboxScreen(store)
                 MobileTab.PROJECTS -> ProjectsScreen(store)
+                MobileTab.MAIL -> MailScreen(store)
                 MobileTab.CHATS -> ChatsScreen(store)
                 MobileTab.MORE -> MoreScreen(store)
             }
-        is MobileRoute.Mailbox -> MailScreen(store)
         is MobileRoute.Channels -> ChannelsScreen(store)
         is MobileRoute.Project -> ProjectScreen(store, route.projectId)
         is MobileRoute.Board -> BoardScreen(store, route.boardId)

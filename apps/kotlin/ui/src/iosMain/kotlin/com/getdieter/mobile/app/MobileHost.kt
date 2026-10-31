@@ -37,7 +37,7 @@ class NativeTab(val key: String, val title: String, val symbol: String)
 class NativeNavigation(
     /** The selected tab's index in [tabs]. */
     val tab: Int,
-    /** The tabs, in order: Inbox, Projects, Chats and More on every layout. */
+    /** The tabs, in order: Inbox, Mail, Projects, Chats and More on every layout. */
     val tabs: List<NativeTab>,
     /** Each visible tab's stack, in the order of [tabs]. */
     val stacks: List<List<MobileRouteHandle>>,
@@ -51,7 +51,9 @@ class NativeNavigation(
     val attention: Int,
     /** ARGB accent for native controls; 0 means the label color (monochrome). */
     val accent: Long,
-    /** The More tab badge: unread mail and channel messages, "4", "99+", or empty. */
+    /** The Mail tab badge: unread Inbox mail, "4", "99+", or empty. */
+    val mailUnread: String,
+    /** The More tab badge: unread channel messages, "3", "99+", or empty. */
     val moreUnread: String,
 )
 
@@ -173,7 +175,8 @@ class MobileHost(private val shared: DieterShared, private val nativeViews: Mobi
             store.workspace.activity.value.summary?.attention ?: 0,
             if (palette == com.getdieter.mobile.settings.DieterPalette.MONOCHROME) 0L
             else palette.tokens.shellEnd,
-            moreBadge(store.mail.slice.value.unread, store.channels.slice.value.unread),
+            store.mail.slice.value.unread_label,
+            store.channels.slice.value.unread_label,
         )
     }
 

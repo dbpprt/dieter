@@ -42,10 +42,9 @@ internal class MoreEntry(
     val value: String = "",
 )
 
-/** More's places (mail, channels, terminals, usage) and account pages (devices, settings). */
+/** More's places (channels, terminals, usage) and account pages (devices, settings). */
 @Composable
 internal fun rememberMoreEntries(store: MobileStore): Pair<List<MoreEntry>, List<MoreEntry>> {
-    val mail by store.mail.slice.collectAsState()
     val channels by store.channels.slice.collectAsState()
     val quotas by store.machines.quotas.collectAsState()
     val terminals by store.terminals.overview.collectAsState()
@@ -62,14 +61,6 @@ internal fun rememberMoreEntries(store: MobileStore): Pair<List<MoreEntry>, List
         )
     return listOf(
         MoreEntry(
-            "mail",
-            "Mail",
-            Glyph.MAIL,
-            Color(0xFF0A84FF),
-            MobileRoute.Mailbox,
-            badge = mail.unread_label,
-        ),
-        MoreEntry(
             "channels",
             "Channels",
             Glyph.TAG,
@@ -84,16 +75,6 @@ internal fun rememberMoreEntries(store: MobileStore): Pair<List<MoreEntry>, List
         tool(ToolPage.USAGE, lowest?.let { "$it% left" }.orEmpty()),
     ) to listOf(tool(ToolPage.DEVICES), tool(ToolPage.SETTINGS))
 }
-
-/** The More tab badge: unread mail and channel messages together. */
-internal fun moreBadge(mailUnread: Int, channelsUnread: Int): String =
-    (mailUnread.coerceAtLeast(0) + channelsUnread.coerceAtLeast(0)).let {
-        when {
-            it <= 0 -> ""
-            it > 99 -> "99+"
-            else -> "$it"
-        }
-    }
 
 /** What More shows open beside or above it: the route right after the More page. */
 private fun MobileNavigation.moreSelection(): String? =

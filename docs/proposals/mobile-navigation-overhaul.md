@@ -227,3 +227,18 @@ rejects every page pulled into `mbp-office` and `workbench`, so both replicas
 stay almost empty. The pin fix above routes around those replicas, but they
 need their own fix: quarantine the failing record and keep applying the rest.
 The change has to be checked against the threat model.
+
+## 6. Follow-up changes (2026-10-31)
+
+- Mail moved back into the bar, next to Inbox: `MobileTab` is Inbox, Mail,
+  Projects, Chats and More (five items, which iPhone still shows without
+  UIKit's More list). Mail's list is `Root(MAIL)` again; More keeps Channels,
+  Terminals, the machines, Usage, Devices and Settings, and its badge counts
+  unread channel messages.
+- The Android split can collapse either pane (`PaneCollapse` in
+  `LayoutModel`). A drag released with a pane below 60 % of its minimum width
+  collapses it; the handle stays at that edge as a pull tab, and a double tap
+  or the accessibility actions restore both. Without the list, the open page
+  fills the window, an immersive one hides the bar as on phones, and back pops
+  to the list (which then shows beside the placeholder). Without the detail,
+  the list fills the window until something opens from it in the same tab.

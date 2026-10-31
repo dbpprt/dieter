@@ -88,11 +88,11 @@ host telemetry without losing your board.
 
 **Inbox** is the starting point on Android, iPhone, and iPad. It brings task and
 chat activity together so you can find recent work without first choosing a
-board. Next to it are **Projects** and **Chats**. **More** holds everything
-else: [**Mail**](/docs/mail/), **Channels**, **Terminals**, your machines,
+board. Next to it are [**Mail**](/docs/mail/), **Projects** and **Chats**.
+**More** holds everything else: **Channels**, **Terminals**, your machines,
 **Usage**, **Devices** and **Settings**. On Android, More slides up as a sheet
-above the bar; on iPhone and iPad it is a tab. Its badge counts unread mail and
-channel messages.
+above the bar; on iPhone and iPad it is a tab. Its badge counts unread channel
+messages.
 Completed replies that you have not viewed appear under **Needs you**. Opening
 the latest reply clears that state across clients; questions waiting for your
 answer continue to need attention.
@@ -142,7 +142,11 @@ mismatched release compatibility policy.
 
 On iPad, and on Android tablets and unfolded foldables, a list and what you
 open from it sit side by side. On Android, drag the handle between them to
-resize the list, or double-tap it to reset the split; the app remembers it.
+resize the list. Drag it all the way to one side to hide that pane: with the
+list hidden, whatever you open fills the screen (back returns to the list);
+with the open page hidden, the list fills the screen until you open something.
+The handle stays at the edge to pull the pane back, a double-tap restores both,
+and the app remembers your choice.
 
 {{< screenshot src="ipad-conversation.png" kind="tablet" width="2048" height="2732" alt="iPad with the Atlas API board on the left and a running task's reply, rate-limit table, and plan on the right" caption="The board and a running task, side by side on iPad." >}}
 

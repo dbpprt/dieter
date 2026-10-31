@@ -168,10 +168,11 @@ public final class ShellController: UIViewController, UINavigationControllerDele
         tabs.tabs = nextTabs
     }
 
-    /// Inbox attention; More counts unread mail and channel messages.
+    /// Inbox attention, unread mail, and unread channel messages on More.
     private static func badge(_ id: String, _ navigation: NativeNavigation) -> String? {
         switch id {
         case "inbox": navigation.attention > 0 ? "\(navigation.attention)" : nil
+        case "mail": navigation.mailUnread.isEmpty ? nil : navigation.mailUnread
         case "more": navigation.moreUnread.isEmpty ? nil : navigation.moreUnread
         default: nil
         }

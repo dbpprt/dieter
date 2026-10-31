@@ -5,11 +5,12 @@ import androidx.compose.ui.graphics.Color
 import com.getdieter.mobile.design.*
 
 /**
- * The primary destinations, in navigation order. More holds everything else: mail, channels,
- * terminals, the machines and the account pages.
+ * The primary destinations, in navigation order. More holds everything else: channels, terminals,
+ * the machines and the account pages.
  */
 enum class MobileTab(val title: String) {
     INBOX("Inbox"),
+    MAIL("Mail"),
     PROJECTS("Projects"),
     CHATS("Chats"),
     MORE("More"),
@@ -19,6 +20,7 @@ internal val MobileTab.glyph: Glyph
     get() =
         when (this) {
             MobileTab.INBOX -> Glyph.INBOX
+            MobileTab.MAIL -> Glyph.MAIL
             MobileTab.PROJECTS -> Glyph.PROJECTS
             MobileTab.CHATS -> Glyph.CHATS
             MobileTab.MORE -> Glyph.TOOLS
@@ -36,6 +38,8 @@ internal val MobileTab.emptyDetail: EmptyDetail
                     "No conversation selected",
                     "Choose an item from your inbox.",
                 )
+            MobileTab.MAIL ->
+                EmptyDetail(Glyph.MAIL, "No message selected", "Choose a message to read it.")
             MobileTab.PROJECTS ->
                 EmptyDetail(Glyph.BOARD, "No task selected", "Open a board and choose a task.")
             MobileTab.CHATS ->
@@ -44,15 +48,13 @@ internal val MobileTab.emptyDetail: EmptyDetail
                 EmptyDetail(
                     Glyph.TOOLS,
                     "Nothing selected",
-                    "Choose mail, a channel, a machine or a setting.",
+                    "Choose a channel, a machine or a setting.",
                 )
         }
 
 /** A list's empty detail column, where the list has its own wording. */
 internal fun MobileRoute.emptyDetail(tab: MobileTab): EmptyDetail =
     when (this) {
-        is MobileRoute.Mailbox ->
-            EmptyDetail(Glyph.MAIL, "No message selected", "Choose a message to read it.")
         is MobileRoute.Channels ->
             EmptyDetail(
                 Glyph.TAG,
@@ -128,12 +130,6 @@ sealed class MobileRoute {
     /** The account's project channels; opened from More. */
     data object Channels : MobileRoute() {
         override val key = "channels"
-        override val list = true
-    }
-
-    /** Mail folders and the message list; opened from More. */
-    data object Mailbox : MobileRoute() {
-        override val key = "mailbox"
         override val list = true
     }
 
