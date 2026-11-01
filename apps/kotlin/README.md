@@ -161,8 +161,11 @@ commands are shared.
   700 dp and swipeable lane tabs below that.
 - **Android desktop:** in Samsung DeX, desktop windowing, on a connected
   display or a PC (`DesktopSignals` in the Android app), or with
-  Settings → Interface → Desktop, windows from 720 dp get the desktop shell
-  (`ui/.../desktop`), modelled on the Mac app: Mac tokens and type
+  Settings → Interface → Desktop, windows from 720 dp get the desktop shell,
+  modelled on the Mac app. The shell and `MobileApp` live in the `jvmShared`
+  source set (`ui/src/jvmSharedMain`, Android and the host JVM), so the iOS
+  framework never compiles them; the theme, chrome host and controls that shared
+  screens reach stay in `commonMain/.../desktop`. It brings Mac tokens and type
   (`DesktopTheme`), a floating sidebar of destinations, projects and machines,
   equal-width kanban lanes with the conversation and its pane tabs beside them,
   list-and-detail panes with draggable gaps (`DesktopPane` widths in

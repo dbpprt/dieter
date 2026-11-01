@@ -13,11 +13,9 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.getdieter.client.v1.SessionSlice
@@ -26,72 +24,22 @@ import com.getdieter.mobile.channels.*
 import com.getdieter.mobile.conversation.*
 import com.getdieter.mobile.creation.*
 import com.getdieter.mobile.design.*
-import com.getdieter.mobile.desktop.DesktopKeys
-import com.getdieter.mobile.desktop.DesktopShell
-import com.getdieter.mobile.desktop.DesktopTheme
-import com.getdieter.mobile.desktop.tokens
 import com.getdieter.mobile.mail.*
 import com.getdieter.mobile.navigation.*
 import com.getdieter.mobile.platform.*
-import com.getdieter.mobile.resources.Res
-import com.getdieter.mobile.resources.sora_variable
 import com.getdieter.mobile.screens.*
 import com.getdieter.mobile.settings.PairingScreen
 import com.getdieter.mobile.share.*
 import com.getdieter.mobile.store.*
 import com.getdieter.mobile.tools.*
 import com.getdieter.mobile.workspace.*
-import org.jetbrains.compose.resources.Font
 
 /**
- * The Material host used on Android and in JVM tests. iOS hosts each route natively. [onWindow]
- * receives the theme's darkness and background ARGB so the host can style its window.
- *
- * [desktopHost] is the platform's desktop signal (Samsung DeX, Android desktop windowing, a
- * connected display, a PC); with it, or with the Desktop interface chosen in Settings, a window
- * large enough shows the desktop shell. [keys] lets the host hand it keyboard shortcuts.
+ * The touch shell Android hosts on phones, tablets and foldables (see `MobileApp`, which is only
+ * compiled for Android and the JVM). iOS hosts each route natively.
  */
 @Composable
-fun MobileApp(
-    store: MobileStore,
-    openUrl: (String) -> Unit = {},
-    onWindow: (dark: Boolean, background: Int) -> Unit = { _, _ -> },
-    desktopHost: Boolean = false,
-    keys: DesktopKeys? = null,
-) {
-    val signInUrl by store.session.signInUrl.collectAsState()
-    LaunchedEffect(signInUrl) {
-        if (signInUrl.isNotEmpty()) {
-            openUrl(signInUrl)
-            store.session.signInUrl.value = ""
-        }
-    }
-    MobileTheme(store, apple = false) {
-        val dark = store.isDark()
-        val mode by store.layout.interfaceMode.collectAsState()
-        val selected by store.theme.palette.collectAsState()
-        CompositionLocalProvider(LocalMobileStore provides store) {
-            BoxWithConstraints(Modifier.fillMaxSize()) {
-                if (DesktopLayout.shows(mode, desktopHost, maxWidth.value, maxHeight.value)) {
-                    DesktopTheme(selected, dark, FontFamily(Font(Res.font.sora_variable))) {
-                        val canvas = tokens.canvas.toArgb()
-                        SideEffect { onWindow(dark, canvas) }
-                        DesktopShell(store, openUrl, keys)
-                    }
-                } else {
-                    val background = palette.background.toArgb()
-                    SideEffect { onWindow(dark, background) }
-                    Surface(Modifier.fillMaxSize(), color = palette.background) {
-                        MaterialShell(store, openUrl)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
+internal fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
     val session by store.session.slice.collectAsState()
     val workspace by store.workspace.slice.collectAsState()
     val navigation by store.routes.collectAsState()

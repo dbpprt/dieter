@@ -48,6 +48,20 @@ compose.resources {
 }
 
 kotlin {
+    // Android and the host JVM (UI tests) share `jvmShared`: Android's desktop shell lives
+    // there, so the iOS framework never compiles it.
+    @OptIn(org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi::class)
+    applyDefaultHierarchyTemplate {
+        common {
+            group("jvmShared") {
+                withCompilations {
+                    it.platformType == org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType.jvm ||
+                        it.platformType ==
+                            org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType.androidJvm
+                }
+            }
+        }
+    }
     jvm()
     android {
         namespace = "com.getdieter.mobile"
