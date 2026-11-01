@@ -256,7 +256,12 @@ internal fun MoreSheet(
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 12.dp)
         ) {
-            TileGrid(places + account, selected, ::open)
+            // Usage shows on the Inbox; the sheet's tiles are only places to go, all alike.
+            TileGrid(
+                (places + account).filter { it.id != ToolPage.USAGE.name.lowercase() },
+                selected,
+                ::open,
+            )
             if (session.machines.isNotEmpty()) {
                 Row(
                     Modifier.fillMaxWidth().padding(start = 4.dp, top = 20.dp, bottom = 8.dp),
@@ -307,7 +312,10 @@ private fun TileGrid(
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val scale = LocalDensity.current.fontScale.coerceAtLeast(1f)
-        val columns = (maxWidth / (84.dp * scale)).toInt().coerceIn(3, 6)
+        val fits = (maxWidth / (84.dp * scale)).toInt().coerceIn(2, 6)
+        // Rows as even as the width allows: four tiles are one row, or two rows of two.
+        val rows = (entries.size + fits - 1) / fits
+        val columns = if (rows == 0) 1 else (entries.size + rows - 1) / rows
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             entries.chunked(columns).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -334,7 +342,10 @@ private fun Tile(entry: MoreEntry, selected: Boolean, modifier: Modifier, onClic
         shape = RoundedCornerShape(20.dp),
         color = if (selected) colors.secondaryContainer else colors.surfaceContainerHigh,
         contentColor = if (selected) colors.onSecondaryContainer else colors.onSurface,
-        modifier = modifier.heightIn(min = 92.dp).testTag("more-${entry.id}"),
+        modifier =
+            modifier
+                .height(92.dp * LocalDensity.current.fontScale.coerceAtLeast(1f))
+                .testTag("more-${entry.id}"),
     ) {
         Box {
             Column(
@@ -348,14 +359,6 @@ private fun Tile(entry: MoreEntry, selected: Boolean, modifier: Modifier, onClic
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (entry.value.isNotEmpty())
-                    Text(
-                        entry.value,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = colors.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
             }
             if (entry.badge.isNotEmpty())
                 TextBadge(entry.badge, Modifier.align(Alignment.TopEnd).padding(10.dp))

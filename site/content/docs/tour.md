@@ -90,8 +90,9 @@ host telemetry without losing your board.
 chat activity together so you can find recent work without first choosing a
 board. Next to it are [**Mail**](/docs/mail/), **Projects** and **Chats**.
 **More** holds everything else: **Channels**, **Terminals**, your machines,
-**Usage**, **Devices** and **Settings**. On Android, More slides up as a sheet
-above the bar; on iPhone and iPad it is a tab. Its badge counts unread channel
+**Devices** and **Settings**. On Android, More slides up as a sheet above the
+bar; on iPhone and iPad it is a tab that also lists **Usage**, which the Inbox
+shows too. Its badge counts unread channel
 messages.
 Completed replies that you have not viewed appear under **Needs you**. Opening
 the latest reply clears that state across clients; questions waiting for your

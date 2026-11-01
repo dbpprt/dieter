@@ -8,7 +8,11 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
-Nothing yet.
+### Changed
+
+- Android's More sheet shows four equal tiles in one row: Channels,
+  Terminals, Devices and Settings. Provider usage stays on the Inbox (and in
+  the More page's list), so no tile is taller than the others.
 
 ## 0.6.433
 
