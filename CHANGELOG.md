@@ -8,8 +8,28 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.6.434
+
+### Added
+
+- **Android on a desktop.** In Samsung DeX, Android desktop windowing and on a
+  connected display, the Android app switches to a desktop layout modelled on
+  the Mac app. A sidebar holds Inbox, Mail, Channels, Chats and Terminals, your
+  projects with their running work, and your machines and quotas. Boards show
+  every lane side by side with the open task beside them and a tab for each of
+  its panes. Lists, menus and dialogs are denser; rows react to the pointer,
+  right-click opens a card's menu, and cards drag between lanes. Ctrl+K searches
+  tasks, chats, projects and commands; Ctrl+N starts a task, Ctrl+1 to Ctrl+5
+  switch sections, Ctrl+B shows or hides the sidebar and Ctrl+W closes the open
+  task. **Settings → Appearance → Interface** chooses Automatic, Desktop or
+  Touch.
+
 ### Changed
 
+- The Android app keeps its screen when its window is resized, moved to
+  another display or switched into DeX, instead of starting it over.
 - Android's More sheet shows four equal tiles in one row: Channels,
   Terminals, Devices and Settings. Provider usage stays on the Inbox (and in
   the More page's list), so no tile is taller than the others.
