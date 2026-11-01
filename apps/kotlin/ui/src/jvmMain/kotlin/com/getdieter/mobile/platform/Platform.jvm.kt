@@ -23,3 +23,6 @@ internal actual fun androidx.compose.ui.Modifier.exposingTestTags(): androidx.co
 
 internal actual fun platformMonospace(): androidx.compose.ui.text.font.FontFamily =
     androidx.compose.ui.text.font.FontFamily.Monospace
+
+internal actual val horizontalResizePointer: androidx.compose.ui.input.pointer.PointerIcon =
+    androidx.compose.ui.input.pointer.PointerIcon(java.awt.Cursor(java.awt.Cursor.E_RESIZE_CURSOR))

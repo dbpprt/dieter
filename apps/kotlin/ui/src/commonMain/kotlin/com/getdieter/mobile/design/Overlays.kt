@@ -254,7 +254,8 @@ internal fun PromptDialog(
 
 /**
  * A modal sheet. iOS presents a native sheet (grabber, detents, glass close and confirm buttons)
- * hosting this Compose content; Android uses a Material modal bottom sheet.
+ * hosting this Compose content; Android uses a Material modal bottom sheet, the desktop shell a
+ * centered dialog.
  */
 @Composable
 internal fun Sheet(
@@ -265,6 +266,17 @@ internal fun Sheet(
     scrollable: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    if (com.getdieter.mobile.desktop.desktop) {
+        com.getdieter.mobile.desktop.DesktopDialog(
+            title,
+            onDismiss,
+            wide = size == SheetSize.LARGE,
+            confirm = confirm,
+            scrollable = scrollable,
+            content = content,
+        )
+        return
+    }
     val overlays = LocalNativeOverlays.current
     val dismissed by rememberUpdatedState(onDismiss)
     val body: @Composable () -> Unit = {

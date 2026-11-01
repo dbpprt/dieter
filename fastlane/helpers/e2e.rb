@@ -8,12 +8,15 @@ require_relative "dieter"
 
 module Dieter
   # The tests/maestro flows: Android and iOS run the mobile flows with the
-  # Maestro CLI; the debug Mac app interprets the mac flows in-process.
+  # Maestro CLI, Android its desktop flows on a desktop display; the debug Mac
+  # app interprets the mac flows in-process.
   module Flows
     DIRECTORIES = {
       "android" => "tests/maestro/mobile",
       "ios" => "tests/maestro/mobile",
-      "mac" => "tests/maestro/mac"
+      "mac" => "tests/maestro/mac",
+      # Android's desktop shell (DeX, desktop windowing) on a desktop-sized display.
+      "android-desktop" => "tests/maestro/desktop"
     }.freeze
     TAGS = %w[smoke full].freeze
     # The subset the Mac app's NativeUIFlowRunner implements.

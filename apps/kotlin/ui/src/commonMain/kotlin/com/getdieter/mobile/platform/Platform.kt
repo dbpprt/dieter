@@ -30,3 +30,6 @@ internal expect val platformSupportsDynamicColor: Boolean
 /** An SF Symbol painter on iOS. Null where Material vectors are used. */
 @Composable
 internal expect fun platformSymbolPainter(symbol: String, size: Dp, weight: GlyphWeight): Painter?
+
+/** The pointer over a pane divider: a horizontal resize arrow where the platform has one. */
+internal expect val horizontalResizePointer: androidx.compose.ui.input.pointer.PointerIcon

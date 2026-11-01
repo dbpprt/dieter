@@ -130,7 +130,7 @@ ios *args:
 android *args:
     bundle exec fastlane android "$@"
 
-# Maestro device flows: just e2e android|ios|mac [tags:smoke|full] [flows:a,b] [profile:NAME]
+# Maestro device flows: just e2e android|ios|mac [tags:smoke|full] [flows:a,b] [profile:NAME] [desktop:true]
 e2e platform *args:
     shift; bundle exec fastlane {{ platform }} e2e "$@"
 

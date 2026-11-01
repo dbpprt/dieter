@@ -84,8 +84,20 @@ kotlin {
         jvmTest.dependencies {
             implementation(kotlin("test"))
             implementation(libs.kotlinx.coroutines.test)
+            // The desktop shell's UI tests render it offscreen with Skia and drive it.
+            implementation(compose.desktop.currentOs)
+            @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
+            implementation(compose.uiTest)
         }
     }
 }
 
-tasks.named<Test>("jvmTest") { testLogging { events("passed", "failed", "skipped") } }
+tasks.named<Test>("jvmTest") {
+    testLogging { events("passed", "failed", "skipped") }
+    // Screenshots of the desktop shell's UI tests, for review.
+    systemProperty(
+        "dieter.screenshots",
+        layout.buildDirectory.dir("desktop-screenshots").get().asFile.absolutePath,
+    )
+    systemProperty("java.awt.headless", "true")
+}

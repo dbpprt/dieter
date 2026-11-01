@@ -8,6 +8,7 @@ completeness. Rules belong in the Kotlin core and its unit tests, not here.
 tests/maestro/
   mobile/         Android and iOS run the same flows (one Compose UI)
     common/       subflows, never run on their own
+  desktop/        Android's desktop shell (DeX, desktop windowing)
   mac/            Maestro syntax interpreted in-app on the Mac
 ```
 
@@ -23,6 +24,7 @@ mise exec -- just e2e ios
 mise exec -- just e2e mac
 mise exec -- just e2e ios tags:full profile:ios-ipad
 mise exec -- just e2e android profile:android-emulator flows:task
+mise exec -- just e2e android profile:android-emulator desktop:true
 ```
 
 Each run builds the app it tests, starts one isolated gateway fixture
@@ -30,12 +32,19 @@ Each run builds the app it tests, starts one isolated gateway fixture
 application (`com.getdieter.android.e2e`, `com.getdieter.ios.e2e`), and runs
 the selected flows. Evidence, `results.json`,
 Maestro's `junit.xml` and its screenshots are in
-`tmp/app-pipelines/<run>/`. The fixture token is redacted from Maestro's
+`tmp/pipeline/<run>/`. The fixture token is redacted from Maestro's
 evidence.
 
 - **Android** borrows the warm emulator if one runs (see `AGENTS.md`), never a
   phone unless a profile names its exact serial. The fixture is reachable
   through an owned `adb reverse` port.
+- **Android desktop** (`desktop:true`) runs `desktop/` with the app forced
+  into the desktop shell (`interface: desktop`). An emulator becomes a
+  1920 × 1080 dp display (`wm size`/`wm density`) for the run and is reset
+  afterwards; a device already in DeX keeps its own display. The shell's
+  keyboard shortcuts, pane layout and rendering are also covered offscreen by
+  the `:ui:jvmTest` desktop UI tests, which write screenshots to
+  `apps/kotlin/ui/build/desktop-screenshots/`.
 - **iOS** creates, boots and deletes its own simulator for every run. The boot
   overlaps the build.
 - **macOS** needs the logged-in desktop and refuses while any `DieterMac` runs.

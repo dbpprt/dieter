@@ -9,7 +9,8 @@ import kotlinx.coroutines.flow.first
  * Debug builds only: replays navigation steps so screenshots of any screen can be taken without
  * touch automation. Steps are separated by ";", e.g. "tab projects; board Main; card Design; pane
  * subagents", "channel Pricing", "mail Dependency audit" or "project Atlas; tool files". `more`
- * opens channels, terminals, usage, devices or settings in More.
+ * opens channels, terminals, usage, devices or settings in More; `interface
+ * desktop|touch|automatic` picks the shell.
  */
 internal suspend fun MobileStore.runDebugScript(script: String) {
     workspace.slice.first { it.loaded }
@@ -84,6 +85,10 @@ internal suspend fun MobileStore.runDebugScript(script: String) {
             "new" -> newConversation(chat = false)
             "newchat" -> newConversation(chat = true)
             "appearance" -> theme.setAppearance(argument)
+            "interface" ->
+                InterfaceMode.entries
+                    .firstOrNull { it.name.equals(argument, true) }
+                    ?.let(layout::setInterfaceMode)
             "palette" -> theme.setPalette(DieterPalette.resolve(argument))
             "back" -> pop()
             "wait" -> delay(argument.toLongOrNull() ?: 500)

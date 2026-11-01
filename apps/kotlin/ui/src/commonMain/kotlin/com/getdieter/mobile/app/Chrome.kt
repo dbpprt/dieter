@@ -20,6 +20,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.getdieter.mobile.design.*
+import com.getdieter.mobile.desktop.DesktopChromeHost
+import com.getdieter.mobile.desktop.DesktopMenu
+import com.getdieter.mobile.desktop.DesktopScreen
+import com.getdieter.mobile.desktop.desktop
 import com.getdieter.mobile.store.*
 
 /** A toolbar or menu command. iOS renders it as a bar button or UIMenu element. */
@@ -179,9 +183,10 @@ private fun LargeTitle(title: String, subtitle: String, menu: List<MenuSection>)
 }
 
 /**
- * A screen with platform bars. On iOS the chrome is published to the native navigation item and
- * content scrolls beneath the Liquid Glass bars; on Android a Material 3 scaffold draws app bars
- * that collapse with the content and a floating action button for [ScreenChrome.primary].
+ * A screen with platform bars. In the desktop shell its pane draws the bars. On iOS the chrome is
+ * published to the native navigation item and content scrolls beneath the Liquid Glass bars; on
+ * Android a Material 3 scaffold draws app bars that collapse with the content and a floating action
+ * button for [ScreenChrome.primary].
  */
 @Composable
 internal fun Screen(
@@ -192,6 +197,10 @@ internal fun Screen(
     content: @Composable ScreenScope.() -> Unit,
 ) {
     val host = LocalChromeHost.current
+    if (host is DesktopChromeHost) {
+        DesktopScreen(host, chrome, modifier, listState, bottomBar, content)
+        return
+    }
     if (host != null) {
         AppleScreen(host, chrome, modifier, listState, bottomBar, content)
         return
@@ -456,6 +465,10 @@ private fun ActionButton(action: ChromeAction) {
 /** Material dropdown with sections, checkmarks and nested submenus. */
 @Composable
 internal fun MaterialMenu(sections: List<MenuSection>, expanded: Boolean, onDismiss: () -> Unit) {
+    if (desktop) {
+        DesktopMenu(sections, expanded, onDismiss)
+        return
+    }
     var nested by remember { mutableStateOf<MenuSection?>(null) }
     DropdownMenu(
         expanded,

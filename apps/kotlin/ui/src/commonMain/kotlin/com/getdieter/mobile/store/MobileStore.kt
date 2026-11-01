@@ -99,6 +99,19 @@ class MobileStore(
         syncNavigation()
     }
 
+    /**
+     * Shows [tab] with [stack], e.g. a desktop sidebar destination; a null [stack] keeps what the
+     * tab showed. Unlike [selectTab], showing the current tab again changes nothing.
+     */
+    fun show(tab: MobileTab, stack: List<MobileRoute>? = null) {
+        val current = routes.value
+        val next =
+            current.copy(tab = tab).let { if (stack.isNullOrEmpty()) it else it.with(tab, stack) }
+        if (next == current) return
+        routes.value = next
+        syncNavigation()
+    }
+
     fun push(route: MobileRoute) {
         val current = routes.value
         if (current.top == route) return

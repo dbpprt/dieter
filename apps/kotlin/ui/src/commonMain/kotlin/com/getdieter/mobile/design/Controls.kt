@@ -338,7 +338,7 @@ internal fun DSwitch(
     }
 }
 
-/** iOS segmented control or Material 3 segmented buttons. */
+/** iOS segmented control, Material 3 segmented buttons, or the desktop's segment track. */
 @Composable
 internal fun Segmented(
     options: List<String>,
@@ -347,6 +347,16 @@ internal fun Segmented(
     modifier: Modifier = Modifier,
     testTagPrefix: String = "segment",
 ) {
+    if (com.getdieter.mobile.desktop.desktop) {
+        com.getdieter.mobile.desktop.DesktopSegments(
+            options,
+            selected,
+            onSelect,
+            modifier,
+            testTagPrefix,
+        )
+        return
+    }
     if (!apple) {
         SingleChoiceSegmentedButtonRow(modifier.fillMaxWidth()) {
             options.forEachIndexed { index, label ->

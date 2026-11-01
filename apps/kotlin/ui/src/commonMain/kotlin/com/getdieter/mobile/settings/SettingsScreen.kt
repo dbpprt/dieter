@@ -29,6 +29,7 @@ internal fun SettingsScreen(store: MobileStore) {
     val selectedPalette by store.theme.palette.collectAsState()
     val appearance by store.theme.appearance.collectAsState()
     val dynamic by store.theme.dynamicColor.collectAsState()
+    val interfaceMode by store.layout.interfaceMode.collectAsState()
     val outbox by store.workspace.outbox.collectAsState()
     val channels by store.channels.settings.collectAsState()
     var signOut by remember { mutableStateOf(false) }
@@ -58,6 +59,22 @@ internal fun SettingsScreen(store: MobileStore) {
                         { store.theme.setAppearance(modes[it].first) },
                         testTagPrefix = "appearance",
                     )
+                    if (!apple)
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Interface", style = type.body, color = palette.label)
+                            Segmented(
+                                InterfaceMode.entries.map { it.title },
+                                interfaceMode.ordinal,
+                                { store.layout.setInterfaceMode(InterfaceMode.entries[it]) },
+                                testTagPrefix = "interface",
+                            )
+                            Text(
+                                "Automatic shows the desktop layout in Samsung DeX, desktop windowing " +
+                                    "and on external displays.",
+                                style = type.footnote,
+                                color = palette.secondaryLabel,
+                            )
+                        }
                     if (!apple && platformSupportsDynamicColor)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {

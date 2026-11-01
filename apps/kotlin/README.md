@@ -159,6 +159,20 @@ commands are shared.
   window until something opens. `LayoutModel` keeps the split; iPad uses a split view in regular
   width. `MobileRoute.list` decides which routes stay in the list column on both. A board shows parallel lanes from
   700 dp and swipeable lane tabs below that.
+- **Android desktop:** in Samsung DeX, desktop windowing, on a connected
+  display or a PC (`DesktopSignals` in the Android app), or with
+  Settings → Interface → Desktop, windows from 720 dp get the desktop shell
+  (`ui/.../desktop`), modelled on the Mac app: Mac tokens and type
+  (`DesktopTheme`), a floating sidebar of destinations, projects and machines,
+  equal-width kanban lanes with the conversation and its pane tabs beside them,
+  list-and-detail panes with draggable gaps (`DesktopPane` widths in
+  `LayoutModel`), a command palette over the core's search, and Ctrl
+  shortcuts the shell sees before its text fields do (the activity hands it
+  keys no view handled through `DesktopKeys`).
+  It reads and drives the same `MobileNavigation` stacks (`desktopPlace()`),
+  so the core binds the same scopes. Shared screens publish their bars to a
+  `DesktopChromeHost`, which draws a compact title band; sheets become centered
+  dialogs and menus, rows and segments become dense.
 
 | Surface                                                                      | Shared implementation                           | Native boundary                                    |
 | ---------------------------------------------------------------------------- | ----------------------------------------------- | -------------------------------------------------- |

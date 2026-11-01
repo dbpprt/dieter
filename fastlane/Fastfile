@@ -167,6 +167,10 @@ def build_ios_simulator(configuration:, evidence:)
 end
 
 # Runs the selected flows with the pinned Maestro CLI and records its JUnit.
+# The display an emulator gets for the desktop flows: 1920 x 1080 dp, like DeX on
+# a 1080p monitor.
+DESKTOP_DISPLAY = { size: "1920x1080", density: 160 }.freeze
+
 def run_maestro(device, app_id, fixture, flows, evidence, results)
   unless system("command -v maestro >/dev/null 2>&1")
     raise Dieter::Unavailable, "Install the pinned Maestro CLI (mise install)"
@@ -320,11 +324,13 @@ platform :android do
     end
   end
 
-  desc "Maestro flows on the isolated E2E app; tags:smoke|full flows:NAMES profile:android-emulator|android-ci|android-device"
+  desc "Maestro flows on the isolated E2E app; tags:smoke|full flows:NAMES profile:android-emulator|android-ci|android-device desktop:true"
   lane :e2e do |options|
     target = Dieter.profile("android", options[:profile])
     app_id = "#{Dieter::Release.ids["android"]}.e2e"
-    e2e_run("android", options) do |flows, evidence, results, cleanup|
+    # desktop:true runs the desktop shell's flows (tests/maestro/desktop) on a desktop display.
+    desktop = options[:desktop].to_s == "true"
+    e2e_run(desktop ? "android-desktop" : "android", options) do |flows, evidence, results, cleanup|
       ENV["DIETER_RELEASE_VERSION"] ||= Dieter.dev_version
       # Compile before admitting a device so low-memory hosts never build and boot at once.
       Dieter::Lease.hold("android-build") { kotlin(":android:assembleE2e") }
@@ -352,6 +358,16 @@ platform :android do
       cleanup.add do
         run.call("shell am force-stop #{app_id}")
         raise "#{app_id} did not stop" unless run.call("shell pidof #{app_id} || true").strip.empty?
+      end
+      # An emulator becomes a 1080p desktop display for the run, as DeX on a monitor;
+      # a device already in DeX or desktop windowing keeps its own display.
+      if desktop && target["kind"] == "emulator"
+        cleanup.add do
+          run.call("shell wm size reset")
+          run.call("shell wm density reset")
+        end
+        run.call("shell wm size #{DESKTOP_DISPLAY.fetch(:size)}")
+        run.call("shell wm density #{DESKTOP_DISPLAY.fetch(:density)}")
       end
       fixture = Dieter::Fixture.new(evidence, cleanup, e2e: true)
       port = fixture.address.split(":").last

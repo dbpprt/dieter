@@ -52,6 +52,7 @@ android:
   - "apps/kotlin/*.kts"
   - "apps/kotlin/gradle.properties"
   - "tests/maestro/mobile/**"
+  - "tests/maestro/desktop/**"
 site:
   - "site/**"
   - "docs/**"

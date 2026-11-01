@@ -150,6 +150,32 @@ and the app remembers your choice.
 
 {{< screenshot src="ipad-conversation.png" kind="tablet" width="2048" height="2732" alt="iPad with the Atlas API board on the left and a running task's reply, rate-limit table, and plan on the right" caption="The board and a running task, side by side on iPad." >}}
 
+### Android on a desktop
+
+In Samsung DeX, in Android's desktop windowing and on a connected display, the
+Android app switches to a desktop layout modelled on the Mac app. A sidebar holds
+Inbox, Mail, Channels, Chats and Terminals, your projects with their live work,
+and your machines and quotas. A board shows every lane side by side, and an open
+task sits beside it with a tab for each of its panes. Rows react to the pointer,
+and a right-click opens a card's menu. Drag the gaps between panes to resize them.
+
+With a keyboard:
+
+| Keys                  | Action                                     |
+| --------------------- | ------------------------------------------ |
+| Ctrl+K                | Search tasks, chats, projects and commands |
+| Ctrl+N / Ctrl+Shift+N | New task / new chat                        |
+| Ctrl+1 … Ctrl+5       | Inbox, Mail, Channels, Chats, Terminals    |
+| Ctrl+,                | Settings                                   |
+| Ctrl+B                | Show or hide the sidebar                   |
+| Ctrl+W                | Close the open task                        |
+| Ctrl+R                | Refresh                                    |
+| Alt+←                 | Back                                       |
+
+**Settings → Appearance → Interface** chooses the layout: **Automatic** (the
+desktop layout only on a desktop), **Desktop** (also on a large tablet window)
+or **Touch**. Windows narrower than 720 dp always use the touch layout.
+
 [Connect more machines →](/docs/machines/) · [Use a remote screen →](/docs/screens/)
 
 ## Try it with your project

@@ -1,0 +1,89 @@
+# The desktop shell on a 1080p display: the sidebar opens a project's board,
+# a card opens beside it with its tab track, the palette finds conversations,
+# and Mail, Chats and Settings are one click away.
+appId: ${APP_ID}
+name: Desktop workspace
+tags: [smoke]
+---
+- runFlow: common/launch.yaml
+- assertVisible:
+    id: activity-feed
+- takeScreenshot: desktop-inbox
+- tapOn:
+    id: sidebar-project-.*
+    index: 0
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible:
+      id: board-lane-running
+    timeout: 40000
+- assertVisible:
+    id: board-lane-review
+- tapOn:
+    text: "Design the mobile workspace"
+    childOf:
+      id: board-lane-running
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: ".*Your board stays within reach.*"
+    timeout: 30000
+# The board stays beside the conversation.
+- assertVisible:
+    id: board-lane-todo
+- takeScreenshot: desktop-board-conversation
+- tapOn:
+    id: pane-tab-subagents
+    waitToSettleTimeoutMs: 500
+- assertVisible: "Layout scout"
+- tapOn:
+    id: pane-tab-conversation
+    waitToSettleTimeoutMs: 500
+- assertVisible: ".*Your board stays within reach.*"
+- tapOn:
+    id: desktop-close
+    waitToSettleTimeoutMs: 500
+- assertNotVisible:
+    id: conversation-panel
+# The palette searches through the core and opens what it finds.
+- tapOn:
+    id: sidebar-search
+    waitToSettleTimeoutMs: 500
+- assertVisible:
+    id: command-palette
+- inputText: "reconnect"
+- extendedWaitUntil:
+    visible: "Make reconnect feel effortless"
+    timeout: 15000
+- takeScreenshot: desktop-palette
+- pressKey: Enter
+- extendedWaitUntil:
+    visible:
+      id: conversation-panel
+    timeout: 15000
+- assertVisible:
+    id: conversation-title
+    text: "Make reconnect feel effortless"
+# Mail lists beside the open message.
+- tapOn:
+    id: sidebar-mail
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: "Dependency audit — 3 critical, 7 outdated"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible:
+      id: mail-open-conversation
+    timeout: 30000
+- takeScreenshot: desktop-mail
+- tapOn:
+    id: sidebar-chats
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Mobile release checklist"
+    timeout: 15000
+- tapOn:
+    id: sidebar-settings
+    waitToSettleTimeoutMs: 500
+- assertVisible:
+    id: interface-1
+- takeScreenshot: desktop-settings

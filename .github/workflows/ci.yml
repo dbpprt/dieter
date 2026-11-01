@@ -432,7 +432,9 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 600
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-audio -no-boot-anim
-          script: bundle exec fastlane android e2e tags:${{ needs.plan.outputs.full == 'true' && 'full' || 'smoke' }} profile:android-ci
+          script: |
+            bundle exec fastlane android e2e tags:${{ needs.plan.outputs.full == 'true' && 'full' || 'smoke' }} profile:android-ci
+            bundle exec fastlane android e2e desktop:true tags:${{ needs.plan.outputs.full == 'true' && 'full' || 'smoke' }} profile:android-ci
       - uses: mikepenz/action-junit-report@6ef3fdcfcd5f0b5d14df3e659ef19b8c6820f93d # v6.6.1
         if: always()
         with:

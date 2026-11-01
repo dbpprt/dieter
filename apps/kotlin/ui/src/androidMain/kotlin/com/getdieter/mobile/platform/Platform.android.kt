@@ -43,3 +43,8 @@ internal actual fun SystemBackHandler(enabled: Boolean, onBack: () -> Unit) =
 
 internal actual fun platformMonospace(): androidx.compose.ui.text.font.FontFamily =
     androidx.compose.ui.text.font.FontFamily.Monospace
+
+internal actual val horizontalResizePointer: androidx.compose.ui.input.pointer.PointerIcon =
+    androidx.compose.ui.input.pointer.PointerIcon(
+        android.view.PointerIcon.TYPE_HORIZONTAL_DOUBLE_ARROW
+    )

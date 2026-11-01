@@ -99,3 +99,6 @@ internal fun NSData.bytesArray(): ByteArray =
     ByteArray(length.toInt()).also { result ->
         if (result.isNotEmpty()) result.usePinned { memcpy(it.addressOf(0), bytes, length) }
     }
+
+internal actual val horizontalResizePointer: androidx.compose.ui.input.pointer.PointerIcon =
+    androidx.compose.ui.input.pointer.PointerIcon.Default
