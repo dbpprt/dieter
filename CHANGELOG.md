@@ -10,7 +10,7 @@ copy the **Unreleased** notes into a section named after that exact version
 
 Nothing yet.
 
-## 0.6.434
+## 0.6.435
 
 ### Added
 
