@@ -8,6 +8,10 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.6.433
+
 ### Changed
 
 - **Mail** is back in the navigation bar on Android, iPhone and iPad, next to
