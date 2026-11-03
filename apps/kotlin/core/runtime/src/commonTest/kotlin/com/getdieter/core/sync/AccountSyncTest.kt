@@ -17,6 +17,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.test.runTest
 import okio.Path.Companion.toPath
 import okio.fakefilesystem.FakeFileSystem
@@ -63,6 +64,40 @@ class AccountSyncTest {
             frame(3, field("item", "c", "summary", """{"runtime":"idle","responseSeq":9}""")),
         )
         assertEquals(9L, store.state.value.card("c")?.response_seq)
+    }
+
+    @Test
+    fun liveFramesAreProjectedAtMostOncePerInterval() = runTest {
+        val store = WorkspaceStore()
+        val sync =
+            AccountSync(
+                store,
+                backgroundScope,
+                clock,
+                SilentLogger,
+                projectionInterval = 250.milliseconds,
+                timeSource = testScheduler.timeSource,
+            )
+        sync.apply("studio", frame(1))
+        val revision = store.revision.value
+        // An agent's activity streams every few tens of milliseconds once the stream is Live.
+        for (sequence in 2L..6L) {
+            sync.apply(
+                "studio",
+                frame(
+                    sequence,
+                    field("item", "c", "title", "\"Step $sequence\"")
+                        .copy(revision = "r$sequence", value_revision = "r$sequence"),
+                ),
+                live = true,
+            )
+            testScheduler.runCurrent()
+        }
+        assertEquals("c", store.state.value.card("c")?.title, "the burst waits for the interval")
+        testScheduler.advanceTimeBy(250.milliseconds)
+        testScheduler.runCurrent()
+        assertEquals("Step 6", store.state.value.card("c")?.title)
+        assertEquals(revision + 1, store.revision.value, "one projection for the whole burst")
     }
 
     @Test

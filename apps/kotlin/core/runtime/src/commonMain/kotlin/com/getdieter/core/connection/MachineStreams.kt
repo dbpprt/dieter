@@ -207,6 +207,9 @@ class MachineStreams(
                                     heartbeat_ms = config.heartbeat.inWholeMilliseconds.toInt(),
                                 ),
                             )
+                        // Only the frame that turns this connection Live is a readiness barrier;
+                        // later live frames are projected with the next scheduled projection.
+                        var live = false
                         try {
                             while (true) {
                                 val received =
@@ -222,10 +225,11 @@ class MachineStreams(
                                                 FailureKind.TRANSIENT,
                                                 "${machine.name}'s change stream ended.",
                                             )
-                                sync.apply(machine.id, frame)
+                                sync.apply(machine.id, frame, live)
                                 attempt = 0
                                 val caughtUp =
                                     frame.caught_up && sync.replica(machine.id)?.replaying != true
+                                live = caughtUp
                                 set(
                                     machine.id,
                                     MachineSync(
