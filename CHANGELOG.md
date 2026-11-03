@@ -8,7 +8,19 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
-Nothing yet.
+### Fixed
+
+- **Screen sharing works from Ubuntu and other GNOME Wayland desktops.**
+  Connecting to a Linux machine running a current desktop portal (Ubuntu 26.04,
+  GNOME 50) failed every time with "portal did not return a session handle".
+  The host now shows the desktop's approval prompt on its own screen; approve it
+  once there, and Dieter asks the portal to remember it so later connections
+  can start without a prompt.
+- **The first connection to a Mac screen no longer fails** with "Unknown native
+  stream" when you take control. Connecting again used to work; now the first
+  attempt does.
+- Linux screen shares keep the desktop's aspect ratio instead of stretching it
+  to the viewer's window, so clicks land where you see them.
 
 ## 0.6.437
 
