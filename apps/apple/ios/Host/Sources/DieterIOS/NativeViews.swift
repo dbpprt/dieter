@@ -47,19 +47,33 @@ final class ComposeNativeViews: NSObject, @preconcurrency MobileNativeViews {
         Self.presenting?.present(controller, animated: true)
     }
     func previewAttachment(part data: Data) {
-        guard let part = try? Dieter_V1_MessagePart(serializedBytes: data) else { return }
+        guard let part = try? Dieter_V1_MessagePart(serializedBytes: data) else {
+            showToast(message: "This attachment could not be read.")
+            return
+        }
         let bytes =
             part.data.isEmpty
             ? Data(base64Encoded: part.url.components(separatedBy: ";base64,").last ?? "") ?? Data() : part.data
-        guard !bytes.isEmpty, bytes.count <= 6 * 1024 * 1024 else { return }
+        guard !bytes.isEmpty, bytes.count <= 6 * 1024 * 1024 else {
+            showToast(message: "This attachment is empty or too large to preview.")
+            return
+        }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
             "attachment-preview", isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         for old in (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
         { try? FileManager.default.removeItem(at: old) }
-        let file = directory.appendingPathComponent(
-            URL(fileURLWithPath: part.filename.isEmpty ? "attachment" : part.filename).lastPathComponent)
-        guard (try? bytes.write(to: file, options: .atomic)) != nil else { return }
+        var name = URL(fileURLWithPath: part.filename.isEmpty ? "attachment" : part.filename).lastPathComponent
+        if URL(fileURLWithPath: name).pathExtension.isEmpty,
+            let suffix = UTType(mimeType: part.mediaType)?.preferredFilenameExtension
+        {
+            name += "." + suffix
+        }
+        let file = directory.appendingPathComponent(name)
+        guard (try? bytes.write(to: file, options: .atomic)) != nil else {
+            showToast(message: "This attachment could not be saved for preview.")
+            return
+        }
         let source = AttachmentPreview(url: file); preview = source
         let controller = QLPreviewController(); controller.dataSource = source
         Self.presenting?.present(controller, animated: true)

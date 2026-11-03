@@ -9,7 +9,7 @@ import com.getdieter.core.presentation.Markdown
  * [MarkdownDocument], selectable, every link through [openUrl].
  */
 @Composable
-internal fun RichText(value: String, openUrl: (String) -> Unit = {}) {
+internal fun RichText(value: String, openUrl: (String) -> Unit) {
     val blocks = remember(value) { Markdown.parse(value) }
     SelectionContainer { MarkdownDocument(blocks, openUrl) }
 }

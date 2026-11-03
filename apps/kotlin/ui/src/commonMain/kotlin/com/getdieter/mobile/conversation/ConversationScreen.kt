@@ -91,7 +91,7 @@ internal fun ConversationScreen(store: MobileStore, cardId: String, openUrl: (St
             }
             return@Screen
         }
-        Transcript(store, view, cardId, openUrl, padding)
+        Transcript(store, view, cardId, { store.openContentLink(it, openUrl, cardId) }, padding)
     }
     if (editing) card?.let { CardEditSheet(store, it) { editing = false } }
 }
@@ -265,6 +265,18 @@ private fun Transcript(
                             },
                         )
                     }
+                view.conversation?.presented_content?.let { content ->
+                    item("presented-content") {
+                        val destination = content.url.ifEmpty { content.path }
+                        Banner(
+                            content.title.ifEmpty { "Shared content" },
+                            destination,
+                            Modifier.padding(horizontal = ScreenMargin),
+                            actionLabel = "Open",
+                            onAction = { openUrl(destination) },
+                        )
+                    }
+                }
                 if (view.has_earlier)
                     item("history") {
                         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -22,7 +23,17 @@ func seedE2EFixture(data *boardstore.Store, project model.Project, board model.B
 			return err
 		}
 	}
-	if err = os.WriteFile(filepath.Join(project.Path, "README.md"), []byte("# Mobile workspace\n\nOne durable conversation across Android and iOS.\n\n- Shared Kotlin client rules\n- Adaptive Compose screens\n- Native glass, terminal and GPU surfaces\n"), 0o644); err != nil {
+	if err = os.WriteFile(filepath.Join(project.Path, "README.md"), []byte("# Mobile workspace\n\nOne durable conversation across Android and iOS.\n\n- Shared Kotlin client rules\n- Adaptive Compose screens\n- Native glass, terminal and GPU surfaces\n\n[Read linked guide](linked-guide.md)\n\n![Workspace preview](workspace-preview.png)\n"), 0o644); err != nil {
+		return err
+	}
+	if err = os.WriteFile(filepath.Join(project.Path, "linked-guide.md"), []byte("# Linked guide\n\nWorkspace links open on the owning machine.\n"), 0o644); err != nil {
+		return err
+	}
+	image, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAKklEQVR4nGNQSjtDU8QwasGoBaMWjFowasGoBaMWjFowasGoBaMWDBULAEcsUEyOg34GAAAAAElFTkSuQmCC")
+	if err != nil {
+		return err
+	}
+	if err = os.WriteFile(filepath.Join(project.Path, "workspace-preview.png"), image, 0o644); err != nil {
 		return err
 	}
 	// Exercise the real file RPC and native editor with a multi-megabyte document.
@@ -52,7 +63,7 @@ func seedE2EFixture(data *boardstore.Store, project model.Project, board model.B
 		}
 		messages := []model.UIMessage{
 			{ID: fmt.Sprintf("compose-user-%d", index), Role: "user", Parts: []model.UIMessagePart{{Type: "text", Text: fixture.prompt}}},
-			{ID: fmt.Sprintf("compose-answer-%d", index), Role: "assistant", Parts: []model.UIMessagePart{{Type: "text", Text: fixture.summary + "\n\nYour board stays within reach while you work. Each task keeps its conversation, so you can move between your phone and tablet without losing the thread.\n\nNext, I’ll refine the compact layout and check the keyboard experience."}}},
+			{ID: fmt.Sprintf("compose-answer-%d", index), Role: "assistant", Parts: []model.UIMessagePart{{Type: "text", Text: fixture.summary + "\n\nYour board stays within reach while you work. Each task keeps its conversation, so you can move between your phone and tablet without losing the thread.\n\nNext, I’ll refine the compact layout and check the keyboard experience.\n\n[Open workspace guide](README.md)"}}},
 		}
 		if _, err = data.Conversations.InitializeFork(card.ID, messages); err != nil {
 			return err

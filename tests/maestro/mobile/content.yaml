@@ -1,0 +1,34 @@
+# Transcript links → daemon-backed Markdown → relative link and image preview.
+appId: ${APP_ID}
+name: Conversation links and images
+tags: [smoke]
+---
+- runFlow: common/launch.yaml
+- tapOn:
+    text: "Projects"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Main"
+    timeout: 40000
+- tapOn:
+    text: "Main"
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: "Design the mobile workspace"
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: ".*Open workspace guide.*"
+    waitToSettleTimeoutMs: 500
+- assertVisible: ".*One durable conversation.*"
+- tapOn:
+    text: ".*Read linked guide.*"
+    waitToSettleTimeoutMs: 500
+- assertVisible: ".*Workspace links open on the owning machine.*"
+- tapOn:
+    id: "chrome-back|BackButton"
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: ".*Workspace preview.*"
+    waitToSettleTimeoutMs: 500
+- assertVisible: "Done|Close preview"
+- takeScreenshot: workspace-image-preview

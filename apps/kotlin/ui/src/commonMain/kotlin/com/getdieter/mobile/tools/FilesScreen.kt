@@ -35,9 +35,10 @@ internal fun FilesScreen(
     route: MobileRoute.FilePath? = null,
     /** The project tool route when this is a project's Files page. */
     tool: MobileRoute.Tool? = null,
+    openUrl: (String) -> Unit = androidx.compose.ui.platform.LocalUriHandler.current::openUri,
 ) {
     if (route?.file == true) {
-        DocumentScreen(store, route)
+        DocumentScreen(store, route, openUrl)
         return
     }
     val view by store.files.slice.collectAsState()
@@ -260,7 +261,11 @@ internal fun formatBytes(size: Long): String =
     }
 
 @Composable
-private fun DocumentScreen(store: MobileStore, route: MobileRoute.FilePath) {
+private fun DocumentScreen(
+    store: MobileStore,
+    route: MobileRoute.FilePath,
+    openUrl: (String) -> Unit,
+) {
     val view by store.files.slice.collectAsState()
     val buffers by store.files.buffers.collectAsState()
     val previewAttachment = rememberAttachmentViewer { store.error.value = it }
@@ -275,6 +280,21 @@ private fun DocumentScreen(store: MobileStore, route: MobileRoute.FilePath) {
     val isMarkdown = document != null && FilePaths.renderer(document) == FilePaths.Renderer.MARKDOWN
     LaunchedEffect(view.document_key, document?.revision) {
         document?.let { store.files.syncBuffer(view.document_key, it.content) }
+    }
+    LaunchedEffect(view.document_key, document?.revision) {
+        if (
+            document != null &&
+                FilePaths.renderer(document) in
+                    setOf(FilePaths.Renderer.IMAGE, FilePaths.Renderer.PDF)
+        ) {
+            previewAttachment(
+                com.getdieter.core.composition.Attachments.part(
+                    document.name,
+                    document.mime_type,
+                    FilePaths.bytes(document),
+                )
+            )
+        }
     }
     fun save() {
         val key = view.document_key
@@ -394,11 +414,17 @@ private fun DocumentScreen(store: MobileStore, route: MobileRoute.FilePath) {
                     tone = Tone.DANGER,
                 )
             when {
+                document == null && view.document_error.isNotEmpty() ->
+                    EmptyState(
+                        Glyph.FILE_PLAIN,
+                        "File unavailable",
+                        "Choose another link or go back to Files.",
+                    )
                 document == null ->
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Spinner(Modifier.size(26.dp))
                     }
-                document.binary ->
+                !FilePaths.editable(document) ->
                     EmptyState(
                         Glyph.FILE_PLAIN,
                         document.name,
@@ -426,7 +452,9 @@ private fun DocumentScreen(store: MobileStore, route: MobileRoute.FilePath) {
                             .padding(horizontal = 20.dp, vertical = 12.dp)
                             .padding(bottom = padding.calculateBottomPadding())
                     ) {
-                        RichText(text)
+                        RichText(text) {
+                            store.openContentLink(it, openUrl, route.cardId, route.path)
+                        }
                     }
                 else ->
                     BasicTextField(

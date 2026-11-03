@@ -108,13 +108,19 @@ class MobileHost(private val shared: DieterShared, private val nativeViews: Mobi
         )
     private val hostScope = MainScope()
     private val openUrl: (String) -> Unit = { url ->
-        NSURL.URLWithString(url)?.let {
-            UIApplication.sharedApplication.openURL(
-                it,
-                options = emptyMap<Any?, Any>(),
-                completionHandler = null,
-            )
-        }
+        val destination = NSURL.URLWithString(url)
+        if (destination == null) store.error.value = "This link could not be opened."
+        else
+            destination.let {
+                UIApplication.sharedApplication.openURL(
+                    it,
+                    options = emptyMap<Any?, Any>(),
+                    completionHandler = { opened ->
+                        if (!opened)
+                            store.error.value = "This link could not be opened on this device."
+                    },
+                )
+            }
     }
 
     init {
