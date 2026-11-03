@@ -8,6 +8,10 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.6.438
+
 ### Fixed
 
 - **Screen sharing works from Ubuntu and other GNOME Wayland desktops.**
