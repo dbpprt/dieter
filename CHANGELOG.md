@@ -8,20 +8,9 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
-### Fixed
+Nothing yet.
 
-- **The Mac app no longer burns a CPU core while agents work.** Each working
-  agent's machine streams its progress several times a second, and every one of
-  those updates rebuilt the whole account view and compared it with the last
-  one card by card. With many cards the app ran at 100–150% CPU and could stop
-  responding. Updates now reach the views at most four times a second, cards
-  that did not change are not compared again, and machines send a working
-  agent's progress at most four times a second. The Android and iPhone apps
-  share this code and use less battery while agents work.
-- The working indicator at the end of a running conversation animates at up to
-  30 frames a second instead of at the display's refresh rate.
-
-## 0.6.435
+## 0.6.437
 
 ### Added
 
@@ -44,6 +33,19 @@ copy the **Unreleased** notes into a section named after that exact version
 - Android's More sheet shows four equal tiles in one row: Channels,
   Terminals, Devices and Settings. Provider usage stays on the Inbox (and in
   the More page's list), so no tile is taller than the others.
+
+### Fixed
+
+- **The Mac app no longer burns a CPU core while agents work.** Each working
+  agent's machine streams its progress several times a second, and every one of
+  those updates rebuilt the whole account view and compared it with the last
+  one card by card. With many cards the app ran at 100–150% CPU and could stop
+  responding. Updates now reach the views at most four times a second, cards
+  that did not change are not compared again, and machines send a working
+  agent's progress at most four times a second. The Android and iPhone apps
+  share this code and use less battery while agents work.
+- The working indicator at the end of a running conversation animates at up to
+  30 frames a second instead of at the display's refresh rate.
 
 ## 0.6.433
 
