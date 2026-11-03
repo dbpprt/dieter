@@ -181,6 +181,39 @@ func TestChangesStreamRecordsThenOnlyWhatChanged(t *testing.T) {
 	}
 }
 
+func TestChangesSpaceTheDataFramesOfABurst(t *testing.T) {
+	t.Parallel()
+	data, api, card := changesFixture(t)
+	frames, _ := watchChangesFrames(t, api, &dieterv1.ChangesRequest{HeartbeatMs: 60_000})
+	untilCaughtUp(t, frames)
+	last := time.Now()
+	const renames = 12
+	go func() {
+		for index := 1; index <= renames; index++ {
+			if _, err := data.Kanban.RenameCard(card.ID, fmt.Sprintf("after-%d", index)); err != nil {
+				t.Error(err)
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+	final := fmt.Sprintf(`"after-%d"`, renames)
+	for count := 1; ; count++ {
+		frame := nextDataFrame(t, frames)
+		// The previous frame's send, less scheduling slack on the receiving side.
+		if gap := time.Since(last); gap < changesFrameGap-50*time.Millisecond {
+			t.Fatalf("data frame %d followed the previous one after %v", count, gap)
+		}
+		last = time.Now()
+		if record := recordIDs(frame)["item/"+card.ID+".title"]; record != nil && string(record.GetVersions()[0].GetValueJson()) == final {
+			if count >= renames {
+				t.Fatalf("%d renames took %d frames", renames, count)
+			}
+			return
+		}
+	}
+}
+
 func TestChangesResumeFromCursorAndResetWhenItNoLongerApplies(t *testing.T) {
 	t.Parallel()
 	data, api, card := changesFixture(t)
