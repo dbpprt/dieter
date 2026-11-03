@@ -44,6 +44,11 @@ for Linux amd64/arm64, the signed gateway container image and deployment bundle,
 the notarized Mac app, `Dieter-Android.apk`, the iOS build in TestFlight, the
 installer script, and `SHA256SUMS` with its signature.
 
+The Mac app ships stripped. Its dSYMs stay with the release run as the
+`symbols-mac` workflow artifact for 90 days, not as a release asset; samples and
+crash reports from that exact build (its binary UUID) symbolicate against them
+with `atos` or `symbolicatecrash`.
+
 Release daemons never run npm to install their harness runtime or their
 Claude Code, Codex and OMP bridges. On each daemon platform the builder first
 runs `dieter __harness-runtime-archive` from a development build of the same
