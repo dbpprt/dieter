@@ -25,6 +25,11 @@ tags:
 - tapOn:
     waitToSettleTimeoutMs: 500
     text: Chart background comparison
+# The body arrives after the message opens. Scrolling before it shows swipes
+# its first heading, vega-lite Null, past the top, and DOWN never comes back.
+- extendedWaitUntil:
+    visible: Chart backgrounds
+    timeout: 30000
 - scrollUntilVisible:
     element:
       text: vega-lite Null
@@ -131,6 +136,9 @@ tags:
 - tapOn:
     waitToSettleTimeoutMs: 500
     text: Chart background comparison
+- extendedWaitUntil:
+    visible: Chart backgrounds
+    timeout: 30000
 - scrollUntilVisible:
     element:
       text: vega-lite Null
@@ -170,6 +178,9 @@ tags:
 - tapOn:
     waitToSettleTimeoutMs: 500
     text: Chart background comparison
+- extendedWaitUntil:
+    visible: Chart backgrounds
+    timeout: 30000
 - scrollUntilVisible:
     element:
       text: vega-lite Null
@@ -276,6 +287,9 @@ tags:
 - tapOn:
     waitToSettleTimeoutMs: 500
     text: Chart background comparison
+- extendedWaitUntil:
+    visible: Chart backgrounds
+    timeout: 30000
 - scrollUntilVisible:
     element:
       text: vega-lite Null
