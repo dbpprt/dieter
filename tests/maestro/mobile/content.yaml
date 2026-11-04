@@ -30,5 +30,20 @@ tags: [smoke]
 - tapOn:
     text: ".*Workspace preview.*"
     waitToSettleTimeoutMs: 500
-- assertVisible: "Done|Close preview"
+# Quick Look can hide its toolbar while showing an image. Verify the actual
+# rendered image canvas instead of depending on a visible Done button.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - assertVisible:
+          id: QLPreviewControllerView
+      - assertVisible:
+          text: Image canvas
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - assertVisible: Close preview
+      - assertVisible: workspace-preview.png
 - takeScreenshot: workspace-image-preview
