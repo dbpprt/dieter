@@ -10,6 +10,17 @@ copy the **Unreleased** notes into a section named after that exact version
 
 Nothing yet.
 
+## 0.6.439
+
+### Fixed
+
+- **Workspace file links open in the mobile apps.** On Android, iPhone and
+  iPad, file links in conversations and Markdown previews now open through
+  Files in the owning workspace. Relative links resolve from the document's
+  folder, and image and PDF links open native previews automatically.
+- Conversations show the latest file or page an agent explicitly presents.
+  iOS also reports failures to open links or attachments.
+
 ## 0.6.438
 
 ### Fixed
