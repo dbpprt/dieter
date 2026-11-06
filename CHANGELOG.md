@@ -10,6 +10,19 @@ copy the **Unreleased** notes into a section named after that exact version
 
 Nothing yet.
 
+## 0.6.440
+
+### Changed
+
+- Updated the bundled Claude Code, Codex, Pi and OMP agents and their adapters.
+  Managed Bun is now 1.4.4, supporting the updated OMP executable.
+- Updated shared Kotlin libraries, networking dependencies and build tools.
+
+### Fixed
+
+- Cancelling a relay connection discards queued writes so its endpoints can
+  close cleanly.
+
 ## 0.6.439
 
 ### Fixed
