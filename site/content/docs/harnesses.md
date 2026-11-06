@@ -7,7 +7,7 @@ weight: 42
 slug: "harnesses"
 ---
 
-Dieter integrates five harnesses through a pinned JavaScript runtime. Each uses
+Dieter integrates six harnesses through a pinned JavaScript runtime. Each uses
 its normal local configuration on the **execution machine**.
 
 | Harness                | Default configuration                       |
@@ -17,6 +17,7 @@ its normal local configuration on the **execution machine**.
 | Pi                     | `~/.pi/agent` or `PI_AGENT_DIR`             |
 | Oh My Pi               | `~/.omp/agent`, with `OMP_PROFILE` when set |
 | DeepSeek Harness (DSH) | `~/.dsh` or `DSH_HOME`                      |
+| Antigravity (Google)   | `agy` on PATH, `~/.gemini/antigravity-cli`  |
 
 Authenticate or configure the provider on that machine first. Dieter does not
 transfer provider credentials between hosts or store them on the gateway.
@@ -51,7 +52,10 @@ model list; this page does not freeze a second copy of it.
 A new conversation uses the selected model's `defaultEffort` when defined.
 `--effort default` explicitly selects the provider's native default.
 
-Codex, Claude Code, and Pi support model and effort changes between turns.
+Codex, Claude Code, Pi, and Antigravity support model and effort changes between turns.
+Antigravity reaches Dieter's host tools through an MCP server named `dieter` that the
+harness registers in agy's own configuration (`agy mcp add dieter …`) the first time a
+turn offers them; outside a Dieter turn that server offers no tools.
 OMP and DSH support model changes; OMP thinking stays fixed after the first
 message. Provider options appear only where the catalog advertises them.
 Supported Codex models expose mutable **Fast mode** with
