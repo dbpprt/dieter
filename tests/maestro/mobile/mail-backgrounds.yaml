@@ -1,0 +1,305 @@
+appId: "${APP_ID}"
+name: Mail chart backgrounds
+tags:
+  - full
+---
+- runFlow: common/launch.yaml
+- runFlow:
+    file: common/more.yaml
+    env:
+      PLACE: settings
+- scrollUntilVisible:
+    element:
+      id: appearance-1
+    direction: UP
+- tapOn:
+    waitToSettleTimeoutMs: 500
+    id: appearance-1
+- tapOn:
+    text: "Mail"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: Chart background comparison
+    timeout: 40000
+- takeScreenshot: mail-rows-light
+- tapOn:
+    waitToSettleTimeoutMs: 500
+    text: Chart background comparison
+# The body arrives after the message opens. Scrolling before it shows swipes
+# its first heading, vega-lite Null, past the top, and DOWN never comes back.
+- extendedWaitUntil:
+    visible: Chart backgrounds
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: vega-lite Null
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- extendedWaitUntil:
+    visible:
+      id: mail-diagram-vega-lite-rendered
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: vega-lite Omitted
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: mail-backgrounds-light-vega-lite-null
+- scrollUntilVisible:
+    element:
+      text: vega-lite Omitted
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- extendedWaitUntil:
+    visible:
+      id: mail-diagram-vega-lite-rendered
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: vega-lite White
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: mail-backgrounds-light-vega-lite-omitted
+- scrollUntilVisible:
+    element:
+      text: vega-lite White
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- extendedWaitUntil:
+    visible:
+      id: mail-diagram-vega-lite-rendered
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: vega Null
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: mail-backgrounds-light-vega-lite-white
+- scrollUntilVisible:
+    element:
+      text: vega Null
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- extendedWaitUntil:
+    visible:
+      id: mail-diagram-vega-rendered
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: vega Omitted
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: mail-backgrounds-light-vega-null
+- scrollUntilVisible:
+    element:
+      text: vega Omitted
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- extendedWaitUntil:
+    visible:
+      id: mail-diagram-vega-rendered
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: vega White
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: mail-backgrounds-light-vega-omitted
+- scrollUntilVisible:
+    element:
+      text: vega White
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- extendedWaitUntil:
+    visible:
+      id: mail-diagram-vega-rendered
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: End of background comparison.
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: mail-backgrounds-light-vega-white
+- runFlow: common/back.yaml
+- tapOn:
+    waitToSettleTimeoutMs: 500
+    text: "Invoice migration finished: 12,408 rows moved"
+- assertNotVisible:
+    id: mail-diagram-vega-rendered
+- runFlow: common/back.yaml
+- tapOn:
+    waitToSettleTimeoutMs: 500
+    text: Chart background comparison
+- extendedWaitUntil:
+    visible: Chart backgrounds
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: vega-lite Null
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- scrollUntilVisible:
+    element:
+      text: vega-lite Omitted
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: mail-backgrounds-light-reopened
+- runFlow: common/back.yaml
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - hideKeyboard
+- runFlow:
+    file: common/more.yaml
+    env:
+      PLACE: settings
+- scrollUntilVisible:
+    element:
+      id: appearance-1
+    direction: UP
+- tapOn:
+    waitToSettleTimeoutMs: 500
+    id: appearance-2
+- tapOn:
+    text: "Mail"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: Chart background comparison
+    timeout: 40000
+- takeScreenshot: mail-rows-dark
+- tapOn:
+    waitToSettleTimeoutMs: 500
+    text: Chart background comparison
+- extendedWaitUntil:
+    visible: Chart backgrounds
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: vega-lite Null
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- extendedWaitUntil:
+    visible:
+      id: mail-diagram-vega-lite-rendered
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: vega-lite Omitted
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: mail-backgrounds-dark-vega-lite-null
+- scrollUntilVisible:
+    element:
+      text: vega-lite Omitted
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- extendedWaitUntil:
+    visible:
+      id: mail-diagram-vega-lite-rendered
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: vega-lite White
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: mail-backgrounds-dark-vega-lite-omitted
+- scrollUntilVisible:
+    element:
+      text: vega-lite White
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- extendedWaitUntil:
+    visible:
+      id: mail-diagram-vega-lite-rendered
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: vega Null
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: mail-backgrounds-dark-vega-lite-white
+- scrollUntilVisible:
+    element:
+      text: vega Null
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- extendedWaitUntil:
+    visible:
+      id: mail-diagram-vega-rendered
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: vega Omitted
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: mail-backgrounds-dark-vega-null
+- scrollUntilVisible:
+    element:
+      text: vega Omitted
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- extendedWaitUntil:
+    visible:
+      id: mail-diagram-vega-rendered
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: vega White
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: mail-backgrounds-dark-vega-omitted
+- scrollUntilVisible:
+    element:
+      text: vega White
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- extendedWaitUntil:
+    visible:
+      id: mail-diagram-vega-rendered
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: End of background comparison.
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: mail-backgrounds-dark-vega-white
+- runFlow: common/back.yaml
+- tapOn:
+    waitToSettleTimeoutMs: 500
+    text: "Invoice migration finished: 12,408 rows moved"
+- assertNotVisible:
+    id: mail-diagram-vega-rendered
+- runFlow: common/back.yaml
+- tapOn:
+    waitToSettleTimeoutMs: 500
+    text: Chart background comparison
+- extendedWaitUntil:
+    visible: Chart backgrounds
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: vega-lite Null
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- scrollUntilVisible:
+    element:
+      text: vega-lite Omitted
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: mail-backgrounds-dark-reopened
+- runFlow: common/back.yaml

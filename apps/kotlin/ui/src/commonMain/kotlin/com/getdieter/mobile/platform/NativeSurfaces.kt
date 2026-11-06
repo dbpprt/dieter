@@ -1,0 +1,24 @@
+package com.getdieter.mobile.platform
+
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import com.getdieter.mobile.store.*
+
+// Renderers, pickers and media stay native; navigation and commands remain shared.
+@Composable internal expect fun NativeTerminal(store: MobileStore, modifier: Modifier)
+
+@Composable internal expect fun NativeScreenCanvas(store: MobileStore, modifier: Modifier)
+
+@Composable
+internal expect fun rememberAttachmentPicker(
+    onPicked: (List<com.getdieter.api.v1.MessagePart>) -> Unit,
+    onError: (String) -> Unit,
+): () -> Unit
+
+@Composable
+internal expect fun rememberAttachmentViewer(
+    onError: (String) -> Unit
+): (com.getdieter.api.v1.MessagePart) -> Unit
+
+/** Hands [text] to the system share sheet, titled [subject]; e.g. a mail message's Markdown. */
+@Composable internal expect fun rememberTextSharer(): (subject: String, text: String) -> Unit

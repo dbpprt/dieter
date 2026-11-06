@@ -2,6 +2,7 @@ package remotedesktop
 
 import (
 	"bytes"
+	"errors"
 	"math"
 	"testing"
 	"time"
@@ -56,7 +57,7 @@ func TestRTPTrafficCountersSeparatePayloadClassesAndExcludeFailedWrites(t *testi
 	if p.mediaRTPBytes.Load() != 112 || p.fecRTPBytes.Load() != 112 || p.repairRTPBytes.Load() != 112 || p.probeRTPBytes.Load() != 267 {
 		t.Fatal("RTP classes or byte units changed")
 	}
-	if _, err := p.Write(header, nil, interceptor.Attributes{repairDeadlineAttribute: time.Now().Add(-time.Second)}); err != errRepairExpired || p.repairRTPBytes.Load() != 112 {
+	if _, err := p.Write(header, nil, interceptor.Attributes{repairDeadlineAttribute: time.Now().Add(-time.Second)}); !errors.Is(err, errRepairExpired) || p.repairRTPBytes.Load() != 112 {
 		t.Fatal("expired repair counted as sent")
 	}
 }

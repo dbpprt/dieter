@@ -1,0 +1,128 @@
+syntax = "proto3";
+
+package dieter.v1;
+
+option go_package = "github.com/dbpprt/dieter/internal/gen/dieter/v1;dieterv1";
+option java_multiple_files = true;
+option java_package = "com.getdieter.api.v1";
+
+import "dieter/gateway/v1/gateway.proto";
+import "google/protobuf/empty.proto";
+
+// Device trust. Every remote call is mutually authenticated TLS between
+// devices of the account's signed device roster; the gateway relays but cannot
+// join. This service shows the daemon's verified view of the roster and lets
+// an operator pair, revoke and recover devices. Agent turns cannot change
+// device trust.
+service TrustService {
+  rpc GetTrustStatus(google.protobuf.Empty) returns (TrustStatus);
+  // Entries of the daemon's verified roster from from_sequence.
+  rpc GetDeviceRoster(dieter.gateway.v1.GetDeviceRosterRequest) returns (dieter.gateway.v1.DeviceRoster);
+  // Offers roster entries the daemon may be missing, e.g. a revocation the
+  // gateway withholds. The daemon adopts them only if they extend its pinned
+  // chain, then refreshes from the gateway.
+  rpc SyncDeviceRoster(SyncDeviceRosterRequest) returns (TrustStatus);
+  // Starts the account's roster with this machine as its first device and
+  // returns a one-time recovery key. Local route only. replace discards an
+  // existing roster: every paired device must then reset and pair again.
+  rpc InitializeDeviceRoster(InitializeDeviceRosterRequest) returns (InitializeDeviceRosterResponse);
+  // Devices waiting to join. Their codes are never listed: only the new
+  // device shows its code.
+  rpc ListPairingRequests(google.protobuf.Empty) returns (ListPairingRequestsResponse);
+  // Signs the device that shows code into the roster.
+  rpc ApproveDevice(ApproveDeviceRequest) returns (TrustStatus);
+  rpc RevokeDevice(RevokeDeviceRequest) returns (TrustStatus);
+  // Adds this machine to the roster with the recovery key from
+  // initialization, when no other device can approve it. The key commits to
+  // the roster's root, so it cannot approve into another roster. Local route
+  // only.
+  rpc RecoverDeviceTrust(RecoverDeviceTrustRequest) returns (TrustStatus);
+}
+
+enum TrustState {
+  TRUST_STATE_UNSPECIFIED = 0;
+  // The daemon is not enrolled with a gateway.
+  TRUST_STATE_NOT_ENROLLED = 1;
+  // The account has no roster yet: run `dieter device init`.
+  TRUST_STATE_NO_ROSTER = 2;
+  // This machine asked to join; another device must approve pairing_code.
+  TRUST_STATE_PENDING = 3;
+  TRUST_STATE_TRUSTED = 4;
+  // This machine was revoked from the roster.
+  TRUST_STATE_REVOKED = 5;
+  // The gateway or a peer presented a roster that conflicts with the pinned
+  // one. Remote calls are refused until an operator resets trust.
+  TRUST_STATE_CONFLICT = 6;
+}
+
+message TrustStatus {
+  TrustState state = 1;
+  string device_id = 2;
+  // Base64url SHA-256 of the genesis entry; empty without a pinned roster.
+  string root_hash = 3;
+  uint64 head_sequence = 4;
+  string head_hash = 5;
+  // While PENDING: the one-time code to type on a trusted device. Keep it
+  // private; anyone who types it on a trusted device approves this machine.
+  string pairing_code = 6;
+  repeated TrustedDevice devices = 7;
+  // Why the state is CONFLICT or a sync failed; empty otherwise.
+  string detail = 8;
+  // When the roster was last fetched from the gateway (RFC 3339).
+  string synced_at = 9;
+}
+
+message TrustedDevice {
+  string device_id = 1;
+  dieter.gateway.v1.DeviceKind kind = 2;
+  string platform = 3;
+  string name = 4;
+  string daemon_id = 5;
+  // Device ID of the member that added it.
+  string added_by = 6;
+  uint64 added_sequence = 7;
+  bool revoked = 8;
+  // This daemon's own device.
+  bool this_device = 9;
+}
+
+message SyncDeviceRosterRequest {
+  repeated dieter.gateway.v1.DeviceRosterEntry entries = 1;
+}
+
+message InitializeDeviceRosterRequest {
+  bool replace = 1;
+}
+
+message InitializeDeviceRosterResponse {
+  TrustStatus status = 1;
+  // Shown once; store it offline. It can approve a replacement machine.
+  string recovery_key = 2;
+}
+
+message PairingRequestInfo {
+  string id = 1;
+  string device_id = 2;
+  dieter.gateway.v1.DeviceKind kind = 3;
+  string platform = 4;
+  string name = 5;
+  string requested_at = 6;
+  string expires_at = 7;
+}
+
+message ListPairingRequestsResponse {
+  repeated PairingRequestInfo requests = 1;
+}
+
+message ApproveDeviceRequest {
+  // The code the new device shows.
+  string code = 1;
+}
+
+message RevokeDeviceRequest {
+  string device_id = 1;
+}
+
+message RecoverDeviceTrustRequest {
+  string recovery_key = 1;
+}

@@ -1,0 +1,307 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 60;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		D1E7E5000000000000000101 /* DieterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1E7E5000000000000000001 /* DieterApp.swift */; };
+		D1E7E5000000000000000102 /* DieterMacKit in Frameworks */ = {isa = PBXBuildFile; productRef = D1E7E5000000000000000501 /* DieterMacKit */; };
+		D1E7E5000000000000000103 /* DieterMonochrome.icns in Resources */ = {isa = PBXBuildFile; fileRef = D1E7E5000000000000000005 /* DieterMonochrome.icns */; };
+		D1E7E5000000000000000104 /* DieterMonochromeFavicon.png in Resources */ = {isa = PBXBuildFile; fileRef = D1E7E5000000000000000006 /* DieterMonochromeFavicon.png */; };
+		D1E7E5000000000000000105 /* PaletteIcons in Resources */ = {isa = PBXBuildFile; fileRef = D1E7E5000000000000000007 /* PaletteIcons */; };
+		D1E7E5000000000000000106 /* Sora-Variable.ttf in Fonts */ = {isa = PBXBuildFile; fileRef = D1E7E5000000000000000008 /* Sora-Variable.ttf */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		D1E7E5000000000000000204 /* Fonts */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Fonts;
+			dstSubfolderSpec = 7;
+			files = (
+				D1E7E5000000000000000106 /* Sora-Variable.ttf in Fonts */,
+			);
+			name = Fonts;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		D1E7E5000000000000000001 /* DieterApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DieterApp.swift; sourceTree = "<group>"; };
+		D1E7E5000000000000000002 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		D1E7E5000000000000000003 /* Dieter.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Dieter.entitlements; sourceTree = "<group>"; };
+		D1E7E5000000000000000004 /* Identity.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Identity.xcconfig; sourceTree = "<group>"; };
+		D1E7E5000000000000000005 /* DieterMonochrome.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = DieterMonochrome.icns; sourceTree = "<group>"; };
+		D1E7E5000000000000000006 /* DieterMonochromeFavicon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = DieterMonochromeFavicon.png; sourceTree = "<group>"; };
+		D1E7E5000000000000000007 /* PaletteIcons */ = {isa = PBXFileReference; lastKnownFileType = folder; path = PaletteIcons; sourceTree = "<group>"; };
+		D1E7E5000000000000000008 /* Sora-Variable.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "Sora-Variable.ttf"; path = "../../../assets/brand/assets/fonts/Sora-Variable.ttf"; sourceTree = SOURCE_ROOT; };
+		D1E7E5000000000000000009 /* Dieter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dieter.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		D1E7E5000000000000000202 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D1E7E5000000000000000102 /* DieterMacKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		D1E7E5000000000000000301 = {
+			isa = PBXGroup;
+			children = (
+				D1E7E5000000000000000302 /* App */,
+				D1E7E5000000000000000303 /* Resources */,
+				D1E7E5000000000000000008 /* Sora-Variable.ttf */,
+				D1E7E5000000000000000304 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		D1E7E5000000000000000302 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				D1E7E5000000000000000001 /* DieterApp.swift */,
+				D1E7E5000000000000000002 /* Info.plist */,
+				D1E7E5000000000000000003 /* Dieter.entitlements */,
+				D1E7E5000000000000000004 /* Identity.xcconfig */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		D1E7E5000000000000000303 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				D1E7E5000000000000000005 /* DieterMonochrome.icns */,
+				D1E7E5000000000000000006 /* DieterMonochromeFavicon.png */,
+				D1E7E5000000000000000007 /* PaletteIcons */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		D1E7E5000000000000000304 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				D1E7E5000000000000000009 /* Dieter.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		D1E7E5000000000000000401 /* Dieter */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D1E7E5000000000000000702 /* Build configuration list for PBXNativeTarget "Dieter" */;
+			buildPhases = (
+				D1E7E5000000000000000201 /* Sources */,
+				D1E7E5000000000000000202 /* Frameworks */,
+				D1E7E5000000000000000203 /* Resources */,
+				D1E7E5000000000000000204 /* Fonts */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Dieter;
+			packageProductDependencies = (
+				D1E7E5000000000000000501 /* DieterMacKit */,
+			);
+			productName = Dieter;
+			productReference = D1E7E5000000000000000009 /* Dieter.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		D1E7E5000000000000000601 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2600;
+			};
+			buildConfigurationList = D1E7E5000000000000000701 /* Build configuration list for PBXProject "Dieter" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = D1E7E5000000000000000301;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				D1E7E5000000000000000502 /* XCLocalSwiftPackageReference "." */,
+			);
+			preferredProjectObjectVersion = 60;
+			productRefGroup = D1E7E5000000000000000304 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				D1E7E5000000000000000401 /* Dieter */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		D1E7E5000000000000000203 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D1E7E5000000000000000103 /* DieterMonochrome.icns in Resources */,
+				D1E7E5000000000000000104 /* DieterMonochromeFavicon.png in Resources */,
+				D1E7E5000000000000000105 /* PaletteIcons in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		D1E7E5000000000000000201 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D1E7E5000000000000000101 /* DieterApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		D1E7E5000000000000000711 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = D1E7E5000000000000000004 /* Identity.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DIETER_BUILD_NUMBER = 1;
+				DIETER_MAC_SIGN_IDENTITY = "-";
+				DIETER_RELEASE_VERSION = "0.0.0-dev.0";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		D1E7E5000000000000000712 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = D1E7E5000000000000000004 /* Identity.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DIETER_BUILD_NUMBER = 1;
+				DIETER_MAC_SIGN_IDENTITY = "-";
+				DIETER_RELEASE_VERSION = "0.0.0-dev.0";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		D1E7E5000000000000000721 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				CODE_SIGN_ENTITLEMENTS = App/Dieter.entitlements;
+				CODE_SIGN_IDENTITY = "$(DIETER_MAC_SIGN_IDENTITY)";
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = "$(DIETER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = "$(DIETER_MAC_TEAM_ID)";
+				ENABLE_HARDENED_RUNTIME = NO;
+				EXECUTABLE_NAME = "$(DIETER_MAC_EXECUTABLE_NAME)";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = App/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MARKETING_VERSION = "$(DIETER_RELEASE_VERSION)";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(DIETER_MAC_BUNDLE_ID)";
+				PRODUCT_NAME = "$(DIETER_MAC_PRODUCT_NAME)";
+			};
+			name = Debug;
+		};
+		D1E7E5000000000000000722 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				CODE_SIGN_ENTITLEMENTS = App/Dieter.entitlements;
+				CODE_SIGN_IDENTITY = "$(DIETER_MAC_SIGN_IDENTITY)";
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = "$(DIETER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = "$(DIETER_MAC_TEAM_ID)";
+				ENABLE_HARDENED_RUNTIME = YES;
+				EXECUTABLE_NAME = "$(DIETER_MAC_EXECUTABLE_NAME)";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = App/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MARKETING_VERSION = "$(DIETER_RELEASE_VERSION)";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(DIETER_MAC_BUNDLE_ID)";
+				PRODUCT_NAME = "$(DIETER_MAC_PRODUCT_NAME)";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		D1E7E5000000000000000701 /* Build configuration list for PBXProject "Dieter" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D1E7E5000000000000000711 /* Debug */,
+				D1E7E5000000000000000712 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D1E7E5000000000000000702 /* Build configuration list for PBXNativeTarget "Dieter" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D1E7E5000000000000000721 /* Debug */,
+				D1E7E5000000000000000722 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		D1E7E5000000000000000502 /* XCLocalSwiftPackageReference "." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = .;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		D1E7E5000000000000000501 /* DieterMacKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1E7E5000000000000000502 /* XCLocalSwiftPackageReference "." */;
+			productName = DieterMacKit;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = D1E7E5000000000000000601 /* Project object */;
+}

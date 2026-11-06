@@ -5,23 +5,23 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 )
 
 func TestDaemonCLIBoardsUseRequestedProject(t *testing.T) {
-	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
+	t.Parallel()
 	client, output, data := daemonCLIForTest(t)
 	for _, name := range []string{"afa", "dieter"} {
-		_, err := data.CreateProject(store.CreateProjectInput{Name: name, Path: initTestRepository(t, name), InitialBoardName: "Main", InitialWorkflow: "review"})
+		_, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: name, Path: initTestRepository(t, name), InitialBoardName: "Main", InitialWorkflow: "review"})
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	project, err := data.ResolveProject("dieter")
+	project, err := data.Kanban.ResolveProject("dieter")
 	if err != nil {
 		t.Fatal(err)
 	}
-	boards, err := data.ListBoards(project.ID)
+	boards, err := data.Kanban.ListBoards(project.ID)
 	if err != nil || len(boards) != 1 {
 		t.Fatalf("boards: %+v %v", boards, err)
 	}

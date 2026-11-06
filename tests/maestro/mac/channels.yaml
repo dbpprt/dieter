@@ -1,0 +1,60 @@
+# Maestro syntax, run in-app: Maestro has no macOS driver.
+# Agent channels (experimental): off by default, turned on in Settings ›
+# Experimental; the seeded project's channel opens, a post from the Mac shows
+# in its live stream, and the switch is turned off again for the other flows.
+appId: com.getdieter.mac
+name: Mac agent channels
+tags: [full]
+---
+- launchApp
+- tapOn:
+    id: sidebar.channels
+- assertVisible:
+    id: destination.Channels
+- extendedWaitUntil:
+    visible:
+      id: channels.empty
+      text: "Agent channels are off"
+    timeout: 30000
+- tapOn:
+    id: channels.empty.settings
+- assertVisible:
+    id: destination.Settings
+- tapOn:
+    id: settings.experimental.channels
+- tapOn:
+    id: sidebar.channels
+- extendedWaitUntil:
+    visible:
+      id: 'channels\.row\..+'
+      text: "Isolated E2E"
+    timeout: 60000
+- extendedWaitUntil:
+    visible:
+      id: channels.stream
+      text: "#Isolated E2E"
+    timeout: 60000
+- tapOn:
+    id: channels.composer
+- inputText: "Hello agents"
+- tapOn:
+    id: channels.composer.send
+- extendedWaitUntil:
+    visible:
+      id: 'channels\.message\..+'
+      text: "Hello agents"
+    timeout: 30000
+- takeScreenshot: mac-channels
+- tapOn:
+    id: sidebar.settings
+- tapOn:
+    id: settings.experimental
+- tapOn:
+    id: settings.experimental.channels
+- tapOn:
+    id: sidebar.channels
+- extendedWaitUntil:
+    visible:
+      id: channels.empty
+      text: "Agent channels are off"
+    timeout: 60000

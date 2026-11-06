@@ -19,8 +19,8 @@ import (
 const vaultHelp = `Usage: dieter vault <action> [options]
 
 An account-wide password and TOTP vault shared by your machines. Items
-replicate end-to-end encrypted; the gateway relays only ciphertext and vault
-contents never cross the gateway relay route. Each machine joins once.
+replicate end-to-end encrypted, and every route to a machine is TLS between
+your devices, so the gateway relays only ciphertext. Each machine joins once.
 
 Setup and machines:
   status         Show vault state, members and this caller's access
@@ -81,7 +81,7 @@ func (c *CLI) rpcVault(args []string) error {
 	if !ok {
 		return fmt.Errorf("unknown vault action %q; run `dieter vault --help`", args[0])
 	}
-	if !wantsHelp(args[1:]) && os.Getenv("DIETER_TURN_TOKEN") != "" && strings.TrimSpace(c.Machine) != "" {
+	if !wantsHelp(args[1:]) && c.env.TurnToken != "" && strings.TrimSpace(c.Machine) != "" {
 		return errors.New("agent turns use the vault only through their own machine; omit --machine")
 	}
 	return action(args[1:])

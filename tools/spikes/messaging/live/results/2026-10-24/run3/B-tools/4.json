@@ -1,0 +1,10 @@
+{
+  "cardId": "c_f0a7c2b3c7eaf232184416c6",
+  "messageId": "msg_7bad71f4036bef7398",
+  "toolCallId": "exec-76e9e94b-2eff-428e-8b01-fb9c14fb8395",
+  "toolName": "bash",
+  "state": "output-available",
+  "inputJson": "eyJjb21tYW5kIjoiL2Jpbi96c2ggLWxjICdkaWV0ZXIgY2hhbm5lbCBjaGVjayBzcmMvbW9kdWxlMy5qcyBzcmMvbW9kdWxlNS5qczsgZ2l0IHN0YXR1cyAtLXNob3J0OyBnaXQgZGlmZiAtLWNhY2hlZCAtLXN0YXQ7IHRhaWwgLW4gMiBzcmMvbW9kdWxlMy5qczsgaGVhZCAtbiAxIHNyYy9tb2R1bGU1LmpzJyJ9",
+  "outputJson": "eyJleGl0Q29kZSI6MCwib3V0cHV0IjoiTm8gb3RoZXIgYWdlbnQgaXMgY2hhbmdpbmcgdGhlc2UgZmlsZXMsIGFuZCB0aGUgY2hhbm5lbCBoYXMgbm8gbm90ZXMgYWJvdXQgdGhlbS5cbiBNIHNyYy9tb2R1bGU1LmpzXG5leHBvcnQgZnVuY3Rpb24gcnVsZTNfMzgocXR5LCBwcmljZSkgeyByZXR1cm4gcXR5IFx1MDAzZSAzOCA/IHByaWNlICogMC45NjIgOiBwcmljZTsgfVxuZXhwb3J0IGZ1bmN0aW9uIHJ1bGUzXzM5KHF0eSwgcHJpY2UpIHsgcmV0dXJuIHF0eSBcdTAwM2UgMzkgPyBwcmljZSAqIDAuOTYxIDogcHJpY2U7IH1cbi8vIG1vZHVsZSA1OiBpbnZlbnRvcnkgcHJpY2luZyBydWxlcyAob3duZXI6IEIpXG4iLCJzdGF0dXMiOiJjb21wbGV0ZWQifQ==",
+  "revision": "23db81bb86005693ad0a8276"
+}

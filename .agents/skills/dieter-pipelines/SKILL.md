@@ -1,69 +1,76 @@
 ---
 name: dieter-pipelines
-description: Develop or diagnose Dieter's Fastlane builds, test selection, CI qualification, signing, and immutable releases. Use for pipeline changes and contributor setup; use native app skills for live UI or device operation.
+description: Build, check, and qualify Dieter components; run device flows; diagnose CI; and work on signing and releases. Use for build/test/CI/release changes and contributor setup; use the mac-app skill for live Mac UI work.
 ---
 
 # Dieter pipelines
 
-Read [the pipeline guide](../../../fastlane/README.md) and relevant platform
-instructions before changing builds, device lifecycle, or release compositions.
-Use `just pipeline`; local and CI commands execute the same pinned Fastlane.
-Local tools come from root `mise.toml`/`mise.lock`; prepare them with
-`mise install --locked` and `mise run setup`. Use `mise exec -- just ...` for
-noninteractive commands. With managed Java, keep `toolchains.java_home` null
-in `fastlane/local.json` so it inherits `JAVA_HOME`. Mise does not provision
-Xcode, SDKs, emulators, devices, or the Docker engine that gateway
-`deployment_integration` needs.
+Read [docs/building.md](../../../docs/building.md),
+[docs/testing.md](../../../docs/testing.md) and, for release work,
+[docs/releasing.md](../../../docs/releasing.md) and
+[fastlane/README.md](../../../fastlane/README.md) before changing builds, device
+lifecycle or releases.
 
-Local commit checks use `just hooks` once per checkout/worktree, `just format`
-for explicit working-source fixes, and `just pre-commit` for read-only staged
-checks. The no-stash dispatcher preserves concurrent working edits; do not run
-`pre-commit install` over it or add automatic staging. Tool pins/caches and the
-isolated `just hooks-test` gate are documented in the pipeline guide. These
-local commands require Python 3.11+; setup also needs Go, Node 22+, and Ruby
-from `.ruby-version`. The lean formatters cover source, web/config files and
-Markdown; they do not change CI qualification.
+## Tools and commands
 
-Inspect `just check-changed --dry-run` before verification. It includes dirty
-files; add `--base REF` for the branch. Run affected contracts/packages once at
-the integration boundary. During implementation, rerun only a failed or newly
-affected check. Generic orchestration edits do not justify every native build.
-Device/desktop checks are listed separately and require `--native` or explicit
-catalog cases. Use registered processes and collect their results before ending.
+Tools are pinned in `mise.toml`/`mise.lock`; CI installs the same versions.
+Prepare a checkout with `mise trust` and `just setup`; in non-interactive shells
+run `mise exec -- just …`. mise does not provision Xcode, SDKs, simulator
+runtimes, emulators, devices or Docker.
 
-Keep assertions in native tests and shared-core/Go tests. The catalog standardizes
-selection, requirements and results. Do not create another journey language or
-host test loop. Device tests qualify native surfaces; shared rules belong in the
-core. Missing/skipped/duplicate/unavailable assertions and cleanup failures fail.
+Every `just` recipe wraps a plain toolchain command (`go`, `./gradlew -p
+apps/kotlin`, `swift`, `xcodebuild`, `hugo`). Prefer the plain command when you
+need one package, task or test. `just pipeline <lane>` runs a Fastlane lane
+directly; Fastlane owns native packaging, signing, notarization and store
+delivery and uses its built-in actions.
 
-Put reusable process, lease, evidence and product contracts in
-`fastlane/lib/dieter/pipeline`. `NativeAction` delegates XCTest and archive/export
-to Fastlane inside owned subprocesses; keep launch environments and signing
-credentials private. Stream sanitized output and show measured phase/case times.
-Upload bounded diagnostics, never caches, archives or duplicate producer bytes.
-Diagnostic upload outages are distinct from mandatory checkpoint retention.
-For latency work, compare compilation, per-case execution and cache transfer
-separately. Hosted Apple checks share the Mac SwiftPM test/build graph and cache
-unsigned compiler state in Actions; producers keep independent release graphs.
-Do not claim a ten-minute gate from a cold build or relabel a full catalog smoke.
+## Verify efficiently
 
-Named profiles in ignored `fastlane/local.json` select exact targets. CI ignores
-that file and uses tracked defaults on GitHub-hosted workers. Android, Mac desktop,
-and physical-device journeys use explicit local profiles.
-Never choose an arbitrary phone, replace an operator app, delete leases, clean
-build caches, or restart the live daemon. Use the Mac skill when operating the Mac
-app; Android and iOS devices go through their pipeline lanes. `ios_qualify` builds
-once and verifies products before each explicit
-simulator layout; physical tests use `ios e2e` with exact profiles and existing
-development signing/TLS fixtures.
+1. Inspect `just check-changed --dry-run` (add `--base REF` for a branch). It
+   includes uncommitted files and lists device checks separately.
+2. During implementation, run focused checks (`go test ./internal/x/...`,
+   `just kotlin :core:runtime:jvmTest --tests '…'`). Rerun only what failed or
+   became newly affected.
+3. At the integration boundary, run `just check-changed` once, plus the one
+   relevant `just e2e <platform>` run for app, schema, fixture or lifecycle
+   changes. Do not repeat full suites, `tags:full` or every platform between
+   edits.
+4. Run `just lint` (or `just lint --staged`) and `just generate` if schemas or
+   `config/identity.json` changed; CI fails on generated drift.
 
-The reusable qualification workflow owns affected PR/main checks and full
-scheduled/manual checks. iOS checks run the `ios.journey` case on both simulator
-layouts and `ios.share` on iPhone; Android checks compile `android.journey` and
-`android.share`, which run locally on the emulator. Full catalogs remain available through scheduled/manual qualification.
-Main qualifies once, then CI
-calls Release. Manual releases qualify first. Keep one canonical SemVer, exact
-producer checkpoints, byte-preserving reruns, retained-IPA TestFlight delivery,
-and protected stable promotion. Local configuration cannot change release policy.
-Do not publish releases, rotate signing accounts, or activate production merely
-to test pipeline changes; verify those contracts with disposable fixtures.
+Measure cold builds, cache restores and test execution separately; a cold
+native build is not evidence about test speed. Run Gradle and Xcode builds one
+at a time on a shared machine. Use registered background processes for
+long-running builds, emulators and servers, and collect their results before
+you finish.
+
+## Device flows
+
+`just e2e <android|ios|mac> [tags:smoke|full] [flows:NAME,…]` builds the app,
+starts one isolated fixture gateway, installs the separate E2E app and runs the
+Maestro flows in `tests/maestro`. Keep assertions about rules in Kotlin unit
+tests; add a device flow only for a journey that needs a device.
+
+- Android borrows a running emulator, or a phone only through a profile that
+  names its exact serial. Never pick an arbitrary phone, never wipe operator
+  userdata, and never kill unrelated processes.
+- iOS creates, boots and deletes its own simulator.
+- The Mac run needs the logged-in desktop and refuses while any `DieterMac`
+  process runs.
+- Required missing, skipped or unavailable assertions and cleanup failures fail
+  the run. Keep failed evidence; never relax assertions to hide emulator
+  problems.
+
+## CI and releases
+
+Pull requests and `main` run the affected checks; the required check is
+`ci-ok`. Dev releases are cut nightly and on demand; stable is a protected
+promotion of an exact dev build (see `docs/releasing.md`). Release checksums
+are signed only by `.github/workflows/release.yml@refs/heads/main`, which
+installed updaters verify; never rename or bypass it. Publishing jobs run only
+in the upstream repository.
+
+Do not publish releases, rotate signing material, upload to TestFlight or
+activate production to test a pipeline change. Verify those paths with dry
+runs and disposable fixtures. Never stop, restart or replace the operator's
+daemon or apps.

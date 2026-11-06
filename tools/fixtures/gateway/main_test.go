@@ -180,7 +180,7 @@ func TestIsolatedRunnerDiagnosticsBoundAndPreserveOutput(t *testing.T) {
 					received.Add(1)
 					return nil
 				})
-				if err != cause {
+				if !errors.Is(err, cause) {
 					t.Fatal("diagnostics replaced the original error")
 				}
 			}

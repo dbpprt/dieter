@@ -1,0 +1,96 @@
+syntax = "proto3";
+
+package dieter.v1;
+
+option go_package = "github.com/dbpprt/dieter/internal/gen/dieter/v1;dieterv1";
+option java_multiple_files = true;
+option java_package = "com.getdieter.api.v1";
+
+import "dieter/v1/common.proto";
+
+// Boards, lanes, labels and board lifecycle.
+service BoardService {
+  rpc CreateBoard(CreateBoardRequest) returns (Board);
+  rpc GetBoard(BoardRef) returns (Board);
+  rpc ListRetiredBoards(ListRetiredBoardsRequest) returns (ListRetiredBoardsResponse);
+  rpc SetBoardRetired(SetBoardRetiredRequest) returns (Board);
+  rpc RenameBoard(RenameBoardRequest) returns (Board);
+  rpc SetBoardArchivePolicy(SetBoardArchivePolicyRequest) returns (Board);
+  rpc UpdateBoardHostnames(UpdateBoardHostnamesRequest) returns (Board);
+  rpc UpdateBoardGitSettings(UpdateBoardGitSettingsRequest) returns (Board);
+  rpc CreateBoardLabel(CreateBoardLabelRequest) returns (Board);
+  rpc UpdateBoardLabel(UpdateBoardLabelRequest) returns (Board);
+  rpc DeleteBoardLabel(DeleteBoardLabelRequest) returns (Board);
+}
+
+message ListRetiredBoardsRequest {
+  string project_id = 1;
+  uint32 page_size = 2;
+  string after_id = 3;
+  string snapshot_revision = 4;
+}
+
+message ListRetiredBoardsResponse {
+  repeated Board boards = 1;
+  string next_id = 2;
+  string snapshot_revision = 3;
+}
+
+message SetBoardRetiredRequest {
+  string board_id = 1;
+  bool retired = 2;
+  string expected_revision = 3;
+  string operation_id = 4;
+}
+
+message CreateBoardRequest {
+  string project_id = 1;
+  string name = 2;
+  string workflow = 3;
+  string description = 4;
+  string done_archive_policy = 5;
+  string base_remote = 6;
+  string remote_publish_mode = 7;
+}
+
+message RenameBoardRequest {
+  string board_id = 1;
+  string name = 2;
+}
+
+message SetBoardArchivePolicyRequest {
+  string board_id = 1;
+  string done_archive_policy = 2;
+}
+
+message CreateBoardLabelRequest {
+  string board_id = 1;
+  string name = 2;
+  string color = 3;
+  string instructions = 4;
+}
+
+message UpdateBoardLabelRequest {
+  string board_id = 1;
+  string label_id = 2;
+  string name = 3;
+  string color = 4;
+  string instructions = 5;
+}
+
+message DeleteBoardLabelRequest {
+  string board_id = 1;
+  string label_id = 2;
+}
+
+message UpdateBoardGitSettingsRequest {
+  string board_id = 1;
+  string base_remote = 2;
+  string remote_publish_mode = 3;
+}
+
+message UpdateBoardHostnamesRequest {
+ string board_id = 1;
+ repeated string hostnames = 2;
+ bool append = 3;
+}

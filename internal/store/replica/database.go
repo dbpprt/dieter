@@ -1,0 +1,405 @@
+package replica
+
+import (
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"sort"
+
+	"github.com/dbpprt/dieter/internal/platform/fault"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
+	"github.com/dbpprt/dieter/internal/replication/schema"
+	"github.com/dbpprt/dieter/internal/store/home"
+)
+
+// The replica's rows and local change sequence commit in the same SQLite
+// transaction. Sequence numbers are transport checkpoints, never causal clocks.
+func (s *Store) peerDatabase(account string) (*sql.DB, error) {
+	s.peerDBMu.Lock()
+	defer s.peerDBMu.Unlock()
+	if s.peerDBs == nil {
+		s.peerDBs = map[string]*sql.DB{}
+	}
+	if db := s.peerDBs[account]; db != nil {
+		return db, nil
+	}
+	path := s.peerPath(account)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return nil, err
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, err
+	}
+	_ = file.Close()
+	db, err := home.OpenSQLite(path)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	_, err = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=10000; PRAGMA cache_size=-4096; PRAGMA wal_autocheckpoint=256;
+ CREATE TABLE IF NOT EXISTS peer_metadata (id INTEGER PRIMARY KEY CHECK(id=1), epoch TEXT NOT NULL, sequence INTEGER NOT NULL, record_count INTEGER NOT NULL DEFAULT 0, record_bytes INTEGER NOT NULL DEFAULT 0);
+ CREATE TABLE IF NOT EXISTS kv_receipts (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, value BLOB NOT NULL);
+ CREATE TABLE IF NOT EXISTS peer_effects (path TEXT PRIMARY KEY, value BLOB, remove_file INTEGER NOT NULL);
+ CREATE TABLE IF NOT EXISTS peer_records (key TEXT PRIMARY KEY, revision TEXT NOT NULL, sequence INTEGER NOT NULL, value BLOB NOT NULL);
+ CREATE INDEX IF NOT EXISTS peer_records_sequence ON peer_records(sequence);
+ CREATE INDEX IF NOT EXISTS peer_records_conflicts ON peer_records(key) WHERE json_array_length(value,'$.versions')>1;`)
+	if err == nil {
+		_, err = db.Exec("INSERT OR IGNORE INTO peer_metadata(id,epoch,sequence) VALUES(1,?,0)", home.NewID("replica_"))
+	}
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	s.peerDBs[account] = db
+	return db, nil
+}
+
+// LookupReceipt returns the committed operation receipt id of the account's
+// replica: the fingerprint of its input and the acknowledged value. found is
+// false for an operation the replica has not committed.
+func (s *Store) LookupReceipt(account, id string) (fingerprint string, value []byte, found bool, err error) {
+	db, err := s.peerDatabase(account)
+	if err != nil {
+		return "", nil, false, err
+	}
+	err = db.QueryRow("SELECT fingerprint,value FROM kv_receipts WHERE id=?", id).Scan(&fingerprint, &value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil, false, nil
+	}
+	if err != nil {
+		return "", nil, false, err
+	}
+	return fingerprint, value, true, nil
+}
+
+// Close releases the replica's database handles.
+func (s *Store) Close() error {
+	s.peerDBMu.Lock()
+	peerDBs := s.peerDBs
+	s.peerDBs = nil
+	peerReadDBs := s.peerReadDBs
+	s.peerReadDBs = nil
+	s.peerDBMu.Unlock()
+	errs := make([]error, 0, len(peerDBs))
+	for _, database := range peerDBs {
+		if err := database.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	for _, database := range peerReadDBs {
+		if err := database.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// readPeerState is a bounded diagnostic materialization used by in-process
+// fixtures. Operational reads and writes use openPeerView or SQL pages instead.
+func (s *Store) readPeerState(account string) (PeerData, error) {
+	if _, err := os.Stat(s.peerPath(account)); errors.Is(err, os.ErrNotExist) {
+		return PeerData{State: crdt.State{Records: map[string]crdt.Record{}}}, nil
+	} else if err != nil {
+		return PeerData{}, err
+	}
+	db, err := s.peerDatabase(account)
+	if err != nil {
+		return PeerData{}, err
+	}
+	var epoch string
+	var seq uint64
+	var count, size int64
+	if err = db.QueryRow("SELECT epoch,sequence,record_count,record_bytes FROM peer_metadata WHERE id=1").Scan(&epoch, &seq, &count, &size); err != nil {
+		return PeerData{}, err
+	}
+	if count > crdt.MaxRecords || size > crdt.MaxStateBytes {
+		return PeerData{}, crdt.ErrCapacity
+	}
+	s.peerCacheMu.Lock()
+	defer s.peerCacheMu.Unlock()
+	if s.peerCacheAccount == account && s.peerCacheData.Epoch == epoch && s.peerCacheData.Sequence == seq {
+		return s.peerCacheData, nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return PeerData{}, err
+	}
+	defer tx.Rollback()
+	if err = tx.QueryRow("SELECT epoch,sequence,record_count,record_bytes FROM peer_metadata WHERE id=1").Scan(&epoch, &seq, &count, &size); err != nil {
+		return PeerData{}, err
+	}
+	if count > crdt.MaxRecords || size > crdt.MaxStateBytes {
+		return PeerData{}, crdt.ErrCapacity
+	}
+	rows, err := tx.Query("SELECT key,value FROM peer_records ORDER BY key")
+	if err != nil {
+		return PeerData{}, err
+	}
+	data := PeerData{State: crdt.State{Records: map[string]crdt.Record{}}, Epoch: epoch, Sequence: seq}
+	for rows.Next() {
+		var key string
+		var raw []byte
+		var record crdt.Record
+		if err = rows.Scan(&key, &raw); err != nil {
+			break
+		}
+		if err = json.Unmarshal(raw, &record); err != nil {
+			break
+		}
+		data.Records[key] = record
+	}
+	rowErr := rows.Err()
+	_ = rows.Close()
+	if err != nil {
+		return data, err
+	}
+	if rowErr != nil {
+		return data, rowErr
+	}
+	if err = tx.Commit(); err != nil {
+		return data, err
+	}
+	if err = data.Validate(); err != nil {
+		return data, err
+	}
+	indexPeerData(&data)
+	s.peerCacheAccount, s.peerCacheData = account, data
+	return data, nil
+}
+func (s *Store) WritePeerState(account string, data PeerData, effects ...Effect) error {
+	return s.WritePeerStateReceipt(account, data, nil, effects...)
+}
+func (s *Store) WritePeerStateReceipt(account string, data PeerData, receipt *Receipt, effects ...Effect) error {
+	if err := data.Err(); err != nil {
+		return err
+	}
+	keys := make([]string, 0, len(data.Dirty))
+	if data.Dirty == nil {
+		for key := range data.Records {
+			keys = append(keys, key)
+		}
+	} else {
+		for key := range data.Dirty {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		record, err := s.signOwnerRecord(account, data, data.Records[key])
+		if err != nil {
+			return err
+		}
+		if key != crdt.Key(record.Kind, record.ID) {
+			return fault.New(fault.Invalid, "invalid peer record key")
+		}
+		if err = crdt.ValidateRecord(record); err != nil {
+			return err
+		}
+		if err = schema.Validate(record); err != nil {
+			return err
+		}
+		data.Records[key] = record
+	}
+	if err := data.Err(); err != nil {
+		return err
+	}
+	if receipt != nil && len(receipt.Value) > crdt.MaxPageBytes {
+		return crdt.ErrCapacity
+	}
+	db, err := s.peerDatabase(account)
+	if err != nil {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var epoch string
+	var seq uint64
+	var count, size int64
+	if err = tx.QueryRow("SELECT epoch,sequence,record_count,record_bytes FROM peer_metadata WHERE id=1").Scan(&epoch, &seq, &count, &size); err != nil {
+		return err
+	}
+	previousSequence := seq
+	if data.Epoch != "" && (data.Epoch != epoch || data.Sequence != seq) {
+		return crdt.ErrConflict
+	}
+	if data.Dirty == nil {
+		rows, err := tx.Query("SELECT key FROM peer_records")
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var key string
+			if err = rows.Scan(&key); err != nil {
+				break
+			}
+			if _, ok := data.Records[key]; !ok {
+				err = fault.New(fault.Invalid, "replica writes cannot remove causal records")
+				break
+			}
+		}
+		rowErr := rows.Err()
+		_ = rows.Close()
+		if err != nil {
+			return err
+		}
+		if rowErr != nil {
+			return rowErr
+		}
+	}
+	for _, key := range keys {
+		record := data.Records[key]
+		revision := record.Revision()
+		var previous string
+		var previousSize int64
+		e := tx.QueryRow("SELECT revision,length(value) FROM peer_records WHERE key=?", key).Scan(&previous, &previousSize)
+		if errors.Is(e, sql.ErrNoRows) {
+			count++
+		} else if e != nil {
+			return e
+		}
+		if previous == revision {
+			continue
+		}
+		if seq >= 1<<63-1 {
+			return crdt.ErrCapacity
+		}
+		seq++
+		raw, e := json.Marshal(record)
+		if e != nil {
+			return e
+		}
+		size += int64(len(raw)) - previousSize
+		if _, err = tx.Exec("INSERT INTO peer_records(key,revision,sequence,value) VALUES(?,?,?,?) ON CONFLICT(key) DO UPDATE SET revision=excluded.revision, sequence=excluded.sequence, value=excluded.value", key, revision, seq, raw); err != nil {
+			return err
+		}
+	}
+	if _, err = tx.Exec("UPDATE peer_metadata SET sequence=?,record_count=?,record_bytes=? WHERE id=1", seq, count, size); err != nil {
+		return err
+	}
+	for _, effect := range effects {
+		if _, err = tx.Exec("INSERT INTO peer_effects(path,value,remove_file) VALUES(?,?,?) ON CONFLICT(path) DO UPDATE SET value=excluded.value,remove_file=excluded.remove_file", effect.Path, effect.Value, effect.Remove); err != nil {
+			return err
+		}
+	}
+	if receipt != nil {
+		if _, err = tx.Exec("INSERT INTO kv_receipts(id,fingerprint,value) VALUES(?,?,?)", receipt.ID, receipt.Fingerprint, receipt.Value); err != nil {
+			return err
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	if seq != previousSequence {
+		s.notifyPeerChanges()
+	}
+	// Invalidate the optional bounded diagnostic snapshot; never publish a partial view.
+	s.peerCacheMu.Lock()
+	s.peerCacheAccount, s.peerCacheData = "", PeerData{}
+	s.peerCacheMu.Unlock()
+	return s.applyPeerEffects(db)
+}
+
+type PeerChanges struct {
+	Epoch   string
+	After   uint64
+	More    bool
+	Records []crdt.Record
+}
+
+func (s *Store) PeerChanges(account, epoch string, after uint64) (PeerChanges, error) {
+	db, err := s.peerDatabase(account)
+	if err != nil {
+		return PeerChanges{}, err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return PeerChanges{}, err
+	}
+	defer tx.Rollback()
+	result := PeerChanges{}
+	var high uint64
+	if err = tx.QueryRow("SELECT epoch,sequence FROM peer_metadata WHERE id=1").Scan(&result.Epoch, &high); err != nil {
+		return result, err
+	}
+	if epoch != "" && epoch != result.Epoch {
+		return result, crdt.ErrConflict
+	}
+	if after > high {
+		return result, crdt.ErrConflict
+	}
+	rows, err := tx.Query("SELECT sequence,value FROM peer_records WHERE sequence>? ORDER BY sequence LIMIT ?", after, crdt.PageSize+1)
+	if err != nil {
+		return result, err
+	}
+	result.After = after
+	pageBytes := 2
+	for rows.Next() {
+		var seq uint64
+		var raw []byte
+		if err = rows.Scan(&seq, &raw); err != nil {
+			break
+		}
+		if len(result.Records) == crdt.PageSize || (len(result.Records) > 0 && pageBytes+len(raw)+1 > crdt.MaxPageBytes) {
+			result.More = true
+			break
+		}
+		var record crdt.Record
+		if err = json.Unmarshal(raw, &record); err != nil {
+			break
+		}
+		result.Records = append(result.Records, record)
+		pageBytes += len(raw) + 1
+		result.After = seq
+	}
+	rowErr := rows.Err()
+	_ = rows.Close()
+	if err != nil {
+		return result, err
+	}
+	if rowErr != nil {
+		return result, rowErr
+	}
+	if !result.More {
+		result.After = high
+	}
+	return result, tx.Commit()
+}
+
+type PeerCheckpoint struct {
+	// Push receipts are valid only for the receiving replica incarnation.
+	RemoteEpoch string `json:"remoteEpoch,omitempty"`
+	Epoch       string `json:"epoch"`
+	Sequence    uint64 `json:"sequence"`
+}
+
+func (s *Store) PeerCheckpoint(account, peer, direction string) (PeerCheckpoint, error) {
+	var value PeerCheckpoint
+	err := home.ReadJSON(filepath.Join(s.home.Root, "peers", crdt.Revision([]string{account, peer, direction})+".cursor"), &value)
+	if errors.Is(err, os.ErrNotExist) || errors.Is(err, home.ErrNotFound) {
+		err = nil
+	}
+	return value, err
+}
+func (s *Store) SavePeerCheckpoint(identity PeerIdentity, peer, direction string, value PeerCheckpoint) error {
+	release, err := s.home.BeginWriteLock()
+	if err != nil {
+		return err
+	}
+	defer release()
+	if err = s.CheckPeerIdentity(identity); err != nil {
+		return err
+	}
+	return home.WriteJSON(filepath.Join(s.home.Root, "peers", crdt.Revision([]string{identity.Account, peer, direction})+".cursor"), value)
+}
+
+type Receipt struct {
+	ID, Fingerprint string
+	Value           []byte
+}

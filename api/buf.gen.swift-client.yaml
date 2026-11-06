@@ -1,0 +1,14 @@
+# Swift messages of the clients' UI contract (dieter.client.v1) for
+# apps/apple/DieterKit's DieterClientAPI module. It has no services.
+version: v2
+inputs:
+  - directory: api/proto
+    paths:
+      - api/proto/dieter/client/v1
+plugins:
+  - local: protoc-gen-swift
+    out: apps/apple/DieterKit/Sources/DieterClientAPI/Generated
+    opt:
+      - Visibility=Public
+      - FileNaming=PathToUnderscores
+      - ProtoPathModuleMappings=api/swift-module-mappings.asciipb

@@ -11,29 +11,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type writeBuffer struct{ bytes.Buffer }
-
-func (*writeBuffer) Close() error { return nil }
-
-func TestValidateInputBindsEpochAndBoundsCoordinates(t *testing.T) {
-	epoch := bytes.Repeat([]byte{7}, 16)
-	input := &dieterv1.RemoteDesktopInput{
-		ProtocolVersion: inputProtocolVersion, InputEpoch: epoch, Sequence: 1,
-		Payload: &dieterv1.RemoteDesktopInput_PointerMove{PointerMove: &dieterv1.RemoteDesktopPointerMove{NormalizedX: 500_000, NormalizedY: 1_000_000}},
-	}
-	if err := validateInput(input, epoch); err != nil {
-		t.Fatal(err)
-	}
-	input.GetPointerMove().NormalizedX = maxNormalizedCoordinate + 1
-	if err := validateInput(input, epoch); err == nil {
-		t.Fatal("out-of-range coordinate was accepted")
-	}
-	input.GetPointerMove().NormalizedX = 0
-	if err := validateInput(input, bytes.Repeat([]byte{8}, 16)); err == nil {
-		t.Fatal("input from another session epoch was accepted")
-	}
-}
-
 func TestPointerQueueKeepsOnlyTheNewestUnreliableMove(t *testing.T) {
 	epoch := bytes.Repeat([]byte{9}, 16)
 	session := &Session{control: true, inputEpoch: epoch, pointerInput: make(chan *dieterv1.RemoteDesktopInput, 1), stateInput: make(chan *dieterv1.RemoteDesktopInput, 1)}

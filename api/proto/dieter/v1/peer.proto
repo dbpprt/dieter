@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package dieter.v1;
+
+option go_package = "github.com/dbpprt/dieter/internal/gen/dieter/v1;dieterv1";
+option java_multiple_files = true;
+option java_package = "com.getdieter.api.v1";
+
+import "dieter/v1/common.proto";
+import "google/protobuf/empty.proto";
+
+// Peer-store replication between daemons.
+service PeerService {
+  rpc GetPeerChanges(PeerChangesRequest) returns (PeerChangesResponse);
+  rpc GetPeerRecord(PeerRecordRef) returns (PeerRecord);
+  rpc GetPeerStoreStatus(google.protobuf.Empty) returns (PeerStoreStatus);
+  rpc ListPeerRecords(PeerSnapshotRequest) returns (PeerSnapshot);
+  rpc PutPeerRecord(PutPeerRecordRequest) returns (PeerRecord);
+  rpc MergePeerRecords(MergePeerRecordsRequest) returns (google.protobuf.Empty);
+}
+
+message PeerStoreStatus {
+  string account = 1;
+  string actor = 2;
+  uint32 records = 3;
+  uint32 conflicts = 4;
+  string last_sync_at = 5;
+  string last_peer_id = 6;
+  string last_route = 7;
+  repeated PeerSyncDiagnostic peers = 8;
+}
+
+message PeerSnapshotRequest {
+  string account = 1;
+  string after_key = 2;
+  string snapshot_revision = 3;
+}
+
+message PeerSnapshot {
+  string account = 1;
+  repeated PeerRecord records = 2;
+  string next_key = 3;
+  string snapshot_revision = 4;
+}
+
+message PutPeerRecordRequest {
+  string kind = 1;
+  string id = 2;
+  bytes value_json = 3;
+  bool deleted = 4;
+  // Empty creates a new record; resolving concurrent values requires the current revision.
+  string expected_revision = 5;
+}
+
+message MergePeerRecordsRequest {
+  string account = 1;
+  repeated PeerRecord records = 2;
+}
+
+message PeerRecordRef { string kind = 1; string id = 2; }
+
+message PeerChangesRequest { string account = 1; string epoch = 2; uint64 after_sequence = 3; }
+
+message PeerChangesResponse { string epoch = 1; uint64 after_sequence = 2; bool more = 3; repeated PeerRecord records = 4; }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/dbpprt/dieter/internal/model"
 	boardstore "github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 )
 
 // These persisted cards travel through the authenticated sync and conversation
@@ -19,7 +20,7 @@ func seedInboxFixture(ctx context.Context, data *boardstore.Store, project model
 	if output, err := exec.CommandContext(ctx, "git", "init", "-b", "main", otherPath).CombinedOutput(); err != nil {
 		return fmt.Errorf("initialize Inbox fixture repository: %s: %w", output, err)
 	}
-	other, err := data.CreateProject(boardstore.CreateProjectInput{Name: "Inbox Notes", Path: otherPath})
+	other, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Inbox Notes", Path: otherPath})
 	if err != nil {
 		return err
 	}
@@ -41,7 +42,7 @@ func seedInboxFixture(ctx context.Context, data *boardstore.Store, project model
 		if fixture.otherProject {
 			owner = other
 		}
-		input := boardstore.CreateCardInput{
+		input := kanban.CreateCardInput{
 			Project: owner.ID, Board: board.ID, Lane: "todo", Title: fixture.title,
 			Prompt:   "Review the native Inbox implementation and preserve the existing conversation workflow.",
 			Provider: "mock", Model: "mock", WorkspaceMode: model.WorkspaceModeProject,
@@ -49,9 +50,9 @@ func seedInboxFixture(ctx context.Context, data *boardstore.Store, project model
 		var card model.Card
 		if fixture.chat {
 			input.Board, input.Lane = "", ""
-			card, err = data.CreateChat(input)
+			card, err = data.Kanban.CreateChat(input)
 		} else {
-			card, err = data.CreateCard(input)
+			card, err = data.Kanban.CreateCard(input)
 		}
 		if err != nil {
 			return fmt.Errorf("create Inbox fixture: %w", err)
@@ -59,7 +60,7 @@ func seedInboxFixture(ctx context.Context, data *boardstore.Store, project model
 		if fixture.runtime == "pending" {
 			continue
 		}
-		if _, err = data.MarkPromptSent(card.ID); err != nil {
+		if _, err = data.Kanban.MarkPromptSent(card.ID); err != nil {
 			return err
 		}
 		createdAt := time.Now().UTC().Add(-time.Duration(12+index*7) * time.Minute)
@@ -75,27 +76,27 @@ func seedInboxFixture(ctx context.Context, data *boardstore.Store, project model
 			{ID: fmt.Sprintf("inbox-user-%d", index), Role: "user", Metadata: metadata, Parts: []model.UIMessagePart{{Type: "text", Text: input.Prompt}}},
 			{ID: fmt.Sprintf("inbox-assistant-%d", index), Role: "assistant", Metadata: replyMetadata, Parts: []model.UIMessagePart{{Type: "text", Text: "## Native Inbox workspace\n\n" + fixture.summary + "\n\nThe full conversation stays available here, including the composer and workspace tabs."}}},
 		}
-		if _, err = data.InitializeForkConversation(card.ID, messages); err != nil {
+		if _, err = data.Conversations.InitializeFork(card.ID, messages); err != nil {
 			return err
 		}
 		if fixture.lane == "review" {
-			if _, _, err = data.AppendConversationEvent(card.ID, "ui-chunk", "fixture", messages[1].ID, map[string]string{"type": "finish", "messageId": messages[1].ID}); err != nil {
+			if _, _, err = data.Conversations.Append(card.ID, "ui-chunk", "fixture", messages[1].ID, map[string]string{"type": "finish", "messageId": messages[1].ID}); err != nil {
 				return err
 			}
 		}
-		if _, err = data.SetConversationStatus(card.ID, "", fixture.runtime); err != nil {
+		if _, err = data.Conversations.SetStatus(card.ID, "", fixture.runtime); err != nil {
 			return err
 		}
 		if !fixture.chat {
-			if _, err = data.MoveCard(card.ID, fixture.lane, nil); err != nil {
+			if _, err = data.Kanban.MoveCard(card.ID, fixture.lane, nil); err != nil {
 				return err
 			}
 		}
-		if _, err = data.UpdateCardCache(card.ID, boardstore.CardCacheInput{Runtime: fixture.runtime, Summary: fixture.summary}); err != nil {
+		if _, err = data.Kanban.UpdateCardCache(card.ID, kanban.CardCacheInput{Runtime: fixture.runtime, Summary: fixture.summary}); err != nil {
 			return err
 		}
 		if fixture.archived {
-			if _, err = data.ArchiveCard(card.ID, true); err != nil {
+			if _, err = data.Kanban.ArchiveCard(card.ID, true); err != nil {
 				return err
 			}
 		}

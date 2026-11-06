@@ -1,0 +1,85 @@
+[
+  {
+    "list": "bullet",
+    "items": [
+      {"blocks": [{"paragraph": ["First bullet"]}]},
+      {"blocks": [{"paragraph": ["Second bullet", {"break": "soft"}, "continues lazily"]}]},
+      {"blocks": [{"paragraph": ["Third bullet"]}]}
+    ]
+  },
+  {
+    "list": "bullet",
+    "items": [
+      {"blocks": [{"paragraph": ["Star bullets"]}]},
+      {"blocks": [{"paragraph": ["form their own list"]}]}
+    ]
+  },
+  {
+    "list": "ordered",
+    "start": 1,
+    "items": [
+      {"blocks": [{"paragraph": ["First"]}]},
+      {"blocks": [{"paragraph": ["Second"]}]},
+      {"blocks": [{"paragraph": ["Third"]}]}
+    ]
+  },
+  {
+    "list": "ordered",
+    "start": 7,
+    "items": [
+      {"blocks": [{"paragraph": ["Starts at seven"]}]},
+      {"blocks": [{"paragraph": ["and counts on"]}]}
+    ]
+  },
+  {
+    "list": "bullet",
+    "items": [
+      {
+        "blocks": [
+          {"paragraph": ["Level one"]},
+          {
+            "list": "bullet",
+            "items": [
+              {
+                "blocks": [
+                  {"paragraph": ["Level two"]},
+                  {"list": "bullet", "items": [{"blocks": [{"paragraph": ["Level three"]}]}]}
+                ]
+              },
+              {"blocks": [{"paragraph": ["Back to two"]}]}
+            ]
+          }
+        ]
+      },
+      {"blocks": [{"paragraph": ["Back to one"]}]}
+    ]
+  },
+  {
+    "list": "ordered",
+    "start": 1,
+    "items": [
+      {
+        "blocks": [
+          {"paragraph": ["Ordered parent"]},
+          {
+            "list": "bullet",
+            "items": [
+              {"blocks": [{"paragraph": ["Bullet child"]}]},
+              {"blocks": [{"paragraph": ["Another child"]}]}
+            ]
+          }
+        ]
+      },
+      {"blocks": [{"paragraph": ["Second parent"]}]}
+    ]
+  },
+  {
+    "list": "bullet",
+    "items": [
+      {"blocks": [{"paragraph": ["A loose item"]}]},
+      {
+        "blocks": [{"paragraph": ["separated by a blank line"]}, {"paragraph": ["with a second paragraph."]}]
+      }
+    ]
+  }
+]

@@ -1,0 +1,23 @@
+# Fresh app state bound to the run's isolated gateway fixture, in the desktop
+# shell. The pipeline gives the device a desktop display first; the app pairs
+# with the fixture's code and then shows the sidebar.
+appId: ${APP_ID}
+---
+- launchApp:
+    clearState: true
+    arguments:
+      fixture_url: ${FIXTURE_URL}
+      fixture_token: ${FIXTURE_TOKEN}
+      fixture_pairing_code: ${FIXTURE_PAIRING_CODE}
+      interface: desktop
+- extendedWaitUntil:
+    visible:
+      id: desktop-sidebar
+    timeout: 60000
+- extendedWaitUntil:
+    notVisible: "Loading activity…"
+    timeout: 60000
+- extendedWaitUntil:
+    visible:
+      id: sidebar-project-.*
+    timeout: 40000

@@ -77,7 +77,7 @@ func TestRuntimeDigestCoversEveryEmbeddedSource(t *testing.T) {
 func TestPrepareRuntimePublishesOneCompleteImmutableInstall(t *testing.T) {
 	trace := installFixtureCommands(t)
 	root := t.TempDir()
-	runners := []*SubprocessRunner{NewSubprocessRunner(root), NewSubprocessRunner(root)}
+	runners := []*SubprocessRunner{NewSubprocessRunner(root, Environment{}), NewSubprocessRunner(root, Environment{})}
 	references := make([]RuntimeReference, len(runners))
 	errorsByRunner := make([]error, len(runners))
 	var group sync.WaitGroup
@@ -117,14 +117,14 @@ func TestPrepareRuntimePublishesOneCompleteImmutableInstall(t *testing.T) {
 func TestPrepareRuntimeRepairsPoisonedCurrentAndReopensHistorical(t *testing.T) {
 	trace := installFixtureCommands(t)
 	root := t.TempDir()
-	reference, err := NewSubprocessRunner(root).PrepareRuntime(context.Background(), "")
+	reference, err := NewSubprocessRunner(root, Environment{}).PrepareRuntime(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Remove(filepath.Join(reference.Directory, filepath.FromSlash(requiredRuntimeFiles[len(requiredRuntimeFiles)-1]))); err != nil {
 		t.Fatal(err)
 	}
-	repaired, err := NewSubprocessRunner(root).PrepareRuntime(context.Background(), "")
+	repaired, err := NewSubprocessRunner(root, Environment{}).PrepareRuntime(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ func TestPrepareRuntimeRepairsPoisonedCurrentAndReopensHistorical(t *testing.T) 
 	if err := os.Rename(repaired.Directory, historicalDirectory); err != nil {
 		t.Fatal(err)
 	}
-	historical, err := NewSubprocessRunner(root).PrepareRuntime(context.Background(), historicalDigest)
+	historical, err := NewSubprocessRunner(root, Environment{}).PrepareRuntime(context.Background(), historicalDigest)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -3,6 +3,7 @@ package remotedesktop
 import (
 	"container/list"
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -284,10 +285,10 @@ func (r *retransmissionInterceptor) run() {
 					attributes[repairDeadlineAttribute] = packet.frameStarted.Add(window - transit)
 				}
 				_, err := stream.writer.Write(&header, packet.payload, attributes)
-				if err == errRepairExpired {
+				if errors.Is(err, errRepairExpired) {
 					r.metrics.expired.Add(1)
 				}
-				if err == errRepairExpired && generation == r.currentGeneration() && r.refresh != nil && r.refreshDue(lastRefresh) {
+				if errors.Is(err, errRepairExpired) && generation == r.currentGeneration() && r.refresh != nil && r.refreshDue(lastRefresh) {
 					lastRefresh = time.Now()
 					r.refresh()
 				}

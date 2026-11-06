@@ -12,19 +12,20 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dbpprt/dieter/internal/platform/config"
 	"github.com/dbpprt/dieter/internal/remotedesktop"
 )
 
-func platformDoctorChecks() []doctorCheck {
+func platformDoctorChecks(env config.Client) []doctorCheck {
 	checks := []doctorCheck{
 		commandDoctorCheck("systemctl", false, "--version", nil),
 		commandDoctorCheck("busctl", false, "--version", nil),
 		commandDoctorCheck("cosign", false, "version", nil),
 		commandDoctorCheck("gst-inspect-1.0", false, "--version", nil),
 	}
-	checks = append(checks, linuxScreenDoctorChecks()...)
+	checks = append(checks, linuxScreenDoctorChecks(env.RemoteDesktopHelper)...)
 	manager := doctorCheck{Name: "systemd-user-manager", Required: false, Status: "warning", Detail: "unavailable; foreground mode remains available"}
-	if command, err := systemctlUserCommand("show-environment"); err == nil {
+	if command, err := systemctlUserCommand(env.Environment, "show-environment"); err == nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		environment := command.Env
 		command = exec.CommandContext(ctx, command.Path, command.Args[1:]...)
@@ -36,7 +37,7 @@ func platformDoctorChecks() []doctorCheck {
 	}
 	checks = append(checks, manager)
 
-	unit, unitErr := systemdUserUnitPath()
+	unit, unitErr := systemdUserUnitPath(env.Environment)
 	service := doctorCheck{Name: "systemd-user-service", Required: false, Status: "warning", Detail: "not installed; run `dieter daemon service install`"}
 	if unitErr == nil {
 		if raw, readErr := os.ReadFile(unit); readErr == nil {
@@ -66,10 +67,10 @@ func platformDoctorChecks() []doctorCheck {
 	return append(checks, linger)
 }
 
-func linuxScreenDoctorChecks() []doctorCheck {
+func linuxScreenDoctorChecks(helperPath string) []doctorCheck {
 	helper := doctorCheck{Name: "linux-capture-helper", Required: false, Status: "warning", Detail: "dieter-capture is not installed beside the daemon or in PATH"}
 	backend := doctorCheck{Name: "linux-screen-backend", Required: false, Status: "warning", Detail: "not probed because the capture helper is unavailable"}
-	options := remotedesktop.SourceOptions{Kind: "screen", HelperPath: strings.TrimSpace(os.Getenv("DIETER_REMOTE_DESKTOP_HELPER"))}
+	options := remotedesktop.SourceOptions{Kind: "screen", HelperPath: helperPath}
 	if path, _, err := remotedesktop.CaptureExecutable(options); err == nil {
 		helper.Status, helper.Detail = "ok", path
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)

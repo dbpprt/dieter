@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package dieter.v1;
+
+option go_package = "github.com/dbpprt/dieter/internal/gen/dieter/v1;dieterv1";
+option java_multiple_files = true;
+option java_package = "com.getdieter.api.v1";
+
+import "dieter/v1/common.proto";
+
+// Replicated account key-value records.
+service KVService {
+  // Account-scoped portable JSON state. Revisions and cursors belong to a replica;
+  // replication is causal/eventual, not a distributed transaction or lock.
+  rpc GetKV(KVRef) returns (KVEntry);
+  rpc ListKV(KVListRequest) returns (KVPage);
+  rpc PutKV(KVPutRequest) returns (KVEntry);
+  rpc DeleteKV(KVDeleteRequest) returns (KVEntry);
+  rpc MoveKV(KVMoveRequest) returns (KVEntry);
+  rpc WatchKV(KVWatchRequest) returns (stream KVFrame);
+}
+
+// Namespaces (1..120 bytes) and keys (1..128 bytes) use ASCII letters, digits,
+// dot, dash or underscore.
+// Values are bounded canonical JSON. Tombstones and causal siblings are retained.
+message KVRef { string namespace = 1; string key = 2; string account = 3; }
+
+message KVEntry {
+  string namespace = 1; string key = 2; string revision = 3;
+  bytes value_json = 4; bool deleted = 5; repeated PeerVersion versions = 6;
+}
+
+message KVCursor { string epoch = 1; uint64 sequence = 2; }
+
+message KVListRequest {
+  string namespace = 1; string prefix = 2; string after_key = 3;
+  KVCursor snapshot = 4; string account = 5;
+}
+
+message KVPage {
+  string account = 1; string daemon_id = 2; KVCursor cursor = 3;
+  repeated KVEntry entries = 4; string next_key = 5;
+}
+
+// Mutations are idempotent on the named accepting daemon. Retry exactly the same
+// request there after an uncertain response. An empty revision means create only.
+message KVPutRequest {
+  KVRef ref = 1; bytes value_json = 2; string expected_revision = 3;
+  string operation_id = 4; string daemon_id = 5;
+}
+
+message KVDeleteRequest {
+  KVRef ref = 1; string expected_revision = 2;
+  string operation_id = 3; string daemon_id = 4;
+}
+
+// Ordered values are {"parent":string,"rank":string}. Neighbors are keys in the
+// same namespace/parent. Empty neighbors append among keys sharing the prefix
+// before the first dot and the parent. Moves affect only this key.
+message KVMoveRequest {
+  KVRef ref = 1; string parent = 2; string after_key = 3; string before_key = 4;
+  string expected_revision = 5; string operation_id = 6; string daemon_id = 7;
+}
+
+message KVWatchRequest {
+  string namespace = 1; string prefix = 2; KVCursor after = 3; string account = 4;
+}
+
+// A reset starts a replacement projection; publish it when caught_up is true.
+// Frames may coalesce intermediate writes. Cursors advance only with applied data.
+message KVFrame {
+  string account = 1; string daemon_id = 2; KVCursor cursor = 3;
+  repeated KVEntry entries = 4; bool reset = 5; bool caught_up = 6;
+}

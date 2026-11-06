@@ -1,0 +1,25 @@
+{"t":338,"kind":"config","scenario":"push-steer","a":"codex","useBoard":true,"codexHooks":"thread"}
+{"t":7745,"kind":"hook","agent":"S","event":"PreToolUse","tool":"Bash","files":[],"keys":["command"]}
+{"t":7963,"kind":"tool-call","agent":"S","name":"bash","input":"{\"command\":\"/bin/zsh -lc 'sleep 2 && echo step-1'\"}"}
+{"t":10047,"kind":"tool-result","agent":"S","name":"bash","output":"{\"exitCode\":0,\"output\":\"step-1\\n\",\"status\":\"completed\"}"}
+{"t":10287,"kind":"hook","agent":"S","event":"PostToolUse","tool":"Bash","files":[],"keys":["command"]}
+{"t":11045,"kind":"post","post":{"id":"m_1","from":"R","to":"S","kind":"note","text":"Release tag for this run: PAPAYA-7.","t":11045}}
+{"t":12059,"kind":"steer","to":"S","posts":["m_1"],"bytes":145}
+{"t":15340,"kind":"hook","agent":"S","event":"PreToolUse","tool":"Bash","files":[],"keys":["command"]}
+{"t":15529,"kind":"tool-call","agent":"S","name":"bash","input":"{\"command\":\"/bin/zsh -lc 'sleep 2 && echo step-2'\"}"}
+{"t":17609,"kind":"tool-result","agent":"S","name":"bash","output":"{\"exitCode\":0,\"output\":\"step-2\\n\",\"status\":\"completed\"}"}
+{"t":17830,"kind":"hook","agent":"S","event":"PostToolUse","tool":"Bash","files":[],"keys":["command"]}
+{"t":22756,"kind":"hook","agent":"S","event":"PreToolUse","tool":"Bash","files":[],"keys":["command"]}
+{"t":22939,"kind":"tool-call","agent":"S","name":"bash","input":"{\"command\":\"/bin/zsh -lc 'sleep 2 && echo step-3'\"}"}
+{"t":25027,"kind":"tool-result","agent":"S","name":"bash","output":"{\"exitCode\":0,\"output\":\"step-3\\n\",\"status\":\"completed\"}"}
+{"t":25240,"kind":"hook","agent":"S","event":"PostToolUse","tool":"Bash","files":[],"keys":["command"]}
+{"t":28270,"kind":"hook","agent":"S","event":"PreToolUse","tool":"Bash","files":[],"keys":["command"]}
+{"t":28455,"kind":"tool-call","agent":"S","name":"bash","input":"{\"command\":\"/bin/zsh -lc 'sleep 2 && echo step-4'\"}"}
+{"t":30571,"kind":"tool-result","agent":"S","name":"bash","output":"{\"exitCode\":0,\"output\":\"step-4\\n\",\"status\":\"completed\"}"}
+{"t":30768,"kind":"hook","agent":"S","event":"PostToolUse","tool":"Bash","files":[],"keys":["command"]}
+{"t":34081,"kind":"hook","agent":"S","event":"PreToolUse","tool":"Bash","files":[],"keys":["command"]}
+{"t":34265,"kind":"tool-call","agent":"S","name":"bash","input":"{\"command\":\"/bin/zsh -lc 'sleep 2 && echo step-5'\"}"}
+{"t":36347,"kind":"tool-result","agent":"S","name":"bash","output":"{\"exitCode\":0,\"output\":\"step-5\\n\",\"status\":\"completed\"}"}
+{"t":36585,"kind":"hook","agent":"S","event":"PostToolUse","tool":"Bash","files":[],"keys":["command"]}
+{"t":43025,"kind":"turn-end","agent":"S","label":"task","ms":40982,"tools":["bash","bash","bash","bash","bash"],"totalUsage":{"inputTokens":71580,"inputTokenDetails":{"noCacheTokens":12828,"cacheReadTokens":58752,"cacheWriteTokens":0},"outputTokens":233,"outputTokenDetails":{"textTokens":233},"totalTokens":71813},"text":"I’ll run the five commands in order and check the channel for the release tag.\nStep 1 complete.\nStep 2 complete.\nStep 3 complete.\nStep 4 complete.\nStep 5 complete.\nDONE PAPAYA-7"}
+{"t":43299,"kind":"summary","summary":{"scenario":"push-steer","useBoard":true,"papaya":true,"sent":true,"files":{"src/module2.js":{"header":"// module 2: inventory pricing rules"},"src/module3.js":{"header":"// module 3: inventory pricing rules"},"src/module4.js":{"header":"// module 4: inventory pricing rules"},"src/module5.js":{"header":"// module 5: inventory pricing rules"},"src/module6.js":{"header":"// module 6: inventory pricing rules"},"src/module7.js":{"header":"// module 7: inventory pricing rules"}},"commits":["fixture","README.md\nsrc/module0.js\nsrc/module1.js\nsrc/module2.js\nsrc/module3.js\nsrc/module4.js\nsrc/module5.js\nsrc/module6.js\nsrc/module7.js"],"maxTierCommit":"","reviewedHeaderCommit":"","dirty":"","stats":{"hookCalls":10,"hookMs":10,"hookOutputs":0,"denies":0,"contexts":0,"steers":1,"steerRejected":0,"wakes":0,"posts":1,"checks":0,"inboxReads":0,"hookSpawnMs":675},"agents":[{"id":"S","harness":"codex","turns":[{"label":"task","ms":40982,"requests":0,"tools":["bash","bash","bash","bash","bash"],"totalUsage":{"inputTokens":71580,"inputTokenDetails":{"noCacheTokens":12828,"cacheReadTokens":58752,"cacheWriteTokens":0},"outputTokens":233,"outputTokenDetails":{"textTokens":233},"totalTokens":71813},"tail":"I’ll run the five commands in order and check the channel for the release tag.\nStep 1 complete.\nStep 2 complete.\nStep 3 complete.\nStep 4 complete.\nStep 5 complete.\nDONE PAPAYA-7"}]}],"posts":["m_1 R→S note: Release tag for this run: PAPAYA-7."]}}

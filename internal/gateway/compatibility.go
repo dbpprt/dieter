@@ -1,28 +1,28 @@
 package gateway
 
 import (
-	"github.com/dbpprt/dieter/internal/buildinfo"
-	"github.com/dbpprt/dieter/internal/compatibility"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	"github.com/dbpprt/dieter/internal/platform/buildinfo"
+	"github.com/dbpprt/dieter/internal/platform/version"
 )
 
-func compatibilityPolicy(config Config) (compatibility.Policy, error) {
+func compatibilityPolicy(config Config) (version.Policy, error) {
 	minimumClient := config.MinimumClientVersion
 	if minimumClient == "" {
-		minimumClient = compatibility.DevelopmentMinimum
+		minimumClient = version.DevelopmentMinimum
 	}
 	minimumDaemon := config.MinimumDaemonVersion
 	if minimumDaemon == "" {
-		minimumDaemon = compatibility.DevelopmentMinimum
+		minimumDaemon = version.DevelopmentMinimum
 	}
 	issuer := "development"
 	if config.IssuerURL != nil || config.PublicURL != nil {
 		issuer = config.IdentityOrigin()
 	}
-	return compatibility.NewPolicy(issuer, buildinfo.ReleaseVersion, minimumClient, minimumDaemon)
+	return version.NewPolicy(issuer, buildinfo.ReleaseVersion, minimumClient, minimumDaemon)
 }
 
-func protoCompatibilityPolicy(policy compatibility.Policy) *gatewayv1.CompatibilityPolicy {
+func protoCompatibilityPolicy(policy version.Policy) *gatewayv1.CompatibilityPolicy {
 	return &gatewayv1.CompatibilityPolicy{
 		GatewayReleaseVersion: policy.GatewayReleaseVersion,
 		MinimumClientVersion:  policy.MinimumClientVersion,
@@ -31,13 +31,13 @@ func protoCompatibilityPolicy(policy compatibility.Policy) *gatewayv1.Compatibil
 	}
 }
 
-func protoCompatibilityStatus(value compatibility.Status) gatewayv1.CompatibilityStatus {
+func protoCompatibilityStatus(value version.Status) gatewayv1.CompatibilityStatus {
 	switch value {
-	case compatibility.StatusCompatible:
+	case version.StatusCompatible:
 		return gatewayv1.CompatibilityStatus_COMPATIBILITY_STATUS_COMPATIBLE
-	case compatibility.StatusUpdateRequired:
+	case version.StatusUpdateRequired:
 		return gatewayv1.CompatibilityStatus_COMPATIBILITY_STATUS_UPDATE_REQUIRED
-	case compatibility.StatusInvalidVersion:
+	case version.StatusInvalidVersion:
 		return gatewayv1.CompatibilityStatus_COMPATIBILITY_STATUS_INVALID_VERSION
 	default:
 		return gatewayv1.CompatibilityStatus_COMPATIBILITY_STATUS_UNSPECIFIED

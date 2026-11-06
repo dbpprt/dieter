@@ -1,0 +1,4 @@
+ccache nobase: source cold configure+build 8.19s; view fresh build dir: configure 1.6s + build 6.87s;  Hits: 0 / 61 ( 0.00%); Misses: 61 / 61 (100.0%); Hits: 0 / 61 ( 0.00%); Misses: 61 / 61 (100.0%);
+  debug info path in view object: /Volumes/External/dieter-spike/pathrelo/cm/cc-view-nobase
+ccache base: source cold configure+build 7.91s; view fresh build dir: configure 1.77s + build 2.93s;  Hits: 61 / 61 (100.0%); Misses: 0 / 61 ( 0.00%); Hits: 61 / 61 (100.0%); Misses: 0 / 61 ( 0.00%);
+  debug info path in view object: /Volumes/External/dieter-spike/pathrelo/cm/cc-src-base

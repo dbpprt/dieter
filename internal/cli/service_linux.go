@@ -15,7 +15,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/serviceruntime"
+	"github.com/dbpprt/dieter/internal/host/serviceruntime"
+	"github.com/dbpprt/dieter/internal/platform/buildinfo"
+	"github.com/dbpprt/dieter/internal/platform/config"
+	"github.com/dbpprt/dieter/internal/platform/fsx"
 )
 
 const managedSystemdUnitHeader = "# Managed by Dieter. Reinstall through the CLI after changing service options."
@@ -72,7 +75,7 @@ or PATH overrides in DIETER_HOME/service.env, then restart the service.
 		if err := validateLinuxServiceOptions(options); err != nil {
 			return err
 		}
-		return installSystemdUserService(c.Store.Root, options, c.Out)
+		return installSystemdUserService(c.env.Environment, c.Root, options, c.Out)
 	}
 	for _, arg := range args {
 		if arg == "--help" || arg == "-h" {
@@ -85,42 +88,42 @@ or PATH overrides in DIETER_HOME/service.env, then restart the service.
 	}
 	switch action {
 	case "start", "restart", "stop":
-		return runSystemctlUser(action, "dieter.service")
+		return runSystemctlUser(c.env.Environment, action, "dieter.service")
 	case "status":
-		cmd, err := systemctlUserCommand("status", "--no-pager", "--full", "dieter.service")
+		cmd, err := systemctlUserCommand(c.env.Environment, "status", "--no-pager", "--full", "dieter.service")
 		if err != nil {
 			return err
 		}
 		cmd.Stdout, cmd.Stderr = c.Out, c.Err
 		return cmd.Run()
 	case "uninstall":
-		return uninstallSystemdUserService(c.Out)
+		return uninstallSystemdUserService(c.env.Environment, c.Out)
 	default:
 		return fmt.Errorf("unsupported service action %q", action)
 	}
 }
 
-func installAndStartPlatformService(root string, out interface{ Write([]byte) (int, error) }) error {
-	return installSystemdUserService(root, linuxServiceInstallOptions{start: true, address: "127.0.0.1:4242", directNetwork: "lan", preserveRoute: true}, out)
+func installAndStartPlatformService(env config.Env, root string, out interface{ Write([]byte) (int, error) }) error {
+	return installSystemdUserService(env, root, linuxServiceInstallOptions{start: true, address: "127.0.0.1:4242", directNetwork: "lan", preserveRoute: true}, out)
 }
 
 func serviceStartHint() string {
 	return "Skipped; install it later with `dieter daemon service install`."
 }
 
-func systemdUserUnitPath() (string, error) {
-	config := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME"))
-	if config == "" {
+func systemdUserUnitPath(env config.Env) (string, error) {
+	directory := env.Value("XDG_CONFIG_HOME")
+	if directory == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return "", err
 		}
-		config = filepath.Join(home, ".config")
+		directory = filepath.Join(home, ".config")
 	}
-	return filepath.Join(config, "systemd", "user", "dieter.service"), nil
+	return filepath.Join(directory, "systemd", "user", "dieter.service"), nil
 }
 
-func installSystemdUserService(root string, options linuxServiceInstallOptions, out interface{ Write([]byte) (int, error) }) error {
+func installSystemdUserService(env config.Env, root string, options linuxServiceInstallOptions, out interface{ Write([]byte) (int, error) }) error {
 	if !filepath.IsAbs(root) {
 		return errors.New("DIETER_HOME must be absolute for a managed service")
 	}
@@ -138,7 +141,7 @@ func installSystemdUserService(root string, options linuxServiceInstallOptions, 
 	if err != nil {
 		return err
 	}
-	unitPath, err := systemdUserUnitPath()
+	unitPath, err := systemdUserUnitPath(env)
 	if err != nil {
 		return err
 	}
@@ -177,7 +180,7 @@ func installSystemdUserService(root string, options linuxServiceInstallOptions, 
 		return fmt.Errorf("stage managed Linux runtime: %w", err)
 	}
 	managedExecutable := filepath.Join(runtimeRoot, "bin", "dieter")
-	pathValue := servicePATH(filepath.Dir(executable))
+	pathValue := servicePATH(env, filepath.Dir(executable))
 	arguments := []string{"--store", root, "daemon", "start", "--service", "--runtime", runtimeRoot, "--addr", options.address}
 	if options.directAddress != "" {
 		arguments = append(arguments, "--direct-addr", options.directAddress, "--direct-host", options.directHost, "--direct-network", options.directNetwork)
@@ -193,7 +196,7 @@ func installSystemdUserService(root string, options linuxServiceInstallOptions, 
 	}
 	unit := managedSystemdUnitHeader + "\n" + `[Unit]
 Description=Dieter local daemon
-Documentation=https://github.com/dbpprt/dieter
+Documentation=https://github.com/` + buildinfo.Repository + `
 After=network-online.target
 Wants=network-online.target
 
@@ -215,17 +218,17 @@ StandardError=journal
 [Install]
 WantedBy=default.target
 `
-	if err := atomicWriteServiceFile(unitPath, []byte(unit), 0o600); err != nil {
+	if err := fsx.WriteFile(unitPath, []byte(unit), 0o600); err != nil {
 		return err
 	}
-	if err := runSystemctlUser("daemon-reload"); err != nil {
+	if err := runSystemctlUser(env, "daemon-reload"); err != nil {
 		return fmt.Errorf("reload systemd user manager: %w", err)
 	}
-	if err := runSystemctlUser("enable", "dieter.service"); err != nil {
+	if err := runSystemctlUser(env, "enable", "dieter.service"); err != nil {
 		return fmt.Errorf("enable Dieter systemd user service: %w", err)
 	}
 	if options.start {
-		if err := runSystemctlUser("restart", "dieter.service"); err != nil {
+		if err := runSystemctlUser(env, "restart", "dieter.service"); err != nil {
 			return fmt.Errorf("start Dieter systemd user service: %w", err)
 		}
 	}
@@ -286,8 +289,8 @@ func copyServiceExecutable(source, target string) error {
 	return errors.Join(copyErr, syncErr, closeErr)
 }
 
-func uninstallSystemdUserService(out interface{ Write([]byte) (int, error) }) error {
-	unitPath, err := systemdUserUnitPath()
+func uninstallSystemdUserService(env config.Env, out interface{ Write([]byte) (int, error) }) error {
+	unitPath, err := systemdUserUnitPath(env)
 	if err != nil {
 		return err
 	}
@@ -301,7 +304,7 @@ func uninstallSystemdUserService(out interface{ Write([]byte) (int, error) }) er
 	}
 	// An explicit uninstall authorizes stopping this service. Failure to stop a
 	// missing/inactive unit is harmless, but other manager failures are useful.
-	cmd, commandErr := systemctlUserCommand("disable", "--now", "dieter.service")
+	cmd, commandErr := systemctlUserCommand(env, "disable", "--now", "dieter.service")
 	if commandErr != nil {
 		return commandErr
 	}
@@ -311,7 +314,7 @@ func uninstallSystemdUserService(out interface{ Write([]byte) (int, error) }) er
 	if err := os.Remove(unitPath); err != nil {
 		return err
 	}
-	if err := runSystemctlUser("daemon-reload"); err != nil {
+	if err := runSystemctlUser(env, "daemon-reload"); err != nil {
 		return err
 	}
 	fmt.Fprintln(out, "Removed the Dieter systemd user service; DIETER_HOME and projects were preserved.")
@@ -341,14 +344,14 @@ func systemdEscapeWord(value string) string {
 	return escaped.String()
 }
 
-func servicePATH(executableDirectory string) string {
+func servicePATH(env config.Env, executableDirectory string) string {
 	home, _ := os.UserHomeDir()
 	items := []string{executableDirectory}
 	// Preserve absolute interactive PATH entries selected during installation
 	// so nvm/asdf-installed Node and user-installed harnesses remain available
 	// after systemd starts without a login shell. Relative entries are never
 	// embedded in the service definition.
-	for _, item := range filepath.SplitList(os.Getenv("PATH")) {
+	for _, item := range filepath.SplitList(env["PATH"]) {
 		if filepath.IsAbs(item) {
 			items = append(items, filepath.Clean(item))
 		}
@@ -365,44 +368,19 @@ func servicePATH(executableDirectory string) string {
 	return strings.Join(unique, ":")
 }
 
-func atomicWriteServiceFile(path string, data []byte, mode os.FileMode) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".dieter-service-*")
-	if err != nil {
-		return err
-	}
-	name := tmp.Name()
-	defer os.Remove(name)
-	if err := tmp.Chmod(mode); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(name, path)
-}
-
-func systemctlUserCommand(args ...string) (*exec.Cmd, error) {
+func systemctlUserCommand(env config.Env, args ...string) (*exec.Cmd, error) {
 	path, err := exec.LookPath("systemctl")
 	if err != nil {
 		return nil, errors.New("systemctl is required for the Linux user service")
 	}
 	cmd := exec.Command(path, append([]string{"--user"}, args...)...)
-	cmd.Env = systemctlUserEnvironment()
+	cmd.Env = systemctlUserEnvironment(env)
 	return cmd, nil
 }
 
-func systemctlUserEnvironment() []string {
-	environment := os.Environ()
-	runtimeDirectory := strings.TrimSpace(os.Getenv("XDG_RUNTIME_DIR"))
+func systemctlUserEnvironment(env config.Env) []string {
+	environment := env.List()
+	runtimeDirectory := env.Value("XDG_RUNTIME_DIR")
 	if runtimeDirectory == "" {
 		candidate := filepath.Join("/run/user", strconv.Itoa(os.Getuid()))
 		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
@@ -410,7 +388,7 @@ func systemctlUserEnvironment() []string {
 			environment = replaceEnvironmentValue(environment, "XDG_RUNTIME_DIR", candidate)
 		}
 	}
-	if strings.TrimSpace(os.Getenv("DBUS_SESSION_BUS_ADDRESS")) == "" && runtimeDirectory != "" {
+	if env.Value("DBUS_SESSION_BUS_ADDRESS") == "" && runtimeDirectory != "" {
 		bus := filepath.Join(runtimeDirectory, "bus")
 		if info, err := os.Stat(bus); err == nil && info.Mode()&os.ModeSocket != 0 {
 			environment = replaceEnvironmentValue(environment, "DBUS_SESSION_BUS_ADDRESS", "unix:path="+bus)
@@ -430,8 +408,8 @@ func replaceEnvironmentValue(environment []string, key, value string) []string {
 	return append(result, prefix+value)
 }
 
-func runSystemctlUser(args ...string) error {
-	cmd, err := systemctlUserCommand(args...)
+func runSystemctlUser(env config.Env, args ...string) error {
+	cmd, err := systemctlUserCommand(env, args...)
 	if err != nil {
 		return err
 	}
@@ -442,11 +420,11 @@ func runSystemctlUser(args ...string) error {
 	return nil
 }
 
-func managedServiceStatus(manager string) string {
+func managedServiceStatus(env config.Env, manager string) string {
 	if manager != "systemd-user" && manager != "managed" {
 		return "unknown"
 	}
-	cmd, err := systemctlUserCommand("is-active", "dieter.service")
+	cmd, err := systemctlUserCommand(env, "is-active", "dieter.service")
 	if err != nil {
 		return "unknown"
 	}
@@ -464,27 +442,4 @@ func managedServiceStatus(manager string) string {
 		return "inactive"
 	}
 	return "unknown"
-}
-
-func notifyServiceReady(manager string) error {
-	if manager != "systemd-user" {
-		return nil
-	}
-	socket := strings.TrimSpace(os.Getenv("NOTIFY_SOCKET"))
-	if socket == "" {
-		return errors.New("systemd service did not provide NOTIFY_SOCKET")
-	}
-	if strings.HasPrefix(socket, "@") {
-		socket = "\x00" + strings.TrimPrefix(socket, "@")
-	}
-	connection, err := net.DialUnix("unixgram", nil, &net.UnixAddr{Name: socket, Net: "unixgram"})
-	if err != nil {
-		return fmt.Errorf("connect systemd notification socket: %w", err)
-	}
-	defer connection.Close()
-	if err := connection.SetWriteDeadline(time.Now().Add(2 * time.Second)); err != nil {
-		return err
-	}
-	_, err = connection.Write([]byte("READY=1\nSTATUS=Dieter daemon is ready\nMAINPID=" + strconv.Itoa(os.Getpid())))
-	return err
 }

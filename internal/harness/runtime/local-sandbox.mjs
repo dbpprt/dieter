@@ -1,9 +1,19 @@
-import { createReadStream } from 'node:fs';
-import { access, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
-import { Readable } from 'node:stream';
-import { spawn } from 'node:child_process';
-import { createServer } from 'node:net';
+import { createReadStream } from "node:fs";
+import {
+  access,
+  mkdir,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
+import { spawn } from "node:child_process";
+import { createServer } from "node:net";
 
 function localPath(candidate) {
   // This provider intentionally represents the unrestricted local host, not a
@@ -16,8 +26,9 @@ function commandValue(command) {
   // Bootstrap runs when a pinned recipe needs installing. Revalidate npm's
   // package lists so an older cache cannot hide a newly published dependency,
   // including on OMP's bounded retries. Override inherited prefer-offline too.
-  const install = 'npm install --ignore-scripts --no-audit --no-fund --prefer-online --prefer-offline=false';
-  if (command.startsWith('pnpm install')) {
+  const install =
+    "npm install --ignore-scripts --no-audit --no-fund --prefer-online --prefer-offline=false";
+  if (command.startsWith("pnpm install")) {
     return install;
   }
   const scopedInstall = command.match(/^pnpm --dir ([^ ]+) install(?: |$)/);
@@ -34,19 +45,24 @@ async function readLocalTextFile(path, encoding, startLine, endLine) {
   const name = basename(absolute);
   if (bootstrapMarkerPattern.test(name)) {
     try {
-      const current = (await readFile(join(dirname(absolute), '.bootstrap-current'), 'utf8')).trim();
+      const current = (
+        await readFile(join(dirname(absolute), ".bootstrap-current"), "utf8")
+      ).trim();
       if (current !== name) return null;
     } catch (error) {
-      if (error?.code === 'ENOENT') return null;
+      if (error?.code === "ENOENT") return null;
       throw error;
     }
   }
   try {
     const text = await readFile(absolute, { encoding });
     if (!startLine && !endLine) return text;
-    return text.split('\n').slice((startLine ?? 1) - 1, endLine).join('\n');
+    return text
+      .split("\n")
+      .slice((startLine ?? 1) - 1, endLine)
+      .join("\n");
   } catch (error) {
-    if (error?.code === 'ENOENT') return null;
+    if (error?.code === "ENOENT") return null;
     throw error;
   }
 }
@@ -54,62 +70,127 @@ async function readLocalTextFile(path, encoding, startLine, endLine) {
 async function writeLocalTextFile(path, content, encoding) {
   const absolute = localPath(path);
   await mkdir(dirname(absolute), { recursive: true });
-  await writeFile(absolute, content, { encoding, mode: 0o600 });
+  // Concurrent sessions rewrite the same bootstrap recipe while another one
+  // may be installing from it. Never expose a partially written manifest.
+  const temporary = join(dirname(absolute), `.${basename(absolute)}.${randomUUID()}.tmp`);
+  try {
+    await writeFile(temporary, content, { encoding, mode: 0o600 });
+    await rename(temporary, absolute);
+  } catch (error) {
+    await rm(temporary, { force: true });
+    throw error;
+  }
   const name = basename(absolute);
   if (bootstrapMarkerPattern.test(name)) {
-    await writeFile(join(dirname(absolute), '.bootstrap-current'), `${name}\n`, { encoding: 'utf8', mode: 0o600 });
+    await writeFile(join(dirname(absolute), ".bootstrap-current"), `${name}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+    });
   }
 }
 
-export async function createLocalSandboxProvider({ root, projectPath, workDir = 'repo' }) {
+// Harness bootstraps live in a shared per-user state directory, so turns in
+// different conversations (and processes) can apply the same recipe at once.
+// Concurrent npm installs in one directory roll back each other's links, so
+// serialize every command that runs inside one bootstrap directory.
+function bootstrapDirectory(workingDirectory) {
+  const parts = localPath(workingDirectory).split(sep);
+  const index = parts.lastIndexOf(".harness-bootstrap");
+  if (index < 0 || index + 1 >= parts.length) return null;
+  return parts.slice(0, index + 2).join(sep);
+}
+
+function processAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
+}
+
+async function acquireBootstrapLock(directory, abortSignal) {
+  await mkdir(directory, { recursive: true });
+  const path = join(directory, ".bootstrap.lock");
+  const token = `${process.pid} ${randomUUID()}\n`;
+  for (let delay = 25; ; delay = Math.min(delay * 2, 500)) {
+    abortSignal?.throwIfAborted();
+    try {
+      await writeFile(path, token, { flag: "wx", mode: 0o600 });
+      return async () => {
+        // Only release our own lock; a stale-lock takeover may replace it.
+        if ((await readFile(path, "utf8").catch(() => null)) === token)
+          await rm(path, { force: true });
+      };
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+    }
+    const owner = Number.parseInt(await readFile(path, "utf8").catch(() => ""), 10);
+    if (Number.isInteger(owner) && owner > 0 && !processAlive(owner)) {
+      // The owner died mid-install. The next install repairs its partial state.
+      await rm(path, { force: true });
+      continue;
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, delay));
+  }
+}
+
+export async function createLocalSandboxProvider({ root, projectPath, workDir = "repo" }) {
   root = resolve(root);
   projectPath = await realpath(projectPath);
-  if (typeof workDir !== 'string' || workDir.length === 0 || isAbsolute(workDir) || workDir.includes('\0')) {
-    throw new Error('local sandbox workDir must be a non-empty relative path');
+  if (
+    typeof workDir !== "string" ||
+    workDir.length === 0 ||
+    isAbsolute(workDir) ||
+    workDir.includes("\0")
+  ) {
+    throw new Error("local sandbox workDir must be a non-empty relative path");
   }
   await mkdir(root, { recursive: true, mode: 0o700 });
   const repo = resolve(root, workDir);
   if (repo === root || !repo.startsWith(`${root}${sep}`)) {
-    throw new Error('local sandbox workDir must stay inside the runtime root');
+    throw new Error("local sandbox workDir must stay inside the runtime root");
   }
   await mkdir(dirname(repo), { recursive: true, mode: 0o700 });
   const activeProcesses = new Set();
 
   const bridgePort = await new Promise((resolvePort, reject) => {
     const server = createServer();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
       const address = server.address();
-      server.close(error => error ? reject(error) : resolvePort(address.port));
+      server.close((error) => (error ? reject(error) : resolvePort(address.port)));
     });
   });
   try {
     const current = await realpath(repo);
     if (current !== projectPath) {
-      throw new Error(`local sandbox workspace is already bound to ${current}; refusing to retarget it to ${projectPath}`);
+      throw new Error(
+        `local sandbox workspace is already bound to ${current}; refusing to retarget it to ${projectPath}`,
+      );
     }
   } catch (error) {
-    if (error?.code !== 'ENOENT') throw error;
+    if (error?.code !== "ENOENT") throw error;
     await rm(repo, { force: true });
     try {
-      await symlink(projectPath, repo, 'dir');
+      await symlink(projectPath, repo, "dir");
     } catch (linkError) {
-      if (linkError?.code !== 'EEXIST' || await realpath(repo) !== projectPath) throw linkError;
+      if (linkError?.code !== "EEXIST" || (await realpath(repo)) !== projectPath) throw linkError;
     }
   }
-  if (await realpath(repo) !== projectPath) {
+  if ((await realpath(repo)) !== projectPath) {
     throw new Error(`local sandbox workspace binding does not resolve to ${projectPath}`);
   }
 
   const spawnProcess = ({ command, workingDirectory = root, env = {}, abortSignal }) => {
-    const child = spawn('/bin/sh', ['-lc', commandValue(command)], {
+    const child = spawn("/bin/sh", ["-lc", commandValue(command)], {
       cwd: workingDirectory,
       env: { ...process.env, ...env },
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ["ignore", "pipe", "pipe"],
       // On Unix this makes the bridge the leader of a process group. Harness
       // providers commonly launch another CLI process, so stopping only the
       // shell/bridge PID can otherwise leave the actual model process alive.
-      detached: process.platform !== 'win32',
+      detached: process.platform !== "win32",
     });
     // Subscribe immediately. A short-lived bridge can exit before the adapter
     // calls wait(); attaching the listener lazily would leave that wait pending
@@ -117,41 +198,41 @@ export async function createLocalSandboxProvider({ root, projectPath, workDir = 
     let processHandle;
     const treeAlive = () => {
       if (child.pid == null) return false;
-      if (process.platform === 'win32') return child.exitCode == null;
+      if (process.platform === "win32") return child.exitCode == null;
       try {
         process.kill(-child.pid, 0);
         return true;
       } catch (error) {
-        if (error?.code === 'ESRCH') return false;
+        if (error?.code === "ESRCH") return false;
         throw error;
       }
     };
     const waitPromise = new Promise((resolveWait, reject) => {
-      child.once('error', error => {
+      child.once("error", (error) => {
         activeProcesses.delete(processHandle);
         reject(error);
       });
-      child.once('exit', (code, signal) => {
+      child.once("exit", (code, signal) => {
         // On Unix the process-group leader can exit while a compiler or model
         // CLI it launched keeps running. Retain the handle until session stop
         // has checked and terminated the whole group.
-        if (process.platform === 'win32' || !treeAlive()) activeProcesses.delete(processHandle);
+        if (process.platform === "win32" || !treeAlive()) activeProcesses.delete(processHandle);
         resolveWait({ exitCode: code ?? (signal ? 128 : 1) });
       });
     });
-    const signalTree = signal => {
+    const signalTree = (signal) => {
       if (child.pid == null) return;
       try {
-        if (process.platform === 'win32') child.kill(signal);
+        if (process.platform === "win32") child.kill(signal);
         else process.kill(-child.pid, signal);
       } catch (error) {
-        if (error?.code !== 'ESRCH') throw error;
+        if (error?.code !== "ESRCH") throw error;
       }
     };
-    const waitForTreeExit = async timeout => {
+    const waitForTreeExit = async (timeout) => {
       const deadline = Date.now() + timeout;
       while (treeAlive() && Date.now() < deadline) {
-        await new Promise(resolveWait => setTimeout(resolveWait, 25));
+        await new Promise((resolveWait) => setTimeout(resolveWait, 25));
       }
       return !treeAlive();
     };
@@ -161,10 +242,11 @@ export async function createLocalSandboxProvider({ root, projectPath, workDir = 
       killPromise = (async () => {
         try {
           if (!treeAlive()) return;
-          signalTree('SIGTERM');
-          if (!await waitForTreeExit(1000)) {
-            signalTree('SIGKILL');
-            if (!await waitForTreeExit(1000)) throw new Error(`process group ${child.pid} did not exit after SIGKILL`);
+          signalTree("SIGTERM");
+          if (!(await waitForTreeExit(1000))) {
+            signalTree("SIGKILL");
+            if (!(await waitForTreeExit(1000)))
+              throw new Error(`process group ${child.pid} did not exit after SIGKILL`);
           }
           await waitPromise;
         } finally {
@@ -175,7 +257,7 @@ export async function createLocalSandboxProvider({ root, projectPath, workDir = 
     };
     if (abortSignal) {
       if (abortSignal.aborted) void kill();
-      else abortSignal.addEventListener('abort', () => void kill(), { once: true });
+      else abortSignal.addEventListener("abort", () => void kill(), { once: true });
     }
     processHandle = {
       pid: child.pid,
@@ -188,59 +270,110 @@ export async function createLocalSandboxProvider({ root, projectPath, workDir = 
     return processHandle;
   };
 
+  const runProcess = async (options) => {
+    const processHandle = spawnProcess(options);
+    const stdoutPromise = new Response(processHandle.stdout).text();
+    const stderrPromise = new Response(processHandle.stderr).text();
+    const [{ exitCode }, stdout, stderr] = await Promise.all([
+      processHandle.wait(),
+      stdoutPromise,
+      stderrPromise,
+    ]);
+    return { exitCode, stdout, stderr };
+  };
+
   const stopProcesses = async () => {
-    await Promise.allSettled([...activeProcesses].map(processHandle => processHandle.kill()));
+    await Promise.allSettled([...activeProcesses].map((processHandle) => processHandle.kill()));
   };
 
   const session = {
-    id: `board-local-${Buffer.from(`${root}\0${workDir}`).toString('base64url').slice(-32)}`,
+    id: `board-local-${Buffer.from(`${root}\0${workDir}`).toString("base64url").slice(-32)}`,
     description: `Unrestricted local host runtime rooted at ${root}; repo is ${projectPath}`,
     defaultWorkingDirectory: root,
     ports: [bridgePort],
-    getPortEndpoint: async ({ port, protocol = 'http' }) => ({ url: `${protocol}://127.0.0.1:${port}` }),
-    getPortUrl: async ({ port, protocol = 'http' }) => `${protocol}://127.0.0.1:${port}`,
+    getPortEndpoint: async ({ port, protocol = "http" }) => ({
+      url: `${protocol}://127.0.0.1:${port}`,
+    }),
+    getPortUrl: async ({ port, protocol = "http" }) => `${protocol}://127.0.0.1:${port}`,
     readFile: async ({ path }) => {
       const absolute = localPath(path);
-      try { await access(absolute); return Readable.toWeb(createReadStream(absolute)); } catch { return null; }
+      try {
+        await access(absolute);
+        return Readable.toWeb(createReadStream(absolute));
+      } catch {
+        return null;
+      }
     },
     readBinaryFile: async ({ path }) => {
-      try { return new Uint8Array(await readFile(localPath(path))); } catch (error) {
-        if (error?.code === 'ENOENT') return null;
+      try {
+        return new Uint8Array(await readFile(localPath(path)));
+      } catch (error) {
+        if (error?.code === "ENOENT") return null;
         throw error;
       }
     },
-    readTextFile: async ({ path, encoding = 'utf8', startLine, endLine }) => readLocalTextFile(path, encoding, startLine, endLine),
+    readTextFile: async ({ path, encoding = "utf8", startLine, endLine }) =>
+      readLocalTextFile(path, encoding, startLine, endLine),
     writeFile: async ({ path, content }) => {
       const absolute = localPath(path);
       await mkdir(dirname(absolute), { recursive: true });
       const chunks = [];
       for await (const chunk of content) chunks.push(chunk);
-      await writeFile(absolute, Buffer.concat(chunks.map(chunk => Buffer.from(chunk))), { mode: 0o600 });
+      await writeFile(absolute, Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))), {
+        mode: 0o600,
+      });
     },
     writeBinaryFile: async ({ path, content }) => {
       const absolute = localPath(path);
       await mkdir(dirname(absolute), { recursive: true });
       await writeFile(absolute, content, { mode: 0o600 });
     },
-    writeTextFile: async ({ path, content, encoding = 'utf8' }) => writeLocalTextFile(path, content, encoding),
-    spawn: async options => spawnProcess(options),
-    run: async options => {
-      const processHandle = spawnProcess(options);
-      const stdoutPromise = new Response(processHandle.stdout).text();
-      const stderrPromise = new Response(processHandle.stderr).text();
-      const [{ exitCode }, stdout, stderr] = await Promise.all([processHandle.wait(), stdoutPromise, stderrPromise]);
-      return { exitCode, stdout, stderr };
+    writeTextFile: async ({ path, content, encoding = "utf8" }) =>
+      writeLocalTextFile(path, content, encoding),
+    spawn: async (options) => spawnProcess(options),
+    run: async (options) => {
+      const directory =
+        options.workingDirectory == null ? null : bootstrapDirectory(options.workingDirectory);
+      if (directory) {
+        const release = await acquireBootstrapLock(directory, options.abortSignal);
+        try {
+          return await runProcess(options);
+        } finally {
+          await release();
+        }
+      }
+      return runProcess(options);
     },
     stop: stopProcesses,
     destroy: stopProcesses,
     restricted() {
-      const { description, readFile, readBinaryFile, readTextFile, writeFile, writeBinaryFile, writeTextFile, spawn, run } = this;
-      return { description, readFile, readBinaryFile, readTextFile, writeFile, writeBinaryFile, writeTextFile, spawn, run };
+      const {
+        description,
+        readFile,
+        readBinaryFile,
+        readTextFile,
+        writeFile,
+        writeBinaryFile,
+        writeTextFile,
+        spawn,
+        run,
+      } = this;
+      return {
+        description,
+        readFile,
+        readBinaryFile,
+        readTextFile,
+        writeFile,
+        writeBinaryFile,
+        writeTextFile,
+        spawn,
+        run,
+      };
     },
   };
   return {
-    specificationVersion: 'harness-sandbox-v1',
-    providerId: 'board-local-host',
+    specificationVersion: "harness-sandbox-v1",
+    providerId: "board-local-host",
     createSession: async () => session,
     resumeSession: async () => session,
     // Dieter's worker uses this only as a last-resort shutdown guard if an SDK

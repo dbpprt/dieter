@@ -1,0 +1,12 @@
+[
+  {"paragraph": ["Above the rules."]},
+  {"rule": true},
+  {"rule": true},
+  {"rule": true},
+  {"rule": true},
+  {"rule": true},
+  {"paragraph": ["Text directly before a rule"]},
+  {"rule": true},
+  {"paragraph": ["Text after."]},
+  {"paragraph": ["-- is not a rule, nor is **."]}
+]

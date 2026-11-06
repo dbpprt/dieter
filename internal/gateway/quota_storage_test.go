@@ -10,6 +10,7 @@ import (
 )
 
 func TestProviderCorrelationKeyIsStableAndOwnerScoped(t *testing.T) {
+	t.Parallel()
 	store, err := OpenStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -36,6 +37,7 @@ func TestProviderCorrelationKeyIsStableAndOwnerScoped(t *testing.T) {
 }
 
 func TestReplaceProviderAccountPresenceSeparatesMultipleAccounts(t *testing.T) {
+	t.Parallel()
 	store, err := OpenStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -147,6 +149,7 @@ func TestReplaceProviderAccountPresenceSeparatesMultipleAccounts(t *testing.T) {
 }
 
 func TestReplaceProviderAccountPresenceKeepsAccountAvailableFromAnySource(t *testing.T) {
+	t.Parallel()
 	store, err := OpenStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)

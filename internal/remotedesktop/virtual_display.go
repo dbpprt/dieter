@@ -3,7 +3,6 @@ package remotedesktop
 import (
 	"context"
 	"errors"
-	"os"
 	"runtime"
 	"time"
 
@@ -41,10 +40,10 @@ func (n *nativeVirtualDisplay) Exchange(ctx context.Context, action string, r *d
 }
 
 func (m *Manager) virtualDisplayEnabled() bool {
-	return m.options.VirtualDisplayFactory != nil || (runtime.GOOS == "darwin" && os.Getenv("DIETER_SCREEN_VIRTUAL_DISPLAY") == "1" && m.options.Source.StateRoot != "")
+	return m.options.VirtualDisplayFactory != nil || (runtime.GOOS == "darwin" && m.options.Tuning.VirtualDisplay && m.options.Source.StateRoot != "")
 }
 func (m *Manager) virtualDisableEnabled() bool {
-	return m.options.VirtualDisplayFactory != nil || (m.virtualDisplayEnabled() && os.Getenv("DIETER_SCREEN_VIRTUAL_DISABLE") == "1")
+	return m.options.VirtualDisplayFactory != nil || (m.virtualDisplayEnabled() && m.options.Tuning.VirtualDisable)
 }
 func (m *Manager) GetVirtualDisplay(ctx context.Context, id string) (*dieterv1.RemoteDesktopVirtualDisplay, error) {
 	s := m.sessionFor(id)
@@ -261,7 +260,7 @@ func (m *Manager) monitorVirtual(s *Session, backend VirtualDisplayBackend) {
 		cancel()
 		expired := !m.virtualPresented && time.Now().After(deadline)
 		s.mu.Lock()
-		if m.virtualPresented && time.Since(s.lastFeedback) > 3*time.Second {
+		if m.virtualPresented && s.now().Sub(s.lastFeedback) > 3*time.Second {
 			expired = true
 		}
 		s.mu.Unlock()

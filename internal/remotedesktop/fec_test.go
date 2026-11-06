@@ -6,11 +6,12 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"testing"
+	"time"
+
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/pion/interceptor/pkg/flexfec"
 	"github.com/pion/rtp"
-	"testing"
-	"time"
 )
 
 func TestFECRepairsExactRTPAndBoundsWireOverhead(t *testing.T) {

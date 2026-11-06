@@ -25,7 +25,7 @@ func TestCancelRejectsUnverifiableLegacyWorkerPID(t *testing.T) {
 	if err := os.WriteFile(workerFile, []byte("999999\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	runner := NewSubprocessRunner(t.TempDir())
+	runner := NewSubprocessRunner(t.TempDir(), Environment{})
 	if err := runner.Cancel("card", runtimeRoot); !errors.Is(err, ErrNoActiveTurn) {
 		t.Fatalf("cancel error=%v", err)
 	}
@@ -48,6 +48,12 @@ func TestEmbeddedRuntimeAssets(t *testing.T) {
 			continue
 		}
 		name := "runtime/" + entry.Name()
+		if !runtimeSourceFile(entry.Name()) {
+			if _, err := os.Stat(filepath.Join(destination, entry.Name())); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("node test %s was staged into the runtime: %v", name, err)
+			}
+			continue
+		}
 		data, err := runtimeAssets.ReadFile(name)
 		if err != nil || len(data) == 0 {
 			t.Fatalf("asset %s: %v", name, err)
@@ -97,11 +103,11 @@ func TestEmbeddedRuntimeContainsLocalModuleClosure(t *testing.T) {
 }
 
 func TestCatalogIncludesEverySupportedHarness(t *testing.T) {
-	if got := len(Catalog(false)); got != 5 {
+	if got := len(StaticCatalog(false).Adapters()); got != 5 {
 		t.Fatalf("catalog has %d harnesses, want 5", got)
 	}
 	for _, id := range []string{"codex", "claude-code", "pi", "omp", "dsh"} {
-		adapter, found := ResolveAdapter(id, false)
+		adapter, found := StaticCatalog(false).ResolveAdapter(id)
 		if !found || adapter.DefaultModel == "" || len(adapter.Models) == 0 {
 			t.Errorf("harness %q is incomplete: %#v", id, adapter)
 		}
@@ -112,7 +118,7 @@ func TestCatalogIncludesEverySupportedHarness(t *testing.T) {
 }
 
 func TestCatalogIncludesDeepSeekHarnessACPWithConfiguredDefaultFallback(t *testing.T) {
-	adapter, valid := ResolveAdapter("dsh", false)
+	adapter, valid := StaticCatalog(false).ResolveAdapter("dsh")
 	if !valid || adapter.Runtime != "dsh-acp" || adapter.DefaultModel != "default" || len(adapter.Models) != 1 {
 		t.Fatalf("dsh catalog=%#v valid=%v", adapter, valid)
 	}
@@ -135,7 +141,7 @@ func hasCapability(adapter Adapter, id string) bool {
 }
 
 func TestCatalogIncludesCurrentCodexRegistry(t *testing.T) {
-	codex, found := ResolveAdapter("codex", false)
+	codex, found := StaticCatalog(false).ResolveAdapter("codex")
 	if !found {
 		t.Fatal("codex harness is missing")
 	}
@@ -173,7 +179,7 @@ func TestCatalogIncludesCurrentCodexRegistry(t *testing.T) {
 }
 
 func TestConfiguredEffortValidationIsProviderAndModelAware(t *testing.T) {
-	codex, sol, err := ResolveSelection("codex", "gpt-5.6-sol", false)
+	codex, sol, err := StaticCatalog(false).ResolveSelection("codex", "gpt-5.6-sol")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +190,7 @@ func TestConfiguredEffortValidationIsProviderAndModelAware(t *testing.T) {
 		t.Fatalf("codex xhigh effort=%q err=%v", effort, err)
 	}
 	for _, modelID := range []string{"gpt-6.1-sol", "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra"} {
-		adapter, model, resolveErr := ResolveSelection("codex", modelID, false)
+		adapter, model, resolveErr := StaticCatalog(false).ResolveSelection("codex", modelID)
 		if resolveErr != nil {
 			t.Fatal(resolveErr)
 		}
@@ -195,7 +201,7 @@ func TestConfiguredEffortValidationIsProviderAndModelAware(t *testing.T) {
 		}
 	}
 	for _, modelID := range []string{"gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "gpt-5.3-codex", "gpt-5.3-codex-spark"} {
-		adapter, model, resolveErr := ResolveSelection("codex", modelID, false)
+		adapter, model, resolveErr := StaticCatalog(false).ResolveSelection("codex", modelID)
 		if resolveErr != nil {
 			t.Fatal(resolveErr)
 		}
@@ -203,7 +209,7 @@ func TestConfiguredEffortValidationIsProviderAndModelAware(t *testing.T) {
 			t.Fatalf("codex %s ultra err=%v", modelID, err)
 		}
 	}
-	claude, sonnet, err := ResolveSelection("claude-code", "claude-sonnet-4-5", false)
+	claude, sonnet, err := StaticCatalog(false).ResolveSelection("claude-code", "claude-sonnet-4-5")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,11 +222,11 @@ func TestConfiguredEffortValidationIsProviderAndModelAware(t *testing.T) {
 }
 
 func TestCatalogIncludesConfiguredOMPModels(t *testing.T) {
-	adapter, valid := ResolveAdapter("omp", false)
-	if !valid || adapter.Runtime != "omp-acp" || adapter.DefaultModel != "tailscale/glm-5.3-flash-exl3" || len(adapter.Models) != 4 {
+	adapter, valid := StaticCatalog(false).ResolveAdapter("omp")
+	if !valid || adapter.Runtime != "omp-acp" || adapter.DefaultModel != "openai-codex/gpt-6-sol" || len(adapter.Models) != 3 {
 		t.Fatalf("omp catalog=%#v valid=%v", adapter, valid)
 	}
-	if adapter.Models[0].RuntimeID() != "tailscale/glm-5.3-flash-exl3" || adapter.Models[0].ContextWindow != 1000000 || adapter.Models[3].ID != "openai-codex/gpt-6-astra" {
+	if adapter.Models[0].RuntimeID() != "openai-codex/gpt-6-luna" || adapter.Models[0].ContextWindow != 272000 || adapter.Models[2].ID != "openai-codex/gpt-6-astra" {
 		t.Fatalf("omp models=%#v", adapter.Models)
 	}
 	if adapter.Effort == nil || len(adapter.Effort.Options) != 8 || len(adapter.Capabilities) != 3 || adapter.Capabilities[0] != (Capability{ID: "model-selection", Level: "between-turns"}) || adapter.Capabilities[1] != (Capability{ID: "subagents", Level: "progress"}) || adapter.Capabilities[2] != (Capability{ID: "task-plan", Level: "phases"}) {
@@ -291,7 +297,7 @@ func TestValidateOptionUpdateAllowsOnlyMutableValuesToChange(t *testing.T) {
 }
 
 func TestPiUsesConfiguredModelsAndThinkingLevels(t *testing.T) {
-	adapter, configuredModel, err := ResolveSelection("pi", "", false)
+	adapter, configuredModel, err := StaticCatalog(false).ResolveSelection("pi", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,24 +337,20 @@ func TestLoadCatalogRejectsUnknownFields(t *testing.T) {
 	}
 }
 
-func TestConfigureCatalogLoadsLocalOverride(t *testing.T) {
+func TestNewCatalogLoadsLocalOverride(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "harnesses.yaml")
 	data := []byte("version: 1\nharnesses:\n  - id: local\n    name: Local\n    adapter: pi\n    defaultModel: one\n    models:\n      - id: one\n        name: One\n")
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := ConfigureCatalog(path); err != nil {
+	catalog, err := NewCatalog(CatalogOptions{Path: path})
+	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if err := ConfigureCatalog(""); err != nil {
-			t.Fatal(err)
-		}
-	})
-	if source := CatalogSource(); source != path {
+	if source := catalog.Source(); source != path {
 		t.Fatalf("catalog source=%q want %q", source, path)
 	}
-	if adapter, found := ResolveAdapter("local", false); !found || adapter.DefaultModel != "one" {
+	if adapter, found := catalog.ResolveAdapter("local"); !found || adapter.DefaultModel != "one" {
 		t.Fatalf("local adapter=%#v found=%v", adapter, found)
 	}
 }
@@ -362,12 +364,12 @@ func TestSupportedNodeVersion(t *testing.T) {
 }
 
 func TestEveryConfiguredProviderAndModelResolves(t *testing.T) {
-	for _, provider := range Catalog(false) {
-		if _, _, err := ResolveSelection(provider.ID, provider.DefaultModel, false); err != nil {
+	for _, provider := range StaticCatalog(false).Adapters() {
+		if _, _, err := StaticCatalog(false).ResolveSelection(provider.ID, provider.DefaultModel); err != nil {
 			t.Errorf("default selection %s/%s: %v", provider.ID, provider.DefaultModel, err)
 		}
 		for _, model := range provider.Models {
-			adapter, resolved, err := ResolveSelection(provider.ID, model.ID, false)
+			adapter, resolved, err := StaticCatalog(false).ResolveSelection(provider.ID, model.ID)
 			if err != nil || adapter.Runtime == "" || resolved.ID != model.ID {
 				t.Errorf("selection %s/%s: adapter=%#v model=%#v err=%v", provider.ID, model.ID, adapter, resolved, err)
 			}
@@ -406,11 +408,11 @@ func TestHarnessEnvironmentIncludesConfigAndOptInVariables(t *testing.T) {
 	t.Setenv("NODE_USE_ENV_PROXY", "1")
 	t.Setenv("USER", "board-user")
 	t.Setenv("LOGNAME", "board-user")
-	t.Setenv("DIETER_HARNESS_ENV", "CUSTOM_MODEL_API_KEY,CUSTOM_MODEL_BASE_URL")
 	t.Setenv("CUSTOM_MODEL_API_KEY", "test-key")
 	t.Setenv("CUSTOM_MODEL_BASE_URL", "https://models.example.test")
 	values := map[string]string{}
-	for _, item := range harnessEnvironment() {
+	env := Environment{PassThrough: []string{"CUSTOM_MODEL_API_KEY", "CUSTOM_MODEL_BASE_URL"}}
+	for _, item := range env.harnessEnvironment() {
 		name, value, _ := strings.Cut(item, "=")
 		values[name] = value
 	}
@@ -448,7 +450,6 @@ func TestSubprocessRunnerDSHACPIntegration(t *testing.T) {
 	if err := os.Symlink(filepath.Join(runtimeDir, "node_modules"), filepath.Join(stagedRuntime, "node_modules")); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("DIETER_HARNESS_RUNTIME_DIR", stagedRuntime)
 
 	var apiMu sync.Mutex
 	var apiRequests []map[string]any
@@ -544,21 +545,24 @@ func TestSubprocessRunnerDSHACPIntegration(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dshHome, "cordis.patch.yml"), []byte(profilePatch), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("DIETER_HOME", dieterHome)
 	t.Setenv("DSH_HOME", dshHome)
-	t.Setenv("DIETER_HARNESS_ENV", "DIETER_DSH_E2E_API_KEY")
 	t.Setenv("DIETER_DSH_E2E_API_KEY", "dieter-e2e-key")
 	t.Setenv("DSH_TELEMETRY_DISABLED", "1")
 	t.Setenv("DSH_PERMISSION_MODE", "workspace-write")
 	t.Setenv("NO_PROXY", "127.0.0.1,localhost")
+	env := Environment{RuntimeDir: stagedRuntime, PassThrough: []string{"DIETER_DSH_E2E_API_KEY"}}
+	catalog, err := NewCatalog(CatalogOptions{Root: dieterHome, Environment: env})
+	if err != nil {
+		t.Fatal(err)
+	}
 	discoveryCtx, cancelDiscovery := context.WithTimeout(context.Background(), 10*time.Minute)
-	discovered, err := discoverDSHModels(discoveryCtx)
+	discovered, err := catalog.discoverDSHModels(discoveryCtx)
 	cancelDiscovery()
 	if err != nil || len(discovered) != 1 || discovered[0].ID != "fixture/test-model" || discovered[0].RuntimeModel == nil || *discovered[0].RuntimeModel != `["fixture","test-model"]` {
 		t.Fatalf("discovered DSH models=%#v err=%v", discovered, err)
 	}
 
-	runner := NewSubprocessRunner(t.TempDir())
+	runner := NewSubprocessRunner(t.TempDir(), env)
 	run := func(prompt, responseID string, session json.RawMessage) (string, string, json.RawMessage, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 		defer cancel()
@@ -621,12 +625,12 @@ func TestSubprocessRunnerMockIntegration(t *testing.T) {
 	if err := os.Symlink(filepath.Join(runtimeDir, "node_modules"), filepath.Join(stagedRuntime, "node_modules")); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("DIETER_HARNESS_RUNTIME_DIR", stagedRuntime)
 	repo := filepath.Join(t.TempDir(), "repo")
 	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	runner := NewSubprocessRunner(t.TempDir())
+	env := Environment{RuntimeDir: stagedRuntime}
+	runner := NewSubprocessRunner(t.TempDir(), env)
 	var chunks []string
 	var capabilities []string
 	heartbeats := 0
@@ -657,13 +661,12 @@ func TestSubprocessRunnerOMPLiveModels(t *testing.T) {
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	runner := NewSubprocessRunner(t.TempDir())
+	runner := NewSubprocessRunner(t.TempDir(), Environment{})
 	runtimeRoot := filepath.Join(t.TempDir(), "runtime")
 	models := []struct {
 		id       string
 		expected string
 	}{
-		{id: "tailscale/glm-5.3-flash-exl3", expected: "OMP_E2E_OK_GLM"},
 		{id: "openai-codex/gpt-6-luna", expected: "OMP_E2E_OK_LUNA"},
 		{id: "openai-codex/gpt-6-sol", expected: "OMP_E2E_OK_SOL"},
 		{id: "openai-codex/gpt-6-astra", expected: "OMP_E2E_OK_ASTRA"},
@@ -706,7 +709,6 @@ func TestSubprocessRunnerKeepsConcurrentProjectWorkspacesIsolated(t *testing.T) 
 	if _, err := os.Stat(filepath.Join(runtimeDir, "node_modules")); err != nil {
 		t.Skip("local harness dependencies are not installed")
 	}
-	t.Setenv("DIETER_HARNESS_RUNTIME_DIR", runtimeDir)
 	base := t.TempDir()
 	projectA := filepath.Join(base, "project-a")
 	projectB := filepath.Join(base, "project-b")
@@ -716,7 +718,8 @@ func TestSubprocessRunnerKeepsConcurrentProjectWorkspacesIsolated(t *testing.T) 
 		}
 	}
 	runtimeRoot := filepath.Join(base, "shared-runtime")
-	runner := NewSubprocessRunner(t.TempDir())
+	env := Environment{RuntimeDir: runtimeDir}
+	runner := NewSubprocessRunner(t.TempDir(), env)
 	type result struct {
 		session string
 		stream  string
@@ -781,8 +784,8 @@ func TestSubprocessRunnerRetainsDiagnosticsAfterStructuredError(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(runtimeDir, "runner.mjs"), []byte(script), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("DIETER_HARNESS_RUNTIME_DIR", runtimeDir)
-	runner := NewSubprocessRunner(t.TempDir())
+	env := Environment{RuntimeDir: runtimeDir}
+	runner := NewSubprocessRunner(t.TempDir(), env)
 	var reported string
 	err := runner.Run(context.Background(), Request{
 		Harness: "codex", Prompt: "fail", SessionID: "card", ProjectPath: t.TempDir(), RuntimeRoot: t.TempDir(),
@@ -810,8 +813,8 @@ func TestSubprocessRunnerKeepsFailureOnItsOwnSummaryLine(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(runtimeDir, "runner.mjs"), []byte(script), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("DIETER_HARNESS_RUNTIME_DIR", runtimeDir)
-	err := NewSubprocessRunner(t.TempDir()).Run(context.Background(), Request{
+	env := Environment{RuntimeDir: runtimeDir}
+	err := NewSubprocessRunner(t.TempDir(), env).Run(context.Background(), Request{
 		Harness: "codex", Prompt: "fail", SessionID: "card", ProjectPath: t.TempDir(), RuntimeRoot: t.TempDir(),
 	}, func(Output) error { return nil })
 	want := "stream disconnected before completion: Transport error\n\n[harness:codex:stderr] [harness:codex:warn] Reconnecting... 5/5 (stream disconnected before completion)"
@@ -829,8 +832,8 @@ func TestSubprocessRunnerRetainsDiagnosticsAfterUIError(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(runtimeDir, "runner.mjs"), []byte(script), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("DIETER_HARNESS_RUNTIME_DIR", runtimeDir)
-	runner := NewSubprocessRunner(t.TempDir())
+	env := Environment{RuntimeDir: runtimeDir}
+	runner := NewSubprocessRunner(t.TempDir(), env)
 	emittedErrorChunk := false
 	err := runner.Run(context.Background(), Request{
 		Harness: "omp", Prompt: "fail", SessionID: "card", ProjectPath: t.TempDir(), RuntimeRoot: t.TempDir(),

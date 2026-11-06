@@ -12,6 +12,7 @@ import (
 	"text/tabwriter"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 )
 
 const terminalHelp = `Usage: dieter terminal <action>
@@ -57,7 +58,7 @@ func (c *CLI) rpcTerminal(args []string) error {
 	}
 }
 
-func (c *CLI) terminalScope(ctx context.Context, client dieterv1.DieterServiceClient, rpcCtx context.Context, projectRef, cardID string, optional bool) (string, string, error) {
+func (c *CLI) terminalScope(ctx context.Context, client dieterclient.Client, rpcCtx context.Context, projectRef, cardID string, optional bool) (string, string, error) {
 	projectRef, cardID = strings.TrimSpace(projectRef), strings.TrimSpace(cardID)
 	if optional && projectRef == "" && cardID == "" {
 		return "", "", nil
@@ -81,7 +82,7 @@ func resolveTerminal(items []*dieterv1.Terminal, reference string) (*dieterv1.Te
 	return matches[0], nil
 }
 
-func (c *CLI) resolveTerminal(ctx context.Context, client dieterv1.DieterServiceClient, rpcCtx context.Context, reference string) (*dieterv1.Terminal, error) {
+func (c *CLI) resolveTerminal(ctx context.Context, client dieterclient.Client, rpcCtx context.Context, reference string) (*dieterv1.Terminal, error) {
 	value, err := client.ListTerminals(rpcCtx, &dieterv1.ListTerminalsRequest{})
 	if err != nil {
 		return nil, err

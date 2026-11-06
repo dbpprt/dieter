@@ -1,0 +1,116 @@
+syntax = "proto3";
+
+package dieter.v1;
+
+option go_package = "github.com/dbpprt/dieter/internal/gen/dieter/v1;dieterv1";
+option java_multiple_files = true;
+option java_package = "com.getdieter.api.v1";
+
+import "dieter/v1/common.proto";
+import "google/protobuf/empty.proto";
+
+// Logical projects and their checkouts.
+service ProjectService {
+  rpc ListDirectories(ListDirectoriesRequest) returns (DirectoryListing);
+  rpc ConsolidateProject(ConsolidateProjectRequest) returns (Project);
+  rpc AttachCheckout(AttachCheckoutRequest) returns (Checkout);
+  rpc DetachCheckout(CheckoutRef) returns (google.protobuf.Empty);
+  rpc ListCheckouts(ProjectRef) returns (CheckoutsResponse);
+  rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse);
+  rpc UpdateProject(UpdateProjectRequest) returns (Project);
+  rpc UpdateProjectWorkspaceSettings(UpdateProjectWorkspaceSettingsRequest) returns (Project);
+  rpc ArchiveProject(ArchiveProjectRequest) returns (Project);
+  rpc ListArchivedProjects(google.protobuf.Empty) returns (ProjectsResponse);
+}
+
+message ProjectsResponse {
+  repeated Project projects = 1;
+}
+
+message ConsolidateProjectRequest { string source_project_id = 1; string destination_project_id = 2; }
+
+message AttachCheckoutRequest { string project_id = 1; string path = 2; string name = 3; }
+
+message CheckoutRef { string checkout_id = 1; }
+
+message CheckoutsResponse { repeated Checkout checkouts = 1; }
+
+message ListDirectoriesRequest {
+  string path = 1;
+}
+
+message DirectoryEntry {
+  string name = 1;
+  string path = 2;
+  bool git_repository = 3;
+  bool hidden = 4;
+}
+
+message DirectoryLocation {
+  string name = 1;
+  string path = 2;
+  string kind = 3;
+}
+
+message DirectoryListing {
+  string path = 1;
+  string parent = 2;
+  string name = 3;
+  bool git_repository = 4;
+  string separator = 5;
+  repeated DirectoryEntry entries = 6;
+  repeated DirectoryLocation locations = 7;
+}
+
+message CreateProjectRequest {
+  string operation_id = 16;
+  reserved 8;
+  reserved "default_workspace_mode";
+  reserved 12;
+  reserved "remote_publish_mode";
+
+  string mode = 1;
+  string path = 2;
+  string name = 3;
+  string summary = 4;
+  string prompt = 5;
+  string board_name = 6;
+  string workflow = 7;
+  string base_remote = 9;
+  string base_branch = 10;
+  repeated ValidationCommand validation_commands = 11;
+}
+
+message CreateProjectResponse {
+  Project project = 1;
+  Board board = 2;
+}
+
+message UpdateProjectRequest {
+  string project_id = 1;
+  optional string name = 2;
+  optional string summary = 3;
+  optional string prompt = 4;
+  optional string path = 5;
+  ProjectHostnames hostnames = 6; // Absent preserves mappings; empty values clears them.
+}
+
+message ProjectHostnames {
+  repeated string values = 1;
+}
+
+message UpdateProjectWorkspaceSettingsRequest {
+  string checkout_id = 50;
+  reserved 2;
+  reserved "default_workspace_mode";
+
+  string project_id = 1;
+  string base_remote = 3;
+  string base_branch = 4;
+  repeated ValidationCommand validation_commands = 5;
+}
+
+message ArchiveProjectRequest {
+  string project_id = 1;
+  bool archived = 2;
+}

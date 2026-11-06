@@ -16,22 +16,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dbpprt/dieter/internal/platform/fault"
 )
 
 const discoveryTTL = 5 * time.Minute
 
-var ErrCatalogUnavailable = errors.New("harness model catalog is temporarily unavailable")
-
-var (
-	discoveryMu      sync.Mutex
-	discoveryUpdated time.Time
-	runDiscovery     = runDiscoveryCommand
-	runOMPDiscovery  = runOMPDiscoveryCommand
-	runDSHDiscovery  = runDSHDiscoveryCommand
-	discoverProvider = discoverModels
-	targetedMu       sync.Mutex
-	targetedCalls    = map[string]*targetedDiscoveryCall{}
-)
+var ErrCatalogUnavailable = fault.New(fault.Unavailable, "harness model catalog is temporarily unavailable")
 
 type discoveryResult struct {
 	id     string
@@ -47,14 +38,20 @@ type targetedDiscoveryCall struct {
 // RefreshCatalog asks each installed harness for its current model and
 // reasoning capabilities. The YAML registry remains the compatibility and
 // provider-options layer; successfully discovered models are what clients see.
-func RefreshCatalog(ctx context.Context, includeMock bool) []Adapter {
-	discoveryMu.Lock()
-	defer discoveryMu.Unlock()
-	if time.Since(discoveryUpdated) < discoveryTTL && len(discoveredCatalog) > 0 {
-		return Catalog(includeMock)
+func (c *Catalog) Refresh(ctx context.Context) []Adapter {
+	if c.static {
+		return c.Adapters()
 	}
-	refreshCatalogLocked(ctx)
-	return Catalog(includeMock)
+	c.discoveryMu.Lock()
+	defer c.discoveryMu.Unlock()
+	c.mu.RLock()
+	fresh := time.Since(c.discoveryUpdated) < discoveryTTL && len(c.discovered) > 0
+	c.mu.RUnlock()
+	if fresh {
+		return c.Adapters()
+	}
+	c.refreshLocked(ctx)
+	return c.Adapters()
 }
 
 // ResolveSelectionWithRefresh validates a selection against the current
@@ -62,30 +59,30 @@ func RefreshCatalog(ctx context.Context, includeMock bool) []Adapter {
 // model is missing. This closes the gap between a catalog advertised to a
 // client and a later create/resume request without weakening strict model
 // validation.
-func ResolveSelectionWithRefresh(ctx context.Context, providerID, modelID string, includeMock bool) (Adapter, Model, error) {
-	adapter, model, err := ResolveSelection(providerID, modelID, includeMock)
-	if err == nil || strings.TrimSpace(modelID) == "" {
+func (c *Catalog) ResolveSelectionWithRefresh(ctx context.Context, providerID, modelID string) (Adapter, Model, error) {
+	adapter, model, err := c.ResolveSelection(providerID, modelID)
+	if err == nil || strings.TrimSpace(modelID) == "" || c.static {
 		return adapter, model, err
 	}
-	if _, ok := ResolveAdapter(strings.TrimSpace(providerID), includeMock); !ok {
+	if _, ok := c.ResolveAdapter(strings.TrimSpace(providerID)); !ok {
 		return adapter, model, err
 	}
 
-	refreshErr := refreshAdapterOnce(ctx, strings.TrimSpace(providerID))
+	refreshErr := c.refreshAdapterOnce(ctx, strings.TrimSpace(providerID))
 	if refreshErr != nil {
 		if ctx.Err() != nil {
 			return adapter, model, ctx.Err()
 		}
 		return adapter, model, fmt.Errorf(
-			"%w: could not refresh %q before validating model %q: %v",
+			"%w: could not refresh %q before validating model %q: %w",
 			ErrCatalogUnavailable, strings.TrimSpace(providerID), strings.TrimSpace(modelID), refreshErr,
 		)
 	}
-	return ResolveSelection(providerID, modelID, includeMock)
+	return c.ResolveSelection(providerID, modelID)
 }
 
-func refreshCatalogLocked(ctx context.Context) {
-	base := configuredCatalogSnapshot()
+func (c *Catalog) refreshLocked(ctx context.Context) {
+	base := c.configuredSnapshot()
 
 	results := make(chan discoveryResult, len(base))
 	var wait sync.WaitGroup
@@ -97,7 +94,7 @@ func refreshCatalogLocked(ctx context.Context) {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			results <- discoverAdapter(ctx, adapter.ID)
+			results <- c.discoverAdapter(ctx, adapter.ID)
 		}()
 	}
 	wait.Wait()
@@ -109,7 +106,7 @@ func refreshCatalogLocked(ctx context.Context) {
 	// Snapshot at publication time so a successful provider-only recovery that
 	// completed while this full refresh was running cannot be overwritten by a
 	// slower failure from the full refresh.
-	previous := catalogByID(discoveredCatalogSnapshot())
+	previous := catalogByID(c.discoveredSnapshot())
 	for index := range base {
 		result := byID[base[index].ID]
 		if result.err == nil && len(result.models) > 0 {
@@ -123,16 +120,16 @@ func refreshCatalogLocked(ctx context.Context) {
 			slog.Debug("harness model discovery failed; using configured catalog", "harness", base[index].ID, "error", result.err)
 		}
 	}
-	catalogMu.Lock()
-	discoveredCatalog = base
-	discoveryUpdated = time.Now()
-	catalogMu.Unlock()
+	c.mu.Lock()
+	c.discovered = base
+	c.discoveryUpdated = time.Now()
+	c.mu.Unlock()
 }
 
-func refreshAdapterOnce(ctx context.Context, providerID string) error {
-	targetedMu.Lock()
-	if call := targetedCalls[providerID]; call != nil {
-		targetedMu.Unlock()
+func (c *Catalog) refreshAdapterOnce(ctx context.Context, providerID string) error {
+	c.targetedMu.Lock()
+	if call := c.targetedCalls[providerID]; call != nil {
+		c.targetedMu.Unlock()
 		select {
 		case <-call.done:
 			return call.err
@@ -141,19 +138,19 @@ func refreshAdapterOnce(ctx context.Context, providerID string) error {
 		}
 	}
 	call := &targetedDiscoveryCall{done: make(chan struct{})}
-	targetedCalls[providerID] = call
-	targetedMu.Unlock()
+	c.targetedCalls[providerID] = call
+	c.targetedMu.Unlock()
 
-	call.err = refreshAdapter(ctx, providerID)
-	targetedMu.Lock()
-	delete(targetedCalls, providerID)
+	call.err = c.refreshAdapter(ctx, providerID)
+	c.targetedMu.Lock()
+	delete(c.targetedCalls, providerID)
 	close(call.done)
-	targetedMu.Unlock()
+	c.targetedMu.Unlock()
 	return call.err
 }
 
-func refreshAdapter(ctx context.Context, providerID string) error {
-	base := configuredCatalogSnapshot()
+func (c *Catalog) refreshAdapter(ctx context.Context, providerID string) error {
+	base := c.configuredSnapshot()
 	var configured Adapter
 	found := false
 	for _, adapter := range base {
@@ -165,17 +162,17 @@ func refreshAdapter(ctx context.Context, providerID string) error {
 	if !found {
 		return fmt.Errorf("unsupported harness %q", providerID)
 	}
-	result := discoverAdapter(ctx, providerID)
+	result := c.discoverAdapter(ctx, providerID)
 	if result.err != nil {
 		slog.Warn("targeted harness model discovery failed", "harness", providerID, "error", result.err)
 		return result.err
 	}
 
-	catalogMu.Lock()
-	defer catalogMu.Unlock()
-	source := discoveredCatalog
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	source := c.discovered
 	if len(source) == 0 {
-		source = configuredCatalog
+		source = c.configured
 	}
 	next := make([]Adapter, len(source))
 	for index, adapter := range source {
@@ -184,11 +181,11 @@ func refreshAdapter(ctx context.Context, providerID string) error {
 			next[index] = mergeDiscoveredAdapter(configured, result.models)
 		}
 	}
-	discoveredCatalog = next
+	c.discovered = next
 	return nil
 }
 
-func discoverAdapter(ctx context.Context, providerID string) discoveryResult {
+func (c *Catalog) discoverAdapter(ctx context.Context, providerID string) discoveryResult {
 	// Pi needs two native RPC rounds (models, then per-model levels), and
 	// provider CLIs can contend for startup I/O when refreshed together.
 	timeout := 30 * time.Second
@@ -199,28 +196,28 @@ func discoverAdapter(ctx context.Context, providerID string) discoveryResult {
 	}
 	commandCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	models, err := discoverProvider(commandCtx, providerID)
+	models, err := c.discoverProvider(commandCtx, providerID)
 	if err == nil && len(models) == 0 {
 		err = errors.New("discovery returned no models")
 	}
 	return discoveryResult{id: providerID, models: models, err: err}
 }
 
-func configuredCatalogSnapshot() []Adapter {
-	catalogMu.RLock()
-	defer catalogMu.RUnlock()
-	result := make([]Adapter, len(configuredCatalog))
-	for index, adapter := range configuredCatalog {
+func (c *Catalog) configuredSnapshot() []Adapter {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	result := make([]Adapter, len(c.configured))
+	for index, adapter := range c.configured {
 		result[index] = cloneAdapter(adapter)
 	}
 	return result
 }
 
-func discoveredCatalogSnapshot() []Adapter {
-	catalogMu.RLock()
-	defer catalogMu.RUnlock()
-	result := make([]Adapter, len(discoveredCatalog))
-	for index, adapter := range discoveredCatalog {
+func (c *Catalog) discoveredSnapshot() []Adapter {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	result := make([]Adapter, len(c.discovered))
+	for index, adapter := range c.discovered {
 		result[index] = cloneAdapter(adapter)
 	}
 	return result
@@ -234,22 +231,22 @@ func catalogByID(values []Adapter) map[string]Adapter {
 	return result
 }
 
-func discoverModels(ctx context.Context, provider string) ([]Model, error) {
+func (c *Catalog) discoverModels(ctx context.Context, provider string) ([]Model, error) {
 	switch provider {
 	case "codex":
-		return discoverCodexModels()
+		return c.discoverCodexModels()
 	case "claude-code":
-		output, err := runDiscovery(ctx, "claude", "--help")
+		output, err := c.runDiscovery(ctx, "claude", "--help")
 		if err != nil {
 			return nil, err
 		}
 		return parseClaudeHelp(output)
 	case "pi":
-		return discoverPiModels(ctx)
+		return c.discoverPiModels(ctx)
 	case "omp":
-		return discoverOMPModels(ctx)
+		return c.discoverOMPModels(ctx)
 	case "dsh":
-		return discoverDSHModels(ctx)
+		return c.discoverDSHModels(ctx)
 	default:
 		return nil, fmt.Errorf("no discovery integration for %s", provider)
 	}
@@ -263,8 +260,8 @@ type dshDiscoveryDocument struct {
 	} `json:"models"`
 }
 
-func discoverDSHModels(ctx context.Context) ([]Model, error) {
-	output, err := runDSHDiscovery(ctx)
+func (c *Catalog) discoverDSHModels(ctx context.Context) ([]Model, error) {
+	output, err := c.runDSHDiscovery(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -288,8 +285,8 @@ func discoverDSHModels(ctx context.Context) ([]Model, error) {
 	return models, nil
 }
 
-func runDSHDiscoveryCommand(ctx context.Context) ([]byte, error) {
-	dshHome := strings.TrimSpace(os.Getenv("DSH_HOME"))
+func (c *Catalog) runDSHDiscoveryCommand(ctx context.Context) ([]byte, error) {
+	dshHome := strings.TrimSpace(c.env.Value("DSH_HOME"))
 	if dshHome == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -301,15 +298,11 @@ func runDSHDiscoveryCommand(ctx context.Context) ([]byte, error) {
 		return nil, fmt.Errorf("DSH home %q is not initialized", dshHome)
 	}
 
-	dieterHome := strings.TrimSpace(os.Getenv("DIETER_HOME"))
-	if dieterHome == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, err
-		}
-		dieterHome = filepath.Join(home, ".dieter")
+	dieterHome, err := c.discoveryHome()
+	if err != nil {
+		return nil, err
 	}
-	runtimeDir, err := NewSubprocessRunner(dieterHome).ensure(ctx)
+	runtimeDir, err := NewSubprocessRunner(dieterHome, c.env).ensure(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +311,7 @@ func runDSHDiscoveryCommand(ctx context.Context) ([]byte, error) {
 	prepareHarnessCommand(command)
 	command.WaitDelay = 9 * time.Second
 	command.Dir = runtimeDir
-	command.Env = harnessEnvironment()
+	command.Env = c.env.harnessEnvironment()
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
 	output, err := command.Output()
@@ -389,10 +382,22 @@ func supportsEffort(model Model, effort string) bool {
 	return false
 }
 
-func runDiscoveryCommand(ctx context.Context, name string, args ...string) ([]byte, error) {
+func (c *Catalog) runDiscoveryCommand(ctx context.Context, name string, args ...string) ([]byte, error) {
 	command := exec.CommandContext(ctx, discoveryExecutable(name), args...)
-	command.Env = discoveryEnvironment()
+	command.Env = c.env.discoveryEnvironment()
 	return command.Output()
+}
+
+// discoveryHome is the DIETER_HOME whose pinned runtimes discovery reuses.
+func (c *Catalog) discoveryHome() (string, error) {
+	if c.root != "" {
+		return c.root, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".dieter"), nil
 }
 
 func discoveryExecutable(name string) string {
@@ -412,13 +417,13 @@ func discoveryExecutable(name string) string {
 	return name
 }
 
-func discoveryEnvironment() []string {
-	environment := os.Environ()
+func (e Environment) discoveryEnvironment() []string {
+	environment := e.environ()
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return environment
 	}
-	path := os.Getenv("PATH")
+	path := e.Value("PATH")
 	prefixes := []string{filepath.Join(home, ".bun", "bin"), filepath.Join(home, ".local", "bin")}
 	filtered := environment[:0]
 	for _, value := range environment {
@@ -443,8 +448,8 @@ type codexCache struct {
 	} `json:"models"`
 }
 
-func discoverCodexModels() ([]Model, error) {
-	root := strings.TrimSpace(os.Getenv("CODEX_HOME"))
+func (c *Catalog) discoverCodexModels() ([]Model, error) {
+	root := strings.TrimSpace(c.env.Value("CODEX_HOME"))
 	if root == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -562,28 +567,24 @@ func parseOMPModels(data []byte) ([]Model, error) {
 	return models, nil
 }
 
-func discoverOMPModels(ctx context.Context) ([]Model, error) {
-	output, err := runOMPDiscovery(ctx)
+func (c *Catalog) discoverOMPModels(ctx context.Context) ([]Model, error) {
+	output, err := c.runOMPDiscovery(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return parseOMPModels(output)
 }
 
-func runOMPDiscoveryCommand(ctx context.Context) ([]byte, error) {
-	dieterHome := strings.TrimSpace(os.Getenv("DIETER_HOME"))
-	if dieterHome == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, err
-		}
-		dieterHome = filepath.Join(home, ".dieter")
-	}
-	runtimeDir, err := NewSubprocessRunner(dieterHome).ensure(ctx)
+func (c *Catalog) runOMPDiscoveryCommand(ctx context.Context) ([]byte, error) {
+	dieterHome, err := c.discoveryHome()
 	if err != nil {
 		return nil, err
 	}
-	bunBin, err := ensureManagedBun(ctx, dieterHome)
+	runtimeDir, err := NewSubprocessRunner(dieterHome, c.env).ensure(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bunBin, err := ensureManagedBun(ctx, dieterHome, c.env.runtimeArchive())
 	if err != nil {
 		return nil, fmt.Errorf("prepare managed Bun for pinned OMP discovery: %w", err)
 	}
@@ -592,7 +593,7 @@ func runOMPDiscoveryCommand(ctx context.Context) ([]byte, error) {
 	prepareHarnessCommand(command)
 	command.WaitDelay = 9 * time.Second
 	command.Dir = runtimeDir
-	command.Env = ompHarnessEnvironment(bunBin)
+	command.Env = c.env.ompHarnessEnvironment(bunBin)
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
 	output, err := command.Output()
@@ -620,8 +621,8 @@ type piRPCResponse struct {
 	} `json:"data"`
 }
 
-func discoverPiModels(ctx context.Context) ([]Model, error) {
-	first, err := runPiRPC(ctx, []map[string]any{{"id": "models", "type": "get_available_models"}})
+func (c *Catalog) discoverPiModels(ctx context.Context) ([]Model, error) {
+	first, err := c.runPiRPC(ctx, []map[string]any{{"id": "models", "type": "get_available_models"}})
 	if err != nil {
 		return nil, err
 	}
@@ -653,7 +654,7 @@ func discoverPiModels(ctx context.Context) ([]Model, error) {
 			map[string]any{"id": fmt.Sprintf("levels-%d", index), "type": "get_available_thinking_levels"},
 		)
 	}
-	responses, err := runPiRPC(ctx, commands)
+	responses, err := c.runPiRPC(ctx, commands)
 	if err != nil {
 		return nil, err
 	}
@@ -675,7 +676,7 @@ func discoverPiModels(ctx context.Context) ([]Model, error) {
 	return models, nil
 }
 
-func runPiRPC(ctx context.Context, commands []map[string]any) ([]piRPCResponse, error) {
+func (c *Catalog) runPiRPC(ctx context.Context, commands []map[string]any) ([]piRPCResponse, error) {
 	var input bytes.Buffer
 	for _, command := range commands {
 		if err := json.NewEncoder(&input).Encode(command); err != nil {
@@ -683,7 +684,7 @@ func runPiRPC(ctx context.Context, commands []map[string]any) ([]piRPCResponse, 
 		}
 	}
 	command := exec.CommandContext(ctx, discoveryExecutable("pi"), "--mode", "rpc", "--no-session", "--no-tools", "--no-extensions", "--no-skills", "--no-context-files")
-	command.Env = discoveryEnvironment()
+	command.Env = c.env.discoveryEnvironment()
 	command.Stdin = &input
 	output, err := command.Output()
 	if err != nil {
@@ -717,5 +718,5 @@ func effortName(id string) string {
 
 func titleWords(value string) string {
 	value = strings.ReplaceAll(value, "-", " ")
-	return strings.Title(value) //nolint:staticcheck -- capability labels are short ASCII identifiers.
+	return strings.Title(value) //nolint:staticcheck // capability labels are short ASCII identifiers
 }

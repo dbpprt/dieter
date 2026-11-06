@@ -1,0 +1,41 @@
+
+failed to load manifest for workspace member `/Volumes/External/dieter-spike/pathrelo/rs/src/app`
+referenced by workspace at `/Volumes/External/dieter-spike/pathrelo/rs/src/Cargo.toml`
+
+Caused by:
+  failed to read `/Volumes/External/dieter-spike/pathrelo/rs/src/app/Cargo.toml`
+
+Caused by:
+  No such file or directory (os error 2)
+
+failed to load manifest for workspace member `/Volumes/External/dieter-spike/pathrelo/rs/src/app`
+referenced by workspace at `/Volumes/External/dieter-spike/pathrelo/rs/src/Cargo.toml`
+
+Caused by:
+  failed to read `/Volumes/External/dieter-spike/pathrelo/rs/src/app/Cargo.toml`
+
+Caused by:
+  No such file or directory (os error 2)
+error: 'app/' does not have a commit checked out
+error: unable to index file 'app/'
+fatal: adding files failed
+On branch main
+
+Initial commit
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	Cargo.toml
+	app/
+	core/
+	util/
+
+nothing added to commit but untracked files present (use "git add" to track)
+source cold build: 30.09s (      19 rlibs)
+clone: 0.67s (     493 files)
+view cargo build: 0.27s; Fresh=21 Compiling=0 Dirty=0
+  view binary prints: {"n":10} true where=source gen=/Volumes/External/dieter-spike/pathrelo/rs/src/target/debug/build/core-e632d898f89d0b86/out
+view after editing core: 2.87s; Compiling=core app
+  view binary prints: {"n":10} true where=view gen=/Volumes/External/dieter-spike/pathrelo/rs/view/target/debug/build/core-e632d898f89d0b86/out
+  link-search in rustc cmd: native=view/target/debug/build/core-e632d898f89d0b86/out native=view/target/debug/build/core-e632d898f89d0b86/out`
+  view build with source target/ moved away: rc=0

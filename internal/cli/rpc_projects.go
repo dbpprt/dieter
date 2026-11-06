@@ -15,19 +15,19 @@ import (
 const projectHelp = `Usage: dieter project <action>
 
 Actions:
-  consolidate SOURCE DESTINATION  Combine project identities; retain all boards and owners
-  attach PROJECT PATH  Attach this machine’s checkout to an existing shared project
-  checkouts PROJECT    List checkouts across machines
-  detach CHECKOUT      Detach a local checkout
-  create PATH       Create and register a Git working tree on the target daemon
-  open PATH         Register an existing Git working tree on the target daemon
-  directories PATH  Browse daemon-host directories and Git repositories
-  list              List active projects; use --removed for archived projects
-  show PROJECT      Show project metadata
-  update PROJECT    Update project path, name, summary, prompt, or browser hostnames
-  workspace PROJECT Update Git base and validation commands
-  remove PROJECT    Archive a project
-  restore PROJECT   Restore an archived project
+  list                            List active projects; --removed lists archived ones
+  show PROJECT                    Show project metadata
+  create PATH                     Create and register a Git working tree on the target daemon
+  open PATH                       Register an existing Git working tree on the target daemon
+  directories [PATH]              Browse daemon-host directories and Git repositories
+  update PROJECT                  Update path, name, summary, instructions or browser hostnames
+  workspace PROJECT               Update the Git base and validation commands
+  remove PROJECT                  Archive a project
+  restore PROJECT                 Restore an archived project
+  checkouts PROJECT               List the project's checkouts across machines
+  attach PROJECT PATH             Attach this machine's checkout to an existing shared project
+  detach CHECKOUT                 Detach a local checkout
+  consolidate SOURCE DESTINATION  Merge SOURCE into DESTINATION, keeping all boards and owners
 `
 
 func (c *CLI) rpcProject(args []string) error {
@@ -396,7 +396,7 @@ func (c *CLI) rpcProjectArchive(args []string, archived bool) error {
 	if err != nil {
 		return err
 	}
-	projectID := args[0]
+	var projectID string
 	if archived {
 		project, _, err := c.projectState(ctx, args[0])
 		if err != nil {
@@ -423,20 +423,19 @@ func (c *CLI) rpcProjectArchive(args []string, archived bool) error {
 
 const boardHelp = `Usage: dieter board <action>
 
-  hostnames BOARD  Replace, append, or clear exact browser hosts
-
 Actions:
-  create              Create a fixed direct or review workflow board
-  list                List boards
-  show BOARD           Show one board
-  retire BOARD         Retire an empty board without deleting its records
-  restore BOARD        Restore a retired board by exact ID
+  list                 List boards
+  show BOARD           Show one board, its lanes and labels
+  create               Create a direct or review workflow board
   rename BOARD         Rename a board
   retention BOARD      Configure automatic Done-card archiving
   git BOARD            Configure the default remote and publishing mode
-  label add            Create a board label
+  hostnames BOARD      Replace, append or clear exact browser hosts
+  retire BOARD         Retire an empty board without deleting its records
+  restore BOARD        Restore a retired board by exact ID
   label list           List board labels
-  label update LABEL   Update label name, color, or instructions
+  label add            Create a board label
+  label update LABEL   Update label name, color or instructions
   label remove LABEL   Delete a board label
 `
 
@@ -742,6 +741,9 @@ Actions:
   list --board BOARD
   update --board BOARD [--name NAME] [--color COLOR] [--instructions TEXT] LABEL
   remove --board BOARD LABEL
+
+COLOR is a hex color such as #6558df (the default for new labels). LABEL is an
+exact label ID or a unique name. Agents see a label's instructions on its cards.
 `
 	if groupHelp(args) {
 		fmt.Fprint(c.Out, usage)
@@ -775,7 +777,11 @@ Actions:
 		if set.NArg() != 0 {
 			return errors.New("label list does not accept a LABEL")
 		}
-		return jsonOut(c.Out, board.GetLabels())
+		labels := board.GetLabels()
+		if labels == nil {
+			labels = []*dieterv1.Label{}
+		}
+		return jsonOut(c.Out, labels)
 	case "add", "create":
 		if set.NArg() != 0 || strings.TrimSpace(*name) == "" {
 			return errors.New("--name is required")
@@ -873,12 +879,12 @@ func (c *CLI) rpcBoardHostnames(args []string) error {
 }
 
 func (c *CLI) rpcProjectCheckouts(action string, args []string) error {
-	usage := "Usage: dieter project " + action + " [--name NAME] PROJECT PATH\nAttach an existing Git working tree on the selected machine to a shared project.\n"
+	usage := "Usage: dieter project " + action + " [--name NAME] PROJECT PATH\n\nAttach an existing Git working tree on the selected machine to a shared project.\n"
 	if action == "checkouts" {
-		usage = "Usage: dieter project checkouts PROJECT\nList the shared checkout directory; paths are shown only for the selected machine.\n"
+		usage = "Usage: dieter project checkouts PROJECT\n\nList the project's checkouts on every machine; paths are shown only for the selected machine.\n"
 	}
 	if action == "detach" {
-		usage = "Usage: dieter project detach CHECKOUT\nDetach a checkout on the selected machine without deleting project or conversation data.\n"
+		usage = "Usage: dieter project detach CHECKOUT\n\nDetach a checkout on the selected machine without deleting project or conversation data.\n"
 	}
 	set := flags("project " + action)
 	name := set.String("name", "", "checkout display name")
@@ -919,7 +925,7 @@ func (c *CLI) rpcProjectCheckouts(action string, args []string) error {
 }
 
 func (c *CLI) rpcProjectConsolidate(args []string) error {
-	const usage = "Usage: dieter project consolidate SOURCE DESTINATION\nKeep destination project defaults and retain every source board, label, checkout, and conversation with its existing ID and machine owner. Source references become durable redirects.\n"
+	const usage = "Usage: dieter project consolidate SOURCE DESTINATION\n\nKeep destination project defaults and retain every source board, label, checkout, and conversation with its existing ID and machine owner. Source references become durable redirects.\n"
 	set := flags("project consolidate")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {

@@ -16,9 +16,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/trust"
+	"github.com/dbpprt/dieter/internal/platform/fsx"
+	"github.com/dbpprt/dieter/internal/security/trust"
 )
 
+// Keys are the gateway's own keys. The signing key signs daemon tokens, RTC
+// configurations and endpoint moves. The daemon CA issues the enrollment
+// certificates daemons present only to this gateway (TLS client
+// authentication and link proofs); clients and peers trust the device roster
+// instead and never receive it.
 type Keys struct {
 	SigningPrivate  ed25519.PrivateKey
 	SigningPublic   ed25519.PublicKey
@@ -28,7 +34,6 @@ type Keys struct {
 }
 
 type DaemonTokenClaims = trust.DaemonTokenClaims
-type DelegationClaims = trust.DelegationClaims
 type RTCConfigurationClaims = trust.RTCConfigurationClaims
 
 func LoadOrCreateKeys(root string) (*Keys, error) {
@@ -189,11 +194,6 @@ func (k *Keys) SignDaemonToken(publicURL, daemonID string, githubID int64, gener
 	return token, expires, err
 }
 
-func (k *Keys) SignDelegation(publicURL string, claims DelegationClaims) (string, error) {
-	claims.Issuer = strings.TrimRight(publicURL, "/")
-	return trust.SignCompact(k.SigningPrivate, claims)
-}
-
 func (k *Keys) SignRTCConfiguration(publicURL string, claims RTCConfigurationClaims) (string, error) {
 	claims.Issuer = strings.TrimRight(publicURL, "/")
 	return trust.SignCompact(k.SigningPrivate, claims)
@@ -201,10 +201,6 @@ func (k *Keys) SignRTCConfiguration(publicURL string, claims RTCConfigurationCla
 
 func ParseAndVerifyDaemonToken(public ed25519.PublicKey, token, issuer, daemonID string, generation uint64, now time.Time) (DaemonTokenClaims, error) {
 	return trust.ParseAndVerifyDaemonToken(public, token, issuer, daemonID, generation, now)
-}
-
-func ParseAndVerifyDelegation(public ed25519.PublicKey, token, issuer, daemonID, requestID, method string, payload []byte, generation uint64, now time.Time) (DelegationClaims, error) {
-	return trust.ParseAndVerifyDelegation(public, token, issuer, daemonID, requestID, method, payload, generation, now)
 }
 
 func ParseAndVerifyRTCConfiguration(public ed25519.PublicKey, token, issuer, daemonID, operatorSubject, configurationID string, digest []byte, generation uint64, now time.Time) (RTCConfigurationClaims, error) {
@@ -232,40 +228,8 @@ func randomID(prefix string) string {
 	return prefix + base64.RawURLEncoding.EncodeToString(raw)
 }
 
+// writePrivate publishes a key without ever replacing one another process
+// just created.
 func writePrivate(path string, raw []byte, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	temporary, err := os.CreateTemp(filepath.Dir(path), ".dieter-key-*")
-	if err != nil {
-		return err
-	}
-	name := temporary.Name()
-	defer os.Remove(name)
-	if err := temporary.Chmod(mode); err != nil {
-		temporary.Close()
-		return err
-	}
-	if _, err := temporary.Write(raw); err != nil {
-		temporary.Close()
-		return err
-	}
-	if err := temporary.Sync(); err != nil {
-		temporary.Close()
-		return err
-	}
-	if err := temporary.Close(); err != nil {
-		return err
-	}
-	// Publishing a key must never replace one another process just created.
-	// Linking the fully written temporary file is atomic and fails on EEXIST.
-	if err := os.Link(name, path); err != nil {
-		return err
-	}
-	directory, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return err
-	}
-	defer directory.Close()
-	return directory.Sync()
+	return fsx.CreateFile(path, raw, mode)
 }

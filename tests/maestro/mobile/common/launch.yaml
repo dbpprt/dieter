@@ -1,4 +1,6 @@
-# Fresh app state bound to the run's isolated gateway fixture.
+# Fresh app state bound to the run's isolated gateway fixture. The app pairs
+# with the fixture's code, which the fixture's machine approves; until then it
+# shows the pairing screen instead of the tabs.
 appId: ${APP_ID}
 ---
 - launchApp:
@@ -6,6 +8,16 @@ appId: ${APP_ID}
     arguments:
       fixture_url: ${FIXTURE_URL}
       fixture_token: ${FIXTURE_TOKEN}
+      fixture_pairing_code: ${FIXTURE_PAIRING_CODE}
+- extendedWaitUntil:
+    visible: "Projects"
+    timeout: 30000
+# The tabs also show while the app still reads the account's devices, before
+# pairing replaces them. Machine content loads only once this device is
+# trusted, and the tabs never give way to pairing again after that.
+- extendedWaitUntil:
+    notVisible: "Loading activity…"
+    timeout: 60000
 - extendedWaitUntil:
     visible: "Projects"
     timeout: 30000

@@ -8,6 +8,7 @@ import (
 )
 
 func TestCreationCheckoutDefaultsToTargetMachine(t *testing.T) {
+	t.Parallel()
 	project := &dieterv1.Project{
 		Id: "p_shared", Name: "Shared",
 		Checkouts: []*dieterv1.Checkout{
@@ -31,6 +32,7 @@ func TestCreationCheckoutDefaultsToTargetMachine(t *testing.T) {
 }
 
 func TestCreationCheckoutRequiresTargetMachineCheckout(t *testing.T) {
+	t.Parallel()
 	project := &dieterv1.Project{Id: "p_remote", Name: "Remote only", Checkouts: []*dieterv1.Checkout{{Id: "co_remote", DaemonId: "remote"}}}
 	if _, err := creationCheckoutID(project, ""); err == nil || !strings.Contains(err.Error(), "no checkout on the target machine") {
 		t.Fatalf("missing local checkout error=%v", err)
@@ -38,6 +40,7 @@ func TestCreationCheckoutRequiresTargetMachineCheckout(t *testing.T) {
 }
 
 func TestCreationCheckoutRequiresDisambiguationOnTargetMachine(t *testing.T) {
+	t.Parallel()
 	project := &dieterv1.Project{
 		Id: "p_local", Name: "Two local checkouts",
 		Checkouts: []*dieterv1.Checkout{

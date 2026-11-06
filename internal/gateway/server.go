@@ -17,7 +17,6 @@ import (
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
-	"golang.org/x/net/http2"
 	"google.golang.org/grpc"
 )
 
@@ -29,8 +28,8 @@ type Server struct {
 	Hub         *Hub
 	Quota       *QuotaManager
 	Service     *Service
+	Relay       *RelayService
 	APIGRPC     *grpc.Server
-	RelayGRPC   *grpc.Server
 	HTTPHandler http.Handler
 }
 
@@ -50,11 +49,12 @@ func NewServer(config Config, store *Store, logger *slog.Logger) (*Server, error
 	service.SetQuotaManager(quota)
 	api := grpc.NewServer(
 		grpc.UnaryInterceptor(auth.UnaryInterceptor), grpc.StreamInterceptor(auth.StreamInterceptor),
-		grpc.MaxRecvMsgSize(maxRelayPayload), grpc.MaxSendMsgSize(maxRelayPayload),
+		grpc.MaxRecvMsgSize(maxGatewayMessageBytes), grpc.MaxSendMsgSize(maxGatewayResponseBytes),
 	)
+	relay := NewRelayService(store, hub)
 	gatewayv1.RegisterGatewayServiceServer(api, service)
+	gatewayv1.RegisterRelayServiceServer(api, relay)
 	gatewayv1.RegisterDaemonLinkServiceServer(api, hub)
-	relay := newRelayServer(store, auth, keys, hub, config)
 	httpMux := http.NewServeMux()
 	auth.RegisterHTTP(httpMux)
 	publicRequests := make(chan struct{}, maxPublicRequests)
@@ -130,23 +130,12 @@ func NewServer(config Config, store *Store, logger *slog.Logger) (*Server, error
 			api.ServeHTTP(w, r)
 			return
 		}
-		if strings.HasPrefix(r.URL.Path, "/dieter.v1.DieterService/") {
-			headers := r.Header.Values("Authorization")
-			if len(headers) != 1 {
-				gatewayAuthenticationRequired(w)
-				return
-			}
-			if _, ok := auth.AuthenticateBearer(headers[0]); !ok {
-				gatewayAuthenticationRequired(w)
-				return
-			}
-			relay.ServeHTTP(w, r)
-			return
-		}
+		// The daemon API is never served here: clients reach daemons through
+		// RelayService tunnels, so /dieter.v1.* paths are ordinary 404s.
 		httpMux.ServeHTTP(w, r)
 	})
 	handler = limitGatewayRequestBodies(handler, 15*time.Second)
-	return &Server{Config: config, Store: store, Keys: keys, Auth: auth, Hub: hub, Quota: quota, Service: service, APIGRPC: api, RelayGRPC: relay, HTTPHandler: handler}, nil
+	return &Server{Config: config, Store: store, Keys: keys, Auth: auth, Hub: hub, Quota: quota, Service: service, Relay: relay, APIGRPC: api, HTTPHandler: handler}, nil
 }
 
 func gatewayMethodRequiresSession(path string) bool {
@@ -177,11 +166,14 @@ func gatewayResourceExhausted(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func gatewayHTTP2Config() *http2.Server {
-	return &http2.Server{
-		MaxConcurrentStreams: 128, IdleTimeout: 2 * time.Minute,
-		MaxUploadBufferPerStream: 64 << 10, MaxUploadBufferPerConnection: 1 << 20,
-		ReadIdleTimeout: 30 * time.Second, PingTimeout: 15 * time.Second,
+// gatewayHTTP2Config bounds HTTP/2 streams and flow-control buffers and
+// health-checks idle connections. Idle connections close after the server's
+// IdleTimeout.
+func gatewayHTTP2Config() *http.HTTP2Config {
+	return &http.HTTP2Config{
+		MaxConcurrentStreams:      128,
+		MaxReceiveBufferPerStream: 64 << 10, MaxReceiveBufferPerConnection: 1 << 20,
+		SendPingTimeout: 30 * time.Second, PingTimeout: 15 * time.Second,
 		WriteByteTimeout: 15 * time.Second,
 	}
 }
@@ -207,23 +199,23 @@ func publicGatewayUnaryMethod(path string) bool {
 
 func limitGatewayRequestBodies(next http.Handler, timeout time.Duration) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		isRPC := strings.HasPrefix(r.URL.Path, "/dieter.gateway.v1.") || strings.HasPrefix(r.URL.Path, "/dieter.v1.DieterService/")
+		isRPC := strings.HasPrefix(r.URL.Path, "/dieter.gateway.v1.")
 		if r.ProtoMajor == 1 || publicGatewayUnaryMethod(r.URL.Path) || !isRPC {
 			controller := http.NewResponseController(w)
 			_ = controller.SetReadDeadline(time.Now().Add(timeout))
 			if r.ProtoMajor >= 2 {
-				defer controller.SetReadDeadline(time.Time{})
+				defer func() { _ = controller.SetReadDeadline(time.Time{}) }()
 			}
 			// HTTP/1 may drain a request body after ServeHTTP returns. Leave its
 			// deadline in place; net/http resets it before the next request.
 		}
 		limit := int64(0)
 		if r.ProtoMajor == 1 {
-			limit = maxRelayPayload
+			limit = maxGatewayMessageBytes
 		}
 		if publicGatewayUnaryMethod(r.URL.Path) {
 			// Public enrollment RPCs carry short names, Ed25519 keys, secrets,
-			// and signatures, never relay payloads. Bound them before decoding.
+			// and signatures, never tunnel data. Bound them before decoding.
 			limit = publicGatewayMessageBytes
 		}
 		if limit > 0 {
@@ -280,16 +272,13 @@ func (s *Server) httpServer() (*http.Server, error) {
 	// Native unencrypted HTTP/2 parses the complete client preface under the
 	// header deadline. The old h2c handler hijacked before reading its tail,
 	// which cleared deadlines and allowed an incomplete preface to wait forever.
-	httpServer := &http.Server{Handler: s.HTTPHandler, Protocols: protocols, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 1 << 20}
+	httpServer := &http.Server{Handler: s.HTTPHandler, Protocols: protocols, HTTP2: gatewayHTTP2Config(), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 1 << 20}
 	if !plaintext {
 		tlsConfig, err := s.TLSConfig()
 		if err != nil {
 			return nil, err
 		}
 		httpServer.TLSConfig = tlsConfig
-	}
-	if err := http2.ConfigureServer(httpServer, gatewayHTTP2Config()); err != nil {
-		return nil, err
 	}
 	return httpServer, nil
 }
@@ -313,7 +302,6 @@ func Listen(config Config, store *Store, logger *slog.Logger) error {
 		return err
 	case <-ctx.Done():
 		server.APIGRPC.GracefulStop()
-		server.RelayGRPC.GracefulStop()
 		_ = listener.Close()
 		return nil
 	}

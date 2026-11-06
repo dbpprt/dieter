@@ -1,0 +1,34 @@
+[
+  {
+    "quote": [
+      {
+        "paragraph": [
+          "A quote with ",
+          {"strong": ["bold"]},
+          " text",
+          {"break": "soft"},
+          "continues lazily on this line."
+        ]
+      },
+      {"paragraph": ["A second paragraph in the quote."]}
+    ]
+  },
+  {
+    "quote": [
+      {"paragraph": ["Outer quote"]},
+      {"quote": [{"paragraph": ["Nested quote", {"break": "soft"}, "on two lines"]}]},
+      {"paragraph": ["Back in the outer quote"]}
+    ]
+  },
+  {
+    "quote": [
+      {
+        "list": "bullet",
+        "items": [
+          {"blocks": [{"paragraph": ["A list in a quote"]}]},
+          {"blocks": [{"paragraph": ["with two items"]}]}
+        ]
+      }
+    ]
+  }
+]
