@@ -10,6 +10,13 @@ copy the **Unreleased** notes into a section named after that exact version
 
 Nothing yet.
 
+## 0.6.441
+
+### Fixed
+
+- Screen-sharing keyboards suppress autocomplete on Android and inline
+  predictions on iOS, preserving the text sent to the remote desktop.
+
 ## 0.6.440
 
 ### Changed
