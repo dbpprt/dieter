@@ -509,6 +509,11 @@ class CompositionTest {
             Creation.request(input.copy(vaultAccess = true)).vault_access,
             "vault access is requested per conversation",
         )
+        assertFalse(request.mail_access, "mail access is off unless chosen")
+        assertTrue(
+            Creation.request(input.copy(mailAccess = true)).mail_access,
+            "mail access is requested per conversation",
+        )
         val chat =
             Creation.request(
                 input.copy(chat = true, workspaceMode = WorkspaceMode.PROJECT, title = "Named")

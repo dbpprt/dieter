@@ -20,12 +20,12 @@ import (
 )
 
 // StartUsage documents `dieter daemon start` and its `dieter serve` alias.
-const StartUsage = `Usage: dieter daemon start [--addr ADDRESS] [--direct-addr ADDRESS --direct-host HOST] [--env-file PATH] [--service [--runtime PATH]] [--verbose]
+const StartUsage = `Usage: dieter daemon start [--addr ADDRESS] [--direct-addr ADDRESS --direct-host HOST [--direct-network lan|tailscale|public|loopback]] [--env-file PATH] [--service [--runtime PATH]] [--verbose]
 
 Run the machine-local Dieter data plane and, when enrolled, its persistent
 outbound gateway tunnel. The local API is always loopback-only. An enrolled
 daemon automatically advertises an authenticated loopback route; direct flags
-add an optional LAN, Tailscale, or public route.
+add an optional LAN (the default --direct-network), Tailscale, or public route.
 A package manager may supply --runtime with a fixed executable directory.
 Service startup activates a staged verified release there before workers begin.
 An enrolled daemon also verifies any gateway-signed endpoint relocation at startup,

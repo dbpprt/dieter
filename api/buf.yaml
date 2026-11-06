@@ -19,6 +19,7 @@ breaking:
   use:
     - WIRE_JSON
   ignore:
-    # In-process contracts that ship inside each client build.
-    - dieter/client
-    - dieter/core
+    # In-process contracts that ship inside each client build. Paths are
+    # relative to this file, so they include the module directory.
+    - proto/dieter/client
+    - proto/dieter/core

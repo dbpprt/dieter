@@ -4,13 +4,12 @@ import SwiftUI
 extension View {
     /// Immediate hover labels; an optional width wraps longer details. Accessibility stays on the actual control;
     /// no system tooltip is registered, so a delayed second tooltip cannot appear.
+    /// Board cards and transcript rows carry these by the hundred; the
+    /// background takes the control's size without a geometry reader.
     func quickHelp(_ title: String, maximumWidth: CGFloat? = nil) -> some View {
         background {
-            GeometryReader { geometry in
-                QuickHelp(title: title, maximumWidth: maximumWidth)
-                    .frame(width: geometry.size.width, height: geometry.size.height)
-            }
-            .accessibilityHidden(true)
+            QuickHelp(title: title, maximumWidth: maximumWidth)
+                .accessibilityHidden(true)
         }
     }
 }
@@ -24,6 +23,11 @@ struct QuickHelp: NSViewRepresentable {
     func updateNSView(_ view: QuickHelpView, context: Context) {
         view.title = title
         view.maximumWidth = maximumWidth
+    }
+
+    /// The control's size: a background is proposed exactly that.
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: QuickHelpView, context: Context) -> CGSize? {
+        proposal.replacingUnspecifiedDimensions(by: .zero)
     }
 
     static func dismantleNSView(_ view: QuickHelpView, coordinator: ()) {
@@ -41,6 +45,9 @@ final class QuickHelpView: NSView {
     private(set) var helpWindow: NSPanel?
     private var hoverArea: NSTrackingArea?
     private var dismissalMonitor: Any?
+    /// What dismisses a shown label; observed only while one is shown, as
+    /// every row of a long list carries one of these views.
+    private var observedWindow: NSWindow?
     private static weak var activeOwner: QuickHelpView?
 
     override init(frame frameRect: NSRect) {
@@ -71,14 +78,16 @@ final class QuickHelpView: NSView {
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         dismissHelp()
-        NotificationCenter.default.removeObserver(self)
         super.viewWillMove(toWindow: newWindow)
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         updateTrackingAreas()
-        guard let window else { return }
+    }
+
+    private func observeDismissal(of window: NSWindow) {
+        observedWindow = window
         for name in [
             NSWindow.didResignKeyNotification, NSWindow.willCloseNotification, NSWindow.willMiniaturizeNotification,
         ] {
@@ -86,6 +95,12 @@ final class QuickHelpView: NSView {
         }
         NotificationCenter.default.addObserver(
             self, selector: #selector(dismissHelp), name: NSApplication.didResignActiveNotification, object: NSApp)
+    }
+
+    private func stopObservingDismissal() {
+        guard observedWindow != nil else { return }
+        observedWindow = nil
+        NotificationCenter.default.removeObserver(self)
     }
 
     override func viewDidHide() {
@@ -125,6 +140,7 @@ final class QuickHelpView: NSView {
                 in: NSSize(width: maximumWidth ?? .greatestFiniteMagnitude, height: .greatestFiniteMagnitude)))
         helpWindow = panel
         positionHelp()
+        observeDismissal(of: window)
         window.addChildWindow(panel, ordered: .above)
         if nonactivatingHost {
             panel.orderFrontRegardless()
@@ -144,6 +160,7 @@ final class QuickHelpView: NSView {
     override func mouseExited(with event: NSEvent) { dismissHelp() }
 
     @objc func dismissHelp() {
+        stopObservingDismissal()
         if let dismissalMonitor { NSEvent.removeMonitor(dismissalMonitor) }
         dismissalMonitor = nil
         if let panel = helpWindow {

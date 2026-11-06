@@ -12,7 +12,8 @@ import (
 	"github.com/dbpprt/dieter/internal/git/workspace"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/platform/fault"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/home"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 )
 
 const maxDiffPageBytes = 1 << 20
@@ -68,7 +69,7 @@ func (s *Service) resolveTarget(ctx context.Context, cardID, projectID string) (
 		return model.Workspace{}, fault.New(fault.Invalid, "exactly one of card_id or project_id is required")
 	}
 	if projectID != "" {
-		project, err := s.Workspaces.Store.ProjectForCheckout(projectID, store.CheckoutFromContext(ctx))
+		project, err := s.Workspaces.Store.Kanban.ProjectForCheckout(projectID, kanban.CheckoutFromContext(ctx))
 		if err != nil {
 			return model.Workspace{}, err
 		}
@@ -85,8 +86,8 @@ func (s *Service) resolveTarget(ctx context.Context, cardID, projectID string) (
 			BaseBranch: strings.TrimSpace(project.BaseBranch), State: model.WorkspaceStateReady,
 		}, nil
 	}
-	value, err := s.Workspaces.Store.Workspace(cardID)
-	if errors.Is(err, store.ErrNotFound) || (err == nil && (value.Path == "" || value.State == model.WorkspaceStateProvisioning)) {
+	value, err := s.Workspaces.Store.Workspaces.Get(cardID)
+	if errors.Is(err, home.ErrNotFound) || (err == nil && (value.Path == "" || value.State == model.WorkspaceStateProvisioning)) {
 		value, err = s.Workspaces.Ensure(ctx, cardID)
 	}
 	if err != nil {

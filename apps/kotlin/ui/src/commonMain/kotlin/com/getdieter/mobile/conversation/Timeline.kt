@@ -19,6 +19,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontStyle
@@ -29,6 +30,7 @@ import com.getdieter.api.v1.MessagePart
 import com.getdieter.api.v1.ToolOutput
 import com.getdieter.client.v1.*
 import com.getdieter.mobile.app.*
+import com.getdieter.mobile.channels.PeerNoticeCard
 import com.getdieter.mobile.design.*
 
 @Composable
@@ -139,6 +141,12 @@ private fun TimelineStepView(
                 .forEach { SubagentCard(it) }
         TimelineStepKind.TIMELINE_STEP_KIND_ATTACHMENT ->
             part?.let { AttachmentTile(it) { onAttachment(it) } }
+        TimelineStepKind.TIMELINE_STEP_KIND_PEER_NOTICE -> {
+            val store = LocalMobileStore.current
+            val notice = step.peer_notice
+            if (notice != null) PeerNoticeCard(notice, openUrl) { store?.openChannel(it) }
+            else if (text.isNotEmpty()) RichText(text, openUrl)
+        }
         else -> if (text.isNotEmpty()) RichText(text, openUrl)
     }
 }
@@ -157,6 +165,20 @@ private fun UserMessage(
         Modifier.fillMaxWidth().padding(horizontal = ScreenMargin),
         horizontalAlignment = Alignment.End,
     ) {
+        if (row.origin_label.isNotEmpty())
+            // A turn an agent channel message started, not the user.
+            Row(
+                Modifier.padding(bottom = 4.dp, end = 6.dp).testTag("message-origin-${row.id}"),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Icon(Glyph.TAG, null, tint = palette.info, size = 11.dp, weight = GlyphWeight.BOLD)
+                Text(
+                    row.origin_label,
+                    style = type.caption.copy(fontWeight = FontWeight.SemiBold),
+                    color = palette.info,
+                )
+            }
         steps
             .filter { it.kind == TimelineStepKind.TIMELINE_STEP_KIND_ATTACHMENT }
             .forEach { step ->

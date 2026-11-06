@@ -1,6 +1,7 @@
 package com.getdieter.core.sync
 
 import com.getdieter.api.v1.CardDetail
+import com.getdieter.api.v1.Conversation
 import com.getdieter.api.v1.ConversationSnapshot
 import com.getdieter.core.runtime.Timestamps
 
@@ -9,6 +10,11 @@ import com.getdieter.core.runtime.Timestamps
  * client receive times: independent streams can deliver an older projection after a newer read.
  */
 object TranscriptFreshness {
+    /** Owner revisions, shared by full transcripts and the account's bounded activity previews. */
+    fun compare(left: Conversation, right: Conversation): Int =
+        left.last_seq.compareTo(right.last_seq).takeIf { it != 0 }
+            ?: Timestamps.compare(left.updated_at, right.updated_at)
+
     fun freshest(
         existing: ConversationSnapshot?,
         incoming: ConversationSnapshot,
@@ -21,11 +27,12 @@ object TranscriptFreshness {
             when {
                 next == null -> false
                 current == null -> true
-                next.last_seq != current.last_seq -> next.last_seq > current.last_seq
-                // Same live tail: keep the richer page so paging survives a background refresh.
+                compare(next, current) != 0 -> compare(next, current) > 0
+                // Only identical revisions may prefer a richer page. A newer, smaller window
+                // must still replace changed messages and metadata at the same sequence.
                 next.messages.size != current.messages.size ->
                     next.messages.size > current.messages.size
-                else -> Timestamps.compare(next.updated_at, current.updated_at) >= 0
+                else -> true
             }
         val transcript = if (incomingWins) incoming else existing
         val incomingCard = incoming.detail?.card

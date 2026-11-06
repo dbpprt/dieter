@@ -6,7 +6,7 @@
 // Source: dieter/v1/schedules.proto
 //
 // For information on using the generated types, please see the documentation:
-//   https://github.com/grpc/grpc-swift
+//   https://github.com/grpc/grpc-swift-2
 
 import GRPCCore
 import GRPCProtobuf
@@ -179,9 +179,9 @@ extension Dieter_V1_ScheduleService {
         ///   - serializer: A serializer for `Dieter_V1_ListSchedulesRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_SchedulesResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func listSchedules<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ListSchedulesRequest>,
@@ -198,9 +198,9 @@ extension Dieter_V1_ScheduleService {
         ///   - serializer: A serializer for `Dieter_V1_ScheduleRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Schedule` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func getSchedule<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ScheduleRef>,
@@ -217,9 +217,9 @@ extension Dieter_V1_ScheduleService {
         ///   - serializer: A serializer for `Dieter_V1_PreviewScheduleRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_SchedulePreview` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func previewSchedule<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_PreviewScheduleRequest>,
@@ -236,9 +236,9 @@ extension Dieter_V1_ScheduleService {
         ///   - serializer: A serializer for `Dieter_V1_SaveScheduleRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Schedule` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func createSchedule<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_SaveScheduleRequest>,
@@ -255,9 +255,9 @@ extension Dieter_V1_ScheduleService {
         ///   - serializer: A serializer for `Dieter_V1_SaveScheduleRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Schedule` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func updateSchedule<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_SaveScheduleRequest>,
@@ -274,9 +274,9 @@ extension Dieter_V1_ScheduleService {
         ///   - serializer: A serializer for `Dieter_V1_ScheduleRef` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func deleteSchedule<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ScheduleRef>,
@@ -293,9 +293,9 @@ extension Dieter_V1_ScheduleService {
         ///   - serializer: A serializer for `Dieter_V1_ScheduleRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ScheduleRun` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func runSchedule<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ScheduleRef>,
@@ -312,9 +312,9 @@ extension Dieter_V1_ScheduleService {
         ///   - serializer: A serializer for `Dieter_V1_SetScheduleEnabledRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Schedule` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func setScheduleEnabled<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_SetScheduleEnabledRequest>,
@@ -331,9 +331,9 @@ extension Dieter_V1_ScheduleService {
         ///   - serializer: A serializer for `Dieter_V1_ListScheduleRunsRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ScheduleRunsResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func listScheduleRuns<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ListScheduleRunsRequest>,
@@ -371,9 +371,9 @@ extension Dieter_V1_ScheduleService {
         ///   - serializer: A serializer for `Dieter_V1_ListSchedulesRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_SchedulesResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func listSchedules<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ListSchedulesRequest>,
@@ -401,9 +401,9 @@ extension Dieter_V1_ScheduleService {
         ///   - serializer: A serializer for `Dieter_V1_ScheduleRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Schedule` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func getSchedule<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ScheduleRef>,
@@ -431,9 +431,9 @@ extension Dieter_V1_ScheduleService {
         ///   - serializer: A serializer for `Dieter_V1_PreviewScheduleRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_SchedulePreview` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func previewSchedule<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_PreviewScheduleRequest>,
@@ -461,9 +461,9 @@ extension Dieter_V1_ScheduleService {
         ///   - serializer: A serializer for `Dieter_V1_SaveScheduleRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Schedule` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func createSchedule<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_SaveScheduleRequest>,
@@ -491,9 +491,9 @@ extension Dieter_V1_ScheduleService {
         ///   - serializer: A serializer for `Dieter_V1_SaveScheduleRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Schedule` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func updateSchedule<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_SaveScheduleRequest>,
@@ -521,9 +521,9 @@ extension Dieter_V1_ScheduleService {
         ///   - serializer: A serializer for `Dieter_V1_ScheduleRef` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func deleteSchedule<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ScheduleRef>,
@@ -551,9 +551,9 @@ extension Dieter_V1_ScheduleService {
         ///   - serializer: A serializer for `Dieter_V1_ScheduleRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ScheduleRun` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func runSchedule<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ScheduleRef>,
@@ -581,9 +581,9 @@ extension Dieter_V1_ScheduleService {
         ///   - serializer: A serializer for `Dieter_V1_SetScheduleEnabledRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Schedule` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func setScheduleEnabled<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_SetScheduleEnabledRequest>,
@@ -611,9 +611,9 @@ extension Dieter_V1_ScheduleService {
         ///   - serializer: A serializer for `Dieter_V1_ListScheduleRunsRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ScheduleRunsResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func listScheduleRuns<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ListScheduleRunsRequest>,
@@ -644,9 +644,9 @@ extension Dieter_V1_ScheduleService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ListSchedulesRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listSchedules<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ListSchedulesRequest>,
@@ -669,9 +669,9 @@ extension Dieter_V1_ScheduleService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ScheduleRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getSchedule<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ScheduleRef>,
@@ -694,9 +694,9 @@ extension Dieter_V1_ScheduleService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_PreviewScheduleRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func previewSchedule<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_PreviewScheduleRequest>,
@@ -719,9 +719,9 @@ extension Dieter_V1_ScheduleService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_SaveScheduleRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func createSchedule<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_SaveScheduleRequest>,
@@ -744,9 +744,9 @@ extension Dieter_V1_ScheduleService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_SaveScheduleRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func updateSchedule<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_SaveScheduleRequest>,
@@ -769,9 +769,9 @@ extension Dieter_V1_ScheduleService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ScheduleRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func deleteSchedule<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ScheduleRef>,
@@ -794,9 +794,9 @@ extension Dieter_V1_ScheduleService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ScheduleRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func runSchedule<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ScheduleRef>,
@@ -819,9 +819,9 @@ extension Dieter_V1_ScheduleService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_SetScheduleEnabledRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func setScheduleEnabled<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_SetScheduleEnabledRequest>,
@@ -844,9 +844,9 @@ extension Dieter_V1_ScheduleService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ListScheduleRunsRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listScheduleRuns<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ListScheduleRunsRequest>,
@@ -874,9 +874,9 @@ extension Dieter_V1_ScheduleService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listSchedules<Result>(
         _ message: Dieter_V1_ListSchedulesRequest,
@@ -903,9 +903,9 @@ extension Dieter_V1_ScheduleService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getSchedule<Result>(
         _ message: Dieter_V1_ScheduleRef,
@@ -932,9 +932,9 @@ extension Dieter_V1_ScheduleService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func previewSchedule<Result>(
         _ message: Dieter_V1_PreviewScheduleRequest,
@@ -961,9 +961,9 @@ extension Dieter_V1_ScheduleService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func createSchedule<Result>(
         _ message: Dieter_V1_SaveScheduleRequest,
@@ -990,9 +990,9 @@ extension Dieter_V1_ScheduleService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func updateSchedule<Result>(
         _ message: Dieter_V1_SaveScheduleRequest,
@@ -1019,9 +1019,9 @@ extension Dieter_V1_ScheduleService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func deleteSchedule<Result>(
         _ message: Dieter_V1_ScheduleRef,
@@ -1048,9 +1048,9 @@ extension Dieter_V1_ScheduleService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func runSchedule<Result>(
         _ message: Dieter_V1_ScheduleRef,
@@ -1077,9 +1077,9 @@ extension Dieter_V1_ScheduleService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func setScheduleEnabled<Result>(
         _ message: Dieter_V1_SetScheduleEnabledRequest,
@@ -1106,9 +1106,9 @@ extension Dieter_V1_ScheduleService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listScheduleRuns<Result>(
         _ message: Dieter_V1_ListScheduleRunsRequest,

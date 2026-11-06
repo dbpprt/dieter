@@ -15,7 +15,6 @@ import (
 type possessionConn struct {
 	grpc.ClientConnInterface
 	identity *Identity
-	target   string
 }
 
 func (c possessionConn) auth(ctx context.Context) context.Context {
@@ -23,9 +22,6 @@ func (c possessionConn) auth(ctx context.Context) context.Context {
 	values = values.Copy()
 	values.Set("authorization", "Bearer "+linkauth.SignPeer(c.identity.PrivateKey, c.identity.ID, c.identity.Issuer(), c.identity.Generation, time.Now()))
 	values.Set("x-dieter-client-version", buildinfo.ReleaseVersion)
-	if c.target != "" {
-		values.Set("x-dieter-daemon-id", c.target)
-	}
 	return metadata.NewOutgoingContext(ctx, values)
 }
 func (c possessionConn) Invoke(ctx context.Context, method string, in, out any, opts ...grpc.CallOption) error {
@@ -35,9 +31,8 @@ func (c possessionConn) NewStream(ctx context.Context, desc *grpc.StreamDesc, me
 	return c.ClientConnInterface.NewStream(c.auth(ctx), desc, method, opts...)
 }
 
-// PossessionConn wraps conn so every call carries a fresh possession proof of
-// identity's key. A non-empty target routes the call to that daemon through
-// the gateway relay.
-func PossessionConn(conn grpc.ClientConnInterface, identity *Identity, target string) grpc.ClientConnInterface {
-	return possessionConn{conn, identity, target}
+// PossessionConn wraps conn so every gateway call, including relay tunnels,
+// carries a fresh possession proof of identity's key.
+func PossessionConn(conn grpc.ClientConnInterface, identity *Identity) grpc.ClientConnInterface {
+	return possessionConn{conn, identity}
 }

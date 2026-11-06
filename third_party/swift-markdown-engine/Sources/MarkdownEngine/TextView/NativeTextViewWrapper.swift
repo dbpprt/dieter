@@ -86,6 +86,10 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
     /// Fires whenever the caret rect inside an active wiki-link changes,
     /// so embedders can position a follow-the-caret UI.
     public var onCaretRectChange: ((CGRect) -> Void)?
+    /// Reports one completed native edit in UTF-16 display-text coordinates.
+    /// Multi-step smart-input transformations and ambiguous composition
+    /// batches are omitted so embedders can treat every callback as exact.
+    public var onTextMutation: ((MarkdownTextMutation) -> Void)?
     /// Build the editor's right-click menu (the engine ships no menu). Receives the default
     /// NSMenu + the current selection range; return the menu to display (or unchanged).
     public var onBuildContextMenu: ((NSMenu, NSRange) -> NSMenu)?
@@ -95,6 +99,14 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
     /// Fires on ↑/↓/Enter/Esc while an inline `[[…]]` preview is open, so the
     /// embedder can drive its autocomplete list. Return `true` to consume the key.
     public var onInlinePreviewKey: ((InlinePreviewKey) -> Bool)?
+    /// Fires when the caret's directive-completion context changes — entering
+    /// a directive name or one of its arguments — and with `nil` to dismiss.
+    /// The engine supplies the ranked candidates; the embedder draws the list
+    /// and routes keys back through ``onInlinePreviewKey``.
+    public var onDirectiveCompletion: ((DirectiveCompletionContext?) -> Void)?
+    /// Commit a picked directive completion. The engine applies it, places the
+    /// caret, and clears the binding.
+    @Binding public var pendingDirectiveCompletion: DirectiveCompletionRequest?
     /// Fires when the set of visible code blocks changes, so embedders can
     /// overlay copy buttons (see ``CodeBlockButton``).
     public var onCodeBlockSelectionChange: (([CodeBlockSelection]) -> Void)?
@@ -153,9 +165,12 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         onLinkClick: ((String) -> Void)? = nil,
         onURLClick: (@MainActor (URL) -> Bool)? = nil,
         onCaretRectChange: ((CGRect) -> Void)? = nil,
+        onTextMutation: ((MarkdownTextMutation) -> Void)? = nil,
         onBuildContextMenu: ((NSMenu, NSRange) -> NSMenu)? = nil,
         onInlineSelectionChange: ((InlineSelectionState?) -> Void)? = nil,
         onInlinePreviewKey: ((InlinePreviewKey) -> Bool)? = nil,
+        onDirectiveCompletion: ((DirectiveCompletionContext?) -> Void)? = nil,
+        pendingDirectiveCompletion: Binding<DirectiveCompletionRequest?> = .constant(nil),
         onCodeBlockSelectionChange: (([CodeBlockSelection]) -> Void)? = nil,
         onSpellCheckingPolicyChanged: ((SpellCheckingPolicy) -> Void)? = nil,
         placeholder: NSAttributedString? = nil,
@@ -179,9 +194,12 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         self.onLinkClick = onLinkClick
         self.onURLClick = onURLClick
         self.onCaretRectChange = onCaretRectChange
+        self.onTextMutation = onTextMutation
         self.onBuildContextMenu = onBuildContextMenu
         self.onInlineSelectionChange = onInlineSelectionChange
         self.onInlinePreviewKey = onInlinePreviewKey
+        self.onDirectiveCompletion = onDirectiveCompletion
+        self._pendingDirectiveCompletion = pendingDirectiveCompletion
         self.onCodeBlockSelectionChange = onCodeBlockSelectionChange
         self.onSpellCheckingPolicyChanged = onSpellCheckingPolicyChanged
         self.placeholder = placeholder
@@ -285,7 +303,7 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         textView.isAutomaticSpellingCorrectionEnabled = configuration.spellChecking.automaticSpellingCorrection
         textView.isContinuousSpellCheckingEnabled = configuration.spellChecking.continuousSpellChecking
         textView.isGrammarCheckingEnabled = configuration.spellChecking.grammarChecking
-        textView.isAutomaticQuoteSubstitutionEnabled = true
+        textView.isAutomaticQuoteSubstitutionEnabled = configuration.spellChecking.automaticQuoteSubstitution
         textView.isAutomaticDataDetectionEnabled = true
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.onPasteImage = onPasteImage
@@ -328,9 +346,11 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         context.coordinator.textView = textView
         context.coordinator.wikiLinkMetadata = initialState.metadata
         context.coordinator.onCaretRectChange = onCaretRectChange
+        context.coordinator.onTextMutation = onTextMutation
         context.coordinator.onBuildContextMenu = onBuildContextMenu
         context.coordinator.onInlineSelectionChange = onInlineSelectionChange
         context.coordinator.onInlinePreviewKey = onInlinePreviewKey
+        context.coordinator.onDirectiveCompletion = onDirectiveCompletion
         context.coordinator.onCodeBlockSelectionChange = onCodeBlockSelectionChange
 
         textView.recalcOverscroll(for: scrollView)
@@ -501,14 +521,22 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         // and no rebuild is needed for it to take effect.
         textView.configuration.lists = configuration.lists
         context.coordinator.configuration.lists = configuration.lists
-        // Sync registered extensions (inline spans + fenced blocks). A change alters the GRAMMAR
-        // (tokens differ under the new registry), so the coordinator's parsed
+        // Sync registered extensions (inline spans + fenced blocks) and directives. A change alters
+        // the GRAMMAR (tokens differ under the new registry), so the coordinator's parsed
         // cache must drop before the restyle — the parse-layer memos invalidate
         // themselves via the registry fingerprint.
+        //
+        // The fingerprint covers BOTH seams, so a directive-only change lands in this branch too —
+        // which means the directive list has to be copied here as well, or the restyle it triggers
+        // runs against the old one.
         let newExtensionFingerprint = configuration.extensionRegistry.fingerprint
         if newExtensionFingerprint != context.coordinator.configuration.extensionRegistry.fingerprint {
             context.coordinator.configuration.extensions = configuration.extensions
             textView.configuration.extensions = configuration.extensions
+            context.coordinator.configuration.directives = configuration.directives
+            textView.configuration.directives = configuration.directives
+            context.coordinator.configuration.directiveSettings = configuration.directiveSettings
+            textView.configuration.directiveSettings = configuration.directiveSettings
             context.coordinator.cachedParsedDocument = nil
             let fullRange = NSRange(location: 0, length: (textView.string as NSString).length)
             if fullRange.length > 0 {
@@ -565,6 +593,18 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
             ? (context.coordinator.resolvedCaretColor ?? context.coordinator.configuration.theme.bodyText)
             : .clear
         let fontChanged = (context.coordinator.fontName != fontName) || (context.coordinator.fontSize != fontSize)
+        if let pendingDirectiveCompletion {
+            if pendingDirectiveCompletion.documentId == documentId,
+               context.coordinator.lastAppliedDirectiveCompletionID != pendingDirectiveCompletion.id {
+                context.coordinator.applyDirectiveCompletion(pendingDirectiveCompletion, to: textView)
+            }
+            DispatchQueue.main.async {
+                if self.pendingDirectiveCompletion?.id == pendingDirectiveCompletion.id {
+                    self.pendingDirectiveCompletion = nil
+                }
+            }
+            return
+        }
         if let pendingInlineReplacement {
             if pendingInlineReplacement.documentId == documentId,
                context.coordinator.lastAppliedInlineReplacementID != pendingInlineReplacement.id {
@@ -663,12 +703,30 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
                 nsView.contentView.scroll(to: NSPoint(x: nsView.contentView.bounds.origin.x, y: savedY))
                 nsView.reflectScrolledClipView(nsView.contentView)
                 (nsView as? ClampedScrollView)?.clampToInsets()
-                let landed = abs(nsView.contentView.bounds.origin.y - savedY) < 1
+                // A zero-height viewport cannot contradict any offset: with no range to
+                // clamp against the scroll is taken verbatim, so this is true for EVERY
+                // value — it says the offset was set, not that it survived. Believing it
+                // retires the latch before the geometry exists; the first real layout
+                // then clamps the reader back to the top and nothing is left to correct
+                // it. Measured on a remount after routing away: saved=201 actual=201
+                // landed=true viewportH=0.
+                let measured = nsView.contentView.bounds.height > 0
+                let landed = measured && abs(nsView.contentView.bounds.origin.y - savedY) < 1
                 // Also give up once the real content has had its chance, landed or
                 // not: an armed latch outliving the document's arrival lets a much
                 // later unrelated pass — ⌘+/⌘−, the raw-source toggle, a buffer
                 // reload — scroll the reader away from wherever they went.
-                if landed || !text.isEmpty || context.coordinator.pendingScrollRestoreAttempts <= 0 {
+                // The "content has arrived" give-up needs the same proof: a non-empty
+                // buffer laid out into nothing has not had its chance either.
+                if !measured {
+                    // No geometry on this tick: hand it to the scroll view, which applies
+                    // it from its own layout. Retiring the latch here is safe because the
+                    // offset is no longer waiting on another update pass — and those stop
+                    // coming (measured: two passes, both viewportH=0, then nothing, with
+                    // the latch left armed forever and teardown refusing to save).
+                    (nsView as? ClampedScrollView)?.armScrollRestore(to: savedY)
+                    context.coordinator.pendingScrollRestoreDocumentId = nil
+                } else if landed || !text.isEmpty || context.coordinator.pendingScrollRestoreAttempts <= 0 {
                     context.coordinator.pendingScrollRestoreDocumentId = nil
                 }
             } else {
@@ -682,9 +740,11 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         }
 
         context.coordinator.onCaretRectChange = onCaretRectChange
+        context.coordinator.onTextMutation = onTextMutation
         context.coordinator.onBuildContextMenu = onBuildContextMenu
         context.coordinator.onInlineSelectionChange = onInlineSelectionChange
         context.coordinator.onInlinePreviewKey = onInlinePreviewKey
+        context.coordinator.onDirectiveCompletion = onDirectiveCompletion
         context.coordinator.onCodeBlockSelectionChange = onCodeBlockSelectionChange
         context.coordinator.didInitialFormatting = true
     }
@@ -701,6 +761,7 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         coordinator.documentId = documentId
         coordinator.onURLClick = onURLClick
         coordinator.onPersistScrollOffset = onPersistScrollOffset
+        coordinator.onTextMutation = onTextMutation
         coordinator.restoreScrollOffset = restoreScrollOffset
         // Seeding documentId above means the first update pass is not a switch, so
         // arm the restore here or a remount would always open at the top.
@@ -711,9 +772,11 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         coordinator.lastRenderedCodeFingerprint = configuration.services.renderedCodeBlocks.fingerprint()
         coordinator.onCodeBlockSelectionChange = onCodeBlockSelectionChange
         coordinator.onInlinePreviewKey = onInlinePreviewKey
+        coordinator.onDirectiveCompletion = onDirectiveCompletion
         coordinator.userPrefersContinuousSpellChecking = configuration.spellChecking.continuousSpellChecking
         coordinator.userPrefersGrammarChecking = configuration.spellChecking.grammarChecking
         coordinator.userPrefersAutomaticSpellingCorrection = configuration.spellChecking.automaticSpellingCorrection
+        coordinator.userPrefersAutomaticQuoteSubstitution = configuration.spellChecking.automaticQuoteSubstitution
         coordinator.onSpellCheckingPolicyChanged = onSpellCheckingPolicyChanged
         return coordinator
     }
@@ -757,6 +820,13 @@ private extension NativeTextViewWrapper {
         }
         let controller = coord.headerController ?? ScrollingHeaderController()
         coord.headerController = controller
+        // A document switch re-lays the header out at the new document's height a few
+        // milliseconds later. That is not a disclosure and must not be revealed — see
+        // `snapNextHeightChange`. Read before `updateNSView` advances the coordinator's
+        // `documentId`, so this is the switch's own pass.
+        if coord.documentId != documentId {
+            controller.snapNextHeightChange()
+        }
         controller.reconcile(
             header: header,
             collapsedHeight: headerCollapsedHeight,

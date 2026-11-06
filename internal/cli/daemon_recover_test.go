@@ -3,16 +3,19 @@ package cli
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/gateway"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/link"
 	"github.com/dbpprt/dieter/internal/security/linkauth"
@@ -46,31 +49,18 @@ func TestDaemonRecoverValidatesGatewayResultBeforeLocalCutover(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	keys, err := gateway.LoadOrCreateKeys(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
 	publicDER, err := identity.PublicKeyDER()
 	if err != nil {
 		t.Fatal(err)
 	}
-	replacementCert, _, err := keys.IssueDaemonCertificate(replacementID, publicDER)
-	if err != nil {
-		t.Fatal(err)
-	}
-	oldCert, _, err := keys.IssueDaemonCertificate(oldID, publicDER)
-	if err != nil {
-		t.Fatal(err)
-	}
+	replacementCert := testEnrollmentCertificate(t, replacementID, publicDER)
+	oldCert := testEnrollmentCertificate(t, oldID, publicDER)
 	block, _ := pem.Decode(oldCert)
 	certificate, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	signingKey, err := keys.SigningPublicPEM()
-	if err != nil {
-		t.Fatal(err)
-	}
+	signingKey, otherSigningKey := testSigningKeyPEM(t), testSigningKeyPEM(t)
 	otherIdentity, err := link.LoadOrCreateEnrollmentIdentity(t.TempDir(), "Other", issuer)
 	if err != nil {
 		t.Fatal(err)
@@ -79,24 +69,9 @@ func TestDaemonRecoverValidatesGatewayResultBeforeLocalCutover(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherKeyCert, _, err := keys.IssueDaemonCertificate(oldID, otherPublicDER)
-	if err != nil {
-		t.Fatal(err)
-	}
-	otherKeys, err := gateway.LoadOrCreateKeys(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	otherCACert, _, err := otherKeys.IssueDaemonCertificate(oldID, publicDER)
-	if err != nil {
-		t.Fatal(err)
-	}
-	otherSigningKey, err := otherKeys.SigningPublicPEM()
-	if err != nil {
-		t.Fatal(err)
-	}
+	otherKeyCert := testEnrollmentCertificate(t, oldID, otherPublicDER)
 	identity.GatewayIssuer = issuer
-	if err := identity.SaveCredential(replacementID, "Replacement", replacementCert, keys.DaemonCAPEM, signingKey, time.Now().Add(time.Hour).Format(time.RFC3339Nano), 1); err != nil {
+	if err := identity.SaveCredential(replacementID, "Replacement", replacementCert, signingKey, time.Now().Add(time.Hour).Format(time.RFC3339Nano), 1); err != nil {
 		t.Fatal(err)
 	}
 	client := New(root)
@@ -113,8 +88,8 @@ func TestDaemonRecoverValidatesGatewayResultBeforeLocalCutover(t *testing.T) {
 	client.gateway = &gatewayTransport{client: stub}
 	credential := &gatewayv1.DaemonCredential{
 		DaemonId: oldID, DaemonName: "Original", CertificatePem: oldCert,
-		DaemonCaPem: keys.DaemonCAPEM, GatewaySigningPublicKey: signingKey,
-		ExpiresAt: certificate.NotAfter.UTC().Format(time.RFC3339Nano), Generation: 2, GatewayIssuer: issuer,
+		GatewaySigningPublicKey: signingKey,
+		ExpiresAt:               certificate.NotAfter.UTC().Format(time.RFC3339Nano), Generation: 2, GatewayIssuer: issuer,
 	}
 	path := filepath.Join(root, "daemon", "identity.json")
 	original, err := os.ReadFile(path)
@@ -204,12 +179,7 @@ func TestDaemonRecoverValidatesGatewayResultBeforeLocalCutover(t *testing.T) {
 		{"future generation", func(c *gatewayv1.DaemonCredential) { c.Generation = 3 }},
 		{"wrong issuer", func(c *gatewayv1.DaemonCredential) { c.GatewayIssuer = "https://other.example.test" }},
 		{"wrong certificate", func(c *gatewayv1.DaemonCredential) { c.CertificatePem = replacementCert }},
-		{"missing CA", func(c *gatewayv1.DaemonCredential) { c.DaemonCaPem = nil }},
 		{"missing signing key", func(c *gatewayv1.DaemonCredential) { c.GatewaySigningPublicKey = nil }},
-		{"different CA", func(c *gatewayv1.DaemonCredential) {
-			c.CertificatePem, c.DaemonCaPem = otherCACert, otherKeys.DaemonCAPEM
-		}},
-		{"foreign certificate under pinned CA", func(c *gatewayv1.DaemonCredential) { c.CertificatePem = otherCACert }},
 		{"different signing key", func(c *gatewayv1.DaemonCredential) { c.GatewaySigningPublicKey = otherSigningKey }},
 		{"wrong key", func(c *gatewayv1.DaemonCredential) { c.CertificatePem = otherKeyCert }},
 		{"expired metadata", func(c *gatewayv1.DaemonCredential) { c.ExpiresAt = time.Now().Add(-time.Hour).Format(time.RFC3339Nano) }},
@@ -241,4 +211,41 @@ func TestDaemonRecoverValidatesGatewayResultBeforeLocalCutover(t *testing.T) {
 	if text := output.String(); !strings.Contains(text, oldID) || !strings.Contains(text, replacementID) || !strings.Contains(text, "Restart the daemon service") || !strings.Contains(text, "verify") || !strings.Contains(text, "dieter machine revoke "+replacementID) {
 		t.Fatalf("recovery guidance missing: %q", text)
 	}
+}
+
+// testEnrollmentCertificate is a gateway enrollment certificate for id and
+// public, as the gateway issues one; only the gateway ever checks its issuer.
+func testEnrollmentCertificate(t *testing.T, id string, publicDER []byte) []byte {
+	t.Helper()
+	public, err := x509.ParsePKIXPublicKey(publicDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, issuer, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(time.Now().UnixNano()), Subject: pkix.Name{CommonName: id},
+		NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(time.Hour).Truncate(time.Second),
+		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, public, issuer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+}
+
+func testSigningKeyPEM(t *testing.T) []byte {
+	t.Helper()
+	public, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKIXPublicKey(public)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
 }

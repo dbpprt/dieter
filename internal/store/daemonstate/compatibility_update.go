@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/dbpprt/dieter/internal/platform/fault"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/home"
 )
 
 type CompatibilityUpdateReceipt struct {
@@ -41,7 +41,7 @@ func (s *Store) BeginCompatibilityUpdate(receipt CompatibilityUpdateReceipt) (bo
 	}
 	receipt.AttemptedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	receipt.Outcome = "admitted"
-	return true, store.WriteJSON(s.compatibilityUpdateReceiptPath(), receipt)
+	return true, home.WriteJSON(s.compatibilityUpdateReceiptPath(), receipt)
 }
 
 func (s *Store) FinishCompatibilityUpdate(key, outcome, message string) error {
@@ -58,7 +58,7 @@ func (s *Store) FinishCompatibilityUpdate(key, outcome, message string) error {
 		return fault.New(fault.Invalid, "compatibility update receipt changed")
 	}
 	receipt.Outcome, receipt.Error = outcome, message
-	return store.WriteJSON(s.compatibilityUpdateReceiptPath(), receipt)
+	return home.WriteJSON(s.compatibilityUpdateReceiptPath(), receipt)
 }
 
 func (s *Store) CompatibilityUpdateReceipt() (CompatibilityUpdateReceipt, error) {

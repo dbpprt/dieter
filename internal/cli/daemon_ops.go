@@ -343,7 +343,11 @@ Retrying incomplete enrollment updates the gateway while preserving the machine 
 			return err
 		}
 	}
-	fmt.Fprintln(c.Out, "\n3. Required screen sharing permissions")
+	fmt.Fprintln(c.Out, "\n3. Device trust")
+	if err := c.setupDeviceTrust(20 * time.Second); err != nil {
+		return fmt.Errorf("device trust: %w (run `dieter device status`)", err)
+	}
+	fmt.Fprintln(c.Out, "\n4. Required screen sharing permissions")
 	capabilities, capabilityErr := c.remoteDesktopCapabilities()
 	if capabilityErr != nil {
 		return capabilityErr
@@ -354,7 +358,7 @@ Retrying incomplete enrollment updates the gateway while preserving the machine 
 		return err
 	}
 	if runtime.GOOS == "darwin" {
-		fmt.Fprintln(c.Out, "\n4. Privacy input helper")
+		fmt.Fprintln(c.Out, "\n5. Privacy input helper")
 		if err := c.setupPrivacyHelper(*noOpen || *noStart); err != nil {
 			return err
 		}

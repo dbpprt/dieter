@@ -87,10 +87,20 @@ public final class CoreURLSessionHttp: NSObject, NativeHttp, Sendable {
     }
 }
 
-/// Screen-session bindings are signed by the daemon's Ed25519 key.
+/// Roster entries and screen-session bindings: Ed25519 (daemons and recovery
+/// keys) and ECDSA P-256 over SHA-256 (apps).
 public final class CoreCryptoKitSignatures: NSObject, NativeSignatures, Sendable {
+    /// `publicKey` is the raw 32-byte key.
     public func verifyEd25519(publicKey: Data, message: Data, signature: Data) -> Bool {
         guard let key = try? Curve25519.Signing.PublicKey(rawRepresentation: publicKey) else { return false }
+        return key.isValidSignature(signature, for: message)
+    }
+
+    /// `publicKey` is a DER SubjectPublicKeyInfo and `signature` a DER ECDSA signature.
+    public func verifyEcdsaP256(publicKey: Data, message: Data, signature: Data) -> Bool {
+        guard let key = try? P256.Signing.PublicKey(derRepresentation: publicKey),
+            let signature = try? P256.Signing.ECDSASignature(derRepresentation: signature)
+        else { return false }
         return key.isValidSignature(signature, for: message)
     }
 }
@@ -115,12 +125,16 @@ public final class CoreOSLogger: NSObject, NativeLogger, Sendable {
 
 /// Local notifications the core decides to post. Actions are registered as
 /// categories named after their action set, so the system shows the core's
-/// buttons; the app's notification delegate routes taps back to the core.
+/// buttons; the app's notification delegate (`CoreNotificationResponder`)
+/// routes taps back to the core.
 public final class CoreUserNotifications: NSObject, NativeNotifications, Sendable {
     /// `userInfo` keys a delegate reads to route a tap.
     public static let keyInfo = "dieter.notification.key"
     public static let sessionInfo = "dieter.notification.session"
-    private static let titles = ["MARK_DONE": "Mark done", "OPEN": "Open"]
+    /// The buttons' titles by the core's action names.
+    static let titles = [
+        "MARK_DONE": "Mark done", "OPEN": "Open", "MARK_READ": "Mark as Read", "ARCHIVE": "Archive",
+    ]
 
     private let isEnabled: @Sendable () -> Bool
     private let registered = Mutex<Set<String>>([])
@@ -151,21 +165,32 @@ public final class CoreUserNotifications: NSObject, NativeNotifications, Sendabl
             content.categoryIdentifier = category
             let isNew = registered.withLock { $0.insert(category).inserted }
             if isNew {
+                // The first notification with these buttons waits for their
+                // category, or it would show without them. Nothing changes
+                // the request once it is built.
+                nonisolated(unsafe) let request = UNNotificationRequest(identifier: key, content: content, trigger: nil)
                 center.getNotificationCategories { existing in
-                    let buttons = actions.map { name in
-                        UNNotificationAction(
-                            identifier: name, title: Self.titles[name] ?? name,
-                            options: name == "OPEN" ? [.foreground] : [])
-                    }
                     var categories = existing.filter { $0.identifier != category }
-                    categories.insert(
-                        UNNotificationCategory(identifier: category, actions: buttons, intentIdentifiers: []))
-                    UNUserNotificationCenter.current().setNotificationCategories(categories)
+                    categories.insert(Self.category(category, actions: actions))
+                    let center = UNUserNotificationCenter.current()
+                    center.setNotificationCategories(categories)
+                    center.add(request)
                 }
+                return true
             }
         }
         center.add(UNNotificationRequest(identifier: key, content: content, trigger: nil))
         return true
+    }
+
+    /// The core's actions as buttons: only OPEN brings the app forward; the
+    /// others (Mark done, Mark as Read, Archive) run without opening it.
+    static func category(_ identifier: String, actions: [String]) -> UNNotificationCategory {
+        let buttons = actions.map { name in
+            UNNotificationAction(
+                identifier: name, title: titles[name] ?? name, options: name == "OPEN" ? [.foreground] : [])
+        }
+        return UNNotificationCategory(identifier: identifier, actions: buttons, intentIdentifiers: [])
     }
 
     public func cancel(key: String) {

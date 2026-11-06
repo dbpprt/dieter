@@ -12,6 +12,7 @@ import (
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit"
 )
 
@@ -51,11 +52,11 @@ func TestConversationWatchReceivesTimedBatchesAndReconnectsDuringTurn(t *testing
 	defer cancel()
 	data := testkit.Store(t)
 	defer data.Close()
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Batch watch", Path: testkit.CheckoutDir(t)})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Batch watch", Path: testkit.CheckoutDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	card, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Timed batch", Provider: "mock", Model: "mock", WorkspaceMode: model.WorkspaceModeProject})
+	card, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Timed batch", Provider: "mock", Model: "mock", WorkspaceMode: model.WorkspaceModeProject})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +105,7 @@ func TestConversationWatchReceivesTimedBatchesAndReconnectsDuringTurn(t *testing
 	}
 	reader := store.New(data.Root)
 	defer reader.Close()
-	conversation, err := reader.Conversation(card.ID)
+	conversation, err := reader.Conversations.Get(card.ID)
 	if err != nil || conversation.LastSeq < seq || conversation.Messages[1].Parts[0].Text != strings.Repeat("x", 17) || conversation.Status != "running" {
 		t.Fatalf("watch published before persistence: %+v %v", conversation, err)
 	}
@@ -136,7 +137,7 @@ func TestConversationWatchReceivesTimedBatchesAndReconnectsDuringTurn(t *testing
 	if err := data.WaitForWriter(ctx); err != nil {
 		t.Fatal(err)
 	}
-	conversation, err = reader.Conversation(card.ID)
+	conversation, err = reader.Conversations.Get(card.ID)
 	if err != nil || !strings.Contains(string(conversation.Session), "batched-watch") {
 		t.Fatalf("watch completion preceded trailing session: %+v %v", conversation, err)
 	}

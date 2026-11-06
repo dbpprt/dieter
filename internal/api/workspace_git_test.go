@@ -18,11 +18,11 @@ import (
 func TestGitWatchPublishesTerminalStatusAfterLogCursorAlreadyAdvanced(t *testing.T) {
 	t.Parallel()
 	data, api, card := changesFixture(t)
-	operation, err := data.CreateGitOperation(card.ID, "commit", "fixture")
+	operation, err := data.Workspaces.CreateGitOperation(card.ID, "commit", "fixture")
 	if err != nil {
 		t.Fatal(err)
 	}
-	sequence, err := data.AppendGitOperationLog(operation.ID, "commit complete")
+	sequence, err := data.Workspaces.AppendGitOperationLog(operation.ID, "commit complete")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestGitWatchPublishesTerminalStatusAfterLogCursorAlreadyAdvanced(t *testing
 		if len(frames) == 1 {
 			// Status publication can follow the last log without a newer sequence.
 			operation.Status = model.GitOperationSucceeded
-			_, err := data.SaveGitOperation(operation)
+			_, err := data.Workspaces.SaveGitOperation(operation)
 			return err
 		}
 		return nil

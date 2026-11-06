@@ -5,6 +5,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
     case general = "General"
     case browser = "Browser"
     case connection = "Connection"
+    case devices = "Devices"
     case usage = "Usage"
     case prompts = "Prompts"
     case notifications = "Notifications"
@@ -19,6 +20,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .general: "gearshape"
         case .browser: "globe"
         case .connection: "network"
+        case .devices: "lock.laptopcomputer"
         case .usage: "chart.bar.xaxis"
         case .prompts: "text.quote"
         case .notifications: "bell"
@@ -33,6 +35,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .general: "Server, client, and project preferences"
         case .browser: "Choose which websites leave the workspace browser"
         case .connection: "Machines, gateways, and authentication"
+        case .devices: "Trusted devices and end-to-end encryption"
         case .usage: "Provider accounts, limits, and reset windows"
         case .prompts: "Global and scoped agent instructions"
         case .notifications: "macOS alerts for agent activity"
@@ -96,6 +99,7 @@ struct DieterSettingsView: View {
                         case .general: GeneralSettings()
                         case .browser: BrowserSettings()
                         case .connection: ConnectionSettings()
+                        case .devices: DevicesSettings()
                         case .usage: UsageSettings()
                         case .prompts: PromptSettingsEditor()
                         case .notifications: NotificationSettings()
@@ -126,6 +130,7 @@ private struct SettingsNavigationRow: View {
         .foregroundStyle(selected ? DieterTheme.text : DieterTheme.subtle)
         .padding(.horizontal, 10)
         .frame(height: DieterMetrics.rowHeight)
+        .contentShape(Rectangle())
         .background(
             selected ? DieterTheme.tileSelected : .clear,
             in: RoundedRectangle(cornerRadius: DieterMetrics.rowRadius, style: .continuous)

@@ -11,6 +11,8 @@ import Observation
 @Observable
 package final class BoardViewModel {
     package private(set) var slice = ClientBoardViewSlice()
+    /// What the selected board's chrome shows of its view.
+    private(set) var chrome = BoardChromeSummary()
     @ObservationIgnored package let scope: String
     @ObservationIgnored package private(set) var target = ClientBoardViewTarget()
     @ObservationIgnored private var core: CoreClient?
@@ -18,6 +20,8 @@ package final class BoardViewModel {
     /// The core takes commands for the view once it has shown it.
     @ObservationIgnored private var shown = false
     @ObservationIgnored private var waiting: [(inout ClientBoardViewCommand) -> Void] = []
+    /// The latest view the core delivered, until the burst it came in is folded.
+    @ObservationIgnored private var unfolded: ClientBoardViewSlice?
     @ObservationIgnored private var queued: Task<Void, Never>?
     @ObservationIgnored package var onFailure: (@MainActor (any Error) -> Void)?
     /// Called after a slice of the bound board was folded.
@@ -33,10 +37,16 @@ package final class BoardViewModel {
         self.core = core
         subscription = SliceSubscription(
             client: core, slice: .boardView, scope: scope,
-            onReset: { [weak self] in self?.reset() }
+            onReset: { [weak self] in self?.reset() },
+            onSettled: { [weak self] in
+                guard let self, let value = self.unfolded else { return }
+                self.unfolded = nil
+                self.fold(value)
+            }
         ) { [weak self] update in
             guard let self, case .boardView(let value) = update.value else { return }
-            self.fold(value)
+            // Each update is the whole view: a burst folds only its latest.
+            self.unfolded = value
         }
     }
 
@@ -49,6 +59,7 @@ package final class BoardViewModel {
 
     private func reset() {
         shown = false
+        unfolded = nil
         // The resubscribed surface starts unbound; bind it again.
         let target = target
         if !target.boardID.isEmpty { waiting = [{ $0.bind = target }] }
@@ -65,6 +76,11 @@ package final class BoardViewModel {
         guard value.target.boardID == target.boardID else { return }
         if slice != value { slice = value }
         onChange?()
+    }
+
+    /// Publishes what the chrome shows of the board the window shows.
+    func showChrome(_ next: BoardChromeSummary) {
+        if chrome != next { chrome = next }
     }
 
     /// Shows the target's board, narrowed by its filters.
@@ -121,5 +137,27 @@ package final class BoardViewModel {
                 self?.onFailure?(error)
             }
         }
+    }
+}
+
+/// What a board's chrome shows of its view: counts and filter choices. They
+/// change with the board's cards' state and labels, not with every card update.
+struct BoardChromeSummary: Equatable {
+    var total: Int32 = 0
+    /// "board · 4 conversations · 1 needs you".
+    var summary = ""
+    /// Label ID → the board's cards with it, before filtering.
+    var labelCounts: [String: Int32] = [:]
+    var machineIds: [String] = []
+    var stateOptions: [ClientBoardStateOption] = []
+
+    init() {}
+
+    init(_ view: ClientBoardViewSlice) {
+        total = view.total
+        summary = view.summary
+        labelCounts = view.labelCounts
+        machineIds = view.machineIds
+        stateOptions = view.stateOptions
     }
 }

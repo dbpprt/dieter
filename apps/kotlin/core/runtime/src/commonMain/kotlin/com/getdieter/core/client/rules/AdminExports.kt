@@ -5,6 +5,7 @@ import com.getdieter.client.v1.AdminChoice
 import com.getdieter.client.v1.AdminOptions
 import com.getdieter.client.v1.ValidationDraft
 import com.getdieter.core.admin.AdminForms
+import com.getdieter.core.admin.PromptTemplates
 import com.getdieter.core.workspace.ValidationCommandDraft
 
 /** Project and board settings as their forms offer and check them. */
@@ -59,6 +60,14 @@ object AdminExports {
      */
     fun validationProblem(drafts: List<ValidationDraft>): String =
         ValidationCommandDraft.problem(drafts.map { it.model() }).orEmpty()
+
+    /**
+     * The first problem with a project or board prompt [template], e.g. "template is required" or
+     * "template must contain {{project.instructions_block}} exactly once"; "" when the daemon
+     * accepts it.
+     */
+    fun promptTemplateProblem(template: String): String =
+        PromptTemplates.validate(template, context = true).orEmpty()
 
     /** A new project needs a folder, a base branch, and valid validation commands. */
     fun canCreateProject(path: String, baseBranch: String, drafts: List<ValidationDraft>): Boolean =

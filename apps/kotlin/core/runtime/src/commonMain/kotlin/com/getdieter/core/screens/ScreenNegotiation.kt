@@ -79,7 +79,7 @@ internal class ScreenNegotiation(
             sessionId,
             start,
             sdp,
-            current.certificatePem,
+            current.daemonPublicKey,
             clock.now(),
             verifier,
         )

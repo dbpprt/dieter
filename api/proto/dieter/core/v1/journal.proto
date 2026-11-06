@@ -12,6 +12,9 @@ enum OutboxKind {
   OUTBOX_KIND_CREATE_CHAT = 2;
   OUTBOX_KIND_SEND_MESSAGE = 3;
   OUTBOX_KIND_START_CARD = 4;
+  // UpdateMail or DeleteMail on the machine that holds the messages.
+  OUTBOX_KIND_UPDATE_MAIL = 5;
+  OUTBOX_KIND_DELETE_MAIL = 6;
 }
 
 enum OutboxState {
@@ -39,9 +42,10 @@ message OutboxEntry {
   // The encoded dieter.v1 request.
   bytes request = 5;
   // The ID the UI shows before the daemon answers: a local_ conversation, a
-  // message ID, or the started card.
+  // message ID, the started card, or a mail change's own mail_ ID.
   string optimistic_id = 6;
   // Set once the daemon accepted the command; the entry stays until sync shows it.
+  // For a mail change: the newest state_changed_at the daemon answered with.
   string server_id = 7;
   int32 attempts = 8;
   string last_error = 9;

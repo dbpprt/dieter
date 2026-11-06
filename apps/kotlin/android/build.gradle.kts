@@ -84,6 +84,8 @@ android {
         // Dieter uses only Termux's pure-Java VT emulator and renderer. The
         // bundled local-process JNI bridge is unused and is not 16 KiB aligned.
         jniLibs.excludes += setOf("**/libtermux.so")
+        // Bouncy Castle's provider, TLS and util jars each carry the same license.
+        resources.pickFirsts += "/META-INF/LICENSE.md"
     }
 }
 

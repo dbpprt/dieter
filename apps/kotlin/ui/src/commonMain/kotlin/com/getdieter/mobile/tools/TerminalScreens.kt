@@ -79,20 +79,25 @@ internal fun TerminalsScreen(store: MobileStore, inConversation: Boolean = false
                         DButton("New terminal", { create = true }, glyph = Glyph.ADD)
                     }
                 }
-            itemsIndexed(entries, key = { _, entry -> entry.id }) { index, entry ->
-                ListRow(
-                    entry.terminal?.name.orEmpty().ifEmpty { "Terminal" },
-                    Modifier.testTag("terminal-${entry.id}"),
-                    position = Position.of(index, entries.size),
-                    subtitle =
-                        listOf(entry.machine_name, entry.row?.status.orEmpty())
-                            .filter { it.isNotBlank() }
-                            .joinToString(" · "),
-                    glyph = Glyph.TERMINAL,
-                    tile = Color(0xFF3A3A3C),
-                    accessory = Accessory.CHEVRON,
-                    onClick = { store.push(MobileRoute.TerminalSession(entry.id, cardId)) },
-                )
+            // Every machine's shells, each under its machine; a conversation's are one group.
+            val groups =
+                if (inConversation) listOf("" to entries)
+                else entries.groupBy { it.machine_name }.toList()
+            groups.forEach { (machineName, group) ->
+                if (machineName.isNotEmpty())
+                    item(key = "machine-$machineName") { SectionHeader(machineName) }
+                itemsIndexed(group, key = { _, entry -> entry.id }) { index, entry ->
+                    ListRow(
+                        entry.terminal?.name.orEmpty().ifEmpty { "Terminal" },
+                        Modifier.testTag("terminal-${entry.id}"),
+                        position = Position.of(index, group.size),
+                        subtitle = entry.row?.status?.ifEmpty { null },
+                        glyph = Glyph.TERMINAL,
+                        tile = Color(0xFF3A3A3C),
+                        accessory = Accessory.CHEVRON,
+                        onClick = { store.push(MobileRoute.TerminalSession(entry.id, cardId)) },
+                    )
+                }
             }
         }
     }
@@ -139,9 +144,9 @@ internal fun TerminalSessionScreen(store: MobileStore, terminalId: String, cardI
                     )
                 }
         else view.entries.firstOrNull { it.id == terminalId }
-    fun send(value: TerminalsCommand) =
-        store.command(Command(terminals = value.copy(scope = MobileStore.TERMINAL_SCOPE)))
-    DisposableEffect(store) {
+    val shellId = entry?.terminal?.id ?: terminalId
+    fun send(value: TerminalsCommand) = store.terminals.command(value, inCard = cardId.isNotEmpty())
+    DisposableEffect(store, cardId) {
         send(TerminalsCommand(active = Toggle(true)))
         onDispose { send(TerminalsCommand(active = Toggle(false))) }
     }
@@ -214,7 +219,7 @@ internal fun TerminalSessionScreen(store: MobileStore, terminalId: String, cardI
             entry?.terminal?.name.orEmpty(),
             "Save",
             {
-                send(TerminalsCommand(rename = TerminalRename(terminalId, it)))
+                send(TerminalsCommand(rename = TerminalRename(shellId, it)))
                 rename = false
             },
             { rename = false },
@@ -226,7 +231,7 @@ internal fun TerminalSessionScreen(store: MobileStore, terminalId: String, cardI
                 ?: "This ends the shell and clears its scrollback.",
             "Close",
             {
-                send(TerminalsCommand(close = TerminalId(terminalId)))
+                send(TerminalsCommand(close = TerminalId(shellId)))
                 closing = false
                 store.pop()
             },
@@ -281,12 +286,15 @@ private fun TerminalKeys(store: MobileStore, enabled: Boolean, modifier: Modifie
 }
 
 @Composable
-internal fun TerminalEditor(store: MobileStore, onDismiss: () -> Unit) {
+internal fun TerminalEditor(store: MobileStore, machineId: String = "", onDismiss: () -> Unit) {
     val session by store.session.slice.collectAsState()
     val workspace by store.workspace.slice.collectAsState()
     val busy by store.busy.collectAsState()
+    // From a machine's page the terminal starts there; otherwise on the first available machine.
     var machine by remember {
-        mutableStateOf(session.machines.firstOrNull { it.available }?.id.orEmpty())
+        mutableStateOf(
+            machineId.ifEmpty { session.machines.firstOrNull { it.available }?.id.orEmpty() }
+        )
     }
     var checkout by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
@@ -311,7 +319,7 @@ internal fun TerminalEditor(store: MobileStore, onDismiss: () -> Unit) {
                         Command(
                             terminal_overview =
                                 TerminalOverviewCommand(
-                                    scope = MobileStore.TERMINAL_SCOPE,
+                                    scope = MobileStore.TERMINAL_OVERVIEW_SCOPE,
                                     create =
                                         CreateOverviewTerminal(
                                             daemon_id = machine,
@@ -364,7 +372,7 @@ internal fun TerminalEditor(store: MobileStore, onDismiss: () -> Unit) {
             MobileTextField(
                 name,
                 { name = it },
-                Modifier.fillMaxWidth(),
+                Modifier.fillMaxWidth().testTag("terminal-name"),
                 label = { Text("Name") },
                 placeholder = { Text("Terminal name (optional)") },
                 singleLine = true,

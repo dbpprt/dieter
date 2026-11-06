@@ -9,13 +9,14 @@ import (
 
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit"
 )
 
 func TestDaemonCLIChangesSelectionForExistingCardsAndChats(t *testing.T) {
 	t.Parallel()
 	client, output, data := daemonCLIForTest(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Path: initTestRepository(t, "turn-selection"), Name: "Selection"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Path: initTestRepository(t, "turn-selection"), Name: "Selection"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,17 +25,17 @@ func TestDaemonCLIChangesSelectionForExistingCardsAndChats(t *testing.T) {
 
 func assertConversationSelectionCLI(t *testing.T, client *CLI, output *bytes.Buffer, data *store.Store, projectID string) {
 	t.Helper()
-	board, err := data.CreateBoard(store.CreateBoardInput{Project: projectID, Name: "Selection", Workflow: "review"})
+	board, err := data.Kanban.CreateBoard(kanban.CreateBoardInput{Project: projectID, Name: "Selection", Workflow: "review"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, scope := range []string{"card", "chat"} {
-		input := store.CreateCardInput{Project: projectID, Board: board.ID, Title: "Selection", Provider: "codex", Model: "gpt-5.5", Effort: "low", WorkspaceMode: model.WorkspaceModeProject}
+		input := kanban.CreateCardInput{Project: projectID, Board: board.ID, Title: "Selection", Provider: "codex", Model: "gpt-5.5", Effort: "low", WorkspaceMode: model.WorkspaceModeProject}
 		var card model.Card
 		if scope == "chat" {
-			card, err = data.CreateChat(input)
+			card, err = data.Kanban.CreateChat(input)
 		} else {
-			card, err = data.CreateCard(input)
+			card, err = data.Kanban.CreateCard(input)
 		}
 		if err != nil {
 			t.Fatal(err)
@@ -43,9 +44,9 @@ func assertConversationSelectionCLI(t *testing.T, client *CLI, output *bytes.Buf
 			t.Helper()
 			deadline := time.Now().Add(testkit.Budget(30 * time.Second))
 			for time.Now().Before(deadline) {
-				stored, err := data.ResolveCard(card.ID)
-				leased, leaseErr := data.CardHasRuntimeLease(card.ID)
-				conversation, conversationErr := data.Conversation(card.ID)
+				stored, err := data.Kanban.ResolveCard(card.ID)
+				leased, leaseErr := data.Leases.CardActive(card.ID)
+				conversation, conversationErr := data.Conversations.Get(card.ID)
 				if err == nil && leaseErr == nil && conversationErr == nil && stored.Runtime == "idle" && !leased && conversation.LastSeq > afterSequence && conversation.Status == "idle" && conversation.ActiveTurn == nil && len(conversation.Queue) == 0 {
 					if err := data.WaitForWriter(t.Context()); err != nil {
 						t.Fatal(err)
@@ -58,17 +59,17 @@ func assertConversationSelectionCLI(t *testing.T, client *CLI, output *bytes.Buf
 		}
 		runDaemonCLI(t, client, output, scope, "send", "--message", "First", card.ID)
 		waitIdle(0)
-		before, err := data.Conversation(card.ID)
+		before, err := data.Conversations.Get(card.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
 		runDaemonCLI(t, client, output, scope, "send", "--message", "Next", "--model", "gpt-5.6-sol", "--effort", "high", "--provider-option", "fast_mode=true", card.ID)
 		waitIdle(before.LastSeq)
-		stored, err := data.ResolveCard(card.ID)
+		stored, err := data.Kanban.ResolveCard(card.ID)
 		if err != nil || stored.Provider != "codex" || stored.Model != "gpt-5.6-sol" || stored.Effort != "high" || stored.ProviderOptions["fast_mode"] != "true" {
 			t.Fatalf("selection=%#v err=%v", stored, err)
 		}
-		after, err := data.Conversation(card.ID)
+		after, err := data.Conversations.Get(card.ID)
 		if err != nil || len(before.Session) == 0 || string(after.Session) != string(before.Session) || len(after.Messages) <= len(before.Messages) {
 			t.Fatalf("resumed conversation lost session/history: %#v err=%v", after, err)
 		}

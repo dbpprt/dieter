@@ -15,6 +15,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -28,6 +32,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -333,7 +338,7 @@ internal fun DSwitch(
     }
 }
 
-/** iOS segmented control or Material 3 segmented buttons. */
+/** iOS segmented control, Material 3 segmented buttons, or the desktop's segment track. */
 @Composable
 internal fun Segmented(
     options: List<String>,
@@ -342,6 +347,16 @@ internal fun Segmented(
     modifier: Modifier = Modifier,
     testTagPrefix: String = "segment",
 ) {
+    if (com.getdieter.mobile.desktop.desktop) {
+        com.getdieter.mobile.desktop.DesktopSegments(
+            options,
+            selected,
+            onSelect,
+            modifier,
+            testTagPrefix,
+        )
+        return
+    }
     if (!apple) {
         SingleChoiceSegmentedButtonRow(modifier.fillMaxWidth()) {
             options.forEachIndexed { index, label ->
@@ -499,6 +514,45 @@ internal fun PickerRow(
     onSelect: (String) -> Unit,
 ) {
     val menu = rememberMenuState()
+    val focus = LocalFocusManager.current
+    var choosing by remember { mutableStateOf(false) }
+    val nativeMenu = apple
+    if (choosing && !nativeMenu) {
+        AlertDialog(
+            onDismissRequest = { choosing = false },
+            title = { Text(title) },
+            text = {
+                LazyColumn(
+                    Modifier.fillMaxWidth(),
+                    state =
+                        rememberLazyListState(
+                            options.indexOfFirst { it.first == selected }.coerceAtLeast(0)
+                        ),
+                ) {
+                    itemsIndexed(options, key = { _, option -> option.first }) { _, option ->
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .selectable(
+                                    selected = option.first == selected,
+                                    role = Role.RadioButton,
+                                    onClick = {
+                                        choosing = false
+                                        onSelect(option.first)
+                                    },
+                                )
+                                .padding(vertical = 12.dp)
+                                .testTag("$tag-${option.first}"),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = option.first == selected, onClick = null)
+                            Text(option.second, Modifier.padding(start = 12.dp), style = type.body)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { choosing = false }) { Text("Cancel") } },
+        )
+    }
     MenuAnchor(menu) {
         ListRow(
             title,
@@ -507,21 +561,27 @@ internal fun PickerRow(
             glyph = glyph,
             enabled = enabled && options.isNotEmpty(),
             onClick = {
-                menu.show(
-                    listOf(
-                        MenuSection(
-                            options.map { (key, label) ->
-                                ChromeAction(
-                                    "$tag-$key",
-                                    label,
-                                    checked = key == selected || label == value,
-                                ) {
-                                    onSelect(key)
+                if (!nativeMenu) choosing = true
+                else {
+                    // UIKit restores a focused Compose text field when its menu closes.
+                    // End that focus before presenting so the keyboard cannot cover choices.
+                    focus.clearFocus()
+                    menu.show(
+                        listOf(
+                            MenuSection(
+                                options.map { (key, label) ->
+                                    ChromeAction(
+                                        "$tag-$key",
+                                        label,
+                                        checked = key == selected,
+                                    ) {
+                                        onSelect(key)
+                                    }
                                 }
-                            }
+                            )
                         )
                     )
-                )
+                }
             },
             trailing = {
                 Row(verticalAlignment = Alignment.CenterVertically) {

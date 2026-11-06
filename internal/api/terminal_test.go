@@ -1,5 +1,8 @@
 package api
 
+// These tests start real tmux servers; they stay serial because concurrent
+// tmux server starts on loaded CI runners exit unexpectedly.
+
 import (
 	"bytes"
 	"context"
@@ -15,7 +18,7 @@ import (
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	terminalmanager "github.com/dbpprt/dieter/internal/host/terminal"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit"
 	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 	"google.golang.org/grpc"
@@ -24,7 +27,6 @@ import (
 )
 
 func TestTerminalWorkingDirectoryStaysInsideProjectAfterSymlinkResolution(t *testing.T) {
-	t.Parallel()
 	repository := filepath.Join(t.TempDir(), "repository")
 	inside := filepath.Join(repository, "nested")
 	outside := filepath.Join(t.TempDir(), "outside")
@@ -38,7 +40,7 @@ func TestTerminalWorkingDirectoryStaysInsideProjectAfterSymlinkResolution(t *tes
 		t.Fatal(err)
 	}
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Terminal fixture", Path: repository})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Terminal fixture", Path: repository})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +66,6 @@ func TestTerminalWorkingDirectoryStaysInsideProjectAfterSymlinkResolution(t *tes
 }
 
 func TestMachineTerminalWorkingDirectoryStaysInsideHome(t *testing.T) {
-	t.Parallel()
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatal(err)
@@ -85,13 +86,12 @@ func TestMachineTerminalWorkingDirectoryStaysInsideHome(t *testing.T) {
 }
 
 func TestTerminalGRPCPersistsAcrossWatchReconnect(t *testing.T) {
-	t.Parallel()
 	repository := filepath.Join(t.TempDir(), "repository")
 	if err := os.MkdirAll(filepath.Join(repository, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Terminal fixture", Path: repository})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Terminal fixture", Path: repository})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,6 @@ func TestTerminalGRPCPersistsAcrossWatchReconnect(t *testing.T) {
 }
 
 func TestTerminalPersistsAcrossServerReconstruction(t *testing.T) {
-	t.Parallel()
 	data := testkit.Store(t)
 	first := New(data, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if !first.terminals.Durable() {

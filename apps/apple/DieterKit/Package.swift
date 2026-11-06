@@ -21,25 +21,24 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../../../native/macos"),
-        .package(url: "https://github.com/apple/swift-certificates.git", from: "1.14.0"),
-        .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.3.0"),
-        // Vendored from 2.9.0 with duration-based Task.sleep calls replaced by
+        .package(url: "https://github.com/apple/swift-certificates.git", from: "1.21.0"),
+        .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.4.4"),
+        // Vendored from 2.11.0 with duration-based Task.sleep calls replaced by
         // nanosecond sleeps to avoid Swift #81771 (see its PATCHES.md).
         .package(path: "../../../third_party/grpc-swift-nio-transport"),
-        .package(url: "https://github.com/grpc/grpc-swift-protobuf.git", from: "2.4.0"),
-        .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.38.0"),
+        .package(url: "https://github.com/grpc/grpc-swift-protobuf.git", from: "2.5.0"),
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.101.0"),
+        .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.37.0"),
+        .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.39.0"),
     ],
     targets: [
         // Assembled from apps/kotlin by `gradlew link…Framework…` and
         // `xcodebuild -create-xcframework` (see apps/apple/README.md).
         .binaryTarget(name: "DieterCore", path: "../Frameworks/DieterCore.xcframework"),
-        // The upstream 151.0.0 and 151.0.1 tags share a manifest whose
-        // 151.0.0 asset URL was removed. Pin the surviving, byte-identical
-        // 151.0.1 release asset directly so clean SwiftPM builds stay valid.
         .binaryTarget(
             name: "WebRTC",
-            url: "https://github.com/stasel/WebRTC/releases/download/151.0.1/WebRTC-M151.xcframework.zip",
-            checksum: "6f3f5693383ce65763190c46ca9f2c4325c34b83681acb9db30f01488e15f1e0"
+            url: "https://github.com/stasel/WebRTC/releases/download/155.0.0/WebRTC-M155.xcframework.zip",
+            checksum: "cb9adacf2d6bbf598d1d9e3e6c16d8fb97ca987b5b697746891828f9dc068ffe"
         ),
         // The network API's generated SwiftProtobuf messages (dieter.v1 and
         // the gateway; scripts/generate-swift-proto.sh).
@@ -55,7 +54,7 @@ let package = Package(
             name: "DieterClientAPI",
             dependencies: ["DieterAPI", .product(name: "SwiftProtobuf", package: "swift-protobuf")]
         ),
-        // Generated grpc-swift v2 clients; only the Mac tests' fixture client uses them.
+        // Generated grpc-swift v2 clients: the relay tunnel and the Mac tests' fixture client.
         .target(
             name: "DieterAPIGRPC",
             dependencies: [
@@ -65,21 +64,24 @@ let package = Package(
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
             ]
         ),
-        // The native transport: the WebRTC control channel, daemon certificate
-        // pinning, and gRPC resolver targets. It re-exports the screen key map
-        // and clipboard content shared with the capture helper (native/macos).
+        // The native transport: the WebRTC control channel, relay tunnels,
+        // roster-pinned mutual TLS, and gRPC resolver targets. It re-exports
+        // the screen key map and clipboard content shared with the capture
+        // helper (native/macos).
         .target(
             name: "DieterTransport",
             dependencies: [
-                "WebRTC", "DieterAPI",
+                "WebRTC", "DieterAPI", "DieterAPIGRPC",
                 .product(name: "RemoteDesktopProtocol", package: "macos"),
-                .product(name: "X509", package: "swift-certificates"),
+                .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOSSL", package: "swift-nio-ssl"),
             ]
         ),
-        // The apps' side of the core: the RPC bridge, platform services,
-        // Keychain store, control channels, and the WebRTC screen media engine,
-        // which draws through each app's renderer.
+        // The apps' side of the core: the RPC bridge, relay tunnels, the
+        // device key, platform services, Keychain store, control channels, and
+        // the WebRTC screen media engine, which draws through each app's renderer.
         .target(
             name: "DieterPlatform",
             dependencies: [
@@ -93,9 +95,13 @@ let package = Package(
         .testTarget(
             name: "DieterPlatformTests",
             dependencies: [
-                "DieterPlatform", "DieterCore", "DieterTransport", "DieterClientAPI",
+                "DieterPlatform", "DieterCore", "DieterTransport", "DieterClientAPI", "DieterAPI", "DieterAPIGRPC",
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
+                .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOSSL", package: "swift-nio-ssl"),
+                .product(name: "X509", package: "swift-certificates"),
             ]
         ),
     ]

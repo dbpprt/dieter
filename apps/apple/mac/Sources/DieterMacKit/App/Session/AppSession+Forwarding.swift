@@ -16,11 +16,11 @@ extension AppSession {
     }
     var state: Dieter_V1_State {
         get { replica.state }
-        set { replica.state = newValue; refreshReplicaPresentation() }
+        set { replica.state = newValue; refreshSelectedCard(); refreshReplicaPresentation() }
     }
     var chats: [Dieter_V1_Card] {
         get { replica.chats }
-        set { replica.chats = newValue }
+        set { replica.chats = newValue; refreshSelectedCard() }
     }
     var chatProjects: [Dieter_V1_Project] {
         get { replica.chatProjects }
@@ -61,6 +61,7 @@ extension AppSession {
         set {
             guard conversationModel.selectedCardID != newValue else { return }
             conversationModel.selectedCardID = newValue
+            refreshSelectedCard()
             bindComposer()
             bindWorktree()
         }
@@ -70,6 +71,7 @@ extension AppSession {
         set {
             guard conversationModel.selectedChatID != newValue else { return }
             conversationModel.selectedChatID = newValue
+            refreshSelectedCard()
             bindComposer()
             bindWorktree()
         }

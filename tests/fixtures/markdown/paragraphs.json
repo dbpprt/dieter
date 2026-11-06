@@ -1,0 +1,21 @@
+[
+  {
+    "paragraph": ["A paragraph runs over", {"break": "soft"}, "several lines; each line break is kept."]
+  },
+  {
+    "paragraph": [
+      "A blank line starts the next paragraph.",
+      {"break": "soft"},
+      "Leading spaces of a line are dropped."
+    ]
+  },
+  {
+    "paragraph": [
+      "Two trailing spaces",
+      {"break": "hard"},
+      "make a hard break, and so does a backslash",
+      {"break": "hard"},
+      "at the end of a line."
+    ]
+  }
+]

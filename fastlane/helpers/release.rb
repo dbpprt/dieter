@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "erb"
+
 require "time"
 require_relative "dieter"
 
@@ -43,12 +45,25 @@ module Dieter
       }
     end
 
-    def ldflags(version, revision)
+    # The linker flags of a release binary. A daemon also pins the SHA-256 of
+    # its platform's prebuilt harness runtime archive, which it then downloads
+    # from its own release instead of running npm.
+    def ldflags(version, revision, harness_runtime_sha256: nil)
       package =
         "#{File.read(Dieter.path("go.mod"))[/^module (\S+)/, 1]}/internal/platform/buildinfo"
       built = Dieter.capture("git", "show", "-s", "--format=%cI", "HEAD").strip
-      "-s -w -X #{package}.ReleaseVersion=#{version} -X #{package}.SourceRevision=#{revision} -X #{package}.BuiltAt=#{built}"
+      flags =
+        "-s -w -X #{package}.ReleaseVersion=#{version} -X #{package}.SourceRevision=#{revision} -X #{package}.BuiltAt=#{built}"
+      return flags unless harness_runtime_sha256
+      unless harness_runtime_sha256.match?(/\A\h{64}\z/)
+        raise ArgumentError, "The harness runtime pin must be a SHA-256"
+      end
+      "#{flags} -X #{package}.HarnessRuntimeSHA256=#{harness_runtime_sha256}"
     end
+
+    # The release asset carrying one platform's prebuilt harness runtime
+    # (harness.RuntimeArchiveName).
+    def harness_runtime_archive(os, arch) = "dieter-harness-runtime-#{os}-#{arch}.tar.gz"
 
     # The stable notes: the CHANGELOG.md section of exactly this version.
     def changelog_section(text, version)
@@ -60,18 +75,27 @@ module Dieter
       body
     end
 
-    # Rewrites the version, release URL and SHA-256 of a tap formula or cask.
-    def homebrew(text, version:, sha256:, repository:)
-      unless text.scan(/^\s+version "/).length == 1 && text.scan(/^\s+sha256 "/).length == 1
-        raise ArgumentError, "Unexpected tap file layout"
+    # The tap's formula and cask, rendered from deploy/homebrew/*.rb.erb with the
+    # identity and the promoted release: tap path => asset whose digest it pins.
+    HOMEBREW = {
+      "Formula/dieter.rb" => %w[dieter.rb.erb dieter-darwin-arm64.tar.gz],
+      "Casks/dieter-app.rb" => %w[dieter-app.rb.erb Dieter-macOS-arm64.zip]
+    }.freeze
+
+    def homebrew(template, version:, sha256:, identity: Dieter.identity)
+      unless version.match?(/\A\d+\.\d+\.\d+\z/) && sha256.match?(/\A\h{64}\z/)
+        raise ArgumentError, "Homebrew needs a release version and a SHA-256"
       end
-      text
-        .sub(/^(\s+)version "[^"\n]*"/) { "#{Regexp.last_match(1)}version \"#{version}\"" }
-        .sub(/^(\s+)sha256 "[^"\n]*"/) { "#{Regexp.last_match(1)}sha256 \"#{sha256}\"" }
-        .gsub(
-          %r{https://github\.com/[^/\s"]+/[^/\s"]+/releases/download/v[^/\s"]+/},
-          "https://github.com/#{repository}/releases/download/v#{version}/"
-        )
+      values = {
+        version: version,
+        sha256: sha256,
+        repository: identity.fetch("repository"),
+        tap: identity.fetch("homebrew_tap"),
+        mac_bundle_id: "#{identity.fetch("bundle_prefix")}.mac"
+      }
+      ERB.new(File.read(Dieter.path("deploy/homebrew", template)), trim_mode: "-").result_with_hash(
+        values
+      )
     end
 
     # Retention: dev prereleases beyond the newest `count` and older than `days`.

@@ -40,17 +40,19 @@ final class AppSessionCoreIntegrationTests {
     }
 
     /// A launch as the e2e runner does it: an isolated state root, preference
-    /// suite, and the fixture's session from the command line.
+    /// suite, and the fixture's session and pairing code from the command line.
     func launch(root: URL, suite: String) throws -> AppSession {
         let tokenFile = root.appending(path: "session-token")
+        let pairingFile = root.appending(path: "pairing-code")
         if !FileManager.default.fileExists(atPath: tokenFile.path) {
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             try Data(try fixture("DIETER_ISOLATED_TOKEN").utf8).write(to: tokenFile)
+            try Data(try fixture("DIETER_ISOLATED_PAIRING_CODE").utf8).write(to: pairingFile)
         }
         let defaults = try #require(UserDefaults(suiteName: suite))
         let arguments = [
             "DieterMac", "--dieter-endpoint", "http://\(try fixture("DIETER_ISOLATED_ADDR"))",
-            "--dieter-access-token-file", tokenFile.path,
+            "--dieter-access-token-file", tokenFile.path, "--dieter-pairing-code-file", pairingFile.path,
         ]
         // An isolated storage root; the live core never sees an operator's state.
         return AppSession(
@@ -73,6 +75,10 @@ final class AppSessionCoreIntegrationTests {
         #expect(store.coreHost != nil, "a live launch runs the shared core")
         await store.connect()
         try await wait("connected") { store.phase.isConnected }
+        // The fixture's machine approves the launch's pairing code; only a
+        // trusted device reaches machines.
+        try await wait("trusted", timeout: .seconds(60)) { store.session.deviceTrust == .trusted }
+        #expect(store.session.pairingCode.isEmpty)
         // Every machine streams at once; nothing is chosen.
         try await wait("synced") { store.workspaceIsLive }
         try await wait("project") { store.projectDirectory[project] != nil }

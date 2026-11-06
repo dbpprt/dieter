@@ -107,15 +107,28 @@ struct BoardCardMachineName: View {
 
     var body: some View {
         if let machine = store.machine(for: card) {
-            let online = store.machineIsAvailable(machine)
-            Text(machine.name)
-                .font(.system(size: 11))
-                .foregroundStyle(online ? DieterTheme.tertiary : DieterTheme.tertiary.opacity(0.6))
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .help("Hosted on \(machine.name) · \(SharedRules.shared.machinePresence(online: online))")
-                .accessibilityLabel("Hosted on \(machine.name), \(online ? "online" : "offline")")
+            BoardCardMachineLabel(name: machine.name, online: store.machineIsAvailable(machine)).equatable()
         }
+    }
+}
+
+/// Presence refreshes that keep the name and availability leave it alone.
+private struct BoardCardMachineLabel: View, Equatable {
+    let name: String
+    let online: Bool
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.name == rhs.name && lhs.online == rhs.online
+    }
+
+    var body: some View {
+        Text(name)
+            .font(.system(size: 11))
+            .foregroundStyle(online ? DieterTheme.tertiary : DieterTheme.tertiary.opacity(0.6))
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .help("Hosted on \(name) · \(SharedRules.shared.machinePresence(online: online))")
+            .accessibilityLabel("Hosted on \(name), \(online ? "online" : "offline")")
     }
 }
 
@@ -200,6 +213,41 @@ struct BoardCardFooter: View {
     }
 }
 
+/// A card that exists only in this device's outbox fades and shows whether
+/// it waits or failed. The outbox changes only this, not the rich row.
+struct PendingCardMark: ViewModifier {
+    @Environment(DieterStore.self) private var store
+    let cardID: String
+    let inset: CGFloat
+
+    func body(content: Content) -> some View {
+        let pending = store.isPendingCard(cardID)
+        content
+            .opacity(pending ? 0.52 : 1)
+            .overlay(alignment: .bottomTrailing) {
+                if pending {
+                    let failed = store.isFailedOutboxItem(cardID)
+                    Image(systemName: failed ? "exclamationmark.circle.fill" : "clock")
+                        .font(.caption2)
+                        .foregroundStyle(failed ? DieterTheme.coral : DieterTheme.tertiary)
+                        .padding(inset)
+                }
+            }
+    }
+}
+
+/// The spinner while a card's labels are being saved.
+private struct BoardCardLabelProgress: View {
+    @Environment(DieterStore.self) private var store
+    let cardID: String
+
+    var body: some View {
+        if store.labelUpdatingCardIDs.contains(cardID) {
+            ProgressView().controlSize(.mini).padding(8)
+        }
+    }
+}
+
 struct BoardCardAvailability: ViewModifier {
     @Environment(DieterStore.self) private var store
     let projectID: String
@@ -264,6 +312,8 @@ struct BoardCardView: View {
     let board: Dieter_V1_Board?
     /// The lane the card shows in; a card dropped on it lands there, above it.
     let laneID: String
+    /// What the board view shows for the card; nil asks the store.
+    private let shownFlags: ClientBoardCardFlags?
     private var currentBoard: Dieter_V1_Board? { board ?? store.selectedBoard }
     @State private var renamePresented = false
     @State private var editPresented = false
@@ -276,19 +326,21 @@ struct BoardCardView: View {
 
     init(
         card: Dieter_V1_Card, board: Dieter_V1_Board? = nil, laneID: String? = nil,
-        dropState: BoardCardDropState = BoardCardDropState()
+        flags: ClientBoardCardFlags? = nil, dropState: BoardCardDropState = BoardCardDropState()
     ) {
         self.card = card
         self.board = board
         self.laneID = laneID ?? card.lane
+        shownFlags = flags
         _cardDrop = State(initialValue: dropState)
     }
 
     var labels: [Dieter_V1_Label] {
         currentBoard?.labels.filter { card.labelIds.contains($0.id) } ?? []
     }
-    /// What the board shows for this card and offers on it.
-    private var flags: ClientBoardCardFlags { store.cardFlags(card, board: currentBoard) }
+    /// What the board shows for this card and offers on it. Flags the lane
+    /// passes in keep the card out of the board's flag observation.
+    private var flags: ClientBoardCardFlags { shownFlags ?? store.cardFlags(card, board: currentBoard) }
     private func canMergePayload(_ value: String) -> Bool {
         guard let payload = BoardCardDragPayload(value), payload.cardID != card.id,
             let source = store.state.cards.first(where: { $0.id == payload.cardID })
@@ -382,25 +434,12 @@ struct BoardCardView: View {
                             .background(DieterTheme.panelSolid, in: Circle())
                             .padding(5)
                             .transition(.scale.combined(with: .opacity))
-                    } else if store.labelUpdatingCardIDs.contains(card.id) {
-                        ProgressView().controlSize(.mini).padding(8)
+                    } else {
+                        BoardCardLabelProgress(cardID: card.id)
                     }
                 }
                 .scaleEffect(labelDropTargeted ? 1.012 : 1)
-                .opacity(store.isPendingCard(card.id) ? 0.52 : 1)
-                .overlay(alignment: .bottomTrailing) {
-                    if store.isPendingCard(card.id) {
-                        Image(
-                            systemName: store.isFailedOutboxItem(card.id)
-                                ? "exclamationmark.circle.fill" : "clock"
-                        )
-                        .font(.caption2)
-                        .foregroundStyle(
-                            store.isFailedOutboxItem(card.id) ? DieterTheme.coral : DieterTheme.tertiary
-                        )
-                        .padding(7)
-                    }
-                }
+                .modifier(PendingCardMark(cardID: card.id, inset: 7))
                 .draggable(
                     BoardCardDragPayload(cardID: card.id, boardID: card.boardID, sourceLane: card.lane)
                         .encoded
@@ -522,69 +561,23 @@ struct BoardCardContextMenu: ViewModifier {
     @Environment(DieterStore.self) private var store
     let card: Dieter_V1_Card
     let currentBoard: Dieter_V1_Board?
-    let flags: ClientBoardCardFlags
+    /// What the card offers; nil asks the store when the menu is built.
+    let flags: ClientBoardCardFlags?
     let open: () -> Void
     @Binding var renamePresented: Bool
     @Binding var editPresented: Bool
     @Binding var renameText: String
 
     func body(content: Content) -> some View {
-        let starting = flags.starting
-        return
-            content
+        content
             .contextMenu {
-                if store.isFailedOutboxItem(card.id) {
-                    Button("Retry queued creation") { Task { await store.retryOutboxItem(card.id) } }
-                    Button("Discard queued creation", role: .destructive) {
-                        Task { await store.discardOutboxItem(card.id) }
-                    }
-                    Divider()
-                }
-                Button("Open conversation", action: open)
-                if flags.canStart || starting {
-                    Button(starting ? "Starting task…" : "Run task", systemImage: "play.fill") {
-                        Task { await store.start(card) }
-                    }
-                    .disabled(starting)
-                }
-                Group {
-                    if flags.canEditDraft { Button("Edit card…") { editPresented = true } }
-                    Button("Rename…") {
+                BoardCardMenuItems(
+                    card: card, currentBoard: currentBoard, flags: flags, open: open,
+                    edit: { editPresented = true },
+                    rename: {
                         renameText = card.title
                         renamePresented = true
-                    }
-                    Menu("Move to") {
-                        ForEach(currentBoard?.lanes ?? [], id: \.id) { lane in
-                            Button(lane.name) { Task { await store.move(card, lane: lane.id) } }
-                        }
-                    }
-                    if let labels = currentBoard?.labels, !labels.isEmpty {
-                        Menu("Labels") {
-                            ForEach(labels, id: \.id) { label in
-                                Button {
-                                    var ids = card.labelIds
-                                    if let index = ids.firstIndex(of: label.id) {
-                                        ids.remove(at: index)
-                                    } else {
-                                        ids.append(label.id)
-                                    }
-                                    Task { await store.setLabels(card, ids: ids) }
-                                } label: {
-                                    Label(
-                                        label.name,
-                                        systemImage: card.labelIds.contains(label.id)
-                                            ? "checkmark.circle.fill" : "circle"
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    if flags.canCancel {
-                        Button("Cancel turn", role: .destructive) { Task { await store.cancel(card) } }
-                    }
-                    Divider()
-                    Button("Archive", role: .destructive) { Task { await store.archive(card, archived: true) } }
-                }.modifier(BoardCardAvailability(projectID: card.projectID))
+                    })
             }
             .sheet(isPresented: $renamePresented) {
                 VStack(alignment: .leading, spacing: 14) {
@@ -609,6 +602,72 @@ struct BoardCardContextMenu: ViewModifier {
             .sheet(isPresented: $editPresented) {
                 EditCardSheet(card: card).environment(store)
             }
+    }
+}
+
+/// A card's context menu. Its outbox, availability, and rule reads belong to
+/// the menu, so they do not redraw every card that offers one.
+private struct BoardCardMenuItems: View {
+    @Environment(DieterStore.self) private var store
+    let card: Dieter_V1_Card
+    let currentBoard: Dieter_V1_Board?
+    let flags: ClientBoardCardFlags?
+    let open: () -> Void
+    let edit: () -> Void
+    let rename: () -> Void
+
+    var body: some View {
+        let flags = flags ?? store.cardFlags(card, board: currentBoard)
+        let starting = flags.starting
+        if store.isFailedOutboxItem(card.id) {
+            Button("Retry queued creation") { Task { await store.retryOutboxItem(card.id) } }
+            Button("Discard queued creation", role: .destructive) {
+                Task { await store.discardOutboxItem(card.id) }
+            }
+            Divider()
+        }
+        Button("Open conversation", action: open)
+        if flags.canStart || starting {
+            Button(starting ? "Starting task…" : "Run task", systemImage: "play.fill") {
+                Task { await store.start(card) }
+            }
+            .disabled(starting)
+        }
+        Group {
+            if flags.canEditDraft { Button("Edit card…", action: edit) }
+            Button("Rename…", action: rename)
+            Menu("Move to") {
+                ForEach(currentBoard?.lanes ?? [], id: \.id) { lane in
+                    Button(lane.name) { Task { await store.move(card, lane: lane.id) } }
+                }
+            }
+            if let labels = currentBoard?.labels, !labels.isEmpty {
+                Menu("Labels") {
+                    ForEach(labels, id: \.id) { label in
+                        Button {
+                            var ids = card.labelIds
+                            if let index = ids.firstIndex(of: label.id) {
+                                ids.remove(at: index)
+                            } else {
+                                ids.append(label.id)
+                            }
+                            Task { await store.setLabels(card, ids: ids) }
+                        } label: {
+                            Label(
+                                label.name,
+                                systemImage: card.labelIds.contains(label.id)
+                                    ? "checkmark.circle.fill" : "circle"
+                            )
+                        }
+                    }
+                }
+            }
+            if flags.canCancel {
+                Button("Cancel turn", role: .destructive) { Task { await store.cancel(card) } }
+            }
+            Divider()
+            Button("Archive", role: .destructive) { Task { await store.archive(card, archived: true) } }
+        }.modifier(BoardCardAvailability(projectID: card.projectID))
     }
 }
 

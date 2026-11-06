@@ -1,0 +1,18 @@
+[2026-10-22T08:19:03Z DEBUG sccache::config] Attempting to read config file at "/Users/dbpprt/Library/Application Support/Mozilla.sccache/config"
+[2026-10-22T08:19:03Z DEBUG sccache::config] Couldn't open config file: failed to open file `/Users/dbpprt/Library/Application Support/Mozilla.sccache/config`: No such file or directory (os error 2)
+[2026-10-22T08:19:03Z DEBUG sccache::commands] request_stats
+Statistics zeroed.
+[2026-10-22T08:19:18Z DEBUG sccache::config] Attempting to read config file at "/Users/dbpprt/Library/Application Support/Mozilla.sccache/config"
+[2026-10-22T08:19:18Z DEBUG sccache::config] Couldn't open config file: failed to open file `/Users/dbpprt/Library/Application Support/Mozilla.sccache/config`: No such file or directory (os error 2)
+[2026-10-22T08:19:18Z DEBUG sccache::commands] request_stats
+sccache nobase: source cold 24.17s; view fresh target dir 13.35s; Cache hits 17;Cache hits (Rust) 16;Cache misses 5;Cache misses (Rust) 5;Non-cacheable calls 12;
+[2026-10-22T08:19:44Z DEBUG sccache::config] Attempting to read config file at "/Users/dbpprt/Library/Application Support/Mozilla.sccache/config"
+[2026-10-22T08:19:44Z DEBUG sccache::config] Couldn't open config file: failed to open file `/Users/dbpprt/Library/Application Support/Mozilla.sccache/config`: No such file or directory (os error 2)
+[2026-10-22T08:19:44Z DEBUG sccache::config] Using basedirs for path normalization: ["/Volumes/External/dieter-spike/pathrelo/rs/"]
+[2026-10-22T08:19:44Z DEBUG sccache::commands] request_stats
+Statistics zeroed.
+[2026-10-22T08:19:59Z DEBUG sccache::config] Attempting to read config file at "/Users/dbpprt/Library/Application Support/Mozilla.sccache/config"
+[2026-10-22T08:19:59Z DEBUG sccache::config] Couldn't open config file: failed to open file `/Users/dbpprt/Library/Application Support/Mozilla.sccache/config`: No such file or directory (os error 2)
+[2026-10-22T08:19:59Z DEBUG sccache::config] Using basedirs for path normalization: ["/Volumes/External/dieter-spike/pathrelo/rs/"]
+[2026-10-22T08:19:59Z DEBUG sccache::commands] request_stats
+sccache base: source cold 24.62s; view fresh target dir 13.63s; Cache hits 17;Cache hits (Rust) 16;Cache misses 5;Cache misses (Rust) 5;Non-cacheable calls 12;

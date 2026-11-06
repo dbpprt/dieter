@@ -9,16 +9,17 @@ import (
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/platform/fault"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/commands"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 func (api *cardsAPI) ListArchivedCards(_ context.Context, request *dieterv1.BoardRef) (*dieterv1.CardsResponse, error) {
-	board, err := api.server.store.ResolveBoard("", request.GetBoardId())
+	board, err := api.server.store.Kanban.ResolveBoard("", request.GetBoardId())
 	if err != nil {
 		return nil, err
 	}
-	values, err := api.server.store.ListCards(store.CardFilter{
+	values, err := api.server.store.Kanban.ListCards(kanban.CardFilter{
 		Board: board.ID, Scope: model.ConversationScopeBoard, IncludeArchived: true,
 	})
 	if err != nil {
@@ -50,11 +51,11 @@ func (api *cardsAPI) ForkChat(_ context.Context, request *dieterv1.ForkChatReque
 }
 
 func (api *cardsAPI) ListChats(_ context.Context, request *dieterv1.ListChatsRequest) (*dieterv1.ChatsResponse, error) {
-	projects, err := api.server.store.ListProjects()
+	projects, err := api.server.store.Kanban.ListProjects()
 	if err != nil {
 		return nil, err
 	}
-	chats, err := api.server.store.ListCards(store.CardFilter{
+	chats, err := api.server.store.Kanban.ListCards(kanban.CardFilter{
 		Scope: model.ConversationScopeChat, IncludeArchived: request.GetIncludeArchived(),
 	})
 	if err != nil {
@@ -83,7 +84,7 @@ func (api *cardsAPI) ListChats(_ context.Context, request *dieterv1.ListChatsReq
 }
 
 func (api *cardsAPI) GetCard(_ context.Context, request *dieterv1.GetCardRequest) (*dieterv1.CardDetail, error) {
-	value, err := api.server.store.CardDetail(request.GetCardId())
+	value, err := api.server.store.Kanban.CardDetail(request.GetCardId())
 	if err != nil {
 		return nil, err
 	}
@@ -91,36 +92,36 @@ func (api *cardsAPI) GetCard(_ context.Context, request *dieterv1.GetCardRequest
 }
 
 func (api *cardsAPI) MoveCard(_ context.Context, request *dieterv1.MoveCardRequest) (*dieterv1.Card, error) {
-	before, err := api.server.store.ResolveCard(request.GetCardId())
+	before, err := api.server.store.Kanban.ResolveCard(request.GetCardId())
 	if err != nil {
 		return nil, err
 	}
 	if request.GetLane() == model.LaneRunning && before.InitialPromptSentAt == "" {
-		if err = api.server.store.RequireLocalCard(before); err != nil {
+		if err = api.server.store.Kanban.RequireLocalCard(before); err != nil {
 			return nil, err
 		}
 	}
-	value, err := api.server.store.MoveCardBetween(before.ID, request.GetLane(), request.GetAfterCardId(), request.GetBeforeCardId(), request.GetExpectedRevision())
+	value, err := api.server.store.Kanban.MoveCardBetween(before.ID, request.GetLane(), request.GetAfterCardId(), request.GetBeforeCardId(), request.GetExpectedRevision())
 	if err != nil {
 		return nil, err
 	}
 	if value.Lane == model.LaneRunning && value.InitialPromptSentAt == "" {
 		updates, startErr := api.server.app.StartCard(value.ID, "", value.Provider, value.Model, "")
 		if startErr != nil {
-			_, _ = api.server.store.MoveCard(value.ID, before.Lane, nil)
+			_, _ = api.server.store.Kanban.MoveCard(value.ID, before.Lane, nil)
 			return nil, startErr
 		}
 		go drainUpdates(updates)
 		// StartCard durably updates the runtime and initial prompt marker before
 		// returning. Resolve again so MoveCard callers never receive the
 		// stale "running lane / idle runtime" projection.
-		value, _ = api.server.store.ResolveCard(value.ID)
+		value, _ = api.server.store.Kanban.ResolveCard(value.ID)
 	}
 	if value.Lane == model.LaneDone {
-		if _, err := api.server.store.ArchiveDoneCards(time.Now()); err != nil {
+		if _, err := api.server.store.Kanban.ArchiveDoneCards(time.Now()); err != nil {
 			return nil, err
 		}
-		value, _ = api.server.store.ResolveCard(value.ID)
+		value, _ = api.server.store.Kanban.ResolveCard(value.ID)
 	}
 	return protoCard(value), nil
 }
@@ -132,20 +133,20 @@ func (api *cardsAPI) StartCard(_ context.Context, request *dieterv1.StartCardReq
 	}
 	api.server.commandMu.Lock()
 	defer api.server.commandMu.Unlock()
-	if result, ok, err := api.server.store.LoadCommandResult(clientID, commandID); err != nil {
+	if result, ok, err := api.server.store.Commands.Load(clientID, commandID); err != nil {
 		return nil, err
 	} else if ok {
 		if result.Kind != "start_card" || result.CardID != request.GetCardId() {
 			return nil, fault.New(fault.AlreadyExists, "command_id was already used for another operation")
 		}
-		card, resolveErr := api.server.store.ResolveCard(result.CardID)
+		card, resolveErr := api.server.store.Kanban.ResolveCard(result.CardID)
 		if resolveErr != nil {
 			return nil, resolveErr
 		}
 		return &dieterv1.StartCardResponse{Card: protoCard(card), Accepted: true, Replayed: true, CommandId: commandID}, nil
 	}
 
-	card, err := api.server.store.ResolveCard(request.GetCardId())
+	card, err := api.server.store.Kanban.ResolveCard(request.GetCardId())
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +155,7 @@ func (api *cardsAPI) StartCard(_ context.Context, request *dieterv1.StartCardReq
 	}
 	if card.InitialPromptSentAt != "" {
 		if model.RuntimeHoldsTurn(card.Runtime) {
-			if saveErr := api.server.store.SaveCommandResult(clientID, commandID, store.CommandResult{Kind: "start_card", CardID: card.ID}); saveErr != nil {
+			if saveErr := api.server.store.Commands.Save(clientID, commandID, commands.Result{Kind: "start_card", CardID: card.ID}); saveErr != nil {
 				return nil, saveErr
 			}
 			return &dieterv1.StartCardResponse{Card: protoCard(card), Accepted: true, AlreadyRunning: true, CommandId: commandID}, nil
@@ -167,18 +168,18 @@ func (api *cardsAPI) StartCard(_ context.Context, request *dieterv1.StartCardReq
 		return nil, err
 	}
 	go drainUpdates(updates)
-	fresh, err := api.server.store.ResolveCard(card.ID)
+	fresh, err := api.server.store.Kanban.ResolveCard(card.ID)
 	if err != nil {
 		return nil, err
 	}
-	if err := api.server.store.SaveCommandResult(clientID, commandID, store.CommandResult{Kind: "start_card", CardID: fresh.ID}); err != nil {
+	if err := api.server.store.Commands.Save(clientID, commandID, commands.Result{Kind: "start_card", CardID: fresh.ID}); err != nil {
 		return nil, err
 	}
 	return &dieterv1.StartCardResponse{Card: protoCard(fresh), Accepted: true, CommandId: commandID}, nil
 }
 
 func (api *cardsAPI) SetCardLabels(_ context.Context, request *dieterv1.SetCardLabelsRequest) (*dieterv1.Card, error) {
-	value, err := api.server.store.SetCardLabels(request.GetCardId(), request.GetLabelIds())
+	value, err := api.server.store.Kanban.SetCardLabels(request.GetCardId(), request.GetLabelIds())
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +194,7 @@ func (api *cardsAPI) CancelCard(_ context.Context, request *dieterv1.GetCardRequ
 }
 
 func (api *cardsAPI) RenameCard(_ context.Context, request *dieterv1.RenameCardRequest) (*dieterv1.Card, error) {
-	value, err := api.server.store.RenameCard(request.GetCardId(), request.GetTitle())
+	value, err := api.server.store.Kanban.RenameCard(request.GetCardId(), request.GetTitle())
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +210,7 @@ func (api *cardsAPI) MergeCard(_ context.Context, request *dieterv1.MergeCardReq
 }
 
 func (api *cardsAPI) UpdateCard(_ context.Context, request *dieterv1.UpdateCardRequest) (*dieterv1.Card, error) {
-	var settings []store.DraftAgentSettings
+	var settings []kanban.DraftAgentSettings
 	if config := request.GetAgentSettings(); config != nil {
 		provider := config.GetProvider()
 		if provider == "" {
@@ -231,9 +232,9 @@ func (api *cardsAPI) UpdateCard(_ context.Context, request *dieterv1.UpdateCardR
 		if err != nil {
 			return nil, err
 		}
-		settings = append(settings, store.DraftAgentSettings{Provider: adapter.ID, Model: selected.ID, Effort: effort, ProviderOptions: options})
+		settings = append(settings, kanban.DraftAgentSettings{Provider: adapter.ID, Model: selected.ID, Effort: effort, ProviderOptions: options})
 	}
-	value, err := api.server.store.UpdateCard(request.GetCardId(), request.GetTitle(), request.GetInitialPrompt(), settings...)
+	value, err := api.server.store.Kanban.UpdateCard(request.GetCardId(), request.GetTitle(), request.GetInitialPrompt(), settings...)
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +242,7 @@ func (api *cardsAPI) UpdateCard(_ context.Context, request *dieterv1.UpdateCardR
 }
 
 func (api *cardsAPI) ArchiveCard(_ context.Context, request *dieterv1.ArchiveCardRequest) (*dieterv1.Card, error) {
-	value, err := api.server.store.ArchiveCard(request.GetCardId(), request.GetArchived())
+	value, err := api.server.store.Kanban.ArchiveCard(request.GetCardId(), request.GetArchived())
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +250,7 @@ func (api *cardsAPI) ArchiveCard(_ context.Context, request *dieterv1.ArchiveCar
 }
 
 func (api *cardsAPI) PinChat(_ context.Context, request *dieterv1.PinChatRequest) (*dieterv1.Card, error) {
-	value, err := api.server.store.PinChat(request.GetCardId(), request.GetPinned())
+	value, err := api.server.store.Kanban.PinChat(request.GetCardId(), request.GetPinned())
 	if err != nil {
 		return nil, err
 	}

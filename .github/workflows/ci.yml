@@ -13,12 +13,23 @@ on:
         description: Run every component, every Maestro flow and the iPad layout
         type: boolean
         default: false
+  # Full or isolated iPhone qualification on demand, without a release.
+  workflow_dispatch:
+    inputs:
+      full:
+        description: Run every component, every Maestro flow and the iPad layout
+        type: boolean
+        default: true
+      ios_only:
+        description: Run only Release iPhone verification (overrides full)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.full && 'full' || 'affected' }}
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.ios_only && 'ios' || inputs.full && 'full' || 'affected' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -47,7 +58,7 @@ jobs:
       harness-runtime: ${{ steps.mode.outputs.full == 'true' || steps.filter.outputs.harness-runtime == 'true' }}
       kotlin: ${{ steps.mode.outputs.full == 'true' || steps.filter.outputs.kotlin == 'true' || steps.filter.outputs.go == 'true' }}
       apple: ${{ steps.mode.outputs.full == 'true' || steps.filter.outputs.apple == 'true' }}
-      ios: ${{ steps.mode.outputs.full == 'true' || steps.filter.outputs.ios == 'true' }}
+      ios: ${{ inputs.ios_only == true || steps.mode.outputs.full == 'true' || steps.filter.outputs.ios == 'true' }}
       android: ${{ steps.mode.outputs.full == 'true' || steps.filter.outputs.android == 'true' }}
       site: ${{ steps.mode.outputs.full == 'true' || steps.filter.outputs.site == 'true' }}
       deploy-gateway: ${{ steps.mode.outputs.full == 'true' || steps.filter.outputs.deploy-gateway == 'true' }}
@@ -57,30 +68,34 @@ jobs:
         with:
           persist-credentials: false
       - id: mode
-        run: echo "full=${{ inputs.full == true }}" >> "$GITHUB_OUTPUT"
+        run: echo "full=${{ inputs.full == true && inputs.ios_only != true }}" >> "$GITHUB_OUTPUT"
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
-        if: steps.mode.outputs.full != 'true'
+        if: steps.mode.outputs.full != 'true' && inputs.ios_only != true
         with:
           filters: .github/filters.yml
-          list-files: json
       - name: Summarize the selection
         env:
           FULL: ${{ steps.mode.outputs.full }}
+          IOS_ONLY: ${{ inputs.ios_only == true }}
           CHANGES: ${{ steps.filter.outputs.changes || '[]' }}
           OUTPUTS: ${{ toJSON(steps.filter.outputs) }}
         run: |
           {
             echo "### Selected components"
-            if [[ "$FULL" == true ]]; then echo "Full qualification: every component, every flow."; exit 0; fi
-            echo "| Component | Why (matching paths) |"
-            echo "|---|---|"
-            for name in $(jq -r '.[]' <<<"$CHANGES"); do
-              files=$(jq -r --arg key "${name}_files" '.[$key] // "[]" | fromjson | .[:3] | join(", ")' <<<"$OUTPUTS")
-              count=$(jq -r --arg key "${name}_count" '.[$key] // "0"' <<<"$OUTPUTS")
-              echo "| \`$name\` | $files$([[ $count -gt 3 ]] && echo " … ($count files)") |"
-            done
-            [[ "$CHANGES" == "[]" ]] && echo "| (none) | no component paths changed |"
+            if [[ "$FULL" == true ]]; then
+              echo "Full qualification: every component, every flow."
+            elif [[ "$IOS_ONLY" == true ]]; then
+              echo "Release iPhone verification only."
+            elif [[ "$CHANGES" == "[]" ]]; then
+              echo "No component paths changed (see .github/filters.yml)."
+            else
+              echo "| Component | Changed files matching .github/filters.yml |"
+              echo "|---|---|"
+              for name in $(jq -r '.[]' <<<"$CHANGES"); do
+                echo "| \`$name\` | $(jq -r --arg key "${name}_count" '.[$key] // "?"' <<<"$OUTPUTS") |"
+              done
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   go:
@@ -166,8 +181,8 @@ jobs:
       - name: End-to-end tests
         run: |
           mkdir -p tmp/junit
-          packages=$(grep -rl --include='*_test.go' '^//go:build e2e' cmd internal tools | xargs -n1 dirname | sort -u | sed 's|^|./|')
-          gotestsum --format github-actions --junitfile tmp/junit/go-e2e.xml -- -tags e2e -timeout 20m $packages
+          mapfile -t packages < <(grep -rl --include='*_test.go' '^//go:build e2e' cmd internal tools | xargs -n1 dirname | sort -u | sed 's|^|./|')
+          gotestsum --format github-actions --junitfile tmp/junit/go-e2e.xml -- -tags e2e -timeout 20m "${packages[@]}"
       - uses: mikepenz/action-junit-report@6ef3fdcfcd5f0b5d14df3e659ef19b8c6820f93d # v6.6.1
         if: always()
         with:
@@ -216,7 +231,7 @@ jobs:
           tools: java go node ruby gem:bundler
           bundle: "true"
           harness: "true"
-      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       - name: Unit and fixture end-to-end tests
@@ -253,7 +268,7 @@ jobs:
           tools: java go node ruby gem:bundler xcbeautify just buf protoc-gen-go protoc-gen-go-grpc protoc-gen-connect-go
           bundle: "true"
           harness: "true"
-      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       # Compiler state keyed by toolchain and dependency locks only (never the
@@ -269,6 +284,14 @@ jobs:
             apps/apple/mac/.build
             apps/apple/ios/.build/DerivedData/SourcePackages
             native/macos/.build
+      - name: Kotlin macOS tests
+        run: bundle exec fastlane core_apple_test
+      - name: Swift tests (count-guarded) and privacy helper packaging
+        run: |
+          bundle exec fastlane mac test_unit
+          bundle exec fastlane mac privacy_test
+      # After the test lanes: building the Swift protoc plugins resolves
+      # DieterKit, whose DieterCore.xcframework they assemble.
       - name: Swift generated code
         run: |
           echo "::group::buf generate (Swift)"
@@ -278,17 +301,11 @@ jobs:
             echo "::error title=Generated Swift drift::Run 'just generate' on macOS and commit the result."
             exit 1
           fi
-      - name: Kotlin macOS tests
-        run: bundle exec fastlane core_apple_test
-      - name: Swift tests (count-guarded) and privacy helper packaging
-        run: |
-          bundle exec fastlane mac test_unit
-          bundle exec fastlane mac privacy_test
       - name: Swift formatting of this change
         if: env.CHANGE_BASE != ''
         run: |
           git fetch --no-tags --depth=200 origin "$CHANGE_BASE"
-          ruby fastlane/helpers/format.rb --base "$CHANGE_BASE"
+          ruby fastlane/helpers/format.rb --base "$CHANGE_BASE" --only swift
       - name: Prepare the hosted desktop
         run: swift fastlane/helpers/mac_ci_desktop.swift
       - name: Mac flows
@@ -321,7 +338,10 @@ jobs:
     needs: plan
     if: needs.plan.outputs.ios == 'true'
     runs-on: macos-26
-    timeout-minutes: 75
+    # Measured cold Release framework builds take 108 minutes, followed by
+    # ~15 minutes for Xcode. Retain the full 25-minute Maestro deadline plus
+    # setup, evidence upload, cache saving, and cleanup.
+    timeout-minutes: 165
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.5.app/Contents/Developer
     steps:
@@ -333,7 +353,7 @@ jobs:
           tools: java go node ruby gem:bundler xcbeautify maestro
           bundle: "true"
           harness: "true"
-      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       - *apple-cache-restore
@@ -343,10 +363,11 @@ jobs:
           xcrun simctl list runtimes -j | jq -e --arg v "$sdk" '.runtimes[] | select(.isAvailable and .platform == "iOS" and (.version | startswith($v)))' >/dev/null \
             || xcodebuild -downloadPlatform iOS -buildVersion "$sdk"
       - name: iPhone flows
-        run: bundle exec fastlane ios e2e tags:${{ needs.plan.outputs.full == 'true' && 'full' || 'smoke' }} profile:ios-iphone
+        # Kotlin/Native optimizer failures can pass Debug and crash the shipped app.
+        run: bundle exec fastlane ios e2e configuration:release tags:${{ needs.plan.outputs.full == 'true' && 'full' || 'smoke' }} profile:ios-iphone
       - name: iPad flows
         if: needs.plan.outputs.full == 'true'
-        run: bundle exec fastlane ios e2e tags:full profile:ios-ipad
+        run: bundle exec fastlane ios e2e configuration:release tags:full profile:ios-ipad
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: github.ref == 'refs/heads/main' && !cancelled()
         with:
@@ -385,7 +406,7 @@ jobs:
       - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         with:
           packages: platforms;android-37.1 build-tools;37.0.0
-      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       - name: Lint and unit tests
@@ -411,7 +432,9 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 600
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-audio -no-boot-anim
-          script: bundle exec fastlane android e2e tags:${{ needs.plan.outputs.full == 'true' && 'full' || 'smoke' }} profile:android-ci
+          script: |
+            bundle exec fastlane android e2e tags:${{ needs.plan.outputs.full == 'true' && 'full' || 'smoke' }} profile:android-ci
+            bundle exec fastlane android e2e desktop:true tags:${{ needs.plan.outputs.full == 'true' && 'full' || 'smoke' }} profile:android-ci
       - uses: mikepenz/action-junit-report@6ef3fdcfcd5f0b5d14df3e659ef19b8c6820f93d # v6.6.1
         if: always()
         with:
@@ -475,7 +498,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup
         with:
-          tools: ruby gem:bundler just actionlint
+          tools: ruby gem:bundler just actionlint shellcheck
           bundle: "true"
       - name: Workflows
         run: just lint-workflows

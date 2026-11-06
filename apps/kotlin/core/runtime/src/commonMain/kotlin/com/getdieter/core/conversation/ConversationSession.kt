@@ -20,6 +20,8 @@ import com.getdieter.core.board.Runtimes
 import com.getdieter.core.composition.Attachments
 import com.getdieter.core.composition.ConversationDrafts
 import com.getdieter.core.composition.DraftKey
+import com.getdieter.core.connection.MachineSync
+import com.getdieter.core.connection.SyncState
 import com.getdieter.core.outbox.Outbox
 import com.getdieter.core.outbox.OutboxPolicy
 import com.getdieter.core.outbox.OutboxView
@@ -32,6 +34,7 @@ import com.getdieter.core.selection.AgentControls
 import com.getdieter.core.selection.Selections
 import com.getdieter.core.session.MachineSessions
 import com.getdieter.core.store.WorkspaceStore
+import com.getdieter.core.sync.TranscriptFreshness
 import com.getdieter.core.v1.OutboxPlacement
 import com.getdieter.core.v1.OutboxState
 import kotlin.coroutines.cancellation.CancellationException
@@ -42,6 +45,7 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
@@ -50,11 +54,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class ConversationConfig(
     /** Messages per unary read and history page. */
@@ -91,6 +97,8 @@ data class ConversationView(
     val awaitingReply: Boolean = false,
     /** A failed turn's retry was sent and has not run yet. */
     val retrying: Boolean = false,
+    /** A newer account activity preview; used for live status, never as full transcript content. */
+    val activity: Conversation? = null,
 ) {
     val card: Card?
         get() = presented?.detail?.card
@@ -129,6 +137,7 @@ internal constructor(
     private val onTranscript: (String, TranscriptState) -> Unit,
     /** A machine's agent catalog once it has loaded, else null. */
     private val catalog: (daemonId: String) -> List<Harness>? = { null },
+    private val syncs: StateFlow<Map<String, MachineSync>>? = null,
 ) {
     private val scope =
         CoroutineScope(parent.coroutineContext + SupervisorJob(parent.coroutineContext.job))
@@ -142,6 +151,16 @@ internal constructor(
         )
     val view: StateFlow<ConversationView> = mutableView.asStateFlow()
     private var transcript = cached ?: TranscriptState()
+    private var confirmed = false
+    private var interrupted = false
+    private var paused = false
+    private var readError: String? = null
+    private var refreshedAt: Instant? = null
+    private var latestActivity: Conversation? = null
+    private var recovery: Job? = null
+    internal val updatesPaused: Boolean
+        get() = paused
+
     private var historyRequest = 0L
     private val toolOutputs = LinkedHashMap<String, ToolOutput>()
 
@@ -163,10 +182,16 @@ internal constructor(
 
     internal fun start() {
         scope.launch { outbox.view.collect { publish() } }
-        // Runtime and lane changes arrive through the workspace, not the transcript.
+        // Account activity can advance while the full transcript stream is delayed. Observe both
+        // sources, including activity-only changes that do not alter the card's metadata.
         scope.launch {
-            store.state.map { it.card(cardId) }.distinctUntilChanged().collect { publish() }
+            store.state
+                .map { it.card(cardId) to it.activities[cardId] }
+                .distinctUntilChanged()
+                .collect { publish() }
         }
+        scope.launch { syncs?.collect { publish() } }
+        scope.launch { sessions.gateways.collect { publish() } }
         scope.launch {
             try {
                 var id = cardId
@@ -184,9 +209,9 @@ internal constructor(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
-                mutableView.update {
-                    it.copy(loading = false, syncing = false, error = Failures.message(error))
-                }
+                paused = true
+                readError = Failures.message(error)
+                publish()
             }
         }
         publish()
@@ -201,11 +226,10 @@ internal constructor(
         // frame.
         var requireSnapshot = transcript.snapshot == null
         var failures = 0
-        var delivered = false
-        val hedge =
-            if (requireSnapshot) scope.launch { hedgedRead(owner, id) { delivered } } else null
         while (true) {
             var received = false
+            // Disconnected, there is nothing to retry: subscribe once a gateway session exists.
+            val gateway = sessions.gateways.filterNotNull().first()
             try {
                 val after = if (requireSnapshot) 0L else transcript.lastSeq
                 sessions.call(owner) { client ->
@@ -224,8 +248,6 @@ internal constructor(
                         try {
                             for (update in updates) {
                                 received = true
-                                delivered = true
-                                hedge?.cancel()
                                 accept(update)
                                 requireSnapshot = false
                             }
@@ -244,52 +266,73 @@ internal constructor(
                         Failures.kind(error) != FailureKind.UNAUTHENTICATED
                 ) {
                     logger.info(TAG, "conversation $id stopped: ${Failures.message(error)}")
-                    mutableView.update {
-                        it.copy(
-                            syncing = false,
-                            loading = false,
-                            error = "Conversation updates paused: ${Failures.message(error)}",
-                        )
-                    }
+                    paused = true
+                    readError = "Conversation updates paused: ${Failures.message(error)}"
+                    publish()
                     return
                 }
             }
             failures = if (received) 1 else failures + 1
-            mutableView.update { it.copy(syncing = true) }
-            delay(resubscribeDelay(failures))
+            interrupted = true
+            publish()
+            // A new session, e.g. back in the foreground, resubscribes at once.
+            val replaced =
+                withTimeoutOrNull(resubscribeDelay(failures)) {
+                    sessions.gateways.first { it !== gateway }
+                    true
+                } == true
+            if (replaced) failures = 0
         }
     }
 
-    /** Races a slow first frame with a unary read; whichever arrives first is shown. */
-    private suspend fun hedgedRead(owner: String, id: String, delivered: () -> Boolean) {
+    /**
+     * A delayed first frame (cached opens too), or activity ahead of a quiet/stalled transcript,
+     * gets a bounded unary read. Healthy idle watches need no periodic polling or silence timeout.
+     */
+    private suspend fun recover() {
         delay(config.hedgeDelay)
-        if (delivered()) return
-        try {
-            val snapshot =
-                sessions.call(owner, config.readTimeout) {
-                    it.GetConversation()
-                        .execute(GetConversationRequest(card_id = id, limit = config.pageSize))
-                }
-            if (!delivered()) accept(ConversationUpdate(snapshot = snapshot))
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Throwable) {
-            if (!delivered())
-                mutableView.update {
-                    it.copy(
-                        error = "Could not refresh conversation: ${Failures.message(error)}",
-                        loading = false,
-                    )
-                }
+        while (needsRead() && !paused) {
+            val owner = daemonId ?: return
+            sessions.gateways.filterNotNull().first()
+            if (!needsRead()) return
+            if (syncs?.value?.get(owner)?.state in setOf(SyncState.OFFLINE, SyncState.INCOMPATIBLE))
+                return
+            try {
+                val snapshot =
+                    sessions.call(owner, config.readTimeout) {
+                        it.GetConversation()
+                            .execute(
+                                GetConversationRequest(card_id = cardId, limit = config.pageSize)
+                            )
+                    }
+                accept(ConversationUpdate(snapshot = snapshot))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                readError = "Could not refresh conversation: ${Failures.message(error)}"
+                publish()
+            }
+            if (!needsRead()) return
+            delay(config.readTimeout)
         }
     }
 
     private fun accept(update: ConversationUpdate) {
+        val previous = transcript.conversation
+        val incoming =
+            update.snapshot?.conversation
+                ?: Conversation(last_seq = update.last_seq, updated_at = update.updated_at)
         val next = ConversationReducer.apply(transcript, update, config.retention)
-        mutableView.update {
-            it.copy(loading = false, syncing = false, error = null, refreshedAt = clock.now())
+        if (previous == null || TranscriptFreshness.compare(incoming, previous) >= 0) {
+            confirmed = true
+            interrupted = false
+            if (!paused) readError = null
+            refreshedAt = clock.now()
         }
-        if (next == transcript) return
+        if (next == transcript) {
+            publish()
+            return
+        }
         transcript = next
         adopt()
     }
@@ -720,25 +763,67 @@ internal constructor(
     }
 
     fun close() {
+        // Include local queue edits and history changes, not only the last received frame.
+        if (transcript.snapshot != null) onTranscript(cardId, transcript)
         scope.cancel()
     }
 
     // --- Presentation --------------------------------------------------------------
 
+    private fun needsRead(): Boolean {
+        if (!OutboxPolicy.isServerBacked(cardId)) return false
+        val current = transcript.conversation
+        return !confirmed ||
+            interrupted ||
+            (latestActivity?.let {
+                current == null || TranscriptFreshness.compare(it, current) > 0
+            } == true) ||
+            (store.state.value.card(cardId)?.response_seq ?: 0) > (current?.last_seq ?: 0)
+    }
+
     private fun publish() {
+        store.state.value.activities[cardId]?.let { incoming ->
+            if (latestActivity?.let { TranscriptFreshness.compare(incoming, it) > 0 } != false)
+                latestActivity = incoming
+        }
         val outboxView = outbox.view.value
         val presented = presentedSnapshot(outboxView)
+        val activity = latestActivity?.takeIf {
+            transcript.conversation?.let { current -> TranscriptFreshness.compare(it, current) > 0 }
+                ?: true
+        }
+        val health = daemonId?.let { syncs?.value?.get(it) }
+        val healthError =
+            when (health?.state) {
+                SyncState.OFFLINE ->
+                    "The conversation's machine is offline. Displayed activity may be out of date."
+                SyncState.STALE ->
+                    "The conversation's machine is not responding. Displayed activity may be out of date."
+                SyncState.INCOMPATIBLE -> "The conversation's machine needs an update."
+                else -> null
+            }
+        val needsRead = needsRead()
         settleAwaiting(presented, outboxView)
         mutableView.update {
             it.copy(
                 transcript = transcript,
                 presented = presented,
-                loading = it.loading && presented?.conversation == null,
+                activity = activity,
+                loading =
+                    presented?.conversation == null &&
+                        readError == null &&
+                        healthError == null &&
+                        !paused,
+                syncing = !it.pending && !paused && (needsRead || health?.current == false),
+                refreshedAt = refreshedAt,
+                error = healthError ?: readError,
                 awaitingReply = awaiting != null,
                 retrying = awaiting?.retry == true,
             )
         }
         reconcileAgent()
+        if (needsRead && !paused && daemonId != null && recovery?.isActive != true)
+            recovery = scope.launch { recover() }
     }
 
     /** A reply, a turn that started and ended, or a rejected send ends the wait. */

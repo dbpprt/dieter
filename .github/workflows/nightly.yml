@@ -59,6 +59,7 @@ jobs:
     with:
       channel: dev
       qualified_by: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    secrets: inherit
 
   prune:
     needs: release
@@ -81,6 +82,7 @@ jobs:
         with:
           tools: ruby gem:bundler
           bundle: "true"
+          cache-scope: release
       - name: Delete expired dev prereleases (tags stay)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

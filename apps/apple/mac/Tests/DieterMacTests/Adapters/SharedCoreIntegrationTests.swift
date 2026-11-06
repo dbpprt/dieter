@@ -91,7 +91,8 @@ struct SharedCoreIntegrationTests {
             configuration: CoreHostConfiguration(
                 root: root, clientVersion: "0.0.0-dev.0", logSubsystem: DistributionIdentity.macBundleID + ".tests"),
             platform: .mac(
-                credentialsFile: root.appending(path: "gateway-sessions.json"), notificationsEnabled: { false }),
+                credentialsFile: root.appending(path: "gateway-sessions.json"),
+                deviceKeyFile: root.appending(path: "device-key.json"), notificationsEnabled: { false }),
             defaults: defaults)
     }
 
@@ -120,6 +121,8 @@ struct SharedCoreIntegrationTests {
                 adopt.gatewayURL = "http://\(try! fixture("DIETER_ISOLATED_ADDR"))"
                 adopt.sessionToken = try! fixture("DIETER_ISOLATED_TOKEN")
                 adopt.name = "Isolated"
+                // The fixture's machine approves this code, so the core pairs this device.
+                adopt.pairingCode = try! fixture("DIETER_ISOLATED_PAIRING_CODE")
             }
         }
         try await wait("connected") { folded.session.phase == .connected }

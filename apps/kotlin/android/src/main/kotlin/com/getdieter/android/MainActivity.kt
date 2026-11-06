@@ -1,13 +1,18 @@
 package com.getdieter.android
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -16,7 +21,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import com.getdieter.android.update.AppUpdateDialog
 import com.getdieter.mobile.app.*
+import com.getdieter.mobile.desktop.DesktopKeys
 import com.getdieter.mobile.share.*
+import com.getdieter.mobile.store.InterfaceMode
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -24,14 +31,26 @@ class MainActivity : ComponentActivity() {
     private val store
         get() = session.store
 
+    /** DeX, desktop windowing or a connected display; see [DesktopSignals]. */
+    private var desktop by mutableStateOf(false)
+    private val keys = DesktopKeys()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         session = ViewModelProvider(this)[DieterSession::class.java]
+        desktop = DesktopSignals.detect(this)
         if (BuildConfig.DEBUG) {
             val url = intent.getStringExtra("fixture_url")
             val token = intent.getStringExtra("fixture_token")
-            if (url != null && token != null) session.adoptFixture(url, token)
+            val pairingCode = intent.getStringExtra("fixture_pairing_code").orEmpty()
+            if (url != null && token != null) session.adoptFixture(url, token, pairingCode)
+            // Flows pick the shell: interface=desktop|touch|automatic.
+            intent.getStringExtra("interface")?.let { value ->
+                InterfaceMode.entries
+                    .firstOrNull { it.name.equals(value, ignoreCase = true) }
+                    ?.let(store.layout::setInterfaceMode)
+            }
             intent.getStringExtra("script")?.let {
                 if (savedInstanceState == null) store.debugScript(it)
             }
@@ -47,6 +66,8 @@ class MainActivity : ComponentActivity() {
                     store,
                     openUrl = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))) },
                     onWindow = ::styleWindow,
+                    desktopHost = desktop,
+                    keys = keys,
                 )
                 AppUpdateDialog(session.updates)
             }
@@ -70,6 +91,25 @@ class MainActivity : ComponentActivity() {
             isAppearanceLightNavigationBars = !dark
         }
     }
+
+    // Window resizes, DeX and display moves arrive as configuration changes (see the manifest).
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        desktop = DesktopSignals.detect(this)
+    }
+
+    override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean, newConfig: Configuration) {
+        super.onMultiWindowModeChanged(isInMultiWindowMode, newConfig)
+        desktop = DesktopSignals.detect(this)
+    }
+
+    /**
+     * The desktop shell's shortcuts while nothing in it has focus; with focus inside, the shell
+     * sees them first itself.
+     */
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean =
+        keys.handle(androidx.compose.ui.input.key.KeyEvent(event)) ||
+            super.onKeyDown(keyCode, event)
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -96,7 +136,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
-        if (::session.isInitialized) store.setForeground(false)
+        // Recreation (rotation, dark mode) keeps the app on screen and its connection open.
+        if (::session.isInitialized && !isChangingConfigurations) store.setForeground(false)
         super.onStop()
     }
 }

@@ -47,13 +47,14 @@ export function createMarkdownDocument({ document, root, preview, postMessage })
     return { ...result, stale: result.stale === true || disposed || desired !== request };
   }
 
-  async function renderDiagram(kind, source, theme = "light", blockID = "") {
+  async function renderDiagram(kind, source, theme = "light", blockID = "", readOnly = false) {
     if (disposed) return { stale: true };
     const fenced = diagramMarkdown(kind, source);
     const request = {
       id: nextID + 1,
       mode: "diagram",
       kind: fenced.kind,
+      readOnly: readOnly === true,
       source: fenced.markdown,
       theme: theme === "dark" ? "dark" : "light",
       blockID: typeof blockID === "string" ? blockID.slice(0, 128) : "",
@@ -64,6 +65,7 @@ export function createMarkdownDocument({ document, root, preview, postMessage })
       desired.source === request.source &&
       desired.theme === request.theme &&
       desired.blockID === request.blockID &&
+      desired.readOnly === request.readOnly &&
       desired.viewportWidth === request.viewportWidth
     )
       return desired.rendering;

@@ -1,0 +1,51 @@
+# New task from the board's toolbar in a centered sheet, a live mock turn in
+# the conversation beside the board, then a follow-up from its composer.
+appId: ${APP_ID}
+name: Desktop task turn
+tags: [smoke]
+---
+- runFlow: common/launch.yaml
+- tapOn:
+    id: sidebar-project-.*
+    index: 0
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible:
+      id: board-lane-running
+    timeout: 40000
+- tapOn:
+    id: chrome-new-task
+    waitToSettleTimeoutMs: 500
+- assertVisible:
+    id: desktop-modal
+- tapOn:
+    id: task-title
+    waitToSettleTimeoutMs: 500
+- inputText: "Desktop task"
+- tapOn:
+    id: task-prompt
+    waitToSettleTimeoutMs: 500
+- inputText: "Desktop turn"
+- tapOn:
+    id: chrome-start-working
+    waitToSettleTimeoutMs: 500
+- assertNotVisible:
+    id: desktop-modal
+- extendedWaitUntil:
+    visible: "Mock harness received: Desktop turn.*"
+    timeout: 300000
+- assertVisible:
+    id: conversation-panel
+- assertVisible:
+    id: board-lane-todo
+- tapOn:
+    id: message-input
+    waitToSettleTimeoutMs: 500
+- inputText: "Second turn"
+- tapOn:
+    id: send-message
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Mock harness received: Second turn.*"
+    timeout: 300000
+- takeScreenshot: desktop-task-turn

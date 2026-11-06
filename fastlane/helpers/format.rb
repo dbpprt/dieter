@@ -2,13 +2,14 @@
 
 # Formats or checks authored sources with the pinned formatters from mise.toml.
 #
-#   ruby fastlane/helpers/format.rb [--write] [--staged | --base REF | --all]
+#   ruby fastlane/helpers/format.rb [--write] [--staged | --base REF | --all] [--only LANGS]
 #
 # Default selection: working-tree changes against HEAD plus untracked files.
 # --staged checks the index content, exported to a temporary tree, without
 # stashing or touching working files. --base REF adds branch changes since the
 # merge base (CI). Formatting is enforced on touched files; --all checks the
-# full inventory.
+# full inventory. --only narrows the selection to some formatters' files, for a
+# runner that installs only those (the Mac job checks Swift).
 require "fileutils"
 require "open3"
 require "optparse"
@@ -18,7 +19,7 @@ module Dieter
   module Format
     ROOT = File.expand_path("../..", __dir__)
     EXCLUDED =
-      %r{\A(?:third_party/|internal/gen/|tmp/|\.mise/|apps/apple/DieterKit/Sources/DieterAPI(?:GRPC)?/|
+      %r{\A(?:third_party/|internal/gen/|tmp/|\.mise/|tests/fixtures/markdown/|apps/apple/DieterKit/Sources/DieterAPI(?:GRPC)?/|
                     apps/apple/mac/Sources/DieterMacKit/Resources/MarkdownPreview/|apps/kotlin/android/webrtc/src/|
                     site/layouts/)|/testdata/|(?:\A|/)(?:package-lock\.json|gradlew(?:\.bat)?|mise\.lock)\z}x
     CONFIGS = %w[.editorconfig .prettierrc.json ruff.toml .streerc apps/apple/.swift-format].freeze
@@ -135,7 +136,8 @@ module Dieter
       paths.filter_map do |path|
         file = File.join(tree, path)
         next "#{path}: exceeds 5 MiB; keep build output out of Git" if File.size(file) > MAX_BYTES
-        next if path.match?(EXCLUDED) || File.binread(file, 8000).include?("\0")
+        # An empty file reads as nil; it has nothing to check.
+        next if path.match?(EXCLUDED) || File.binread(file, 8000).to_s.include?("\0")
         text = File.binread(file)
         next "#{path}: merge conflict marker" if text.match?(/^(?:<{7}|>{7}) /)
         next "#{path}: missing final newline" unless text.empty? || text.end_with?("\n")
@@ -148,22 +150,29 @@ module Dieter
     end
 
     def main(argv)
-      mode, base, write = :changed, nil, false
+      mode, base, write, only = :changed, nil, false, nil
       OptionParser
         .new do |flags|
-          flags.banner = "ruby fastlane/helpers/format.rb [--write] [--staged | --base REF | --all]"
+          flags.banner =
+            "ruby fastlane/helpers/format.rb [--write] [--staged | --base REF | --all] [--only LANGS]"
           flags.on("--write", "Rewrite working files instead of checking") { write = true }
           flags.on("--staged", "Check the staged index content") { mode = :staged }
           flags.on("--base REF", "Include changes since the merge base with REF") do |value|
             base = value
           end
           flags.on("--all", "Every tracked file") { mode = :all }
+          flags.on("--only LANGS", Array, "Only files of #{LANGUAGES.keys.join(", ")}") do |value|
+            only = value
+          end
         end
         .parse!(argv)
+      unknown = Array(only) - LANGUAGES.keys
+      abort "unknown --only language: #{unknown.join(", ")}" unless unknown.empty?
       if write && mode == :staged
         abort "--write cannot format the index; format working files, then stage them"
       end
       paths = selection(mode, base)
+      paths = paths.select { |path| only.include?(language(path)) } if only
       tree = ROOT
       if mode == :staged
         tree = Dir.mktmpdir("dieter-staged-")

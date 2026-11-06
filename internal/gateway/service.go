@@ -40,6 +40,7 @@ type Service struct {
 	enrollMu       sync.Mutex
 	enrollAttempts map[string][]time.Time
 	enrollActive   map[string][]time.Time
+	rosters        rosterCache
 }
 
 const (
@@ -529,8 +530,15 @@ func (s *Service) RevokeDaemon(ctx context.Context, request *gatewayv1.DaemonRef
 	return &emptypb.Empty{}, nil
 }
 
+// ExchangeDaemonToken issues a short-lived daemon admission token bound to the
+// caller's roster device ID. It is a second factor: the daemon also requires
+// TLS authenticated by that device's roster key, so the token alone grants
+// nothing.
 func (s *Service) ExchangeDaemonToken(ctx context.Context, request *gatewayv1.ExchangeDaemonTokenRequest) (*gatewayv1.DaemonAccessToken, error) {
 	principal, _ := PrincipalFromContext(ctx)
+	if !trust.ValidDeviceID(request.GetClientKeyThumbprint()) {
+		return nil, status.Error(codes.InvalidArgument, "client_key_thumbprint must be the caller's roster device ID")
+	}
 	record, err := s.ownedDaemon(request.GetDaemonId(), principal.GitHubID)
 	if err != nil {
 		return nil, err
@@ -542,6 +550,9 @@ func (s *Service) ExchangeDaemonToken(ctx context.Context, request *gatewayv1.Ex
 	return &gatewayv1.DaemonAccessToken{AccessToken: token, TokenType: "Bearer", ExpiresAt: expires.Format(time.RFC3339Nano), DaemonGeneration: record.Generation}, nil
 }
 
+// ResolveDaemonRoute reports how to reach a daemon: direct candidates, the
+// WebRTC capability and relay lane status. It carries no daemon keys; clients
+// authenticate daemons with the keys pinned in the device roster.
 func (s *Service) ResolveDaemonRoute(ctx context.Context, request *gatewayv1.DaemonRef) (*gatewayv1.DaemonRoute, error) {
 	principal, _ := PrincipalFromContext(ctx)
 	record, err := s.ownedDaemon(request.GetDaemonId(), principal.GitHubID)
@@ -549,7 +560,7 @@ func (s *Service) ResolveDaemonRoute(ctx context.Context, request *gatewayv1.Dae
 		return nil, err
 	}
 	daemon := s.protoDaemon(record)
-	return &gatewayv1.DaemonRoute{RelayLanes: s.hub.RelayLanes(record.ID), ControlWebrtc: s.hub.ControlWebRTC(record.ID), DaemonId: record.ID, RelayAvailable: daemon.Online, DirectCandidates: daemon.DirectCandidates, Generation: record.Generation, DaemonCaPem: s.keys.DaemonCAPEM, DaemonCertificatePem: append([]byte(nil), record.Certificate...)}, nil
+	return &gatewayv1.DaemonRoute{RelayLanes: s.hub.RelayLanes(record.ID), ControlWebrtc: s.hub.ControlWebRTC(record.ID), DaemonId: record.ID, RelayAvailable: daemon.Online, DirectCandidates: daemon.DirectCandidates, Generation: record.Generation}, nil
 }
 
 func (s *Service) GetRTCConfiguration(ctx context.Context, request *gatewayv1.DaemonRef) (*gatewayv1.RTCConfiguration, error) {
@@ -640,7 +651,7 @@ func (s *Service) credential(record DaemonRecord) *gatewayv1.DaemonCredential {
 			expires = certificate.NotAfter.UTC().Format(time.RFC3339Nano)
 		}
 	}
-	return &gatewayv1.DaemonCredential{DaemonId: record.ID, DaemonName: record.Name, CertificatePem: record.Certificate, DaemonCaPem: s.keys.DaemonCAPEM, GatewaySigningPublicKey: public, ExpiresAt: expires, Generation: record.Generation, GatewayIssuer: s.config.IdentityOrigin()}
+	return &gatewayv1.DaemonCredential{DaemonId: record.ID, DaemonName: record.Name, CertificatePem: record.Certificate, GatewaySigningPublicKey: public, ExpiresAt: expires, Generation: record.Generation, GatewayIssuer: s.config.IdentityOrigin()}
 }
 
 func hmacEqual(left, right string) bool {

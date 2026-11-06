@@ -26,7 +26,8 @@ func (c readResumingConn) NewStream(ctx context.Context, desc *grpc.StreamDesc, 
 		dieterv1.ConversationService_WatchConversation_FullMethodName,
 		dieterv1.TerminalService_WatchTerminal_FullMethodName,
 		dieterv1.ExecutionService_WatchExecution_FullMethodName,
-		dieterv1.GitService_WatchGitOperation_FullMethodName:
+		dieterv1.GitService_WatchGitOperation_FullMethodName,
+		dieterv1.ChannelService_WatchChannel_FullMethodName:
 		return &resumingReadStream{ctx: ctx, open: func(ctx context.Context) (grpc.ClientStream, error) {
 			return c.ClientConnInterface.NewStream(ctx, desc, method, opts...)
 		}}, nil
@@ -157,6 +158,9 @@ func (s *resumingReadStream) checkpoint(value any) {
 		for _, log := range value.(*dieterv1.GitOperationFrame).GetLogs() {
 			request.AfterSequence = max(request.AfterSequence, log.GetSequence())
 		}
+	case *dieterv1.WatchChannelRequest:
+		// A resumed watch starts after the last delivered sequence, without a reset page.
+		request.AfterSeq = max(request.AfterSeq, value.(*dieterv1.ChannelFrame).GetLastSeq())
 	case *dieterv1.ChangesRequest:
 		// Every frame's cursor covers everything delivered up to it.
 		if cursor := value.(*dieterv1.ChangesFrame).GetCursor(); cursor != nil {

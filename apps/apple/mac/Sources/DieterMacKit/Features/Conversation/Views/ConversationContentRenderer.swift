@@ -30,15 +30,15 @@ struct ConversationContentRenderer: View {
         case .markdown:
             MarkdownFileEditor(
                 session: files.fileEditorSession, documentKey: files.documentKey,
-                text: document.content, filename: document.name, active: active, revealID: navigationID
+                text: document.content, filename: document.name, active: active, revealID: navigationID,
+                requestedLine: line
             )
         case .text:
             SyntaxHighlightedEditor(
                 session: files.fileEditorSession, documentKey: files.documentKey,
                 text: document.content, filename: document.name,
-                active: active, editable: false, requestedLine: line
+                active: active, editable: false, requestedLine: line, revealID: navigationID
             )
-            .id(navigationID)
             .accessibilityIdentifier("conversation.content.code")
         case .image:
             ConversationImageDocumentRenderer(data: bytes(document)) {

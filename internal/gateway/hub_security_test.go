@@ -16,6 +16,7 @@ import (
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/security/linkauth"
+	"github.com/dbpprt/dieter/internal/transport/relay"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/peer"
@@ -140,7 +141,7 @@ type blockedSecurityLinkStream struct {
 }
 
 func (s *blockedSecurityLinkStream) Send(frame *gatewayv1.DaemonLinkFrame) error {
-	if frame.GetKind() == gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_OPEN_RPC {
+	if frame.GetKind() == gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_TUNNEL_OPEN {
 		close(s.blocked)
 	}
 	return s.securityLinkStream.Send(frame)
@@ -160,13 +161,13 @@ func TestDaemonRevocationClosesTransportEvenWhenSendIsBlocked(t *testing.T) {
 		t.Fatalf("handshake acknowledgement = %v", ack)
 	}
 	// Leave the simulated peer's receive window full while the gateway opens
-	// an RPC. Its Send and Recv are now both blocked on the transport.
+	// a tunnel. Its Send and Recv are now both blocked on the transport.
 	stream.sent <- &gatewayv1.DaemonLinkFrame{}
-	relay, err := service.hub.Open(t.Context(), credential.GetDaemonId(), &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_OPEN_RPC, Method: "/dieter.v1.MachineService/Health"})
+	opened, err := service.hub.openTunnel(credential.GetDaemonId(), relay.Control)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer relay.Close()
+	defer opened.close(status.New(codes.Canceled, "test ended"), false)
 	<-stream.blocked
 	service.hub.CloseDaemon(credential.GetDaemonId())
 	select {
@@ -229,4 +230,77 @@ func newEnrolledSecurityService(t *testing.T) (*Service, ed25519.PrivateKey, *ga
 		t.Fatal(err)
 	}
 	return service, private, credential
+}
+
+// stallingLinkStream blocks inside Send once the gateway asks it to open a
+// tunnel, as a daemon whose transport stopped reading does.
+type stallingLinkStream struct {
+	*securityLinkStream
+	stalled chan struct{}
+}
+
+func (s *stallingLinkStream) Send(frame *gatewayv1.DaemonLinkFrame) error {
+	if frame.GetKind() == gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_TUNNEL_OPEN {
+		close(s.stalled)
+		<-s.ctx.Done()
+		return s.ctx.Err()
+	}
+	return s.securityLinkStream.Send(frame)
+}
+
+func TestStalledLaneWriterResetsOnlyThatLaneAndItsTunnels(t *testing.T) {
+	t.Parallel()
+	service, private, credential := newEnrolledSecurityService(t)
+	hub := service.hub
+	hub.writeTimeout, hub.leaseCheck = 200*time.Millisecond, 10*time.Millisecond
+	connect := func(stream *securityLinkStream, lane relay.Lane, send grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame, gatewayv1.DaemonLinkFrame]) chan error {
+		result := make(chan error, 1)
+		go func() { result <- hub.Connect(send) }()
+		stream.recv <- &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO, ReleaseVersion: "0.4.1-dev", DaemonId: credential.GetDaemonId(), Lane: lane, SessionId: strings.Repeat("a", 64), Generation: credential.GetGeneration()}
+		challenge := <-stream.sent
+		stream.recv <- &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG, DaemonId: credential.GetDaemonId(), RequestId: challenge.GetRequestId(), Payload: linkauth.Sign(private, service.config.PublicURL.String(), credential.GetDaemonId(), challenge.GetPayload())}
+		if ack := <-stream.sent; ack.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK {
+			t.Fatalf("%s handshake acknowledgement = %v", lane, ack)
+		}
+		return result
+	}
+	control := newSecurityLinkStream(t)
+	controlDone := connect(control, relay.Control, control)
+	subscription := &stallingLinkStream{securityLinkStream: newSecurityLinkStream(t), stalled: make(chan struct{})}
+	subscriptionDone := connect(subscription.securityLinkStream, relay.Subscription, subscription)
+
+	healthy, err := hub.openTunnel(credential.GetDaemonId(), relay.Control)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer healthy.close(status.New(codes.Canceled, "test ended"), false)
+	if open := <-control.sent; open.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_TUNNEL_OPEN {
+		t.Fatalf("control lane sent %v", open)
+	}
+	stalled, err := hub.openTunnel(credential.GetDaemonId(), relay.Subscription)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-subscription.stalled
+	select {
+	case err := <-subscriptionDone:
+		if status.Code(err) != codes.Unavailable {
+			t.Fatalf("stalled lane ended with %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("a stalled lane writer was not reset")
+	}
+	if reason := tunnelReason(t, stalled); reason.Code() != codes.Unavailable {
+		t.Fatalf("tunnel of the stalled lane ended with %v", reason)
+	}
+	select {
+	case err := <-controlDone:
+		t.Fatalf("a stalled subscription lane reset the control lane: %v", err)
+	case <-healthy.done:
+		t.Fatal("a stalled subscription lane ended a control tunnel")
+	default:
+	}
+	if !hub.Online(credential.GetDaemonId()) {
+		t.Fatal("a stalled subscription lane took the daemon offline")
+	}
 }

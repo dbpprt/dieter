@@ -118,6 +118,7 @@ def build_mac(configuration:, e2e: false, evidence:)
       "DIETER_MAC_URL_SCHEME=dieter-mac-e2e"
     ] if e2e
     derived = Dieter.path("apps/apple/mac/.build/DerivedData")
+    Dieter::Swift.prepare_webrtc_module_cache(File.join(derived, "Build"))
     build_mac_app(
       project: MAC_PROJECT,
       scheme: "Dieter",
@@ -139,6 +140,7 @@ def build_ios_simulator(configuration:, evidence:)
   Dieter::Lease.hold("apple-build") do
     build_framework(configuration, ["ios-simulator"])
     derived = Dieter.path("apps/apple/ios/.build/DerivedData")
+    Dieter::Swift.prepare_webrtc_module_cache(File.join(derived, "Build"))
     settings = [
       "ARCHS=arm64",
       "CODE_SIGNING_ALLOWED=YES",
@@ -165,6 +167,10 @@ def build_ios_simulator(configuration:, evidence:)
 end
 
 # Runs the selected flows with the pinned Maestro CLI and records its JUnit.
+# The display an emulator gets for the desktop flows: 1920 x 1080 dp, like DeX on
+# a 1080p monitor.
+DESKTOP_DISPLAY = { size: "1920x1080", density: 160 }.freeze
+
 def run_maestro(device, app_id, fixture, flows, evidence, results)
   unless system("command -v maestro >/dev/null 2>&1")
     raise Dieter::Unavailable, "Install the pinned Maestro CLI (mise install)"
@@ -187,6 +193,8 @@ def run_maestro(device, app_id, fixture, flows, evidence, results)
     "FIXTURE_URL=http://#{fixture.address}",
     "-e",
     "FIXTURE_TOKEN=#{fixture.token}",
+    "-e",
+    "FIXTURE_PAIRING_CODE=#{fixture.pairing_code}",
     *flows.map { |flow| flow["path"] }
   ]
   java = ENV["JAVA_HOME"]
@@ -234,6 +242,16 @@ def e2e_run(platform, options)
 end
 
 def android_sdk_tool(*parts) = File.join(Dieter::Emulator.sdk, *parts)
+
+# This host platform's prebuilt harness runtime archive into dist, written by a
+# development build of this source with the daemon's own install logic
+# (`dieter __harness-runtime-archive`, which also verifies it). Returns the
+# SHA-256 the release daemon pins.
+def harness_runtime_archive(dist, os, arch)
+  archive = File.join(dist, Dieter::Release.harness_runtime_archive(os, arch))
+  Dieter.sh("go", "run", "./cmd/dieter", "__harness-runtime-archive", "--output", archive)
+  Dieter.sha256(archive)
+end
 
 # --- Lanes ---------------------------------------------------------------------
 
@@ -306,11 +324,13 @@ platform :android do
     end
   end
 
-  desc "Maestro flows on the isolated E2E app; tags:smoke|full flows:NAMES profile:android-emulator|android-ci|android-device"
+  desc "Maestro flows on the isolated E2E app; tags:smoke|full flows:NAMES profile:android-emulator|android-ci|android-device desktop:true"
   lane :e2e do |options|
     target = Dieter.profile("android", options[:profile])
     app_id = "#{Dieter::Release.ids["android"]}.e2e"
-    e2e_run("android", options) do |flows, evidence, results, cleanup|
+    # desktop:true runs the desktop shell's flows (tests/maestro/desktop) on a desktop display.
+    desktop = options[:desktop].to_s == "true"
+    e2e_run(desktop ? "android-desktop" : "android", options) do |flows, evidence, results, cleanup|
       ENV["DIETER_RELEASE_VERSION"] ||= Dieter.dev_version
       # Compile before admitting a device so low-memory hosts never build and boot at once.
       Dieter::Lease.hold("android-build") { kotlin(":android:assembleE2e") }
@@ -338,6 +358,16 @@ platform :android do
       cleanup.add do
         run.call("shell am force-stop #{app_id}")
         raise "#{app_id} did not stop" unless run.call("shell pidof #{app_id} || true").strip.empty?
+      end
+      # An emulator becomes a 1080p desktop display for the run, as DeX on a monitor;
+      # a device already in DeX or desktop windowing keeps its own display.
+      if desktop && target["kind"] == "emulator"
+        cleanup.add do
+          run.call("shell wm size reset")
+          run.call("shell wm density reset")
+        end
+        run.call("shell wm size #{DESKTOP_DISPLAY.fetch(:size)}")
+        run.call("shell wm density #{DESKTOP_DISPLAY.fetch(:density)}")
       end
       fixture = Dieter::Fixture.new(evidence, cleanup, e2e: true)
       port = fixture.address.split(":").last
@@ -450,7 +480,7 @@ platform :ios do
     UI.success("App: #{app}")
   end
 
-  desc "Maestro flows on a disposable simulator; tags:smoke|full flows:NAMES profile:ios-iphone|ios-ipad"
+  desc "Maestro flows on a disposable simulator; configuration:debug|release tags:smoke|full flows:NAMES profile:ios-iphone|ios-ipad"
   lane :e2e do |options|
     target = Dieter.profile("ios", options[:profile])
     app_id = "#{Dieter::Release.ids["ios"]}.e2e"
@@ -508,7 +538,11 @@ platform :ios do
           log: File.join(evidence, "boot.log")
         )
       cleanup.add { boot.stop }
-      app = build_ios_simulator(configuration: "debug", evidence: evidence)
+      app =
+        build_ios_simulator(
+          configuration: (options[:configuration] || "debug").to_s,
+          evidence: evidence
+        )
       raise Dieter::Unavailable, "Simulator #{udid} did not boot" unless boot.wait(300).success?
       Dieter.sh(
         "xcrun",
@@ -534,7 +568,7 @@ platform :ios do
     ids = Dieter::Release.ids
     team = Dieter.identity.fetch("apple_team_id")
     Dieter::Lease.hold("apple-build") { build_framework("release", ["ios-device"]) }
-    setup_ci(provider: "github", force: true)
+    setup_ci(force: true)
     import_certificate(
       certificate_path:
         Dieter.secret_file("IOS_DISTRIBUTION_CERTIFICATE_BASE64", "distribution.p12"),
@@ -562,6 +596,9 @@ platform :ios do
       "DIETER_IOS_PROFILE_SPECIFIER=#{profiles[ids["ios"]]}",
       "DIETER_IOS_SHARE_PROFILE_SPECIFIER=#{profiles[ids["ios_share"]]}"
     ]
+    Dieter::Swift.prepare_webrtc_module_cache(
+      Dieter.path("apps/apple/ios/.build/DerivedData/Build")
+    )
     ipa =
       build_app(
         project: IOS_PROJECT,
@@ -572,7 +609,7 @@ platform :ios do
         archive_path: Dieter.path("dist/ios/Dieter.xcarchive"),
         output_directory: Dieter.path("dist/ios"),
         output_name: "Dieter-iOS.ipa",
-        export_method: "app-store-connect",
+        export_method: "app-store",
         export_options: {
           signingStyle: "manual",
           teamID: team,
@@ -604,28 +641,69 @@ platform :ios do
   desc "CI: upload dist/ios/Dieter-iOS.ipa to TestFlight and deliver it to the identity's internal groups"
   lane :beta do |options|
     release = Dieter::Release.current
-    app = Dieter::Release.ids["ios"]
+    app_identifier = Dieter::Release.ids["ios"]
+    version = release["version"]
+    build_number = release["apple_build"]
+    groups = Dieter.identity.fetch("testflight_groups")
     app_store_connect_api_key(
       key_id: ENV.fetch("IOS_APP_STORE_CONNECT_KEY_ID"),
       issuer_id: ENV.fetch("IOS_APP_STORE_CONNECT_ISSUER_ID"),
       key_content: ENV.fetch("IOS_APP_STORE_CONNECT_KEY_BASE64"),
       is_key_content_base64: true
     )
-    latest = latest_testflight_build_number(app_identifier: app, initial_build_number: 0).to_s
-    if Gem::Version.new(latest) >= Gem::Version.new(release["apple_build"])
-      UI.user_error!(
-        "TestFlight already has build #{latest}; #{release["apple_build"]} must be newer"
+    Spaceship::ConnectAPI.token =
+      Spaceship::ConnectAPI::Token.from(hash: lane_context[SharedValues::APP_STORE_CONNECT_API_KEY])
+    app =
+      Spaceship::ConnectAPI::App.find(app_identifier) ||
+        UI.user_error!("No App Store app #{app_identifier}")
+    find_build =
+      lambda do
+        Spaceship::ConnectAPI::Build.all(
+          app_id: app.id,
+          version: version,
+          build_number: build_number
+        ).first
+      end
+    # Idempotent: a retried delivery reuses the build an earlier attempt uploaded.
+    if find_build.call
+      UI.message("TestFlight already has #{version} (#{build_number}); delivering it")
+    else
+      latest =
+        latest_testflight_build_number(app_identifier: app_identifier, initial_build_number: 0).to_s
+      if Gem::Version.new(latest) >= Gem::Version.new(build_number)
+        UI.user_error!("TestFlight already has build #{latest}; #{build_number} must be newer")
+      end
+      upload_to_testflight(
+        ipa: File.expand_path(options[:ipa] || "dist/ios/Dieter-iOS.ipa", Dieter::ROOT),
+        app_identifier: app_identifier,
+        changelog: "Dieter #{version} (#{release["revision"][0, 12]})",
+        # Distribution is below: the release key may add builds to groups, but
+        # not change their beta details as pilot's distribute step does.
+        skip_submission: true,
+        distribute_external: false
       )
     end
-    upload_to_testflight(
-      ipa: options[:ipa] || Dieter.path("dist/ios/Dieter-iOS.ipa"),
-      app_identifier: app,
-      groups: Dieter.identity.fetch("testflight_groups"),
-      distribute_external: false,
-      notify_external_testers: false,
-      skip_waiting_for_build_processing: false,
-      changelog: "Dieter #{release["version"]} (#{release["revision"][0, 12]})"
-    )
+    build = nil
+    deadline = Time.now + 1800
+    loop do
+      build = find_build.call
+      break if build&.processed?
+      if Time.now > deadline
+        UI.user_error!("TestFlight #{version} (#{build_number}) did not finish processing")
+      end
+      UI.message("Waiting for TestFlight to process #{version} (#{build_number})")
+      sleep(30)
+    end
+    unless build.processing_state == "VALID"
+      UI.user_error!("App Store Connect rejected #{version}: #{build.processing_state}")
+    end
+    beta_groups =
+      app.get_beta_groups.select { |group| groups.include?(group.name) && group.is_internal_group }
+    unless beta_groups.map(&:name).sort == groups.sort
+      UI.user_error!("TestFlight groups #{groups} must exist and be internal")
+    end
+    build.add_beta_groups(beta_groups: beta_groups)
+    UI.success("TestFlight #{version} (#{build_number}) delivered to #{groups.join(", ")}")
   end
 end
 
@@ -748,7 +826,13 @@ platform :mac do
       flows.each do |flow|
         began = Dieter.clock
         status, reason =
-          run_mac_flow(app, plans[flow["id"]], File.join(evidence, flow["id"]), fixture)
+          run_mac_flow(
+            app,
+            plans[flow["id"]],
+            File.join(evidence, flow["id"]),
+            fixture,
+            compositor: options[:screenshots].to_s == "compositor"
+          )
         results.record(flow, status, reason, Dieter.clock - began)
       end
     end
@@ -762,7 +846,7 @@ platform :mac do
       build_framework("release", ["macos"])
       markdown_preview
     end
-    setup_ci(provider: "github", force: true)
+    setup_ci(force: true)
     import_certificate(
       certificate_path:
         Dieter.secret_file("MACOS_DEVELOPER_ID_CERTIFICATE_BASE64", "developer-id.p12"),
@@ -770,19 +854,19 @@ platform :mac do
       keychain_name: "fastlane_tmp_keychain",
       keychain_password: ""
     )
-    update_code_signing_settings(
-      path: MAC_PROJECT,
-      targets: ["Dieter"],
-      use_automatic_signing: false,
-      team_id: team,
-      code_sign_identity: "Developer ID Application"
-    )
     output = Dieter.path("dist/apple")
+    # The app target signs with $(DIETER_MAC_SIGN_IDENTITY) (ad hoc by default);
+    # only the app, not its SwiftPM dependencies, gets the Developer ID here.
     settings = [
       "DIETER_RELEASE_VERSION=#{release["version"]}",
       "DIETER_BUILD_NUMBER=#{release["apple_build"]}",
+      "DIETER_MAC_TEAM_ID=#{team}",
+      "DIETER_MAC_SIGN_IDENTITY=Developer ID Application",
       "OTHER_CODE_SIGN_FLAGS=--timestamp"
     ]
+    Dieter::Swift.prepare_webrtc_module_cache(
+      Dieter.path("apps/apple/mac/.build/DerivedData/Build")
+    )
     build_mac_app(
       project: MAC_PROJECT,
       scheme: "Dieter",
@@ -814,7 +898,15 @@ platform :mac do
     zip(path: app, output_path: File.join(output, "Dieter-macOS-arm64.zip"), symlinks: true)
   end
 
-  desc "CI: signed, notarized darwin daemon tarball and side-by-side pkg into dist/daemon"
+  desc "CI: the darwin harness runtime archive into dist/harness-runtime, built without signing secrets"
+  lane :harness_runtime do
+    dist = Dieter.path("dist/harness-runtime")
+    FileUtils.rm_rf(dist)
+    FileUtils.mkdir_p(dist)
+    harness_runtime_archive(dist, "darwin", "arm64")
+  end
+
+  desc "CI: signed, notarized darwin daemon tarball and side-by-side pkg into dist/daemon, pinning the mac harness_runtime archive"
   lane :daemon do
     release = Dieter::Release.current
     ids = Dieter::Release.ids
@@ -823,12 +915,23 @@ platform :mac do
     stage = File.join(dist, "dieter-darwin-arm64")
     FileUtils.rm_rf(dist)
     FileUtils.mkdir_p(stage)
+    # Installing the runtime runs third-party installers, so `mac harness_runtime`
+    # builds it in a job that never holds the signing secrets.
+    name = Dieter::Release.harness_runtime_archive("darwin", "arm64")
+    prebuilt = Dieter.path("dist/harness-runtime", name)
+    UI.user_error!("Run `mac harness_runtime` first: no #{prebuilt}") unless File.file?(prebuilt)
+    FileUtils.cp(prebuilt, dist)
+    harness_runtime = Dieter.sha256(File.join(dist, name))
     Dieter.sh(
       "go",
       "build",
       "-trimpath",
       "-ldflags",
-      Dieter::Release.ldflags(version, release["revision"]),
+      Dieter::Release.ldflags(
+        version,
+        release["revision"],
+        harness_runtime_sha256: harness_runtime
+      ),
       "-o",
       File.join(stage, "dieter"),
       "./cmd/dieter",
@@ -871,7 +974,7 @@ platform :mac do
         "DIETER_RELEASE_VERSION" => version
       }
     )
-    setup_ci(provider: "github", force: true)
+    setup_ci(force: true)
     import_certificate(
       certificate_path:
         Dieter.secret_file("MACOS_DEVELOPER_ID_CERTIFICATE_BASE64", "developer-id.p12"),
@@ -982,14 +1085,23 @@ platform :mac do
   end
 end
 
-desc "CI: Linux daemon and gateway tarballs of this host's architecture (+ TURN probes on amd64) into dist/server"
+desc "CI: Linux daemon, harness runtime and gateway tarballs of this host's architecture (+ TURN probes on amd64) into dist/server"
 lane :server do
   release = Dieter::Release.current
   version = release["version"]
   dist = Dieter.path("dist/server")
   FileUtils.mkdir_p(dist)
   arch = Dieter.capture("go", "env", "GOHOSTARCH").strip
-  ldflags = Dieter::Release.ldflags(version, release["revision"])
+  harness_runtime = harness_runtime_archive(dist, "linux", arch)
+  ldflags = {
+    "dieter" =>
+      Dieter::Release.ldflags(
+        version,
+        release["revision"],
+        harness_runtime_sha256: harness_runtime
+      ),
+    "dieter-gateway" => Dieter::Release.ldflags(version, release["revision"])
+  }
   { "dieter" => "./cmd/dieter", "dieter-gateway" => "./cmd/dieter-gateway" }.each do |name, package|
     stage = File.join(dist, "#{name}-linux-#{arch}")
     FileUtils.mkdir_p(stage)
@@ -998,7 +1110,7 @@ lane :server do
       "build",
       "-trimpath",
       "-ldflags",
-      ldflags,
+      ldflags.fetch(name),
       "-o",
       File.join(stage, name),
       package,
@@ -1073,8 +1185,10 @@ desc "CI: create the GitHub release of dist:DIR with generated notes; channel:de
 lane :publish do |options|
   release = Dieter::Release.current
   repository = Dieter.identity.fetch("repository")
-  assets = Dir.glob(File.join(options.fetch(:dist), "*")).select { |file| File.file?(file) }.sort
-  UI.user_error!("No release assets in #{options[:dist]}") if assets.empty?
+  # Lanes run inside fastlane/; resolve a relative directory from the repository root.
+  dist = File.expand_path(options.fetch(:dist), Dieter::ROOT)
+  assets = Dir.glob(File.join(dist, "*")).select { |file| File.file?(file) }.sort
+  UI.user_error!("No release assets in #{dist}") if assets.empty?
   body =
     "Development build #{release["version"]} from #{release["revision"]}.#{options[:qualified_by] ? " Qualified by #{options[:qualified_by]}." : ""}\n\n" \
       "Verify `SHA256SUMS` with `cosign verify-blob --bundle SHA256SUMS.sigstore.json --certificate-identity #{Dieter::Release.signer} " \
@@ -1083,7 +1197,7 @@ lane :publish do |options|
   created =
     set_github_release(
       repository_name: repository,
-      api_token: ENV.fetch("GITHUB_TOKEN"),
+      api_bearer: ENV.fetch("GITHUB_TOKEN"),
       tag_name: "v#{release["version"]}",
       name: "Dieter #{release["version"]}",
       commitish: release["revision"],
@@ -1100,7 +1214,7 @@ lane :publish do |options|
   end
   github_api(
     server_url: "https://api.github.com",
-    api_token: ENV.fetch("GITHUB_TOKEN"),
+    api_bearer: ENV.fetch("GITHUB_TOKEN"),
     http_method: "PATCH",
     path: "/repos/#{repository}/releases/#{created.fetch("id")}",
     body: {
@@ -1119,7 +1233,7 @@ lane :promote do |options|
   token = ENV.fetch("GITHUB_TOKEN")
   release =
     github_api(
-      api_token: token,
+      api_bearer: token,
       http_method: "GET",
       path: "/repos/#{repository}/releases/tags/#{tag}"
     )[
@@ -1131,61 +1245,53 @@ lane :promote do |options|
   notes = Dieter::Release.changelog_section(File.read(Dieter.path("CHANGELOG.md")), version)
   directory = Dir.mktmpdir("dieter-promote-")
   Dieter.sh("gh", "release", "download", tag, "--repo", repository, "--dir", directory)
-  Dir.chdir(directory) do
-    Dieter.sh(
-      "cosign",
-      "verify-blob",
-      "--bundle",
-      "SHA256SUMS.sigstore.json",
-      "--certificate-identity",
-      Dieter::Release.signer,
-      "--certificate-oidc-issuer",
-      "https://token.actions.githubusercontent.com",
-      "SHA256SUMS"
-    )
-    Dieter.sh("shasum", "-a", "256", "--check", "--strict", "SHA256SUMS")
-    File
-      .read("SHA256SUMS")
-      .lines
-      .map { |line| line.split.last }
-      .each do |asset|
-        Dieter.sh(
-          "gh",
-          "attestation",
-          "verify",
-          asset,
-          "--repo",
-          repository,
-          "--signer-workflow",
-          "#{repository}/.github/workflows/release.yml"
-        )
-      end
-  end
+  # Verify in the download directory: the signature, every checksum, and the
+  # provenance attestation of every asset, all against release.yml.
+  Dieter.sh(
+    "cosign",
+    "verify-blob",
+    "--bundle",
+    "SHA256SUMS.sigstore.json",
+    "--certificate-identity",
+    Dieter::Release.signer,
+    "--certificate-oidc-issuer",
+    "https://token.actions.githubusercontent.com",
+    "SHA256SUMS",
+    chdir: directory
+  )
+  Dieter.sh("shasum", "-a", "256", "--check", "--strict", "SHA256SUMS", chdir: directory)
+  File
+    .read(File.join(directory, "SHA256SUMS"))
+    .lines
+    .map { |line| line.split.last }
+    .each do |asset|
+      Dieter.sh(
+        "gh",
+        "attestation",
+        "verify",
+        asset,
+        "--repo",
+        repository,
+        "--signer-workflow",
+        "#{repository}/.github/workflows/release.yml",
+        chdir: directory
+      )
+    end
   sums = File.read(File.join(directory, "SHA256SUMS")).lines.to_h { |line| line.split.reverse }
   tap = Dieter.identity.fetch("homebrew_tap")
-  {
-    "Formula/dieter.rb" => "dieter-darwin-arm64.tar.gz",
-    "Casks/dieter-app.rb" => "Dieter-macOS-arm64.zip"
-  }.each do |file, asset|
+  Dieter::Release::HOMEBREW.each do |file, (template, asset)|
     current =
       github_api(
-        api_token: ENV.fetch("HOMEBREW_TAP_TOKEN"),
+        api_bearer: ENV.fetch("HOMEBREW_TAP_TOKEN"),
         http_method: "GET",
         path: "/repos/#{tap}/contents/#{file}"
       )[
         :json
       ]
-    text = Base64.decode64(current.fetch("content"))
-    updated =
-      Dieter::Release.homebrew(
-        text,
-        version: version,
-        sha256: sums.fetch(asset),
-        repository: repository
-      )
-    next if updated == text
+    updated = Dieter::Release.homebrew(template, version: version, sha256: sums.fetch(asset))
+    next if updated == Base64.decode64(current.fetch("content"))
     github_api(
-      api_token: ENV.fetch("HOMEBREW_TAP_TOKEN"),
+      api_bearer: ENV.fetch("HOMEBREW_TAP_TOKEN"),
       http_method: "PUT",
       path: "/repos/#{tap}/contents/#{file}",
       body: {
@@ -1196,7 +1302,7 @@ lane :promote do |options|
     )
   end
   github_api(
-    api_token: token,
+    api_bearer: token,
     http_method: "PATCH",
     path: "/repos/#{repository}/releases/#{release.fetch("id")}",
     body: {
@@ -1216,7 +1322,7 @@ lane :prune do
   releases =
     (1..10).flat_map do |page|
       github_api(
-        api_token: ENV.fetch("GITHUB_TOKEN"),
+        api_bearer: ENV.fetch("GITHUB_TOKEN"),
         http_method: "GET",
         path: "/repos/#{repository}/releases?per_page=100&page=#{page}"
       )[
@@ -1227,7 +1333,7 @@ lane :prune do
     .expired(releases, count: retention.fetch("dev_count"), days: retention.fetch("dev_days"))
     .each do |release|
       github_api(
-        api_token: ENV.fetch("GITHUB_TOKEN"),
+        api_bearer: ENV.fetch("GITHUB_TOKEN"),
         http_method: "DELETE",
         path: "/repos/#{repository}/releases/#{release.fetch("id")}"
       )
@@ -1237,7 +1343,7 @@ end
 
 # One Mac flow in a fresh DieterE2E process with isolated state; the app
 # interprets the plan, writes report.json and quits.
-def run_mac_flow(app, plan, output, fixture)
+def run_mac_flow(app, plan, output, fixture, compositor: false)
   FileUtils.mkdir_p(output, mode: 0o700)
   state = Dir.mktmpdir("dieter-mac-flow-")
   suite = "#{Dieter::Release.ids["mac"]}.e2e.#{Digest::SHA256.hexdigest(state)[0, 16]}"
@@ -1246,6 +1352,8 @@ def run_mac_flow(app, plan, output, fixture)
   begin
     token = File.join(state, "session-token")
     File.write(token, fixture.token, perm: 0o600)
+    pairing = File.join(state, "pairing-code")
+    File.write(pairing, fixture.pairing_code, perm: 0o600)
     File.write(File.join(state, "plan.json"), JSON.generate(plan))
     activation = File.join(output, "activation.pid")
     process =
@@ -1260,12 +1368,15 @@ def run_mac_flow(app, plan, output, fixture)
           "http://#{fixture.address}",
           "--dieter-access-token-file",
           token,
+          "--dieter-pairing-code-file",
+          pairing,
           "--e2e-activation-ready",
           activation,
           "--e2e-flow",
           File.join(state, "plan.json"),
           "--e2e-output",
-          output
+          output,
+          *(compositor ? ["--e2e-compositor-capture"] : [])
         ],
         log: File.join(output, "app.log")
       )

@@ -47,19 +47,33 @@ final class ComposeNativeViews: NSObject, @preconcurrency MobileNativeViews {
         Self.presenting?.present(controller, animated: true)
     }
     func previewAttachment(part data: Data) {
-        guard let part = try? Dieter_V1_MessagePart(serializedBytes: data) else { return }
+        guard let part = try? Dieter_V1_MessagePart(serializedBytes: data) else {
+            showToast(message: "This attachment could not be read.")
+            return
+        }
         let bytes =
             part.data.isEmpty
             ? Data(base64Encoded: part.url.components(separatedBy: ";base64,").last ?? "") ?? Data() : part.data
-        guard !bytes.isEmpty, bytes.count <= 6 * 1024 * 1024 else { return }
+        guard !bytes.isEmpty, bytes.count <= 6 * 1024 * 1024 else {
+            showToast(message: "This attachment is empty or too large to preview.")
+            return
+        }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
             "attachment-preview", isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         for old in (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
         { try? FileManager.default.removeItem(at: old) }
-        let file = directory.appendingPathComponent(
-            URL(fileURLWithPath: part.filename.isEmpty ? "attachment" : part.filename).lastPathComponent)
-        guard (try? bytes.write(to: file, options: .atomic)) != nil else { return }
+        var name = URL(fileURLWithPath: part.filename.isEmpty ? "attachment" : part.filename).lastPathComponent
+        if URL(fileURLWithPath: name).pathExtension.isEmpty,
+            let suffix = UTType(mimeType: part.mediaType)?.preferredFilenameExtension
+        {
+            name += "." + suffix
+        }
+        let file = directory.appendingPathComponent(name)
+        guard (try? bytes.write(to: file, options: .atomic)) != nil else {
+            showToast(message: "This attachment could not be saved for preview.")
+            return
+        }
         let source = AttachmentPreview(url: file); preview = source
         let controller = QLPreviewController(); controller.dataSource = source
         Self.presenting?.present(controller, animated: true)
@@ -75,8 +89,32 @@ final class ComposeNativeViews: NSObject, @preconcurrency MobileNativeViews {
     private var menuAnchor: MenuAnchorButton?
 
     func showMenu(sections: [NativeMenuSection], view: UIView, x: Double, y: Double, width: Double, height: Double) {
+        // Compose focus and UIKit's active text input can settle on different frames.
+        // Dismiss native editing before the menu so the keyboard cannot cover its actions.
+        view.window?.endEditing(true)
         menuAnchor?.removeFromSuperview()
-        let button = MenuAnchorButton(frame: CGRect(x: x, y: y, width: max(width, 1), height: max(height, 1)))
+        let windowFrame = CGRect(x: x, y: y, width: max(width, 1), height: max(height, 1))
+        let localFrame = view.convert(windowFrame, from: view.window)
+        let actions = sections.flatMap(\.actions)
+        if actions.allSatisfy({ $0.sections.isEmpty }) {
+            // A native choice sheet stays in the presenting modal's hierarchy. A
+            // programmatic UIButton menu can move behind that modal and its keyboard.
+            let chooser = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
+            for action in actions {
+                let title = action.checked ? "✓ \(action.title)" : action.title
+                let choice = UIAlertAction(title: title, style: action.destructive ? .destructive : .default) { _ in
+                    action.perform()
+                }
+                choice.isEnabled = action.enabled
+                chooser.addAction(choice)
+            }
+            chooser.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+            chooser.popoverPresentationController?.sourceView = view
+            chooser.popoverPresentationController?.sourceRect = localFrame
+            Self.presenter(for: view)?.present(chooser, animated: true)
+            return
+        }
+        let button = MenuAnchorButton(frame: localFrame)
         button.menu = RouteChrome.menu(sections)
         button.showsMenuAsPrimaryAction = true
         button.backgroundColor = .clear
@@ -138,6 +176,20 @@ final class ComposeNativeViews: NSObject, @preconcurrency MobileNativeViews {
 
     func showToast(message: String) { Toast.show(message) }
 
+    /// The system share sheet with Markdown text; mail and notes apps take the subject too.
+    func shareText(subject: String, text: String) {
+        guard let presenter = Self.presenting else { return }
+        let sheet = UIActivityViewController(
+            activityItems: [MarkdownShareItem(subject: subject, text: text)], applicationActivities: nil)
+        if let popover = sheet.popoverPresentationController {
+            popover.sourceView = presenter.view
+            popover.sourceRect = CGRect(
+                x: presenter.view.bounds.maxX - 44, y: presenter.view.safeAreaInsets.top, width: 1, height: 1)
+            popover.permittedArrowDirections = [.up]
+        }
+        presenter.present(sheet, animated: true)
+    }
+
     static func presenter(for view: UIView) -> UIViewController? {
         var controller = view.window?.rootViewController
         while let next = controller?.presentedViewController, !next.isBeingDismissed { controller = next }
@@ -168,10 +220,19 @@ private final class ComposeTerminal: SwiftTerm.TerminalView, @preconcurrency Mob
     required init?(coder: NSCoder) { nil }
     func key(value: Int32) {
         guard acceptsInput else { return }
-        input.send(
-            data: SharedRules.shared.terminalKey(
-                key: value, shift: false, alt: false, control: false, applicationCursor: getTerminal().applicationCursor
-            ))
+        // SwiftTerm keeps the cursor key mode private and applies it when it sends these keys.
+        switch ClientTerminalKey(rawValue: Int(value)) {
+        case .up: sendKeyUp()
+        case .down: sendKeyDown()
+        case .right: sendKeyRight()
+        case .left: sendKeyLeft()
+        case .home: sendKeyHome()
+        case .end: sendKeyEnd()
+        default:
+            input.send(
+                data: SharedRules.shared.terminalKey(
+                    key: value, shift: false, alt: false, control: false, applicationCursor: false))
+        }
     }
     func reset() { let reset: [UInt8] = [0x1b, 0x63]; feed(byteArray: reset[...]) }
     func feed(data: Data) { let bytes = [UInt8](data); feed(byteArray: bytes[...]) }
@@ -399,6 +460,24 @@ private final class SheetHandle: NSObject, @preconcurrency NativeSheet, UIAdapti
         closed = true
         dismissed.chose(confirmed: false)
     }
+}
+
+/// Shared Markdown text with its subject, as `UIActivityViewController` asks for them.
+@MainActor private final class MarkdownShareItem: NSObject, @preconcurrency UIActivityItemSource {
+    let subject: String
+    let text: String
+    init(subject: String, text: String) {
+        self.subject = subject
+        self.text = text
+    }
+    func activityViewControllerPlaceholderItem(_ activityViewController: UIActivityViewController) -> Any { text }
+    func activityViewController(
+        _ activityViewController: UIActivityViewController, itemForActivityType activityType: UIActivity.ActivityType?
+    ) -> Any? { text }
+    func activityViewController(
+        _ activityViewController: UIActivityViewController,
+        subjectForActivityType activityType: UIActivity.ActivityType?
+    ) -> String { subject }
 }
 
 /// A transient Liquid Glass capsule for errors that need no decision.

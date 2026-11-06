@@ -17,7 +17,7 @@ import (
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/security/localauth"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit"
 	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -82,11 +82,11 @@ func (runner *activationRecoveryRunner) Suspend(_, _ string) error {
 func TestCandidateActivationWaitsForRecoveredWorkerHeartbeat(t *testing.T) {
 	t.Parallel()
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Activation", Path: testkit.CheckoutDir(t)})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Activation", Path: testkit.CheckoutDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	chat, err := data.CreateChat(store.CreateCardInput{
+	chat, err := data.Kanban.CreateChat(kanban.CreateCardInput{
 		Project: project.ID, ID: "chat_activation", Title: "Activation recovery", Prompt: "Keep working",
 		Provider: "codex", Model: "gpt-5.6-sol", Effort: "low", WorkspaceMode: model.WorkspaceModeProject,
 	})
@@ -94,10 +94,10 @@ func TestCandidateActivationWaitsForRecoveredWorkerHeartbeat(t *testing.T) {
 		t.Fatal(err)
 	}
 	const turnID = "turn_activation"
-	if _, err := data.StartConversationTurn(chat.ID, turnID, "user_activation", chat.InitialPrompt); err != nil {
+	if _, err := data.Conversations.StartTurn(chat.ID, turnID, "user_activation", chat.InitialPrompt); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := data.SetConversationActiveTurn(chat.ID, model.ConversationTurn{
+	if _, err := data.Conversations.SetActiveTurn(chat.ID, model.ConversationTurn{
 		ID: turnID, UserMessageID: "user_activation", ResponseMessageID: "assistant_activation",
 		HarnessRuntimeDigest: "runtime-a", HarnessRuntimeProtocol: harness.RuntimeProtocolVersion,
 		Selection: &model.HarnessSelection{Provider: "codex", Model: "gpt-5.6-sol", Effort: "low"},
@@ -105,10 +105,10 @@ func TestCandidateActivationWaitsForRecoveredWorkerHeartbeat(t *testing.T) {
 		t.Fatal(err)
 	}
 	continuation := json.RawMessage(`{"type":"resume-session","data":{"thread":"fixture"},"continueFrom":{"type":"continue-turn","data":{"cursor":1}}}`)
-	if _, err := data.SetConversationSession(chat.ID, turnID, continuation); err != nil {
+	if _, err := data.Conversations.SetSession(chat.ID, turnID, continuation); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := data.UpdateCardCache(chat.ID, store.CardCacheInput{Provider: "codex", Model: "gpt-5.6-sol", Runtime: "running"}); err != nil {
+	if _, err := data.Kanban.UpdateCardCache(chat.ID, kanban.CardCacheInput{Provider: "codex", Model: "gpt-5.6-sol", Runtime: "running"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -160,7 +160,7 @@ func TestCandidateActivationWaitsForRecoveredWorkerHeartbeat(t *testing.T) {
 	case <-time.After(testkit.Budget(30 * time.Second)):
 		t.Fatal("candidate daemon did not shut down cleanly")
 	}
-	conversation, err := data.Conversation(chat.ID)
+	conversation, err := data.Conversations.Get(chat.ID)
 	if err != nil || conversation.Status != "running" || conversation.ActiveTurn == nil || conversation.ActiveTurn.HarnessRuntimeDigest != "runtime-a" {
 		t.Fatalf("parked conversation=%#v err=%v", conversation, err)
 	}

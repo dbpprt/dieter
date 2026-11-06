@@ -10,6 +10,7 @@ struct PinnedChatRow: View {
 
     var body: some View {
         ChatRow(card: card, showsPinnedDragHandle: true)
+            .equatable()
             .overlay {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .stroke(dropTargeted ? DieterTheme.shell : .clear, lineWidth: 1.5)

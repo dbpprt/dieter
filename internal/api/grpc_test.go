@@ -14,7 +14,7 @@ import (
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit"
 	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 	"google.golang.org/grpc"
@@ -32,11 +32,11 @@ func TestGRPCMachineListener(t *testing.T) {
 		t.Fatal(err)
 	}
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Fixture", Path: repo})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Fixture", Path: repo})
 	if err != nil {
 		t.Fatal(err)
 	}
-	board, err := data.CreateBoard(store.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
+	board, err := data.Kanban.CreateBoard(kanban.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestGRPCMachineListener(t *testing.T) {
 	if err != nil || promptPreview.GetSource() != "project" || promptPreview.GetInstructions() == "" {
 		t.Fatalf("gRPC prompt preview = %#v, %v", promptPreview, err)
 	}
-	worktreeCard, err := data.CreateCard(store.CreateCardInput{
+	worktreeCard, err := data.Kanban.CreateCard(kanban.CreateCardInput{
 		Project: project.ID, Board: board.ID, Lane: model.LaneTodo, Title: "Worktree preview", Prompt: "Inspect",
 		WorkspaceMode: model.WorkspaceModeWorktree,
 	})
@@ -109,7 +109,7 @@ func TestGRPCMachineListener(t *testing.T) {
 		t.Fatal(err)
 	}
 	worktreePath := filepath.Join(data.WorktreeRoot(), project.ID, worktreeCard.ID)
-	if _, err := data.SaveWorkspace(model.Workspace{
+	if _, err := data.Workspaces.Save(model.Workspace{
 		CardID: worktreeCard.ID, ProjectID: project.ID, Mode: model.WorkspaceModeWorktree, Path: worktreePath,
 		Branch: "dieter/preview", BaseBranch: "main", State: model.WorkspaceStateReady,
 	}); err != nil {
@@ -144,7 +144,7 @@ func TestGRPCMachineListener(t *testing.T) {
 	if err != nil || canonicalErr != nil || createdWorkspace.GetProject().GetPath() != canonicalSecondRepo || createdWorkspace.GetBoard().GetProjectId() != createdWorkspace.GetProject().GetId() || createdWorkspace.GetBoard().GetRemotePublishMode() != model.RemotePublishManual {
 		t.Fatalf("native project creation = %#v, %v", createdWorkspace, err)
 	}
-	if _, err = data.ArchiveProject(createdWorkspace.GetProject().GetId(), true); err != nil {
+	if _, err = data.Kanban.ArchiveProject(createdWorkspace.GetProject().GetId(), true); err != nil {
 		t.Fatal(err)
 	}
 	restoredWorkspace, err := client.CreateProject(ctx, &dieterv1.CreateProjectRequest{
@@ -196,7 +196,7 @@ func TestGRPCMachineListener(t *testing.T) {
 	if got != "Built locally" {
 		t.Fatalf("assistant response = %q", got)
 	}
-	queued, _, err := data.QueueConversationMessagePartsWithID(card.GetId(), "queued_for_edit", []model.UIMessagePart{
+	queued, _, err := data.Conversations.QueueMessagePartsWithID(card.GetId(), "queued_for_edit", []model.UIMessagePart{
 		{Type: "text", Text: "Edit before running"},
 		{Type: "file", Filename: "context.txt", MediaType: "text/plain", URL: "data:text/plain;base64,Y29udGV4dA=="},
 	})

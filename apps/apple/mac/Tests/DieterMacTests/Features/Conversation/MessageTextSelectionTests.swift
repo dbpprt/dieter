@@ -101,7 +101,8 @@ import Testing
         store.conversation = snapshot
         let row = try #require(store.conversationModel.timeline.first)
         let host = NSHostingView(
-            rootView: ConversationTimelineItemView(row: row).environment(store.conversationContext))
+            rootView: ConversationTimelineItemView(row: row, content: store.conversationModel.content(for: row))
+                .environment(store.conversationContext))
         host.frame = NSRect(x: 0, y: 0, width: 600, height: 300)
         host.layoutSubtreeIfNeeded()
         func textViews(_ view: NSView) -> [MessageTextView] {
@@ -324,7 +325,7 @@ private struct HostedMessageSizingView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 ForEach(model.timeline, id: \.id) { row in
-                    ConversationTimelineItemView(row: row)
+                    ConversationTimelineItemView(row: row, content: model.content(for: row))
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

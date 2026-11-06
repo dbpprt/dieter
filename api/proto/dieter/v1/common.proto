@@ -195,6 +195,9 @@ message Card {
   // Owner-local: agent turns of this conversation may use the account vault.
   // Set only at creation; forks and merges never inherit it.
   bool vault_access = 47;
+  // Owner-local: agent turns of this conversation may send the user mail.
+  // Set only at creation; forks and merges never inherit it.
+  bool mail_access = 48;
 }
 
 message CardOrigin {
@@ -349,6 +352,8 @@ message MessagePart {
   string input_preview = 17;
   string output_preview = 18;
   string payload_revision = 19;
+  // JSON payload of a "data-*" part, e.g. a data-peer-notice from agent channels.
+  bytes data_json = 20;
 }
 
 message PendingTool {

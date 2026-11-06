@@ -2,6 +2,8 @@ package com.getdieter.core.client
 
 import com.getdieter.api.v1.Harness
 import com.getdieter.client.v1.Cards
+import com.getdieter.client.v1.ChannelsCommand
+import com.getdieter.client.v1.ChannelsSlice
 import com.getdieter.client.v1.Command
 import com.getdieter.client.v1.ConversationSlice
 import com.getdieter.client.v1.Done
@@ -10,6 +12,7 @@ import com.getdieter.client.v1.Drafts
 import com.getdieter.client.v1.Failure
 import com.getdieter.client.v1.FolderScope as ClientFolderScope
 import com.getdieter.client.v1.MessageQueued
+import com.getdieter.client.v1.Outcome
 import com.getdieter.client.v1.PageLoaded
 import com.getdieter.client.v1.Result
 import com.getdieter.client.v1.SearchHit
@@ -21,6 +24,8 @@ import com.getdieter.client.v1.WorkspaceSlice
 import com.getdieter.core.CoreRuntime
 import com.getdieter.core.board.BoardOperations
 import com.getdieter.core.board.DropAnchors
+import com.getdieter.core.channels.ChannelSettingRules
+import com.getdieter.core.channels.ChannelsView
 import com.getdieter.core.composition.Attachments
 import com.getdieter.core.composition.DraftKey
 import com.getdieter.core.conversation.ConversationSession
@@ -40,6 +45,7 @@ import com.getdieter.core.screens.ScreenMediaEngineFactory
 import com.getdieter.core.screens.ScreenRouteFactory
 import com.getdieter.core.search.TaskSearchIndex
 import com.getdieter.core.store.WorkspaceView
+import com.getdieter.core.trust.DevicesPresenter
 import com.getdieter.core.workspace.ProjectChangesView
 import com.getdieter.core.workspace.WorkspaceReviewView
 import kotlin.coroutines.cancellation.CancellationException
@@ -51,6 +57,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
@@ -104,7 +111,11 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
         val done = Result(done = Done())
         command.adopt_session?.let { adopt ->
             if (adopt.session_token.isBlank()) invalid("The session token is empty.")
-            runtime.adoptSession(gateway(adopt.gateway_url, adopt.name), adopt.session_token)
+            runtime.adoptSession(
+                gateway(adopt.gateway_url, adopt.name),
+                adopt.session_token,
+                adopt.pairing_code.ifBlank { null },
+            )
             return done
         }
         command.begin_sign_in?.let {
@@ -130,6 +141,10 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
         }
         command.reconnect?.let {
             runtime.reconnect()
+            return done
+        }
+        command.system_woke?.let {
+            runtime.systemWoke()
             return done
         }
         command.set_foreground?.let {
@@ -468,7 +483,74 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
         command.admin?.let {
             return runtime.administer(it)
         }
+        command.channels?.let {
+            return channels(it)
+        }
+        command.mail?.let {
+            return runtime.executeMail(it, surfaces.mail)
+        }
+        command.notification_response?.let {
+            return runtime.respond(it, surfaces.mail)
+        }
+        command.devices?.let { devices ->
+            devices.refresh?.let { runtime.refreshDevices() }
+            devices.approve?.let { approval ->
+                if (approval.code.isBlank()) invalid("Type the code the new device shows.")
+                runtime.approveDevice(approval.code)
+                return Result(outcome = Outcome(succeeded = true))
+            }
+            devices.revoke?.let {
+                if (it.device_id.isBlank()) invalid("Choose a device to remove.")
+                runtime.revokeDevice(it.device_id)
+            }
+            devices.reset?.let { runtime.resetTrust() }
+            if (devices.refresh == null && devices.revoke == null && devices.reset == null)
+                invalid("Choose what to do with your devices.")
+            return done
+        }
         invalid("Choose a command.")
+    }
+
+    /**
+     * A channels command. A setting change reaches any reachable machine; everything else needs the
+     * view's channels surface (the unscoped one for an empty scope).
+     */
+    private suspend fun channels(command: ChannelsCommand): Result {
+        command.set_setting?.let {
+            runtime.channelSettings.set(it)
+            // The change showed before the write landed, so a listing it woke may
+            // predate it; list again now that the machine has it.
+            surfaces.channels.all.forEach { channels -> channels.requestRefresh() }
+            return Result(done = Done())
+        }
+        val channels = surfaces.channels.scoped(command.scope, "Open the channels first.")
+        val select = command.select
+        val active = command.active
+        val post = command.post
+        val pin = command.pin
+        val release = command.release_claim
+        when {
+            select != null -> channels.select(select.project_id.ifEmpty { null })
+            active != null -> channels.setActive(active.on)
+            command.refresh != null -> channels.refresh()
+            post != null -> channels.post(post)
+            pin != null -> channels.pin(pin.message_id, pin.pinned)
+            command.mark_read != null -> channels.markRead()
+            release != null -> channels.release(release.card_id, release.path)
+            else -> invalid("Choose what to do with the channels.")
+        }
+        return Result(channels = channelsSlice(channels.view.value))
+    }
+
+    private fun channelsSlice(view: ChannelsView): ChannelsSlice {
+        val directory = runtime.connection.machines.value
+        val reachable = runtime.choice.reachable().toSet()
+        return view.slice(
+            runtime.channelSettings.view.value.switches,
+            name = { id -> directory.machine(id)?.name?.ifBlank { null } ?: id },
+            reachable = { it in reachable },
+            now = runtime.platform.clock.now(),
+        )
     }
 
     /** [daemonId]'s agents as its loaded catalog lists them. */
@@ -549,6 +631,14 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
                     }
                 Slice.SLICE_QUOTAS ->
                     collect(runtime.quotas.view.map(::quotasSlice)) { emit(Update(quotas = it)) }
+                Slice.SLICE_DEVICES -> {
+                    // Waiting devices are read while some view shows them.
+                    val release = runtime.trust.observeRequests()
+                    collect(runtime.trust.view.map { devicesSlice(DevicesPresenter.present(it)) }) {
+                            emit(Update(devices = it))
+                        }
+                        .also { job -> job.invokeOnCompletion { release() } }
+                }
                 Slice.SLICE_FILES ->
                     observeSurface(surfaces.files, scope, ::emit) { files ->
                         var previous: FilesView? = null
@@ -642,6 +732,43 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
                             )
                         }
                     }
+                Slice.SLICE_CHANNELS ->
+                    observeSurface(surfaces.channels, scope, ::emit) { channels ->
+                        launch { channels.run(runtime.reachabilityChanges()) }
+                        // Claims' ages advance while nothing else changes.
+                        val ticks = flow {
+                            while (true) {
+                                emit(Unit)
+                                delay(CHANNEL_TICK)
+                            }
+                        }
+                        combine(
+                                channels.view,
+                                runtime.channelSettings.view,
+                                runtime.reachabilityChanges(),
+                                ticks,
+                            ) { view, _, _, _ ->
+                                channelsSlice(view)
+                            }
+                            .distinctUntilChanged()
+                            .map { Update(channels = it) }
+                    }
+                Slice.SLICE_CHANNEL_SETTINGS ->
+                    collect(
+                        combine(runtime.channelSettings.view, runtime.workspace.state) {
+                            settings,
+                            workspace ->
+                            ChannelSettingRules.slice(
+                                settings.switches,
+                                workspace.projects,
+                                workspace.boards.values.flatten(),
+                                settings.saving,
+                                settings.error,
+                            )
+                        }
+                    ) {
+                        emit(Update(channel_settings = it))
+                    }
                 Slice.SLICE_CREATION_PREVIEW ->
                     observeSurface(surfaces.creationPreviews, scope, ::emit) { form ->
                         form.view.map { Update(creation_preview = it) }
@@ -732,6 +859,10 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
                             }
                     }
                 }
+                Slice.SLICE_MAIL ->
+                    observeSurface(surfaces.mail, scope, ::emit) { surface ->
+                        runtime.mailSlices(surface).map { Update(mail = it) }
+                    }
                 Slice.SLICE_UNSPECIFIED -> invalid("Choose a slice to observe.")
             }
         return ClientSubscription { job.cancel() }
@@ -768,6 +899,9 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
 
     private companion object {
         val OVERVIEW_RELIST = 3.seconds
+
+        /** How often the channels slice refreshes its relative ages. */
+        val CHANNEL_TICK = 30.seconds
 
         /** The command palette's hits. */
         const val SEARCH_LIMIT = 30

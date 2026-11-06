@@ -115,6 +115,7 @@ private struct SidebarMachineRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel(detail: detail, entry: entry))
         .accessibilityIdentifier("machine.\(machine.daemonID ?? machine.id)")
+        .e2eTarget("machine.\(machine.daemonID ?? machine.id)", text: machine.name)
     }
 
     private func name(online: Bool) -> some View {

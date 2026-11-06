@@ -20,6 +20,11 @@ import (
 	"github.com/dbpprt/dieter/internal/security/trust"
 )
 
+// Keys are the gateway's own keys. The signing key signs daemon tokens, RTC
+// configurations and endpoint moves. The daemon CA issues the enrollment
+// certificates daemons present only to this gateway (TLS client
+// authentication and link proofs); clients and peers trust the device roster
+// instead and never receive it.
 type Keys struct {
 	SigningPrivate  ed25519.PrivateKey
 	SigningPublic   ed25519.PublicKey
@@ -29,7 +34,6 @@ type Keys struct {
 }
 
 type DaemonTokenClaims = trust.DaemonTokenClaims
-type DelegationClaims = trust.DelegationClaims
 type RTCConfigurationClaims = trust.RTCConfigurationClaims
 
 func LoadOrCreateKeys(root string) (*Keys, error) {
@@ -190,11 +194,6 @@ func (k *Keys) SignDaemonToken(publicURL, daemonID string, githubID int64, gener
 	return token, expires, err
 }
 
-func (k *Keys) SignDelegation(publicURL string, claims DelegationClaims) (string, error) {
-	claims.Issuer = strings.TrimRight(publicURL, "/")
-	return trust.SignCompact(k.SigningPrivate, claims)
-}
-
 func (k *Keys) SignRTCConfiguration(publicURL string, claims RTCConfigurationClaims) (string, error) {
 	claims.Issuer = strings.TrimRight(publicURL, "/")
 	return trust.SignCompact(k.SigningPrivate, claims)
@@ -202,10 +201,6 @@ func (k *Keys) SignRTCConfiguration(publicURL string, claims RTCConfigurationCla
 
 func ParseAndVerifyDaemonToken(public ed25519.PublicKey, token, issuer, daemonID string, generation uint64, now time.Time) (DaemonTokenClaims, error) {
 	return trust.ParseAndVerifyDaemonToken(public, token, issuer, daemonID, generation, now)
-}
-
-func ParseAndVerifyDelegation(public ed25519.PublicKey, token, issuer, daemonID, requestID, method string, payload []byte, generation uint64, now time.Time) (DelegationClaims, error) {
-	return trust.ParseAndVerifyDelegation(public, token, issuer, daemonID, requestID, method, payload, generation, now)
 }
 
 func ParseAndVerifyRTCConfiguration(public ed25519.PublicKey, token, issuer, daemonID, operatorSubject, configurationID string, digest []byte, generation uint64, now time.Time) (RTCConfigurationClaims, error) {

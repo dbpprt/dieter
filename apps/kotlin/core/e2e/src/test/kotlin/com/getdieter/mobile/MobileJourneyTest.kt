@@ -15,6 +15,198 @@ class MobileJourneyTest : EndToEnd() {
     @AfterTest fun cleanup() = tearDownRuntimes()
 
     @Test
+    fun overviewTerminalStreamsWhileTheConversationSurfaceIsAlsoObserved() = e2e {
+        val fixture = fixture()
+        val runtime = runtime(fixture)
+        runtime.awaitConnected()
+        runtime.awaitLoaded(fixture)
+        val uiDispatcher = coroutineContext[ContinuationInterceptor] as CoroutineDispatcher
+        val store = MobileStore(RuntimeMobileCore(ClientApi(runtime)), uiDispatcher)
+        try {
+            store.push(MobileRoute.Tool(ToolPage.TERMINALS))
+            store.session.slice.await {
+                it.machines.any { machine -> machine.id == fixture.daemonId }
+            }
+            val created =
+                store.core
+                    .dispatch(
+                        Command(
+                            terminal_overview =
+                                TerminalOverviewCommand(
+                                    scope = MobileStore.TERMINAL_OVERVIEW_SCOPE,
+                                    create =
+                                        CreateOverviewTerminal(
+                                            daemon_id = fixture.daemonId,
+                                            name = "mobile",
+                                            shell = "sh",
+                                            machine_home = true,
+                                        ),
+                                )
+                        )
+                    )
+                    .terminal_overview!!
+            val id = created.selected_id
+            val shell = created.entries.first { it.id == id }.terminal!!
+            assertEquals("", shell.project_id, "machine-home shells need no project")
+            assertEquals("", shell.card_id)
+            assertTrue(shell.working_directory.isNotEmpty())
+            store.push(MobileRoute.TerminalSession(id, ""))
+            store.terminals.command(TerminalsCommand(active = Toggle(true)))
+            store.terminals.acceptsInput.await(
+                10.seconds,
+                describe = {
+                    "overview: ${store.terminals.overview.value}; error: ${store.error.value}"
+                },
+            ) {
+                it
+            }
+            store.terminals.input(
+                "echo mobile-$((6*7)); test \"\$PWD\" -ef \"\$HOME\" && echo at-machine-home\n"
+                    .encodeToByteArray()
+            )
+            store.terminals.screens.await(
+                15.seconds,
+                describe = {
+                    "machine-home output: ${store.terminals.screens.value[id]?.accessibilityText()}"
+                },
+            ) {
+                val output = it[id]?.accessibilityText().orEmpty()
+                output.contains("mobile-42") &&
+                    output.lineSequence().any { it.trim() == "at-machine-home" }
+            }
+
+            // Leaving the surface stops observation, while the daemon-owned shell survives.
+            store.terminals.command(TerminalsCommand(active = Toggle(false)))
+            store.terminals.acceptsInput.await(10.seconds) { !it }
+            store.pop()
+            store.push(MobileRoute.TerminalSession(id, ""))
+            store.terminals.command(TerminalsCommand(active = Toggle(true)))
+            // An idle resumed watch acknowledges the cursor on its 15-second heartbeat.
+            store.terminals.acceptsInput.await(20.seconds) { it }
+            store.terminals.input("echo resumed-$((1+1))\n".encodeToByteArray())
+            val output =
+                store.terminals.screens
+                    .await(15.seconds) {
+                        it[id]?.accessibilityText()?.contains("resumed-2") == true
+                    }
+                    .getValue(id)
+                    .accessibilityText()
+            assertEquals(1, output.split("mobile-42").size - 1, "output is not replayed twice")
+            store.terminals.command(TerminalsCommand(close = TerminalId(shell.id)))
+            store.terminals.overview.await { it.entries.none { entry -> entry.id == id } }
+            assertTrue(store.error.value.isEmpty(), store.error.value)
+        } finally {
+            store.close()
+        }
+    }
+
+    @Test
+    fun conversationTerminalLoadsExistingShellsAndRoutesTheirInput() = e2e {
+        val fixture = fixture(seeded = true)
+        val runtime = runtime(fixture)
+        runtime.awaitConnected()
+        runtime.awaitLoaded(fixture)
+        val uiDispatcher = coroutineContext[ContinuationInterceptor] as CoroutineDispatcher
+        val store = MobileStore(RuntimeMobileCore(ClientApi(runtime)), uiDispatcher)
+        try {
+            val card =
+                store.workspace.slice
+                    .await { it.cards.isNotEmpty() }
+                    .cards
+                    .first { it.project_id == fixture.projectId }
+            val shell =
+                runtime.onMachine(fixture.daemonId) {
+                    it.CreateTerminal()
+                        .execute(
+                            com.getdieter.api.v1.CreateTerminalRequest(
+                                project_id = fixture.projectId,
+                                card_id = card.id,
+                                name = "conversation",
+                                shell = "sh",
+                                columns = 80,
+                                rows = 24,
+                            )
+                        )
+                }
+            store.openConversation(card.id)
+            store.conversation.slice.await { it.daemon_id == fixture.daemonId }
+            store.push(MobileRoute.Pane(card.id, CardPane.TERMINAL))
+            store.terminals.card.await(10.seconds) {
+                it.terminals.any { terminal -> terminal.id == shell.id }
+            }
+            store.push(MobileRoute.TerminalSession(shell.id, card.id))
+            store.terminals.command(TerminalsCommand(active = Toggle(true)))
+            store.terminals.acceptsInput.await(10.seconds) { it }
+            store.terminals.input("echo conversation-$((3*7))\n".encodeToByteArray())
+            store.terminals.screens.await(15.seconds) {
+                it[shell.id]?.accessibilityText()?.contains("conversation-21") == true
+            }
+            store.terminals.grid(90, 25)
+            store.terminals.card.await(10.seconds) {
+                it.terminals.any { terminal ->
+                    terminal.id == shell.id && terminal.columns == 90 && terminal.rows == 25
+                }
+            }
+            store.terminals.command(TerminalsCommand(rename = TerminalRename(shell.id, "renamed")))
+            store.terminals.card.await(10.seconds) {
+                it.terminals.any { terminal ->
+                    terminal.id == shell.id && terminal.name == "renamed"
+                }
+            }
+            store.terminals.command(TerminalsCommand(close = TerminalId(shell.id)))
+            store.terminals.card.await(10.seconds) {
+                it.terminals.none { terminal -> terminal.id == shell.id }
+            }
+            assertTrue(store.error.value.isEmpty(), store.error.value)
+        } finally {
+            store.close()
+        }
+    }
+
+    @Test
+    fun anUnavailableAgentCanBeReplacedAfterARejectedPickerChoice() = e2e {
+        val fixture = fixture()
+        val runtime = runtime(fixture)
+        runtime.awaitConnected()
+        runtime.awaitLoaded(fixture)
+        val uiDispatcher = coroutineContext[ContinuationInterceptor] as CoroutineDispatcher
+        val store = MobileStore(RuntimeMobileCore(ClientApi(runtime)), uiDispatcher)
+        try {
+            // A remembered agent reaches a machine where it is not installed.
+            val unavailable = "not-installed-agent"
+            val intent =
+                CreationIntent(
+                    project_id = fixture.projectId,
+                    prompt = "Repair the picker",
+                    selection = com.getdieter.api.v1.HarnessSelection(unavailable, "opus"),
+                )
+            store.creation.update(intent)
+            store.creation.preview.await(15.seconds) {
+                it.catalog == CreationCatalogState.CREATION_CATALOG_STATE_LIVE
+            }
+            assertTrue(store.creation.preview.value.agent!!.providers.none { it.id == unavailable })
+            // An old menu's tap is rejected, then the current catalog can still be used.
+            store.creation.update(intent, AgentChoice(provider = unavailable))
+            store.error.await { it.contains("not available") }
+            store.creation.update(store.creation.intent.value, AgentChoice(provider = "codex"))
+            store.creation.preview.await {
+                it.intent?.selection?.provider == "codex" && it.problem.isEmpty()
+            }
+            val alternate =
+                store.creation.preview.value.agent!!
+                    .models
+                    .first {
+                        it.id != store.creation.intent.value.selection?.model
+                    }
+                    .id
+            store.creation.update(store.creation.intent.value, AgentChoice(model = alternate))
+            store.creation.intent.await { it.selection?.model == alternate }
+        } finally {
+            store.close()
+        }
+    }
+
+    @Test
     fun sharedTaskJourneySurvivesFollowUpAndSyncsToAnotherClient() = e2e {
         val fixture = fixture()
         val runtime = runtime(fixture)
@@ -83,7 +275,7 @@ class MobileJourneyTest : EndToEnd() {
                     message.parts.any { part -> part.text.contains("Continue in the same task") }
                 }
             }
-            first.push(MobileRoute.Tool(ToolPage.FILES))
+            first.push(MobileRoute.Tool(ToolPage.FILES, fixture.projectId))
             first.files.slice.await { it.entries.any { entry -> entry.name == "README.md" } }
             first.core.dispatch(
                 Command(
@@ -95,7 +287,7 @@ class MobileJourneyTest : EndToEnd() {
                 )
             )
             first.files.slice.await { it.document?.content?.contains("# Isolated E2E") == true }
-            first.push(MobileRoute.Tool(ToolPage.SCHEDULES))
+            first.push(MobileRoute.Tool(ToolPage.SCHEDULES, fixture.projectId))
             first.schedules.slice.await { it.loaded }
             assertTrue(first.schedules.slice.value.error.isEmpty())
             val selectionBeforeRefresh = first.conversation.selectedCard.value

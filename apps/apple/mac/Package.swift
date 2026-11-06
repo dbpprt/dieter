@@ -13,10 +13,10 @@ let package = Package(
     dependencies: [
         .package(path: "../DieterKit"),
         .package(path: "../../../native/macos"),
-        .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.3.0"),
+        .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.4.4"),
         .package(path: "../../../third_party/grpc-swift-nio-transport"),
-        .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.38.0"),
-        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.19.0"),
+        .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.39.0"),
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.99.0"),
         .package(path: "../../../third_party/swift-markdown-engine"),
     ],
     targets: [

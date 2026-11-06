@@ -29,6 +29,7 @@ import (
 	"github.com/dbpprt/dieter/internal/security/linkauth"
 	"github.com/dbpprt/dieter/internal/security/localauth"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit"
 	"github.com/dbpprt/dieter/internal/testkit/topology"
 	"github.com/dbpprt/dieter/internal/transport/dieterclient"
@@ -80,11 +81,11 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	a, b, other := topology.Machine(t, g, "A", 42), topology.Machine(t, g, "B", 42), topology.Machine(t, g, "Other", 43)
 	scope := crdt.Revision([]string{issuer, "github:42"})
 	sa, sb := store.New(a.Root), store.New(b.Root)
-	ba, err := sa.BindPeerAccount(scope, "github:42", a.ID, a.Issuer())
+	ba, err := sa.Replica.BindPeerAccount(scope, "github:42", a.ID, a.Issuer())
 	if err != nil {
 		t.Fatal(err)
 	}
-	bb, err := sb.BindPeerAccount(scope, "github:42", b.ID, b.Issuer())
+	bb, err := sb.Replica.BindPeerAccount(scope, "github:42", b.ID, b.Issuer())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,33 +94,35 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 		Identity: b, Store: sb, Direct: wantRoute == "direct-tls", ControlWebRTC: rtc,
 		API: api.Options{Runner: newFakeRunner(), Catalog: testkit.MockCatalog()}, Logger: logger,
 	})
-	left, err := sa.PutPeerRecord(ba, "project-settings", "shared", "", []byte(`{"name":"From A"}`), false)
+	left, err := sa.Replica.PutPeerRecord(ba, "project-settings", "shared", "", []byte(`{"name":"From A"}`), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = sb.PutPeerRecord(bb, "project-settings", "shared", "", []byte(`{"name":"From B"}`), false)
+	_, err = sb.Replica.PutPeerRecord(bb, "project-settings", "shared", "", []byte(`{"name":"From B"}`), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner := &peersync.PeerSync{Identity: a, Store: sa, RelayOnly: wantRoute == "webrtc-turn"}
+	// A's daemon is played by this test: its device trust joins B's roster.
+	trustA := topology.Join(t, g, daemonB, a)
+	runner := &peersync.PeerSync{Identity: a, Trust: trustA, Store: sa, RelayOnly: wantRoute == "webrtc-turn"}
 	if err = runner.Round(ctx); err != nil {
 		t.Fatal(err)
 	}
-	da, err := sa.PeerData(scope)
+	da, err := sa.Replica.PeerData(scope)
 	if err != nil {
 		t.Fatal(err)
 	}
-	db, err := sb.PeerData(scope)
+	db, err := sb.Replica.PeerData(scope)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if da.LastRoute != wantRoute || crdt.Revision(da.State) != crdt.Revision(db.State) || len(da.Records["project-settings/shared"].Versions) != 2 {
 		t.Fatalf("route=%s wanted=%s A=%+v B=%+v", da.LastRoute, wantRoute, da.State, db.State)
 	}
-	if _, err = sa.PutPeerRecord(ba, "project-settings", "shared", left.Revision(), []byte(`{}`), false); err == nil {
+	if _, err = sa.Replica.PutPeerRecord(ba, "project-settings", "shared", left.Revision(), []byte(`{}`), false); err == nil {
 		t.Fatal("stale write accepted")
 	}
-	resolved, err := sa.PutPeerRecord(ba, "project-settings", "shared", da.Records["project-settings/shared"].Revision(), []byte(`{"name":"Resolved"}`), false)
+	resolved, err := sa.Replica.PutPeerRecord(ba, "project-settings", "shared", da.Records["project-settings/shared"].Revision(), []byte(`{"name":"Resolved"}`), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +131,7 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	if err = runner.Round(ctx); err != nil {
 		t.Fatal(err)
 	}
-	db, err = sb.PeerData(scope)
+	db, err = sb.Replica.PeerData(scope)
 	if err != nil || db.Records["project-settings/shared"].Revision() != resolved.Revision() {
 		t.Fatal(db, err)
 	}
@@ -197,9 +200,34 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	if err = runner.Round(ctx); err != nil {
 		t.Fatal(err)
 	}
-	shared, e := sa.PeerData(scope)
+	shared, e := sa.Replica.PeerData(scope)
 	if e != nil || !schema.SelectedKV(shared.Records["kv.navigation/projects-folder.fixture.name"]).Deleted {
 		t.Fatal(shared, e)
+	}
+	// Inbox pins use the same public KV command over the selected route.
+	for _, value := range []string{"true", "false"} {
+		if err = os.WriteFile(file, []byte(value), 0600); err != nil {
+			t.Fatal(err)
+		}
+		output.Reset()
+		args := []string{"kv", "put", "--namespace", "navigation", "--key", "inbox-pin.fixture.pinned", "--file", file, "--operation", "inbox-pin-" + value}
+		if value == "false" {
+			args = append(args, "--revision", entry.Revision)
+		}
+		if err = client.Run(args); err != nil {
+			t.Fatal(err)
+		}
+		entry.Reset()
+		if err = protojson.Unmarshal(output.Bytes(), &entry); err != nil {
+			t.Fatal(err)
+		}
+		if err = runner.Round(ctx); err != nil {
+			t.Fatal(err)
+		}
+		shared, e = sa.Replica.PeerData(scope)
+		if e != nil || string(schema.SelectedKV(shared.Records["kv.navigation/inbox-pin.fixture.pinned"]).Value) != value {
+			t.Fatal(shared, e)
+		}
 	}
 	// Real raw local API, with only the local token, has the same record view.
 	local, err := grpc.NewClient(daemonB.Address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithPerRPCCredentials(localauth.FileCredentials{Root: sb.Root}))
@@ -213,24 +241,24 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 
 	// One logical project over real transports: attach a second machine, edit
 	// from its replica, and keep all execution/file operations on their owner.
-	if _, err := sa.CreateProject(store.CreateProjectInput{Name: "aaa-default", Path: initTestRepository(t, "default"), InitialBoardName: "Main"}); err != nil {
+	if _, err := sa.Kanban.CreateProject(kanban.CreateProjectInput{Name: "aaa-default", Path: initTestRepository(t, "default"), InitialBoardName: "Main"}); err != nil {
 		t.Fatal(err)
 	}
-	project, err := sa.CreateProject(store.CreateProjectInput{Name: "Shared repo", Path: initTestRepository(t, "owner-a"), InitialBoardName: "Main"})
+	project, err := sa.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Shared repo", Path: initTestRepository(t, "owner-a"), InitialBoardName: "Main"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	board, err := sa.InitialBoard(project.ID)
+	board, err := sa.Kanban.InitialBoard(project.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ownedA, err := sa.CreateChat(store.CreateCardInput{Project: project.ID, Title: "A conversation", WorkspaceMode: "project"})
+	ownedA, err := sa.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "A conversation", WorkspaceMode: "project"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Persist a real owner-signed pre-removal summary. Sync must validate its
 	// original bytes and proof, including when the owner is later offline.
-	beforeLegacy, err := sa.PeerData(scope)
+	beforeLegacy, err := sa.Replica.PeerData(scope)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,14 +272,14 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	}
 	legacyFields["commentCount"] = json.RawMessage("0")
 	legacyJSON, _ := json.Marshal(legacyFields)
-	legacyRecord, err := sa.PutPeerRecord(ba, "item", oldSummary.ID, oldSummary.Revision(), legacyJSON, false)
+	legacyRecord, err := sa.Replica.PutPeerRecord(ba, "item", oldSummary.ID, oldSummary.Revision(), legacyJSON, false)
 	if err != nil || len(legacyRecord.Versions[0].Provenance) == 0 {
 		t.Fatalf("signed legacy summary: %v", err)
 	}
 	if err = runner.Round(ctx); err != nil {
 		t.Fatal(err)
 	}
-	afterLegacy, err := sb.PeerData(scope)
+	afterLegacy, err := sb.Replica.PeerData(scope)
 	if err != nil || afterLegacy.Records[crdt.Key("item", oldSummary.ID)].Revision() != legacyRecord.Revision() {
 		t.Fatalf("legacy summary changed in transit: %v", err)
 	}
@@ -288,7 +316,7 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	if !bytes.Contains(output.Bytes(), []byte("initial")) {
 		t.Fatal(output.String())
 	}
-	second, err := sb.AttachCheckout(project.ID, initTestRepository(t, "owner-b-second"), "Second B checkout")
+	second, err := sb.Kanban.AttachCheckout(project.ID, initTestRepository(t, "owner-b-second"), "Second B checkout")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,22 +327,22 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 		t.Fatal(err)
 	}
 	name := "Edited without project creator"
-	if _, err = sb.UpdateProject(project.ID, &name, nil, nil); err != nil {
+	if _, err = sb.Kanban.UpdateProject(project.ID, &name, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err = runner.Round(ctx); err != nil {
 		t.Fatal(err)
 	}
-	mergedProject, err := sa.ResolveProject(project.ID)
+	mergedProject, err := sa.Kanban.ResolveProject(project.ID)
 	if err != nil || mergedProject.Name != name || len(mergedProject.Checkouts) != 3 {
 		t.Fatalf("shared project: %+v %v", mergedProject, err)
 	}
-	if _, err = sa.CardDetail(created.GetId()); err == nil {
+	if _, err = sa.Kanban.CardDetail(created.GetId()); err == nil {
 		t.Fatal("replication moved conversation ownership")
 	}
 	// Multi-page snapshots and unattended Run catch up without a native client.
 	for n := 0; n <= crdt.PageSize; n++ {
-		if _, err = sb.PutPeerRecord(bb, "project-settings", "page_"+strconv.Itoa(n), "", []byte(`{"name":"Paged"}`), false); err != nil {
+		if _, err = sb.Replica.PutPeerRecord(bb, "project-settings", "page_"+strconv.Itoa(n), "", []byte(`{"name":"Paged"}`), false); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -344,7 +372,7 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	if crdt.Key(routedNext.Records[0].Kind, routedNext.Records[0].Id) <= routedFirst.NextKey {
 		t.Fatal("routed continuation repeated a record")
 	}
-	if _, err = sb.PutPeerRecord(bb, "project-settings", "changed_page", "", []byte(`{}`), false); err != nil {
+	if _, err = sb.Replica.PutPeerRecord(bb, "project-settings", "changed_page", "", []byte(`{}`), false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = localAPI.ListPeerRecords(ctx, &dieterv1.PeerSnapshotRequest{AfterKey: first.GetNextKey(), SnapshotRevision: first.GetSnapshotRevision()}); status.Code(err) != codes.Aborted {
@@ -361,7 +389,7 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	until := time.Now().Add(15 * time.Second)
 	caughtUp := false
 	for time.Now().Before(until) {
-		data, e := sa.PeerData(scope)
+		data, e := sa.Replica.PeerData(scope)
 		if e == nil && data.Records["project-settings/changed_page"].ID != "" {
 			caughtUp = true
 			break

@@ -17,6 +17,7 @@ import (
 	"github.com/dbpprt/dieter/internal/link"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit"
 )
 
@@ -74,15 +75,15 @@ func TestCardSendUsesRunningDaemonAndOutlivesClient(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(repository, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Daemon ownership", Path: repository})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Daemon ownership", Path: repository})
 	if err != nil {
 		t.Fatal(err)
 	}
-	board, err := data.CreateBoard(store.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
+	board, err := data.Kanban.CreateBoard(kanban.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
 	if err != nil {
 		t.Fatal(err)
 	}
-	card, err := data.CreateCard(store.CreateCardInput{
+	card, err := data.Kanban.CreateCard(kanban.CreateCardInput{
 		Project: project.ID, Board: board.ID, Lane: model.LaneTodo,
 		Title: "Survive client exit", Prompt: "Start", Provider: "mock", Model: "mock",
 	})
@@ -152,19 +153,19 @@ func TestCardSendUsesRunningDaemonAndOutlivesClient(t *testing.T) {
 	}
 	deadline := time.Now().Add(testkit.Budget(30 * time.Second))
 	for time.Now().Before(deadline) {
-		stored, resolveErr := data.ResolveCard(card.ID)
-		leased, leaseErr := data.CardHasRuntimeLease(card.ID)
+		stored, resolveErr := data.Kanban.ResolveCard(card.ID)
+		leased, leaseErr := data.Leases.CardActive(card.ID)
 		if resolveErr == nil && leaseErr == nil && !leased && stored.Runtime == "idle" {
 			// The cache file precedes the final sync-journal commit. Wait for
 			// that writer to finish before TempDir cleanup removes its root.
-			if _, err := data.GlobalStateContext(context.Background()); err != nil {
+			if _, err := data.Kanban.GlobalStateContext(context.Background()); err != nil {
 				t.Fatal(err)
 			}
 			return
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	stored, _ := data.ResolveCard(card.ID)
+	stored, _ := data.Kanban.ResolveCard(card.ID)
 	t.Fatalf("card runtime=%q after daemon-owned turn", stored.Runtime)
 }
 

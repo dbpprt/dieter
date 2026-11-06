@@ -48,6 +48,7 @@ maestro = "cli-2.11.0"
 # Release signing and OCI publication (CI installs them only in release jobs).
 cosign = "3.1.3"
 oras = "1.3.4"
+shellcheck = "0.11.0"
 
 [tasks.setup]
 description = "Install locked gems and the harness runtime dependencies; no app builds or device setup"

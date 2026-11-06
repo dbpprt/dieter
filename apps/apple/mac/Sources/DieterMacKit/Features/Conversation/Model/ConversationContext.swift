@@ -57,9 +57,7 @@ final class ConversationContext {
     var selectedDetail: Dieter_V1_CardDetail? { model.selectedDetail }
     /// The composer's agent pickers as the core shows them; nil until the
     /// conversation's card and machine are known.
-    var agentControls: ClientAgentControlsState? {
-        return model.state.hasAgent ? model.state.agent : nil
-    }
+    var agentControls: ClientAgentControlsState? { model.chrome.agent }
     @ObservationIgnored var onChooseAgent: (ClientAgentChoice.OneOf_Choice) async -> Void = { _ in }
     /// Changes the composer's agent; the core checks the pickers allow it.
     func chooseAgent(_ choice: ClientAgentChoice.OneOf_Choice) async { await onChooseAgent(choice) }
@@ -71,6 +69,9 @@ final class ConversationContext {
         get { composer.draft.attachments }
         set { composer.draft.attachments = newValue }
     }
+    /// Opens the agent channel of `projectID` on the conversation's machine.
+    @ObservationIgnored var onOpenChannel: (String) -> Void = { _ in }
+    func openChannel(projectID: String) { onOpenChannel(projectID) }
     @ObservationIgnored var onAddAttachments: ([URL]) -> Void = { _ in }
     func addAttachments(_ urls: [URL]) { onAddAttachments(urls) }
     @ObservationIgnored var onAddPastedAttachments: ([NSItemProvider]) -> Void = { _ in }

@@ -1,15 +1,19 @@
-package store
+package store_test
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
+	"github.com/dbpprt/dieter/internal/testkit"
 )
 
 func TestPrivateMetadataCreationPreservesWorktreePermissions(t *testing.T) {
 	t.Parallel()
-	s, project, board := setup(t, "review")
-	card, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, Title: "Private"})
+	s, project, board := testkit.BoardStore(t, "review")
+	card, err := s.Kanban.CreateCard(kanban.CreateCardInput{Project: project.ID, Board: board.ID, Title: "Private"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,15 +31,15 @@ func TestPrivateMetadataCreationPreservesWorktreePermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertMode(t, s.Root, 0700)
-	assertMode(t, s.cardDir(), 0700)
-	assertMode(t, filepath.Join(s.cardDir(), card.ID+".md"), 0600)
+	assertMode(t, s.CardDir(), 0700)
+	assertMode(t, filepath.Join(s.CardDir(), card.ID+".md"), 0600)
 	assertMode(t, worktreeFile, 0644)
 }
 
 func TestEnsureRehardensSensitiveRootFiles(t *testing.T) {
 	t.Parallel()
 	root := filepath.Join(t.TempDir(), "dieter")
-	s := New(root)
+	s := store.New(root)
 	if err := s.Ensure(); err != nil {
 		t.Fatal(err)
 	}

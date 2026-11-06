@@ -1,12 +1,12 @@
 import Foundation
 
-enum ConversationMarkdownAlignment: Equatable, Sendable {
+enum ConversationMarkdownAlignment: Hashable, Sendable {
     case leading
     case center
     case trailing
 }
 
-struct ConversationMarkdownTable: Equatable, Sendable {
+struct ConversationMarkdownTable: Hashable, Sendable {
     let headers: [String]
     let alignments: [ConversationMarkdownAlignment]
     let rows: [[String]]
@@ -23,7 +23,7 @@ struct ConversationMarkdownTable: Equatable, Sendable {
     }
 }
 
-enum ConversationMarkdownBlock: Equatable, Sendable {
+enum ConversationMarkdownBlock: Hashable, Sendable {
     case paragraph(String)
     case heading(level: Int, text: String)
     case bullet(String)

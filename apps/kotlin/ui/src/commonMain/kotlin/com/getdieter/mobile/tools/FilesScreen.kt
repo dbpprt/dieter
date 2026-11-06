@@ -33,29 +33,31 @@ internal fun FilesScreen(
     store: MobileStore,
     inConversation: Boolean = false,
     route: MobileRoute.FilePath? = null,
+    /** The project tool route when this is a project's Files page. */
+    tool: MobileRoute.Tool? = null,
+    openUrl: (String) -> Unit = androidx.compose.ui.platform.LocalUriHandler.current::openUri,
 ) {
     if (route?.file == true) {
-        DocumentScreen(store, route)
+        DocumentScreen(store, route, openUrl)
         return
     }
     val view by store.files.slice.collectAsState()
     val conversation by store.conversation.slice.collectAsState()
-    val workspace by store.workspace.slice.collectAsState()
     var create by remember { mutableStateOf<Boolean?>(null) }
     var moving by remember { mutableStateOf<com.getdieter.api.v1.FileEntry?>(null) }
     var deleting by remember { mutableStateOf<com.getdieter.api.v1.FileEntry?>(null) }
     val buffers by store.files.buffers.collectAsState()
     val path = route?.path.orEmpty()
-    val ready = route == null || view.directory.trimSlashes() == path.trimSlashes()
+    // A project's page waits until Files shows its checkout, never the previous binding.
+    val checkout = tool?.let { store.toolCheckout(it) }
+    val ready =
+        (route == null || view.directory.trimSlashes() == path.trimSlashes()) &&
+            (tool == null || view.target?.checkout_id == checkout?.id)
     val cardId = if (inConversation) store.conversation.selectedCard.value else ""
     val title = path.trimSlashes().substringAfterLast('/').ifEmpty { "Files" }
     val subtitle =
         if (inConversation) conversation.card?.title.orEmpty()
-        else
-            workspace.projects
-                .firstOrNull { it.id == store.boards.currentProjectId() }
-                ?.name
-                .orEmpty()
+        else view.target?.let { scopeSubtitle(store, it.project_id, it.daemon_id) }.orEmpty()
     val chrome =
         ScreenChrome(
             title,
@@ -99,22 +101,24 @@ internal fun FilesScreen(
                                         },
                                     )
                                 ),
-                                if (!inConversation && route == null)
-                                    MenuSection(
-                                        projectScopeMenu(store) { store.files.bindProject() }
-                                    )
-                                else null,
+                                tool
+                                    ?.let { checkoutMenu(store, it) }
+                                    ?.let { MenuSection(listOf(it)) },
                             ),
                     )
                 ),
         )
+    if (tool != null && checkout == null) {
+        Screen(chrome) { NoCheckout(store, tool.projectId) }
+        return
+    }
     Screen(chrome) {
         LazyColumn(
             Modifier.fillMaxSize().testTag("files-list"),
             state = listState,
             contentPadding = padding,
         ) {
-            if (view.listing_error.isNotEmpty())
+            if (view.listing_error.isNotEmpty() && ready)
                 item("error") {
                     Banner(
                         "Files unavailable",
@@ -257,7 +261,11 @@ internal fun formatBytes(size: Long): String =
     }
 
 @Composable
-private fun DocumentScreen(store: MobileStore, route: MobileRoute.FilePath) {
+private fun DocumentScreen(
+    store: MobileStore,
+    route: MobileRoute.FilePath,
+    openUrl: (String) -> Unit,
+) {
     val view by store.files.slice.collectAsState()
     val buffers by store.files.buffers.collectAsState()
     val previewAttachment = rememberAttachmentViewer { store.error.value = it }
@@ -272,6 +280,21 @@ private fun DocumentScreen(store: MobileStore, route: MobileRoute.FilePath) {
     val isMarkdown = document != null && FilePaths.renderer(document) == FilePaths.Renderer.MARKDOWN
     LaunchedEffect(view.document_key, document?.revision) {
         document?.let { store.files.syncBuffer(view.document_key, it.content) }
+    }
+    LaunchedEffect(view.document_key, document?.revision) {
+        if (
+            document != null &&
+                FilePaths.renderer(document) in
+                    setOf(FilePaths.Renderer.IMAGE, FilePaths.Renderer.PDF)
+        ) {
+            previewAttachment(
+                com.getdieter.core.composition.Attachments.part(
+                    document.name,
+                    document.mime_type,
+                    FilePaths.bytes(document),
+                )
+            )
+        }
     }
     fun save() {
         val key = view.document_key
@@ -391,11 +414,17 @@ private fun DocumentScreen(store: MobileStore, route: MobileRoute.FilePath) {
                     tone = Tone.DANGER,
                 )
             when {
+                document == null && view.document_error.isNotEmpty() ->
+                    EmptyState(
+                        Glyph.FILE_PLAIN,
+                        "File unavailable",
+                        "Choose another link or go back to Files.",
+                    )
                 document == null ->
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Spinner(Modifier.size(26.dp))
                     }
-                document.binary ->
+                !FilePaths.editable(document) ->
                     EmptyState(
                         Glyph.FILE_PLAIN,
                         document.name,
@@ -423,7 +452,9 @@ private fun DocumentScreen(store: MobileStore, route: MobileRoute.FilePath) {
                             .padding(horizontal = 20.dp, vertical = 12.dp)
                             .padding(bottom = padding.calculateBottomPadding())
                     ) {
-                        RichText(text)
+                        RichText(text) {
+                            store.openContentLink(it, openUrl, route.cardId, route.path)
+                        }
                     }
                 else ->
                     BasicTextField(
@@ -468,4 +499,26 @@ private fun DocumentScreen(store: MobileStore, route: MobileRoute.FilePath) {
             },
             { moving = false },
         )
+}
+
+/** A project tool's page when the project has no checkout on any machine. */
+@Composable
+internal fun NoCheckout(store: MobileStore, projectId: String) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        EmptyState(
+            Glyph.MACHINE,
+            "No checkout",
+            "Attach this project to a folder on one of your machines to browse it here.",
+        ) {
+            DButton(
+                "Open project",
+                {
+                    store.showFrom(
+                        MobileRoute.Root(MobileTab.PROJECTS),
+                        MobileRoute.Project(projectId),
+                    )
+                },
+            )
+        }
+    }
 }

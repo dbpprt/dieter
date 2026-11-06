@@ -8,12 +8,15 @@ require_relative "dieter"
 
 module Dieter
   # The tests/maestro flows: Android and iOS run the mobile flows with the
-  # Maestro CLI; the debug Mac app interprets the mac flows in-process.
+  # Maestro CLI, Android its desktop flows on a desktop display; the debug Mac
+  # app interprets the mac flows in-process.
   module Flows
     DIRECTORIES = {
       "android" => "tests/maestro/mobile",
       "ios" => "tests/maestro/mobile",
-      "mac" => "tests/maestro/mac"
+      "mac" => "tests/maestro/mac",
+      # Android's desktop shell (DeX, desktop windowing) on a desktop-sized display.
+      "android-desktop" => "tests/maestro/desktop"
     }.freeze
     TAGS = %w[smoke full].freeze
     # The subset the Mac app's NativeUIFlowRunner implements.
@@ -26,6 +29,7 @@ module Dieter
       extendedWaitUntil
       takeScreenshot
       pressKey
+      scroll
     ].freeze
 
     module_function
@@ -107,7 +111,10 @@ module Dieter
             next mac_plan(flow) if platform == "mac"
             flow["steps"].each do |step|
               next unless step.is_a?(Hash) && step.key?("runFlow")
-              reference = step["runFlow"].is_a?(Hash) ? step["runFlow"]["file"] : step["runFlow"]
+              run = step["runFlow"]
+              # An inline conditional block (`when` + `commands`) needs no file.
+              next if run.is_a?(Hash) && run.key?("commands") && !run.key?("file")
+              reference = run.is_a?(Hash) ? run["file"] : run
               unless File.file?(File.join(File.dirname(flow["path"]), reference.to_s))
                 raise ArgumentError, "#{flow["source"]}: missing subflow #{reference}"
               end
@@ -173,6 +180,9 @@ module Dieter
       argv = [self.class.binary, "-addr", "127.0.0.1:0", "-home", File.join(state, "gateway")]
       argv += %w[-direct-route live] if direct
       argv << "-e2e-fixture" if e2e
+      if e2e && !ENV["DIETER_TEST_MAIL_REPORT"].to_s.empty?
+        argv += ["-mail-report", File.expand_path(ENV.fetch("DIETER_TEST_MAIL_REPORT"))]
+      end
       env = { "DIETER_HARNESS_RUNTIME_DIR" => Dieter.path("internal/harness/runtime") }
       env["DIETER_TEST_CONTROL_WEBRTC"] = "1" if e2e
       log = File.join(evidence, "fixture.log")
@@ -192,13 +202,16 @@ module Dieter
       @values =
         lines.filter_map { |line| line.match(/\A(DIETER_ISOLATED_[A-Z_]+)=(.*)\z/)&.captures }.to_h
       unless @values["DIETER_ISOLATED_ADDR"].to_s.match?(/\A127\.0\.0\.1:\d+\z/) &&
-               !@values["DIETER_ISOLATED_TOKEN"].to_s.empty?
+               !@values["DIETER_ISOLATED_TOKEN"].to_s.empty? &&
+               !@values["DIETER_ISOLATED_PAIRING_CODE"].to_s.empty?
         raise "Invalid fixture readiness"
       end
     end
 
     def address = values.fetch("DIETER_ISOLATED_ADDR")
     def token = values.fetch("DIETER_ISOLATED_TOKEN")
+    # The one-time code the fixture's machine approves; apps pair with it.
+    def pairing_code = values.fetch("DIETER_ISOLATED_PAIRING_CODE")
 
     def self.redact(path)
       return unless File.exist?(path)

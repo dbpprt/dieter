@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"slices"
 	"strings"
 
 	"github.com/dbpprt/dieter/internal/platform/fault"
@@ -42,18 +43,24 @@ func (s *Service) turnToken(cardID, turnID string) string {
 
 // VerifyTurnToken returns the card of a currently active turn.
 func (s *Service) VerifyTurnToken(token string) (string, error) {
+	cardID, _, err := s.VerifyTurn(token)
+	return cardID, err
+}
+
+// VerifyTurn returns the card and turn of a currently active turn.
+func (s *Service) VerifyTurn(token string) (cardID, turnID string, err error) {
 	parts := strings.Split(strings.TrimSpace(token), ":")
 	if len(parts) != 4 || parts[0] != turnTokenPrefix || !hmac.Equal([]byte(parts[3]), []byte(s.turnTokenMAC(parts[1], parts[2]))) {
-		return "", ErrTurnTokenInvalid
+		return "", "", ErrTurnTokenInvalid
 	}
 	s.mu.Lock()
 	active := s.active[parts[1]]
 	current := active != nil && active.turnID == parts[2] && !active.finishing
 	s.mu.Unlock()
 	if !current {
-		return "", ErrTurnTokenInvalid
+		return "", "", ErrTurnTokenInvalid
 	}
-	return parts[1], nil
+	return parts[1], parts[2], nil
 }
 
 // agentEnvironment is added to every harness worker. Commands an agent runs
@@ -96,16 +103,18 @@ func (s *Service) RegisterVaultSecrets(cardID string, values ...string) {
 	}
 }
 
-func (s *Service) redactVaultSecrets(cardID, turnID string, chunks []json.RawMessage) []json.RawMessage {
+func (s *Service) turnVaultSecrets(cardID, turnID string) []string {
 	s.mu.Lock()
-	var secrets []string
+	defer s.mu.Unlock()
 	if active := s.active[cardID]; active != nil && active.turnID == turnID {
-		secrets = append(secrets, active.vaultSecrets...)
+		return slices.Clone(active.vaultSecrets)
 	}
-	s.mu.Unlock()
-	if len(secrets) == 0 {
-		return chunks
-	}
+	return nil
+}
+
+// jsonForms are secrets as they appear inside JSON strings, plain and
+// HTML-escaped.
+func jsonForms(secrets []string) [][]byte {
 	var forms [][]byte
 	for _, secret := range secrets {
 		for _, escapeHTML := range []bool{false, true} {
@@ -118,15 +127,46 @@ func (s *Service) redactVaultSecrets(cardID, turnID string, chunks []json.RawMes
 			}
 		}
 	}
+	return forms
+}
+
+func redactForms(value []byte, forms [][]byte) []byte {
+	for _, form := range forms {
+		if len(form) > 0 && bytes.Contains(value, form) {
+			value = bytes.ReplaceAll(value, form, []byte(redactedVaultSecret))
+		}
+	}
+	return value
+}
+
+func (s *Service) redactVaultSecrets(cardID, turnID string, chunks []json.RawMessage) []json.RawMessage {
+	secrets := s.turnVaultSecrets(cardID, turnID)
+	if len(secrets) == 0 {
+		return chunks
+	}
+	forms := jsonForms(secrets)
 	result := make([]json.RawMessage, len(chunks))
 	for i, chunk := range chunks {
-		redacted := []byte(chunk)
-		for _, form := range forms {
-			if len(form) > 0 && bytes.Contains(redacted, form) {
-				redacted = bytes.ReplaceAll(redacted, form, []byte(redactedVaultSecret))
-			}
-		}
-		result[i] = redacted
+		result[i] = redactForms([]byte(chunk), forms)
 	}
 	return result
+}
+
+// RedactVaultText replaces the vault values revealed to a card's active turn
+// in text that turn wrote, such as a mail subject and body, as its stored
+// transcript does: the values themselves and their JSON string forms.
+func (s *Service) RedactVaultText(cardID, turnID string, values ...*string) {
+	secrets := s.turnVaultSecrets(cardID, turnID)
+	if len(secrets) == 0 {
+		return
+	}
+	forms := jsonForms(secrets)
+	for _, secret := range secrets {
+		forms = append(forms, []byte(secret))
+	}
+	// Longer forms first, so no value is left partly replaced.
+	slices.SortStableFunc(forms, func(a, b []byte) int { return len(b) - len(a) })
+	for _, value := range values {
+		*value = string(redactForms([]byte(*value), forms))
+	}
 }

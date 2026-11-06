@@ -30,7 +30,8 @@ struct ProjectContextSheet: View {
                     validationCommands: $draft.validationCommands, workspacesPresented: $workspacesPresented)
                 Section("Checkouts & machines") {
                     ProjectCheckoutMenu(projectID: store.selectedProjectID, size: 28)
-                    ForEach(store.selectedProject?.checkoutChoices ?? [], id: \.id) { checkout in
+                    let checkouts = store.selectedProject?.checkoutChoices ?? []
+                    ForEach(checkouts, id: \.id) { checkout in
                         HStack {
                             VStack(alignment: .leading) {
                                 Text(
@@ -44,6 +45,12 @@ struct ProjectContextSheet: View {
                         }
                     }
                     Text("Attach another checkout from Add project by choosing this existing project.").font(.caption)
+                }
+                Section("Experimental") {
+                    ChannelSettingPicker(
+                        model: store.channelsModel, scope: .project,
+                        row: store.channelsModel.projectSetting(store.selectedProjectID),
+                        identifier: "project.context.channels")
                 }
                 Section("Consolidate projects") {
                     Picker("Destination", selection: $destinationID) {
@@ -66,6 +73,12 @@ struct ProjectContextSheet: View {
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
 
+            // An alert cannot present over this sheet, so a failed save reads here.
+            if let message = store.errorMessage, !message.isEmpty {
+                Text(message).font(.caption).foregroundStyle(DieterTheme.coral)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 24)
+                    .accessibilityIdentifier("project.context.error")
+            }
             HStack(spacing: 10) {
                 Spacer()
                 Button("Cancel") { dismiss() }
@@ -103,17 +116,32 @@ struct ProjectContextSheet: View {
 
     private func save() {
         saving = true
+        store.errorMessage = nil
         Task {
-            let workspaceSaved = await store.updateProjectWorkspaceSettings(
-                remote: draft.baseRemote,
-                branch: draft.baseBranch,
-                validationCommands: draft.validationCommands.map(\.value)
-            )
-            if workspaceSaved {
-                await store.updateProject(name: draft.name, summary: draft.summary, prompt: draft.prompt)
+            defer { saving = false }
+            // Workspace defaults reach the daemon only when edited, so saving instructions
+            // never depends on a checkout's machine answering.
+            if workspaceSettingsChanged {
+                guard
+                    await store.updateProjectWorkspaceSettings(
+                        remote: draft.baseRemote,
+                        branch: draft.baseBranch,
+                        validationCommands: draft.validationCommands.map(\.value)
+                    )
+                else { return }
             }
-            saving = false
+            await store.updateProject(name: draft.name, summary: draft.summary, prompt: draft.prompt)
         }
+    }
+
+    /// Whether the Git base or validation commands differ from what the project shows.
+    private var workspaceSettingsChanged: Bool {
+        guard let project = store.selectedProject else { return true }
+        let shown = ProjectSettingsDraft(project: project)
+        let checkout = store.checkout(forProjectID: project.id)
+        let validation = (checkout?.validationCommands ?? project.validationCommands).map(ValidationCommandDraft.init)
+        return draft.baseRemote != shown.baseRemote || draft.baseBranch != shown.baseBranch
+            || draft.validationCommands.map(\.value) != validation.map(\.value)
     }
 }
 

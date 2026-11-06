@@ -24,6 +24,12 @@ import com.getdieter.mobile.platform.*
  */
 internal enum class Glyph(val symbol: String, private val material: () -> ImageVector) {
     INBOX("tray", { Icons.Outlined.Inbox }),
+    MAIL("envelope", { Icons.Outlined.MailOutline }),
+    MAIL_OPEN("envelope.open", { Icons.Outlined.Email }),
+    MOVE_TO_INBOX("tray.and.arrow.down", { Icons.Outlined.Inbox }),
+    FLAG("flag", { Icons.Outlined.Flag }),
+    FLAG_FILL("flag.fill", { Icons.Outlined.FlagFilled }),
+    SHARE("square.and.arrow.up", { Icons.Outlined.Share }),
     PROJECTS("folder", { Icons.Outlined.Folder }),
     BOARD("rectangle.split.3x1", { Icons.Outlined.ViewKanban }),
     CHATS("bubble.left.and.bubble.right", { Icons.Outlined.Forum }),
@@ -48,6 +54,7 @@ internal enum class Glyph(val symbol: String, private val material: () -> ImageV
     SETTINGS("gearshape", { Icons.Outlined.Settings }),
     MACHINE("laptopcomputer", { Icons.Outlined.Computer }),
     PHONE("iphone", { Icons.Outlined.Smartphone }),
+    DEVICES("laptopcomputer.and.iphone", { Icons.Outlined.Smartphone }),
     SERVER("server.rack", { Icons.Outlined.Dns }),
     TERMINAL("apple.terminal", { Icons.Outlined.Terminal }),
     SCREENS("display", { Icons.Outlined.DesktopWindows }),

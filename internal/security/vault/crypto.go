@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/dbpprt/dieter/internal/platform/fault"
+	"github.com/dbpprt/dieter/internal/security/codes"
 )
 
 const (
@@ -104,7 +105,7 @@ func randomBytes(n int) []byte {
 
 // RandomID returns a prefixed 128-bit identifier valid as a peer record ID.
 func RandomID(prefix string) string {
-	return prefix + strings.ToLower(crockford.EncodeToString(randomBytes(16)))
+	return prefix + strings.ToLower(codes.Encode(randomBytes(16)))
 }
 
 func label(parts ...string) []byte { return []byte(strings.Join(parts, "\x00")) }
@@ -344,72 +345,13 @@ func OpenItem(keys map[string][]byte, vaultID, itemID string, envelope Envelope)
 // that substitutes the vault root or the member key changes the code.
 func JoinCode(vaultID, pinnedRootHash, memberID string, publicKey []byte) string {
 	sum := sha256.Sum256(append(label("dieter-vault-join-v1", vaultID, pinnedRootHash, memberID, ""), publicKey...))
-	return group(crockford.EncodeToString(sum[:10]), 4)
+	return codes.Group(codes.Encode(sum[:10]), 4)
 }
 
 // SameCode compares a typed code, ignoring case, separators and confusable
 // Crockford characters.
 func SameCode(expected, typed string) bool {
-	return subtle.ConstantTimeCompare([]byte(normalizeCode(expected)), []byte(normalizeCode(typed))) == 1
-}
-
-func normalizeCode(value string) string {
-	value = strings.ToUpper(value)
-	value = strings.NewReplacer("-", "", " ", "", "O", "0", "I", "1", "L", "1").Replace(value)
-	return value
-}
-
-func group(value string, size int) string {
-	var parts []string
-	for len(value) > size {
-		parts = append(parts, value[:size])
-		value = value[size:]
-	}
-	return strings.Join(append(parts, value), "-")
-}
-
-var crockford = newCrockford()
-
-func newCrockford() *base32Encoding {
-	return &base32Encoding{alphabet: "0123456789ABCDEFGHJKMNPQRSTVWXYZ"}
-}
-
-// base32Encoding is unpadded Crockford base32 for human-typed codes.
-type base32Encoding struct{ alphabet string }
-
-func (e *base32Encoding) EncodeToString(data []byte) string {
-	var out strings.Builder
-	var buffer, bits uint
-	for _, value := range data {
-		buffer = buffer<<8 | uint(value)
-		bits += 8
-		for bits >= 5 {
-			bits -= 5
-			out.WriteByte(e.alphabet[(buffer>>bits)&31])
-		}
-	}
-	if bits > 0 {
-		out.WriteByte(e.alphabet[(buffer<<(5-bits))&31])
-	}
-	return out.String()
-}
-
-func (e *base32Encoding) DecodeString(value string) ([]byte, error) {
-	var out []byte
-	var buffer, bits uint
-	for _, char := range normalizeCode(value) {
-		index := strings.IndexRune(e.alphabet, char)
-		if index < 0 {
-			return nil, fault.New(fault.Invalid, "invalid character")
-		}
-		buffer = buffer<<5 | uint(index)
-		bits += 5
-		if bits >= 8 {
-			bits -= 8
-			out = append(out, byte(buffer>>bits))
-		}
-	}
-	return out, nil
+	return codes.Same(expected, typed)
 }
 
 const recoveryPrefix = "DVR1"
@@ -422,17 +364,17 @@ func NewRecoveryKey() ([]byte, string) {
 
 func FormatRecoveryKey(seed []byte) string {
 	sum := sha256.Sum256(append([]byte("dieter-vault-recovery-checksum-v1"), seed...))
-	return recoveryPrefix + "-" + group(crockford.EncodeToString(append(append([]byte(nil), seed...), sum[:2]...)), 5)
+	return recoveryPrefix + "-" + codes.Group(codes.Encode(append(append([]byte(nil), seed...), sum[:2]...)), 5)
 }
 
 // ParseRecoveryKey accepts the printed form with any spacing or case.
 func ParseRecoveryKey(value string) ([]byte, error) {
 	value = strings.TrimSpace(value)
-	normalized := normalizeCode(value)
+	normalized := codes.Normalize(value)
 	if !strings.HasPrefix(normalized, recoveryPrefix) {
 		return nil, fault.New(fault.Invalid, "recovery key must start with "+recoveryPrefix)
 	}
-	raw, err := crockford.DecodeString(strings.TrimPrefix(normalized, recoveryPrefix))
+	raw, err := codes.Decode(strings.TrimPrefix(normalized, recoveryPrefix))
 	if err != nil || len(raw) != seedBytes+2 {
 		return nil, fault.New(fault.Invalid, "recovery key is malformed")
 	}

@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import com.getdieter.api.v1.Card
 import com.getdieter.client.v1.*
 import com.getdieter.core.admin.Labels
+import com.getdieter.core.admin.PromptTemplates
 import com.getdieter.mobile.app.*
 import com.getdieter.mobile.design.*
 import com.getdieter.mobile.store.*
@@ -32,13 +33,20 @@ internal fun BoardSettings(store: MobileStore, boardId: String, dismiss: () -> U
     var archive by
         remember(board.id) { mutableStateOf(board.done_archive_policy.ifEmpty { "never" }) }
     var prompt by remember(board.id) { mutableStateOf(board.prompt_template) }
+    val promptProblem =
+        prompt.takeIf { it.isNotBlank() }?.let { PromptTemplates.validate(it, context = true) }
     var editingLabel by remember { mutableStateOf<com.getdieter.api.v1.Label?>(null) }
     var newLabel by remember { mutableStateOf(false) }
     Sheet(
         "Board Settings",
         dismiss,
         confirm =
-            ChromeAction("save-board", "Save", Glyph.CHECK, enabled = name.isNotBlank()) {
+            ChromeAction(
+                "save-board",
+                "Save",
+                Glyph.CHECK,
+                enabled = name.isNotBlank() && promptProblem == null,
+            ) {
                 store.action {
                     store.core.dispatch(
                         Command(
@@ -61,12 +69,19 @@ internal fun BoardSettings(store: MobileStore, boardId: String, dismiss: () -> U
                                 )
                         )
                     )
-                    store.core.dispatch(
-                        Command(
-                            admin =
-                                AdminCommand(set_board_prompt = AdminScopedPrompt(board.id, prompt))
+                    if (prompt != board.prompt_template)
+                        store.core.dispatch(
+                            Command(
+                                admin =
+                                    AdminCommand(
+                                        set_board_prompt =
+                                            AdminScopedPrompt(
+                                                board.id,
+                                                prompt.takeIf { it.isNotBlank() },
+                                            )
+                                    )
+                            )
                         )
-                    )
                     dismiss()
                 }
             },
@@ -157,17 +172,23 @@ internal fun BoardSettings(store: MobileStore, boardId: String, dismiss: () -> U
                 archive = it
             }
         }
-        SectionHeader("Agent instructions")
+        SectionHeader("Prompt template override")
         FormColumn {
             MobileTextField(
                 prompt,
                 { prompt = it },
                 Modifier.fillMaxWidth(),
-                label = { Text("Board prompt") },
-                placeholder = { Text("Instructions added to every task on this board") },
+                label = { Text("Board template") },
+                placeholder = { Text("Empty inherits the project and global template") },
                 minLines = 3,
             )
         }
+        SectionFooter(
+            promptProblem
+                ?: "Replaces the whole agent prompt for this board. It must place " +
+                    "{{project.instructions_block}} and {{labels.instructions_block}} once.",
+            Modifier.padding(horizontal = 20.dp),
+        )
     }
     if (newLabel) LabelEditor(store, board.id, null) { newLabel = false }
     editingLabel?.let { label -> LabelEditor(store, board.id, label) { editingLabel = null } }

@@ -7,7 +7,6 @@ struct ConversationAgentWorkingIndicator: View {
     let label: String
     let startedAt: Date?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var shimmer = false
 
     var body: some View {
         HStack(spacing: 9) {
@@ -17,14 +16,16 @@ struct ConversationAgentWorkingIndicator: View {
                 .foregroundStyle(.secondary)
                 .overlay {
                     if !reduceMotion {
-                        GeometryReader { geometry in
-                            LinearGradient(
-                                colors: [.clear, .primary.opacity(0.8), .clear],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                            .frame(width: geometry.size.width)
-                            .offset(x: shimmer ? geometry.size.width : -geometry.size.width)
+                        ConversationActivityClock { time in
+                            GeometryReader { geometry in
+                                LinearGradient(
+                                    colors: [.clear, .primary.opacity(0.8), .clear],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                                .frame(width: geometry.size.width)
+                                .offset(x: geometry.size.width * (2 * ConversationActivityMotion.cycle(time, 2) - 1))
+                            }
                         }
                         .mask(Text(label).font(.caption.weight(.medium)))
                         .allowsHitTesting(false)
@@ -50,10 +51,34 @@ struct ConversationAgentWorkingIndicator: View {
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("conversation.agent-working")
         .e2eTarget("conversation.agent-working")
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.linear(duration: 2).repeatForever(autoreverses: false)) { shimmer = true }
+    }
+}
+
+/// The working indicator's motion, computed from the time rather than run as
+/// repeating SwiftUI animations. A repeating animation renders its window at
+/// the display's rate (120 Hz on ProMotion) for as long as an agent works; this
+/// clock draws the same motion at most 30 times a second. Reduce Motion stops it.
+private struct ConversationActivityClock<Content: View>: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ViewBuilder let content: (TimeInterval) -> Content
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { timeline in
+            content(reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate)
         }
+    }
+}
+
+private enum ConversationActivityMotion {
+    /// Progress through a repeating period, 0 up to 1.
+    static func cycle(_ time: TimeInterval, _ period: TimeInterval) -> Double {
+        time.truncatingRemainder(dividingBy: period) / period
+    }
+
+    /// Eases in and out from 0 to 1 and back again over twice [half].
+    static func breath(_ time: TimeInterval, _ half: TimeInterval) -> Double {
+        let progress = cycle(time, 2 * half) * 2
+        return 0.5 - 0.5 * cos(.pi * (progress > 1 ? 2 - progress : progress))
     }
 }
 
@@ -62,50 +87,42 @@ struct ConversationAgentWorkingIndicator: View {
 /// so scrolling performance is unchanged.
 private struct ConversationDieterActivityGlyph: View {
     let size: CGFloat
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var rotation = Angle.zero
-    @State private var breathing = false
 
     var body: some View {
-        ZStack {
-            Circle()
-                .fill(DieterTheme.primary.opacity(0.16))
-                .frame(width: size * 1.18, height: size * 1.18)
-                .blur(radius: size * 0.17)
-                .scaleEffect(breathing ? 1.08 : 0.92)
-            Circle()
-                .stroke(DieterTheme.primary.opacity(0.14), lineWidth: max(1, size * 0.025))
-                .frame(width: size, height: size)
-            Circle()
-                .trim(from: 0.08, to: 0.73)
-                .stroke(
-                    AngularGradient(
-                        colors: [.clear, DieterTheme.primary.opacity(0.35), DieterTheme.primary, .clear],
-                        center: .center),
-                    style: StrokeStyle(lineWidth: max(2, size * 0.055), lineCap: .round)
-                )
-                .frame(width: size, height: size)
-                .rotationEffect(rotation)
-            Circle()
-                .fill(.ultraThinMaterial)
-                .frame(width: size * 0.7, height: size * 0.7)
-                .overlay(Circle().stroke(.white.opacity(0.22), lineWidth: 0.75))
-            ConversationDieterMark()
-                .frame(width: size * 0.52, height: size * 0.52)
-                .scaleEffect(breathing ? 1.04 : 0.94)
-                .rotationEffect(breathing ? .degrees(2) : .degrees(-2))
-                .shadow(color: DieterTheme.primary.opacity(0.22), radius: size * 0.06, y: size * 0.02)
+        ConversationActivityClock { time in
+            let rotation = Angle.degrees(360 * ConversationActivityMotion.cycle(time, 1.7))
+            let breathing = ConversationActivityMotion.breath(time, 1.15)
+            ZStack {
+                Circle()
+                    .fill(DieterTheme.primary.opacity(0.16))
+                    .frame(width: size * 1.18, height: size * 1.18)
+                    .blur(radius: size * 0.17)
+                    .scaleEffect(0.92 + 0.16 * breathing)
+                Circle()
+                    .stroke(DieterTheme.primary.opacity(0.14), lineWidth: max(1, size * 0.025))
+                    .frame(width: size, height: size)
+                Circle()
+                    .trim(from: 0.08, to: 0.73)
+                    .stroke(
+                        AngularGradient(
+                            colors: [.clear, DieterTheme.primary.opacity(0.35), DieterTheme.primary, .clear],
+                            center: .center),
+                        style: StrokeStyle(lineWidth: max(2, size * 0.055), lineCap: .round)
+                    )
+                    .frame(width: size, height: size)
+                    .rotationEffect(rotation)
+                Circle()
+                    .fill(.ultraThinMaterial)
+                    .frame(width: size * 0.7, height: size * 0.7)
+                    .overlay(Circle().stroke(.white.opacity(0.22), lineWidth: 0.75))
+                ConversationDieterMark()
+                    .frame(width: size * 0.52, height: size * 0.52)
+                    .scaleEffect(0.94 + 0.1 * breathing)
+                    .rotationEffect(.degrees(-2 + 4 * breathing))
+                    .shadow(color: DieterTheme.primary.opacity(0.22), radius: size * 0.06, y: size * 0.02)
+            }
         }
         .frame(width: size * 1.25, height: size * 1.25)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.linear(duration: 1.7).repeatForever(autoreverses: false)) {
-                rotation = .degrees(360)
-            }
-            withAnimation(.easeInOut(duration: 1.15).repeatForever(autoreverses: true)) {
-                breathing = true
-            }
-        }
         .accessibilityHidden(true)
     }
 }

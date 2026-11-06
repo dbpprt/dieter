@@ -1,0 +1,158 @@
+appId: com.getdieter.mac
+name: Mail chart backgrounds and selection
+tags:
+  - full
+---
+- launchApp
+- tapOn:
+    id: sidebar.settings
+- tapOn:
+    id: settings.appearance.light
+- tapOn:
+    id: sidebar.mail
+- tapOn:
+    id: mail\.row\..+
+    text: Chart background comparison
+- extendedWaitUntil:
+    visible:
+      id: mail.reader.graphics
+      text: 6 rendered, 0 source fallbacks
+    timeout: 60000
+- tapOn:
+    id: mail.search
+- pressKey: Tab
+- takeScreenshot: mail-backgrounds-light-selected
+- tapOn:
+    id: mail.reader.read
+    text: Mark Unread
+- extendedWaitUntil:
+    visible:
+      id: mail.reader.read
+      text: Mark Read
+    timeout: 10000
+- tapOn:
+    id: mail.search
+- pressKey: Tab
+- takeScreenshot: mail-rows-light-selected-unread
+- tapOn:
+    id: mail.reader.read
+    text: Mark Read
+- extendedWaitUntil:
+    visible:
+      id: mail.reader.read
+      text: Mark Unread
+    timeout: 10000
+- tapOn:
+    id: mail.reader.body
+- takeScreenshot: mail-backgrounds-light-inactive
+- scroll
+- tapOn:
+    id: mail.reader.body
+- takeScreenshot: mail-backgrounds-light-1
+- scroll
+- tapOn:
+    id: mail.reader.body
+- takeScreenshot: mail-backgrounds-light-2
+- scroll
+- tapOn:
+    id: mail.reader.body
+- takeScreenshot: mail-backgrounds-light-3
+- tapOn:
+    id: mail\.row\..+
+    text: Dependency audit — 3 critical, 7 outdated
+- tapOn:
+    id: mail.search
+- pressKey: Tab
+- takeScreenshot: mail-rows-light-important
+- tapOn:
+    id: mail\.row\..+
+    text: "Release smoke results: all platforms passed"
+- tapOn:
+    id: mail.search
+- pressKey: Tab
+- takeScreenshot: mail-rows-light-flagged
+- tapOn:
+    id: mail\.row\..+
+    text: Chart background comparison
+- extendedWaitUntil:
+    visible:
+      id: mail.reader.graphics
+      text: 6 rendered, 0 source fallbacks
+    timeout: 60000
+- takeScreenshot: mail-backgrounds-light-reopened
+- tapOn:
+    id: sidebar.settings
+- tapOn:
+    id: settings.appearance.dark
+- tapOn:
+    id: sidebar.mail
+- tapOn:
+    id: mail\.row\..+
+    text: Chart background comparison
+- extendedWaitUntil:
+    visible:
+      id: mail.reader.graphics
+      text: 6 rendered, 0 source fallbacks
+    timeout: 60000
+- tapOn:
+    id: mail.search
+- pressKey: Tab
+- takeScreenshot: mail-backgrounds-dark-selected
+- tapOn:
+    id: mail.reader.read
+    text: Mark Unread
+- extendedWaitUntil:
+    visible:
+      id: mail.reader.read
+      text: Mark Read
+    timeout: 10000
+- tapOn:
+    id: mail.search
+- pressKey: Tab
+- takeScreenshot: mail-rows-dark-selected-unread
+- tapOn:
+    id: mail.reader.read
+    text: Mark Read
+- extendedWaitUntil:
+    visible:
+      id: mail.reader.read
+      text: Mark Unread
+    timeout: 10000
+- tapOn:
+    id: mail.reader.body
+- takeScreenshot: mail-backgrounds-dark-inactive
+- scroll
+- tapOn:
+    id: mail.reader.body
+- takeScreenshot: mail-backgrounds-dark-1
+- scroll
+- tapOn:
+    id: mail.reader.body
+- takeScreenshot: mail-backgrounds-dark-2
+- scroll
+- tapOn:
+    id: mail.reader.body
+- takeScreenshot: mail-backgrounds-dark-3
+- tapOn:
+    id: mail\.row\..+
+    text: Dependency audit — 3 critical, 7 outdated
+- tapOn:
+    id: mail.search
+- pressKey: Tab
+- takeScreenshot: mail-rows-dark-important
+- tapOn:
+    id: mail\.row\..+
+    text: "Release smoke results: all platforms passed"
+- tapOn:
+    id: mail.search
+- pressKey: Tab
+- takeScreenshot: mail-rows-dark-flagged
+- tapOn:
+    id: mail\.row\..+
+    text: Chart background comparison
+- extendedWaitUntil:
+    visible:
+      id: mail.reader.graphics
+      text: 6 rendered, 0 source fallbacks
+    timeout: 60000
+- takeScreenshot: mail-backgrounds-dark-reopened

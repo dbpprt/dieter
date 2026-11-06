@@ -19,6 +19,7 @@ import (
 	"github.com/dbpprt/dieter/internal/security/localauth"
 	"github.com/dbpprt/dieter/internal/security/trust"
 	"github.com/dbpprt/dieter/internal/transport/dieterclient"
+	"github.com/dbpprt/dieter/internal/transport/relay"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -37,12 +38,10 @@ type dieterTransport struct {
 	client   dieterclient.Client
 	route    string
 	daemonID string
-	relay    bool
 }
 
 type dieterMetadataConn struct {
 	grpc.ClientConnInterface
-	daemonID string
 	// turnToken identifies the agent turn that runs this CLI. It is sent only
 	// to the local daemon that issued it.
 	turnToken string
@@ -50,9 +49,6 @@ type dieterMetadataConn struct {
 
 func (c dieterMetadataConn) context(ctx context.Context) context.Context {
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-dieter-client-version", Version)
-	if c.daemonID != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, "x-dieter-daemon-id", c.daemonID)
-	}
 	if c.turnToken != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-dieter-turn-token", c.turnToken)
 	}
@@ -270,40 +266,49 @@ func (c *CLI) dialDieter(ctx context.Context) (*dieterTransport, error) {
 	if !machine.GetOnline() {
 		return nil, fmt.Errorf("Dieter machine %s (%s) is offline", machine.GetName(), machine.GetId())
 	}
+	peer, err := c.trustedPeer(machine)
+	if err != nil {
+		return nil, err
+	}
 	route, err := gateway.client.ResolveDaemonRoute(ctx, &gatewayv1.DaemonRef{DaemonId: machine.GetId()})
 	if err != nil {
 		return nil, fmt.Errorf("resolve route to %s: %w", machine.GetName(), err)
 	}
+	credential := &directCredential{timeout: c.connectionTimeout(), exchange: func(ctx context.Context) (*gatewayv1.DaemonAccessToken, error) {
+		return gateway.client.ExchangeDaemonToken(ctx, &gatewayv1.ExchangeDaemonTokenRequest{DaemonId: machine.GetId(), ClientKeyThumbprint: peer.deviceID})
+	}}
 	candidates := append([]*gatewayv1.DirectCandidate(nil), route.GetDirectCandidates()...)
 	sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].GetPriority() > candidates[j].GetPriority() })
-	if len(candidates) > 0 {
-		access, accessErr := gateway.client.ExchangeDaemonToken(ctx, &gatewayv1.ExchangeDaemonTokenRequest{DaemonId: machine.GetId()})
-		if accessErr != nil {
-			return nil, fmt.Errorf("issue direct token for %s: %w", machine.GetName(), accessErr)
-		}
-		credential := &directCredential{access: access, timeout: c.connectionTimeout(), exchange: func(ctx context.Context) (*gatewayv1.DaemonAccessToken, error) {
-			return gateway.client.ExchangeDaemonToken(ctx, &gatewayv1.ExchangeDaemonTokenRequest{DaemonId: machine.GetId()})
-		}}
-		for _, candidate := range candidates {
-			address := net.JoinHostPort(candidate.GetHost(), strconv.Itoa(int(candidate.GetPort())))
-			probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-			connection, dialErr := link.DialDirectWithCredentials(probeCtx, address, machine.GetId(), route.GetDaemonCaPem(), credential)
+	for _, candidate := range candidates {
+		address := net.JoinHostPort(candidate.GetHost(), strconv.Itoa(int(candidate.GetPort())))
+		probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		connection, dialErr := link.DialDaemon(peer.certificate, peer.daemonKey, credential, link.TCPDialer(address))
+		if dialErr == nil {
+			client := dieterclient.New(readResumingConn{dieterMetadataConn{ClientConnInterface: connection}})
+			_, dialErr = client.Health(probeCtx, &emptypb.Empty{})
 			if dialErr == nil {
-				client := dieterclient.New(readResumingConn{dieterMetadataConn{ClientConnInterface: connection}})
-				_, dialErr = client.Health(probeCtx, &emptypb.Empty{})
-				if dialErr == nil {
-					cancel()
-					result := &dieterTransport{conn: connection, client: client, route: "direct", daemonID: machine.GetId()}
-					c.transport = result
-					return result, nil
-				}
-				_ = connection.Close()
+				cancel()
+				result := &dieterTransport{conn: connection, client: client, route: "direct", daemonID: machine.GetId()}
+				c.transport = result
+				return result, nil
 			}
-			cancel()
+			_ = connection.Close()
 		}
+		cancel()
 	}
-
-	if route.GetControlWebrtc() && route.GetRelayAvailable() {
+	if !route.GetRelayAvailable() {
+		return nil, fmt.Errorf("Dieter machine %s has no reachable direct route and its relay is unavailable", machine.GetName())
+	}
+	// The relay carries an opaque tunnel to the daemon's own TLS endpoint;
+	// every reconnect opens a fresh tunnel on the command lane.
+	tunnel, err := link.DialDaemon(peer.certificate, peer.daemonKey, credential, func(ctx context.Context, _ string) (net.Conn, error) {
+		return link.DialTunnel(ctx, gateway.conn, machine.GetId(), relay.Command)
+	})
+	if err != nil {
+		return nil, err
+	}
+	relayed := &dieterTransport{conn: tunnel, client: dieterclient.New(readResumingConn{dieterMetadataConn{ClientConnInterface: tunnel}}), route: "relay", daemonID: machine.GetId()}
+	if route.GetControlWebrtc() {
 		// Reserve part of the command deadline for the relay. Unreachable ICE
 		// must not consume the entire budget and prevent fallback.
 		budget := 12 * time.Second
@@ -311,25 +316,56 @@ func (c *CLI) dialDieter(ctx context.Context) (*dieterTransport, error) {
 			budget = min(budget, time.Until(deadline)*2/3)
 		}
 		probe, cancel := context.WithTimeout(ctx, budget)
-		connection, err := c.dialControl(probe, gateway, route)
+		connection, err := c.dialControl(probe, gateway, route, relayed.client, peer, credential)
 		cancel()
 		if err == nil {
+			_ = tunnel.Close()
 			c.transport = connection
 			return connection, nil
 		}
 		if ctx.Err() != nil {
+			_ = tunnel.Close()
 			return nil, ctx.Err()
 		}
 	}
-	if !route.GetRelayAvailable() {
-		return nil, fmt.Errorf("Dieter machine %s has no reachable direct route and its relay is unavailable", machine.GetName())
+	c.transport = relayed
+	return relayed, nil
+}
+
+// trustedDaemon is a target daemon as the device roster pins it.
+type trustedDaemon struct {
+	deviceID    string
+	certificate tls.Certificate
+	daemonKey   []byte
+}
+
+// trustedPeer authenticates the CLI as this machine's roster device and pins
+// the target's key from the roster this machine's daemon verified. The
+// gateway never supplies a key.
+func (c *CLI) trustedPeer(machine *gatewayv1.Daemon) (*trustedDaemon, error) {
+	identity, _, err := c.gatewayIdentity()
+	if err != nil {
+		return nil, err
 	}
-	result := &dieterTransport{
-		conn: gateway.conn, client: dieterclient.New(readResumingConn{dieterMetadataConn{ClientConnInterface: gateway.conn, daemonID: machine.GetId()}}),
-		route: "relay", daemonID: machine.GetId(), relay: true,
+	pinned, err := link.PinnedRoster(c.Root)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, errors.New("this machine is not a trusted device of the account yet; run `dieter device status`")
 	}
-	c.transport = result
-	return result, nil
+	if err != nil {
+		return nil, fmt.Errorf("this machine's device trust is unavailable: %w", err)
+	}
+	if !pinned.Member(identity.DeviceID()).Connects() {
+		return nil, errors.New("this machine is not a trusted device of the account; run `dieter device status`")
+	}
+	daemon := pinned.Daemon(machine.GetId())
+	if daemon == nil {
+		return nil, fmt.Errorf("Dieter machine %s (%s) is not a trusted device of this account; approve its code with `dieter device approve CODE`", machine.GetName(), machine.GetId())
+	}
+	certificate, err := identity.DeviceCertificate()
+	if err != nil {
+		return nil, err
+	}
+	return &trustedDaemon{deviceID: identity.DeviceID(), certificate: certificate, daemonKey: daemon.Descriptor.GetPublicKey()}, nil
 }
 
 func (c *CLI) rpc(ctx context.Context) (dieterclient.Client, context.Context, error) {

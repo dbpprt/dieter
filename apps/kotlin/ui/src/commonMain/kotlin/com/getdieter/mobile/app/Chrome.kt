@@ -11,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
@@ -19,6 +20,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.getdieter.mobile.design.*
+import com.getdieter.mobile.desktop.DesktopChromeHost
+import com.getdieter.mobile.desktop.DesktopMenu
+import com.getdieter.mobile.desktop.DesktopScreen
+import com.getdieter.mobile.desktop.desktop
 import com.getdieter.mobile.store.*
 
 /** A toolbar or menu command. iOS renders it as a bar button or UIMenu element. */
@@ -33,12 +38,14 @@ internal class ChromeAction(
     /** Non-empty actions open a menu instead of running [onClick]. */
     val menu: List<MenuSection> = emptyList(),
     val subtitle: String = "",
+    /** A trailing count or state, e.g. a mailbox's unread count; iOS shows it as the subtitle. */
+    val value: String = "",
     val onClick: () -> Unit = {},
 ) {
     /** Structural identity, so native bars rebuild only when something visible changed. */
     val signature: String
         get() =
-            "$id|$title|${glyph?.name}|$enabled|$destructive|$checked|$subtitle[" +
+            "$id|$title|${glyph?.name}|$enabled|$destructive|$checked|$subtitle|$value[" +
                 menu.joinToString(";") { it.signature } +
                 "]"
 }
@@ -69,6 +76,11 @@ internal class ScreenChrome(
     val confirm: ChromeAction? = null,
     /** Modal dismissal. iOS shows a close button; Android a navigation close icon. */
     val cancel: ChromeAction? = null,
+    /**
+     * Choices behind the title, e.g. a mailbox: Android's app bar title and iOS's large title open
+     * them as a menu.
+     */
+    val titleMenu: List<MenuSection> = emptyList(),
 ) {
     val signature: String
         get() =
@@ -80,6 +92,7 @@ internal class ScreenChrome(
                     primary?.signature.orEmpty(),
                     confirm?.signature.orEmpty(),
                     cancel?.signature.orEmpty(),
+                    titleMenu.joinToString(";") { it.signature },
                 )
                 .joinToString("‖")
 }
@@ -115,23 +128,49 @@ internal class ScreenScope(
     fun LazyListScope.titleHeader() {
         if (showsLargeTitle)
             item(key = "large-title", contentType = "large-title") {
-                LargeTitle(chrome.title, chrome.subtitle)
+                LargeTitle(chrome.title, chrome.subtitle, chrome.titleMenu)
             }
     }
 }
 
 @Composable
-private fun LargeTitle(title: String, subtitle: String) {
+private fun LargeTitle(title: String, subtitle: String, menu: List<MenuSection>) {
     Column(
         Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 2.dp, bottom = 10.dp)
     ) {
-        Text(
-            title,
-            style = type.largeTitle,
-            color = palette.label,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        if (menu.isEmpty())
+            Text(
+                title,
+                style = type.largeTitle,
+                color = palette.label,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        else {
+            val state = rememberMenuState()
+            MenuAnchor(state) {
+                Row(
+                    Modifier.pressable(onClick = { state.show(menu) }).testTag("chrome-title-menu"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        title,
+                        style = type.largeTitle,
+                        color = palette.label,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Icon(
+                        Glyph.CHEVRON_DOWN,
+                        "Choose",
+                        Modifier.padding(start = 6.dp, top = 4.dp),
+                        tint = palette.accent,
+                        size = 18.dp,
+                        weight = GlyphWeight.BOLD,
+                    )
+                }
+            }
+        }
         if (subtitle.isNotEmpty())
             Text(
                 subtitle,
@@ -144,9 +183,10 @@ private fun LargeTitle(title: String, subtitle: String) {
 }
 
 /**
- * A screen with platform bars. On iOS the chrome is published to the native navigation item and
- * content scrolls beneath the Liquid Glass bars; on Android a Material 3 scaffold draws app bars
- * that collapse with the content and a floating action button for [ScreenChrome.primary].
+ * A screen with platform bars. In the desktop shell its pane draws the bars. On iOS the chrome is
+ * published to the native navigation item and content scrolls beneath the Liquid Glass bars; on
+ * Android a Material 3 scaffold draws app bars that collapse with the content and a floating action
+ * button for [ScreenChrome.primary].
  */
 @Composable
 internal fun Screen(
@@ -157,6 +197,10 @@ internal fun Screen(
     content: @Composable ScreenScope.() -> Unit,
 ) {
     val host = LocalChromeHost.current
+    if (host is DesktopChromeHost) {
+        DesktopScreen(host, chrome, modifier, listState, bottomBar, content)
+        return
+    }
     if (host != null) {
         AppleScreen(host, chrome, modifier, listState, bottomBar, content)
         return
@@ -272,17 +316,40 @@ private fun MaterialScreen(
             val barInsets = insets.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
             val title: @Composable () -> Unit = {
                 Column {
-                    Text(
-                        chrome.title,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style =
-                            if (chrome.large) LocalTextStyle.current
-                            else
-                                MaterialTheme.typography.titleLarge.copy(
-                                    fontWeight = FontWeight.Medium
-                                ),
-                    )
+                    val heading: @Composable () -> Unit = {
+                        Text(
+                            chrome.title,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style =
+                                if (chrome.large) LocalTextStyle.current
+                                else
+                                    MaterialTheme.typography.titleLarge.copy(
+                                        fontWeight = FontWeight.Medium
+                                    ),
+                        )
+                    }
+                    if (chrome.titleMenu.isEmpty()) heading()
+                    else {
+                        var open by remember { mutableStateOf(false) }
+                        Box {
+                            Row(
+                                Modifier.clip(MaterialTheme.shapes.small)
+                                    .pressable(onClick = { open = true })
+                                    .testTag("chrome-title-menu"),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                heading()
+                                Icon(
+                                    Glyph.CHEVRON_DOWN,
+                                    "Choose",
+                                    Modifier.padding(start = 4.dp),
+                                    size = 24.dp,
+                                )
+                            }
+                            MaterialMenu(chrome.titleMenu, open) { open = false }
+                        }
+                    }
                     if (subtitle != null)
                         CompositionLocalProvider(
                             LocalTextStyle provides MaterialTheme.typography.bodyMedium,
@@ -398,6 +465,10 @@ private fun ActionButton(action: ChromeAction) {
 /** Material dropdown with sections, checkmarks and nested submenus. */
 @Composable
 internal fun MaterialMenu(sections: List<MenuSection>, expanded: Boolean, onDismiss: () -> Unit) {
+    if (desktop) {
+        DesktopMenu(sections, expanded, onDismiss)
+        return
+    }
     var nested by remember { mutableStateOf<MenuSection?>(null) }
     DropdownMenu(
         expanded,
@@ -471,9 +542,21 @@ internal fun MaterialMenu(sections: List<MenuSection>, expanded: Boolean, onDism
                                 else -> null
                             },
                         trailingIcon =
-                            if (action.menu.isNotEmpty()) {
-                                { Icon(Glyph.CHEVRON_RIGHT, null, size = 20.dp) }
-                            } else null,
+                            when {
+                                action.menu.isNotEmpty() -> {
+                                    { Icon(Glyph.CHEVRON_RIGHT, null, size = 20.dp) }
+                                }
+                                action.value.isNotEmpty() -> {
+                                    {
+                                        Text(
+                                            action.value,
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = colors.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                                else -> null
+                            },
                         enabled = action.enabled,
                         onClick = {
                             if (action.menu.isNotEmpty())

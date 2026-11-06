@@ -34,6 +34,33 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// FileServiceStatTransferFileProcedure is the fully-qualified name of the FileService's
+	// StatTransferFile RPC.
+	FileServiceStatTransferFileProcedure = "/dieter.v1.FileService/StatTransferFile"
+	// FileServiceListTransferFilesProcedure is the fully-qualified name of the FileService's
+	// ListTransferFiles RPC.
+	FileServiceListTransferFilesProcedure = "/dieter.v1.FileService/ListTransferFiles"
+	// FileServiceReadFileChunkProcedure is the fully-qualified name of the FileService's ReadFileChunk
+	// RPC.
+	FileServiceReadFileChunkProcedure = "/dieter.v1.FileService/ReadFileChunk"
+	// FileServiceBeginFileUploadProcedure is the fully-qualified name of the FileService's
+	// BeginFileUpload RPC.
+	FileServiceBeginFileUploadProcedure = "/dieter.v1.FileService/BeginFileUpload"
+	// FileServiceWriteFileChunkProcedure is the fully-qualified name of the FileService's
+	// WriteFileChunk RPC.
+	FileServiceWriteFileChunkProcedure = "/dieter.v1.FileService/WriteFileChunk"
+	// FileServiceGetFileUploadProcedure is the fully-qualified name of the FileService's GetFileUpload
+	// RPC.
+	FileServiceGetFileUploadProcedure = "/dieter.v1.FileService/GetFileUpload"
+	// FileServiceCommitFileUploadProcedure is the fully-qualified name of the FileService's
+	// CommitFileUpload RPC.
+	FileServiceCommitFileUploadProcedure = "/dieter.v1.FileService/CommitFileUpload"
+	// FileServiceAbortFileUploadProcedure is the fully-qualified name of the FileService's
+	// AbortFileUpload RPC.
+	FileServiceAbortFileUploadProcedure = "/dieter.v1.FileService/AbortFileUpload"
+	// FileServiceDeleteTransferFileProcedure is the fully-qualified name of the FileService's
+	// DeleteTransferFile RPC.
+	FileServiceDeleteTransferFileProcedure = "/dieter.v1.FileService/DeleteTransferFile"
 	// FileServiceListFilesProcedure is the fully-qualified name of the FileService's ListFiles RPC.
 	FileServiceListFilesProcedure = "/dieter.v1.FileService/ListFiles"
 	// FileServiceReadFileProcedure is the fully-qualified name of the FileService's ReadFile RPC.
@@ -50,6 +77,15 @@ const (
 
 // FileServiceClient is a client for the dieter.v1.FileService service.
 type FileServiceClient interface {
+	StatTransferFile(context.Context, *v1.TransferPath) (*v1.TransferEntry, error)
+	ListTransferFiles(context.Context, *v1.ListTransferFilesRequest) (*v1.TransferPage, error)
+	ReadFileChunk(context.Context, *v1.ReadFileChunkRequest) (*v1.FileChunk, error)
+	BeginFileUpload(context.Context, *v1.BeginFileUploadRequest) (*v1.FileUpload, error)
+	WriteFileChunk(context.Context, *v1.WriteFileChunkRequest) (*v1.FileUpload, error)
+	GetFileUpload(context.Context, *v1.FileUploadRequest) (*v1.FileUpload, error)
+	CommitFileUpload(context.Context, *v1.FileUploadRequest) (*v1.FileUpload, error)
+	AbortFileUpload(context.Context, *v1.FileUploadRequest) (*v1.FileUpload, error)
+	DeleteTransferFile(context.Context, *v1.DeleteTransferFileRequest) (*emptypb.Empty, error)
 	ListFiles(context.Context, *v1.ListFilesRequest) (*v1.FileList, error)
 	ReadFile(context.Context, *v1.ReadFileRequest) (*v1.FileDocument, error)
 	SaveFile(context.Context, *v1.SaveFileRequest) (*v1.FileDocument, error)
@@ -69,6 +105,60 @@ func NewFileServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 	baseURL = strings.TrimRight(baseURL, "/")
 	fileServiceMethods := v1.File_dieter_v1_files_proto.Services().ByName("FileService").Methods()
 	return &fileServiceClient{
+		statTransferFile: connect.NewClient[v1.TransferPath, v1.TransferEntry](
+			httpClient,
+			baseURL+FileServiceStatTransferFileProcedure,
+			connect.WithSchema(fileServiceMethods.ByName("StatTransferFile")),
+			connect.WithClientOptions(opts...),
+		),
+		listTransferFiles: connect.NewClient[v1.ListTransferFilesRequest, v1.TransferPage](
+			httpClient,
+			baseURL+FileServiceListTransferFilesProcedure,
+			connect.WithSchema(fileServiceMethods.ByName("ListTransferFiles")),
+			connect.WithClientOptions(opts...),
+		),
+		readFileChunk: connect.NewClient[v1.ReadFileChunkRequest, v1.FileChunk](
+			httpClient,
+			baseURL+FileServiceReadFileChunkProcedure,
+			connect.WithSchema(fileServiceMethods.ByName("ReadFileChunk")),
+			connect.WithClientOptions(opts...),
+		),
+		beginFileUpload: connect.NewClient[v1.BeginFileUploadRequest, v1.FileUpload](
+			httpClient,
+			baseURL+FileServiceBeginFileUploadProcedure,
+			connect.WithSchema(fileServiceMethods.ByName("BeginFileUpload")),
+			connect.WithClientOptions(opts...),
+		),
+		writeFileChunk: connect.NewClient[v1.WriteFileChunkRequest, v1.FileUpload](
+			httpClient,
+			baseURL+FileServiceWriteFileChunkProcedure,
+			connect.WithSchema(fileServiceMethods.ByName("WriteFileChunk")),
+			connect.WithClientOptions(opts...),
+		),
+		getFileUpload: connect.NewClient[v1.FileUploadRequest, v1.FileUpload](
+			httpClient,
+			baseURL+FileServiceGetFileUploadProcedure,
+			connect.WithSchema(fileServiceMethods.ByName("GetFileUpload")),
+			connect.WithClientOptions(opts...),
+		),
+		commitFileUpload: connect.NewClient[v1.FileUploadRequest, v1.FileUpload](
+			httpClient,
+			baseURL+FileServiceCommitFileUploadProcedure,
+			connect.WithSchema(fileServiceMethods.ByName("CommitFileUpload")),
+			connect.WithClientOptions(opts...),
+		),
+		abortFileUpload: connect.NewClient[v1.FileUploadRequest, v1.FileUpload](
+			httpClient,
+			baseURL+FileServiceAbortFileUploadProcedure,
+			connect.WithSchema(fileServiceMethods.ByName("AbortFileUpload")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteTransferFile: connect.NewClient[v1.DeleteTransferFileRequest, emptypb.Empty](
+			httpClient,
+			baseURL+FileServiceDeleteTransferFileProcedure,
+			connect.WithSchema(fileServiceMethods.ByName("DeleteTransferFile")),
+			connect.WithClientOptions(opts...),
+		),
 		listFiles: connect.NewClient[v1.ListFilesRequest, v1.FileList](
 			httpClient,
 			baseURL+FileServiceListFilesProcedure,
@@ -110,12 +200,102 @@ func NewFileServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 
 // fileServiceClient implements FileServiceClient.
 type fileServiceClient struct {
-	listFiles  *connect.Client[v1.ListFilesRequest, v1.FileList]
-	readFile   *connect.Client[v1.ReadFileRequest, v1.FileDocument]
-	saveFile   *connect.Client[v1.SaveFileRequest, v1.FileDocument]
-	createFile *connect.Client[v1.CreateFileRequest, v1.FileEntry]
-	moveFile   *connect.Client[v1.MoveFileRequest, v1.MoveFileResponse]
-	deleteFile *connect.Client[v1.DeleteFileRequest, emptypb.Empty]
+	statTransferFile   *connect.Client[v1.TransferPath, v1.TransferEntry]
+	listTransferFiles  *connect.Client[v1.ListTransferFilesRequest, v1.TransferPage]
+	readFileChunk      *connect.Client[v1.ReadFileChunkRequest, v1.FileChunk]
+	beginFileUpload    *connect.Client[v1.BeginFileUploadRequest, v1.FileUpload]
+	writeFileChunk     *connect.Client[v1.WriteFileChunkRequest, v1.FileUpload]
+	getFileUpload      *connect.Client[v1.FileUploadRequest, v1.FileUpload]
+	commitFileUpload   *connect.Client[v1.FileUploadRequest, v1.FileUpload]
+	abortFileUpload    *connect.Client[v1.FileUploadRequest, v1.FileUpload]
+	deleteTransferFile *connect.Client[v1.DeleteTransferFileRequest, emptypb.Empty]
+	listFiles          *connect.Client[v1.ListFilesRequest, v1.FileList]
+	readFile           *connect.Client[v1.ReadFileRequest, v1.FileDocument]
+	saveFile           *connect.Client[v1.SaveFileRequest, v1.FileDocument]
+	createFile         *connect.Client[v1.CreateFileRequest, v1.FileEntry]
+	moveFile           *connect.Client[v1.MoveFileRequest, v1.MoveFileResponse]
+	deleteFile         *connect.Client[v1.DeleteFileRequest, emptypb.Empty]
+}
+
+// StatTransferFile calls dieter.v1.FileService.StatTransferFile.
+func (c *fileServiceClient) StatTransferFile(ctx context.Context, req *v1.TransferPath) (*v1.TransferEntry, error) {
+	response, err := c.statTransferFile.CallUnary(ctx, connect.NewRequest(req))
+	if response != nil {
+		return response.Msg, err
+	}
+	return nil, err
+}
+
+// ListTransferFiles calls dieter.v1.FileService.ListTransferFiles.
+func (c *fileServiceClient) ListTransferFiles(ctx context.Context, req *v1.ListTransferFilesRequest) (*v1.TransferPage, error) {
+	response, err := c.listTransferFiles.CallUnary(ctx, connect.NewRequest(req))
+	if response != nil {
+		return response.Msg, err
+	}
+	return nil, err
+}
+
+// ReadFileChunk calls dieter.v1.FileService.ReadFileChunk.
+func (c *fileServiceClient) ReadFileChunk(ctx context.Context, req *v1.ReadFileChunkRequest) (*v1.FileChunk, error) {
+	response, err := c.readFileChunk.CallUnary(ctx, connect.NewRequest(req))
+	if response != nil {
+		return response.Msg, err
+	}
+	return nil, err
+}
+
+// BeginFileUpload calls dieter.v1.FileService.BeginFileUpload.
+func (c *fileServiceClient) BeginFileUpload(ctx context.Context, req *v1.BeginFileUploadRequest) (*v1.FileUpload, error) {
+	response, err := c.beginFileUpload.CallUnary(ctx, connect.NewRequest(req))
+	if response != nil {
+		return response.Msg, err
+	}
+	return nil, err
+}
+
+// WriteFileChunk calls dieter.v1.FileService.WriteFileChunk.
+func (c *fileServiceClient) WriteFileChunk(ctx context.Context, req *v1.WriteFileChunkRequest) (*v1.FileUpload, error) {
+	response, err := c.writeFileChunk.CallUnary(ctx, connect.NewRequest(req))
+	if response != nil {
+		return response.Msg, err
+	}
+	return nil, err
+}
+
+// GetFileUpload calls dieter.v1.FileService.GetFileUpload.
+func (c *fileServiceClient) GetFileUpload(ctx context.Context, req *v1.FileUploadRequest) (*v1.FileUpload, error) {
+	response, err := c.getFileUpload.CallUnary(ctx, connect.NewRequest(req))
+	if response != nil {
+		return response.Msg, err
+	}
+	return nil, err
+}
+
+// CommitFileUpload calls dieter.v1.FileService.CommitFileUpload.
+func (c *fileServiceClient) CommitFileUpload(ctx context.Context, req *v1.FileUploadRequest) (*v1.FileUpload, error) {
+	response, err := c.commitFileUpload.CallUnary(ctx, connect.NewRequest(req))
+	if response != nil {
+		return response.Msg, err
+	}
+	return nil, err
+}
+
+// AbortFileUpload calls dieter.v1.FileService.AbortFileUpload.
+func (c *fileServiceClient) AbortFileUpload(ctx context.Context, req *v1.FileUploadRequest) (*v1.FileUpload, error) {
+	response, err := c.abortFileUpload.CallUnary(ctx, connect.NewRequest(req))
+	if response != nil {
+		return response.Msg, err
+	}
+	return nil, err
+}
+
+// DeleteTransferFile calls dieter.v1.FileService.DeleteTransferFile.
+func (c *fileServiceClient) DeleteTransferFile(ctx context.Context, req *v1.DeleteTransferFileRequest) (*emptypb.Empty, error) {
+	response, err := c.deleteTransferFile.CallUnary(ctx, connect.NewRequest(req))
+	if response != nil {
+		return response.Msg, err
+	}
+	return nil, err
 }
 
 // ListFiles calls dieter.v1.FileService.ListFiles.
@@ -174,6 +354,15 @@ func (c *fileServiceClient) DeleteFile(ctx context.Context, req *v1.DeleteFileRe
 
 // FileServiceHandler is an implementation of the dieter.v1.FileService service.
 type FileServiceHandler interface {
+	StatTransferFile(context.Context, *v1.TransferPath) (*v1.TransferEntry, error)
+	ListTransferFiles(context.Context, *v1.ListTransferFilesRequest) (*v1.TransferPage, error)
+	ReadFileChunk(context.Context, *v1.ReadFileChunkRequest) (*v1.FileChunk, error)
+	BeginFileUpload(context.Context, *v1.BeginFileUploadRequest) (*v1.FileUpload, error)
+	WriteFileChunk(context.Context, *v1.WriteFileChunkRequest) (*v1.FileUpload, error)
+	GetFileUpload(context.Context, *v1.FileUploadRequest) (*v1.FileUpload, error)
+	CommitFileUpload(context.Context, *v1.FileUploadRequest) (*v1.FileUpload, error)
+	AbortFileUpload(context.Context, *v1.FileUploadRequest) (*v1.FileUpload, error)
+	DeleteTransferFile(context.Context, *v1.DeleteTransferFileRequest) (*emptypb.Empty, error)
 	ListFiles(context.Context, *v1.ListFilesRequest) (*v1.FileList, error)
 	ReadFile(context.Context, *v1.ReadFileRequest) (*v1.FileDocument, error)
 	SaveFile(context.Context, *v1.SaveFileRequest) (*v1.FileDocument, error)
@@ -189,6 +378,60 @@ type FileServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewFileServiceHandler(svc FileServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	fileServiceMethods := v1.File_dieter_v1_files_proto.Services().ByName("FileService").Methods()
+	fileServiceStatTransferFileHandler := connect.NewUnaryHandlerSimple(
+		FileServiceStatTransferFileProcedure,
+		svc.StatTransferFile,
+		connect.WithSchema(fileServiceMethods.ByName("StatTransferFile")),
+		connect.WithHandlerOptions(opts...),
+	)
+	fileServiceListTransferFilesHandler := connect.NewUnaryHandlerSimple(
+		FileServiceListTransferFilesProcedure,
+		svc.ListTransferFiles,
+		connect.WithSchema(fileServiceMethods.ByName("ListTransferFiles")),
+		connect.WithHandlerOptions(opts...),
+	)
+	fileServiceReadFileChunkHandler := connect.NewUnaryHandlerSimple(
+		FileServiceReadFileChunkProcedure,
+		svc.ReadFileChunk,
+		connect.WithSchema(fileServiceMethods.ByName("ReadFileChunk")),
+		connect.WithHandlerOptions(opts...),
+	)
+	fileServiceBeginFileUploadHandler := connect.NewUnaryHandlerSimple(
+		FileServiceBeginFileUploadProcedure,
+		svc.BeginFileUpload,
+		connect.WithSchema(fileServiceMethods.ByName("BeginFileUpload")),
+		connect.WithHandlerOptions(opts...),
+	)
+	fileServiceWriteFileChunkHandler := connect.NewUnaryHandlerSimple(
+		FileServiceWriteFileChunkProcedure,
+		svc.WriteFileChunk,
+		connect.WithSchema(fileServiceMethods.ByName("WriteFileChunk")),
+		connect.WithHandlerOptions(opts...),
+	)
+	fileServiceGetFileUploadHandler := connect.NewUnaryHandlerSimple(
+		FileServiceGetFileUploadProcedure,
+		svc.GetFileUpload,
+		connect.WithSchema(fileServiceMethods.ByName("GetFileUpload")),
+		connect.WithHandlerOptions(opts...),
+	)
+	fileServiceCommitFileUploadHandler := connect.NewUnaryHandlerSimple(
+		FileServiceCommitFileUploadProcedure,
+		svc.CommitFileUpload,
+		connect.WithSchema(fileServiceMethods.ByName("CommitFileUpload")),
+		connect.WithHandlerOptions(opts...),
+	)
+	fileServiceAbortFileUploadHandler := connect.NewUnaryHandlerSimple(
+		FileServiceAbortFileUploadProcedure,
+		svc.AbortFileUpload,
+		connect.WithSchema(fileServiceMethods.ByName("AbortFileUpload")),
+		connect.WithHandlerOptions(opts...),
+	)
+	fileServiceDeleteTransferFileHandler := connect.NewUnaryHandlerSimple(
+		FileServiceDeleteTransferFileProcedure,
+		svc.DeleteTransferFile,
+		connect.WithSchema(fileServiceMethods.ByName("DeleteTransferFile")),
+		connect.WithHandlerOptions(opts...),
+	)
 	fileServiceListFilesHandler := connect.NewUnaryHandlerSimple(
 		FileServiceListFilesProcedure,
 		svc.ListFiles,
@@ -227,6 +470,24 @@ func NewFileServiceHandler(svc FileServiceHandler, opts ...connect.HandlerOption
 	)
 	return "/dieter.v1.FileService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case FileServiceStatTransferFileProcedure:
+			fileServiceStatTransferFileHandler.ServeHTTP(w, r)
+		case FileServiceListTransferFilesProcedure:
+			fileServiceListTransferFilesHandler.ServeHTTP(w, r)
+		case FileServiceReadFileChunkProcedure:
+			fileServiceReadFileChunkHandler.ServeHTTP(w, r)
+		case FileServiceBeginFileUploadProcedure:
+			fileServiceBeginFileUploadHandler.ServeHTTP(w, r)
+		case FileServiceWriteFileChunkProcedure:
+			fileServiceWriteFileChunkHandler.ServeHTTP(w, r)
+		case FileServiceGetFileUploadProcedure:
+			fileServiceGetFileUploadHandler.ServeHTTP(w, r)
+		case FileServiceCommitFileUploadProcedure:
+			fileServiceCommitFileUploadHandler.ServeHTTP(w, r)
+		case FileServiceAbortFileUploadProcedure:
+			fileServiceAbortFileUploadHandler.ServeHTTP(w, r)
+		case FileServiceDeleteTransferFileProcedure:
+			fileServiceDeleteTransferFileHandler.ServeHTTP(w, r)
 		case FileServiceListFilesProcedure:
 			fileServiceListFilesHandler.ServeHTTP(w, r)
 		case FileServiceReadFileProcedure:
@@ -247,6 +508,42 @@ func NewFileServiceHandler(svc FileServiceHandler, opts ...connect.HandlerOption
 
 // UnimplementedFileServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedFileServiceHandler struct{}
+
+func (UnimplementedFileServiceHandler) StatTransferFile(context.Context, *v1.TransferPath) (*v1.TransferEntry, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.FileService.StatTransferFile is not implemented"))
+}
+
+func (UnimplementedFileServiceHandler) ListTransferFiles(context.Context, *v1.ListTransferFilesRequest) (*v1.TransferPage, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.FileService.ListTransferFiles is not implemented"))
+}
+
+func (UnimplementedFileServiceHandler) ReadFileChunk(context.Context, *v1.ReadFileChunkRequest) (*v1.FileChunk, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.FileService.ReadFileChunk is not implemented"))
+}
+
+func (UnimplementedFileServiceHandler) BeginFileUpload(context.Context, *v1.BeginFileUploadRequest) (*v1.FileUpload, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.FileService.BeginFileUpload is not implemented"))
+}
+
+func (UnimplementedFileServiceHandler) WriteFileChunk(context.Context, *v1.WriteFileChunkRequest) (*v1.FileUpload, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.FileService.WriteFileChunk is not implemented"))
+}
+
+func (UnimplementedFileServiceHandler) GetFileUpload(context.Context, *v1.FileUploadRequest) (*v1.FileUpload, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.FileService.GetFileUpload is not implemented"))
+}
+
+func (UnimplementedFileServiceHandler) CommitFileUpload(context.Context, *v1.FileUploadRequest) (*v1.FileUpload, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.FileService.CommitFileUpload is not implemented"))
+}
+
+func (UnimplementedFileServiceHandler) AbortFileUpload(context.Context, *v1.FileUploadRequest) (*v1.FileUpload, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.FileService.AbortFileUpload is not implemented"))
+}
+
+func (UnimplementedFileServiceHandler) DeleteTransferFile(context.Context, *v1.DeleteTransferFileRequest) (*emptypb.Empty, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.FileService.DeleteTransferFile is not implemented"))
+}
 
 func (UnimplementedFileServiceHandler) ListFiles(context.Context, *v1.ListFilesRequest) (*v1.FileList, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.FileService.ListFiles is not implemented"))

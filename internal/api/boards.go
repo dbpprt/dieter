@@ -5,11 +5,11 @@ import (
 	"time"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 )
 
 func (api *boardsAPI) GetBoard(_ context.Context, request *dieterv1.BoardRef) (*dieterv1.Board, error) {
-	board, err := api.server.store.GetBoard(request.GetBoardId())
+	board, err := api.server.store.Kanban.GetBoard(request.GetBoardId())
 	if err != nil {
 		return nil, err
 	}
@@ -17,7 +17,7 @@ func (api *boardsAPI) GetBoard(_ context.Context, request *dieterv1.BoardRef) (*
 }
 
 func (api *boardsAPI) ListRetiredBoards(_ context.Context, request *dieterv1.ListRetiredBoardsRequest) (*dieterv1.ListRetiredBoardsResponse, error) {
-	page, err := api.server.store.ListRetiredBoards(request.GetProjectId(), request.GetAfterId(), request.GetSnapshotRevision(), int(request.GetPageSize()))
+	page, err := api.server.store.Kanban.ListRetiredBoards(request.GetProjectId(), request.GetAfterId(), request.GetSnapshotRevision(), int(request.GetPageSize()))
 	if err != nil {
 		return nil, err
 	}
@@ -29,7 +29,7 @@ func (api *boardsAPI) ListRetiredBoards(_ context.Context, request *dieterv1.Lis
 }
 
 func (api *boardsAPI) SetBoardRetired(_ context.Context, request *dieterv1.SetBoardRetiredRequest) (*dieterv1.Board, error) {
-	board, err := api.server.store.SetBoardRetired(store.BoardRetirementInput{BoardID: request.GetBoardId(), Retired: request.GetRetired(), ExpectedRevision: request.GetExpectedRevision(), OperationID: request.GetOperationId()})
+	board, err := api.server.store.Kanban.SetBoardRetired(kanban.BoardRetirementInput{BoardID: request.GetBoardId(), Retired: request.GetRetired(), ExpectedRevision: request.GetExpectedRevision(), OperationID: request.GetOperationId()})
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +37,7 @@ func (api *boardsAPI) SetBoardRetired(_ context.Context, request *dieterv1.SetBo
 }
 
 func (api *boardsAPI) RenameBoard(_ context.Context, request *dieterv1.RenameBoardRequest) (*dieterv1.Board, error) {
-	value, err := api.server.store.RenameBoard(request.GetBoardId(), request.GetName())
+	value, err := api.server.store.Kanban.RenameBoard(request.GetBoardId(), request.GetName())
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +45,7 @@ func (api *boardsAPI) RenameBoard(_ context.Context, request *dieterv1.RenameBoa
 }
 
 func (api *boardsAPI) CreateBoard(_ context.Context, request *dieterv1.CreateBoardRequest) (*dieterv1.Board, error) {
-	value, err := api.server.store.CreateBoard(store.CreateBoardInput{
+	value, err := api.server.store.Kanban.CreateBoard(kanban.CreateBoardInput{
 		Project: request.GetProjectId(), Name: request.GetName(), Workflow: request.GetWorkflow(),
 		Description: request.GetDescription(), DoneArchivePolicy: request.GetDoneArchivePolicy(),
 		BaseRemote: request.GetBaseRemote(), RemotePublishMode: request.GetRemotePublishMode(),
@@ -57,7 +57,7 @@ func (api *boardsAPI) CreateBoard(_ context.Context, request *dieterv1.CreateBoa
 }
 
 func (api *boardsAPI) UpdateBoardGitSettings(_ context.Context, request *dieterv1.UpdateBoardGitSettingsRequest) (*dieterv1.Board, error) {
-	value, err := api.server.store.UpdateBoardGitSettings(
+	value, err := api.server.store.Kanban.UpdateBoardGitSettings(
 		request.GetBoardId(), request.GetBaseRemote(), request.GetRemotePublishMode(),
 	)
 	if err != nil {
@@ -67,9 +67,9 @@ func (api *boardsAPI) UpdateBoardGitSettings(_ context.Context, request *dieterv
 }
 
 func (api *boardsAPI) SetBoardArchivePolicy(_ context.Context, request *dieterv1.SetBoardArchivePolicyRequest) (*dieterv1.Board, error) {
-	value, err := api.server.store.UpdateBoardDoneArchivePolicy(request.GetBoardId(), request.GetDoneArchivePolicy())
+	value, err := api.server.store.Kanban.UpdateBoardDoneArchivePolicy(request.GetBoardId(), request.GetDoneArchivePolicy())
 	if err == nil {
-		_, err = api.server.store.ArchiveDoneCards(time.Now())
+		_, err = api.server.store.Kanban.ArchiveDoneCards(time.Now())
 	}
 	if err != nil {
 		return nil, err
@@ -78,7 +78,7 @@ func (api *boardsAPI) SetBoardArchivePolicy(_ context.Context, request *dieterv1
 }
 
 func (api *boardsAPI) CreateBoardLabel(_ context.Context, request *dieterv1.CreateBoardLabelRequest) (*dieterv1.Board, error) {
-	value, err := api.server.store.CreateBoardLabel(
+	value, err := api.server.store.Kanban.CreateBoardLabel(
 		request.GetBoardId(), request.GetName(), request.GetColor(), request.GetInstructions(),
 	)
 	if err != nil {
@@ -88,7 +88,7 @@ func (api *boardsAPI) CreateBoardLabel(_ context.Context, request *dieterv1.Crea
 }
 
 func (api *boardsAPI) UpdateBoardLabel(_ context.Context, request *dieterv1.UpdateBoardLabelRequest) (*dieterv1.Board, error) {
-	value, err := api.server.store.UpdateBoardLabel(
+	value, err := api.server.store.Kanban.UpdateBoardLabel(
 		request.GetBoardId(), request.GetLabelId(), request.GetName(), request.GetColor(), request.GetInstructions(),
 	)
 	if err != nil {
@@ -98,7 +98,7 @@ func (api *boardsAPI) UpdateBoardLabel(_ context.Context, request *dieterv1.Upda
 }
 
 func (api *boardsAPI) DeleteBoardLabel(_ context.Context, request *dieterv1.DeleteBoardLabelRequest) (*dieterv1.Board, error) {
-	value, err := api.server.store.DeleteBoardLabel(request.GetBoardId(), request.GetLabelId())
+	value, err := api.server.store.Kanban.DeleteBoardLabel(request.GetBoardId(), request.GetLabelId())
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func (api *boardsAPI) DeleteBoardLabel(_ context.Context, request *dieterv1.Dele
 }
 
 func (api *boardsAPI) UpdateBoardHostnames(_ context.Context, request *dieterv1.UpdateBoardHostnamesRequest) (*dieterv1.Board, error) {
-	value, err := api.server.store.UpdateBoardHostnames(request.GetBoardId(), request.GetHostnames(), request.GetAppend())
+	value, err := api.server.store.Kanban.UpdateBoardHostnames(request.GetBoardId(), request.GetHostnames(), request.GetAppend())
 	if err != nil {
 		return nil, err
 	}

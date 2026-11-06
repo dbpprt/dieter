@@ -86,9 +86,16 @@ struct SharedAdapterTests {
     }
 
     @Test func theMacConfiguresTheCoreForTheDesktop() {
-        let file = FileManager.default.temporaryDirectory.appending(path: "dieter-platform-\(UUID().uuidString).json")
-        let mac = CoreHostPlatform.mac(credentialsFile: file, notificationsEnabled: { false })
+        let directory = FileManager.default.temporaryDirectory.appending(path: "dieter-platform-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let mac = CoreHostPlatform.mac(
+            credentialsFile: directory.appending(path: "gateway-sessions.json"),
+            deviceKeyFile: directory.appending(path: "device-key.json"), notificationsEnabled: { false })
         #expect(mac.secureStore is CoreFileSecureStore)
+        // The device key lives in a private file beside the sessions, never the Keychain.
+        #expect(mac.deviceKeys.platform() == "macos" && !mac.deviceKeys.deviceName().isEmpty)
+        #expect(!mac.deviceKeys.publicKey().isEmpty)
+        #expect(FileManager.default.fileExists(atPath: directory.appending(path: "device-key.json").path))
         #expect(mac.includeLoopbackRoutes && !mac.compactTranscripts && mac.desktopScreens)
         #expect(mac.screenClientName == "Mac" && mac.clientIDPrefix == "mac")
         #expect(mac.oauthRedirectURI == "dieter-mac://oauth/callback")

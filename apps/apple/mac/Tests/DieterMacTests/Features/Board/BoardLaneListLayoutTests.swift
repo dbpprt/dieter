@@ -1,5 +1,6 @@
 import AppKit
 import DieterAPI
+import DieterClientAPI
 import DieterMacTestSupport
 import SwiftUI
 import Testing
@@ -146,6 +147,44 @@ import Testing
     #expect(renamed["updatedRows"] == cards.count)
     let table = try #require(boardLaneNativeTable(in: root))
     try assertBoardLaneRowsFitContent(table: table, root: root, cards: cards, store: store)
+}
+
+@Test @MainActor func boardLaneFlagUpdateOnlyReconfiguresItsCard() async throws {
+    let store = boardLaneFixtureStore()
+    let cards = boardLaneFixtureCards(count: 3)
+    store.state.cards = cards
+    var flags = Dictionary(
+        uniqueKeysWithValues: cards.map { ($0.id, ClientBoardCardFlags.with { $0.runtimeLabel = "Idle" }) })
+    func lane() -> AnyView {
+        AnyView(
+            BoardLaneList(laneID: "todo", cards: cards, flags: flags, sortDirection: .descending)
+                .environment(store))
+    }
+    let root = NSHostingView(rootView: lane())
+    root.sizingOptions = []
+    let window = boardLaneFixtureWindow(root: root, width: 300, height: 1000)
+    defer { window.close() }
+    await settleBoardLane(root)
+
+    // Cards given their flags do not observe the board's flags.
+    BoardRenderingDiagnostics.start()
+    store.boardCardFlags = flags.mapValues { shown in
+        var waiting = shown
+        waiting.runtimeLabel = "Waiting"
+        return waiting
+    }
+    await settleBoardLane(root)
+    let unobserved = BoardRenderingDiagnostics.stop()
+    #expect(unobserved["cardBody"] == 0)
+
+    BoardRenderingDiagnostics.start()
+    flags[cards[1].id]?.tone = .active
+    root.rootView = lane()
+    await settleBoardLane(root)
+    let updated = BoardRenderingDiagnostics.stop()
+    #expect(updated["fullReload"] == 0)
+    #expect(updated["rowConfigured"] == 1)
+    #expect(updated["cardBody"] == 1)
 }
 
 @Test @MainActor func boardLaneLiveInsertionAndRemovalRetainUnchangedVisibleCells() async throws {

@@ -121,6 +121,7 @@
             case extendedWaitUntil(ElementSelector, visible: Bool, timeout: TimeInterval)
             case takeScreenshot(String)
             case pressKey(Key)
+            case scroll
         }
 
         struct Step {
@@ -236,6 +237,9 @@
                     throw Failure("Unsupported key \(argument) on macOS")
                 }
                 command = .pressKey(key)
+            case "scroll":
+                guard argument as? Bool == true else { throw Failure("scroll takes no options on macOS") }
+                command = .scroll
             default:
                 throw Failure("Unsupported Maestro command \(name) on macOS")
             }
@@ -269,7 +273,33 @@
                 guard focused, let input else { throw Failure("No focused text input") }
                 input.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
             case .takeScreenshot(let name):
+                // A posted mouse/key event must be consumed before a screenshot
+                // can represent the step that just finished.
+                guard
+                    try await NativeUIAccessibility.wait(
+                        timeout: elementTimeout,
+                        until: {
+                            NSApp.nextEvent(
+                                matching: [.leftMouseDown, .leftMouseUp, .keyDown, .keyUp],
+                                until: .distantPast, inMode: .default, dequeue: false) == nil
+                        })
+                else { throw Failure("Input events did not drain before capture") }
+                await withCheckedContinuation { continuation in
+                    DispatchQueue.main.async { continuation.resume() }
+                }
+                window.displayIfNeeded()
                 try capture(window, name: name, output: output)
+            case .scroll:
+                // A real wheel event follows the nested reader's responder
+                // chain into the outer page scroller, just like a trackpad.
+                guard let content = window.contentView,
+                    let wheel = CGEvent(
+                        scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1,
+                        wheel1: -600, wheel2: 0, wheel3: 0),
+                    let event = NSEvent(cgEvent: wheel)
+                else { throw Failure("Native scroll event unavailable") }
+                let point = NSPoint(x: content.bounds.midX, y: content.bounds.midY)
+                content.hitTest(point)?.scrollWheel(with: event)
             case .pressKey(let key):
                 let target = NSApp.keyWindow ?? window
                 for type in [NSEvent.EventType.keyDown, .keyUp] {
@@ -288,8 +318,10 @@
 
         /// The fixture connection is live and the workspace window is key.
         private static func launch(store: DieterStore) async throws -> NSWindow {
-            guard try await NativeUIAccessibility.wait(timeout: 30, until: { store.workspaceIsLive }) else {
-                throw Failure("Fixture connection did not become live")
+            // The fixture's machine approves the launch's pairing code before
+            // any machine is reachable.
+            guard try await NativeUIAccessibility.wait(timeout: 60, until: { store.workspaceIsLive }) else {
+                throw Failure("Fixture connection did not become live (device trust \(store.session.deviceTrust))")
             }
             var window: NSWindow?
             guard
@@ -350,8 +382,11 @@
         }
 
         private static func click(_ element: NativeUIAccessibility.Element) throws {
-            let frame = element.frame
             let host = element.window
+            // A tall reader may extend well beyond the window. Click its
+            // visible portion so subsequent key events reach the reader.
+            let frame = element.frame.intersection(host.frame)
+            guard !frame.isNull, !frame.isEmpty else { throw Failure("Element is outside its window") }
             let point = host.convertPoint(fromScreen: NSPoint(x: frame.midX, y: frame.midY))
             for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
                 guard

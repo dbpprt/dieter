@@ -41,6 +41,18 @@ extension DieterStore {
         return Array(byID.values)
     }
 
+    /// The card `synchronizedCardValues()` holds for `id`, found without
+    /// collecting every project's cards.
+    func synchronizedCard(id: String) -> Dieter_V1_Card? {
+        guard !id.isEmpty else { return nil }
+        if let card = state.cards.first(where: { $0.id == id }) ?? state.chats.first(where: { $0.id == id })
+            ?? chats.first(where: { $0.id == id })
+        {
+            return card
+        }
+        return navigationCards.values.lazy.compactMap { cards in cards.first { $0.id == id } }.first
+    }
+
     /// The island's rows and counts from the core's activity slice.
     func refreshIslandActivity() {
         let next = DieterIslandActivity(activity)
@@ -66,7 +78,7 @@ extension DieterStore {
     }
 
     func isChatUnread(_ card: Dieter_V1_Card) -> Bool {
-        SharedRules.shared.isUnread(card: card.rulesData)
+        unreadRule.value(card.id, input: card) { SharedRules.shared.isUnread(card: card.rulesData) }
     }
 
     func isPendingCard(_ id: String) -> Bool { pendingCardIDs.contains(id) }
@@ -124,11 +136,6 @@ extension DieterStore {
         board(id: renameBoardTargetID)
     }
 
-    var selectedCard: Dieter_V1_Card? {
-        let id = selectedCardID ?? selectedChatID
-        return state.cards.first { $0.id == id } ?? state.chats.first { $0.id == id } ?? chats.first { $0.id == id }
-    }
-
     /// Every card the board shows, lane by lane.
     var displayedCards: [Dieter_V1_Card] {
         boardProjection.displayedCards
@@ -138,11 +145,15 @@ extension DieterStore {
     /// shows it, else the core's rules over the card, e.g. in the Inbox.
     func cardFlags(_ card: Dieter_V1_Card, board: Dieter_V1_Board?) -> ClientBoardCardFlags {
         if let flags = boardCardFlags[card.id] { return flags }
-        return ClientBoardCardFlags(
-            rules: SharedRules.shared.cardFlags(
-                card: card.rulesData, board: board?.rulesData ?? Data(),
-                operation: boardState.operations[card.id] ?? "",
-                pending: outboxState.pendingCardIds.contains(card.id), failed: outboxState.failures[card.id] != nil))
+        let inputs = CardFlagInputs(
+            card: card, board: board, operation: boardState.operations[card.id] ?? "",
+            pending: outboxState.pendingCardIds.contains(card.id), failed: outboxState.failures[card.id] != nil)
+        return cardFlagsRule.value(card.id, input: inputs) {
+            ClientBoardCardFlags(
+                rules: SharedRules.shared.cardFlags(
+                    card: card.rulesData, board: board?.rulesData ?? Data(), operation: inputs.operation,
+                    pending: inputs.pending, failed: inputs.failed))
+        }
     }
 
     func refreshBoardProjection() {
@@ -150,6 +161,8 @@ extension DieterStore {
         let next = BoardProjection.resolve(view: boardView, board: selectedBoard, cards: state.cards)
         if next != boardProjection { boardProjection = next }
         if boardCardFlags != next.view.cards { boardCardFlags = next.view.cards }
+        // The chrome observes its own summary, so card updates leave it alone.
+        boardViewModel.showChrome(BoardChromeSummary(next.view))
     }
 
     func boards(for projectID: String) -> [Dieter_V1_Board] {
@@ -158,9 +171,25 @@ extension DieterStore {
 
     func board(id: String) -> Dieter_V1_Board? {
         guard !id.isEmpty else { return nil }
-        if let board = state.boards.first(where: { $0.id == id }) { return board }
-        return navigationBoards.values.lazy.compactMap { boards in
+        // Every project's boards first: the selected project's state mirrors
+        // its boards but changes with every card, and views that only show a
+        // board must not observe it.
+        let listed = navigationBoards.values.lazy.compactMap { boards in
             boards.first(where: { $0.id == id })
         }.first
+        return listed ?? state.boards.first(where: { $0.id == id })
     }
+}
+
+/// The core's rules over a card take it encoded, and rows ask while they render.
+private let unreadRule = SharedRuleEntityMemo<Dieter_V1_Card, Bool>()
+private let cardFlagsRule = SharedRuleEntityMemo<CardFlagInputs, ClientBoardCardFlags>()
+
+/// What the core's card flags rule reads.
+private struct CardFlagInputs: Equatable, Sendable {
+    let card: Dieter_V1_Card
+    let board: Dieter_V1_Board?
+    let operation: String
+    let pending: Bool
+    let failed: Bool
 }

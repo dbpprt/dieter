@@ -24,6 +24,9 @@ type runtimeManifest struct {
 	InstalledAt     string   `json:"installedAt"`
 }
 
+// requiredRuntimeFiles must exist in every installed runtime: the adapters,
+// the agent CLIs whose bridges link them from the runtime, and the packages
+// those bridges import. Platform packages are checked per agent at bootstrap.
 var requiredRuntimeFiles = []string{
 	"runner.mjs",
 	"package.json",
@@ -34,6 +37,11 @@ var requiredRuntimeFiles = []string{
 	"node_modules/@ai-sdk/harness-codex/dist/index.js",
 	"node_modules/@ai-sdk/harness-pi/dist/index.js",
 	"node_modules/@earendil-works/pi-coding-agent/dist/index.js",
+	"node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs",
+	"node_modules/@openai/codex/bin/codex.js",
+	"node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js",
+	"node_modules/@agentclientprotocol/sdk/package.json",
+	"node_modules/@modelcontextprotocol/sdk/package.json",
 }
 
 func embeddedRuntimeSourceFiles() []string {
@@ -122,7 +130,11 @@ func validateRuntimeDirectory(dir, digest string) error {
 	return nil
 }
 
-func installRuntimeAtomically(ctx context.Context, root, finalDir, digest string) error {
+// installRuntimeAtomically publishes finalDir under the per-digest install
+// lock: it stages the embedded sources, lets populate add node_modules (npm,
+// or a prebuilt release archive), writes the .installed marker, validates the
+// result and renames it into place.
+func installRuntimeAtomically(ctx context.Context, root, finalDir, digest string, populate func(context.Context, string) error) error {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return err
 	}
@@ -162,11 +174,8 @@ func installRuntimeAtomically(ctx context.Context, root, finalDir, digest string
 	if err := stageRuntimeAssets(temporary); err != nil {
 		return fmt.Errorf("stage AI SDK harness runtime: %w", err)
 	}
-	command := exec.CommandContext(ctx, "npm", "ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund")
-	command.Dir = temporary
-	output, installErr := command.CombinedOutput()
-	if installErr != nil {
-		return fmt.Errorf("install pinned AI SDK harness runtime: %s: %w", strings.TrimSpace(string(output)), installErr)
+	if err := populate(ctx, temporary); err != nil {
+		return err
 	}
 	manifest, err := json.Marshal(runtimeManifest{
 		Digest: digest, ProtocolVersion: RuntimeProtocolVersion, SourceFiles: embeddedRuntimeSourceFiles(), InstalledAt: time.Now().UTC().Format(time.RFC3339Nano),
@@ -189,6 +198,19 @@ func installRuntimeAtomically(ctx context.Context, root, finalDir, digest string
 	}
 	if err := fsx.SyncDir(root); err != nil {
 		return err
+	}
+	return nil
+}
+
+// npmInstallRuntime installs the staged runtime's pinned dependencies. Source
+// builds run it on the daemon host; release builders run it once per platform
+// to produce the prebuilt archive.
+func npmInstallRuntime(ctx context.Context, dir string) error {
+	command := exec.CommandContext(ctx, "npm", "ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund")
+	command.Dir = dir
+	output, err := command.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("install pinned AI SDK harness runtime: %s: %w", strings.TrimSpace(string(output)), err)
 	}
 	return nil
 }

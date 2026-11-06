@@ -18,6 +18,17 @@ device checks separately; add `--base origin/main` for a whole branch and
 `--dry-run` to see the plan first. The required pull-request check is `ci-ok`,
 which aggregates every selected CI job.
 
+To rerun only Release iPhone verification after diagnosing an iOS CI failure:
+
+```sh
+gh workflow run ci.yml --ref main -f ios_only=true
+```
+
+This runs the iPhone build and smoke flows, overrides `full`, and skips unrelated
+components. Pull requests and main pushes keep their usual affected-check
+selection. The job allows for the cold Kotlin/Native and Xcode builds before the
+unchanged 25-minute Maestro deadline.
+
 ## Go
 
 ```sh
@@ -38,8 +49,11 @@ go test -race ./internal/engine/...       # one package, with the race detector
   `testkit.FakeRunner` and `testkit.MockCatalog()` for harnesses, and
   `testkit.Eventually` (race-scaled budgets) instead of sleeps.
   `internal/testkit/topology` starts an in-process gateway with enrolled
-  daemons, sessions and relay routes. Packages that `testkit` itself imports
-  (store, harness and their dependencies) keep local helpers to avoid cycles.
+  daemons that share one device roster, sessions and relay tunnels.
+  `Gateway.NewClient` pairs a test app device (a software P-256 key) through the
+  production pairing path, so tests dial daemons over the same mutual TLS as
+  the apps. Packages that `testkit` itself imports (store, harness and their
+  dependencies) keep local helpers to avoid cycles.
 - **Time.** Do not poll the wall clock or sleep to wait for an effect. Inject a
   clock, wait on an observer (for example `scheduler.Manager.OnRunSettled`), or
   use `testkit.Eventually`.
@@ -48,6 +62,14 @@ go test -race ./internal/engine/...       # one package, with the race detector
   `DIETER_TEST_CAPTURE_HELPER`, `DIETER_TEST_SCREEN_CAPTURE_REAL`,
   `DIETER_TEST_LINUX_CAPTURE_REAL`). See
   [reference/environment.md](reference/environment.md#fixtures-and-tests).
+
+For concurrent-turn storage measurements, run
+`DIETER_TEST_CONGESTION=1 go test ./internal/engine -run '^TestConcurrentTurnWriterCost$' -count=1 -v`.
+It uses a 100-card isolated store and measures 1, 8 and 16 streaming turns after
+fixture setup and admission. Run it separately from compilation and other
+suites. The end-to-end `TestConcurrentTurnsStayResponsiveAcrossRoutes` in
+`internal/testkit/topology` additionally covers local, direct TLS and relay
+admission, watches, concurrent edits, peer exchange and cold journal replay.
 
 ### Contract tests
 
@@ -61,6 +83,7 @@ These keep the product surfaces in step. Never weaken them to land a change:
 | `go run ./tools/identity -check`                                                                                                                  | Committed identity constants match `config/identity.json`               |
 | `go test ./tools/brandcheck`                                                                                                                      | Brand assets exist once and every product uses them                     |
 | Maestro flow lint (in `just check-changed`)                                                                                                       | Every flow parses and only uses supported commands                      |
+| `TestGatewayRelaysButNeverSeesContent`, `TestDaemonsAndClientsRefuseUntrustedPeersThroughTheGateway` (`internal/testkit/topology`, `-tags e2e`)   | The gateway relays only ciphertext and cannot impersonate a device      |
 
 ## Kotlin
 
@@ -75,6 +98,18 @@ the rule. `:core:e2e` builds `tools/fixtures/gateway` once and starts a fresh
 gateway and daemon with a temporary home and random ports for each test. iOS
 simulator tests need a caller-provided simulator:
 `just kotlin :core:runtime:iosSimulatorArm64Test -Pdieter.simulator=<UDID>`.
+
+### Pairing in fixtures
+
+Machines answer only trusted devices, so every fixture client pairs. The fixture
+gateway starts the device roster on its primary daemon, pairs its other
+daemons, and prints one pairing code, `DIETER_ISOLATED_PAIRING_CODE`, before
+`READY`. Its primary daemon keeps approving every request that proves that code,
+exactly as `dieter device approve` does. Clients receive the code in
+`AdoptSession.pairing_code` (fixtures only; the Mac app reads it from
+`--dieter-pairing-code-file`) and use it instead of a random one. Everything else
+is the production path: the client still verifies the approver's confirmation
+before it pins the roster.
 
 ## Swift
 
@@ -113,8 +148,11 @@ tests cannot cover, and keep assertions about rules in Kotlin unit tests.
 ## Cross-language fixtures
 
 Golden vectors shared by Go, Kotlin and Swift live in `tests/fixtures` (for
-example `board-lifecycle.tsv`, read by `internal/store` and the Kotlin
-`BoardLifecycleTest`). Go generates or validates them; the clients load them as
+example `board-lifecycle.tsv`, read by `internal/store/kanban` and the Kotlin
+`BoardLifecycleTest`, and `roster/vectors.json`, the device roster's encoding,
+hashes, device IDs, pairing codes and MACs, read by
+`internal/security/roster`, the Kotlin `RosterVectorsTest` and DieterKit's
+`DeviceTrustTests`). Go generates or validates them; the clients load them as
 test resources. Change the producer and every consumer in one change.
 
 ## Safety

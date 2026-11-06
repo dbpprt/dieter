@@ -47,7 +47,6 @@ func TestGatewayRelocationPreservesEnrollmentAndPeerIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer g.APIGRPC.Stop()
-	defer g.RelayGRPC.Stop()
 	go func() { _ = g.APIGRPC.Serve(oldListener) }()
 	go func() { _ = g.APIGRPC.Serve(newListener) }()
 	local := testkit.Store(t)
@@ -70,11 +69,11 @@ func TestGatewayRelocationPreservesEnrollmentAndPeerIdentity(t *testing.T) {
 		t.Fatal("enrollment lost durable issuer")
 	}
 	// Model an existing enrollment created before explicit issuer discovery.
-	if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetDaemonCaPem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
+	if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
 		t.Fatal(err)
 	}
 	scope := crdt.Revision([]string{identity.Issuer(), "github:42"})
-	binding, err := local.BindPeerAccount(scope, "github:42", identity.ID, identity.Issuer())
+	binding, err := local.Replica.BindPeerAccount(scope, "github:42", identity.ID, identity.Issuer())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,14 +98,14 @@ func TestGatewayRelocationPreservesEnrollmentAndPeerIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if moved.GatewayURL != endpoint || moved.Issuer() != oldURL.String() || moved.ID != identity.ID || moved.Generation != identity.Generation || !bytes.Equal(moved.CertificatePEM, identity.CertificatePEM) || !bytes.Equal(moved.DaemonCAPEM, identity.DaemonCAPEM) {
+	if moved.GatewayURL != endpoint || moved.Issuer() != oldURL.String() || moved.ID != identity.ID || moved.Generation != identity.Generation || !bytes.Equal(moved.CertificatePEM, identity.CertificatePEM) {
 		t.Fatal("gateway move changed enrollment identity")
 	}
 	keyAfter, _ := os.ReadFile(keyPath)
 	if !bytes.Equal(keyBefore, keyAfter) {
 		t.Fatal("daemon private key changed")
 	}
-	next, err := local.BindPeerAccount(scope, "github:42", moved.ID, moved.Issuer())
+	next, err := local.Replica.BindPeerAccount(scope, "github:42", moved.ID, moved.Issuer())
 	if err != nil || next != binding {
 		t.Fatalf("peer binding/actor changed: %v", err)
 	}

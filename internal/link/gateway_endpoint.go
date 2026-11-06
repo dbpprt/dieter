@@ -40,7 +40,7 @@ func ResolveGatewayEndpoint(ctx context.Context, identity *Identity) (string, er
 			return nil, err
 		}
 		defer conn.Close()
-		return gatewayv1.NewGatewayServiceClient(possessionConn{conn, value, ""}).GetAccount(ctx, &emptypb.Empty{})
+		return gatewayv1.NewGatewayServiceClient(possessionConn{conn, value}).GetAccount(ctx, &emptypb.Empty{})
 	}
 	account, err := accountAt(identity)
 	if err != nil {

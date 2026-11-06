@@ -14,6 +14,10 @@ import (
 // RPC must have an equivalent, documented CLI entry point. Adding an RPC makes
 // this test fail until the feature team wires and documents its CLI operation.
 var rpcCommand = map[string]string{
+	"ListChannels": "channel list", "ListChannelMessages": "channel messages", "PostChannelMessage": "channel post", "PinChannelMessage": "channel pin",
+	"MarkChannelRead": "channel read", "GetChannelInbox": "channel inbox", "CheckChannelFiles": "channel check", "ListChannelClaims": "channel claims",
+	"ReleaseChannelClaims": "channel release", "HandleChannelHook": "channel hook", "GetChannelSettings": "channel settings", "SetChannelSetting": "channel settings", "WatchChannel": "channel watch",
+	"SendMail": "mail send", "ListMail": "mail list", "GetMail": "mail show", "UpdateMail": "mail mark", "DeleteMail": "mail delete",
 	"GetKV": "kv get", "ListKV": "kv list", "PutKV": "kv put", "DeleteKV": "kv delete", "MoveKV": "kv move", "WatchKV": "kv watch",
 	"GetPeerRecord": "peer show", "GetPeerChanges": "peer changes", "GetPeerStoreStatus": "peer status", "ListPeerRecords": "peer list", "PutPeerRecord": "peer put", "MergePeerRecords": "peer merge",
 	"StartControlConnection": "machine connection start", "GetControlConnection": "machine connection show", "CloseControlConnection": "machine connection close",
@@ -37,6 +41,7 @@ var rpcCommand = map[string]string{
 	"GetBoard": "board show", "ListRetiredBoards": "board list", "SetBoardRetired": "board retire", "CreateBoard": "board create", "RenameBoard": "board rename", "SetBoardArchivePolicy": "board retention", "UpdateBoardGitSettings": "board git", "ListArchivedCards": "card list", "CreateBoardLabel": "board label add", "UpdateBoardLabel": "board label update", "DeleteBoardLabel": "board label remove",
 	"CreateCard": "card create", "CreateChat": "chat create", "ForkChat": "card fork", "ListChats": "chat list", "GetCard": "card show", "GetConversation": "card transcript", "PollConversation": "card poll", "WatchConversation": "card watch", "GetToolOutput": "card tool-output", "SendMessage": "card send", "RemoveQueuedMessage": "card queue remove", "MarkConversationRead": "card read", "MoveCard": "card move", "MergeCard": "card merge", "StartCard": "card start", "SetCardLabels": "card labels", "CancelCard": "card cancel", "RenameCard": "card rename", "UpdateCard": "card update", "ArchiveCard": "card archive", "PinChat": "chat pin",
 	"UpdateConversationWorkspace": "card workspace", "GetWorkspace": "workspace show", "ListProjectWorkspaces": "workspace list", "GetChangeset": "workspace changes", "GetFileDiff": "workspace diff", "GetCommitDiff": "workspace diff", "AddChangeComment": "workspace comment", "ListChangeComments": "workspace comments", "GetSCMCapabilities": "workspace scm", "StartGitOperation": "workspace run", "GetGitOperation": "workspace operation", "WatchGitOperation": "workspace watch", "CancelGitOperation": "workspace cancel",
+	"StatTransferFile": "file stat", "ListTransferFiles": "file scan", "ReadFileChunk": "file cp", "BeginFileUpload": "file upload", "WriteFileChunk": "file upload", "GetFileUpload": "file upload", "CommitFileUpload": "file upload", "AbortFileUpload": "file upload", "DeleteTransferFile": "file sync",
 	"ListFiles": "file list", "ReadFile": "file read", "SaveFile": "file save", "CreateFile": "file create", "MoveFile": "file move", "DeleteFile": "file delete",
 	"ListTerminals": "terminal list", "CreateTerminal": "terminal create", "WatchTerminal": "terminal watch", "WriteTerminal": "terminal write", "ResizeTerminal": "terminal resize", "RenameTerminal": "terminal rename", "CloseTerminal": "terminal close",
 	"ListExecutions": "remote list", "StartExecution": "remote exec", "GetExecution": "remote show", "WatchExecution": "remote watch", "WriteExecutionInput": "remote input", "SignalExecution": "remote signal", "ResizeExecution": "remote resize", "CancelExecution": "remote cancel", "CloseExecution": "remote close",
@@ -46,6 +51,8 @@ var rpcCommand = map[string]string{
 	"GetRemoteDesktopSession":        "screen status", "UpdateRemoteDesktopSession": "screen configure",
 	"GetSchedule": "schedule show", "ListSchedules": "schedule list", "PreviewSchedule": "schedule preview", "CreateSchedule": "schedule create", "UpdateSchedule": "schedule update", "DeleteSchedule": "schedule delete", "RunSchedule": "schedule run", "SetScheduleEnabled": "schedule pause", "ListScheduleRuns": "schedule runs",
 	"GetVaultStatus": "vault status", "InitVault": "vault init", "JoinVault": "vault join", "ApproveVaultMember": "vault approve", "RemoveVaultMember": "vault remove-member", "RotateVault": "vault rotate",
+	"GetTrustStatus": "device status", "GetDeviceRoster": "device roster", "SyncDeviceRoster": "device sync", "InitializeDeviceRoster": "device init",
+	"ListPairingRequests": "device requests", "ApproveDevice": "device approve", "RevokeDevice": "device revoke", "RecoverDeviceTrust": "device recover",
 	"ListVaultItems": "vault list", "GetVaultItem": "vault show", "RevealVaultItem": "vault get", "CreateVaultItem": "vault add", "UpdateVaultItem": "vault edit", "DeleteVaultItem": "vault remove", "ListVaultAudit": "vault audit",
 }
 

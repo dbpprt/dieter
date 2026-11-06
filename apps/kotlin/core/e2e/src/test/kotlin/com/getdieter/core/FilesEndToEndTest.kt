@@ -24,6 +24,78 @@ class FilesEndToEndTest : EndToEnd() {
     @AfterTest fun tearDown() = tearDownRuntimes()
 
     @Test
+    fun markdownRefreshProtectsDraftsAndExplicitOverwriteUsesTheDiskRevision() = e2e {
+        val fixture = fixture()
+        val runtime = runtime(fixture)
+        runtime.awaitConnected()
+        runtime.awaitLoaded(fixture)
+        val checkout = runtime.workspace.state.value.project(fixture.projectId)!!.checkouts.first()
+        val files = runtime.files()
+        val target = FilesTarget(fixture.daemonId, fixture.projectId, checkout.id)
+        val disk = File(checkout.path, "refresh.md")
+        disk.writeText("# Original\n")
+        runtime.onCore {
+            files.bind(target)
+            files.open("refresh.md")
+        }
+        val original = files.view.value.document!!
+        val key = files.view.value.documentKey
+
+        disk.writeText("# Changed on disk\n")
+        runtime.onCore { files.refresh(key, original.revision, dirty = false) }
+        assertEquals(disk.readText(), files.view.value.document!!.content)
+        assertEquals(disk.readText(), files.view.value.draft)
+        assertFalse(files.view.value.conflict)
+
+        val base = files.view.value.document!!
+        files.edit("# My unsaved draft\n")
+        disk.writeText("# Another writer\n")
+        runtime.onCore { files.refresh(key, base.revision, dirty = true) }
+        assertTrue(files.view.value.conflict)
+        assertEquals(base, files.view.value.document)
+        assertEquals("# My unsaved draft\n", files.view.value.draft)
+        assertEquals("# Another writer\n", disk.readText())
+        // Further external writes must not dismiss the choice or replace the buffer.
+        disk.writeText("# Newest disk version\n")
+        runtime.onCore { files.refresh(key, base.revision, dirty = true) }
+        assertTrue(files.view.value.conflict)
+        runtime.onCore { files.reload() }
+        assertFalse(files.view.value.conflict)
+        assertEquals("# Newest disk version\n", files.view.value.draft)
+
+        files.edit("# Keep my changes\n")
+        disk.writeText("# External change before overwrite\n")
+        runtime.onCore {
+            files.refresh(key, files.view.value.document!!.revision, dirty = true)
+            files.save(overwrite = true)
+        }
+        assertEquals("# Keep my changes\n", disk.readText())
+        assertFalse(files.view.value.conflict)
+        assertFalse(files.view.value.dirty)
+
+        // A clean refresh may finish just before the native editor reports an
+        // edit. Its next check and save must still use that buffer's older base.
+        val bufferBase = files.view.value.document!!
+        disk.writeText("# Change racing a keystroke\n")
+        runtime.onCore { files.refresh(key, bufferBase.revision, dirty = false) }
+        files.edit("# Keystroke during the read\n")
+        runtime.onCore { files.refresh(key, bufferBase.revision, dirty = true) }
+        assertTrue(files.view.value.conflict)
+        assertFailsWith<FileConflictException> {
+            runtime.onCore { files.save(revision = bufferBase.revision) }
+        }
+        assertEquals("# Change racing a keystroke\n", disk.readText())
+
+        // Old document callbacks cannot refresh the newly selected file.
+        disk.writeText("# Must not reopen\n")
+        runtime.onCore {
+            files.open("README.md")
+            files.refresh(key, bufferBase.revision, dirty = false)
+        }
+        assertEquals("README.md", files.view.value.document!!.path)
+    }
+
+    @Test
     fun editsSaveByRevisionAndConflictsKeepTheDraft() = e2e {
         val fixture = fixture()
         val runtime = runtime(fixture)

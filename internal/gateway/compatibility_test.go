@@ -13,7 +13,7 @@ import (
 )
 
 func TestCompatibilityBootstrapEvaluatesClientAndDaemonFloors(t *testing.T) {
-	t.Parallel()
+	// Not parallel: it replaces the process-wide release version.
 	previous := buildinfo.ReleaseVersion
 	buildinfo.ReleaseVersion = "0.4.310"
 	t.Cleanup(func() { buildinfo.ReleaseVersion = previous })

@@ -19,7 +19,9 @@ import (
 	"github.com/dbpprt/dieter/internal/platform/fault"
 	"github.com/dbpprt/dieter/internal/replication/crdt"
 	"github.com/dbpprt/dieter/internal/security/vault"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/home"
+	"github.com/dbpprt/dieter/internal/store/leases"
+	"github.com/dbpprt/dieter/internal/store/replica"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -45,7 +47,7 @@ func TestRPCErrorPreservesGRPCDetails(t *testing.T) {
 
 func TestPeerRecordErrorsCarryErrorInfo(t *testing.T) {
 	t.Parallel()
-	err := domainFailure(fmt.Errorf("merge: %w", &store.PeerRecordError{Code: "invalid-record", Kind: "board", ID: "b_1", Field: "name"}))
+	err := domainFailure(fmt.Errorf("merge: %w", &replica.PeerRecordError{Code: "invalid-record", Kind: "board", ID: "b_1", Field: "name"}))
 	failure := connectError(t, rpcError(err))
 	if failure.Code() != connect.CodeInvalidArgument || len(failure.Details()) != 1 {
 		t.Fatalf("peer record failure=%v", failure)
@@ -90,11 +92,11 @@ func TestRPCErrorCodes(t *testing.T) {
 		"unknown harness":             {harnessErr, connect.CodeInvalidArgument},
 		"unregistered model":          {modelErr, connect.CodeInvalidArgument},
 		"attachment validation":       {partsErr, connect.CodeInvalidArgument},
-		"not found":                   {fmt.Errorf("card c_1: %w", store.ErrNotFound), connect.CodeNotFound},
+		"not found":                   {fmt.Errorf("card c_1: %w", home.ErrNotFound), connect.CodeNotFound},
 		"missing file":                {&os.PathError{Op: "open", Path: "x", Err: os.ErrNotExist}, connect.CodeNotFound},
-		"active card":                 {store.ErrCardActive, connect.CodeFailedPrecondition},
-		"active card while sending":   {sendMessageFailure(store.ErrCardActive), connect.CodeAborted},
-		"writer busy":                 {fmt.Errorf("%w: deadline", store.ErrWriterBusy), connect.CodeUnavailable},
+		"active card":                 {leases.ErrCardActive, connect.CodeFailedPrecondition},
+		"active card while sending":   {sendMessageFailure(leases.ErrCardActive), connect.CodeAborted},
+		"writer busy":                 {fmt.Errorf("%w: deadline", home.ErrWriterBusy), connect.CodeUnavailable},
 		"stale changeset":             {changeset.ErrStaleRevision, connect.CodeAborted},
 		"peer conflict":               {crdt.ErrConflict, connect.CodeAborted},
 		"peer capacity":               {crdt.ErrCapacity, connect.CodeResourceExhausted},

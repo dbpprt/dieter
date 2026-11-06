@@ -28,33 +28,14 @@ import com.getdieter.mobile.design.Tone
 import com.getdieter.mobile.store.*
 
 @Composable
-internal fun SchedulesScreen(store: MobileStore) {
+internal fun SchedulesScreen(store: MobileStore, projectId: String) {
     val view by store.schedules.slice.collectAsState()
     val workspace by store.workspace.slice.collectAsState()
     var editorId by remember { mutableStateOf<String?>(null) }
     var deleteId by remember { mutableStateOf("") }
     fun command(value: SchedulesCommand) =
         store.command(Command(schedules = value.copy(scope = MobileStore.SCHEDULES_SCOPE)))
-    fun rebind() {
-        val projectId = store.boards.currentProjectId()
-        store.action {
-            store.core.dispatch(
-                Command(
-                    schedules =
-                        SchedulesCommand(
-                            scope = MobileStore.SCHEDULES_SCOPE,
-                            bind = ScheduleProject(projectId),
-                        )
-                )
-            )
-            store.core.dispatch(
-                Command(
-                    schedules = SchedulesCommand(scope = MobileStore.SCHEDULES_SCOPE, load = Step())
-                )
-            )
-        }
-    }
-    val project = workspace.projects.firstOrNull { it.id == store.boards.currentProjectId() }
+    val project = workspace.projects.firstOrNull { it.id == projectId }
     Screen(
         ScreenChrome(
             "Schedules",
@@ -77,8 +58,7 @@ internal fun SchedulesScreen(store: MobileStore) {
                                             command(SchedulesCommand(load = Step()))
                                         }
                                     )
-                                ),
-                                MenuSection(projectScopeMenu(store, ::rebind).take(1)),
+                                )
                             ),
                     ),
                     ChromeAction("new-schedule", "New schedule", Glyph.ADD) { editorId = "" },
@@ -530,7 +510,7 @@ private fun ScheduleEditor(store: MobileStore, scheduleId: String, onDismiss: ()
             store.creation.update(store.creation.intent.value, choice)
         }
         SectionHeader("Behavior")
-        Group(listOf(0, 1, 2, 3)) { index, position ->
+        Group(listOf(0, 1, 2, 3, 4)) { index, position ->
             when (index) {
                 0 ->
                     PickerRow(
@@ -564,6 +544,19 @@ private fun ScheduleEditor(store: MobileStore, scheduleId: String, onDismiss: ()
                                 value.vault_access,
                                 { draft = value.copy(vault_access = it) },
                                 Modifier.testTag("schedule-vault-access"),
+                            )
+                        },
+                    )
+                4 ->
+                    ListRow(
+                        "Allow mail",
+                        position = position,
+                        subtitle = "Runs may send you reports",
+                        trailing = {
+                            DSwitch(
+                                value.mail_access,
+                                { draft = value.copy(mail_access = it) },
+                                Modifier.testTag("schedule-mail-access"),
                             )
                         },
                     )

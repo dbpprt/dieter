@@ -56,7 +56,7 @@ interface MobileNativeViews {
 
     fun screen(scope: String, input: MobileScreenInput): MobileScreenSurface
 
-    /** Shows a UIMenu anchored to a rectangle (points) in [view]. */
+    /** Shows native choices anchored to a rectangle in [view]'s window (points). */
     fun showMenu(
         sections: List<NativeMenuSection>,
         view: UIView,
@@ -94,6 +94,9 @@ interface MobileNativeViews {
     ): NativeSheet
 
     fun showToast(message: String)
+
+    /** Presents the share sheet with [text] (Markdown), titled [subject]. */
+    fun shareText(subject: String, text: String)
 }
 
 interface NativeChoice {
@@ -219,3 +222,9 @@ internal actual fun rememberAttachmentViewer(
 ): (com.getdieter.api.v1.MessagePart) -> Unit = { part ->
     checkNotNull(AppleNativeViews.factory).previewAttachment(part.encode().data())
 }
+
+@Composable
+internal actual fun rememberTextSharer(): (subject: String, text: String) -> Unit =
+    { subject, text ->
+        checkNotNull(AppleNativeViews.factory).shareText(subject, text)
+    }

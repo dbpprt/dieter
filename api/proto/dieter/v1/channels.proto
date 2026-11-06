@@ -1,0 +1,285 @@
+syntax = "proto3";
+
+package dieter.v1;
+
+option go_package = "github.com/dbpprt/dieter/internal/gen/dieter/v1;dieterv1";
+option java_multiple_files = true;
+option java_package = "com.getdieter.api.v1";
+
+import "google/protobuf/empty.proto";
+
+// Agent channels (experimental): one message channel per project on each
+// daemon, direct messages to cards, threads, pinned decisions and file claims
+// that keep agents sharing a checkout from overwriting each other.
+//
+// The feature is off unless the replicated KV namespace "experimental" enables
+// it globally (key "channels"), per project ("channels.project.<id>") or per
+// board ("channels.board.<id>"); board overrides project overrides global.
+//
+// Callers are identified by the daemon: a live turn token (local route only)
+// makes the caller that card's agent; any other caller is a human. Agents
+// cannot change channel settings.
+service ChannelService {
+  // Lists the channels of this daemon's projects with read state and members.
+  rpc ListChannels(ListChannelsRequest) returns (ListChannelsResponse);
+  // Pages a project channel's messages in sequence order.
+  rpc ListChannelMessages(ListChannelMessagesRequest) returns (ChannelMessagePage);
+  // Posts to a project channel, a thread or directly to cards.
+  rpc PostChannelMessage(PostChannelMessageRequest) returns (ChannelMessage);
+  // Pins a message as a decision or removes the pin.
+  rpc PinChannelMessage(PinChannelMessageRequest) returns (ChannelMessage);
+  // Advances the human read position of a project channel.
+  rpc MarkChannelRead(MarkChannelReadRequest) returns (google.protobuf.Empty);
+  // Returns a card's undelivered messages and, unless peek is set, marks them
+  // delivered.
+  rpc GetChannelInbox(GetChannelInboxRequest) returns (ChannelMessagePage);
+  // Reports who else is changing files, pinned decisions and recent notes
+  // that mention them.
+  rpc CheckChannelFiles(CheckChannelFilesRequest) returns (ChannelCheck);
+  // Lists live file claims.
+  rpc ListChannelClaims(ListChannelClaimsRequest) returns (ChannelClaims);
+  // Releases claims of a card (all of them when paths is empty).
+  rpc ReleaseChannelClaims(ReleaseChannelClaimsRequest) returns (ChannelClaims);
+  // Answers a harness hook (Claude Code / Codex hook JSON on stdin) for the
+  // calling agent. An empty output means no opinion. Fails open.
+  rpc HandleChannelHook(ChannelHookRequest) returns (ChannelHookResponse);
+  // Returns the replicated channel settings.
+  rpc GetChannelSettings(GetChannelSettingsRequest) returns (ChannelSettings);
+  // Sets the global switch or a project/board override. Refuses agents.
+  rpc SetChannelSetting(SetChannelSettingRequest) returns (ChannelSettings);
+  // Streams a project channel: new messages, claims and the summary.
+  rpc WatchChannel(WatchChannelRequest) returns (stream ChannelFrame);
+}
+
+// Who wrote a message. kind is "agent" (a card's turn), "human" or "dieter"
+// (coordination events such as holds and releases).
+message ChannelAuthor {
+  string kind = 1;
+  string card_id = 2;
+  string title = 3;
+  string harness = 4;
+  string model = 5;
+  string device_id = 6;
+}
+
+// How a message reached one recipient card. mode is "pending", "steered"
+// (pushed into a running turn), "digest" (prepended to the next turn),
+// "inbox" (read with GetChannelInbox) or "woke" (started a turn).
+message ChannelDelivery {
+  string card_id = 1;
+  string mode = 2;
+  string at = 3;
+}
+
+// kind is "note", "request", "done", "decision", "claim", "hold" or
+// "release". Bodies are at most 4096 bytes; at most 16 files and 32
+// recipients.
+message ChannelMessage {
+  string id = 1;
+  string project_id = 2;
+  int64 seq = 3;
+  string thread_id = 4;
+  string kind = 5;
+  ChannelAuthor author = 6;
+  repeated string to_card_ids = 7;
+  string body = 8;
+  repeated string files = 9;
+  bool pinned = 10;
+  string created_at = 11;
+  int32 reply_count = 12;
+  repeated ChannelDelivery deliveries = 13;
+  // The daemon the message was posted on; empty for this daemon's own
+  // coordination events (claim, hold, release), which stay on it.
+  string origin_daemon_id = 14;
+  // A person's @here: it steered every running member on every machine.
+  bool here = 15;
+}
+
+// A card of a project channel. status is "running", "waiting" (blocked on a
+// claim), "idle" or "failed".
+message ChannelMember {
+  string card_id = 1;
+  string title = 2;
+  string board_id = 3;
+  string harness = 4;
+  string model = 5;
+  string status = 6;
+  bool enabled = 7;
+  repeated string holds = 8;
+  repeated string waiting_on = 9;
+  // The machine that runs the card; remote members run on another one.
+  string daemon_id = 10;
+  bool remote = 11;
+}
+
+message ChannelSummary {
+  string project_id = 1;
+  string project_name = 2;
+  // enabled is true when the project or any of its boards has channels on.
+  bool enabled = 3;
+  int64 last_seq = 4;
+  int64 seen_seq = 5;
+  int32 unread = 6;
+  int32 claims = 7;
+  string last_message_at = 8;
+  repeated ChannelMember members = 9;
+}
+
+message ListChannelsRequest {}
+
+message ListChannelsResponse {
+  string daemon_id = 1;
+  repeated ChannelSummary channels = 2;
+}
+
+// limit is 1..200 (default 50). With before_seq the page ends before it; with
+// after_seq it starts after it; with neither it is the newest page. A thread_id
+// returns the thread root and its replies.
+message ListChannelMessagesRequest {
+  string project_id = 1;
+  int64 after_seq = 2;
+  int64 before_seq = 3;
+  int32 limit = 4;
+  string thread_id = 5;
+}
+
+message ChannelMessagePage {
+  repeated ChannelMessage messages = 1;
+  int64 last_seq = 2;
+  bool has_more = 3;
+}
+
+// project_id may be omitted by an agent (its card's project). wake starts a
+// turn for idle direct recipients within their wake budget. operation_id makes
+// a retried post return the original message.
+message PostChannelMessageRequest {
+  string project_id = 1;
+  repeated string to_card_ids = 2;
+  string thread_id = 3;
+  string kind = 4;
+  string body = 5;
+  repeated string files = 6;
+  bool wake = 7;
+  string operation_id = 8;
+  // Steer every running member on every machine. People only.
+  bool here = 9;
+}
+
+message PinChannelMessageRequest {
+  string project_id = 1;
+  string message_id = 2;
+  bool pinned = 3;
+}
+
+message MarkChannelReadRequest {
+  string project_id = 1;
+  int64 seq = 2;
+}
+
+// card_id may be omitted by an agent (its own card).
+message GetChannelInboxRequest {
+  string card_id = 1;
+  bool peek = 2;
+}
+
+// files are paths relative to the card's workspace (at most 64).
+message CheckChannelFilesRequest {
+  string card_id = 1;
+  repeated string files = 2;
+  string intent = 3;
+}
+
+// A parked claim belongs to a card that ended its turn waiting for another
+// card's file: it protects that card's uncommitted changes until it is woken
+// (at most an hour).
+message ChannelClaim {
+  string project_id = 1;
+  string path = 2;
+  string card_id = 3;
+  string card_title = 4;
+  string since = 5;
+  repeated string waiting_card_ids = 6;
+  bool parked = 7;
+  // The machine whose checkout the claim is in. A remote claim is another
+  // machine's: advisory, in its own checkout.
+  string daemon_id = 8;
+  bool remote = 9;
+}
+
+message ChannelCheck {
+  repeated ChannelClaim conflicts = 1;
+  repeated ChannelMessage decisions = 2;
+  repeated ChannelMessage recent = 3;
+  // summary is the plain-text answer agents read.
+  string summary = 4;
+  int32 unread = 5;
+  // Other machines' claims on the same paths, in their own checkouts.
+  repeated ChannelClaim elsewhere = 6;
+}
+
+message ListChannelClaimsRequest {
+  string project_id = 1;
+}
+
+message ChannelClaims {
+  repeated ChannelClaim claims = 1;
+}
+
+message ReleaseChannelClaimsRequest {
+  string card_id = 1;
+  repeated string paths = 2;
+}
+
+// event_json is the hook input a harness writes to the hook command's stdin
+// (at most 1 MiB).
+message ChannelHookRequest {
+  bytes event_json = 1;
+}
+
+// output_json is printed on the hook command's stdout; empty means no opinion.
+message ChannelHookResponse {
+  bytes output_json = 1;
+}
+
+message GetChannelSettingsRequest {}
+
+// scope is "project" or "board"; value is "on" or "off". An absent override
+// inherits.
+message ChannelSettingOverride {
+  string scope = 1;
+  string id = 2;
+  string value = 3;
+}
+
+message ChannelSettings {
+  bool global = 1;
+  repeated ChannelSettingOverride overrides = 2;
+}
+
+// scope is "global" (value "on" or "off"), "project" or "board" (value "on",
+// "off" or "inherit").
+message SetChannelSettingRequest {
+  string scope = 1;
+  string id = 2;
+  string value = 3;
+}
+
+// heartbeat_ms is 0 (15 s) or at least 1000.
+message WatchChannelRequest {
+  string project_id = 1;
+  int64 after_seq = 2;
+  uint32 heartbeat_ms = 3;
+}
+
+// The first frame has reset set and carries the newest page (or, with
+// after_seq, the messages after it); later frames carry messages after
+// last_seq. Changed messages (pins, deliveries, reply
+// counts) are resent with their original seq. claims and summary are complete.
+message ChannelFrame {
+  repeated ChannelMessage messages = 1;
+  ChannelSummary summary = 2;
+  repeated ChannelClaim claims = 3;
+  int64 last_seq = 4;
+  bool heartbeat = 5;
+  bool reset = 6;
+}

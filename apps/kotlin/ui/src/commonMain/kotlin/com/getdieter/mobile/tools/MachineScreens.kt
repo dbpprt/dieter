@@ -6,7 +6,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,77 +29,14 @@ internal fun machineGlyph(platform: String): Glyph =
     }
 
 @Composable
-internal fun MachinesScreen(store: MobileStore) {
-    val session by store.session.slice.collectAsState()
-    val online = session.machines.count { it.online }
-    Screen(
-        ScreenChrome(
-            "Machines",
-            subtitle =
-                if (session.machines.isEmpty()) ""
-                else "$online of ${session.machines.size} online",
-            actions =
-                listOf(
-                    ChromeAction(
-                        "reconnect",
-                        "Reconnect",
-                        Glyph.REFRESH,
-                        onClick = store.session::retry,
-                    )
-                ),
-        )
-    ) {
-        LazyColumn(
-            Modifier.fillMaxSize().testTag("machines-list"),
-            state = listState,
-            contentPadding = padding,
-        ) {
-            item { ConnectionNotice(store) }
-            item { Spacer(Modifier.height(8.dp)) }
-            if (session.machines.isEmpty())
-                item {
-                    EmptyState(
-                        Glyph.MACHINE,
-                        "No machines",
-                        "Enroll a computer with the Dieter daemon to run agents on it.",
-                        Modifier.padding(top = 40.dp),
-                    )
-                }
-            itemsIndexed(session.machines, key = { _, machine -> machine.id }) { index, machine ->
-                ListRow(
-                    machine.display_name,
-                    Modifier.testTag("machine-${machine.id}"),
-                    position = Position.of(index, session.machines.size),
-                    subtitle =
-                        listOf(machine.presence, machine.detail)
-                            .filter { it.isNotBlank() }
-                            .distinct()
-                            .joinToString(" · "),
-                    glyph = machineGlyph(machine.platform),
-                    tile = if (machine.online) Color(0xFF0A84FF) else Color(0xFF8E8E93),
-                    accessory = Accessory.CHEVRON,
-                    trailing = {
-                        Box(
-                            Modifier.size(9.dp)
-                                .background(
-                                    if (machine.online) palette.success else palette.tertiaryLabel,
-                                    CircleShape,
-                                )
-                        )
-                    },
-                    onClick = { store.push(MobileRoute.Machine(machine.id)) },
-                )
-            }
-        }
-    }
-}
-
-@Composable
 internal fun MachineScreen(store: MobileStore, machineId: String) {
     val session by store.session.slice.collectAsState()
+    val workspace by store.workspace.slice.collectAsState()
     val telemetry by store.machines.telemetry.collectAsState()
+    val overview by store.terminals.overview.collectAsState()
     var operation by remember { mutableStateOf<MachineOperationState?>(null) }
     var rename by remember { mutableStateOf(false) }
+    var newTerminal by remember { mutableStateOf(false) }
     val machine = session.machines.firstOrNull { it.id == machineId }
     val readings = telemetry.machines[machineId]
     val information = readings?.information
@@ -120,6 +56,80 @@ internal fun MachineScreen(store: MobileStore, machineId: String) {
             if (machine == null) {
                 item { Placeholder("This machine is no longer enrolled.") }
                 return@LazyColumn
+            }
+            item { ConnectionNotice(store) }
+            // What runs here first: its screen, its shells and the projects checked out on it.
+            item {
+                Spacer(Modifier.height(8.dp))
+                Group(listOf(0, 1)) { index, position ->
+                    if (index == 0)
+                        ListRow(
+                            "Screen",
+                            Modifier.testTag("machine-screen"),
+                            position = position,
+                            subtitle =
+                                machine.screen_status
+                                    .ifEmpty { machine.remote_desktop_reason }
+                                    .ifEmpty { null },
+                            glyph = Glyph.SCREENS,
+                            tile = Color(0xFF5E5CE6),
+                            accessory = Accessory.CHEVRON,
+                            enabled = machine.can_share_screen,
+                            onClick = { store.push(MobileRoute.ScreenSession(machineId)) },
+                        )
+                    else
+                        ListRow(
+                            "New terminal",
+                            Modifier.testTag("machine-new-terminal"),
+                            position = position,
+                            subtitle = machine.unavailable_message.ifEmpty { null },
+                            glyph = Glyph.TERMINAL,
+                            tile = Color(0xFF3A3A3C),
+                            enabled = machine.available,
+                            onClick = { newTerminal = true },
+                        )
+                }
+            }
+            val terminals = overview.entries.filter { it.daemon_id == machineId }
+            if (terminals.isNotEmpty()) {
+                item { SectionHeader("Terminals on this machine") }
+                itemsIndexed(terminals, key = { _, entry -> "terminal-" + entry.id }) { index, entry
+                    ->
+                    ListRow(
+                        entry.terminal?.name.orEmpty().ifEmpty { "Terminal" },
+                        Modifier.testTag("machine-terminal-${entry.id}"),
+                        position = Position.of(index, terminals.size),
+                        subtitle = entry.row?.status?.ifEmpty { null },
+                        glyph = Glyph.TERMINAL,
+                        accessory = Accessory.CHEVRON,
+                        onClick = { store.push(MobileRoute.TerminalSession(entry.id)) },
+                    )
+                }
+            }
+            val checkouts =
+                workspace.projects.flatMap { project ->
+                    project.checkouts
+                        .filter { it.daemon_id == machineId && !it.detached }
+                        .map { project to it }
+                }
+            if (checkouts.isNotEmpty()) {
+                item { SectionHeader("Projects on this machine") }
+                itemsIndexed(checkouts, key = { _, (_, checkout) -> "checkout-" + checkout.id }) {
+                    index,
+                    (project, checkout) ->
+                    ListRow(
+                        project.name,
+                        Modifier.testTag("machine-checkout-${checkout.id}"),
+                        position = Position.of(index, checkouts.size),
+                        subtitle = checkout.path,
+                        subtitleMaxLines = 1,
+                        leading = { ProjectAvatar(project.id, project.name, 30.dp) },
+                        accessory = Accessory.CHEVRON,
+                        onClick = {
+                            store.push(MobileRoute.Tool(ToolPage.FILES, project.id, checkout.id))
+                        },
+                    )
+                }
             }
             item {
                 SectionHeader("Connection")
@@ -316,6 +326,7 @@ internal fun MachineScreen(store: MobileStore, machineId: String) {
             destructive = copy.destructive,
         )
     }
+    if (newTerminal) TerminalEditor(store, machineId) { newTerminal = false }
     if (rename && machine != null)
         PromptDialog(
             "Rename machine",

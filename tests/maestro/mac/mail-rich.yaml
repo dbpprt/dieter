@@ -1,0 +1,53 @@
+appId: com.getdieter.mac
+name: Mac Mail offline graphics
+tags: [smoke]
+---
+- launchApp
+- tapOn:
+    id: sidebar.mail
+- extendedWaitUntil:
+    visible:
+      id: 'mail\.row\..+'
+      text: "Release smoke results: all platforms passed"
+    timeout: 60000
+- tapOn:
+    id: 'mail\.row\..+'
+    text: "Release smoke results: all platforms passed"
+- extendedWaitUntil:
+    visible:
+      id: mail.reader.graphics
+      text: "4 rendered, 2 source fallbacks"
+    timeout: 60000
+- takeScreenshot: mac-mail-rich
+- tapOn:
+    id: mail.reader.body
+- scroll
+- tapOn:
+    id: mail.reader.body
+- takeScreenshot: mac-mail-rich-charts
+- scroll
+- tapOn:
+    id: mail.reader.body
+- takeScreenshot: mac-mail-rich-vega
+- scroll
+- tapOn:
+    id: mail.reader.body
+- takeScreenshot: mac-mail-rich-source-fallback
+- tapOn:
+    id: 'mail\.row\..+'
+    text: "Invoice migration finished: 12,408 rows moved"
+- assertVisible:
+    id: mail.reader.body
+    text: ".*12,408.*"
+- tapOn:
+    id: 'mail\.row\..+'
+    text: "Release smoke results: all platforms passed"
+- extendedWaitUntil:
+    visible:
+      id: mail.reader.graphics
+      text: "4 rendered, 2 source fallbacks"
+    timeout: 60000
+- assertVisible:
+    id: mail.reader.graphics-cache
+    text: "[1-9][0-9]* reused"
+- takeScreenshot: mac-mail-rich-reopened

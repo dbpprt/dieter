@@ -261,7 +261,7 @@ class HolderTest {
             runCurrent()
             assertEquals(
                 TerminalTarget.Kind.KIND_CARD,
-                core.sentOf { it.terminals }.single().bind?.kind,
+                core.sentOf { it.terminals }.first().bind?.kind,
             )
             publish(listOf("one", "two"), output("one", false, "first"), output("two", true, "x"))
             publish(listOf("one", "two"), output("one", false, " second"))
@@ -278,7 +278,7 @@ class HolderTest {
             // The overview's output is the overview's; it leaves the card's screens alone.
             core.publish(
                 Slice.SLICE_TERMINAL_OVERVIEW,
-                MobileStore.TERMINAL_SCOPE,
+                MobileStore.TERMINAL_OVERVIEW_SCOPE,
                 Update(
                     terminal_overview =
                         TerminalOverviewSlice(

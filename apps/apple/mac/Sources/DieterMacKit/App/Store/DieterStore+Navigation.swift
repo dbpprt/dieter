@@ -86,6 +86,21 @@ extension DieterStore {
         section = .inbox
     }
 
+    /// The account's agent channels (experimental).
+    func openChannels() {
+        guard section != .channels else { return }
+        stopTerminalWatch()
+        closeConversation()
+        section = .channels
+    }
+
+    /// Opens `projectID`'s channel, e.g. from a peer notice in a transcript.
+    func openChannel(projectID: String) {
+        openChannels()
+        guard !projectID.isEmpty else { return }
+        Task { await channelsModel.select(projectID: projectID) }
+    }
+
     func openChats() async {
         // Reselecting the current destination must not tear down its transcript.
         guard section != .chats else { return }
@@ -165,7 +180,7 @@ extension DieterStore {
             return
         }
         terminalOverview.stop()
-        let card = synchronizedCardValues().first { $0.id == cardID } ?? chats.first { $0.id == cardID }
+        let card = synchronizedCard(id: cardID)
         let owner = card.flatMap { machine(for: $0) }
         terminalsModel.bind(
             target: WorkspaceTarget(endpointID: owner?.id ?? "", projectID: selectedProjectID, conversationID: cardID),

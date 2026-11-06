@@ -50,7 +50,7 @@ export function createDiagramSurface({ document, root, postMessage }) {
     postMessage({ type: "diagramSize", blockID: current.blockID, height });
   }
   function activate(event) {
-    if (disposed || !current || !root.contains(event.target)) return;
+    if (disposed || !current || current.readOnly || !root.contains(event.target)) return;
     if (event.type === "keydown") {
       if (event.target !== root || event.repeat || !["Enter", " "].includes(event.key)) return;
     } else if (event.button !== 0) return;
@@ -66,11 +66,13 @@ export function createDiagramSurface({ document, root, postMessage }) {
     lastHeight = null;
     document.documentElement.dataset.surface = "diagram";
     root.dataset.mode = "diagram";
-    root.tabIndex = 0;
-    root.setAttribute("role", "button");
+    root.dataset.readonly = String(request.readOnly === true);
+    if (request.readOnly) root.removeAttribute("tabindex");
+    else root.tabIndex = 0;
+    root.setAttribute("role", request.readOnly ? "img" : "button");
     root.setAttribute(
       "aria-label",
-      `${request.kind === "mermaid" ? "Mermaid" : "Vega"} diagram. Activate to edit source.`,
+      `${request.kind === "mermaid" ? "Mermaid" : "Vega"} diagram${request.readOnly ? "." : ". Activate to edit source."}`,
     );
     if (!observer && window.ResizeObserver) observer = new window.ResizeObserver(reportSize);
     observer?.observe(root);
@@ -92,6 +94,7 @@ export function createDiagramSurface({ document, root, postMessage }) {
     lastHeight = null;
     observer?.disconnect();
     delete document.documentElement.dataset.surface;
+    delete root.dataset.readonly;
     root.removeAttribute("tabindex");
     root.removeAttribute("role");
     root.removeAttribute("aria-label");

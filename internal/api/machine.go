@@ -212,7 +212,7 @@ func (s *Server) machineProcessDescriptors() []machine.ProcessDescriptor {
 				continue
 			}
 			cardID := strings.TrimSuffix(strings.TrimPrefix(name, ".dieter-worker-"), ".pid")
-			card, cardErr := s.store.ResolveCard(cardID)
+			card, cardErr := s.store.Kanban.ResolveCard(cardID)
 			if cardErr != nil {
 				continue
 			}
@@ -221,7 +221,7 @@ func (s *Server) machineProcessDescriptors() []machine.ProcessDescriptor {
 				provider = "agent"
 			}
 			detail := projectEntry.Name()
-			if project, projectErr := s.store.ResolveProjectIncludingArchived(card.ProjectID); projectErr == nil {
+			if project, projectErr := s.store.Kanban.ResolveProjectIncludingArchived(card.ProjectID); projectErr == nil {
 				detail = project.Name
 			}
 			if model := strings.TrimSpace(card.Model); model != "" {

@@ -254,6 +254,24 @@ CREATE TABLE IF NOT EXISTS provider_quota_snapshots (
     REFERENCES provider_accounts(github_id, provider, account_key)
     ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS device_roster_entries (
+  github_id INTEGER NOT NULL,
+  sequence INTEGER NOT NULL,
+  entry BLOB NOT NULL,
+  PRIMARY KEY(github_id, sequence)
+);
+CREATE TABLE IF NOT EXISTS pairing_requests (
+  id TEXT PRIMARY KEY,
+  github_id INTEGER NOT NULL,
+  device_id TEXT NOT NULL,
+  device BLOB NOT NULL,
+  proof BLOB NOT NULL,
+  confirmation BLOB NOT NULL DEFAULT x'',
+  requested_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  UNIQUE(github_id, device_id)
+);
+CREATE INDEX IF NOT EXISTS pairing_requests_expiry ON pairing_requests(expires_at);
 PRAGMA user_version=1;
 COMMIT;
 `)

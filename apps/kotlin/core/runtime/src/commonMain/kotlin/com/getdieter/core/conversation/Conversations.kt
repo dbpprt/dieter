@@ -3,6 +3,7 @@ package com.getdieter.core.conversation
 import com.getdieter.api.v1.Harness
 import com.getdieter.core.board.BoardOperations
 import com.getdieter.core.composition.ConversationDrafts
+import com.getdieter.core.connection.MachineSync
 import com.getdieter.core.outbox.Outbox
 import com.getdieter.core.platform.DeviceSettings
 import com.getdieter.core.runtime.CoreLogger
@@ -32,6 +33,7 @@ class Conversations(
     private val settings: DeviceSettings? = null,
     /** A machine's agent catalog once it has loaded, else null. */
     private val catalog: (daemonId: String) -> List<Harness>? = { null },
+    private val syncs: StateFlow<Map<String, MachineSync>>? = null,
 ) {
     private val open = LinkedHashMap<String, ConversationSession>()
     private val cache = LinkedHashMap<String, TranscriptState>()
@@ -51,8 +53,11 @@ class Conversations(
     fun open(cardId: String): ConversationSession {
         val id = outbox.view.value.resolve(cardId)
         open.remove(key(id))?.let { existing ->
-            open[id] = existing
-            return existing
+            if (!existing.updatesPaused) {
+                open[id] = existing
+                return existing
+            }
+            existing.close()
         }
         val session =
             ConversationSession(
@@ -69,6 +74,7 @@ class Conversations(
                 cache[id],
                 onTranscript = ::remember,
                 catalog = catalog,
+                syncs = syncs,
             )
         open[id] = session
         while (open.size > config.maxOpen) open.remove(open.keys.first())?.close()

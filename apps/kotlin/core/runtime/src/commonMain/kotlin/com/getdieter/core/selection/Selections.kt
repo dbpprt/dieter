@@ -74,7 +74,9 @@ object Selections {
                 model == null -> ""
                 harness.id == saved.provider &&
                     model.id == saved.model &&
-                    (saved.effort.isEmpty() || saved.effort in allowed) -> saved.effort
+                    (saved.effort.isEmpty() ||
+                        saved.effort == DEFAULT_EFFORT ||
+                        saved.effort in allowed) -> saved.effort
                 model.default_effort.isNotEmpty() &&
                     (allowed.isEmpty() || model.default_effort in allowed) -> model.default_effort
                 else -> allowed.firstOrNull().orEmpty()

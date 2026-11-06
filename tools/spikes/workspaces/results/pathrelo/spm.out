@@ -1,0 +1,5 @@
+SwiftPM source cold build: 43.4s, 0 compile lines
+SwiftPM view build: 22.52s, 0 compile lines; Build complete! (17,90 sec)
+SwiftPM view after editing LibA/F3 + main: 5.92s, 0 compile lines; runs: where=view
+  source still prints: where=source
+  files in view .build naming the source path:      147 of     1748

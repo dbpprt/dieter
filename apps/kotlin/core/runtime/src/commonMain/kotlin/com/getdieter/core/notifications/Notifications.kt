@@ -3,13 +3,18 @@ package com.getdieter.core.notifications
 import com.getdieter.api.v1.Board
 import com.getdieter.api.v1.Card
 import com.getdieter.api.v1.Conversation
+import com.getdieter.api.v1.MailHeader
 import com.getdieter.api.v1.Project
 import com.getdieter.api.v1.Subagent
+import com.getdieter.client.v1.MailBox
+import com.getdieter.client.v1.MailMessageRef
+import com.getdieter.client.v1.MailPreferences
 import com.getdieter.core.admin.BackgroundMode
 import com.getdieter.core.board.Cards
 import com.getdieter.core.board.Lanes
 import com.getdieter.core.board.Runtimes
 import com.getdieter.core.connection.ConnectionPhase
+import com.getdieter.core.mail.MailRules
 import com.getdieter.core.platform.DeviceSettings
 import com.getdieter.core.presentation.Counts
 
@@ -87,6 +92,9 @@ sealed interface NotificationEvent {
         NotificationEvent
 }
 
+/** A message that newly arrived, unread, in [daemonId]'s Inbox. */
+data class MailArrived(val daemonId: String, val header: MailHeader)
+
 private fun normalizedRuntime(runtime: String): String =
     runtime.trim().lowercase().let { if (it == "canceled") "cancelled" else it }
 
@@ -99,9 +107,41 @@ class TransitionTracker {
     private var previous: Map<String, Card>? = null
     private var activities: Map<String, Conversation> = emptyMap()
 
+    /** Machine ID → the message IDs it reported last. */
+    private var mail: Map<String, Set<String>>? = null
+
     fun reset() {
         previous = null
         activities = emptyMap()
+        mail = null
+    }
+
+    /**
+     * Mail that arrived since the last call: messages a machine reports in [headers] (machine ID →
+     * message ID → header) that it did not before, unread and in its Inbox. The first call only
+     * sets the baseline; a machine that is [replaying] (catching up) only advances it.
+     */
+    fun mail(
+        headers: Map<String, Map<String, MailHeader>>,
+        replaying: (String) -> Boolean,
+    ): List<MailArrived> {
+        val before = mail
+        mail = headers.mapValues { it.value.keys }
+        before ?: return emptyList()
+        return buildList {
+            for ((daemonId, current) in headers) {
+                if (replaying(daemonId)) continue
+                val known = before[daemonId].orEmpty()
+                for ((id, header) in current) {
+                    if (
+                        id !in known &&
+                            !header.read &&
+                            MailRules.inBox(header, MailBox.MAIL_BOX_INBOX)
+                    )
+                        add(MailArrived(daemonId, header))
+                }
+            }
+        }
     }
 
     fun update(
@@ -165,16 +205,22 @@ enum class NotificationRole {
     RESULTS,
 }
 
-/** What a notification is about: a running chat, a chat's result, or a card ready for review. */
+/**
+ * What a notification is about: a running chat, a chat's result, a card ready for review, or new
+ * mail.
+ */
 enum class NotificationKind {
     RUNNING,
     RESULT,
     REVIEW,
+    MAIL,
 }
 
 enum class NotificationAction(val title: String) {
     MARK_DONE("Mark done"),
     OPEN("Open"),
+    MARK_READ("Mark as Read"),
+    ARCHIVE("Archive"),
 }
 
 data class NotificationContent(
@@ -287,6 +333,45 @@ data class NotificationContent(
         fun session(card: Card): String =
             card.runtime_updated_at.ifBlank { card.updated_at.ifBlank { card.id } }
 
+        /**
+         * A new message: from its sender, about its subject, with its preview when detailed
+         * notifications show result previews.
+         */
+        fun mail(
+            daemonId: String,
+            header: MailHeader,
+            machineName: String,
+            settings: NotificationSettings,
+        ): NotificationContent =
+            NotificationContent(
+                mailKey(daemonId, header.id),
+                NotificationKind.MAIL,
+                "",
+                MailRules.sender(header.sender, machineName),
+                header.subject,
+                header.preview.takeIf {
+                    settings.style == NotificationStyle.DETAILED &&
+                        settings.resultPreviews &&
+                        it.isNotBlank()
+                },
+                listOf(
+                    NotificationAction.OPEN,
+                    NotificationAction.MARK_READ,
+                    NotificationAction.ARCHIVE,
+                ),
+            )
+
+        fun mailKey(daemonId: String, id: String): String = "$MAIL_PREFIX$daemonId:$id"
+
+        /** The message a mail notification's [key] is about; null for other notifications. */
+        fun mailRef(key: String): MailMessageRef? {
+            if (!key.startsWith(MAIL_PREFIX)) return null
+            val rest = key.removePrefix(MAIL_PREFIX)
+            val daemonId = rest.substringBeforeLast(':', "")
+            val id = rest.substringAfterLast(':', "")
+            return if (daemonId.isEmpty() || id.isEmpty()) null else MailMessageRef(daemonId, id)
+        }
+
         /** The card a running chat's notification [key] describes; null for other notifications. */
         fun runningCardId(key: String): String? =
             key.removePrefix(RUNNING_PREFIX).takeIf {
@@ -294,6 +379,7 @@ data class NotificationContent(
             }
 
         private const val RUNNING_PREFIX = "running:"
+        private const val MAIL_PREFIX = "mail:"
     }
 }
 
@@ -539,6 +625,53 @@ class NotificationPlanner(
                         NotificationContent.review(event, boardNames[event.card.board_id], settings)
                     )
             }
+        }
+    }
+
+    /**
+     * Applies the machines' mail [headers] (machine ID → message ID → header, as synced): posts
+     * each newly arrived message ([TransitionTracker.mail]) unless notifications or mail
+     * notifications are off, only important mail notifies and it is not, or it is [open] in a
+     * reading pane on screen. A machine that is [replaying] (catching up) notifies nothing. [shown]
+     * is the mailbox with this device's pending changes, which cancel notifications ([mailShown]);
+     * [name] names a machine.
+     */
+    fun mail(
+        headers: Map<String, Map<String, MailHeader>>,
+        shown: Map<String, Map<String, MailHeader>>,
+        settings: NotificationSettings,
+        preferences: MailPreferences,
+        name: (String) -> String,
+        open: Set<MailMessageRef> = emptySet(),
+        replaying: (String) -> Boolean = { false },
+    ) {
+        val arrived = tracker.mail(headers, replaying)
+        mailShown(shown)
+        if (!settings.enabled || !preferences.notify) return
+        for (event in arrived) {
+            if (preferences.notify_important_only && !MailRules.important(event.header)) continue
+            if (MailMessageRef(event.daemonId, event.header.id) in open) continue
+            post(
+                NotificationContent.mail(
+                    event.daemonId,
+                    event.header,
+                    name(event.daemonId),
+                    settings,
+                )
+            )
+        }
+    }
+
+    /**
+     * Removes the notification of every message [shown] (machine ID → message ID → header) reports
+     * read, outside the Inbox, or not at all, whichever device changed it.
+     */
+    fun mailShown(shown: Map<String, Map<String, MailHeader>>) {
+        for (key in posted.toList()) {
+            val ref = NotificationContent.mailRef(key) ?: continue
+            val header = shown[ref.daemon_id]?.get(ref.id)
+            if (header == null || header.read || !MailRules.inBox(header, MailBox.MAIL_BOX_INBOX))
+                cancel(key)
         }
     }
 

@@ -12,7 +12,7 @@ let package = Package(
     dependencies: [
         .package(path: "../../DieterKit"),
         .package(path: "../../../../native/macos"),
-        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.19.0"),
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.99.0"),
     ],
     targets: [
         .target(

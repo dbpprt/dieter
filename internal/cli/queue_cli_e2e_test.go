@@ -9,13 +9,14 @@ import (
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func TestDaemonCLIQueuedMessageRemoval(t *testing.T) {
 	t.Parallel()
 	client, output, data := daemonCLIForTest(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Path: initTestRepository(t, "queue"), Name: "Queue"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Path: initTestRepository(t, "queue"), Name: "Queue"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,16 +25,16 @@ func TestDaemonCLIQueuedMessageRemoval(t *testing.T) {
 
 func assertQueueRemovalCLI(t *testing.T, client *CLI, output *bytes.Buffer, data *store.Store, projectID string) {
 	t.Helper()
-	board, err := data.CreateBoard(store.CreateBoardInput{Project: projectID, Name: "Queue", Workflow: "review"})
+	board, err := data.Kanban.CreateBoard(kanban.CreateBoardInput{Project: projectID, Name: "Queue", Workflow: "review"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	card, err := data.CreateCard(store.CreateCardInput{Project: projectID, Board: board.ID, Title: "Queued task"})
+	card, err := data.Kanban.CreateCard(kanban.CreateCardInput{Project: projectID, Board: board.ID, Title: "Queued task"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	selection := &model.HarnessSelection{Provider: "codex", Model: "gpt-5.6-sol", Effort: "high", ProviderOptions: map[string]string{"fast_mode": "true"}}
-	queued, _, err := data.QueueConversationMessageWithSelection(card.ID, "", []model.UIMessagePart{
+	queued, _, err := data.Conversations.QueueMessageWithSelection(card.ID, "", []model.UIMessagePart{
 		{Type: "text", Text: "Keep my attachment"},
 		{Type: "file", Filename: "note.txt", MediaType: "text/plain", URL: "data:text/plain;base64,aGk="},
 	}, selection)
@@ -51,7 +52,7 @@ func assertQueueRemovalCLI(t *testing.T, client *CLI, output *bytes.Buffer, data
 	if removed.GetSelection().GetModel() != selection.Model || removed.GetSelection().GetEffort() != selection.Effort || removed.GetSelection().GetProviderOptions()["fast_mode"] != "true" {
 		t.Fatalf("removed message lost its selection: %s", raw)
 	}
-	conversation, err := data.Conversation(card.ID)
+	conversation, err := data.Conversations.Get(card.ID)
 	if err != nil || len(conversation.Queue) != 0 {
 		t.Fatalf("queue not removed: %#v %v", conversation.Queue, err)
 	}

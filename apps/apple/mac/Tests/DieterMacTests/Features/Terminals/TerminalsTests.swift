@@ -107,6 +107,13 @@ struct TerminalsTests {
             frame: NSRect(x: 0, y: 0, width: 640, height: 320),
             font: font
         )
+        // Unit tests do not run an application visibility lifecycle.
+        view.suspendsRenderingWhenNotVisible = false
+        let window = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        window.makeKeyAndOrderFront(nil)
+        defer { window.close() }
         let renderer = RemoteTerminalScreenRenderer()
 
         var screen = TerminalScreenState()
@@ -114,9 +121,10 @@ struct TerminalsTests {
         screen.revision = 1
         renderer.apply(screen, to: view)
         try await Task.sleep(nanoseconds: 50_000_000)
+        window.display()
 
-        #expect(view.terminal.getCursorLocation().x == 3)
-        #expect(view.terminal.getCursorLocation().y == 0)
+        #expect(view.terminalStateSnapshot().cursor.col == 3)
+        #expect(view.terminalStateSnapshot().cursor.row == 0)
         #expect(view.caretFrame.origin.x > 0)
         let firstCaret = view.caretFrame
 
@@ -124,17 +132,19 @@ struct TerminalsTests {
         screen.revision += 1
         renderer.apply(screen, to: view)
         try await Task.sleep(nanoseconds: 50_000_000)
+        window.display()
 
-        #expect(view.terminal.getCursorLocation().x == 1)
+        #expect(view.terminalStateSnapshot().cursor.col == 1)
         #expect(view.caretFrame.origin.x < firstCaret.origin.x)
 
         screen.data.append(Data("\r\nnext".utf8))
         screen.revision += 1
         renderer.apply(screen, to: view)
         try await Task.sleep(nanoseconds: 50_000_000)
+        window.display()
 
-        #expect(view.terminal.getCursorLocation().x == 4)
-        #expect(view.terminal.getCursorLocation().y == 1)
+        #expect(view.terminalStateSnapshot().cursor.col == 4)
+        #expect(view.terminalStateSnapshot().cursor.row == 1)
         #expect(view.caretFrame.origin.y < firstCaret.origin.y)
 
         screen.data = Data("reset".utf8)
@@ -142,9 +152,10 @@ struct TerminalsTests {
         screen.resetRevision += 1
         renderer.apply(screen, to: view)
         try await Task.sleep(nanoseconds: 50_000_000)
+        window.display()
 
-        #expect(view.terminal.getCursorLocation().x == 5)
-        #expect(view.terminal.getCursorLocation().y == 0)
+        #expect(view.terminalStateSnapshot().cursor.col == 5)
+        #expect(view.terminalStateSnapshot().cursor.row == 0)
         #expect(view.caretFrame.origin.y == firstCaret.origin.y)
     }
 
@@ -160,10 +171,10 @@ struct TerminalsTests {
         renderer.apply(screen, to: view)
         try await Task.sleep(nanoseconds: 50_000_000)
 
-        #expect(view.terminal.cols == 120)
-        #expect(view.terminal.rows == 36)
-        #expect(view.terminal.getCursorLocation().x == 33)
-        #expect(view.terminal.getCursorLocation().y == 0)
+        #expect(view.terminalDimensions.cols == 120)
+        #expect(view.terminalDimensions.rows == 36)
+        #expect(view.terminalStateSnapshot().cursor.col == 33)
+        #expect(view.terminalStateSnapshot().cursor.row == 0)
     }
 
     @Test @MainActor func remoteTerminalViewTracksSetFrameSizeGeometry() async throws {
@@ -178,19 +189,19 @@ struct TerminalsTests {
         view.setFrameSize(NSSize(width: 520, height: 260))
         try await Task.sleep(nanoseconds: 50_000_000)
 
-        let narrowColumns = view.terminal.cols
-        let narrowRows = view.terminal.rows
+        let narrowColumns = view.terminalDimensions.cols
+        let narrowRows = view.terminalDimensions.rows
         #expect(narrowColumns > 2 && narrowColumns < 120)
         #expect(narrowRows > 1 && narrowRows < 36)
-        #expect(view.terminal.getCursorLocation().x == 32)
-        #expect(view.terminal.getCursorLocation().x < narrowColumns)
+        #expect(view.terminalStateSnapshot().cursor.col == 32)
+        #expect(view.terminalStateSnapshot().cursor.col < narrowColumns)
 
         view.setFrameSize(NSSize(width: 1_100, height: 620))
         try await Task.sleep(nanoseconds: 50_000_000)
 
-        #expect(view.terminal.cols > narrowColumns)
-        #expect(view.terminal.rows > narrowRows)
-        #expect(view.terminal.getCursorLocation().x == 32)
+        #expect(view.terminalDimensions.cols > narrowColumns)
+        #expect(view.terminalDimensions.rows > narrowRows)
+        #expect(view.terminalStateSnapshot().cursor.col == 32)
         #expect(view.bounds.intersects(view.caretFrame))
     }
 
@@ -245,6 +256,10 @@ struct TerminalsTests {
         pasteboard.clearContents()
         pasteboard.setString("pasted through terminal", forType: .string)
         NSApp.sendEvent(terminalKeyEvent("v", modifiers: .command, in: window))
+        // SwiftTerm posts parser-originated paste output to the main queue.
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
         #expect(String(decoding: sent, as: UTF8.self) == "pasted through terminal")
 
         let menu = view.menu(for: terminalMouseEvent(.rightMouseDown, at: .zero, in: view))

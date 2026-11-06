@@ -9,7 +9,7 @@ import (
 
 	"github.com/dbpprt/dieter/internal/git/workspace"
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit"
 )
 
@@ -17,24 +17,24 @@ func TestWorktreeWorkspaceUsesSameCardIdentityForBoardCardsAndChats(t *testing.T
 	t.Parallel()
 	repository := testkit.GitRepo(t)
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{
 		Name: "Fixture", Path: repository, BaseBranch: "main", BaseRemote: "origin",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	board, err := data.CreateBoard(store.CreateBoardInput{
+	board, err := data.Kanban.CreateBoard(kanban.CreateBoardInput{
 		Project: project.ID, Name: "Main", Workflow: model.WorkflowReview,
 		BaseRemote: "private", RemotePublishMode: model.RemotePublishPullRequest,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	card, err := data.CreateCard(store.CreateCardInput{Project: project.ID, Board: board.ID, Lane: model.LaneTodo, Title: "Board work", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
+	card, err := data.Kanban.CreateCard(kanban.CreateCardInput{Project: project.ID, Board: board.ID, Lane: model.LaneTodo, Title: "Board work", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
 	if err != nil {
 		t.Fatal(err)
 	}
-	chat, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Chat work", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
+	chat, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Chat work", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,13 +74,13 @@ func TestProjectDirectoryWorkspaceUsesCurrentBranchWithoutSwitching(t *testing.T
 	repository := testkit.GitRepo(t)
 	testkit.RunGit(t, repository, "switch", "-c", "feature/current-checkout")
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{
 		Name: "Fixture", Path: repository, BaseBranch: "main",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	chat, err := data.CreateChat(store.CreateCardInput{
+	chat, err := data.Kanban.CreateChat(kanban.CreateCardInput{
 		Project: project.ID, Title: "Direct work", Prompt: "work", WorkspaceMode: model.WorkspaceModeProject,
 	})
 	if err != nil {

@@ -39,8 +39,13 @@ extension NativeTextViewWrapper.Coordinator {
         }) {
             menu.removeItem(at: fontIndex)
         }
-        guard let build = onBuildContextMenu else { return menu }
-        return build(menu, textView.selectedRange())
+        let built = onBuildContextMenu?(menu, textView.selectedRange()) ?? menu
+        // Dieter: a read-only view's rendered table offers its own copies.
+        if let tv = textView as? NativeTextView, !tv.isEditable,
+           let table = tv.renderedTable(at: tv.convert(event.locationInWindow, from: nil)) {
+            tv.prependTableCopyItems(to: built, anchor: table.anchor)
+        }
+        return built
     }
 
     /// Returns the smallest bold or boldItalic token that fully contains the selection, or nil when the selection isn't enclosed by emphasis with a bold trait.

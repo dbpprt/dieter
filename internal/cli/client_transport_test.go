@@ -17,7 +17,7 @@ func enrolledCLIIdentity(t *testing.T, gateway string) (*CLI, *link.Identity) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := identity.SaveCredential("d_cli", "CLI", []byte("certificate"), nil, nil, time.Now().Add(time.Hour).Format(time.RFC3339Nano), 3); err != nil {
+	if err := identity.SaveCredential("d_cli", "CLI", []byte("certificate"), nil, time.Now().Add(time.Hour).Format(time.RFC3339Nano), 3); err != nil {
 		t.Fatal(err)
 	}
 	return New(root), identity

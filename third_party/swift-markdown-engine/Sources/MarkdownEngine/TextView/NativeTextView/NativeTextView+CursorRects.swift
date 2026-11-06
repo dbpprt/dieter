@@ -109,7 +109,7 @@ extension NativeTextView {
     /// (view coordinates). `.link` is what drives `clickedOnLink`, so this
     /// matches exactly what is clickable.
     private func isOverLink(at viewPoint: CGPoint) -> Bool {
-        attributes(at: viewPoint)?[.link] != nil
+        attributes(at: viewPoint)?[.link] != nil || tableCellLinkDestination(at: viewPoint) != nil
     }
 
     /// Attributes of the character under `viewPoint`, or nil when the point is

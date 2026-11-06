@@ -7,7 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit"
 )
 
@@ -16,11 +16,11 @@ func TestConnectContentPresentationSnapshotAndDelta(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), testkit.Budget(30*time.Second))
 	defer cancel()
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Path: testkit.CheckoutDir(t), Name: "Presentation"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Path: testkit.CheckoutDir(t), Name: "Presentation"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	card, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Present", WorkspaceMode: "project"})
+	card, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Present", WorkspaceMode: "project"})
 	if err != nil {
 		t.Fatal(err)
 	}

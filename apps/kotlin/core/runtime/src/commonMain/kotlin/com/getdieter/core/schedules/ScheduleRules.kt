@@ -227,6 +227,7 @@ object ScheduleDrafts {
                     provider_options = it.provider_options,
                     workspace_mode = it.workspace_mode,
                     vault_access = it.vault_access,
+                    mail_access = it.mail_access,
                 )
             }
                 ?: ScheduleDraft(

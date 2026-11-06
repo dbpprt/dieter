@@ -4,9 +4,13 @@ import DieterCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct TaskPlanView: View {
+/// A task plan's progress. Its summary comes from the core, so it renders
+/// again only when the plan changes, not with every streamed step around it.
+struct TaskPlanView: View, Equatable {
     let plan: Dieter_V1_TaskPlan
     @State private var expanded = true
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool { lhs.plan == rhs.plan }
 
     private var tasks: [Dieter_V1_TaskPlanItem] { plan.phases.flatMap(\.tasks) }
 
@@ -148,10 +152,11 @@ struct SubagentTimelineCard: View {
 struct SubagentsView: View {
     @Environment(ConversationContext.self) private var context
     var background: Color = .clear
-    private var agents: [Dieter_V1_Subagent] { context.conversation?.conversation.subagents ?? [] }
-    private var running: Int { agents.filter { subagentSummary($0).active }.count }
 
     var body: some View {
+        let agents = context.conversation?.conversation.subagents ?? []
+        // Each summary serializes the agent for the core; count them once.
+        let running = agents.filter { subagentSummary($0).active }.count
         ScrollView {
             LazyVStack(spacing: 11) {
                 HStack {

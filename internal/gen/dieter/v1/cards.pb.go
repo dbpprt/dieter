@@ -92,7 +92,10 @@ type CreateConversationRequest struct {
 	WorkspaceBaseRemote string `protobuf:"bytes,19,opt,name=workspace_base_remote,json=workspaceBaseRemote,proto3" json:"workspace_base_remote,omitempty"`
 	RemotePublishMode   string `protobuf:"bytes,20,opt,name=remote_publish_mode,json=remotePublishMode,proto3" json:"remote_publish_mode,omitempty"`
 	// Grant this conversation's agent turns access to the account vault.
-	VaultAccess   bool `protobuf:"varint,25,opt,name=vault_access,json=vaultAccess,proto3" json:"vault_access,omitempty"`
+	VaultAccess bool `protobuf:"varint,25,opt,name=vault_access,json=vaultAccess,proto3" json:"vault_access,omitempty"`
+	// Let this conversation's agent turns send the user mail (MailService).
+	// An agent turn may grant it only when its own conversation has it.
+	MailAccess    bool `protobuf:"varint,26,opt,name=mail_access,json=mailAccess,proto3" json:"mail_access,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -277,6 +280,13 @@ func (x *CreateConversationRequest) GetRemotePublishMode() string {
 func (x *CreateConversationRequest) GetVaultAccess() bool {
 	if x != nil {
 		return x.VaultAccess
+	}
+	return false
+}
+
+func (x *CreateConversationRequest) GetMailAccess() bool {
+	if x != nil {
+		return x.MailAccess
 	}
 	return false
 }
@@ -1095,7 +1105,7 @@ const file_dieter_v1_cards_proto_rawDesc = "" +
 	"\n" +
 	"\x15dieter/v1/cards.proto\x12\tdieter.v1\x1a\x16dieter/v1/common.proto\x1a\x1bgoogle/protobuf/empty.proto\"6\n" +
 	"\rCardsResponse\x12%\n" +
-	"\x05cards\x18\x01 \x03(\v2\x0f.dieter.v1.CardR\x05cards\"\x9d\a\n" +
+	"\x05cards\x18\x01 \x03(\v2\x0f.dieter.v1.CardR\x05cards\"\xbe\a\n" +
 	"\x19CreateConversationRequest\x12\x1f\n" +
 	"\vcheckout_id\x18\x18 \x01(\tR\n" +
 	"checkoutId\x12\x1d\n" +
@@ -1123,7 +1133,9 @@ const file_dieter_v1_cards_proto_rawDesc = "" +
 	"\x13auto_generate_title\x18\x12 \x01(\bR\x11autoGenerateTitle\x122\n" +
 	"\x15workspace_base_remote\x18\x13 \x01(\tR\x13workspaceBaseRemote\x12.\n" +
 	"\x13remote_publish_mode\x18\x14 \x01(\tR\x11remotePublishMode\x12!\n" +
-	"\fvault_access\x18\x19 \x01(\bR\vvaultAccess\x1aB\n" +
+	"\fvault_access\x18\x19 \x01(\bR\vvaultAccess\x12\x1f\n" +
+	"\vmail_access\x18\x1a \x01(\bR\n" +
+	"mailAccess\x1aB\n" +
 	"\x14ProviderOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"=\n" +

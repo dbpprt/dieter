@@ -11,6 +11,7 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
     var active = true
     var editable = true
     var requestedLine: Int?
+    var revealID: UUID?
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -47,8 +48,8 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
         context.coordinator.parent = self
         guard context.coordinator.textView != nil else { return }
         context.coordinator.setActive(active)
-        container.textView.isEditable = editable
-        container.textView.allowsUndo = editable
+        if container.textView.isEditable != editable { container.textView.isEditable = editable }
+        if container.textView.allowsUndo != editable { container.textView.allowsUndo = editable }
         if session.documentKey != documentKey {
             context.coordinator.isApplyingUpdate = true
             session.prepare(documentKey: documentKey, text: text)
@@ -88,6 +89,8 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
         private var pendingLineDelta = 0
         private var fullHighlightTask: Task<Void, Never>?
         private var needsFullHighlight = true
+        private var scheduledRevision: Int?
+        private var highlightedRevision: Int?
         private var isActive = true
         private var revealedLine: String?
 
@@ -95,7 +98,7 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
 
         func revealRequestedLine() {
             guard isActive, let line = parent.requestedLine, let textView else { return }
-            let key = "\(parent.documentKey):\(line)"
+            let key = "\(parent.documentKey):\(line):\(parent.revealID?.uuidString ?? "")"
             guard revealedLine != key else { return }
             revealedLine = key
             let range = SyntaxHighlightedEditor.range(ofLine: line, in: textView.string)
@@ -109,12 +112,12 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
             if !active {
                 fullHighlightTask?.cancel()
                 fullHighlightTask = nil
-                needsFullHighlight = true
+                scheduledRevision = nil
                 if textView?.window?.firstResponder === textView {
                     textView?.window?.makeFirstResponder(nil)
                 }
             } else if becameActive {
-                highlight(force: true)
+                highlight(force: false)
             }
         }
 
@@ -127,7 +130,8 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
             let current = textView.string as NSString
             let removed = current.substring(with: affectedCharRange)
             let replacement = replacementString ?? ""
-            pendingLineDelta = replacement.utf8.filter { $0 == 0x0A }.count - removed.utf8.filter { $0 == 0x0A }.count
+            pendingLineDelta =
+                replacement.utf8.lazy.filter { $0 == 0x0A }.count - removed.utf8.lazy.filter { $0 == 0x0A }.count
             pendingEditedRange = NSRange(
                 location: affectedCharRange.location,
                 length: (replacement as NSString).length
@@ -145,9 +149,13 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
         }
 
         func highlight(force: Bool) {
-            guard isActive else { needsFullHighlight = true; return }
+            guard isActive else { return }
             guard let textView, textView.textStorage != nil else { return }
-            guard force || needsFullHighlight || highlightedFilename != parent.filename else { return }
+            let revision = parent.session.revision
+            guard
+                force || needsFullHighlight || highlightedFilename != parent.filename
+                    || (highlightedRevision != revision && scheduledRevision != revision)
+            else { return }
             highlightedFilename = parent.filename
             needsFullHighlight = false
             textView.typingAttributes = FileSyntaxHighlighter.baseAttributes
@@ -161,34 +169,38 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
             let safeLocation = min(editedRange.location, source.length)
             let safeLength = min(editedRange.length, source.length - safeLocation)
             let lineRange = source.lineRange(for: NSRange(location: safeLocation, length: safeLength))
-            FileSyntaxHighlighter.apply(
-                FileSyntaxHighlightPlan.lex(source.substring(with: lineRange), path: parent.filename, in: lineRange),
-                to: storage
-            )
+            // A paste or minified line must not bypass the full-pass budget.
+            let range = NSIntersectionRange(
+                lineRange, NSRange(location: 0, length: min(source.length, FileSyntaxHighlightPlan.limit)))
+            if range.length > 0, lineRange.length <= FileSyntaxHighlightPlan.lineLimit {
+                FileSyntaxHighlighter.apply(
+                    FileSyntaxHighlightPlan.lex(source.substring(with: range), path: parent.filename, in: range),
+                    to: storage)
+            }
             scheduleFullHighlight(delayNanoseconds: 550_000_000)
         }
 
         private func scheduleFullHighlight(delayNanoseconds: UInt64) {
             guard isActive else { return }
-            guard let storage = textView?.textStorage else { return }
+            guard textView?.textStorage != nil else { return }
             fullHighlightTask?.cancel()
-            // The core lexes at most the first 200,000 characters; only those cross over.
-            let source = storage.string as NSString
-            let range = NSRange(location: 0, length: min(source.length, FileSyntaxHighlightPlan.limit))
-            let text = source.substring(with: range)
+            scheduledRevision = parent.session.revision
             let filename = parent.filename
-            let revision = parent.session.revision
             let documentKey = parent.documentKey
             fullHighlightTask = Task { @MainActor [weak self] in
                 if delayNanoseconds > 0 {
                     try? await Task.sleep(nanoseconds: delayNanoseconds)
                 }
-                guard !Task.isCancelled, self?.isActive == true else { return }
-                let plan = await Task.detached(priority: .userInitiated) {
-                    FileSyntaxHighlightPlan.lex(text, path: filename, in: range)
-                }.value
-                guard !Task.isCancelled,
-                    let self,
+                guard !Task.isCancelled, let self, self.isActive, let snapshot = self.textView?.textStorage
+                else { return }
+                // The text is copied once typing pauses, not on every keystroke.
+                // The core lexes at most the first 200,000 characters; only those cross over.
+                let source = snapshot.string as NSString
+                let range = NSRange(location: 0, length: min(source.length, FileSyntaxHighlightPlan.limit))
+                let text = source.substring(with: range)
+                let revision = self.parent.session.revision
+                let plan = await FileSyntaxHighlightWorker.shared.lex(text, path: filename, in: range)
+                guard let plan, !Task.isCancelled,
                     self.isActive,
                     self.parent.documentKey == documentKey,
                     self.parent.session.documentKey == documentKey,
@@ -199,6 +211,8 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
                 let selectedRanges = textView.selectedRanges
                 FileSyntaxHighlighter.apply(plan, to: storage)
                 textView.selectedRanges = selectedRanges
+                self.highlightedRevision = revision
+                self.scheduledRevision = nil
             }
         }
     }
@@ -308,6 +322,7 @@ final class SyntaxEditorTextView: NSTextView {
 struct FileSyntaxHighlightPlan: Sendable {
     /// The most characters the core lexes; text beyond stays plain.
     static let limit = 200_000
+    static let lineLimit = 8_192
 
     let range: NSRange
     /// Packed (start, length, kind) triples in document UTF-16 offsets.
@@ -316,6 +331,14 @@ struct FileSyntaxHighlightPlan: Sendable {
     /// Lexes [text], which starts at [range]'s location in the document.
     static func lex(_ text: String, path: String, in range: NSRange) -> FileSyntaxHighlightPlan {
         MacPerformanceSignposts.measure("Syntax highlight plan", log: MacPerformanceSignposts.editor) {
+            // Regex lexers can be expensive on minified/generated lines. Plain
+            // text keeps every character available without that synchronous work.
+            guard range.length <= limit else { return FileSyntaxHighlightPlan(range: range, spans: []) }
+            var lineLength = 0
+            for unit in text.utf16 {
+                lineLength = unit == 10 || unit == 13 ? 0 : lineLength + 1
+                if lineLength > lineLimit { return FileSyntaxHighlightPlan(range: range, spans: []) }
+            }
             let highlights = ClientSyntaxHighlights(
                 rules: SharedRules.shared.syntaxHighlights(text: text, path: path, offset: Int32(range.location)))
             return FileSyntaxHighlightPlan(range: range, spans: highlights.spans)
@@ -329,13 +352,13 @@ private enum FileSyntaxHighlighter {
     static let boldFont = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .semibold)
     static let foreground = NSColor.textColor
 
-    static var baseAttributes: [NSAttributedString.Key: Any] {
+    static let baseAttributes: [NSAttributedString.Key: Any] = {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 2
         paragraph.tabStops = []
         paragraph.defaultTabInterval = 28
-        return [.font: baseFont, .foregroundColor: foreground, .paragraphStyle: paragraph]
-    }
+        return [.font: baseFont, .foregroundColor: foreground, .paragraphStyle: paragraph.copy()]
+    }()
 
     static func apply(_ plan: FileSyntaxHighlightPlan, to storage: NSTextStorage) {
         let fullRange = NSRange(location: 0, length: storage.length)
@@ -369,5 +392,16 @@ private enum FileSyntaxHighlighter {
         case .property, .attribute, .variable: .systemPink
         default: nil
         }
+    }
+}
+
+/// Serialize lexing across retained tabs. Cancellation is inherited from the
+/// requesting task, so an obsolete queued snapshot never starts work.
+private actor FileSyntaxHighlightWorker {
+    static let shared = FileSyntaxHighlightWorker()
+
+    func lex(_ text: String, path: String, in range: NSRange) -> FileSyntaxHighlightPlan? {
+        guard !Task.isCancelled else { return nil }
+        return FileSyntaxHighlightPlan.lex(text, path: path, in: range)
     }
 }

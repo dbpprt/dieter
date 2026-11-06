@@ -45,9 +45,13 @@ final class RequiredPermissions {
         refresh()
     }
 
+    /// The app polls this while it runs; only a change in a grant reaches the
+    /// scenes and the window that read readiness.
     func refresh() {
-        accessibility = check(.accessibility)
-        screenRecording = check(.screenRecording)
+        let accessibility = check(.accessibility)
+        if self.accessibility != accessibility { self.accessibility = accessibility }
+        let screenRecording = check(.screenRecording)
+        if self.screenRecording != screenRecording { self.screenRecording = screenRecording }
     }
 
     func grant(_ permission: Permission) {
@@ -59,7 +63,7 @@ final class RequiredPermissions {
     }
 
     func skipSetup() {
-        setupSkipped = true
+        if !setupSkipped { setupSkipped = true }
     }
 
     static func live() -> RequiredPermissions {

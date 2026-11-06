@@ -14,6 +14,11 @@ class IsolatedGateway(
     directRoute: String? = null,
     /** Enrolls a second, projectless daemon in the same account. */
     secondDaemon: Boolean = false,
+    /**
+     * Seeds the workspace the Maestro flows share (`-e2e-fixture`): labelled cards, chats, a
+     * schedule, and the agent mail they read.
+     */
+    seeded: Boolean = false,
 ) : AutoCloseable {
     private val home = Files.createTempDirectory("dieter-core-e2e").toFile()
     private val offlineTrigger = File(home, "offline")
@@ -40,6 +45,7 @@ class IsolatedGateway(
             )
         if (directRoute != null) command += listOf("-direct-route", directRoute)
         if (secondDaemon) command += listOf("-daemon-restart-trigger", restartTrigger.path)
+        if (seeded) command += "-e2e-fixture"
         process = ProcessBuilder(command).redirectError(log).start()
         val lines = process.inputStream.bufferedReader()
         values = buildMap {
@@ -60,11 +66,26 @@ class IsolatedGateway(
         )
     }
 
+    /** The gateway's loopback `host:port`. */
+    val address
+        get() = values.getValue("DIETER_ISOLATED_ADDR")
+
     val url
-        get() = "http://${values.getValue("DIETER_ISOLATED_ADDR")}"
+        get() = "http://$address"
 
     val token
         get() = values.getValue("DIETER_ISOLATED_TOKEN")
+
+    /**
+     * The one-time pairing code the fixture's machine approves: a runtime that pairs with it
+     * becomes a trusted device without user interaction.
+     */
+    val pairingCode: String
+        get() =
+            values.getOrElse("DIETER_ISOLATED_PAIRING_CODE") {
+                values.entries.firstOrNull { it.key.uppercase().endsWith("PAIRING_CODE") }?.value
+                    ?: error("the fixture gateway printed no pairing code")
+            }
 
     val daemonId
         get() = values.getValue("DIETER_ISOLATED_DAEMON")

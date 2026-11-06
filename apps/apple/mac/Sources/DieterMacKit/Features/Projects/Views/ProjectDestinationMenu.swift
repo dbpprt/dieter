@@ -11,23 +11,24 @@ struct ProjectCheckoutMenu: View {
         accessibilityIdentifier.isEmpty ? "project.checkout.\(projectID)" : accessibilityIdentifier
     }
 
-    private var selectedCheckoutLabel: String {
-        guard let checkout = store.checkout(forProjectID: projectID) else { return "Choose machine" }
-        let machine = store.endpoints.first { $0.daemonID == checkout.daemonID }
-        return "\(machine?.name ?? checkout.daemonID) · \(checkout.title())"
-    }
-
     var body: some View {
+        // The chosen checkout and the choices, read once rather than per item.
+        let chosen = store.checkout(forProjectID: projectID)
+        let choices = store.projectDirectory[projectID]?.checkoutChoices ?? []
+        let selectedCheckoutLabel: String =
+            chosen.map { checkout in
+                let machine = store.endpoints.first { $0.daemonID == checkout.daemonID }
+                return "\(machine?.name ?? checkout.daemonID) · \(checkout.title())"
+            } ?? "Choose machine"
         Menu {
-            ForEach(store.projectDirectory[projectID]?.checkoutChoices ?? [], id: \.id) { checkout in
+            ForEach(choices, id: \.id) { checkout in
                 let machine = store.endpoints.first { $0.daemonID == checkout.daemonID }
                 Button {
                     Task { await store.selectCheckout(checkout) }
                 } label: {
                     Label(
                         "\(machine?.name ?? checkout.daemonID) · \(checkout.title(machineOnline: machine?.online == true))",
-                        systemImage: store.checkout(forProjectID: projectID)?.id == checkout.id
-                            ? "checkmark" : "desktopcomputer")
+                        systemImage: chosen?.id == checkout.id ? "checkmark" : "desktopcomputer")
                 }
                 .disabled(!(machine.map(store.machineIsAvailable) ?? false))
                 .accessibilityLabel(

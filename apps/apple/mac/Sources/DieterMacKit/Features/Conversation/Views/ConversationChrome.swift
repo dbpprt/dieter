@@ -52,7 +52,7 @@ struct ConversationActionsMenu: View {
                 Button("Fork as new chat", systemImage: "arrow.triangle.branch") {
                     Task { await context.fork(card) }
                 }
-                if context.model.state.canHalt {
+                if context.model.chrome.canHalt {
                     Button("Halt agent", role: .destructive) { Task { await context.cancel(card) } }
                 }
                 Divider()

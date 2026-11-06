@@ -13,6 +13,8 @@ struct BoardProjection: Equatable {
     var lanes: [ClientBoardLaneView] = []
     /// Lane ID → its shown cards, top to bottom.
     var cardsByLane: [String: [Dieter_V1_Card]] = [:]
+    /// Lane ID → what the board shows for each of its cards, by card ID.
+    var flagsByLane: [String: [String: ClientBoardCardFlags]] = [:]
 
     static let empty = BoardProjection()
 
@@ -33,8 +35,15 @@ struct BoardProjection: Equatable {
         }
         let byID = Dictionary(cards.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
         var cardsByLane: [String: [Dieter_V1_Card]] = [:]
-        for lane in view.lanes { cardsByLane[lane.laneID] = lane.cardIds.compactMap { byID[$0] } }
-        return BoardProjection(view: view, lanes: view.lanes, cardsByLane: cardsByLane)
+        var flagsByLane: [String: [String: ClientBoardCardFlags]] = [:]
+        for lane in view.lanes {
+            let shown = lane.cardIds.compactMap { byID[$0] }
+            cardsByLane[lane.laneID] = shown
+            var flags: [String: ClientBoardCardFlags] = [:]
+            for card in shown { flags[card.id] = view.cards[card.id] }
+            flagsByLane[lane.laneID] = flags
+        }
+        return BoardProjection(view: view, lanes: view.lanes, cardsByLane: cardsByLane, flagsByLane: flagsByLane)
     }
 
     /// Every shown card, lane by lane.

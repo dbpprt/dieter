@@ -11,21 +11,26 @@ struct DieterApp: App {
             ShellView(host: host)
                 .ignoresSafeArea()
                 .task {
-                    #if DEBUG
-                        // Maestro flows sign in to the isolated E2E gateway fixture and may run a debug script.
+                    #if DEBUG || targetEnvironment(simulator)
+                        // Simulator flows also exercise the optimized Kotlin/Native framework.
                         if let url = launchArgument("fixture_url"), let token = launchArgument("fixture_token") {
-                            host.adoptFixture(url: url, token: token)
+                            host.adoptFixture(
+                                url: url, token: token, pairingCode: launchArgument("fixture_pairing_code") ?? "")
                         }
-                        if let script = launchArgument("script") { host.runDebugScript(script) }
+                        #if DEBUG
+                            if let script = launchArgument("script") { host.runDebugScript(script) }
+                        #endif
                     #endif
                 }
                 .onOpenURL { host.completeSignIn(url: $0.absoluteString) }
-                .onChange(of: scenePhase) { _, phase in host.setForeground(phase == .active) }
+                // Inactive is still on screen (Control Center, the app switcher, system prompts):
+                // only the background ends the connection.
+                .onChange(of: scenePhase) { _, phase in host.setForeground(phase != .background) }
         }
     }
 }
 
-#if DEBUG
+#if DEBUG || targetEnvironment(simulator)
     /// Maestro's launchApp arguments arrive as `-key value` launch arguments.
     private func launchArgument(_ key: String) -> String? {
         let arguments = ProcessInfo.processInfo.arguments

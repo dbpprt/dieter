@@ -220,9 +220,12 @@ class BoardOperations(
     /** Restores [card], as listed by [archivedCards] or the chat archive, to the live views. */
     suspend fun restore(card: Card): Boolean {
         if (!card.archived) return false
-        return mutate(card.id, CardOperation.ARCHIVING, sharedWriter(card), overlay = null) {
-            it.ArchiveCard().execute(ArchiveCardRequest(card_id = card.id, archived = false))
-        }
+        val restored =
+            mutate(card.id, CardOperation.ARCHIVING, sharedWriter(card), overlay = null) {
+                it.ArchiveCard().execute(ArchiveCardRequest(card_id = card.id, archived = false))
+            }
+        if (restored) store.dropArchive(card.id)
+        return restored
     }
 
     /** Stops the running turn; the card shows "cancelling" until its runtime settles. */

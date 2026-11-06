@@ -17,12 +17,12 @@ import com.getdieter.core.workspace.GitOperations
 import com.getdieter.mobile.app.*
 import com.getdieter.mobile.design.*
 import com.getdieter.mobile.design.Tone
+import com.getdieter.mobile.navigation.*
 import com.getdieter.mobile.store.*
 
 @Composable
-internal fun ProjectChangesScreen(store: MobileStore) {
+internal fun ProjectChangesScreen(store: MobileStore, route: MobileRoute.Tool) {
     val view by store.review.projectChanges.collectAsState()
-    val workspace by store.workspace.slice.collectAsState()
     var operation by remember { mutableStateOf<String?>(null) }
     fun send(value: ProjectChangesCommand) =
         store.command(
@@ -32,14 +32,17 @@ internal fun ProjectChangesScreen(store: MobileStore) {
         send(ProjectChangesCommand(active = Toggle(true)))
         onDispose { send(ProjectChangesCommand(active = Toggle(false))) }
     }
-    val project = workspace.projects.firstOrNull { it.id == store.boards.currentProjectId() }
+    val scope = scopeSubtitle(store, view.project_id, view.daemon_id)
     val files = view.changes?.files.orEmpty()
     val selected = view.selection?.path.orEmpty()
     val chrome =
         ScreenChrome(
             "Changes",
             subtitle =
-                listOfNotNull(project?.name, view.changes?.branch?.takeIf { it.isNotEmpty() })
+                listOfNotNull(
+                        scope.ifEmpty { null },
+                        view.changes?.branch?.takeIf { it.isNotEmpty() },
+                    )
                     .joinToString(" · "),
             actions =
                 listOf(
@@ -84,13 +87,25 @@ internal fun ProjectChangesScreen(store: MobileStore) {
                                         },
                                     )
                                 ),
-                                MenuSection(
-                                    projectScopeMenu(store) { store.review.bindProjectChanges() }
-                                ),
+                                checkoutMenu(store, route)?.let { MenuSection(listOf(it)) },
                             ),
                     )
                 ),
         )
+    val checkout = store.toolCheckout(route)
+    if (checkout == null) {
+        Screen(chrome) { NoCheckout(store, route.projectId) }
+        return
+    }
+    // Until the core shows this route's checkout, the previous binding's changes stay hidden.
+    if (view.checkout_id != checkout.id) {
+        Screen(chrome) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Spinner(Modifier.size(26.dp))
+            }
+        }
+        return
+    }
     Screen(chrome) {
         LazyColumn(
             Modifier.fillMaxSize().testTag("project-changes"),

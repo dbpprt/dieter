@@ -99,6 +99,11 @@ board) and then `READY`, and keeps running until interrupted. Its state lives in
 a fresh temporary directory unless `-home` is given. The Kotlin `:core:e2e`
 tests, the Mac fixture suites and the Maestro flows all use it.
 
+`-showcase-fixture` seeds the workspace behind the website and README
+screenshots instead: four projects on two online machines plus an offline
+laptop, unread conversations, schedules, provider usage and five scripted agent
+turns that keep running. It never contacts a model provider.
+
 To try the real sign-in flow, run `dieter-gateway` in development mode with a
 GitHub OAuth app whose callback is `http://127.0.0.1:4243/auth/github/callback`:
 

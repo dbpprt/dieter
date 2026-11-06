@@ -64,7 +64,7 @@ func privacyOnboardingCLI(t *testing.T, driver *onboardingPrivacyFixture) (*CLI,
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := identity.SaveCredential("d_fixture", "fixture", []byte("certificate"), nil, nil, time.Now().Add(time.Hour).Format(time.RFC3339Nano), 1); err != nil {
+	if err := identity.SaveCredential("d_fixture", "fixture", []byte("certificate"), nil, time.Now().Add(time.Hour).Format(time.RFC3339Nano), 1); err != nil {
 		t.Fatal(err)
 	}
 	application := api.NewWithOptions(data, slog.New(slog.NewTextHandler(io.Discard, nil)), api.Options{

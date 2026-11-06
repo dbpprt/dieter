@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.26.9-alpine@sha256:cdfd4fe2da6b225d8b40c6b7a105736e548e83ff56d5d8f9394446eeb5eb84e0 AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS build
 
 ARG TARGETOS
 ARG TARGETARCH
@@ -16,7 +16,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
     -ldflags="-s -w -X github.com/dbpprt/dieter/internal/platform/buildinfo.ReleaseVersion=$RELEASE_VERSION -X github.com/dbpprt/dieter/internal/platform/buildinfo.SourceRevision=$SOURCE_REVISION -X github.com/dbpprt/dieter/internal/platform/buildinfo.BuiltAt=$BUILT_AT" \
     -o /out/dieter-gateway ./cmd/dieter-gateway
 
-FROM alpine:3.23@sha256:85fe1e81d6758c208f3e1eed4338a1997e19d4be002d4dd32d3100c9a8c010a0
+FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
 RUN apk add --no-cache ca-certificates \
     && addgroup -S -g 101 dieter \
     && adduser -S -u 100 -G dieter -h /var/lib/dieter-gateway dieter \

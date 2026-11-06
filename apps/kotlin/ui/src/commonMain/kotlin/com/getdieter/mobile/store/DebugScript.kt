@@ -8,7 +8,9 @@ import kotlinx.coroutines.flow.first
 /**
  * Debug builds only: replays navigation steps so screenshots of any screen can be taken without
  * touch automation. Steps are separated by ";", e.g. "tab projects; board Main; card Design; pane
- * subagents".
+ * subagents", "channel Pricing", "mail Dependency audit" or "project Atlas; tool files". `more`
+ * opens channels, terminals, usage, devices or settings in More; `interface
+ * desktop|touch|automatic` picks the shell.
  */
 internal suspend fun MobileStore.runDebugScript(script: String) {
     workspace.slice.first { it.loaded }
@@ -18,7 +20,15 @@ internal suspend fun MobileStore.runDebugScript(script: String) {
         val argument = raw.substringAfter(' ', "").trim()
         val cards = workspace.slice.value.cards
         when (verb) {
-            "tab" -> selectTab(MobileTab.valueOf(argument.uppercase()))
+            "tab" ->
+                MobileTab.entries.firstOrNull { it.name.equals(argument, true) }?.let(::selectTab)
+            "more" ->
+                openMore(
+                    when (argument.lowercase()) {
+                        "channels" -> MobileRoute.Channels
+                        else -> MobileRoute.Tool(ToolPage.valueOf(argument.uppercase()))
+                    }
+                )
             "project" ->
                 workspace.slice.value.projects
                     .firstOrNull { it.name.startsWith(argument, true) }
@@ -27,6 +37,22 @@ internal suspend fun MobileStore.runDebugScript(script: String) {
                 workspace.slice.value.boards
                     .firstOrNull { it.name.startsWith(argument, true) }
                     ?.let { push(MobileRoute.Board(it.id)) }
+            "channel" ->
+                workspace.slice.value.projects
+                    .firstOrNull { it.name.startsWith(argument, true) }
+                    ?.let { openChannel(it.id) }
+            "mail" ->
+                mail.slice.value.sections
+                    .flatMap { it.rows }
+                    .firstOrNull { it.subject.startsWith(argument, true) }
+                    ?.ref
+                    ?.let {
+                        if (routes.value.tab != MobileTab.MAIL) selectTab(MobileTab.MAIL)
+                        showFrom(
+                            MobileRoute.Root(MobileTab.MAIL),
+                            MobileRoute.MailMessage(it.daemon_id, it.id),
+                        )
+                    }
             "card",
             "chat" ->
                 cards
@@ -36,11 +62,15 @@ internal suspend fun MobileStore.runDebugScript(script: String) {
                 conversation.selectedCard.value
                     .takeIf { it.isNotEmpty() }
                     ?.let { push(MobileRoute.Pane(it, CardPane.valueOf(argument.uppercase()))) }
+            // Project tools open for the project on the visible stack.
             "tool" ->
                 push(
                     MobileRoute.Tool(
                         ToolPage.valueOf(argument.uppercase()),
-                        boards.currentProjectId(),
+                        (routes.value.stack.lastOrNull { it is MobileRoute.Project }
+                                as? MobileRoute.Project)
+                            ?.projectId
+                            .orEmpty(),
                     )
                 )
             "file" -> push(MobileRoute.FilePath(argument, file = true))
@@ -50,11 +80,15 @@ internal suspend fun MobileStore.runDebugScript(script: String) {
                     .firstOrNull {
                         it.display_name.startsWith(argument, true) || argument.isEmpty()
                     }
-                    ?.let { push(MobileRoute.Machine(it.id)) }
-            "terminal" -> push(MobileRoute.Tool(ToolPage.TERMINALS))
+                    ?.let { openMore(MobileRoute.Machine(it.id)) }
+            "terminal" -> openMore(MobileRoute.Tool(ToolPage.TERMINALS))
             "new" -> newConversation(chat = false)
             "newchat" -> newConversation(chat = true)
             "appearance" -> theme.setAppearance(argument)
+            "interface" ->
+                InterfaceMode.entries
+                    .firstOrNull { it.name.equals(argument, true) }
+                    ?.let(layout::setInterfaceMode)
             "palette" -> theme.setPalette(DieterPalette.resolve(argument))
             "back" -> pop()
             "wait" -> delay(argument.toLongOrNull() ?: 500)

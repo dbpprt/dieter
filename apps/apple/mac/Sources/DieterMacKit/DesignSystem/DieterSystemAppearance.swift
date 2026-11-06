@@ -18,10 +18,11 @@ final class DieterSystemAppearance {
 
     private static func read() -> ColorScheme {
         // Read the global domain, independent of Dieter's own selected mode or
-        // an AppKit appearance override from an auxiliary window.
+        // an AppKit appearance override from an auxiliary window. Every
+        // activation asks, so read the one key rather than copy the domain.
         resolve(
-            interfaceStyle: UserDefaults.standard.persistentDomain(forName: UserDefaults.globalDomain)?[
-                "AppleInterfaceStyle"] as? String)
+            interfaceStyle: CFPreferencesCopyAppValue("AppleInterfaceStyle" as CFString, kCFPreferencesAnyApplication)
+                as? String)
     }
 
     private init() {

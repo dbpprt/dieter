@@ -12,12 +12,12 @@ import (
 	"github.com/dbpprt/dieter/internal/host/terminal"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/platform/fault"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 func (api *terminalsAPI) ListTerminals(ctx context.Context, request *dieterv1.ListTerminalsRequest) (*dieterv1.TerminalsResponse, error) {
-	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
+	ctx = kanban.WithCheckout(ctx, request.GetCheckoutId())
 	projectID := strings.TrimSpace(request.GetProjectId())
 	cardID := strings.TrimSpace(request.GetCardId())
 	if projectID != "" || cardID != "" {
@@ -35,7 +35,7 @@ func (api *terminalsAPI) ListTerminals(ctx context.Context, request *dieterv1.Li
 }
 
 func (api *terminalsAPI) CreateTerminal(ctx context.Context, request *dieterv1.CreateTerminalRequest) (*dieterv1.Terminal, error) {
-	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
+	ctx = kanban.WithCheckout(ctx, request.GetCheckoutId())
 	projectID, cardID := strings.TrimSpace(request.GetProjectId()), strings.TrimSpace(request.GetCardId())
 	workingDirectory := ""
 	if request.GetMachineHome() {

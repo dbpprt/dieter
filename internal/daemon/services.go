@@ -33,6 +33,8 @@ type ServiceOptions struct {
 	ControlRTC         *controlrtc.Manager
 	ProviderAccountKey func(string) string
 	DaemonState        *daemonstate.Store
+	// Trust is the enrolled daemon's device roster; nil when not enrolled.
+	Trust api.DeviceTrust
 }
 
 // Services is the wired daemon object graph over one central store.
@@ -65,6 +67,8 @@ func NewServices(data *store.Store, logger *slog.Logger, options ServiceOptions)
 	if options.ProviderAccountKey != nil {
 		application.ProviderAccountKey = options.ProviderAccountKey
 	}
+	// Agent channel hooks run this binary's `dieter channel hook`.
+	application.CLIExecutable = engine.DaemonExecutable()
 	remoteDesktop := options.RemoteDesktop
 	if remoteDesktop == nil {
 		remoteDesktop = remotedesktop.New(remoteDesktopOptions(data.Root, options.Env.RemoteDesktop, logger))
@@ -85,6 +89,7 @@ func NewServices(data *store.Store, logger *slog.Logger, options ServiceOptions)
 		App: application, Schedules: services.Schedules, Terminals: services.Terminals,
 		Executions: services.Executions, Machine: machine.NewCollector(data.Root),
 		Catalog: catalog, MinimumFreeBytes: options.Env.MinimumFreeBytes, DaemonState: options.DaemonState,
+		Trust: options.Trust,
 	})
 	return services
 }
@@ -133,6 +138,9 @@ func (s *Services) Serve(ctx context.Context, listener net.Listener, activating 
 			return fmt.Errorf("commit service runtime activation: %w", err)
 		}
 	}
+	// Agent channels are account-wide: publish this daemon's channel records
+	// and ingest the other daemons'.
+	go s.App.RunChannelReplication(ctx)
 	// During a launchd/systemd replacement the previous owner PID can remain
 	// alive for a fraction of a second after the new process starts. Recheck
 	// once after handoff so that transiently-valid leases cannot strand a turn.

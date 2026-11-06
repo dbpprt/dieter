@@ -6,6 +6,7 @@ import com.getdieter.api.v1.ChangesFrame
 import com.getdieter.api.v1.Checkout
 import com.getdieter.api.v1.Conversation
 import com.getdieter.api.v1.MachinePrivacy
+import com.getdieter.api.v1.MailHeader
 import com.getdieter.api.v1.PeerRecord
 import com.getdieter.api.v1.PeerSyncDiagnostic
 import com.getdieter.api.v1.PeerSyncStatus
@@ -14,8 +15,8 @@ import com.getdieter.api.v1.PeerSyncStatus
 fun recordKey(record: PeerRecord): String = record.kind + "/" + record.id
 
 /**
- * What one machine owns and only it reports: its cards' details, checkouts, activity, and
- * replication issues.
+ * What one machine owns and only it reports: its cards' details, checkouts, activity, replication
+ * issues, and the headers of the mail it holds.
  */
 data class OwnerData(
     val cards: Map<String, Card> = emptyMap(),
@@ -23,6 +24,8 @@ data class OwnerData(
     val activities: Map<String, Conversation> = emptyMap(),
     val peerSyncIssues: List<PeerSyncDiagnostic> = emptyList(),
     val privacy: MachinePrivacy? = null,
+    /** Message ID → its header. */
+    val mail: Map<String, MailHeader> = emptyMap(),
 )
 
 /**
@@ -73,6 +76,7 @@ class MachineReplica(val machineId: String, restored: ChangesFrame? = null) {
                 activities = it.activities.associateBy(Conversation::card_id),
                 peerSyncIssues = it.peer_sync?.issues.orEmpty(),
                 privacy = it.privacy,
+                mail = it.mail.associateBy(MailHeader::id),
             )
         } ?: OwnerData()
         private set
@@ -144,7 +148,9 @@ class MachineReplica(val machineId: String, restored: ChangesFrame? = null) {
                 frame.activities.isNotEmpty() ||
                 frame.removed_activity_ids.isNotEmpty() ||
                 frame.peer_sync != null ||
-                frame.privacy != null
+                frame.privacy != null ||
+                frame.mail.isNotEmpty() ||
+                frame.removed_mail_ids.isNotEmpty()
         var ownerChanged = false
         if (local) {
             val staged = stagedOwner
@@ -196,6 +202,7 @@ class MachineReplica(val machineId: String, restored: ChangesFrame? = null) {
             activities = owner.activities.values.sortedBy(Conversation::card_id),
             peer_sync = PeerSyncStatus(issues = owner.peerSyncIssues),
             privacy = owner.privacy,
+            mail = owner.mail.values.sortedBy(MailHeader::id),
         )
 
     private fun OwnerData.applying(frame: ChangesFrame): OwnerData =
@@ -215,6 +222,7 @@ class MachineReplica(val machineId: String, restored: ChangesFrame? = null) {
                 ),
             peerSyncIssues = frame.peer_sync?.issues ?: peerSyncIssues,
             privacy = frame.privacy ?: privacy,
+            mail = mail.updated(frame.mail, frame.removed_mail_ids, MailHeader::id),
         )
 
     private fun <T> Map<String, T>.updated(

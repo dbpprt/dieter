@@ -1231,7 +1231,10 @@ type Card struct {
 	ProviderAccountKey string `protobuf:"bytes,37,opt,name=provider_account_key,json=providerAccountKey,proto3" json:"provider_account_key,omitempty"`
 	// Owner-local: agent turns of this conversation may use the account vault.
 	// Set only at creation; forks and merges never inherit it.
-	VaultAccess   bool `protobuf:"varint,47,opt,name=vault_access,json=vaultAccess,proto3" json:"vault_access,omitempty"`
+	VaultAccess bool `protobuf:"varint,47,opt,name=vault_access,json=vaultAccess,proto3" json:"vault_access,omitempty"`
+	// Owner-local: agent turns of this conversation may send the user mail.
+	// Set only at creation; forks and merges never inherit it.
+	MailAccess    bool `protobuf:"varint,48,opt,name=mail_access,json=mailAccess,proto3" json:"mail_access,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1584,6 +1587,13 @@ func (x *Card) GetProviderAccountKey() string {
 func (x *Card) GetVaultAccess() bool {
 	if x != nil {
 		return x.VaultAccess
+	}
+	return false
+}
+
+func (x *Card) GetMailAccess() bool {
+	if x != nil {
+		return x.MailAccess
 	}
 	return false
 }
@@ -2733,8 +2743,10 @@ type MessagePart struct {
 	InputPreview    string                 `protobuf:"bytes,17,opt,name=input_preview,json=inputPreview,proto3" json:"input_preview,omitempty"`
 	OutputPreview   string                 `protobuf:"bytes,18,opt,name=output_preview,json=outputPreview,proto3" json:"output_preview,omitempty"`
 	PayloadRevision string                 `protobuf:"bytes,19,opt,name=payload_revision,json=payloadRevision,proto3" json:"payload_revision,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// JSON payload of a "data-*" part, e.g. a data-peer-notice from agent channels.
+	DataJson      []byte `protobuf:"bytes,20,opt,name=data_json,json=dataJson,proto3" json:"data_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *MessagePart) Reset() {
@@ -2898,6 +2910,13 @@ func (x *MessagePart) GetPayloadRevision() string {
 		return x.PayloadRevision
 	}
 	return ""
+}
+
+func (x *MessagePart) GetDataJson() []byte {
+	if x != nil {
+		return x.DataJson
+	}
+	return nil
 }
 
 type PendingTool struct {
@@ -5173,7 +5192,7 @@ const file_dieter_v1_common_proto_rawDesc = "" +
 	"\x0eCardStateField\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
 	"\brevision\x18\x02 \x01(\tR\brevision\x127\n" +
-	"\bversions\x18\x03 \x03(\v2\x1b.dieter.v1.CardStateVersionR\bversions\"\xeb\x0e\n" +
+	"\bversions\x18\x03 \x03(\v2\x1b.dieter.v1.CardStateVersionR\bversions\"\x8c\x0f\n" +
 	"\x04Card\x12<\n" +
 	"\fstate_fields\x18. \x03(\v2\x19.dieter.v1.CardStateFieldR\vstateFields\x12&\n" +
 	"\x0fowner_daemon_id\x18& \x01(\tR\rownerDaemonId\x12\x1f\n" +
@@ -5226,7 +5245,9 @@ const file_dieter_v1_common_proto_rawDesc = "" +
 	"tokenUsage\x12-\n" +
 	"\x13merged_into_card_id\x18$ \x01(\tR\x10mergedIntoCardId\x120\n" +
 	"\x14provider_account_key\x18% \x01(\tR\x12providerAccountKey\x12!\n" +
-	"\fvault_access\x18/ \x01(\bR\vvaultAccess\x1aB\n" +
+	"\fvault_access\x18/ \x01(\bR\vvaultAccess\x12\x1f\n" +
+	"\vmail_access\x180 \x01(\bR\n" +
+	"mailAccess\x1aB\n" +
 	"\x14ProviderOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x18\x10\x19\"\x8e\x01\n" +
@@ -5351,7 +5372,7 @@ const file_dieter_v1_common_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04role\x18\x02 \x01(\tR\x04role\x12#\n" +
 	"\rmetadata_json\x18\x03 \x01(\fR\fmetadataJson\x12,\n" +
-	"\x05parts\x18\x04 \x03(\v2\x16.dieter.v1.MessagePartR\x05parts\"\xbd\x04\n" +
+	"\x05parts\x18\x04 \x03(\v2\x16.dieter.v1.MessagePartR\x05parts\"\xda\x04\n" +
 	"\vMessagePart\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x12\n" +
 	"\x04text\x18\x02 \x01(\tR\x04text\x12\x1d\n" +
@@ -5380,7 +5401,8 @@ const file_dieter_v1_common_proto_rawDesc = "" +
 	"outputSize\x12#\n" +
 	"\rinput_preview\x18\x11 \x01(\tR\finputPreview\x12%\n" +
 	"\x0eoutput_preview\x18\x12 \x01(\tR\routputPreview\x12)\n" +
-	"\x10payload_revision\x18\x13 \x01(\tR\x0fpayloadRevision\"\x87\x02\n" +
+	"\x10payload_revision\x18\x13 \x01(\tR\x0fpayloadRevision\x12\x1b\n" +
+	"\tdata_json\x18\x14 \x01(\fR\bdataJson\"\x87\x02\n" +
 	"\vPendingTool\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12 \n" +
 	"\ftool_call_id\x18\x02 \x01(\tR\n" +

@@ -6,7 +6,7 @@
 // Source: dieter/v1/kv.proto
 //
 // For information on using the generated types, please see the documentation:
-//   https://github.com/grpc/grpc-swift
+//   https://github.com/grpc/grpc-swift-2
 
 import GRPCCore
 import GRPCProtobuf
@@ -141,9 +141,9 @@ extension Dieter_V1_KVService {
         ///   - serializer: A serializer for `Dieter_V1_KVRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_KVEntry` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func getKV<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_KVRef>,
@@ -160,9 +160,9 @@ extension Dieter_V1_KVService {
         ///   - serializer: A serializer for `Dieter_V1_KVListRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_KVPage` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func listKV<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_KVListRequest>,
@@ -179,9 +179,9 @@ extension Dieter_V1_KVService {
         ///   - serializer: A serializer for `Dieter_V1_KVPutRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_KVEntry` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func putKV<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_KVPutRequest>,
@@ -198,9 +198,9 @@ extension Dieter_V1_KVService {
         ///   - serializer: A serializer for `Dieter_V1_KVDeleteRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_KVEntry` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func deleteKV<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_KVDeleteRequest>,
@@ -217,9 +217,9 @@ extension Dieter_V1_KVService {
         ///   - serializer: A serializer for `Dieter_V1_KVMoveRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_KVEntry` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func moveKV<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_KVMoveRequest>,
@@ -236,9 +236,9 @@ extension Dieter_V1_KVService {
         ///   - serializer: A serializer for `Dieter_V1_KVWatchRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_KVFrame` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func watchKV<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_KVWatchRequest>,
@@ -281,9 +281,9 @@ extension Dieter_V1_KVService {
         ///   - serializer: A serializer for `Dieter_V1_KVRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_KVEntry` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func getKV<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_KVRef>,
@@ -311,9 +311,9 @@ extension Dieter_V1_KVService {
         ///   - serializer: A serializer for `Dieter_V1_KVListRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_KVPage` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func listKV<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_KVListRequest>,
@@ -341,9 +341,9 @@ extension Dieter_V1_KVService {
         ///   - serializer: A serializer for `Dieter_V1_KVPutRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_KVEntry` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func putKV<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_KVPutRequest>,
@@ -371,9 +371,9 @@ extension Dieter_V1_KVService {
         ///   - serializer: A serializer for `Dieter_V1_KVDeleteRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_KVEntry` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func deleteKV<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_KVDeleteRequest>,
@@ -401,9 +401,9 @@ extension Dieter_V1_KVService {
         ///   - serializer: A serializer for `Dieter_V1_KVMoveRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_KVEntry` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func moveKV<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_KVMoveRequest>,
@@ -431,9 +431,9 @@ extension Dieter_V1_KVService {
         ///   - serializer: A serializer for `Dieter_V1_KVWatchRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_KVFrame` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func watchKV<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_KVWatchRequest>,
@@ -467,9 +467,9 @@ extension Dieter_V1_KVService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_KVRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getKV<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_KVRef>,
@@ -492,9 +492,9 @@ extension Dieter_V1_KVService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_KVListRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listKV<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_KVListRequest>,
@@ -517,9 +517,9 @@ extension Dieter_V1_KVService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_KVPutRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func putKV<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_KVPutRequest>,
@@ -542,9 +542,9 @@ extension Dieter_V1_KVService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_KVDeleteRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func deleteKV<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_KVDeleteRequest>,
@@ -567,9 +567,9 @@ extension Dieter_V1_KVService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_KVMoveRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func moveKV<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_KVMoveRequest>,
@@ -592,9 +592,9 @@ extension Dieter_V1_KVService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_KVWatchRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func watchKV<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_KVWatchRequest>,
@@ -625,9 +625,9 @@ extension Dieter_V1_KVService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getKV<Result>(
         _ message: Dieter_V1_KVRef,
@@ -654,9 +654,9 @@ extension Dieter_V1_KVService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listKV<Result>(
         _ message: Dieter_V1_KVListRequest,
@@ -683,9 +683,9 @@ extension Dieter_V1_KVService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func putKV<Result>(
         _ message: Dieter_V1_KVPutRequest,
@@ -712,9 +712,9 @@ extension Dieter_V1_KVService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func deleteKV<Result>(
         _ message: Dieter_V1_KVDeleteRequest,
@@ -741,9 +741,9 @@ extension Dieter_V1_KVService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func moveKV<Result>(
         _ message: Dieter_V1_KVMoveRequest,
@@ -770,9 +770,9 @@ extension Dieter_V1_KVService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func watchKV<Result>(
         _ message: Dieter_V1_KVWatchRequest,

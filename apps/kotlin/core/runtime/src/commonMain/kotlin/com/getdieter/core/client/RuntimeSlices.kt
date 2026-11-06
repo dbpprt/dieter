@@ -9,6 +9,7 @@ import com.getdieter.client.v1.BoardSlice
 import com.getdieter.client.v1.FailedOperation
 import com.getdieter.client.v1.GatewayBuild
 import com.getdieter.client.v1.GatewayEntry
+import com.getdieter.client.v1.InboxRule as ClientInboxRule
 import com.getdieter.client.v1.MachineEntry
 import com.getdieter.client.v1.MachineMetadata
 import com.getdieter.client.v1.MachineOutbox
@@ -26,6 +27,7 @@ import com.getdieter.core.CoreRuntime
 import com.getdieter.core.activity.ActivityCounts
 import com.getdieter.core.activity.ActivityItem
 import com.getdieter.core.activity.ActivitySection
+import com.getdieter.core.activity.InboxRule
 import com.getdieter.core.activity.IslandModel
 import com.getdieter.core.activity.MenuBar
 import com.getdieter.core.board.CardOperation
@@ -48,6 +50,7 @@ import com.getdieter.core.outbox.DeliveryPhase
 import com.getdieter.core.routing.RouteKind
 import com.getdieter.core.session.MachineRoute
 import com.getdieter.core.store.WorkspaceView
+import com.getdieter.core.trust.TrustState
 import com.getdieter.core.v1.OutboxKind
 import com.getdieter.core.v1.OutboxState
 import kotlin.time.Instant
@@ -97,7 +100,8 @@ internal fun CoreRuntime.sessionSlices(): Flow<SessionSlice> =
         ),
         connection.gatewayInformation,
         workspace.state.map { it.loaded }.distinctUntilChanged(),
-    ) { inputs, sync, gateway, cached ->
+        trust.view.map { it.state to it.pairingCode }.distinctUntilChanged(),
+    ) { inputs, sync, gateway, cached, (trustState, pairingCode) ->
         val (state, machines, accounts, routes, showReasoning) = inputs
         val active = accounts.active
         val rows =
@@ -191,6 +195,8 @@ internal fun CoreRuntime.sessionSlices(): Flow<SessionSlice> =
             synced = connected && MachineSyncs.current(machines, sync.syncs),
             updated_at_millis = sync.updatedAt,
             show_reasoning = showReasoning,
+            device_trust = deviceTrust(trustState),
+            pairing_code = pairingCode.takeIf { trustState == TrustState.PENDING }.orEmpty(),
         )
     }
 
@@ -246,6 +252,7 @@ internal fun CoreRuntime.navigationSlices(): Flow<NavigationSlice> =
             }
         val sidebar = layout.sidebarProjects(available)
         NavigationSlice(
+            inbox_rules = layout.inboxRules().map(::clientInboxRule),
             projects =
                 ProjectNavigation(
                     order = sidebar.order,
@@ -270,6 +277,18 @@ internal fun CoreRuntime.navigationSlices(): Flow<NavigationSlice> =
             caught_up = status.caughtUp,
         )
     }
+
+internal fun clientInboxRule(rule: InboxRule) =
+    ClientInboxRule(
+        id = rule.id,
+        name = rule.name,
+        hide = rule.hide,
+        match_all = rule.matchAll,
+        project_ids = rule.projects.sorted(),
+        label_ids = rule.labels.sorted(),
+        enabled = rule.enabled,
+        created_millis = rule.created,
+    )
 
 /** [view] as the workspace slice, with each project's host ([MachineChoice.checkout]). */
 internal fun CoreRuntime.workspaceSlice(view: WorkspaceView): WorkspaceSlice =
@@ -366,51 +385,65 @@ internal fun operationLabel(kind: OutboxKind): String =
         OutboxKind.OUTBOX_KIND_CREATE_CHAT -> "Create chat"
         OutboxKind.OUTBOX_KIND_SEND_MESSAGE -> "Send message"
         OutboxKind.OUTBOX_KIND_START_CARD -> "Start card"
+        OutboxKind.OUTBOX_KIND_UPDATE_MAIL -> "Change mail"
+        OutboxKind.OUTBOX_KIND_DELETE_MAIL -> "Delete mail"
         else -> "Queued operation"
     }
 
 /** The activity feed; sent again when a menu bar row leaves its six-hour window. */
 @OptIn(ExperimentalCoroutinesApi::class)
 internal fun CoreRuntime.activitySlices(): Flow<ActivitySlice> =
-    activity().transformLatest { items ->
-        while (true) {
-            val now = platform.clock.now()
-            emit(activitySlice(items, now))
-            val next = MenuBar.nextChange(items, now) ?: break
-            delay(next - now)
+    combine(filteredActivity(), navigationKv.values) { feed, values ->
+            feed to NavigationLayout(values).inboxPins()
         }
-    }
+        .transformLatest { (feed, pins) ->
+            val items = feed.items
+            while (true) {
+                val now = platform.clock.now()
+                emit(activitySlice(items, now, pins, feed.hidden))
+                val next = MenuBar.nextChange(items, now) ?: break
+                delay(next - now)
+            }
+        }
 
-internal fun activitySlice(items: List<ActivityItem>, now: Instant): ActivitySlice {
+internal fun activitySlice(
+    items: List<ActivityItem>,
+    now: Instant,
+    pins: Set<String> = emptySet(),
+    hidden: Int = 0,
+): ActivitySlice {
     val counts = ActivityCounts.of(items)
     val island = IslandModel.build(items)
     return ActivitySlice(
         rows =
-            items.map { item ->
-                ActivityRow(
-                    card = item.card,
-                    kind = item.kind.name,
-                    section =
-                        when (item.section) {
-                            ActivitySection.ATTENTION -> ActivityRow.Section.SECTION_ATTENTION
-                            ActivitySection.RUNNING -> ActivityRow.Section.SECTION_RUNNING
-                            ActivitySection.RECENT -> ActivityRow.Section.SECTION_RECENT
-                        },
-                    detail = item.detail,
-                    at_millis = item.at?.toEpochMilliseconds() ?: 0,
-                    started_at_millis = item.start?.toEpochMilliseconds() ?: 0,
-                    project_name = item.projectName.orEmpty(),
-                    board_name = item.boardName.orEmpty(),
-                    chat = item.chat,
-                    needs_you = item.needsYou,
-                    can_finish = item.canFinish,
-                    kind_label = item.kind.label,
-                    title = item.title,
-                    shown_at_millis = item.shownAt?.toEpochMilliseconds() ?: 0,
-                    menu_bar_title = MenuBar.title(item.kind),
-                    stale = item.stale.orEmpty(),
-                )
-            },
+            items
+                .sortedByDescending { it.id in pins }
+                .map { item ->
+                    ActivityRow(
+                        card = item.card,
+                        kind = item.kind.name,
+                        section =
+                            when (item.section) {
+                                ActivitySection.ATTENTION -> ActivityRow.Section.SECTION_ATTENTION
+                                ActivitySection.RUNNING -> ActivityRow.Section.SECTION_RUNNING
+                                ActivitySection.RECENT -> ActivityRow.Section.SECTION_RECENT
+                            },
+                        detail = item.detail,
+                        at_millis = item.at?.toEpochMilliseconds() ?: 0,
+                        started_at_millis = item.start?.toEpochMilliseconds() ?: 0,
+                        project_name = item.projectName.orEmpty(),
+                        board_name = item.boardName.orEmpty(),
+                        chat = item.chat,
+                        needs_you = item.needsYou,
+                        can_finish = item.canFinish,
+                        kind_label = item.kind.label,
+                        title = item.title,
+                        shown_at_millis = item.shownAt?.toEpochMilliseconds() ?: 0,
+                        menu_bar_title = MenuBar.title(item.kind),
+                        stale = item.stale.orEmpty(),
+                        pinned = item.id in pins,
+                    )
+                },
         summary =
             ActivitySummary(
                 running = counts.running,
@@ -418,6 +451,7 @@ internal fun activitySlice(items: List<ActivityItem>, now: Instant): ActivitySli
                 recent = counts.recent,
                 review = counts.review,
                 subagents = counts.subagents,
+                hidden = hidden,
             ),
         island_ids = island.items.map { it.id },
         menu_bar_ids = MenuBar.items(items, now).map { it.id },

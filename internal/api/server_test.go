@@ -15,6 +15,7 @@ import (
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit"
 	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -119,9 +120,9 @@ func waitForCanceledCard(t *testing.T, data *store.Store, cardID string) {
 	var cardErr, conversationErr, leaseErr error
 	var leased bool
 	for time.Now().Before(deadline) {
-		card, cardErr = data.ResolveCard(cardID)
-		conversation, conversationErr = data.Conversation(cardID)
-		leased, leaseErr = data.CardHasRuntimeLease(cardID)
+		card, cardErr = data.Kanban.ResolveCard(cardID)
+		conversation, conversationErr = data.Conversations.Get(cardID)
+		leased, leaseErr = data.Leases.CardActive(cardID)
 		if cardErr == nil && conversationErr == nil && leaseErr == nil &&
 			!model.RuntimeHoldsTurn(card.Runtime) && conversation.Status != "running" && conversation.ActiveTurn == nil && !leased {
 			// The in-memory conversation state becomes visible before the owning
@@ -271,7 +272,7 @@ func TestConnectConversationEndToEnd(t *testing.T) {
 		t.Fatalf("task plan protocol projection=%#v", plans)
 	}
 	if subagents := timeline.GetConversation().GetSubagents(); len(subagents) != 1 || subagents[0].GetName() != "Verifier" {
-		raw, rawErr := data.Conversation(card.GetId())
+		raw, rawErr := data.Conversations.Get(card.GetId())
 		t.Fatalf("subagent protocol projection=%#v raw=%#v rawErr=%v", subagents, raw.Subagents, rawErr)
 	}
 	if len(timeline.GetConversation().GetDraftAttachments()) != 0 {
@@ -308,7 +309,7 @@ func TestConnectConversationEndToEnd(t *testing.T) {
 	if err != nil || unchanged.GetSnapshot() != nil || unchanged.GetLastSeq() != timeline.GetConversation().GetLastSeq() {
 		t.Fatalf("unchanged poll=%#v err=%v", unchanged, err)
 	}
-	if _, _, err := data.AppendConversationEvent(card.GetId(), "status", "", "", "idle"); err != nil {
+	if _, _, err := data.Conversations.Append(card.GetId(), "status", "", "", "idle"); err != nil {
 		t.Fatal(err)
 	}
 	delta, err := client.PollConversation(ctx, &dieterv1.PollConversationRequest{
@@ -349,13 +350,13 @@ func TestConnectConversationEndToEnd(t *testing.T) {
 	if err != nil || chat.GetScope() != model.ConversationScopeChat || chat.GetBoardId() != "" {
 		t.Fatalf("chat=%#v err=%v", chat, err)
 	}
-	if _, err := data.UpdateCardCache(chat.GetId(), store.CardCacheInput{Runtime: "running"}); err != nil {
+	if _, err := data.Kanban.UpdateCardCache(chat.GetId(), kanban.CardCacheInput{Runtime: "running"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := data.AppendCapability(chat.GetId(), "turn_list", json.RawMessage(`{"id":"subagents","operation":"upsert","subagent":{"id":"worker-list","provider":"mock","messageId":"assistant-list","name":"List scout","status":"running","activity":"Reading files"}}`)); err != nil {
+	if _, _, err := data.Conversations.AppendCapability(chat.GetId(), "turn_list", json.RawMessage(`{"id":"subagents","operation":"upsert","subagent":{"id":"worker-list","provider":"mock","messageId":"assistant-list","name":"List scout","status":"running","activity":"Reading files"}}`)); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := data.AppendCapability(chat.GetId(), "turn_list", json.RawMessage(`{"id":"subagents","operation":"upsert","subagent":{"id":"worker-done","provider":"mock","messageId":"assistant-list","name":"Finished scout","status":"completed"}}`)); err != nil {
+	if _, _, err := data.Conversations.AppendCapability(chat.GetId(), "turn_list", json.RawMessage(`{"id":"subagents","operation":"upsert","subagent":{"id":"worker-done","provider":"mock","messageId":"assistant-list","name":"Finished scout","status":"completed"}}`)); err != nil {
 		t.Fatal(err)
 	}
 	chats, err := client.ListChats(ctx, &dieterv1.ListChatsRequest{IncludeArchived: true})
@@ -375,15 +376,15 @@ func TestPromptConfigurationAPIEndToEnd(t *testing.T) {
 	data := testkit.Store(t)
 	client, _ := newConnectTestClient(t, data, newFakeRunner())
 	ctx := context.Background()
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Prompt project", Path: testkit.CheckoutDir(t), Prompt: "Project baseline"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Prompt project", Path: testkit.CheckoutDir(t), Prompt: "Project baseline"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	board, err := data.CreateBoard(store.CreateBoardInput{Project: project.ID, Name: "Delivery", Workflow: model.WorkflowReview})
+	board, err := data.Kanban.CreateBoard(kanban.CreateBoardInput{Project: project.ID, Name: "Delivery", Workflow: model.WorkflowReview})
 	if err != nil {
 		t.Fatal(err)
 	}
-	board, err = data.CreateBoardLabel(board.ID, "Android", "#3b82f6", "Run emulator verification.")
+	board, err = data.Kanban.CreateBoardLabel(board.ID, "Android", "#3b82f6", "Run emulator verification.")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -494,7 +495,7 @@ func TestConnectCancellationInterruptsActiveTurn(t *testing.T) {
 	}
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		conversation, getErr := data.Conversation(card.GetId())
+		conversation, getErr := data.Conversations.Get(card.GetId())
 		if getErr == nil && conversation.Status == "running" {
 			break
 		}

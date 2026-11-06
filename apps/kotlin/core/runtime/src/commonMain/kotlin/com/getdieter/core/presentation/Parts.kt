@@ -79,7 +79,16 @@ object Parts {
         part.text.isBlank() && part.data_.size == 0 && part.url.isEmpty() && part.filename.isEmpty()
 
     private val uncopied =
-        setOf("reasoning", "thinking", "step-start", "file", "attachment", "image")
+        setOf(
+            "reasoning",
+            "thinking",
+            "step-start",
+            "file",
+            "attachment",
+            "image",
+            // Agent channel messages are other agents' words, not this message's.
+            "data-peer-notice",
+        )
 
     /**
      * Prose a "copy message" action copies: never tools, reasoning, steps, or attachments, and

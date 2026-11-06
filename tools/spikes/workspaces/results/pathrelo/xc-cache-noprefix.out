@@ -1,0 +1,4 @@
+cache-noprefix source cold: rc=0 29.14s; SwiftCompile=53 hits=0 misses=186
+cache-noprefix view build: rc=0 21.65s; SwiftCompile=53 hits=68 misses=84
+  after edit: rc=0 SwiftCompile=3; runs: where=view
+  debug-info source path in view LibA F1.o: /Volumes/External/dieter-spike/pathrelo/swift/xc-view-cache-noprefix

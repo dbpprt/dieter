@@ -58,8 +58,9 @@ internal val ScreenMargin = 16.dp
 @Composable
 @ReadOnlyComposable
 internal fun groupShape(position: Position): Shape {
-    val outer = if (apple) 24.dp else 22.dp
-    val inner = if (apple) 0.dp else 5.dp
+    val dense = com.getdieter.mobile.desktop.desktop
+    val outer = if (dense) 10.dp else if (apple) 24.dp else 22.dp
+    val inner = if (dense) 3.dp else if (apple) 0.dp else 5.dp
     return RoundedCornerShape(
         topStart = if (position.isFirst) outer else inner,
         topEnd = if (position.isFirst) outer else inner,
@@ -141,6 +142,33 @@ internal fun SectionHeader(
     prominent: Boolean = false,
     trailing: (@Composable () -> Unit)? = null,
 ) {
+    if (com.getdieter.mobile.desktop.desktop) {
+        // The Mac's sentence-case section labels.
+        Row(
+            modifier
+                .fillMaxWidth()
+                .padding(
+                    start = ScreenMargin + 4.dp,
+                    end = ScreenMargin + 4.dp,
+                    top = 14.dp,
+                    bottom = 6.dp,
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text,
+                Modifier.weight(1f),
+                style =
+                    if (prominent) type.headline
+                    else type.subheadline.copy(fontWeight = FontWeight.SemiBold),
+                color = if (prominent) palette.label else palette.tertiaryLabel,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            trailing?.invoke()
+        }
+        return
+    }
     Row(
         modifier
             .fillMaxWidth()
@@ -220,11 +248,13 @@ internal fun ListRow(
     trailing: (@Composable () -> Unit)? = null,
 ) {
     val iOS = apple
+    // The desktop shell's rows are pointer-sized.
+    val dense = com.getdieter.mobile.desktop.desktop
     val leadingWidth =
         when {
-            leading != null -> 40.dp
-            tile != null -> 30.dp
-            glyph != null -> if (iOS) 28.dp else 24.dp
+            leading != null -> if (dense) 32.dp else 40.dp
+            tile != null -> if (dense) 24.dp else 30.dp
+            glyph != null -> if (iOS) 28.dp else if (dense) 18.dp else 24.dp
             else -> 0.dp
         }
     val inset =
@@ -242,10 +272,16 @@ internal fun ListRow(
             Modifier.fillMaxWidth()
                 .heightIn(
                     min =
-                        if (iOS) (if (subtitle != null) 58.dp else 46.dp)
-                        else (if (subtitle != null) 68.dp else 56.dp)
+                        when {
+                            dense -> if (subtitle != null) 44.dp else 34.dp
+                            iOS -> if (subtitle != null) 58.dp else 46.dp
+                            else -> if (subtitle != null) 68.dp else 56.dp
+                        }
                 )
-                .padding(horizontal = 16.dp, vertical = if (iOS) 9.dp else 10.dp),
+                .padding(
+                    horizontal = if (dense) 12.dp else 16.dp,
+                    vertical = if (dense) 5.dp else if (iOS) 9.dp else 10.dp,
+                ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             when {
@@ -256,8 +292,8 @@ internal fun ListRow(
                     Spacer(Modifier.width(if (iOS) 14.dp else 16.dp))
                 }
                 tile != null && glyph != null -> {
-                    IconTile(glyph, tile)
-                    Spacer(Modifier.width(if (iOS) 14.dp else 16.dp))
+                    IconTile(glyph, tile, if (dense) 24.dp else 30.dp)
+                    Spacer(Modifier.width(if (iOS) 14.dp else if (dense) 10.dp else 16.dp))
                 }
                 glyph != null -> {
                     Icon(
@@ -268,9 +304,9 @@ internal fun ListRow(
                             glyphTint
                                 ?: if (destructive) palette.destructive
                                 else if (iOS) palette.accent else palette.secondaryLabel,
-                        size = if (iOS) 22.dp else 24.dp,
+                        size = if (iOS) 22.dp else if (dense) 17.dp else 24.dp,
                     )
-                    Spacer(Modifier.width(if (iOS) 14.dp else 16.dp))
+                    Spacer(Modifier.width(if (iOS) 14.dp else if (dense) 10.dp else 16.dp))
                 }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
@@ -334,10 +370,10 @@ internal fun ListRow(
     }
 }
 
-/** Settings-style colored symbol tile on iOS; a tonal circle on Android. */
+/** Settings-style colored symbol tile on iOS and the desktop; a tonal circle on Android. */
 @Composable
 internal fun IconTile(glyph: Glyph, color: Color, size: Dp = 30.dp) {
-    if (apple)
+    if (apple || com.getdieter.mobile.desktop.desktop)
         Box(
             Modifier.size(size).clip(RoundedCornerShape(size * .26f)).background(color),
             contentAlignment = Alignment.Center,

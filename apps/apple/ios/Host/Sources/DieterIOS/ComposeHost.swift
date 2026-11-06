@@ -19,6 +19,9 @@ public final class ComposeHost {
         let media = CoreScreenMedia {
             MTLCreateSystemDefaultDevice() == nil ? "Metal is unavailable on this device." : nil
         }
+        // This install's roster key: in the Secure Enclave where the device has
+        // one (never on a simulator), kept in a device-only Keychain item.
+        let deviceKeys = CoreDeviceKeys(store: DeviceKeyKeychain(), platform: "ios", deviceName: UIDevice.current.name)
         shared = DieterShared(
             configuration: SharedConfiguration(
                 stateDirectory: directory.path, clientVersion: version,
@@ -27,7 +30,8 @@ public final class ComposeHost {
                 screenClientName: UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone",
                 desktopScreens: false),
             extensions: SharedExtensions(
-                rpc: CoreRpcBridge(), secureStore: CoreKeychainSecureStore(),
+                rpc: CoreRpcBridge(deviceKeys: deviceKeys), tunnels: CoreRelayTunnels(), deviceKeys: deviceKeys,
+                secureStore: CoreKeychainSecureStore(),
                 settings: CoreDefaultsSettings(defaults: .standard), http: CoreURLSessionHttp(),
                 signatures: CoreCryptoKitSignatures(),
                 logger: CoreOSLogger(subsystem: DistributionIdentity.iosBundleID), notifications: nil,
@@ -52,7 +56,10 @@ public final class ComposeHost {
         let staged = ShareInbox.consume(request, in: container)
         mobile.share(message: staged.message, destination: request.destination, problem: staged.problem)
     }
-    public func adoptFixture(url: String, token: String) { mobile.adoptFixture(url: url, token: token) }
+    /// Debug builds: the isolated E2E gateway's session and the pairing code its machine approves.
+    public func adoptFixture(url: String, token: String, pairingCode: String) {
+        mobile.adoptFixture(url: url, token: token, pairingCode: pairingCode)
+    }
     /// Debug builds: replays shared navigation steps for screenshots.
     public func runDebugScript(_ script: String) { mobile.runDebugScript(script: script) }
     public func close() { observation?.close(); mobile.close() }
@@ -83,10 +90,8 @@ public final class ShellController: UIViewController, UINavigationControllerDele
     private var modalKey: String?
     private var current: NativeNavigation?
     private var applying = false
-    private static let specs: [(title: String, symbol: String)] = [
-        ("Inbox", "tray"), ("Projects", "folder"), ("Chats", "bubble.left.and.bubble.right"),
-        ("Tools", "square.grid.2x2"),
-    ]
+    /// The shared visible tabs' IDs, in order; the tab bar is rebuilt only when they change.
+    private var tabIDs: [String] = []
 
     init(host: MobileHost) {
         self.host = host
@@ -97,14 +102,6 @@ public final class ShellController: UIViewController, UINavigationControllerDele
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemGroupedBackground
-        containers = Self.specs.indices.map { TabContainer(index: $0, delegate: self) }
-        containers.forEach { $0.settle = { [weak self] in self?.resync() } }
-        tabs.tabs = Self.specs.enumerated().map { index, spec in
-            let container = containers[index]
-            return UITab(title: spec.title, image: UIImage(systemName: spec.symbol), identifier: "tab-\(index)") {
-                _ in container
-            }
-        }
         tabs.mode = .tabSidebar
         tabs.delegate = self
         tabs.sidebar.delegate = self
@@ -141,6 +138,46 @@ public final class ShellController: UIViewController, UINavigationControllerDele
         child.didMove(toParent: self)
     }
 
+    /// Shows [shown] in the shared order. Tabs that stay keep their container, stack and UITab;
+    /// a tab that goes takes its stack with it. Every layout shows the same four tabs, so UIKit's
+    /// own More list never appears and tab indices always match the shared ones.
+    private func rebuildTabs(_ shown: [NativeTab]) {
+        let ids = shown.map(\.key)
+        guard ids != tabIDs else { return }
+        let existing = Dictionary(uniqueKeysWithValues: zip(tabIDs, zip(containers, tabs.tabs)))
+        var nextContainers: [TabContainer] = []
+        var nextTabs: [UITab] = []
+        for (index, tab) in shown.enumerated() {
+            if case let (container, item)? = existing[tab.key] {
+                container.index = index
+                nextContainers.append(container)
+                nextTabs.append(item)
+                continue
+            }
+            let container = TabContainer(index: index, delegate: self)
+            container.settle = { [weak self] in self?.resync() }
+            container.configure(regular: regular)
+            let item = UITab(title: tab.title, image: UIImage(systemName: tab.symbol), identifier: "tab-\(tab.key)") {
+                _ in container
+            }
+            nextContainers.append(container)
+            nextTabs.append(item)
+        }
+        containers = nextContainers
+        tabIDs = ids
+        tabs.tabs = nextTabs
+    }
+
+    /// Inbox attention, unread mail, and unread channel messages on More.
+    private static func badge(_ id: String, _ navigation: NativeNavigation) -> String? {
+        switch id {
+        case "inbox": navigation.attention > 0 ? "\(navigation.attention)" : nil
+        case "mail": navigation.mailUnread.isEmpty ? nil : navigation.mailUnread
+        case "more": navigation.moreUnread.isEmpty ? nil : navigation.moreUnread
+        default: nil
+        }
+    }
+
     private func remove(_ child: UIViewController) {
         child.willMove(toParent: nil)
         child.view.removeFromSuperview()
@@ -163,15 +200,19 @@ public final class ShellController: UIViewController, UINavigationControllerDele
             remove(controller)
             signIn = nil
         }
+        applying = true
+        rebuildTabs(navigation.tabs)
         let selected = Int(navigation.tab)
         let visible = tabs.tabs.firstIndex { $0 == tabs.selectedTab } ?? 0
-        applying = true
         for (index, stack) in navigation.stacks.enumerated() where index < containers.count {
             containers[index].sync(
                 routes: stack, host: host, animated: index == selected && index == visible && view.window != nil)
         }
         if visible != selected, selected < tabs.tabs.count { tabs.selectedTab = tabs.tabs[selected] }
-        tabs.tabs.first?.badgeValue = navigation.attention > 0 ? "\(navigation.attention)" : nil
+        for (id, tab) in zip(tabIDs, tabs.tabs) {
+            let badge = Self.badge(id, navigation)
+            if tab.badgeValue != badge { tab.badgeValue = badge }
+        }
         if selected < containers.count {
             updateTabBar(for: containers[selected].visibleController, animated: view.window != nil)
         }
@@ -275,6 +316,15 @@ public final class ShellController: UIViewController, UINavigationControllerDele
         item.backgroundConfiguration = background
     }
 
+    /// Tapping the selected tab again returns it to its first page, as the system apps do; More
+    /// then shows its list of places again.
+    public func tabBarController(_ tabBarController: UITabBarController, shouldSelectTab tab: UITab) -> Bool {
+        if !applying, tab == tabBarController.selectedTab, let index = tabs.tabs.firstIndex(of: tab) {
+            host.selectTab(index: Int32(index))
+        }
+        return true
+    }
+
     public func tabBarController(
         _ tabBarController: UITabBarController, didSelectTab selectedTab: UITab, previousTab: UITab?
     ) {
@@ -292,13 +342,15 @@ public final class ShellController: UIViewController, UINavigationControllerDele
 /// One tab's content: a navigation stack, or on regular width a list column beside a detail column.
 @MainActor
 final class TabContainer: UIViewController {
-    let index: Int
+    /// The tab's position among the visible tabs; it moves when a tab before it shows or hides.
+    var index: Int
     private weak var delegate: (any UINavigationControllerDelegate)?
     private var navigators: [UINavigationController] = []
     private var keys: [[String]] = []
     private var split: UISplitViewController?
     private let placeholder = PlaceholderController()
-    private var placeholderShown = false
+    /// The list the placeholder last described; its wording follows the list beside it.
+    private var placeholderList: String?
     /// Set when a change waited for a transition; `settle` reapplies the latest navigation.
     var deferred = false
     var settle: (() -> Void)?
@@ -311,11 +363,6 @@ final class TabContainer: UIViewController {
         super.init(nibName: nil, bundle: nil)
     }
     required init?(coder: NSCoder) { nil }
-
-    /// Routes that list things stay in the primary column on regular width.
-    static func isList(_ key: String) -> Bool {
-        key.hasPrefix("root/") || key.hasPrefix("project/") || key.hasPrefix("board/")
-    }
 
     func configure(regular: Bool) {
         guard !configured || regular != self.regular else { return }
@@ -360,15 +407,17 @@ final class TabContainer: UIViewController {
 
     func sync(routes: [MobileRouteHandle], host: MobileHost, animated: Bool) {
         loadViewIfNeeded()
-        if !placeholderShown {
+        // Routes that list things stay in the primary column on regular width.
+        let boundary = routes.lastIndex { $0.list } ?? 0
+        let list = routes.indices.contains(boundary) ? routes[boundary].key : ""
+        if placeholderList != list {
             placeholder.show(host.emptyDetail(tab: Int32(index)))
-            placeholderShown = true
+            placeholderList = list
         }
         if !regular {
             sync(0, routes: routes, host: host, animated: animated)
             return
         }
-        let boundary = routes.lastIndex { Self.isList($0.key) } ?? 0
         sync(0, routes: Array(routes[...boundary]), host: host, animated: animated)
         sync(1, routes: Array(routes[(boundary + 1)...]), host: host, animated: animated)
     }
@@ -379,7 +428,13 @@ final class TabContainer: UIViewController {
         if let coordinator = navigator.transitionCoordinator {
             deferred = true
             coordinator.animate(alongsideTransition: nil) { [weak self] context in
-                if context.isCancelled { self?.settle?() }
+                if context.isCancelled {
+                    self?.settle?()
+                } else {
+                    // Nothing else may follow to apply the change that waited for this transition.
+                    // Pops are recorded by then; `settle` only acts while a change is deferred.
+                    DispatchQueue.main.async { self?.settle?() }
+                }
             }
             return
         }

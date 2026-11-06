@@ -1,14 +1,18 @@
 package com.getdieter.core.testing
 
+import com.getdieter.core.platform.JcaEcdsa
 import com.getdieter.core.platform.SignatureVerifier
 import java.security.KeyFactory
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.Signature
 import java.security.spec.X509EncodedKeySpec
-import java.util.Base64
+import okio.ByteString
+import okio.ByteString.Companion.toByteString
 
-/** Ed25519 through the JDK's provider; Android and Apple hosts supply their own. */
+/**
+ * Ed25519 and ECDSA P-256 through the JDK's providers; Android and Apple hosts supply their own.
+ */
 object JcaSignatureVerifier : SignatureVerifier {
     private val spkiPrefix =
         byteArrayOf(0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00)
@@ -28,17 +32,22 @@ object JcaSignatureVerifier : SignatureVerifier {
         }
     }
         .getOrDefault(false)
+
+    override fun verifyEcdsaP256(
+        publicKey: ByteArray,
+        message: ByteArray,
+        signature: ByteArray,
+    ): Boolean = JcaEcdsa.verify(publicKey, message, signature)
 }
 
-/** A disposable Ed25519 machine identity for signing screen bindings in tests. */
+/**
+ * A disposable Ed25519 machine identity for signing roster entries and screen bindings in tests.
+ */
 class TestMachineKey(
     private val pair: KeyPair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair()
 ) {
-    /** A PEM wrapping the SubjectPublicKeyInfo, which is all the core reads from a certificate. */
-    val certificatePem: String =
-        "-----BEGIN CERTIFICATE-----\n" +
-            Base64.getMimeEncoder(64, "\n".toByteArray()).encodeToString(pair.public.encoded) +
-            "\n-----END CERTIFICATE-----\n"
+    /** The machine's DER SubjectPublicKeyInfo, as the device roster lists it. */
+    val publicKey: ByteString = pair.public.encoded.toByteString()
 
     fun sign(message: ByteArray): ByteArray =
         Signature.getInstance("Ed25519").run {

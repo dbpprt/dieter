@@ -48,12 +48,59 @@ enum ChatPaneSizing {
 enum ChatPaneLayout {
     case chats
     case inbox
+    /// Agent channels: the channel list beside the stream and its inspector.
+    case channels
+    /// Agent mail: the message list beside the reading pane.
+    case mail
 
-    var identifier: String { self == .inbox ? "inbox" : "chats" }
-    var preference: String { self == .inbox ? "dieter.inboxPaneWidth" : "dieter.chatBrowserPaneWidth" }
-    var defaultWidth: CGFloat { self == .inbox ? 340 : ChatPaneSizing.defaultWidth }
-    var minimumWidth: CGFloat { self == .inbox ? 300 : ChatPaneSizing.minimumWidth }
-    var maximumWidth: CGFloat { self == .inbox ? 420 : ChatPaneSizing.maximumWidth }
+    var identifier: String {
+        switch self {
+        case .chats: "chats"
+        case .inbox: "inbox"
+        case .channels: "channels"
+        case .mail: "mail"
+        }
+    }
+    var preference: String {
+        switch self {
+        case .chats: "dieter.chatBrowserPaneWidth"
+        case .inbox: "dieter.inboxPaneWidth"
+        case .channels: "dieter.channelsPaneWidth"
+        case .mail: "dieter.mailPaneWidth"
+        }
+    }
+    var defaultWidth: CGFloat {
+        switch self {
+        case .chats: ChatPaneSizing.defaultWidth
+        case .inbox: 340
+        case .channels: 260
+        case .mail: 360
+        }
+    }
+    var minimumWidth: CGFloat {
+        switch self {
+        case .chats: ChatPaneSizing.minimumWidth
+        case .inbox: 300
+        case .channels: 220
+        case .mail: 320
+        }
+    }
+    var maximumWidth: CGFloat {
+        switch self {
+        case .chats: ChatPaneSizing.maximumWidth
+        case .inbox: 420
+        case .channels: 360
+        case .mail: 460
+        }
+    }
+    var resizeLabel: String {
+        switch self {
+        case .chats: "Resize chat browser"
+        case .inbox: "Resize inbox"
+        case .channels: "Resize channel list"
+        case .mail: "Resize message list"
+        }
+    }
 
     func resolvedWidth(_ requested: CGFloat, available: CGFloat) -> CGFloat {
         if self == .chats {
@@ -150,7 +197,7 @@ final class NativeChatPaneSplitController: NSSplitViewController {
         split.isVertical = true
         split.dividerStyle = .thin
         split.setAccessibilityIdentifier("\(layout.identifier).resize-divider")
-        split.setAccessibilityLabel(layout == .inbox ? "Resize inbox" : "Resize chat browser")
+        split.setAccessibilityLabel(layout.resizeLabel)
         splitView = split
 
         browserHost.sizingOptions = []

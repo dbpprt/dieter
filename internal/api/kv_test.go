@@ -64,6 +64,13 @@ func TestKVWatchSnapshotResumeAndAccountIsolation(t *testing.T) {
 	if third.Reset_ || len(third.Entries) != 1 || third.Cursor.Sequence <= second.Cursor.Sequence {
 		t.Fatal(third)
 	}
+	// Agent channel records are written only by their daemon.
+	for _, namespace := range []string{"channel", "channel-receipt", "channel-pins", "channel-claims"} {
+		_, e = api.PutKV(ctx, &dieterv1.KVPutRequest{Ref: &dieterv1.KVRef{Namespace: namespace, Key: "p_one.d_one", Account: info.Account}, ValueJson: []byte(`{}`), OperationId: "forged-" + namespace, DaemonId: info.DaemonId})
+		if codeOf(e) != codes.PermissionDenied {
+			t.Fatalf("%s: forged write = %v", namespace, e)
+		}
+	}
 	if _, e = api.ListKV(ctx, &dieterv1.KVListRequest{Account: "another"}); codeOf(e) != codes.PermissionDenied {
 		t.Fatal(e)
 	}

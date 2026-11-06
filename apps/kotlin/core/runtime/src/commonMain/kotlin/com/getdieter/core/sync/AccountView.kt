@@ -11,6 +11,7 @@ import com.getdieter.api.v1.KVEntry
 import com.getdieter.api.v1.Label
 import com.getdieter.api.v1.Lane
 import com.getdieter.api.v1.MachinePrivacy
+import com.getdieter.api.v1.MailHeader
 import com.getdieter.api.v1.PeerRecord
 import com.getdieter.api.v1.PeerSyncDiagnostic
 import com.getdieter.api.v1.PeerVersion
@@ -155,17 +156,88 @@ data class AccountSnapshot(
     /** Machine ID → its current peer replication issues. */
     val peerSyncIssues: Map<String, List<PeerSyncDiagnostic>> = emptyMap(),
     val privacy: Map<String, MachinePrivacy> = emptyMap(),
+    /**
+     * Machine ID → message ID → the header of the mail that machine holds, as its stream (or its
+     * cached view) reports it.
+     */
+    val mail: Map<String, Map<String, MailHeader>> = emptyMap(),
 )
+
+/**
+ * Keeps the previous projection's instance of every value that did not change. Every view
+ * downstream compares the account view it receives with the one before, and equal instances compare
+ * at once, so a projection costs what changed rather than a deep walk of every card.
+ */
+internal object Reuse {
+    /** [previous] when it equals [next], else [next]. */
+    fun <T : Any> same(next: T, previous: T?): T =
+        if (previous != null && previous == next) previous else next
+
+    /**
+     * [next] with each value replaced by [reuse] (by default [previous]'s equal value under the
+     * same key); [previous] itself when no value differs from it.
+     */
+    fun <V : Any> map(
+        next: Map<String, V>,
+        previous: Map<String, V>,
+        reuse: (String, V) -> V = { key, value -> same(value, previous[key]) },
+    ): Map<String, V> {
+        var changed = next.size != previous.size
+        val reused = LinkedHashMap<String, V>()
+        for ((key, value) in next) {
+            val kept = reuse(key, value)
+            if (kept !== previous[key]) changed = true
+            reused[key] = kept
+        }
+        return if (changed) reused else previous
+    }
+
+    /** [next] with each element replaced by [reuse]; [previous] itself when every one was. */
+    fun <T : Any> list(next: List<T>, previous: List<T>?, reuse: (T) -> T): List<T> {
+        val reused = next.map(reuse)
+        val unchanged =
+            previous != null &&
+                previous.size == reused.size &&
+                reused.indices.all { reused[it] === previous[it] }
+        return if (unchanged) previous else reused
+    }
+
+    fun directory(next: DirectoryProjection, previous: DirectoryProjection): DirectoryProjection {
+        val cards = HashMap<String, Card>()
+        for (card in previous.allItems) cards[card.id] = card
+        val boards = HashMap<String, Board>()
+        for (list in previous.boards.values) for (board in list) boards[board.id] = board
+        val card = { card: Card -> same(card, cards[card.id]) }
+        val reused =
+            DirectoryProjection(
+                projects = map(next.projects, previous.projects),
+                boards =
+                    map(next.boards, previous.boards) { project, list ->
+                        list(list, previous.boards[project]) { same(it, boards[it.id]) }
+                    },
+                retiredBoards = map(next.retiredBoards, previous.retiredBoards),
+                cards =
+                    map(next.cards, previous.cards) { project, list ->
+                        list(list, previous.cards[project], card)
+                    },
+                chats = list(next.chats, previous.chats, card),
+                activities = map(next.activities, previous.activities),
+                machinesByDaemon = map(next.machinesByDaemon, previous.machinesByDaemon),
+            )
+        return if (reused == previous) previous else reused
+    }
+}
 
 /**
  * Projects joined records into the account view. A port of the daemon's projection (internal/store
  * `shared.go`, `consolidate.go`, `board_lifecycle.go`, `shared_order.go`, `materialized_state.go`),
  * checked against fixtures the daemon generates. Decoded values are cached by version rank between
- * passes.
+ * passes. Values that did not change keep their previous instances ([Reuse]).
  */
 class AccountProjector {
     private var decoded = HashMap<String, JsonElement?>()
     private var used = HashSet<String>()
+    private var previous = AccountSnapshot()
 
     fun project(records: AccountRecords, replicas: Collection<MachineReplica>): AccountSnapshot {
         used = HashSet()
@@ -177,26 +249,37 @@ class AccountProjector {
         val owners = HashMap<String, OwnerData>()
         for (replica in replicas.sortedBy { it.machineId }) if (replica.daemonId.isNotEmpty())
             owners.getOrPut(replica.daemonId) { replica.owner }
-        val view = Pass(records, owners).run(machinesByDaemon)
+        val view = Reuse.directory(Pass(records, owners).run(machinesByDaemon), previous.directory)
         decoded.keys.retainAll(used)
-        return AccountSnapshot(
-            directory = view,
-            kv = kv(records),
-            privacy =
-                replicas
-                    .mapNotNull { replica ->
-                        replica.owner.privacy?.let { replica.machineId to it }
-                    }
-                    .toMap(),
-            peerSyncIssues =
-                replicas
-                    .filter { it.owner.peerSyncIssues.isNotEmpty() }
-                    .associate { it.machineId to it.owner.peerSyncIssues },
-        )
+        val next =
+            AccountSnapshot(
+                directory = view,
+                kv =
+                    Reuse.map(kv(records), previous.kv) { namespace, entries ->
+                        Reuse.map(entries, previous.kv[namespace].orEmpty())
+                    },
+                privacy =
+                    replicas
+                        .mapNotNull { replica ->
+                            replica.owner.privacy?.let { replica.machineId to it }
+                        }
+                        .toMap(),
+                peerSyncIssues =
+                    replicas
+                        .filter { it.owner.peerSyncIssues.isNotEmpty() }
+                        .associate { it.machineId to it.owner.peerSyncIssues },
+                mail =
+                    replicas
+                        .filter { it.owner.mail.isNotEmpty() }
+                        .associate { it.machineId to it.owner.mail },
+            )
+        previous = if (next == previous) previous else next
+        return previous
     }
 
     fun clear() {
         decoded.clear()
+        previous = AccountSnapshot()
     }
 
     private fun json(version: PeerVersion): JsonElement? {
@@ -680,6 +763,7 @@ class AccountProjector {
                 workspace_base_remote = owned.workspace_base_remote,
                 remote_publish_mode = owned.remote_publish_mode,
                 vault_access = owned.vault_access,
+                mail_access = owned.mail_access,
                 workspace = owned.workspace,
                 pull_request = owned.pull_request,
                 token_usage = owned.token_usage,

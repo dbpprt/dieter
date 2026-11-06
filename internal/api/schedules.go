@@ -22,7 +22,7 @@ func (api *schedulesAPI) ListSchedules(_ context.Context, request *dieterv1.List
 }
 
 func (api *schedulesAPI) GetSchedule(_ context.Context, request *dieterv1.ScheduleRef) (*dieterv1.Schedule, error) {
-	value, err := api.server.store.ResolveSchedule(request.GetScheduleId())
+	value, err := api.server.store.Schedules.Resolve(request.GetScheduleId())
 	if err != nil {
 		return nil, err
 	}
@@ -37,10 +37,19 @@ func (api *schedulesAPI) PreviewSchedule(_ context.Context, request *dieterv1.Pr
 	return &dieterv1.SchedulePreview{Times: values}, nil
 }
 
-func (api *schedulesAPI) CreateSchedule(_ context.Context, request *dieterv1.SaveScheduleRequest) (*dieterv1.Schedule, error) {
+func (api *schedulesAPI) CreateSchedule(ctx context.Context, request *dieterv1.SaveScheduleRequest) (*dieterv1.Schedule, error) {
 	input, err := scheduleInput(request)
 	if err != nil {
 		return nil, err
+	}
+	if input.MailAccess {
+		caller, err := api.server.capabilityCaller(ctx)
+		if err == nil {
+			err = caller.grantMail(true)
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
 	value, err := api.server.schedules.Create(input)
 	if err != nil {
@@ -49,13 +58,29 @@ func (api *schedulesAPI) CreateSchedule(_ context.Context, request *dieterv1.Sav
 	return protoSchedule(value), nil
 }
 
-func (api *schedulesAPI) UpdateSchedule(_ context.Context, request *dieterv1.SaveScheduleRequest) (*dieterv1.Schedule, error) {
+func (api *schedulesAPI) UpdateSchedule(ctx context.Context, request *dieterv1.SaveScheduleRequest) (*dieterv1.Schedule, error) {
 	input, err := scheduleInput(request)
 	if err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(request.GetScheduleId()) == "" {
 		return nil, fault.New(fault.Invalid, "schedule ID is required")
+	}
+	if input.MailAccess {
+		// Only turning mail on is a grant; an agent may keep the current value.
+		caller, err := api.server.capabilityCaller(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if caller.agent {
+			current, err := api.server.store.Schedules.Resolve(request.GetScheduleId())
+			if err != nil {
+				return nil, err
+			}
+			if err := caller.grantMail(!current.MailAccess); err != nil {
+				return nil, err
+			}
+		}
 	}
 	value, err := api.server.schedules.Update(request.GetScheduleId(), input)
 	if err != nil {
@@ -65,7 +90,7 @@ func (api *schedulesAPI) UpdateSchedule(_ context.Context, request *dieterv1.Sav
 }
 
 func (api *schedulesAPI) DeleteSchedule(_ context.Context, request *dieterv1.ScheduleRef) (*emptypb.Empty, error) {
-	if err := api.server.store.DeleteSchedule(request.GetScheduleId()); err != nil {
+	if err := api.server.store.Schedules.Delete(request.GetScheduleId()); err != nil {
 		return nil, err
 	}
 	return &emptypb.Empty{}, nil
@@ -88,7 +113,7 @@ func (api *schedulesAPI) SetScheduleEnabled(_ context.Context, request *dieterv1
 }
 
 func (api *schedulesAPI) ListScheduleRuns(_ context.Context, request *dieterv1.ListScheduleRunsRequest) (*dieterv1.ScheduleRunsResponse, error) {
-	page, err := api.server.store.ListScheduleRunsPage(request.GetScheduleId(), int(request.GetPageSize()), request.GetPageToken())
+	page, err := api.server.store.Schedules.ListRunsPage(request.GetScheduleId(), int(request.GetPageSize()), request.GetPageToken())
 	if err != nil {
 		return nil, err
 	}

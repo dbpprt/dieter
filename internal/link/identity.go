@@ -19,12 +19,14 @@ import (
 )
 
 type Identity struct {
-	ID                      string `json:"id"`
-	Name                    string `json:"name"`
-	GatewayURL              string `json:"gatewayUrl"`
-	GatewayIssuer           string `json:"gatewayIssuer,omitempty"`
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	GatewayURL    string `json:"gatewayUrl"`
+	GatewayIssuer string `json:"gatewayIssuer,omitempty"`
+	// CertificatePEM is the gateway's enrollment certificate; the daemon
+	// presents it only to the gateway. Clients and peers trust the device
+	// roster instead.
 	CertificatePEM          []byte `json:"certificatePem"`
-	DaemonCAPEM             []byte `json:"daemonCaPem"`
 	GatewaySigningPublicKey []byte `json:"gatewaySigningPublicKey"`
 	CertificateExpiresAt    string `json:"certificateExpiresAt"`
 	Generation              uint64 `json:"generation"`
@@ -114,26 +116,40 @@ func LoadOrCreateEnrollmentIdentity(boardHome, name, gatewayURL string) (*Identi
 
 func (i *Identity) PublicKeyDER() ([]byte, error) { return x509.MarshalPKIXPublicKey(i.PublicKey) }
 
-func (i *Identity) SaveCredential(id, name string, certificate, daemonCA, signingPublic []byte, expiresAt string, generation uint64) error {
+func (i *Identity) SaveCredential(id, name string, certificate, signingPublic []byte, expiresAt string, generation uint64) error {
 	if i.GatewayIssuer != "" {
 		issuer, err := trust.GatewayOrigin(i.GatewayIssuer)
 		if err != nil || issuer != i.GatewayIssuer {
 			return errors.New("invalid enrolled gateway issuer")
 		}
 	}
-	i.ID, i.Name, i.CertificatePEM, i.DaemonCAPEM, i.GatewaySigningPublicKey, i.CertificateExpiresAt, i.Generation = id, name, certificate, daemonCA, signingPublic, expiresAt, generation
+	i.ID, i.Name, i.CertificatePEM, i.GatewaySigningPublicKey, i.CertificateExpiresAt, i.Generation = id, name, certificate, signingPublic, expiresAt, generation
 	return i.save()
 }
 
 func (i *Identity) ClearCredential() error {
 	i.ID = ""
 	i.CertificatePEM = nil
-	i.DaemonCAPEM = nil
 	i.GatewaySigningPublicKey = nil
 	i.CertificateExpiresAt = ""
 	i.Generation = 0
 	i.GatewayIssuer = ""
 	return i.save()
+}
+
+// Forget removes this machine's enrolled identity: its key, its pinned
+// device roster and its trust state. A later enrollment creates a new key, so
+// the machine joins the device roster again as a new device instead of
+// reusing a key the roster binds to its old daemon ID.
+func (i *Identity) Forget() error {
+	return writeLocked(i.Root, func() error {
+		for _, path := range []string{trustPath(i.Root), rosterPath(i.Root), filepath.Join(i.Root, "daemon", "identity-key.pem"), identityPath(i.Root)} {
+			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (i *Identity) Enrolled() bool {

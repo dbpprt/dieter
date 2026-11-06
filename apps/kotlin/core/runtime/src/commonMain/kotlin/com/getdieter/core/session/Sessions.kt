@@ -1,5 +1,6 @@
 package com.getdieter.core.session
 
+import com.getdieter.api.gateway.v1.Account
 import com.getdieter.api.gateway.v1.CompatibilityComponent
 import com.getdieter.api.gateway.v1.CompatibilityRequest
 import com.getdieter.api.gateway.v1.CompatibilityStatus
@@ -16,8 +17,10 @@ import com.getdieter.core.routing.DataPlane
 import com.getdieter.core.routing.RouteKind
 import com.getdieter.core.routing.RouteSelector
 import com.getdieter.core.runtime.CoreException
+import com.getdieter.core.runtime.Deadlines
 import com.getdieter.core.runtime.FailureKind
 import com.getdieter.core.runtime.Failures
+import com.getdieter.core.runtime.GATEWAY_SILENT
 import com.getdieter.core.runtime.withDeadline
 import com.squareup.wire.GrpcException
 import com.squareup.wire.GrpcStatus
@@ -28,12 +31,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.update
+import okio.ByteString
 import okio.IOException
 
 /** An authenticated connection to one gateway. */
@@ -67,8 +73,12 @@ class GatewaySession(
                 "Dieter update required: installed $clientVersion, minimum ${compatibility.minimum_release_version}",
             )
         }
-        classified { client.GetAccount().execute(Unit) }
+        account = classified { client.GetAccount().execute(Unit) }
     }
+
+    /** The signed-in account, once [verify] read it. */
+    var account: Account? = null
+        private set
 
     /** The gateway's build, as its latest directory or presence report described it. */
     var information: GatewayInformation? = null
@@ -104,10 +114,13 @@ class GatewaySession(
 
     fun close() = channel.close()
 
-    /** Gateway rejections that need user action become typed failures. */
+    /**
+     * Gateway rejections that need user action become typed failures. A connection that outlived a
+     * sleep can stay silent without failing, so an unanswered call ends as a transient failure.
+     */
     private suspend fun <T> classified(call: suspend () -> T): T =
         try {
-            call()
+            withDeadline(Deadlines.CALL, GATEWAY_SILENT) { call() }
         } catch (error: GrpcException) {
             when (error.grpcStatus) {
                 GrpcStatus.UNAUTHENTICATED ->
@@ -132,12 +145,24 @@ data class MachineRoute(val kind: RouteKind, val latency: Duration)
 
 /**
  * One shared data plane per daemon. Every feature that talks to a machine, its change stream
- * included, uses it, so opening a card never reconnects anything. Confined to the core dispatcher.
+ * included, uses it, so opening a card never reconnects anything. [onPlane] runs for every newly
+ * established plane, e.g. to compare roster heads with the machine. Confined to the core
+ * dispatcher.
  */
-class MachineSessions(private val selector: RouteSelector, private val scope: CoroutineScope) {
-    private var gateway: GatewaySession? = null
+class MachineSessions(
+    private val selector: RouteSelector,
+    private val scope: CoroutineScope,
+    private val onPlane: (DataPlane) -> Unit = {},
+) {
+    private val attached = MutableStateFlow<GatewaySession?>(null)
+    private val gateway: GatewaySession?
+        get() = attached.value
+
     val gatewaySession: GatewaySession?
         get() = gateway
+
+    /** The gateway session machine calls go through; null while disconnected. */
+    val gateways: StateFlow<GatewaySession?> = attached.asStateFlow()
 
     private val planes = mutableMapOf<String, DataPlane>()
     private val selecting = mutableMapOf<String, Deferred<DataPlane>>()
@@ -148,7 +173,7 @@ class MachineSessions(private val selector: RouteSelector, private val scope: Co
     fun attach(session: GatewaySession?) {
         if (session === gateway) return
         closeAll()
-        gateway = session
+        attached.value = session
     }
 
     suspend fun plane(daemonId: String): DataPlane {
@@ -164,6 +189,10 @@ class MachineSessions(private val selector: RouteSelector, private val scope: Co
         val plane =
             try {
                 pending.await()
+            } catch (cancelled: CancellationException) {
+                // A new gateway session cancelled the shared selection, not this caller.
+                currentCoroutineContext().ensureActive()
+                throw CoreException(FailureKind.TRANSIENT, "The gateway changed while connecting.")
             } finally {
                 if (selecting[daemonId] === pending) selecting.remove(daemonId)
             }
@@ -177,17 +206,29 @@ class MachineSessions(private val selector: RouteSelector, private val scope: Co
         }
         planes[daemonId] = plane
         mutableRoutes.update { it + (daemonId to MachineRoute(plane.kind, plane.latency)) }
+        onPlane(plane)
         return plane
     }
 
     /**
-     * Runs [block] against [daemonId]. A transport failure retires the plane so the next call
-     * selects a route again; the call itself is not replayed.
+     * Closes every plane whose pinned machine key [trusted] no longer accepts, e.g. after the
+     * machine was removed from the roster.
+     */
+    fun retainTrusted(trusted: (daemonId: String, key: ByteString) -> Boolean) {
+        for ((daemonId, plane) in planes.toList()) {
+            if (!trusted(daemonId, plane.daemonKey)) invalidate(daemonId, plane)
+        }
+    }
+
+    /**
+     * Runs [block] against [daemonId] until its plane closes ([DataPlane.call]). A transport
+     * failure retires the plane so the next call selects a route again; the call itself is not
+     * replayed.
      */
     suspend fun <T> call(daemonId: String, block: suspend (DaemonApi) -> T): T {
         val plane = plane(daemonId)
         return try {
-            block(plane.client)
+            plane.call(block)
         } catch (error: Throwable) {
             if (isTransportFailure(error)) invalidate(daemonId, plane)
             throw error

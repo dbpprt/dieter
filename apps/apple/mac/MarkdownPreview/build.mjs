@@ -4,7 +4,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
-const output = path.resolve(directory, "../Sources/DieterMacKit/Resources/MarkdownPreview");
+const outputArgument = process.argv.indexOf("--output");
+const output = path.resolve(
+  directory,
+  outputArgument >= 0
+    ? process.argv[outputArgument + 1]
+    : "../Sources/DieterMacKit/Resources/MarkdownPreview",
+);
 const check = process.argv.includes("--check");
 const result = await build({
   absWorkingDir: directory,
@@ -14,7 +20,7 @@ const result = await build({
   splitting: false,
   format: "iife",
   platform: "browser",
-  target: ["safari17.4"],
+  target: ["safari17.4", "chrome100"],
   minify: true,
   legalComments: "inline",
   write: false,

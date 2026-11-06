@@ -1,0 +1,128 @@
+{"t":"15:31:16","A":"todo idle","B":"todo idle","claims":{}}
+{"t":"15:31:18","A":"running starting","B":"todo idle","claims":{}}
+{"t":"15:31:21","A":"running starting","B":"running starting","claims":{}}
+{"t":"15:31:24","A":"running running","B":"running starting","claims":{}}
+{"t":"15:31:26","A":"running running","B":"running running","claims":{}}
+{"t":"15:31:29","A":"running running","B":"running running","claims":{}}
+{"t":"15:31:32","A":"running running","B":"running running","claims":{  "claims":  [    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module3.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:32Z"    }  ]}}
+{"t":"15:31:34","A":"running running","B":"running running","claims":{  "claims":  [    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module3.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:32Z"    }  ]}}
+{"t":"15:31:37","A":"running running","B":"running running","claims":{  "claims":  [    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module3.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:32Z",      "waitingCardIds":  [        "c_64855a4f788fa60d5035d95f"      ]    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module4.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:37Z"    }  ]}}
+{"t":"15:31:40","A":"running running","B":"running running","claims":{  "claims":  [    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module3.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:32Z",      "waitingCardIds":  [        "c_64855a4f788fa60d5035d95f"      ]    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module4.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:37Z"    }  ]}}
+{"t":"15:31:42","A":"running running","B":"running running","claims":{  "claims":  [    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module3.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:32Z",      "waitingCardIds":  [        "c_64855a4f788fa60d5035d95f"      ]    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module4.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:37Z"    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module6.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:42Z"    }  ]}}
+{"t":"15:31:45","A":"running running","B":"running running","claims":{  "claims":  [    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module3.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:32Z",      "waitingCardIds":  [        "c_64855a4f788fa60d5035d95f"      ]    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module4.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:37Z"    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module5.js",      "cardId":  "c_64855a4f788fa60d5035d95f",      "cardTitle":  "Add MAX_TIER_3 and module5 owner",      "since":  "2026-10-24T13:31:44Z"    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module6.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:42Z"    }  ]}}
+{"t":"15:31:47","A":"running running","B":"running finishing","claims":{  "claims":  [    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module3.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:32Z",      "waitingCardIds":  [        "c_64855a4f788fa60d5035d95f"      ]    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module4.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:37Z"    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module5.js",      "cardId":  "c_64855a4f788fa60d5035d95f",      "cardTitle":  "Add MAX_TIER_3 and module5 owner",      "since":  "2026-10-24T13:31:44Z"    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module6.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:42Z"    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module7.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:46Z"    }  ]}}
+{"t":"15:31:50","A":"running running","B":"running idle","claims":{  "claims":  [    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module3.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:32Z",      "waitingCardIds":  [        "c_64855a4f788fa60d5035d95f"      ]    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module4.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:37Z"    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module6.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:42Z"    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module7.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:46Z"    }  ]}}
+{"t":"15:31:52","A":"running running","B":"running idle","claims":{  "claims":  [    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module3.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:32Z",      "waitingCardIds":  [        "c_64855a4f788fa60d5035d95f"      ]    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module4.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:37Z"    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module6.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:42Z"    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module7.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:46Z"    }  ]}}
+{"t":"15:31:55","A":"running running","B":"running idle","claims":{  "claims":  [    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module3.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:32Z",      "waitingCardIds":  [        "c_64855a4f788fa60d5035d95f"      ]    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module4.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:37Z"    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module6.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:42Z"    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module7.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:46Z"    }  ]}}
+{"t":"15:31:57","A":"running running","B":"running idle","claims":{  "claims":  [    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module3.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:32Z",      "waitingCardIds":  [        "c_64855a4f788fa60d5035d95f"      ]    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module4.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:37Z"    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module5.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:55Z"    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module6.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:42Z"    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module7.js",      "cardId":  "c_8708738b3dfdaa2e208e953a",      "cardTitle":  "Review headers of modules 3, 4, 6, 7",      "since":  "2026-10-24T13:31:46Z"    }  ]}}
+{"t":"15:32:00","A":"running idle","B":"running running","claims":{}}
+{"t":"15:32:02","A":"running idle","B":"running running","claims":{}}
+{"t":"15:32:05","A":"running idle","B":"running running","claims":{}}
+{"t":"15:32:07","A":"running idle","B":"running running","claims":{}}
+{"t":"15:32:10","A":"running idle","B":"running running","claims":{}}
+{"t":"15:32:13","A":"running idle","B":"running running","claims":{}}
+{"t":"15:32:15","A":"running idle","B":"running running","claims":{}}
+{"t":"15:32:18","A":"running idle","B":"running running","claims":{  "claims":  [    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module3.js",      "cardId":  "c_64855a4f788fa60d5035d95f",      "cardTitle":  "Add MAX_TIER_3 and module5 owner",      "since":  "2026-10-24T13:32:16Z"    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module5.js",      "cardId":  "c_64855a4f788fa60d5035d95f",      "cardTitle":  "Add MAX_TIER_3 and module5 owner",      "since":  "2026-10-24T13:32:16Z"    }  ]}}
+{"t":"15:32:20","A":"running idle","B":"running running","claims":{  "claims":  [    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module3.js",      "cardId":  "c_64855a4f788fa60d5035d95f",      "cardTitle":  "Add MAX_TIER_3 and module5 owner",      "since":  "2026-10-24T13:32:16Z"    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module5.js",      "cardId":  "c_64855a4f788fa60d5035d95f",      "cardTitle":  "Add MAX_TIER_3 and module5 owner",      "since":  "2026-10-24T13:32:16Z"    }  ]}}
+{"t":"15:32:23","A":"running idle","B":"done running","claims":{  "claims":  [    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module3.js",      "cardId":  "c_64855a4f788fa60d5035d95f",      "cardTitle":  "Add MAX_TIER_3 and module5 owner",      "since":  "2026-10-24T13:32:16Z"    },    {      "projectId":  "p_8e24f6c4db69",      "path":  "src/module5.js",      "cardId":  "c_64855a4f788fa60d5035d95f",      "cardTitle":  "Add MAX_TIER_3 and module5 owner",      "since":  "2026-10-24T13:32:16Z"    }  ]}}
+{"t":"15:32:25","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:32:28","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:32:30","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:32:33","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:32:35","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:32:38","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:32:40","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:32:43","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:32:45","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:32:47","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:32:50","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:32:52","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:32:55","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:32:58","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:33:00","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:33:02","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:33:05","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:33:07","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:33:10","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:33:13","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:33:15","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:33:17","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:33:20","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:33:22","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:33:25","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:33:27","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:33:30","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:33:32","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:33:35","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:33:37","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:33:40","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:33:42","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:33:45","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:33:47","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:33:50","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:33:52","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:33:55","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:33:57","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:34:00","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:34:02","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:34:05","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:34:07","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:34:10","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:34:12","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:34:15","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:34:17","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:34:20","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:34:22","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:34:25","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:34:27","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:34:30","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:34:32","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:34:35","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:34:37","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:34:40","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:34:42","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:34:45","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:34:47","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:34:50","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:34:52","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:34:55","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:34:57","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:35:00","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:35:02","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:35:05","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:35:07","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:35:10","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:35:13","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:35:15","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:35:18","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:35:20","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:35:22","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:35:25","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:35:27","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:35:30","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:35:32","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:35:35","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:35:37","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:35:40","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:35:42","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:35:45","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:35:47","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:35:50","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:35:52","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:35:55","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:35:57","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:36:00","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:36:03","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:36:05","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:36:07","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:36:10","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:36:12","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:36:15","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:36:17","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:36:20","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:36:22","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:36:25","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:36:27","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:36:30","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:36:32","A":"running idle","B":"done idle","claims":{}}
+{"t":"15:36:35","A":"running idle","B":"done idle","claims":{}}

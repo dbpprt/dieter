@@ -4,7 +4,9 @@ import com.getdieter.client.v1.Failure
 import com.getdieter.core.CoreRuntime
 import com.getdieter.core.admin.MachineTelemetry
 import com.getdieter.core.board.BoardViewSurface
+import com.getdieter.core.channels.Channels
 import com.getdieter.core.executions.Processes
+import com.getdieter.core.mail.MailSurface
 import com.getdieter.core.navigation.ChatsSurface
 import com.getdieter.core.schedules.Schedules
 import com.getdieter.core.screens.ScreenSurface
@@ -119,9 +121,24 @@ internal class ViewSurfaces(runtime: CoreRuntime, screenHost: ScreenHost?) {
             }
         }
     val creationPreviews = Surfaces { CreationPreviewSurface(runtime) }
+    val channels =
+        Surfaces(Channels::stop) {
+            Channels(
+                runtime.sessions,
+                runtime.choice::reachable,
+                runtime.channelSettings.view,
+                runtime.scope,
+                runtime.platform.logger,
+            )
+        }
 
-    /** Open conversations by card ID; the runtime keeps the sessions themselves. */
-    val conversations = Surfaces<String>(runtime.conversations::close) { it }
+    val mail = Surfaces(MailSurface::stop) { MailSurface(runtime.mailbox, runtime::mailProjection) }
+
+    /**
+     * Observation lifetimes do not end transcript watches: the runtime keeps its bounded LRU of
+     * recent conversations warm, including while another card or destination is shown.
+     */
+    val conversations = Surfaces<String> { it }
 
     /** The account changed: what surfaces showed of the previous one goes. */
     fun resetAccount() {
@@ -130,5 +147,7 @@ internal class ViewSurfaces(runtime: CoreRuntime, screenHost: ScreenHost?) {
         schedules.all.forEach(Schedules::stop)
         telemetry.all.forEach(MachineTelemetry::reset)
         chats.all.forEach(ChatsSurface::reset)
+        channels.all.forEach(Channels::stop)
+        mail.all.forEach(MailSurface::reset)
     }
 }

@@ -13,7 +13,8 @@ import (
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/platform/fault"
 	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
+	"github.com/dbpprt/dieter/internal/store/leases"
 )
 
 // This is part of Service's single turn owner. Service.mu, durable runtime leases,
@@ -24,12 +25,12 @@ import (
 // interrupted; its prompt is never replayed because that could duplicate file
 // edits or external side effects.
 func (s *Service) ReconcileOrphanedTurns() ([]string, error) {
-	targets, mergeErr := s.Store.RecoverCardMerges()
+	targets, mergeErr := s.Store.Conversations.RecoverCardMerges()
 	if mergeErr != nil {
 		return nil, mergeErr
 	}
 	recovered, strandedErr := s.retryStrandedRuntimeLeases("")
-	cards, err := s.Store.OrphanedTurnCards()
+	cards, err := s.Store.Conversations.OrphanedTurnCards()
 	if err != nil {
 		return recovered, errors.Join(strandedErr, err)
 	}
@@ -56,7 +57,7 @@ func (s *Service) ReconcileOrphanedTurns() ([]string, error) {
 				recoveryErrors = append(recoveryErrors, fmt.Errorf("stop orphaned turn %s: %w", card.ID, cancelErr))
 			}
 		}
-		interrupted, interruptErr := s.Store.InterruptConversation(card.ID)
+		interrupted, interruptErr := s.Store.Conversations.Interrupt(card.ID)
 		if interruptErr != nil {
 			recoveryErrors = append(recoveryErrors, fmt.Errorf("reconcile orphaned turn %s: %w", card.ID, interruptErr))
 			continue
@@ -109,7 +110,7 @@ func (s *Service) WaitForRecoveredTurns(ctx context.Context, cards []string) err
 		}
 		s.mu.Unlock()
 		for _, cardID := range inactive {
-			conversation, err := s.Store.Conversation(cardID)
+			conversation, err := s.Store.Conversations.Get(cardID)
 			if err != nil {
 				return fmt.Errorf("inspect recovered turn %s: %w", cardID, err)
 			}
@@ -144,14 +145,14 @@ func (s *Service) CleanupInactiveProviderBridges() ([]string, error) {
 	if !ok {
 		return nil, nil
 	}
-	projects, err := s.Store.ListProjects()
+	projects, err := s.Store.Kanban.ListProjects()
 	if err != nil {
 		return nil, err
 	}
 	cleaned := make([]string, 0)
 	var cleanupErrors []error
 	for _, project := range projects {
-		cards, listErr := s.Store.ListCards(store.CardFilter{Project: project.ID, IncludeArchived: true})
+		cards, listErr := s.Store.Kanban.ListCards(kanban.CardFilter{Project: project.ID, IncludeArchived: true})
 		if listErr != nil {
 			cleanupErrors = append(cleanupErrors, fmt.Errorf("list provider bridges for project %s: %w", project.ID, listErr))
 			continue
@@ -209,7 +210,7 @@ func uniqueStrings(values []string) []string {
 // was full. Token-matched release cannot remove a newer turn's lease.
 func (s *Service) retryStrandedRuntimeLeases(cardID string) ([]string, error) {
 	s.mu.Lock()
-	leases := make([]store.RuntimeLease, 0, len(s.strandedLeases))
+	leases := make([]leases.RuntimeLease, 0, len(s.strandedLeases))
 	for id, lease := range s.strandedLeases {
 		if cardID == "" || id == cardID {
 			leases = append(leases, lease)
@@ -251,14 +252,14 @@ func prepareHarnessRuntime(ctx context.Context, runner harness.Runner, digest st
 }
 
 func (s *Service) resumeOrphanedTurn(ref string) error {
-	detail, err := s.Store.CardDetail(ref)
+	detail, err := s.Store.Kanban.CardDetail(ref)
 	if err != nil {
 		return err
 	}
 	if err := s.ensureStartStorage(s.Store.Root, detail.Project.Path); err != nil {
 		return err
 	}
-	conversation, err := s.Store.Conversation(detail.Card.ID)
+	conversation, err := s.Store.Conversations.Get(detail.Card.ID)
 	if err != nil {
 		return err
 	}
@@ -296,7 +297,7 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 		return err
 	}
 	resolution := dieterprompt.Resolution{}
-	lease, err := s.Store.AcquireRuntimeLeaseFor(detail.Project.ID, detail.Board.ID, detail.Card.ID, adapter.ID)
+	lease, err := s.Store.Kanban.AcquireRuntimeLeaseFor(detail.Project.ID, detail.Board.ID, detail.Card.ID, adapter.ID)
 	if err != nil {
 		return err
 	}
@@ -323,14 +324,14 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 	if s.shuttingDown {
 		s.mu.Unlock()
 		cancel()
-		_ = s.Store.ReleaseRuntimeLease(lease)
+		_ = s.Store.Leases.Release(lease)
 		return fault.New(fault.Unavailable, "Dieter is shutting down")
 	}
 	if active := s.active[detail.Card.ID]; active != nil {
 		s.mu.Unlock()
 		cancel()
-		_ = s.Store.ReleaseRuntimeLease(lease)
-		return store.ErrCardActive
+		_ = s.Store.Leases.Release(lease)
+		return leases.ErrCardActive
 	}
 	now := time.Now()
 	if lease.Detail != nil {
@@ -354,7 +355,7 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 		resolution, err = s.resolveInstructions(detail, workspaceValue)
 		if err != nil {
 			cancel()
-			_ = s.Store.ReleaseRuntimeLease(lease)
+			_ = s.Store.Leases.Release(lease)
 			s.clearActive(detail.Card.ID, turnID)
 			close(done)
 			return err
@@ -370,9 +371,9 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 	}
 	// The card is the active/last-admitted selection shown by clients. Restore
 	// every field from the same snapshot used by the recovered request.
-	if _, err := s.Store.UpdateCardCache(detail.Card.ID, store.CardCacheInput{Provider: adapter.ID, Model: configuredModel.ID, Effort: &effort, ProviderOptions: providerOptions, Runtime: "running"}); err != nil {
+	if _, err := s.Store.Kanban.UpdateCardCache(detail.Card.ID, kanban.CardCacheInput{Provider: adapter.ID, Model: configuredModel.ID, Effort: &effort, ProviderOptions: providerOptions, Runtime: "running"}); err != nil {
 		cancel()
-		_ = s.Store.ReleaseRuntimeLease(lease)
+		_ = s.Store.Leases.Release(lease)
 		s.clearActive(detail.Card.ID, turnID)
 		close(done)
 		return err
@@ -427,7 +428,7 @@ func (s *Service) SuspendActiveTurns(ctx context.Context) error {
 	for _, turn := range turns {
 		go func(turn *activeTurn) {
 			if suspender, ok := s.Runner.(harness.Suspender); ok {
-				detail, detailErr := s.Store.CardDetail(turn.cardID)
+				detail, detailErr := s.Store.Kanban.CardDetail(turn.cardID)
 				if detailErr == nil {
 					detailErr = suspender.Suspend(turn.cardID, filepath.Join(s.Store.RuntimeDir(), "sessions", detail.Project.ID))
 				}
@@ -461,13 +462,13 @@ func (s *Service) SuspendActiveTurns(ctx context.Context) error {
 		}
 		select {
 		case <-result.turn.done:
-			conversation, err := s.Store.Conversation(result.turn.cardID)
+			conversation, err := s.Store.Conversations.Get(result.turn.cardID)
 			if err != nil {
 				suspensionErrors = append(suspensionErrors, err)
 			} else if !hasTurnContinuation(conversation.Session) {
 				suspensionErrors = append(suspensionErrors, fmt.Errorf("suspend %s: %w", result.turn.cardID, errNoTurnContinuation))
 				if cleaner, ok := s.Runner.(harness.Cleaner); ok {
-					detail, detailErr := s.Store.CardDetail(result.turn.cardID)
+					detail, detailErr := s.Store.Kanban.CardDetail(result.turn.cardID)
 					if detailErr != nil {
 						suspensionErrors = append(suspensionErrors, detailErr)
 					} else if cleanupErr := cleaner.Cleanup(result.turn.cardID, filepath.Join(s.Store.RuntimeDir(), "sessions", detail.Project.ID)); cleanupErr != nil {

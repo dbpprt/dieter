@@ -18,7 +18,7 @@ logic layer of their own.
 | --------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `:core:model`   | `core/model`   | Wire models and gRPC stubs generated from `api/proto` (relocated to `com.getdieter.api.*`), the core's on-device records (`dieter/core/v1`, `com.getdieter.core.v1`) and the UI contract (`dieter/client/v1/client.proto`, `com.getdieter.client.v1`).                                                                               |
 | `:core:runtime` | `core/runtime` | All client logic (`com.getdieter.core.*`), the platform-extension contracts (`platform/Platform.kt`, `screens/ScreenMedia.kt`, `terminals/TerminalScreen.kt`), the OkHttp transport for Android and the JVM (`jvmSharedMain`), the distribution identity (`identity/DistributionIdentity.kt`, generated), and its unit tests.        |
-| `:core:testing` | `core/testing` | Fakes, `SliceFolds` (applies keyed deltas as a Swift observer does), the JVM platform, the JDK's Ed25519 verifier, and the `IsolatedGateway` fixture launcher.                                                                                                                                                                       |
+| `:core:testing` | `core/testing` | Fakes, `SliceFolds` (applies keyed deltas as a Swift observer does), the JVM platform (a software device key in its state directory), the JDK's Ed25519 and ECDSA verifier, and the `IsolatedGateway` fixture launcher, whose pairing code makes test runtimes trusted devices.                                                      |
 | `:core:apple`   | `core/apple`   | The Swift façade (`com.getdieter.apple`): `DieterShared` (`dispatch(command)` and `observe(slice, scope)` over encoded `dieter.client.v1` messages), the synchronous `SharedRules` exports, `SharedTouchScreen`, and the native extension protocols, including the RPC bridge (`NativeRpc.kt`). Its macOS framework is `DieterCore`. |
 | `:core:e2e`     | `core/e2e`     | JVM end-to-end tests of the core and the shared UI against a disposable gateway and daemon built from this repository. Opt-in: they need Go and Node.                                                                                                                                                                                |
 | `:ui`           | `ui`           | The Compose Multiplatform UI of the Android and iOS apps (`com.getdieter.mobile`): screens, view lifetime, and navigation over `ClientApi`. Its iOS framework, also named `DieterCore`, exports the `:core:apple` façade.                                                                                                            |
@@ -29,6 +29,13 @@ every core module targets the JVM, Android, `iosArm64`, `iosSimulatorArm64` and
 `macosArm64`, and Android and the JVM share the OkHttp-backed `jvmShared` source
 set. `gradle/libs.versions.toml` is the one source of every toolchain and
 library version.
+
+Mail's graphics reuse `apps/apple/mac/MarkdownPreview` on every platform. The
+UI's `buildMarkdownPreview` task needs the pinned Node/npm toolchain and builds
+the offline bundle from its shared lockfile; Android packages it as resources,
+and the iOS app copies the prepared Compose resources after linking its framework.
+The core owns fence names and aliases; WebView adapters only load packaged
+assets, present diagrams and release views.
 
 ## Architecture
 
@@ -51,6 +58,13 @@ library version.
   with deterministic IDs, so a retry can never duplicate a command. Pending
   cards carry aliases (the deterministic and the acknowledged daemon ID), so a
   card never shows twice when sync delivers it before the create reply.
+- **Device trust.** `trust/DeviceTrust` keeps this device's place in the
+  account's signed device roster: it pairs with a one-time code that a trusted
+  device types, pins the roster only after the approver's confirmation, and
+  enters CONFLICT when a later roster does not extend the pinned one. Every
+  route (direct, WebRTC, and the relay's opaque tunnel) is mutual TLS pinned to
+  the machine's roster key, so the gateway relays ciphertext only. Machines are
+  reachable only while the device is trusted.
 - **Division of labour.** Platforms own HTTP/2, TLS, credentials, rendering,
   terminals (SwiftTerm, Termux), and screen media (WebRTC, decoders, Metal).
   The core makes every decision around them.
@@ -106,9 +120,13 @@ schema lives in `api/proto/dieter/client/v1` (Wire reads all schemas from
 ## Shared mobile UI (`:ui`)
 
 The Android and iOS apps share one Compose Multiplatform UI, organized as
-**Inbox / Projects / Chats / Tools**, with compact task cards, project folders,
+**Inbox / Mail / Projects / Chats / More**, with compact task cards, project folders,
 agent controls, transcript tools, files, Git review, schedules, terminals,
-screens and machine tools. Native code supplies credentials, transport,
+screens and machine tools. More holds Channels, Terminals, the machines,
+Usage, Devices and Settings (`app/More.kt`). Tools live with their scope:
+Files, Changes and Schedules open from a project and carry its ID (and Files
+and Changes a checkout), a machine's page shows its screen, terminals and
+checkouts, and nothing falls back to the last project opened. Native code supplies credentials, transport,
 attachments, terminal emulation, screen video/input and, on iOS, navigation
 chrome.
 
@@ -126,15 +144,38 @@ commands are shared.
 - **Android:** Material 3 throughout. Colors come from the wallpaper (dynamic
   color, Android 12+, switchable in Settings) or from tonal schemes built from
   the eight Dieter palettes; Monochrome is the default. Navigation is a
-  navigation bar (rail from 600 dp); system back pops the visible tab stack.
+  navigation bar whose More item slides up a sheet with the bar docked below
+  it (a rail from 840 dp); system back pops the visible tab stack.
 - **iOS:** UIKit owns navigation: a `UITabBarController` holds one
   `UINavigationController` per tab (a sidebar-adaptable tab bar on iPad), so
   titles, back gestures and bar buttons are the system's own. Compose draws
   each screen's content with iOS system colors, Dynamic Type sizes, SF Symbols
   and inset-grouped lists.
-- **Adaptive layouts:** Android shows list and detail side by side from 840 dp;
-  iPad uses a split view in regular width. A board shows parallel lanes from
+- **Adaptive layouts:** Android shows list and detail side by side from 600 dp
+  wide and 480 dp tall (unfolded foldables, tablets), split by a draggable
+  handle (`app/PaneSplit.kt`). Dragging a pane well past its minimum width
+  collapses it (`PaneCollapse`): without the list, the open page fills the
+  window and goes back to the list; without the detail, the list fills the
+  window until something opens. `LayoutModel` keeps the split; iPad uses a split view in regular
+  width. `MobileRoute.list` decides which routes stay in the list column on both. A board shows parallel lanes from
   700 dp and swipeable lane tabs below that.
+- **Android desktop:** in Samsung DeX, desktop windowing, on a connected
+  display or a PC (`DesktopSignals` in the Android app), or with
+  Settings → Interface → Desktop, windows from 720 dp get the desktop shell,
+  modelled on the Mac app. The shell and `MobileApp` live in the `jvmShared`
+  source set (`ui/src/jvmSharedMain`, Android and the host JVM), so the iOS
+  framework never compiles them; the theme, chrome host and controls that shared
+  screens reach stay in `commonMain/.../desktop`. It brings Mac tokens and type
+  (`DesktopTheme`), a floating sidebar of destinations, projects and machines,
+  equal-width kanban lanes with the conversation and its pane tabs beside them,
+  list-and-detail panes with draggable gaps (`DesktopPane` widths in
+  `LayoutModel`), a command palette over the core's search, and Ctrl
+  shortcuts the shell sees before its text fields do (the activity hands it
+  keys no view handled through `DesktopKeys`).
+  It reads and drives the same `MobileNavigation` stacks (`desktopPlace()`),
+  so the core binds the same scopes. Shared screens publish their bars to a
+  `DesktopChromeHost`, which draws a compact title band; sheets become centered
+  dialogs and menus, rows and segments become dense.
 
 | Surface                                                                      | Shared implementation                           | Native boundary                                    |
 | ---------------------------------------------------------------------------- | ----------------------------------------------- | -------------------------------------------------- |
@@ -144,8 +185,16 @@ commands are shared.
 | Files/editing/history, Git diffs/operations/merge                            | `ToolScreens`, `ReviewScreen`, `WorkspaceTools` | Binary previews                                    |
 | Schedules/editor/history, projects/checkouts/boards/labels/archive           | `ManagementScreens`, `AdministrationScreens`    | Core administration                                |
 | Machine telemetry/actions, quotas, gateways, appearance                      | `ToolScreens`, `MobileTheme`                    | Core operations                                    |
+| Pairing (until this device is trusted), trusted devices, adding a device     | `DevicesScreen`                                 | Device key and TLS client authentication           |
 | Persistent terminals                                                         | Shared controls and bounded core output         | Termux on Android, SwiftTerm on iOS                |
 | Screen sharing                                                               | `ScreenUI` and core session state               | GPU/Metal renderers, WebRTC and native touch input |
+
+Machines answer only a trusted device, so until the session's `device_trust` is
+trusted (or still unknown) both apps show the pairing screen instead of the
+tabs: the one-time code to type on a trusted device (More › Devices, or
+`dieter device approve CODE` on a machine), or Reset after this device was
+removed or saw a conflicting roster. More › Devices lists the account's
+devices, adds one by the code it shows, and removes one.
 
 Items shared from other apps reach `MobileStore.share` as `SharedItems` once the
 workspace has loaded: a new task opens prefilled, or `ShareTargetScreen` picks
@@ -165,6 +214,11 @@ A Material 3 shell hosting the shared UI. It keeps only adapters, under
   `MobileStore`, preferences and screen media across Activity recreation.
 - `data/DieterCredentialStore`: session tokens encrypted with a device-bound
   Android Keystore key, keyed by gateway origin; the core's `SecureStore`.
+- `data/AndroidDeviceKeys`: the device key, a non-exportable ECDSA P-256 key
+  in the Android Keystore (StrongBox when available). `data/KeyStoreTls`
+  configures BouncyCastle JSSE (Conscrypt cannot verify the machines' Ed25519
+  certificates) to sign the TLS 1.3 client CertificateVerify with it through
+  the Keystore's own provider.
 - `sharedcore/ControlRTCBridge`: the WebRTC control channel the core routes
   requests over.
 - `screens/` and `ComposeScreenSurface`: WebRTC/MediaCodec screen media, the
@@ -237,3 +291,11 @@ binary). Every end-to-end test starts its own gateway and daemon with a
 temporary `DIETER_HOME` and random loopback ports, and never touches an
 operator's daemon. The Android and iOS Maestro flows in
 [`tests/maestro`](../../tests/maestro/README.md) cover the shells on devices.
+
+## Workspace links on mobile
+
+Links in the transcript and Markdown file previews open workspace files through
+the owning daemon, including absolute paths in conversation worktrees. Relative
+links in a document resolve against its folder. Web links open in the system
+browser. Image links open the native attachment preview (Quick Look on iOS),
+and the latest explicit content presentation is available from the transcript.

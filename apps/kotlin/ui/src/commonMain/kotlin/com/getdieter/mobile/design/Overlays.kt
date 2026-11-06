@@ -22,10 +22,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.getdieter.mobile.app.*
+import com.getdieter.mobile.platform.exposingTestTags
 
 /** Native presentations for one iOS screen: UIMenu, UIAlertController and sheets. */
 internal interface NativeOverlays {
-    /** [x], [y], [width] and [height] are points in the screen's Compose view. */
+    /** [x], [y], [width] and [height] are points in the Compose view's native window. */
     fun showMenu(
         sections: List<MenuSection>,
         x: Double,
@@ -253,7 +254,8 @@ internal fun PromptDialog(
 
 /**
  * A modal sheet. iOS presents a native sheet (grabber, detents, glass close and confirm buttons)
- * hosting this Compose content; Android uses a Material modal bottom sheet.
+ * hosting this Compose content; Android uses a Material modal bottom sheet, the desktop shell a
+ * centered dialog.
  */
 @Composable
 internal fun Sheet(
@@ -264,6 +266,17 @@ internal fun Sheet(
     scrollable: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    if (com.getdieter.mobile.desktop.desktop) {
+        com.getdieter.mobile.desktop.DesktopDialog(
+            title,
+            onDismiss,
+            wide = size == SheetSize.LARGE,
+            confirm = confirm,
+            scrollable = scrollable,
+            content = content,
+        )
+        return
+    }
     val overlays = LocalNativeOverlays.current
     val dismissed by rememberUpdatedState(onDismiss)
     val body: @Composable () -> Unit = {
@@ -284,7 +297,12 @@ internal fun Sheet(
         return
     }
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = size == SheetSize.LARGE)
-    ModalBottomSheet(onDismiss, sheetState = state, containerColor = colors.surfaceContainerLow) {
+    ModalBottomSheet(
+        onDismiss,
+        Modifier.exposingTestTags(),
+        sheetState = state,
+        containerColor = colors.surfaceContainerLow,
+    ) {
         Row(
             Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,

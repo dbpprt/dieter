@@ -23,10 +23,7 @@ struct MergeIntoBaseSheet: View {
         let value = workspace?.branch ?? card?.workspace.branch ?? ""
         return value.isEmpty ? "workspace" : value
     }
-    private var baseBranch: String {
-        let value = workspace?.baseBranch ?? card?.workspace.baseBranch ?? ""
-        return value.isEmpty ? "base" : value
-    }
+    private var baseBranch: String { model.baseBranch }
     private var conflicted: Bool { model.conflicted }
     private var running: Bool { model.mergeFlowStep != nil }
     private var readiness: ClientMergeReadiness { model.mergeReadiness }

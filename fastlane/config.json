@@ -42,8 +42,8 @@
     }
   },
   "swift_test_minimums": {
-    "kit": 8,
+    "kit": 14,
     "native": 10,
-    "mac": 450
+    "mac": 461
   }
 }

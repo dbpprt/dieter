@@ -39,26 +39,25 @@ func TestGatewayReconnectBackoffResetsAfterStableSession(t *testing.T) {
 	}
 }
 
-func TestRelayMethodPriorityKeepsCommandsAheadOfStreams(t *testing.T) {
+func TestGatewayHostSleptOnlyWhenTheWallClockOutranTheMonotonicClock(t *testing.T) {
 	t.Parallel()
-	for _, method := range []string{
-		"/dieter.v1.CardService/StartCard",
-		"/dieter.v1.CardService/MoveCard",
-		"/dieter.v1.MachineService/Health",
+	for _, test := range []struct {
+		wall, monotonic time.Duration
+		slept           bool
+	}{
+		{wall: time.Second, monotonic: time.Second},
+		{wall: time.Second + gatewayHostSleepTolerance, monotonic: time.Second},
+		{wall: -time.Hour, monotonic: time.Second},
+		{wall: 3 * time.Hour, monotonic: time.Second, slept: true},
 	} {
-		if !relayMethodPriority(method) {
-			t.Fatalf("%s should use the priority relay queue", method)
+		if got := gatewayHostSlept(test.wall, test.monotonic); got != test.slept {
+			t.Fatalf("gatewayHostSlept(%s, %s) = %t, want %t", test.wall, test.monotonic, got, test.slept)
 		}
 	}
-	for _, method := range []string{
-		"/dieter.v1.StateService/WatchChanges",
-		"/dieter.v1.ConversationService/WatchConversation",
-		"/dieter.v1.TerminalService/WatchTerminal",
-		"/dieter.v1.ExecutionService/WatchExecution",
-	} {
-		if relayMethodPriority(method) {
-			t.Fatalf("%s should use the bounded streaming relay queue", method)
-		}
+	previous := time.Now()
+	now := time.Now()
+	if gatewayHostSlept(now.Round(0).Sub(previous.Round(0)), now.Sub(previous)) {
+		t.Fatal("two readings of an awake host must not count as sleep")
 	}
 }
 
@@ -74,8 +73,8 @@ func TestGatewayHeartbeatAcknowledgementCorrelation(t *testing.T) {
 	if gatewayFrameMarksRelayActivity(valid) {
 		t.Fatal("heartbeat acknowledgement was counted as relay activity")
 	}
-	if !gatewayFrameMarksRelayActivity(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_OPEN_RPC}) {
-		t.Fatal("relayed RPC was not counted as activity")
+	if !gatewayFrameMarksRelayActivity(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_TUNNEL_DATA}) {
+		t.Fatal("tunnel data was not counted as activity")
 	}
 	for name, frame := range map[string]*gatewayv1.DaemonLinkFrame{
 		"empty outstanding request": valid,

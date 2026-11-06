@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/gateway"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/link"
+	"github.com/dbpprt/dieter/internal/testkit"
 	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -113,27 +113,25 @@ func (s *expiringExecutionServer) WatchExecution(request *dieterv1.WatchExecutio
 // successive token lifetimes. All identities, listeners and state are isolated.
 func TestRemoteWaitSurvivesTwoDirectTokenExpirations(t *testing.T) {
 	t.Parallel()
-	keys, err := gateway.LoadOrCreateKeys(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	signingKey, signing := testkit.SigningKey(t)
 	identity, err := link.LoadOrCreateEnrollmentIdentity(t.TempDir(), "security", "https://gateway.example")
 	if err != nil {
 		t.Fatal(err)
 	}
-	public, err := identity.PublicKeyDER()
+	if err := identity.SaveCredential("d_security", "security", []byte("enrollment"), signing, time.Now().Add(time.Hour).Format(time.RFC3339Nano), 1); err != nil {
+		t.Fatal(err)
+	}
+	testkit.PinRoster(t, identity.Root, testkit.TestAccount, testkit.DaemonSigner(t, identity.PrivateKey, identity.ID, "security"))
+	deviceTrust, err := link.OpenTrust(identity, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	certificate, expires, err := keys.IssueDaemonCertificate("d_security", public)
+	daemonKey, err := deviceTrust.DaemonKey(identity.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	signing, err := keys.SigningPublicPEM()
+	certificate, err := identity.DeviceCertificate()
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err := identity.SaveCredential("d_security", "security", certificate, keys.DaemonCAPEM, signing, expires.Format(time.RFC3339Nano), 1); err != nil {
 		t.Fatal(err)
 	}
 	localListener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -146,7 +144,7 @@ func TestRemoteWaitSurvivesTwoDirectTokenExpirations(t *testing.T) {
 	dieterv1.RegisterExecutionServiceServer(local, execution)
 	go func() { _ = local.Serve(localListener) }()
 	t.Cleanup(local.Stop)
-	direct, err := link.NewDirectServer(identity, localListener.Addr().String(), "local-token")
+	direct, err := link.NewDirectServer(identity, deviceTrust, localListener.Addr().String(), "local-token")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,10 +157,10 @@ func TestRemoteWaitSurvivesTwoDirectTokenExpirations(t *testing.T) {
 	var exchanges atomic.Int32
 	credential := &directCredential{timeout: time.Second, exchange: func(context.Context) (*gatewayv1.DaemonAccessToken, error) {
 		exchanges.Add(1)
-		token, expiry, err := keys.SignDaemonToken(identity.GatewayURL, identity.ID, 123, 1, "", time.Second)
-		return &gatewayv1.DaemonAccessToken{TokenType: "Bearer", AccessToken: token, ExpiresAt: expiry.Format(time.RFC3339Nano)}, err
+		token, expiry := testkit.DaemonToken(t, signingKey, identity.GatewayURL, identity.ID, 1, identity.DeviceID(), time.Second)
+		return &gatewayv1.DaemonAccessToken{TokenType: "Bearer", AccessToken: token, ExpiresAt: expiry.Format(time.RFC3339Nano)}, nil
 	}}
-	connection, err := link.DialDirectWithCredentials(t.Context(), directListener.Addr().String(), identity.ID, keys.DaemonCAPEM, credential)
+	connection, err := link.DialDaemon(certificate, daemonKey, credential, link.TCPDialer(directListener.Addr().String()))
 	if err != nil {
 		t.Fatal(err)
 	}

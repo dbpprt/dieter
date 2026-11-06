@@ -4,21 +4,26 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import com.getdieter.mobile.design.*
 
-/** The four primary destinations. */
+/**
+ * The primary destinations, in navigation order. More holds everything else: channels, terminals,
+ * the machines and the account pages.
+ */
 enum class MobileTab(val title: String) {
     INBOX("Inbox"),
+    MAIL("Mail"),
     PROJECTS("Projects"),
     CHATS("Chats"),
-    TOOLS("Tools"),
+    MORE("More"),
 }
 
 internal val MobileTab.glyph: Glyph
     get() =
         when (this) {
             MobileTab.INBOX -> Glyph.INBOX
+            MobileTab.MAIL -> Glyph.MAIL
             MobileTab.PROJECTS -> Glyph.PROJECTS
             MobileTab.CHATS -> Glyph.CHATS
-            MobileTab.TOOLS -> Glyph.TOOLS
+            MobileTab.MORE -> Glyph.TOOLS
         }
 
 /** What a tablet's empty detail column shows for each tab. */
@@ -33,13 +38,31 @@ internal val MobileTab.emptyDetail: EmptyDetail
                     "No conversation selected",
                     "Choose an item from your inbox.",
                 )
+            MobileTab.MAIL ->
+                EmptyDetail(Glyph.MAIL, "No message selected", "Choose a message to read it.")
             MobileTab.PROJECTS ->
                 EmptyDetail(Glyph.BOARD, "No task selected", "Open a board and choose a task.")
             MobileTab.CHATS ->
                 EmptyDetail(Glyph.CHATS, "No chat selected", "Choose a chat or start a new one.")
-            MobileTab.TOOLS ->
-                EmptyDetail(Glyph.TOOLS, "No tool selected", "Choose a tool to open it here.")
+            MobileTab.MORE ->
+                EmptyDetail(
+                    Glyph.TOOLS,
+                    "Nothing selected",
+                    "Choose a channel, a machine or a setting.",
+                )
         }
+
+/** A list's empty detail column, where the list has its own wording. */
+internal fun MobileRoute.emptyDetail(tab: MobileTab): EmptyDetail =
+    when (this) {
+        is MobileRoute.Channels ->
+            EmptyDetail(
+                Glyph.TAG,
+                "No channel selected",
+                "Choose a channel to read what its agents tell each other.",
+            )
+        else -> tab.emptyDetail
+    }
 
 /** Secondary views of an open conversation. */
 enum class CardPane(val title: String, internal val glyph: Glyph) {
@@ -50,17 +73,23 @@ enum class CardPane(val title: String, internal val glyph: Glyph) {
     PROCESSES("Processes", Glyph.PROCESSES),
 }
 
-/** Machine, workspace and app tools. */
+/**
+ * Pages opened from a context. Files, Changes and Schedules belong to a project and always carry
+ * its ID; Terminals lists every machine's shells; the rest are account pages in More.
+ */
 enum class ToolPage(val title: String, internal val glyph: Glyph, internal val tint: Long) {
-    MACHINES("Machines", Glyph.MACHINE, 0xFF0A84FF),
     TERMINALS("Terminals", Glyph.TERMINAL, 0xFF3A3A3C),
-    SCREENS("Screens", Glyph.SCREENS, 0xFF5E5CE6),
     FILES("Files", Glyph.FOLDER, 0xFF0A9EF5),
     CHANGES("Changes", Glyph.CHANGES, 0xFFFF9F0A),
     SCHEDULES("Schedules", Glyph.SCHEDULES, 0xFFFF453A),
     USAGE("Usage", Glyph.USAGE, 0xFF30B158),
+    DEVICES("Devices", Glyph.DEVICES, 0xFF32ADE6),
     SETTINGS("Settings", Glyph.SETTINGS, 0xFF8E8E93),
 }
+
+/** Tools that need a project. */
+internal val ToolPage.projectScoped: Boolean
+    get() = this == ToolPage.FILES || this == ToolPage.CHANGES || this == ToolPage.SCHEDULES
 
 internal val ToolPage.color: Color
     get() = Color(tint)
@@ -98,13 +127,30 @@ sealed class MobileRoute {
         override val immersive = true
     }
 
+    /** The account's project channels; opened from More. */
+    data object Channels : MobileRoute() {
+        override val key = "channels"
+        override val list = true
+    }
+
+    /** A project's agent channel: its stream, composer and members. */
+    data class Channel(val projectId: String) : MobileRoute() {
+        override val key = "channel/$projectId"
+        override val immersive = true
+    }
+
     data class Pane(val cardId: String, val pane: CardPane) : MobileRoute() {
         override val key = "pane/$cardId/${pane.name.lowercase()}"
         override val immersive = true
     }
 
-    data class Tool(val page: ToolPage, val projectId: String = "") : MobileRoute() {
-        override val key = "tool/${page.name.lowercase()}/$projectId"
+    /**
+     * A tool page. Project tools carry their [projectId]; Files and Changes also the [checkoutId]
+     * they show, empty for the project's default.
+     */
+    data class Tool(val page: ToolPage, val projectId: String = "", val checkoutId: String = "") :
+        MobileRoute() {
+        override val key = "tool/${page.name.lowercase()}/$projectId/$checkoutId"
     }
 
     data class NewTask(val chat: Boolean) : MobileRoute() {
@@ -116,11 +162,28 @@ sealed class MobileRoute {
         override val key = "share/${if (chat) "chat" else "task"}"
     }
 
-    /** A folder or document below a Files root; [cardId] scopes it to a conversation. */
-    data class FilePath(val path: String, val file: Boolean, val cardId: String = "") :
-        MobileRoute() {
-        override val key = "file/$cardId/${if (file) "doc" else "dir"}/$path"
+    /**
+     * A folder or document below a Files root; [cardId] scopes it to a conversation, a [checkoutId]
+     * on [daemonId] (in [projectId]) to that checkout, e.g. a workspace link in mail.
+     */
+    data class FilePath(
+        val path: String,
+        val file: Boolean,
+        val cardId: String = "",
+        val daemonId: String = "",
+        val projectId: String = "",
+        val checkoutId: String = "",
+    ) : MobileRoute() {
+        override val key =
+            "file/" +
+                (if (checkoutId.isEmpty()) cardId else "$daemonId:$checkoutId") +
+                "/${if (file) "doc" else "dir"}/$path"
         override val immersive = cardId.isNotEmpty() || file
+    }
+
+    /** A mail message on [daemonId], beside the mailbox on wide layouts. */
+    data class MailMessage(val daemonId: String, val id: String) : MobileRoute() {
+        override val key = "mail/$daemonId/$id"
     }
 
     data class Machine(val machineId: String) : MobileRoute() {

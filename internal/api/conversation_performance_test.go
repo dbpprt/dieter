@@ -20,6 +20,7 @@ import (
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/replication/crdt"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit"
 	"github.com/shirou/gopsutil/v4/process"
 	"google.golang.org/protobuf/proto"
@@ -110,29 +111,29 @@ func TestChangesCarryOnlyOwnedConversations(t *testing.T) {
 	var logs bytes.Buffer
 	api, localCard := performanceConversation(t, slog.New(slog.NewTextHandler(&logs, nil)))
 	local := api.server.store
-	identity, err := local.BindPeerAccount("performance", "subject", "local", "https://gateway.test")
+	identity, err := local.Replica.BindPeerAccount("performance", "subject", "local", "https://gateway.test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := local.UpdateCardCache(localCard.ID, store.CardCacheInput{Runtime: "running"}); err != nil {
+	if _, err := local.Kanban.UpdateCardCache(localCard.ID, kanban.CardCacheInput{Runtime: "running"}); err != nil {
 		t.Fatal(err)
 	}
 	remoteAPI, remoteCard := performanceConversation(t, nil)
 	remote := remoteAPI.server.store
-	if _, err := remote.BindPeerAccount("performance", "subject", "remote", "https://gateway.test"); err != nil {
+	if _, err := remote.Replica.BindPeerAccount("performance", "subject", "remote", "https://gateway.test"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := remote.UpdateCardCache(remoteCard.ID, store.CardCacheInput{Runtime: "running"}); err != nil {
+	if _, err := remote.Kanban.UpdateCardCache(remoteCard.ID, kanban.CardCacheInput{Runtime: "running"}); err != nil {
 		t.Fatal(err)
 	}
-	data, err := remote.PeerData(identity.Account)
+	data, err := remote.Replica.PeerData(identity.Account)
 	if err != nil {
 		t.Fatal(err)
 	}
 	records := data.Sorted()
 	for len(records) > 0 {
 		n := min(crdt.PageSize, len(records))
-		if err := local.MergePeerRecords(identity, records[:n]); err != nil {
+		if err := local.Replica.MergePeerRecords(identity, records[:n]); err != nil {
 			t.Fatal(err)
 		}
 		records = records[n:]
@@ -177,11 +178,11 @@ func performanceConversation(tb testing.TB, logger *slog.Logger) (*service, mode
 	}
 	data := store.New(tb.TempDir())
 	tb.Cleanup(func() { _ = data.Close() })
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Performance", Path: repo})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Performance", Path: repo})
 	if err != nil {
 		tb.Fatal(err)
 	}
-	card, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Bounded transcript"})
+	card, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Bounded transcript"})
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -189,7 +190,7 @@ func performanceConversation(tb testing.TB, logger *slog.Logger) (*service, mode
 	for i := range messages {
 		messages[i] = model.UIMessage{ID: string(rune('a' + i)), Role: "assistant", Parts: []model.UIMessagePart{{Type: "text", Text: strings.Repeat("text ", 1600)}}}
 	}
-	if _, err := data.InitializeForkConversation(card.ID, messages); err != nil {
+	if _, err := data.Conversations.InitializeFork(card.ID, messages); err != nil {
 		tb.Fatal(err)
 	}
 	return newService(NewWithRunner(data, logger, newFakeRunner())), card
@@ -228,7 +229,7 @@ func TestResumedConversationAcknowledgesFreshMetadataWithoutResendingMessages(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := api.server.store.RenameCard(card.ID, "Updated metadata"); err != nil {
+	if _, err := api.server.store.Kanban.RenameCard(card.ID, "Updated metadata"); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
@@ -262,13 +263,13 @@ func TestConversationWatchRefreshesMetadataAndCrossProcessTranscript(t *testing.
 		frames++
 		switch frames {
 		case 1:
-			_, err := other.RenameCard(card.ID, "Updated metadata")
+			_, err := other.Kanban.RenameCard(card.ID, "Updated metadata")
 			return err
 		case 2:
 			if update.GetDetail().GetCard().GetTitle() != "Updated metadata" {
 				t.Fatal("metadata-only update was skipped")
 			}
-			_, err := other.StartConversationTurn(card.ID, "turn", "new-message", "A new message")
+			_, err := other.Conversations.StartTurn(card.ID, "turn", "new-message", "A new message")
 			return err
 		case 3:
 			if len(update.ChangedMessages) != 1 || update.ChangedMessages[0].Id != "new-message" {
@@ -289,7 +290,7 @@ func TestConversationWatchSkipsTranscriptBuildForOtherCardMetadata(t *testing.T)
 	api, card := performanceConversation(t, slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	other := store.New(api.server.store.Root)
 	defer other.Close()
-	unrelated, err := other.CreateChat(store.CreateCardInput{Project: card.ProjectID, Title: "Other card"})
+	unrelated, err := other.Kanban.CreateChat(kanban.CreateCardInput{Project: card.ProjectID, Title: "Other card"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +319,7 @@ func TestConversationWatchSkipsTranscriptBuildForOtherCardMetadata(t *testing.T)
 		t.Fatal("watch did not start")
 	}
 	for range 2 {
-		if _, err := other.RenameCard(unrelated.ID, "Updated metadata"); err != nil {
+		if _, err := other.Kanban.RenameCard(unrelated.ID, "Updated metadata"); err != nil {
 			cancel()
 			<-done
 			t.Fatal(err)
@@ -326,7 +327,7 @@ func TestConversationWatchSkipsTranscriptBuildForOtherCardMetadata(t *testing.T)
 		// Give the real notification/debounce path a separate delivery window.
 		time.Sleep(350 * time.Millisecond)
 	}
-	if _, err := other.RenameCard(card.ID, "Updated metadata"); err != nil {
+	if _, err := other.Kanban.RenameCard(card.ID, "Updated metadata"); err != nil {
 		cancel()
 		<-done
 		t.Fatal(err)
@@ -349,7 +350,7 @@ func TestConversationWatchSkipsTranscriptBuildForOtherCardMetadata(t *testing.T)
 func TestConversationWatchRevisionIgnoresUnrelatedTokens(t *testing.T) {
 	t.Parallel()
 	api, card := performanceConversation(t, nil)
-	other, err := api.server.store.CreateChat(store.CreateCardInput{Project: card.ProjectID, Title: "other stream"})
+	other, err := api.server.store.Kanban.CreateChat(kanban.CreateCardInput{Project: card.ProjectID, Title: "other stream"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -358,7 +359,7 @@ func TestConversationWatchRevisionIgnoresUnrelatedTokens(t *testing.T) {
 		t.Fatal(err)
 	}
 	for range 5 {
-		if _, _, err := api.server.store.AppendUIChunk(other.ID, "turn", json.RawMessage(`{"type":"text-delta","delta":"token"}`)); err != nil {
+		if _, _, err := api.server.store.Conversations.AppendUIChunk(other.ID, "turn", json.RawMessage(`{"type":"text-delta","delta":"token"}`)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -366,7 +367,7 @@ func TestConversationWatchRevisionIgnoresUnrelatedTokens(t *testing.T) {
 	if err != nil || pending || after != before {
 		t.Fatalf("unrelated tokens invalidated selected transcript: %+v %+v %v", before, after, err)
 	}
-	if _, err := api.server.store.RenameCard(card.ID, "Updated metadata"); err != nil {
+	if _, err := api.server.store.Kanban.RenameCard(card.ID, "Updated metadata"); err != nil {
 		t.Fatal(err)
 	}
 	after, _, err = api.server.conversationWatchRevision(card.ID)
@@ -385,7 +386,7 @@ func TestConversationCommitDeliveryDoesNotWaitForRecoveryPoll(t *testing.T) {
 	err := api.server.watchConversation(ctx, &dieterv1.WatchConversationRequest{CardId: card.ID}, func(update *dieterv1.ConversationUpdate) error {
 		frames++
 		if frames == 1 {
-			_, err := api.server.store.RenameCard(card.ID, "Updated metadata")
+			_, err := api.server.store.Kanban.RenameCard(card.ID, "Updated metadata")
 			committed = time.Now()
 			return err
 		}
@@ -462,7 +463,7 @@ func performanceToolConversation(tb testing.TB, count int) (*service, model.Card
 			{Type: "tool", ToolCallID: fmt.Sprint(i), ToolName: "exec", State: "output-available", Output: output},
 		}}
 	}
-	if _, err := api.server.store.InitializeForkConversation(card.ID, messages); err != nil {
+	if _, err := api.server.store.Conversations.InitializeFork(card.ID, messages); err != nil {
 		tb.Fatal(err)
 	}
 	if _, err := api.server.conversationSnapshot(card.ID, 30, nil); err != nil {
@@ -482,7 +483,7 @@ func BenchmarkToolHeavyConversationMetadata(b *testing.B) {
 	}
 	b.ReportAllocs()
 	for b.Loop() {
-		detail, err := api.server.store.CardDetail(card.ID)
+		detail, err := api.server.store.Kanban.CardDetail(card.ID)
 		if err != nil {
 			b.Fatal(err)
 		}

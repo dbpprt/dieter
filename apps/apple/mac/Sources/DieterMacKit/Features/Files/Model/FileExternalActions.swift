@@ -7,7 +7,7 @@ struct FileOpeningApplication: Identifiable, Equatable {
     let isDefault: Bool
     var id: String { url.path }
 
-    @MainActor
+    /// Reads Launch Services and each app's bundle, so callers may run it off the main actor.
     static func available(for url: URL, workspace: NSWorkspace = .shared) -> [Self] {
         let preferred = workspace.urlForApplication(toOpen: url)?.standardizedFileURL.resolvingSymlinksInPath()
         let urls = workspace.urlsForApplications(toOpen: url) + (preferred.map { [$0] } ?? [])
@@ -73,7 +73,6 @@ struct FileExternalActions {
         return Self(displayPath: candidate.path, fileURL: canonicalFile, unavailableReason: nil)
     }
 
-    @MainActor
     mutating func loadApplications(workspace: NSWorkspace = .shared) {
         guard let fileURL else { return }
         applications = FileOpeningApplication.available(for: fileURL, workspace: workspace)

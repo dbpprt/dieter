@@ -114,6 +114,8 @@ final class RemoteDesktopController {
     var active: Bool { session.active }
     var capabilities: Dieter_V1_RemoteDesktopCapabilities { session.capabilities }
     var sessionState: Dieter_V1_RemoteDesktopSessionState { session.sessionState }
+    var hostControlActive: Bool { session.hostControlActive }
+    var codec: String { session.codec }
     var routeLabel: String { session.routeLabel }
     /// Why the session failed, while it has.
     var errorMessage: String? { session.failed ? session.problem : nil }

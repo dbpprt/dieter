@@ -9,13 +9,66 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/conversations"
+	"github.com/dbpprt/dieter/internal/store/home"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 )
+
+func TestStreamBatchesDoNotReacquireWriterForUnchangedRuntime(t *testing.T) {
+	t.Parallel()
+	service, _, project, board := appSetup(t)
+	defer service.Store.Close()
+	var admissions atomic.Int64
+	service.Store.SetWriterObserver(func(home.WriterSample) { admissions.Add(1) })
+	service.Runner = batchRunnerFunc(func(_ context.Context, request harness.Request, emit func(harness.Output) error) error {
+		if err := emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(`{"type":"start","messageId":"` + request.ResponseMessageID + `"}`)}); err != nil {
+			return err
+		}
+		for range 4 {
+			if err := emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(`{"type":"text-start","id":"text"}`)}); err != nil {
+				return err
+			}
+			before := admissions.Load()
+			if err := emit(tokenOutput("x")); err != nil {
+				return err
+			}
+			// Text-end flushes the pending delta and persists its own chunk.
+			// Heartbeats deliberately do not flush. One delta keeps the count
+			// independent of timer scheduling on a busy runner.
+			if err := emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(`{"type":"text-end","id":"text"}`)}); err != nil {
+				return err
+			}
+			if got := admissions.Load() - before; got != 2 {
+				return fmt.Errorf("unchanged runtime acquired writer %d times, want two durable appends", got)
+			}
+		}
+		return emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(`{"type":"finish"}`)})
+	})
+	card, err := service.Store.Kanban.CreateCard(kanban.CreateCardInput{Project: project.ID, Board: board.ID, Title: "runtime transitions", Provider: "codex", Model: "gpt-5.5", WorkspaceMode: model.WorkspaceModeProject})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updates, err := service.StartCard(card.ID, "stream", "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for update := range updates {
+		if update.Err != nil {
+			t.Error(update.Err)
+		}
+	}
+	current, err := service.Store.Kanban.ResolveCard(card.ID)
+	if err != nil || current.Runtime != "idle" || current.ResponseSeq == 0 {
+		t.Fatalf("lost final runtime or receipt: %+v %v", current, err)
+	}
+}
 
 type batchRunnerFunc func(context.Context, harness.Request, func(harness.Output) error) error
 
@@ -52,7 +105,7 @@ func TestTurnBatchBoundsOrderAndOwnedBuffers(t *testing.T) {
 				return err
 			}
 		}
-		for _, length := range []int{40000, 40000, store.MaxUIChunkBatchBytes + 1} {
+		for _, length := range []int{40000, 40000, conversations.MaxUIChunkBatchBytes + 1} {
 			value := strings.Repeat("x", length)
 			want = append(want, value)
 			if err := emit(tokenOutput(value)); err != nil {
@@ -76,7 +129,7 @@ func TestTurnBatchBoundsOrderAndOwnedBuffers(t *testing.T) {
 		for _, chunk := range chunks {
 			size += len(chunk)
 		}
-		if size > store.MaxUIChunkBatchBytes || len(chunks) > store.MaxUIChunkBatchEvents {
+		if size > conversations.MaxUIChunkBatchBytes || len(chunks) > conversations.MaxUIChunkBatchEvents {
 			t.Errorf("unbounded batch: %d events %d bytes", len(chunks), size)
 		}
 		sizes = append(sizes, len(chunks))
@@ -216,13 +269,13 @@ func TestBatchedTurnPublishesOnlyPersistedChunksAndRetainsTrailingSession(t *tes
 		}
 		// The finish commit shows the reply as complete while the turn still
 		// holds the card for its trailing state.
-		card, err := service.Store.ResolveCard(request.SessionID)
+		card, err := service.Store.Kanban.ResolveCard(request.SessionID)
 		if err != nil || card.Runtime != model.RuntimeFinishing {
 			return fmt.Errorf("turn did not finish while retaining trailing state: runtime=%s error=%v", card.Runtime, err) //nolint:errorlint // err may be nil; reported as text
 		}
 		return emit(harness.Output{Type: "session", State: json.RawMessage(`{"type":"resume-session","data":{"session":"batch"}}`)})
 	})
-	card, err := service.Store.CreateCard(store.CreateCardInput{Project: project.ID, Board: board.ID, Title: "batched", Provider: "codex", Model: "gpt-5.5", WorkspaceMode: model.WorkspaceModeProject})
+	card, err := service.Store.Kanban.CreateCard(kanban.CreateCardInput{Project: project.ID, Board: board.ID, Title: "batched", Provider: "codex", Model: "gpt-5.5", WorkspaceMode: model.WorkspaceModeProject})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,14 +300,14 @@ func TestBatchedTurnPublishesOnlyPersistedChunksAndRetainsTrailingSession(t *tes
 		if chunk.Type == "text-delta" {
 			visible.WriteString(chunk.Delta)
 			deltas++
-			conversation, err := reader.Conversation(card.ID)
+			conversation, err := reader.Conversations.Get(card.ID)
 			if err != nil || len(conversation.Messages) < 2 || !strings.HasPrefix(conversation.Messages[1].Parts[0].Text, visible.String()) {
 				t.Errorf("client saw an unpersisted chunk: %v", err)
 			}
 		}
 		done = done || update.Done
 	}
-	conversation, err := reader.Conversation(card.ID)
+	conversation, err := reader.Conversations.Get(card.ID)
 	if err != nil || !done || deltas != 96 || conversation.Status != "idle" || !strings.Contains(string(conversation.Session), "batch") || conversation.Messages[1].Parts[0].Text != visible.String() {
 		t.Fatalf("completed batch turn lost data: deltas=%d done=%v conversation=%+v err=%v", deltas, done, conversation, err)
 	}
@@ -294,7 +347,7 @@ func TestBatchedTurnJournalFailureDoesNotPublishOrReplayTokens(t *testing.T) {
 			return errors.New("failed persistence did not stop the runner")
 		}
 	})
-	card, err := service.Store.CreateCard(store.CreateCardInput{Project: project.ID, Board: board.ID, Title: "write failure", Provider: "codex", Model: "gpt-5.5", WorkspaceMode: model.WorkspaceModeProject})
+	card, err := service.Store.Kanban.CreateCard(kanban.CreateCardInput{Project: project.ID, Board: board.ID, Title: "write failure", Provider: "codex", Model: "gpt-5.5", WorkspaceMode: model.WorkspaceModeProject})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,7 +366,7 @@ func TestBatchedTurnJournalFailureDoesNotPublishOrReplayTokens(t *testing.T) {
 	}
 	reader := store.New(service.Store.Root)
 	defer reader.Close()
-	conversation, err := reader.Conversation(card.ID)
+	conversation, err := reader.Conversations.Get(card.ID)
 	raw, _ := json.Marshal(conversation)
 	if err != nil || failure == nil || !strings.Contains(failure.Error(), "events.ndjson") || conversation.Status != "failed" || strings.Contains(string(raw), "must not be acknowledged") {
 		t.Fatalf("persistence failure lost/replayed: failure=%v conversation=%s err=%v", failure, raw, err)

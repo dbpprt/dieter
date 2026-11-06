@@ -97,8 +97,9 @@ When an agent reveals a password, Dieter redacts that value from the stored
 transcript for the rest of the turn. The model provider still receives the
 tool output, which is another reason to prefer `exec`.
 
-`dieter vault audit` lists this machine's vault access: who asked, from which
-conversation and route, for which item and fields, and whether it was allowed.
+`dieter vault audit` lists this machine's vault access: who asked (for a remote
+call, the account and the calling device), from which conversation and route,
+for which item and fields, and whether it was allowed.
 The audit log never contains secret values.
 
 ## Security notes
@@ -107,9 +108,10 @@ The audit log never contains secret values.
   in `DIETER_HOME/vault/member.json`, readable only by your user. The vault keys
   are sealed to each member's key. Items are encrypted with AES-256-GCM and
   bound to the vault and item IDs.
-- Vault commands that return decrypted content refuse the gateway relay route,
-  because the gateway can read relayed payloads. Run them on a member machine,
-  or use `--machine` over a direct TLS or WebRTC route.
+- Every remote route, the gateway relay included, is TLS between two
+  [trusted devices](/docs/security/#trusted-devices), so decrypted content
+  never reaches the gateway, and `--machine` works over any route. The audit
+  log records which device asked.
 - Agents run as your user without a sandbox. Vault access rules guard against
   accidental use and leave an audit trail, but an agent that reads your files
   directly can bypass them. Grant vault access only to work that needs it.

@@ -81,9 +81,10 @@ Not product configuration.
 
 | Variable                                                                                                                             | Consumer                                                                                                          |
 | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| `DIETER_ISOLATED_*` (`ADDR`, `TOKEN`, `DAEMON`, `INCOMPATIBLE_DAEMON`, `SECOND_DAEMON`, `PROJECT`, `BOARD`)                          | Printed by `tools/fixtures/gateway` before `READY`; read by the Kotlin, Mac and Maestro tests. A stable contract. |
+| `DIETER_ISOLATED_*` (`ADDR`, `TOKEN`, `PAIRING_CODE`, `DAEMON`, `INCOMPATIBLE_DAEMON`, `SECOND_DAEMON`, `PROJECT`, `BOARD`)          | Printed by `tools/fixtures/gateway` before `READY`; read by the Kotlin, Mac and Maestro tests. A stable contract. |
 | `DIETER_TEST_TURN_CONFIG`                                                                                                            | `tools/fixtures/fixtureturn`                                                                                      |
 | `DIETER_PERFORMANCE_SWEEP`, `DIETER_PERFORMANCE_LONG_TURN`, `DIETER_TEST_CONTROL_WEBRTC`, `DIETER_FIXTURE_WRITER_PATH`               | `tools/fixtures/gateway`                                                                                          |
+| `DIETER_PERFORMANCE_STREAMS`                                                                                                         | `tools/fixtures/gateway`: that many chats stream like busy agents, among 200 idle ones, until the fixture stops   |
 | `DIETER_TEST_CAPTURE_*`                                                                                                              | Native capture helpers and remote desktop tests                                                                   |
 | `DIETER_TEST_*`, `DIETER_UPDATE_*_FIXTURE`, `DIETER_RUNTIME_TEST_ROOT`, `DIETER_SIGNED_*`, `DIETER_DSH_E2E_API_KEY`, `DIETER_PEER_*` | Opt-in Go tests and golden-vector regeneration                                                                    |
 

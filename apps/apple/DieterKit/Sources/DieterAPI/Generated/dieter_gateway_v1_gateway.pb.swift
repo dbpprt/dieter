@@ -372,15 +372,6 @@ public nonisolated enum Dieter_Gateway_V1_DaemonLinkFrameKind: SwiftProtobuf.Enu
   case helloAck // = 2
   case heartbeat // = 3
   case routes // = 4
-  case openRpc // = 5
-  case requestMessage // = 6
-  case requestEnd // = 7
-  case cancelRpc // = 8
-  case responseHeader // = 9
-  case responseMessage // = 10
-  case responseEnd // = 11
-  case rpcError // = 12
-  case windowUpdate // = 13
   case ping // = 14
   case pong // = 15
   case providerAccounts // = 16
@@ -388,6 +379,21 @@ public nonisolated enum Dieter_Gateway_V1_DaemonLinkFrameKind: SwiftProtobuf.Enu
   case providerQuotaRefreshResult // = 18
   case providerQuotaResetRequest // = 19
   case providerQuotaResetResult // = 20
+
+  /// Gateway to daemon: a client opened tunnel stream_id on this lane.
+  case tunnelOpen // = 21
+
+  /// Daemon to gateway: the tunnel reached the daemon's TLS endpoint.
+  case tunnelOpened // = 22
+
+  /// Opaque tunnel bytes, at most 64 KiB per frame.
+  case tunnelData // = 23
+
+  /// The receiver consumed credit DATA frames; the sender may send that many more.
+  case tunnelWindow // = 24
+
+  /// Either side ends the tunnel; status_code/status_message explain why.
+  case tunnelClose // = 25
   case UNRECOGNIZED(Int)
 
   public init() {
@@ -401,15 +407,6 @@ public nonisolated enum Dieter_Gateway_V1_DaemonLinkFrameKind: SwiftProtobuf.Enu
     case 2: self = .helloAck
     case 3: self = .heartbeat
     case 4: self = .routes
-    case 5: self = .openRpc
-    case 6: self = .requestMessage
-    case 7: self = .requestEnd
-    case 8: self = .cancelRpc
-    case 9: self = .responseHeader
-    case 10: self = .responseMessage
-    case 11: self = .responseEnd
-    case 12: self = .rpcError
-    case 13: self = .windowUpdate
     case 14: self = .ping
     case 15: self = .pong
     case 16: self = .providerAccounts
@@ -417,6 +414,11 @@ public nonisolated enum Dieter_Gateway_V1_DaemonLinkFrameKind: SwiftProtobuf.Enu
     case 18: self = .providerQuotaRefreshResult
     case 19: self = .providerQuotaResetRequest
     case 20: self = .providerQuotaResetResult
+    case 21: self = .tunnelOpen
+    case 22: self = .tunnelOpened
+    case 23: self = .tunnelData
+    case 24: self = .tunnelWindow
+    case 25: self = .tunnelClose
     default: self = .UNRECOGNIZED(rawValue)
     }
   }
@@ -428,15 +430,6 @@ public nonisolated enum Dieter_Gateway_V1_DaemonLinkFrameKind: SwiftProtobuf.Enu
     case .helloAck: return 2
     case .heartbeat: return 3
     case .routes: return 4
-    case .openRpc: return 5
-    case .requestMessage: return 6
-    case .requestEnd: return 7
-    case .cancelRpc: return 8
-    case .responseHeader: return 9
-    case .responseMessage: return 10
-    case .responseEnd: return 11
-    case .rpcError: return 12
-    case .windowUpdate: return 13
     case .ping: return 14
     case .pong: return 15
     case .providerAccounts: return 16
@@ -444,6 +437,11 @@ public nonisolated enum Dieter_Gateway_V1_DaemonLinkFrameKind: SwiftProtobuf.Enu
     case .providerQuotaRefreshResult: return 18
     case .providerQuotaResetRequest: return 19
     case .providerQuotaResetResult: return 20
+    case .tunnelOpen: return 21
+    case .tunnelOpened: return 22
+    case .tunnelData: return 23
+    case .tunnelWindow: return 24
+    case .tunnelClose: return 25
     case .UNRECOGNIZED(let i): return i
     }
   }
@@ -455,15 +453,6 @@ public nonisolated enum Dieter_Gateway_V1_DaemonLinkFrameKind: SwiftProtobuf.Enu
     .helloAck,
     .heartbeat,
     .routes,
-    .openRpc,
-    .requestMessage,
-    .requestEnd,
-    .cancelRpc,
-    .responseHeader,
-    .responseMessage,
-    .responseEnd,
-    .rpcError,
-    .windowUpdate,
     .ping,
     .pong,
     .providerAccounts,
@@ -471,6 +460,11 @@ public nonisolated enum Dieter_Gateway_V1_DaemonLinkFrameKind: SwiftProtobuf.Enu
     .providerQuotaRefreshResult,
     .providerQuotaResetRequest,
     .providerQuotaResetResult,
+    .tunnelOpen,
+    .tunnelOpened,
+    .tunnelData,
+    .tunnelWindow,
+    .tunnelClose,
   ]
 
 }
@@ -515,6 +509,200 @@ public nonisolated enum Dieter_Gateway_V1_RelayLane: SwiftProtobuf.Enum, Swift.C
     .replication,
     .command,
     .subscription,
+  ]
+
+}
+
+public nonisolated enum Dieter_Gateway_V1_TunnelFrameKind: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+
+  /// Client to gateway, first frame only: daemon_id and lane.
+  case `open` // = 1
+
+  /// Gateway to client: the daemon accepted the tunnel.
+  case opened // = 2
+
+  /// Opaque bytes, at most 64 KiB per frame.
+  case data // = 3
+
+  /// The receiver consumed credit DATA frames.
+  case window // = 4
+
+  /// Ends the tunnel in both directions.
+  case close // = 5
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .open
+    case 2: self = .opened
+    case 3: self = .data
+    case 4: self = .window
+    case 5: self = .close
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .open: return 1
+    case .opened: return 2
+    case .data: return 3
+    case .window: return 4
+    case .close: return 5
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Dieter_Gateway_V1_TunnelFrameKind] = [
+    .unspecified,
+    .open,
+    .opened,
+    .data,
+    .window,
+    .close,
+  ]
+
+}
+
+public nonisolated enum Dieter_Gateway_V1_DeviceKind: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+
+  /// An enrolled machine running the daemon (and its CLI).
+  case daemon // = 1
+
+  /// A native app.
+  case client // = 2
+
+  /// An offline recovery key. It may sign roster entries but never connects.
+  case recovery // = 3
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .daemon
+    case 2: self = .client
+    case 3: self = .recovery
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .daemon: return 1
+    case .client: return 2
+    case .recovery: return 3
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Dieter_Gateway_V1_DeviceKind] = [
+    .unspecified,
+    .daemon,
+    .client,
+    .recovery,
+  ]
+
+}
+
+public nonisolated enum Dieter_Gateway_V1_DeviceKeyAlgorithm: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+
+  /// Signature over the canonical entry bytes.
+  case ed25519 // = 1
+
+  /// DER ECDSA signature over SHA-256 of the canonical entry bytes.
+  case ecdsaP256Sha256 // = 2
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .ed25519
+    case 2: self = .ecdsaP256Sha256
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .ed25519: return 1
+    case .ecdsaP256Sha256: return 2
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Dieter_Gateway_V1_DeviceKeyAlgorithm] = [
+    .unspecified,
+    .ed25519,
+    .ecdsaP256Sha256,
+  ]
+
+}
+
+public nonisolated enum Dieter_Gateway_V1_DeviceRosterOperation: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+
+  /// Sequence 0, self-signed by the account's first device.
+  case genesis // = 1
+  case add // = 2
+  case revoke // = 3
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .genesis
+    case 2: self = .add
+    case 3: self = .revoke
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .genesis: return 1
+    case .add: return 2
+    case .revoke: return 3
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Dieter_Gateway_V1_DeviceRosterOperation] = [
+    .unspecified,
+    .genesis,
+    .add,
+    .revoke,
   ]
 
 }
@@ -880,9 +1068,9 @@ public nonisolated struct Dieter_Gateway_V1_DaemonCredential: Sendable {
 
   public var daemonName: String = String()
 
+  /// The gateway's enrollment certificate. The daemon presents it only to the
+  /// gateway; clients and peers trust the device roster instead.
   public var certificatePem: Data = Data()
-
-  public var daemonCaPem: Data = Data()
 
   public var gatewaySigningPublicKey: Data = Data()
 
@@ -919,8 +1107,8 @@ public nonisolated struct Dieter_Gateway_V1_ExchangeDaemonTokenRequest: Sendable
 
   public var daemonID: String = String()
 
-  /// Reserved for a future proof-of-possession token profile. Empty for the
-  /// current short-lived bearer profile.
+  /// The caller's roster device ID. The token is bound to it: the daemon
+  /// accepts the token only over TLS authenticated by that device's key.
   public var clientKeyThumbprint: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -980,15 +1168,6 @@ public nonisolated struct Dieter_Gateway_V1_DaemonRoute: Sendable {
   public var directCandidates: [Dieter_Gateway_V1_DirectCandidate] = []
 
   public var generation: UInt64 = 0
-
-  /// Trust anchor for direct daemon TLS. It is returned only to the owning
-  /// authenticated account and is never needed for the gateway relay path.
-  public var daemonCaPem: Data = Data()
-
-  /// The authenticated owner uses the enrolled leaf certificate to verify
-  /// daemon-signed remote-desktop session bindings on both relay and direct
-  /// signaling routes.
-  public var daemonCertificatePem: Data = Data()
 
   public var controlWebrtc: Bool = false
 
@@ -1731,6 +1910,7 @@ public nonisolated struct Dieter_Gateway_V1_DaemonLinkFrame: @unchecked Sendable
     set {_uniqueStorage()._kind = newValue}
   }
 
+  /// The tunnel this frame belongs to.
   public var streamID: UInt64 {
     get {_storage._streamID}
     set {_uniqueStorage()._streamID = newValue}
@@ -1746,29 +1926,10 @@ public nonisolated struct Dieter_Gateway_V1_DaemonLinkFrame: @unchecked Sendable
     set {_uniqueStorage()._requestID = newValue}
   }
 
-  public var method: String {
-    get {_storage._method}
-    set {_uniqueStorage()._method = newValue}
-  }
-
+  /// HELLO challenge proofs and TUNNEL_DATA bytes.
   public var payload: Data {
     get {_storage._payload}
     set {_uniqueStorage()._payload = newValue}
-  }
-
-  public var payloadSha256: Data {
-    get {_storage._payloadSha256}
-    set {_uniqueStorage()._payloadSha256 = newValue}
-  }
-
-  public var delegationAssertion: String {
-    get {_storage._delegationAssertion}
-    set {_uniqueStorage()._delegationAssertion = newValue}
-  }
-
-  public var deadlineUnixMillis: Int64 {
-    get {_storage._deadlineUnixMillis}
-    set {_uniqueStorage()._deadlineUnixMillis = newValue}
   }
 
   public var statusCode: Int32 {
@@ -1781,14 +1942,10 @@ public nonisolated struct Dieter_Gateway_V1_DaemonLinkFrame: @unchecked Sendable
     set {_uniqueStorage()._statusMessage = newValue}
   }
 
-  public var metadata: Dictionary<String,String> {
-    get {_storage._metadata}
-    set {_uniqueStorage()._metadata = newValue}
-  }
-
-  public var windowBytes: UInt32 {
-    get {_storage._windowBytes}
-    set {_uniqueStorage()._windowBytes = newValue}
+  /// TUNNEL_WINDOW: the number of DATA frames the receiver consumed.
+  public var credit: UInt32 {
+    get {_storage._credit}
+    set {_uniqueStorage()._credit = newValue}
   }
 
   public var releaseVersion: String {
@@ -1895,23 +2052,257 @@ public nonisolated struct Dieter_Gateway_V1_DaemonLinkFrame: @unchecked Sendable
     set {_uniqueStorage()._sessionID = newValue}
   }
 
-  /// Fragmented payloads retain one logical message bound. Metadata is carried
-  /// only by the first fragment; offsets must be contiguous within a stream.
-  public var payloadSize: UInt32 {
-    get {_storage._payloadSize}
-    set {_uniqueStorage()._payloadSize = newValue}
-  }
-
-  public var payloadOffset: UInt32 {
-    get {_storage._payloadOffset}
-    set {_uniqueStorage()._payloadOffset = newValue}
-  }
-
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
   fileprivate var _storage = _StorageClass.defaultInstance
+}
+
+/// TunnelFrame is one frame of a relay tunnel. Each side may have at most
+/// tunnel_window DATA frames (8) that the other side has not credited with a
+/// WINDOW frame; the gateway closes a tunnel whose peer exceeds it.
+public nonisolated struct Dieter_Gateway_V1_TunnelFrame: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var kind: Dieter_Gateway_V1_TunnelFrameKind = .unspecified
+
+  public var daemonID: String = String()
+
+  public var lane: Dieter_Gateway_V1_RelayLane = .control
+
+  public var data: Data = Data()
+
+  public var credit: UInt32 = 0
+
+  public var statusCode: Int32 = 0
+
+  public var statusMessage: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_Gateway_V1_DeviceDescriptor: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// "dv_" + lowercase Crockford base32 of the first 16 bytes of SHA-256(public_key).
+  public var deviceID: String = String()
+
+  public var kind: Dieter_Gateway_V1_DeviceKind = .unspecified
+
+  /// "macos", "linux", "ios", "android", "jvm", or "recovery". Display only.
+  public var platform: String = String()
+
+  /// Display only, at most 64 bytes.
+  public var name: String = String()
+
+  public var algorithm: Dieter_Gateway_V1_DeviceKeyAlgorithm = .unspecified
+
+  /// DER SubjectPublicKeyInfo.
+  public var publicKey: Data = Data()
+
+  /// The gateway daemon ID of a daemon device.
+  public var daemonID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_Gateway_V1_DeviceRosterEntry: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// "<gateway issuer>|github:<numeric id>"; binds the roster to one account.
+  public var account: String = String()
+
+  public var sequence: UInt64 = 0
+
+  /// SHA-256 of the previous entry's canonical bytes; empty for genesis.
+  public var previous: Data = Data()
+
+  public var operation: Dieter_Gateway_V1_DeviceRosterOperation = .unspecified
+
+  /// The added device, or the revoked device (device_id is enough).
+  public var device: Dieter_Gateway_V1_DeviceDescriptor {
+    get {_device ?? Dieter_Gateway_V1_DeviceDescriptor()}
+    set {_device = newValue}
+  }
+  /// Returns true if `device` has been explicitly set.
+  public var hasDevice: Bool {self._device != nil}
+  /// Clears the value of `device`. Subsequent reads from it will return its default value.
+  public mutating func clearDevice() {self._device = nil}
+
+  /// Device ID of the member that signed this entry.
+  public var signer: String = String()
+
+  /// RFC 3339; informational.
+  public var createdAt: String = String()
+
+  public var signature: Data = Data()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _device: Dieter_Gateway_V1_DeviceDescriptor? = nil
+}
+
+public nonisolated struct Dieter_Gateway_V1_DeviceRoster: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var entries: [Dieter_Gateway_V1_DeviceRosterEntry] = []
+
+  /// Sequence and hash of the newest entry, when any exists.
+  public var headSequence: UInt64 = 0
+
+  public var headHash: Data = Data()
+
+  /// Total number of entries; 0 before the account has a roster.
+  public var length: UInt64 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_Gateway_V1_GetDeviceRosterRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var fromSequence: UInt64 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_Gateway_V1_AppendDeviceRosterRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var entry: Dieter_Gateway_V1_DeviceRosterEntry {
+    get {_entry ?? Dieter_Gateway_V1_DeviceRosterEntry()}
+    set {_entry = newValue}
+  }
+  /// Returns true if `entry` has been explicitly set.
+  public var hasEntry: Bool {self._entry != nil}
+  /// Clears the value of `entry`. Subsequent reads from it will return its default value.
+  public mutating func clearEntry() {self._entry = nil}
+
+  public var replace: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _entry: Dieter_Gateway_V1_DeviceRosterEntry? = nil
+}
+
+public nonisolated struct Dieter_Gateway_V1_PostPairingRequestRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var device: Dieter_Gateway_V1_DeviceDescriptor {
+    get {_device ?? Dieter_Gateway_V1_DeviceDescriptor()}
+    set {_device = newValue}
+  }
+  /// Returns true if `device` has been explicitly set.
+  public var hasDevice: Bool {self._device != nil}
+  /// Clears the value of `device`. Subsequent reads from it will return its default value.
+  public mutating func clearDevice() {self._device = nil}
+
+  /// HMAC-SHA256 keyed by the pairing secret over the descriptor.
+  public var proof: Data = Data()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _device: Dieter_Gateway_V1_DeviceDescriptor? = nil
+}
+
+public nonisolated struct Dieter_Gateway_V1_PairingRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var id: String = String()
+
+  public var device: Dieter_Gateway_V1_DeviceDescriptor {
+    get {_device ?? Dieter_Gateway_V1_DeviceDescriptor()}
+    set {_device = newValue}
+  }
+  /// Returns true if `device` has been explicitly set.
+  public var hasDevice: Bool {self._device != nil}
+  /// Clears the value of `device`. Subsequent reads from it will return its default value.
+  public mutating func clearDevice() {self._device = nil}
+
+  public var requestedAt: String = String()
+
+  public var expiresAt: String = String()
+
+  public var proof: Data = Data()
+
+  /// Set by the approver: HMAC-SHA256 keyed by the pairing secret over the
+  /// roster root and the hash of the entry that added the device.
+  public var confirmation: Data = Data()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _device: Dieter_Gateway_V1_DeviceDescriptor? = nil
+}
+
+public nonisolated struct Dieter_Gateway_V1_ConfirmPairingRequestRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var id: String = String()
+
+  public var confirmation: Data = Data()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_Gateway_V1_ListPairingRequestsResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var requests: [Dieter_Gateway_V1_PairingRequest] = []
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_Gateway_V1_PairingRequestRef: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var id: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
 }
 
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
@@ -1951,11 +2342,27 @@ nonisolated extension Dieter_Gateway_V1_ProviderQuotaFreshness: SwiftProtobuf._P
 }
 
 nonisolated extension Dieter_Gateway_V1_DaemonLinkFrameKind: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DAEMON_LINK_FRAME_KIND_UNSPECIFIED\0\u{1}DAEMON_LINK_FRAME_KIND_HELLO\0\u{1}DAEMON_LINK_FRAME_KIND_HELLO_ACK\0\u{1}DAEMON_LINK_FRAME_KIND_HEARTBEAT\0\u{1}DAEMON_LINK_FRAME_KIND_ROUTES\0\u{1}DAEMON_LINK_FRAME_KIND_OPEN_RPC\0\u{1}DAEMON_LINK_FRAME_KIND_REQUEST_MESSAGE\0\u{1}DAEMON_LINK_FRAME_KIND_REQUEST_END\0\u{1}DAEMON_LINK_FRAME_KIND_CANCEL_RPC\0\u{1}DAEMON_LINK_FRAME_KIND_RESPONSE_HEADER\0\u{1}DAEMON_LINK_FRAME_KIND_RESPONSE_MESSAGE\0\u{1}DAEMON_LINK_FRAME_KIND_RESPONSE_END\0\u{1}DAEMON_LINK_FRAME_KIND_RPC_ERROR\0\u{1}DAEMON_LINK_FRAME_KIND_WINDOW_UPDATE\0\u{1}DAEMON_LINK_FRAME_KIND_PING\0\u{1}DAEMON_LINK_FRAME_KIND_PONG\0\u{1}DAEMON_LINK_FRAME_KIND_PROVIDER_ACCOUNTS\0\u{1}DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_REQUEST\0\u{1}DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_RESULT\0\u{1}DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_REQUEST\0\u{1}DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_RESULT\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DAEMON_LINK_FRAME_KIND_UNSPECIFIED\0\u{1}DAEMON_LINK_FRAME_KIND_HELLO\0\u{1}DAEMON_LINK_FRAME_KIND_HELLO_ACK\0\u{1}DAEMON_LINK_FRAME_KIND_HEARTBEAT\0\u{1}DAEMON_LINK_FRAME_KIND_ROUTES\0\u{2}\u{a}DAEMON_LINK_FRAME_KIND_PING\0\u{1}DAEMON_LINK_FRAME_KIND_PONG\0\u{1}DAEMON_LINK_FRAME_KIND_PROVIDER_ACCOUNTS\0\u{1}DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_REQUEST\0\u{1}DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_RESULT\0\u{1}DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_REQUEST\0\u{1}DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_RESULT\0\u{1}DAEMON_LINK_FRAME_KIND_TUNNEL_OPEN\0\u{1}DAEMON_LINK_FRAME_KIND_TUNNEL_OPENED\0\u{1}DAEMON_LINK_FRAME_KIND_TUNNEL_DATA\0\u{1}DAEMON_LINK_FRAME_KIND_TUNNEL_WINDOW\0\u{1}DAEMON_LINK_FRAME_KIND_TUNNEL_CLOSE\0")
 }
 
 nonisolated extension Dieter_Gateway_V1_RelayLane: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0RELAY_LANE_CONTROL\0\u{1}RELAY_LANE_REPLICATION\0\u{1}RELAY_LANE_COMMAND\0\u{1}RELAY_LANE_SUBSCRIPTION\0")
+}
+
+nonisolated extension Dieter_Gateway_V1_TunnelFrameKind: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0TUNNEL_FRAME_KIND_UNSPECIFIED\0\u{1}TUNNEL_FRAME_KIND_OPEN\0\u{1}TUNNEL_FRAME_KIND_OPENED\0\u{1}TUNNEL_FRAME_KIND_DATA\0\u{1}TUNNEL_FRAME_KIND_WINDOW\0\u{1}TUNNEL_FRAME_KIND_CLOSE\0")
+}
+
+nonisolated extension Dieter_Gateway_V1_DeviceKind: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DEVICE_KIND_UNSPECIFIED\0\u{1}DEVICE_KIND_DAEMON\0\u{1}DEVICE_KIND_CLIENT\0\u{1}DEVICE_KIND_RECOVERY\0")
+}
+
+nonisolated extension Dieter_Gateway_V1_DeviceKeyAlgorithm: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DEVICE_KEY_ALGORITHM_UNSPECIFIED\0\u{1}DEVICE_KEY_ALGORITHM_ED25519\0\u{1}DEVICE_KEY_ALGORITHM_ECDSA_P256_SHA256\0")
+}
+
+nonisolated extension Dieter_Gateway_V1_DeviceRosterOperation: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DEVICE_ROSTER_OPERATION_UNSPECIFIED\0\u{1}DEVICE_ROSTER_OPERATION_GENESIS\0\u{1}DEVICE_ROSTER_OPERATION_ADD\0\u{1}DEVICE_ROSTER_OPERATION_REVOKE\0")
 }
 
 nonisolated extension Dieter_Gateway_V1_Account: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
@@ -2735,7 +3142,7 @@ nonisolated extension Dieter_Gateway_V1_RecoverDaemonRequest: SwiftProtobuf.Mess
 
 nonisolated extension Dieter_Gateway_V1_DaemonCredential: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DaemonCredential"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0\u{3}daemon_name\0\u{3}certificate_pem\0\u{3}daemon_ca_pem\0\u{3}gateway_signing_public_key\0\u{3}expires_at\0\u{1}generation\0\u{3}gateway_issuer\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0\u{3}daemon_name\0\u{3}certificate_pem\0\u{4}\u{2}gateway_signing_public_key\0\u{3}expires_at\0\u{1}generation\0\u{3}gateway_issuer\0\u{b}daemon_ca_pem\0\u{c}\u{4}\u{1}")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2746,7 +3153,6 @@ nonisolated extension Dieter_Gateway_V1_DaemonCredential: SwiftProtobuf.Message,
       case 1: try { try decoder.decodeSingularStringField(value: &self.daemonID) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self.daemonName) }()
       case 3: try { try decoder.decodeSingularBytesField(value: &self.certificatePem) }()
-      case 4: try { try decoder.decodeSingularBytesField(value: &self.daemonCaPem) }()
       case 5: try { try decoder.decodeSingularBytesField(value: &self.gatewaySigningPublicKey) }()
       case 6: try { try decoder.decodeSingularStringField(value: &self.expiresAt) }()
       case 7: try { try decoder.decodeSingularUInt64Field(value: &self.generation) }()
@@ -2765,9 +3171,6 @@ nonisolated extension Dieter_Gateway_V1_DaemonCredential: SwiftProtobuf.Message,
     }
     if !self.certificatePem.isEmpty {
       try visitor.visitSingularBytesField(value: self.certificatePem, fieldNumber: 3)
-    }
-    if !self.daemonCaPem.isEmpty {
-      try visitor.visitSingularBytesField(value: self.daemonCaPem, fieldNumber: 4)
     }
     if !self.gatewaySigningPublicKey.isEmpty {
       try visitor.visitSingularBytesField(value: self.gatewaySigningPublicKey, fieldNumber: 5)
@@ -2788,7 +3191,6 @@ nonisolated extension Dieter_Gateway_V1_DaemonCredential: SwiftProtobuf.Message,
     if lhs.daemonID != rhs.daemonID {return false}
     if lhs.daemonName != rhs.daemonName {return false}
     if lhs.certificatePem != rhs.certificatePem {return false}
-    if lhs.daemonCaPem != rhs.daemonCaPem {return false}
     if lhs.gatewaySigningPublicKey != rhs.gatewaySigningPublicKey {return false}
     if lhs.expiresAt != rhs.expiresAt {return false}
     if lhs.generation != rhs.generation {return false}
@@ -2970,7 +3372,7 @@ nonisolated extension Dieter_Gateway_V1_DirectCandidate: SwiftProtobuf.Message, 
 
 nonisolated extension Dieter_Gateway_V1_DaemonRoute: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DaemonRoute"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0\u{3}relay_available\0\u{3}direct_candidates\0\u{1}generation\0\u{3}daemon_ca_pem\0\u{3}daemon_certificate_pem\0\u{3}control_webrtc\0\u{3}relay_lanes\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0\u{3}relay_available\0\u{3}direct_candidates\0\u{1}generation\0\u{4}\u{3}control_webrtc\0\u{3}relay_lanes\0\u{b}daemon_ca_pem\0\u{b}daemon_certificate_pem\0\u{c}\u{5}\u{1}\u{c}\u{6}\u{1}")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2982,8 +3384,6 @@ nonisolated extension Dieter_Gateway_V1_DaemonRoute: SwiftProtobuf.Message, Swif
       case 2: try { try decoder.decodeSingularBoolField(value: &self.relayAvailable) }()
       case 3: try { try decoder.decodeRepeatedMessageField(value: &self.directCandidates) }()
       case 4: try { try decoder.decodeSingularUInt64Field(value: &self.generation) }()
-      case 5: try { try decoder.decodeSingularBytesField(value: &self.daemonCaPem) }()
-      case 6: try { try decoder.decodeSingularBytesField(value: &self.daemonCertificatePem) }()
       case 7: try { try decoder.decodeSingularBoolField(value: &self.controlWebrtc) }()
       case 8: try { try decoder.decodeRepeatedMessageField(value: &self.relayLanes) }()
       default: break
@@ -3004,12 +3404,6 @@ nonisolated extension Dieter_Gateway_V1_DaemonRoute: SwiftProtobuf.Message, Swif
     if self.generation != 0 {
       try visitor.visitSingularUInt64Field(value: self.generation, fieldNumber: 4)
     }
-    if !self.daemonCaPem.isEmpty {
-      try visitor.visitSingularBytesField(value: self.daemonCaPem, fieldNumber: 5)
-    }
-    if !self.daemonCertificatePem.isEmpty {
-      try visitor.visitSingularBytesField(value: self.daemonCertificatePem, fieldNumber: 6)
-    }
     if self.controlWebrtc != false {
       try visitor.visitSingularBoolField(value: self.controlWebrtc, fieldNumber: 7)
     }
@@ -3024,8 +3418,6 @@ nonisolated extension Dieter_Gateway_V1_DaemonRoute: SwiftProtobuf.Message, Swif
     if lhs.relayAvailable != rhs.relayAvailable {return false}
     if lhs.directCandidates != rhs.directCandidates {return false}
     if lhs.generation != rhs.generation {return false}
-    if lhs.daemonCaPem != rhs.daemonCaPem {return false}
-    if lhs.daemonCertificatePem != rhs.daemonCertificatePem {return false}
     if lhs.controlWebrtc != rhs.controlWebrtc {return false}
     if lhs.relayLanes != rhs.relayLanes {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
@@ -4484,22 +4876,17 @@ nonisolated extension Dieter_Gateway_V1_RelayLaneStatus: SwiftProtobuf.Message, 
 
 nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DaemonLinkFrame"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}kind\0\u{3}stream_id\0\u{3}daemon_id\0\u{3}request_id\0\u{1}method\0\u{1}payload\0\u{3}payload_sha256\0\u{3}delegation_assertion\0\u{3}deadline_unix_millis\0\u{3}status_code\0\u{3}status_message\0\u{1}metadata\0\u{3}window_bytes\0\u{3}release_version\0\u{1}generation\0\u{3}direct_candidates\0\u{3}remote_desktop\0\u{2}\u{2}capabilities\0\u{3}provider_account_correlation_key\0\u{3}provider_accounts\0\u{3}provider_quota_refresh_request\0\u{3}provider_quota_refresh_result\0\u{3}provider_quota_reset_request\0\u{3}provider_quota_reset_result\0\u{3}compatibility_policy\0\u{1}compatibility\0\u{1}lane\0\u{3}session_id\0\u{4}\u{2}payload_size\0\u{3}payload_offset\0\u{b}api_version\0\u{c}\u{12}\u{1}\u{c}\u{1e}\u{1}")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}kind\0\u{3}stream_id\0\u{3}daemon_id\0\u{3}request_id\0\u{2}\u{2}payload\0\u{4}\u{4}status_code\0\u{3}status_message\0\u{2}\u{2}credit\0\u{3}release_version\0\u{1}generation\0\u{3}direct_candidates\0\u{3}remote_desktop\0\u{2}\u{2}capabilities\0\u{3}provider_account_correlation_key\0\u{3}provider_accounts\0\u{3}provider_quota_refresh_request\0\u{3}provider_quota_refresh_result\0\u{3}provider_quota_reset_request\0\u{3}provider_quota_reset_result\0\u{3}compatibility_policy\0\u{1}compatibility\0\u{1}lane\0\u{3}session_id\0\u{b}method\0\u{b}payload_sha256\0\u{b}delegation_assertion\0\u{b}deadline_unix_millis\0\u{b}metadata\0\u{b}payload_size\0\u{b}payload_offset\0\u{b}api_version\0\u{c}\u{5}\u{1}\u{c}\u{7}\u{1}\u{c}\u{8}\u{1}\u{c}\u{9}\u{1}\u{c}\u{c}\u{1}\u{c}\u{1e}\u{1}\u{c}\u{1f}\u{1}\u{c} \u{1}\u{c}\u{12}\u{1}")
 
   fileprivate class _StorageClass {
     var _kind: Dieter_Gateway_V1_DaemonLinkFrameKind = .unspecified
     var _streamID: UInt64 = 0
     var _daemonID: String = String()
     var _requestID: String = String()
-    var _method: String = String()
     var _payload: Data = Data()
-    var _payloadSha256: Data = Data()
-    var _delegationAssertion: String = String()
-    var _deadlineUnixMillis: Int64 = 0
     var _statusCode: Int32 = 0
     var _statusMessage: String = String()
-    var _metadata: Dictionary<String,String> = [:]
-    var _windowBytes: UInt32 = 0
+    var _credit: UInt32 = 0
     var _releaseVersion: String = String()
     var _generation: UInt64 = 0
     var _directCandidates: [Dieter_Gateway_V1_DirectCandidate] = []
@@ -4515,8 +4902,6 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
     var _compatibility: Dieter_Gateway_V1_CompatibilityStatus = .unspecified
     var _lane: Dieter_Gateway_V1_RelayLane = .control
     var _sessionID: String = String()
-    var _payloadSize: UInt32 = 0
-    var _payloadOffset: UInt32 = 0
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -4531,15 +4916,10 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
       _streamID = source._streamID
       _daemonID = source._daemonID
       _requestID = source._requestID
-      _method = source._method
       _payload = source._payload
-      _payloadSha256 = source._payloadSha256
-      _delegationAssertion = source._delegationAssertion
-      _deadlineUnixMillis = source._deadlineUnixMillis
       _statusCode = source._statusCode
       _statusMessage = source._statusMessage
-      _metadata = source._metadata
-      _windowBytes = source._windowBytes
+      _credit = source._credit
       _releaseVersion = source._releaseVersion
       _generation = source._generation
       _directCandidates = source._directCandidates
@@ -4555,8 +4935,6 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
       _compatibility = source._compatibility
       _lane = source._lane
       _sessionID = source._sessionID
-      _payloadSize = source._payloadSize
-      _payloadOffset = source._payloadOffset
     }
   }
 
@@ -4579,15 +4957,10 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
         case 2: try { try decoder.decodeSingularUInt64Field(value: &_storage._streamID) }()
         case 3: try { try decoder.decodeSingularStringField(value: &_storage._daemonID) }()
         case 4: try { try decoder.decodeSingularStringField(value: &_storage._requestID) }()
-        case 5: try { try decoder.decodeSingularStringField(value: &_storage._method) }()
         case 6: try { try decoder.decodeSingularBytesField(value: &_storage._payload) }()
-        case 7: try { try decoder.decodeSingularBytesField(value: &_storage._payloadSha256) }()
-        case 8: try { try decoder.decodeSingularStringField(value: &_storage._delegationAssertion) }()
-        case 9: try { try decoder.decodeSingularInt64Field(value: &_storage._deadlineUnixMillis) }()
         case 10: try { try decoder.decodeSingularInt32Field(value: &_storage._statusCode) }()
         case 11: try { try decoder.decodeSingularStringField(value: &_storage._statusMessage) }()
-        case 12: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: &_storage._metadata) }()
-        case 13: try { try decoder.decodeSingularUInt32Field(value: &_storage._windowBytes) }()
+        case 13: try { try decoder.decodeSingularUInt32Field(value: &_storage._credit) }()
         case 14: try { try decoder.decodeSingularStringField(value: &_storage._releaseVersion) }()
         case 15: try { try decoder.decodeSingularUInt64Field(value: &_storage._generation) }()
         case 16: try { try decoder.decodeRepeatedMessageField(value: &_storage._directCandidates) }()
@@ -4603,8 +4976,6 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
         case 27: try { try decoder.decodeSingularEnumField(value: &_storage._compatibility) }()
         case 28: try { try decoder.decodeSingularEnumField(value: &_storage._lane) }()
         case 29: try { try decoder.decodeSingularStringField(value: &_storage._sessionID) }()
-        case 31: try { try decoder.decodeSingularUInt32Field(value: &_storage._payloadSize) }()
-        case 32: try { try decoder.decodeSingularUInt32Field(value: &_storage._payloadOffset) }()
         default: break
         }
       }
@@ -4629,20 +5000,8 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
       if !_storage._requestID.isEmpty {
         try visitor.visitSingularStringField(value: _storage._requestID, fieldNumber: 4)
       }
-      if !_storage._method.isEmpty {
-        try visitor.visitSingularStringField(value: _storage._method, fieldNumber: 5)
-      }
       if !_storage._payload.isEmpty {
         try visitor.visitSingularBytesField(value: _storage._payload, fieldNumber: 6)
-      }
-      if !_storage._payloadSha256.isEmpty {
-        try visitor.visitSingularBytesField(value: _storage._payloadSha256, fieldNumber: 7)
-      }
-      if !_storage._delegationAssertion.isEmpty {
-        try visitor.visitSingularStringField(value: _storage._delegationAssertion, fieldNumber: 8)
-      }
-      if _storage._deadlineUnixMillis != 0 {
-        try visitor.visitSingularInt64Field(value: _storage._deadlineUnixMillis, fieldNumber: 9)
       }
       if _storage._statusCode != 0 {
         try visitor.visitSingularInt32Field(value: _storage._statusCode, fieldNumber: 10)
@@ -4650,11 +5009,8 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
       if !_storage._statusMessage.isEmpty {
         try visitor.visitSingularStringField(value: _storage._statusMessage, fieldNumber: 11)
       }
-      if !_storage._metadata.isEmpty {
-        try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: _storage._metadata, fieldNumber: 12)
-      }
-      if _storage._windowBytes != 0 {
-        try visitor.visitSingularUInt32Field(value: _storage._windowBytes, fieldNumber: 13)
+      if _storage._credit != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._credit, fieldNumber: 13)
       }
       if !_storage._releaseVersion.isEmpty {
         try visitor.visitSingularStringField(value: _storage._releaseVersion, fieldNumber: 14)
@@ -4701,12 +5057,6 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
       if !_storage._sessionID.isEmpty {
         try visitor.visitSingularStringField(value: _storage._sessionID, fieldNumber: 29)
       }
-      if _storage._payloadSize != 0 {
-        try visitor.visitSingularUInt32Field(value: _storage._payloadSize, fieldNumber: 31)
-      }
-      if _storage._payloadOffset != 0 {
-        try visitor.visitSingularUInt32Field(value: _storage._payloadOffset, fieldNumber: 32)
-      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -4720,15 +5070,10 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
         if _storage._streamID != rhs_storage._streamID {return false}
         if _storage._daemonID != rhs_storage._daemonID {return false}
         if _storage._requestID != rhs_storage._requestID {return false}
-        if _storage._method != rhs_storage._method {return false}
         if _storage._payload != rhs_storage._payload {return false}
-        if _storage._payloadSha256 != rhs_storage._payloadSha256 {return false}
-        if _storage._delegationAssertion != rhs_storage._delegationAssertion {return false}
-        if _storage._deadlineUnixMillis != rhs_storage._deadlineUnixMillis {return false}
         if _storage._statusCode != rhs_storage._statusCode {return false}
         if _storage._statusMessage != rhs_storage._statusMessage {return false}
-        if _storage._metadata != rhs_storage._metadata {return false}
-        if _storage._windowBytes != rhs_storage._windowBytes {return false}
+        if _storage._credit != rhs_storage._credit {return false}
         if _storage._releaseVersion != rhs_storage._releaseVersion {return false}
         if _storage._generation != rhs_storage._generation {return false}
         if _storage._directCandidates != rhs_storage._directCandidates {return false}
@@ -4744,12 +5089,506 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
         if _storage._compatibility != rhs_storage._compatibility {return false}
         if _storage._lane != rhs_storage._lane {return false}
         if _storage._sessionID != rhs_storage._sessionID {return false}
-        if _storage._payloadSize != rhs_storage._payloadSize {return false}
-        if _storage._payloadOffset != rhs_storage._payloadOffset {return false}
         return true
       }
       if !storagesAreEqual {return false}
     }
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_Gateway_V1_TunnelFrame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".TunnelFrame"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}kind\0\u{3}daemon_id\0\u{1}lane\0\u{1}data\0\u{1}credit\0\u{3}status_code\0\u{3}status_message\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularEnumField(value: &self.kind) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.daemonID) }()
+      case 3: try { try decoder.decodeSingularEnumField(value: &self.lane) }()
+      case 4: try { try decoder.decodeSingularBytesField(value: &self.data) }()
+      case 5: try { try decoder.decodeSingularUInt32Field(value: &self.credit) }()
+      case 6: try { try decoder.decodeSingularInt32Field(value: &self.statusCode) }()
+      case 7: try { try decoder.decodeSingularStringField(value: &self.statusMessage) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.kind != .unspecified {
+      try visitor.visitSingularEnumField(value: self.kind, fieldNumber: 1)
+    }
+    if !self.daemonID.isEmpty {
+      try visitor.visitSingularStringField(value: self.daemonID, fieldNumber: 2)
+    }
+    if self.lane != .control {
+      try visitor.visitSingularEnumField(value: self.lane, fieldNumber: 3)
+    }
+    if !self.data.isEmpty {
+      try visitor.visitSingularBytesField(value: self.data, fieldNumber: 4)
+    }
+    if self.credit != 0 {
+      try visitor.visitSingularUInt32Field(value: self.credit, fieldNumber: 5)
+    }
+    if self.statusCode != 0 {
+      try visitor.visitSingularInt32Field(value: self.statusCode, fieldNumber: 6)
+    }
+    if !self.statusMessage.isEmpty {
+      try visitor.visitSingularStringField(value: self.statusMessage, fieldNumber: 7)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_TunnelFrame, rhs: Dieter_Gateway_V1_TunnelFrame) -> Bool {
+    if lhs.kind != rhs.kind {return false}
+    if lhs.daemonID != rhs.daemonID {return false}
+    if lhs.lane != rhs.lane {return false}
+    if lhs.data != rhs.data {return false}
+    if lhs.credit != rhs.credit {return false}
+    if lhs.statusCode != rhs.statusCode {return false}
+    if lhs.statusMessage != rhs.statusMessage {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_Gateway_V1_DeviceDescriptor: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".DeviceDescriptor"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}device_id\0\u{1}kind\0\u{1}platform\0\u{1}name\0\u{1}algorithm\0\u{3}public_key\0\u{3}daemon_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.deviceID) }()
+      case 2: try { try decoder.decodeSingularEnumField(value: &self.kind) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.platform) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      case 5: try { try decoder.decodeSingularEnumField(value: &self.algorithm) }()
+      case 6: try { try decoder.decodeSingularBytesField(value: &self.publicKey) }()
+      case 7: try { try decoder.decodeSingularStringField(value: &self.daemonID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.deviceID.isEmpty {
+      try visitor.visitSingularStringField(value: self.deviceID, fieldNumber: 1)
+    }
+    if self.kind != .unspecified {
+      try visitor.visitSingularEnumField(value: self.kind, fieldNumber: 2)
+    }
+    if !self.platform.isEmpty {
+      try visitor.visitSingularStringField(value: self.platform, fieldNumber: 3)
+    }
+    if !self.name.isEmpty {
+      try visitor.visitSingularStringField(value: self.name, fieldNumber: 4)
+    }
+    if self.algorithm != .unspecified {
+      try visitor.visitSingularEnumField(value: self.algorithm, fieldNumber: 5)
+    }
+    if !self.publicKey.isEmpty {
+      try visitor.visitSingularBytesField(value: self.publicKey, fieldNumber: 6)
+    }
+    if !self.daemonID.isEmpty {
+      try visitor.visitSingularStringField(value: self.daemonID, fieldNumber: 7)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_DeviceDescriptor, rhs: Dieter_Gateway_V1_DeviceDescriptor) -> Bool {
+    if lhs.deviceID != rhs.deviceID {return false}
+    if lhs.kind != rhs.kind {return false}
+    if lhs.platform != rhs.platform {return false}
+    if lhs.name != rhs.name {return false}
+    if lhs.algorithm != rhs.algorithm {return false}
+    if lhs.publicKey != rhs.publicKey {return false}
+    if lhs.daemonID != rhs.daemonID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_Gateway_V1_DeviceRosterEntry: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".DeviceRosterEntry"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}account\0\u{1}sequence\0\u{1}previous\0\u{1}operation\0\u{1}device\0\u{1}signer\0\u{3}created_at\0\u{1}signature\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.account) }()
+      case 2: try { try decoder.decodeSingularUInt64Field(value: &self.sequence) }()
+      case 3: try { try decoder.decodeSingularBytesField(value: &self.previous) }()
+      case 4: try { try decoder.decodeSingularEnumField(value: &self.operation) }()
+      case 5: try { try decoder.decodeSingularMessageField(value: &self._device) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.signer) }()
+      case 7: try { try decoder.decodeSingularStringField(value: &self.createdAt) }()
+      case 8: try { try decoder.decodeSingularBytesField(value: &self.signature) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.account.isEmpty {
+      try visitor.visitSingularStringField(value: self.account, fieldNumber: 1)
+    }
+    if self.sequence != 0 {
+      try visitor.visitSingularUInt64Field(value: self.sequence, fieldNumber: 2)
+    }
+    if !self.previous.isEmpty {
+      try visitor.visitSingularBytesField(value: self.previous, fieldNumber: 3)
+    }
+    if self.operation != .unspecified {
+      try visitor.visitSingularEnumField(value: self.operation, fieldNumber: 4)
+    }
+    try { if let v = self._device {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+    } }()
+    if !self.signer.isEmpty {
+      try visitor.visitSingularStringField(value: self.signer, fieldNumber: 6)
+    }
+    if !self.createdAt.isEmpty {
+      try visitor.visitSingularStringField(value: self.createdAt, fieldNumber: 7)
+    }
+    if !self.signature.isEmpty {
+      try visitor.visitSingularBytesField(value: self.signature, fieldNumber: 8)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_DeviceRosterEntry, rhs: Dieter_Gateway_V1_DeviceRosterEntry) -> Bool {
+    if lhs.account != rhs.account {return false}
+    if lhs.sequence != rhs.sequence {return false}
+    if lhs.previous != rhs.previous {return false}
+    if lhs.operation != rhs.operation {return false}
+    if lhs._device != rhs._device {return false}
+    if lhs.signer != rhs.signer {return false}
+    if lhs.createdAt != rhs.createdAt {return false}
+    if lhs.signature != rhs.signature {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_Gateway_V1_DeviceRoster: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".DeviceRoster"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}entries\0\u{3}head_sequence\0\u{3}head_hash\0\u{1}length\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.entries) }()
+      case 2: try { try decoder.decodeSingularUInt64Field(value: &self.headSequence) }()
+      case 3: try { try decoder.decodeSingularBytesField(value: &self.headHash) }()
+      case 4: try { try decoder.decodeSingularUInt64Field(value: &self.length) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.entries.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.entries, fieldNumber: 1)
+    }
+    if self.headSequence != 0 {
+      try visitor.visitSingularUInt64Field(value: self.headSequence, fieldNumber: 2)
+    }
+    if !self.headHash.isEmpty {
+      try visitor.visitSingularBytesField(value: self.headHash, fieldNumber: 3)
+    }
+    if self.length != 0 {
+      try visitor.visitSingularUInt64Field(value: self.length, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_DeviceRoster, rhs: Dieter_Gateway_V1_DeviceRoster) -> Bool {
+    if lhs.entries != rhs.entries {return false}
+    if lhs.headSequence != rhs.headSequence {return false}
+    if lhs.headHash != rhs.headHash {return false}
+    if lhs.length != rhs.length {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_Gateway_V1_GetDeviceRosterRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".GetDeviceRosterRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}from_sequence\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularUInt64Field(value: &self.fromSequence) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.fromSequence != 0 {
+      try visitor.visitSingularUInt64Field(value: self.fromSequence, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_GetDeviceRosterRequest, rhs: Dieter_Gateway_V1_GetDeviceRosterRequest) -> Bool {
+    if lhs.fromSequence != rhs.fromSequence {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_Gateway_V1_AppendDeviceRosterRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".AppendDeviceRosterRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}entry\0\u{1}replace\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularMessageField(value: &self._entry) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.replace) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if let v = self._entry {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    } }()
+    if self.replace != false {
+      try visitor.visitSingularBoolField(value: self.replace, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_AppendDeviceRosterRequest, rhs: Dieter_Gateway_V1_AppendDeviceRosterRequest) -> Bool {
+    if lhs._entry != rhs._entry {return false}
+    if lhs.replace != rhs.replace {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_Gateway_V1_PostPairingRequestRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".PostPairingRequestRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}device\0\u{1}proof\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularMessageField(value: &self._device) }()
+      case 2: try { try decoder.decodeSingularBytesField(value: &self.proof) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if let v = self._device {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    } }()
+    if !self.proof.isEmpty {
+      try visitor.visitSingularBytesField(value: self.proof, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_PostPairingRequestRequest, rhs: Dieter_Gateway_V1_PostPairingRequestRequest) -> Bool {
+    if lhs._device != rhs._device {return false}
+    if lhs.proof != rhs.proof {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_Gateway_V1_PairingRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".PairingRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}device\0\u{3}requested_at\0\u{3}expires_at\0\u{1}proof\0\u{1}confirmation\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
+      case 2: try { try decoder.decodeSingularMessageField(value: &self._device) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.requestedAt) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.expiresAt) }()
+      case 5: try { try decoder.decodeSingularBytesField(value: &self.proof) }()
+      case 6: try { try decoder.decodeSingularBytesField(value: &self.confirmation) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.id.isEmpty {
+      try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
+    }
+    try { if let v = self._device {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    } }()
+    if !self.requestedAt.isEmpty {
+      try visitor.visitSingularStringField(value: self.requestedAt, fieldNumber: 3)
+    }
+    if !self.expiresAt.isEmpty {
+      try visitor.visitSingularStringField(value: self.expiresAt, fieldNumber: 4)
+    }
+    if !self.proof.isEmpty {
+      try visitor.visitSingularBytesField(value: self.proof, fieldNumber: 5)
+    }
+    if !self.confirmation.isEmpty {
+      try visitor.visitSingularBytesField(value: self.confirmation, fieldNumber: 6)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_PairingRequest, rhs: Dieter_Gateway_V1_PairingRequest) -> Bool {
+    if lhs.id != rhs.id {return false}
+    if lhs._device != rhs._device {return false}
+    if lhs.requestedAt != rhs.requestedAt {return false}
+    if lhs.expiresAt != rhs.expiresAt {return false}
+    if lhs.proof != rhs.proof {return false}
+    if lhs.confirmation != rhs.confirmation {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_Gateway_V1_ConfirmPairingRequestRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ConfirmPairingRequestRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}confirmation\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
+      case 2: try { try decoder.decodeSingularBytesField(value: &self.confirmation) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.id.isEmpty {
+      try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
+    }
+    if !self.confirmation.isEmpty {
+      try visitor.visitSingularBytesField(value: self.confirmation, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_ConfirmPairingRequestRequest, rhs: Dieter_Gateway_V1_ConfirmPairingRequestRequest) -> Bool {
+    if lhs.id != rhs.id {return false}
+    if lhs.confirmation != rhs.confirmation {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_Gateway_V1_ListPairingRequestsResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ListPairingRequestsResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}requests\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.requests) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.requests.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.requests, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_ListPairingRequestsResponse, rhs: Dieter_Gateway_V1_ListPairingRequestsResponse) -> Bool {
+    if lhs.requests != rhs.requests {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_Gateway_V1_PairingRequestRef: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".PairingRequestRef"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.id.isEmpty {
+      try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_PairingRequestRef, rhs: Dieter_Gateway_V1_PairingRequestRef) -> Bool {
+    if lhs.id != rhs.id {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

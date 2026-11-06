@@ -150,6 +150,13 @@ public nonisolated struct Dieter_V1_CreateConversationRequest: @unchecked Sendab
     set {_uniqueStorage()._vaultAccess = newValue}
   }
 
+  /// Let this conversation's agent turns send the user mail (MailService).
+  /// An agent turn may grant it only when its own conversation has it.
+  public var mailAccess: Bool {
+    get {_storage._mailAccess}
+    set {_uniqueStorage()._mailAccess = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -427,7 +434,7 @@ nonisolated extension Dieter_V1_CardsResponse: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension Dieter_V1_CreateConversationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".CreateConversationRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}board_id\0\u{1}lane\0\u{1}title\0\u{1}prompt\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{3}label_ids\0\u{3}defer_start\0\u{3}provider_options\0\u{3}client_id\0\u{3}command_id\0\u{1}attachments\0\u{3}workspace_mode\0\u{3}workspace_branch\0\u{3}workspace_base_branch\0\u{3}auto_generate_title\0\u{3}workspace_base_remote\0\u{3}remote_publish_mode\0\u{4}\u{4}checkout_id\0\u{3}vault_access\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}board_id\0\u{1}lane\0\u{1}title\0\u{1}prompt\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{3}label_ids\0\u{3}defer_start\0\u{3}provider_options\0\u{3}client_id\0\u{3}command_id\0\u{1}attachments\0\u{3}workspace_mode\0\u{3}workspace_branch\0\u{3}workspace_base_branch\0\u{3}auto_generate_title\0\u{3}workspace_base_remote\0\u{3}remote_publish_mode\0\u{4}\u{4}checkout_id\0\u{3}vault_access\0\u{3}mail_access\0")
 
   fileprivate class _StorageClass {
     var _checkoutID: String = String()
@@ -452,6 +459,7 @@ nonisolated extension Dieter_V1_CreateConversationRequest: SwiftProtobuf.Message
     var _workspaceBaseRemote: String = String()
     var _remotePublishMode: String = String()
     var _vaultAccess: Bool = false
+    var _mailAccess: Bool = false
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -484,6 +492,7 @@ nonisolated extension Dieter_V1_CreateConversationRequest: SwiftProtobuf.Message
       _workspaceBaseRemote = source._workspaceBaseRemote
       _remotePublishMode = source._remotePublishMode
       _vaultAccess = source._vaultAccess
+      _mailAccess = source._mailAccess
     }
   }
 
@@ -524,6 +533,7 @@ nonisolated extension Dieter_V1_CreateConversationRequest: SwiftProtobuf.Message
         case 20: try { try decoder.decodeSingularStringField(value: &_storage._remotePublishMode) }()
         case 24: try { try decoder.decodeSingularStringField(value: &_storage._checkoutID) }()
         case 25: try { try decoder.decodeSingularBoolField(value: &_storage._vaultAccess) }()
+        case 26: try { try decoder.decodeSingularBoolField(value: &_storage._mailAccess) }()
         default: break
         }
       }
@@ -598,6 +608,9 @@ nonisolated extension Dieter_V1_CreateConversationRequest: SwiftProtobuf.Message
       if _storage._vaultAccess != false {
         try visitor.visitSingularBoolField(value: _storage._vaultAccess, fieldNumber: 25)
       }
+      if _storage._mailAccess != false {
+        try visitor.visitSingularBoolField(value: _storage._mailAccess, fieldNumber: 26)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -629,6 +642,7 @@ nonisolated extension Dieter_V1_CreateConversationRequest: SwiftProtobuf.Message
         if _storage._workspaceBaseRemote != rhs_storage._workspaceBaseRemote {return false}
         if _storage._remotePublishMode != rhs_storage._remotePublishMode {return false}
         if _storage._vaultAccess != rhs_storage._vaultAccess {return false}
+        if _storage._mailAccess != rhs_storage._mailAccess {return false}
         return true
       }
       if !storagesAreEqual {return false}

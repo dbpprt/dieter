@@ -37,6 +37,7 @@ type Server struct {
 	privacySnapshot *dieterv1.MachinePrivacy
 	privacyReadAt   time.Time
 	kvWatches       atomic.Int32
+	channelWatches  atomic.Int32
 	changeStreams   atomic.Int32
 	local           *localChanges
 	previews        *payloadPreviewCache
@@ -47,6 +48,7 @@ type Server struct {
 	snapshotCache           map[string]snapshotHistory
 	snapshotTick            uint64
 	controlRTC              *controlrtc.Manager
+	trust                   DeviceTrust
 	store                   *store.Store
 	vaults                  *vaults.Store
 	daemonState             *daemonstate.Store
@@ -84,7 +86,10 @@ type Options struct {
 	PrivacyDriver remotedesktop.PrivacyDriver
 	PrivacyBootID func(context.Context) (string, error)
 	ControlRTC    *controlrtc.Manager
-	Runner        harness.Runner
+	// Trust is the enrolled daemon's device roster; leave it nil (not a typed
+	// nil) for an unenrolled daemon.
+	Trust  DeviceTrust
+	Runner harness.Runner
 	// Catalog and MinimumFreeBytes configure a default App; see app.Options.
 	Catalog             *harness.Catalog
 	MinimumFreeBytes    *uint64
@@ -128,7 +133,7 @@ func NewWithOptions(data *store.Store, logger *slog.Logger, options Options) *Se
 	s := &Server{
 		store: data, vaults: vaults.New(data), daemonState: options.DaemonState, app: service, workspaces: service.Workspaces, schedules: options.Schedules, log: logger,
 		mux: http.NewServeMux(), terminals: options.Terminals, executions: options.Executions, previews: &payloadPreviewCache{},
-		remoteDesktop: options.RemoteDesktop, machine: options.Machine, controlRTC: options.ControlRTC,
+		remoteDesktop: options.RemoteDesktop, machine: options.Machine, controlRTC: options.ControlRTC, trust: options.Trust,
 		machineAction:       options.MachineAction,
 		machineCapabilities: options.MachineCapabilities, machineDelay: options.MachineDelay,
 		machineOperations: map[string]acceptedMachineOperation{},
@@ -178,14 +183,14 @@ func NewWithOptions(data *store.Store, logger *slog.Logger, options Options) *Se
 	s.changesets = changeset.New(s.workspaces)
 	s.local = newLocalChanges(s)
 	service.BackgroundProcesses = s.backgroundProcess
-	if err := data.InterruptRunningGitOperations(); err != nil {
+	if err := data.Workspaces.InterruptRunningGitOperations(); err != nil {
 		logger.Warn("could not reconcile interrupted Git operations", "error", err)
 	}
 	s.gitOperations = operations.New(data, s.workspaces, logger)
 	s.gitOperations.Changesets = s.changesets
 	s.gitOperations.Busy = func(cardID string) bool {
 		workspacePath := ""
-		if value, err := data.Workspace(cardID); err == nil {
+		if value, err := data.Workspaces.Get(cardID); err == nil {
 			workspacePath = value.Path
 			if resolved, resolveErr := filepath.EvalSymlinks(workspacePath); resolveErr == nil {
 				workspacePath = resolved

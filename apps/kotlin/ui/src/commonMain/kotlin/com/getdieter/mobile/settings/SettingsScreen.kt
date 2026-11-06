@@ -29,7 +29,9 @@ internal fun SettingsScreen(store: MobileStore) {
     val selectedPalette by store.theme.palette.collectAsState()
     val appearance by store.theme.appearance.collectAsState()
     val dynamic by store.theme.dynamicColor.collectAsState()
+    val interfaceMode by store.layout.interfaceMode.collectAsState()
     val outbox by store.workspace.outbox.collectAsState()
+    val channels by store.channels.settings.collectAsState()
     var signOut by remember { mutableStateOf(false) }
     var gatewayEditor by remember { mutableStateOf<GatewayEntry?>(null) }
     var addGateway by remember { mutableStateOf(false) }
@@ -57,6 +59,22 @@ internal fun SettingsScreen(store: MobileStore) {
                         { store.theme.setAppearance(modes[it].first) },
                         testTagPrefix = "appearance",
                     )
+                    if (!apple)
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Interface", style = type.body, color = palette.label)
+                            Segmented(
+                                InterfaceMode.entries.map { it.title },
+                                interfaceMode.ordinal,
+                                { store.layout.setInterfaceMode(InterfaceMode.entries[it]) },
+                                testTagPrefix = "interface",
+                            )
+                            Text(
+                                "Automatic shows the desktop layout in Samsung DeX, desktop windowing " +
+                                    "and on external displays.",
+                                style = type.footnote,
+                                color = palette.secondaryLabel,
+                            )
+                        }
                     if (!apple && platformSupportsDynamicColor)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
@@ -99,6 +117,28 @@ internal fun SettingsScreen(store: MobileStore) {
                         )
                     },
                 )
+            }
+            item("experimental") {
+                SectionHeader("Experimental")
+                ListRow(
+                    "Agent channels",
+                    position = Position.SINGLE,
+                    subtitle =
+                        "Agents of a project, on all your machines, message each other and claim " +
+                            "the files they change. Applies to every machine.",
+                    glyph = Glyph.TAG,
+                    tile = Color(0xFF0A84FF),
+                    subtitleMaxLines = 3,
+                    trailing = {
+                        DSwitch(
+                            channels.global,
+                            store.channels::setEnabled,
+                            Modifier.testTag("settings-channels"),
+                            enabled = !channels.saving,
+                        )
+                    },
+                )
+                if (channels.error.isNotEmpty()) SectionFooter(channels.error)
             }
             item("connection") {
                 SectionHeader("Connection")
@@ -298,18 +338,22 @@ internal fun SettingsScreen(store: MobileStore) {
             destructive = true,
         )
     }
-    if (signOut)
-        ConfirmDialog(
-            "Sign out of Dieter?",
-            "This clears this device’s cached workspace, unsent work and drafts for this account.",
-            "Sign out",
-            {
-                store.command(Command(sign_out = SignOut()))
-                signOut = false
-            },
-            { signOut = false },
-            destructive = true,
-        )
+    if (signOut) SignOutDialog(store) { signOut = false }
+}
+
+@Composable
+internal fun SignOutDialog(store: MobileStore, onDismiss: () -> Unit) {
+    ConfirmDialog(
+        "Sign out of Dieter?",
+        "This clears this device’s cached workspace, unsent work and drafts for this account.",
+        "Sign out",
+        {
+            store.command(Command(sign_out = SignOut()))
+            onDismiss()
+        },
+        onDismiss,
+        destructive = true,
+    )
 }
 
 @Composable

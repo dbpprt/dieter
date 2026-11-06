@@ -8,12 +8,16 @@ import com.getdieter.api.v1.HarnessSelection
 import com.getdieter.api.v1.MessagePart
 import com.getdieter.core.activity.Activity
 import com.getdieter.core.activity.ActivityItem
+import com.getdieter.core.activity.FilteredActivity
+import com.getdieter.core.activity.InboxFilter
 import com.getdieter.core.admin.Administration
 import com.getdieter.core.admin.BackgroundPolicy
 import com.getdieter.core.admin.MachineAdmin
 import com.getdieter.core.admin.MachineTelemetry
 import com.getdieter.core.api.DaemonApi
 import com.getdieter.core.board.BoardOperations
+import com.getdieter.core.channels.ChannelSettingsStore
+import com.getdieter.core.channels.ChannelSwitches
 import com.getdieter.core.composition.ConversationDrafts
 import com.getdieter.core.composition.Creation
 import com.getdieter.core.composition.CreationDestinations
@@ -39,11 +43,16 @@ import com.getdieter.core.identity.Credentials
 import com.getdieter.core.identity.Gateway
 import com.getdieter.core.identity.SignIn
 import com.getdieter.core.machines.MachineChoice
+import com.getdieter.core.mail.MailMachine
+import com.getdieter.core.mail.MailProjection
+import com.getdieter.core.mail.MailRules
+import com.getdieter.core.mail.Mailbox
 import com.getdieter.core.metadata.MachineMetadataStore
 import com.getdieter.core.navigation.KvAcceptor
 import com.getdieter.core.navigation.NavigationEditor
 import com.getdieter.core.navigation.NavigationLayout
 import com.getdieter.core.navigation.SharedKv
+import com.getdieter.core.navigation.kvMachines
 import com.getdieter.core.notifications.NotificationPlanner
 import com.getdieter.core.notifications.NotificationSettings
 import com.getdieter.core.outbox.Outbox
@@ -57,6 +66,7 @@ import com.getdieter.core.routing.RoutingPolicy
 import com.getdieter.core.routing.WebRtcCooldown
 import com.getdieter.core.runtime.CoreException
 import com.getdieter.core.runtime.FailureKind
+import com.getdieter.core.runtime.Failures
 import com.getdieter.core.schedules.Schedules
 import com.getdieter.core.screens.LocalClipboard
 import com.getdieter.core.screens.ScreenConfig
@@ -74,10 +84,13 @@ import com.getdieter.core.terminals.TerminalInputPumps
 import com.getdieter.core.terminals.TerminalOverview
 import com.getdieter.core.terminals.TerminalSelections
 import com.getdieter.core.terminals.Terminals
+import com.getdieter.core.trust.DeviceTrust
+import com.getdieter.core.trust.TrustState
 import com.getdieter.core.workspace.ProjectChanges
 import com.getdieter.core.workspace.ProjectWorkspaces
 import com.getdieter.core.workspace.WorkspaceReview
 import kotlin.concurrent.Volatile
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -92,6 +105,7 @@ import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import okio.ByteString
 
 data class RuntimeConfig(
     /** The canonical Dieter release of the app. */
@@ -122,17 +136,47 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
 
     /** The account view from every machine's change stream. */
     val accountSync = AccountSync(workspace, scope, platform.clock, platform.logger)
+
+    /**
+     * This device's membership in the account's device roster. Kept outside every account's
+     * namespace, so signing out keeps the device's key and pinned roster.
+     */
+    val trust =
+        DeviceTrust(
+            platform.deviceKeys,
+            platform.signatures,
+            storage.scope(TRUST_NAMESPACE),
+            platform.clock,
+            platform.logger,
+        )
     private val cooldown = WebRtcCooldown(platform.clock)
     private val routes =
         RouteSelector(
             platform.transport,
+            platform.tunnels,
             platform.controlChannels,
+            trust,
             RoutingPolicy(config.includeLoopbackRoutes),
             cooldown,
             platform.logger,
             platform.clock,
         )
-    val sessions = MachineSessions(routes, scope)
+    val sessions =
+        MachineSessions(routes, scope) { plane ->
+            // Every authenticated connection compares roster heads with its machine.
+            scope.launch {
+                try {
+                    trust.gossip(plane.daemonId, plane.client)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Throwable) {
+                    platform.logger.info(
+                        "DeviceTrust",
+                        "roster gossip with ${plane.daemonId} failed: ${Failures.message(error)}",
+                    )
+                }
+            }
+        }
     val clientId: String = ClientIdentity.load(storage, config.clientIdPrefix)
     val connection: ConnectionSupervisor =
         ConnectionSupervisor(
@@ -141,6 +185,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
             credentials,
             sessions,
             accountSync,
+            trust,
             ::storageFor,
             platform.transport,
             SupervisorConfig(config.clientVersion),
@@ -150,10 +195,12 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
                 // Overlays and pending results belong to the previous account; everything below
                 // rebinds.
                 workspace.clear()
+                trust.forget()
                 gatewayStorage = prepared
                 terminalSelections.reload()
                 terminalPumps.cancelAll()
                 outbox.bind(prepared.scope("outbox"))
+                mailbox.bind(prepared.scope("mail"))
                 navigationKv.bind(prepared.scope("navigation"))
                 drafts.bind(prepared.scope("drafts"))
                 captures.bind(prepared.scope("captures"))
@@ -164,18 +211,26 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
                 telemetry.reset()
                 projectWorkspaces.reset()
                 quotas.reset()
+                channelSettings.reset()
                 gatewayListeners.forEach { it() }
             },
         )
 
     /** Which machine serves what. */
     val choice = MachineChoice(workspace, accountSync, connection.machines, sessions.routes)
-    val outbox = Outbox(clientId, sessions, workspace, choice, platform.clock, platform.logger)
+    val outbox =
+        Outbox(clientId, sessions, workspace, choice, platform.clock, platform.logger) {
+            accountSync.snapshot.value.mail
+        }
+
+    /** The account's mail on this device: kept bodies, pending changes, preferences. */
+    val mailbox =
+        Mailbox(sessions, outbox, platform.settings, scope, platform.logger, ::mailProjection)
     val board = BoardOperations(sessions, workspace, choice)
     val navigationKv =
         SharedKv(
             NAVIGATION_NAMESPACE,
-            sessions,
+            sessions.kvMachines(),
             acceptor = { machineId ->
                 accountSync
                     .replica(machineId)
@@ -185,6 +240,9 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
             logger = platform.logger,
         )
     val navigation = NavigationEditor(navigationKv)
+
+    /** The account's agent channel settings (experimental), written on a reachable machine. */
+    val channelSettings = ChannelSettingsStore(sessions, choice::reachable, platform.logger)
     val metadata = MachineMetadataStore(sessions, scope, platform.clock, platform.logger)
     val drafts = ConversationDrafts(platform.clock, platform.logger, scope)
     val captures = TaskCaptures(platform.clock, platform.logger, scope)
@@ -209,6 +267,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
             scope,
             platform.settings,
             catalog = { daemonId -> metadata.machines.value[daemonId]?.harnesses?.harnesses },
+            syncs = connection.syncs,
         )
 
     @Volatile private var gatewayListeners = emptyList<() -> Unit>()
@@ -226,8 +285,38 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
 
     fun start() {
         scope.launch { connection.start() }
+        // Connections exist only while this device is trusted, each pinned to its machine's
+        // current roster key.
+        scope.launch {
+            trust.view
+                .map { (it.state == TrustState.TRUSTED) to it.roster }
+                .distinctUntilChanged()
+                .collect { (trusted, _) ->
+                    if (!trusted) sessions.closeAll()
+                    else
+                        sessions.retainTrusted { daemonId, key -> trust.daemonKey(daemonId) == key }
+                }
+        }
         scope.launch { outbox.run(reachableMachines()) }
         scope.launch { workspace.revision.collect { outbox.reconcile() } }
+        // Mail changes settle when their machine's headers show them.
+        scope.launch {
+            accountSync.snapshot
+                .map { it.mail }
+                .distinctUntilChanged()
+                .collect {
+                    outbox.reconcile()
+                    mailbox.mailChanged()
+                }
+        }
+        scope.launch {
+            mailbox.run(
+                connection.syncs
+                    .map { syncs -> syncs.filterValues { it.current }.keys }
+                    .distinctUntilChanged(),
+                reachableMachines(),
+            )
+        }
         // An inline error goes with its card.
         scope.launch {
             workspace.state.collect { view -> board.retainErrors { view.card(it) != null } }
@@ -244,6 +333,12 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
                 .map { it.kv[NAVIGATION_NAMESPACE].orEmpty() }
                 .distinctUntilChanged()
                 .collect(navigationKv::apply)
+        }
+        scope.launch {
+            accountSync.snapshot
+                .map { it.kv[ChannelSwitches.NAMESPACE].orEmpty() }
+                .distinctUntilChanged()
+                .collect(channelSettings::apply)
         }
         scope.launch {
             navigationKv.run(
@@ -294,6 +389,46 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
                     current = connection.syncs.value.filterValues { it.current }.keys
                 }
             }
+            scope.launch {
+                // As for cards: mail a machine replays while catching up is never notified. A
+                // machine's catch-up is published before it reports Live, so the set of current
+                // machines is read after each mail view, and also follows Live alone: a machine
+                // that caught up without new mail notifies its next message.
+                var current = emptySet<String>()
+                combine(
+                        accountSync.snapshot.map { it.mail }.distinctUntilChanged(),
+                        connection.syncs
+                            .map { syncs -> syncs.filterValues { it.current }.keys }
+                            .distinctUntilChanged(),
+                    ) { mail, live ->
+                        mail to live
+                    }
+                    .collect { (mail, live) ->
+                        if (!accountSync.loaded.value) return@collect
+                        val before = current
+                        planner.mail(
+                            mail,
+                            MailRules.overlay(mail, outbox.view.value.entries),
+                            NotificationSettings.load(platform.settings),
+                            mailbox.preferences.value,
+                            name = ::machineName,
+                            open = mailbox.openRefs(),
+                            replaying = { it !in before },
+                        )
+                        current = live
+                    }
+            }
+            // A message read, archived or deleted on this device loses its notification at once.
+            scope.launch {
+                outbox.view
+                    .map { view -> view.entries.filter(MailRules::changesMail) }
+                    .distinctUntilChanged()
+                    .collect { entries ->
+                        planner.mailShown(
+                            MailRules.overlay(accountSync.snapshot.value.mail, entries)
+                        )
+                    }
+            }
         }
         scope.launch { quotas.run(connection.session.map { it?.client }.distinctUntilChanged()) }
         scope.launch {
@@ -314,11 +449,14 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
      * device's first.
      */
     private fun reachableMachines(): Flow<List<String>> =
-        combine(connection.session, connection.machines, sessions.routes) {
-                session,
-                machines,
-                routes ->
-                if (session == null) emptyList() else MachineChoice.ordered(machines, routes)
+        combine(
+                connection.session,
+                connection.machines,
+                sessions.routes,
+                trust.view.map { it.state == TrustState.TRUSTED }.distinctUntilChanged(),
+            ) { session, machines, routes, trusted ->
+                if (session == null || !trusted) emptyList()
+                else MachineChoice.ordered(machines, routes)
             }
             .distinctUntilChanged()
 
@@ -341,13 +479,16 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
 
     /**
      * Uses a gateway session obtained elsewhere, such as an isolated test run's token, and connects
-     * to that gateway.
+     * to that gateway. An isolated fixture's [pairingCode] makes this device pair with that code,
+     * which the fixture's machine approves.
      */
-    suspend fun adoptSession(gateway: Gateway, token: String) = onCore {
-        require(token.isNotBlank()) { "The session token is empty." }
-        credentials.save(gateway, token.trim())
-        activate(gateway)
-    }
+    suspend fun adoptSession(gateway: Gateway, token: String, pairingCode: String? = null) =
+        onCore {
+            require(token.isNotBlank()) { "The session token is empty." }
+            pairingCode?.takeIf { it.isNotBlank() }?.let(trust::usePairingCode)
+            credentials.save(gateway, token.trim())
+            activate(gateway)
+        }
 
     private fun activate(gateway: Gateway) {
         if (accounts.state.value.gateways.none { it.origin == gateway.origin }) {
@@ -379,6 +520,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
         credentials.remove(gateway)
         // Detach the journals first, so nothing writes the namespace while it is removed.
         outbox.bind(null)
+        mailbox.bind(null)
         navigationKv.bind(null)
         drafts.bind(null)
         captures.bind(null)
@@ -388,7 +530,26 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
         connection.unprepare()
         storageFor(gateway).clear()
         workspace.clear()
+        trust.forget()
         connection.restart()
+    }
+
+    /** Rereads the account's trusted devices and, while shown, the devices waiting to join. */
+    suspend fun refreshDevices() = onCore { trust.refresh() }
+
+    /** Signs the device that shows [code] into the account's device roster. */
+    suspend fun approveDevice(code: String) = onCore { trust.approve(code) }
+
+    /** Removes [deviceId] from the account's device roster. */
+    suspend fun revokeDevice(deviceId: String) = onCore { trust.revoke(deviceId) }
+
+    /**
+     * Forgets the pinned roster and this device's key, then asks to join again; used after a
+     * conflict or a revocation.
+     */
+    suspend fun resetTrust() = onCore {
+        sessions.closeAll()
+        trust.reset()
     }
 
     suspend fun selectGateway(origin: String) = onCore { accounts.select(origin) }
@@ -413,6 +574,9 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
         accounts.setDesiredConnected(true)
         connection.restart()
     }
+
+    /** The device woke from sleep: reopens a live connection without undoing a disconnect. */
+    suspend fun systemWoke() = onCore { connection.systemWoke() }
 
     /**
      * Queues a card or chat as [request] says; returns its optimistic row. [create] applies the
@@ -616,23 +780,16 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
         engines: ScreenMediaEngineFactory,
         config: ScreenConfig,
         clipboard: LocalClipboard? = null,
-    ): ScreenSession {
-        val verifier =
-            platform.signatures
-                ?: throw CoreException(
-                    FailureKind.PERMANENT,
-                    "Screen sharing is unavailable on this device.",
-                )
-        return ScreenSession(
+    ): ScreenSession =
+        ScreenSession(
             engines,
-            verifier,
+            platform.signatures,
             config,
             platform.clock,
             scope,
             platform.logger,
             clipboard,
         )
-    }
 
     fun screenRoutes(daemonId: String): ScreenRouteFactory = sessions.screenRoutes(daemonId)
 
@@ -647,19 +804,45 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
             terminals(),
         )
 
-    /** The account-wide activity feed: needs-you, running, and recent conversations. */
+    /**
+     * The account-wide activity feed: needs-you, running, and recent conversations that the
+     * account's Inbox rules show.
+     */
     fun activity(): Flow<List<ActivityItem>> =
-        combine(workspace.state, outbox.view, connection.syncs, connection.machines, ::activity)
+        filteredActivity().map { it.items }.distinctUntilChanged()
+
+    /** [activity] with how many conversations the Inbox rules hide. */
+    internal fun filteredActivity(): Flow<FilteredActivity> =
+        combine(
+                combine(
+                        workspace.state,
+                        outbox.view,
+                        connection.syncs,
+                        connection.machines,
+                        ::activity,
+                    )
+                    .distinctUntilChanged(),
+                navigationKv.values,
+            ) { items, values ->
+                filtered(items, values)
+            }
             .distinctUntilChanged()
 
     /** The activity projection now, e.g. for a widget rendered outside the app. */
     fun currentActivity(): List<ActivityItem> =
-        activity(
-            workspace.state.value,
-            outbox.view.value,
-            connection.syncs.value,
-            connection.machines.value,
-        )
+        filtered(
+                activity(
+                    workspace.state.value,
+                    outbox.view.value,
+                    connection.syncs.value,
+                    connection.machines.value,
+                ),
+                navigationKv.values.value,
+            )
+            .items
+
+    private fun filtered(items: List<ActivityItem>, values: Map<String, ByteString>) =
+        InboxFilter(NavigationLayout(values).inboxRules()).apply(items)
 
     private fun activity(
         view: WorkspaceView,
@@ -676,6 +859,29 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
             excludedIds = pending.pendingCardIds,
             staleness = { card -> staleness(card, syncs, machines) },
         )
+
+    /** [machineId]'s name, else its ID. */
+    fun machineName(machineId: String): String =
+        connection.machines.value.machine(machineId)?.name?.ifBlank { null } ?: machineId
+
+    /**
+     * The account-wide mailbox now: every machine's mail headers with this device's pending
+     * changes, each machine named, with why its view may be old ([MachineSyncs.staleness]) and
+     * whether it is reachable.
+     */
+    fun mailProjection(): MailProjection {
+        val mail = MailRules.overlay(accountSync.snapshot.value.mail, outbox.view.value.entries)
+        val syncs = connection.syncs.value
+        val reachable =
+            if (connection.session.value == null) emptySet() else choice.reachable().toSet()
+        return MailRules.project(
+            mail,
+            mail.keys.associateWith { id ->
+                val name = machineName(id)
+                MailMachine(id, name, MachineSyncs.staleness(syncs[id], name), id in reachable)
+            },
+        )
+    }
 
     /** Why [card]'s owner data may be old ([MachineSyncs.staleness]); null while current. */
     fun staleness(
@@ -771,5 +977,8 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
     private companion object {
         /** The shared navigation layout's KV namespace. */
         const val NAVIGATION_NAMESPACE = "navigation"
+
+        /** Device trust's directory, outside every account's namespace. */
+        const val TRUST_NAMESPACE = "trust"
     }
 }

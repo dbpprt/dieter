@@ -19,3 +19,6 @@ internal actual fun rememberAttachmentPicker(
 internal actual fun rememberAttachmentViewer(
     onError: (String) -> Unit
 ): (com.getdieter.api.v1.MessagePart) -> Unit = {}
+
+@Composable
+internal actual fun rememberTextSharer(): (subject: String, text: String) -> Unit = { _, _ -> }

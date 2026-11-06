@@ -286,9 +286,13 @@ type ChangesFrame struct {
 	// Present when this machine's peer replication diagnostics changed.
 	PeerSync *PeerSyncStatus `protobuf:"bytes,12,opt,name=peer_sync,json=peerSync,proto3" json:"peer_sync,omitempty"`
 	// Present on initial/reset and whenever this owner's privacy state changes.
-	Privacy       *MachinePrivacy `protobuf:"bytes,16,opt,name=privacy,proto3" json:"privacy,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Privacy *MachinePrivacy `protobuf:"bytes,16,opt,name=privacy,proto3" json:"privacy,omitempty"`
+	// Headers of the mail this machine holds, without bodies (GetMail), in every
+	// folder.
+	Mail           []*MailHeader `protobuf:"bytes,17,rep,name=mail,proto3" json:"mail,omitempty"`
+	RemovedMailIds []string      `protobuf:"bytes,18,rep,name=removed_mail_ids,json=removedMailIds,proto3" json:"removed_mail_ids,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ChangesFrame) Reset() {
@@ -433,6 +437,20 @@ func (x *ChangesFrame) GetPrivacy() *MachinePrivacy {
 	return nil
 }
 
+func (x *ChangesFrame) GetMail() []*MailHeader {
+	if x != nil {
+		return x.Mail
+	}
+	return nil
+}
+
+func (x *ChangesFrame) GetRemovedMailIds() []string {
+	if x != nil {
+		return x.RemovedMailIds
+	}
+	return nil
+}
+
 type PeerSyncStatus struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Issues        []*PeerSyncDiagnostic  `protobuf:"bytes,1,rep,name=issues,proto3" json:"issues,omitempty"`
@@ -481,7 +499,7 @@ var File_dieter_v1_state_proto protoreflect.FileDescriptor
 
 const file_dieter_v1_state_proto_rawDesc = "" +
 	"\n" +
-	"\x15dieter/v1/state.proto\x12\tdieter.v1\x1a\x16dieter/v1/common.proto\"\xe3\x01\n" +
+	"\x15dieter/v1/state.proto\x12\tdieter.v1\x1a\x16dieter/v1/common.proto\x1a\x14dieter/v1/mail.proto\"\xe3\x01\n" +
 	"\x0fGetStateRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x19\n" +
@@ -500,7 +518,7 @@ const file_dieter_v1_state_proto_rawDesc = "" +
 	"\x0elocal_sequence\x18\x04 \x01(\x04R\rlocalSequence\"c\n" +
 	"\x0eChangesRequest\x12.\n" +
 	"\x05after\x18\x01 \x01(\v2\x18.dieter.v1.ChangesCursorR\x05after\x12!\n" +
-	"\fheartbeat_ms\x18\x02 \x01(\x05R\vheartbeatMs\"\xe3\x05\n" +
+	"\fheartbeat_ms\x18\x02 \x01(\x05R\vheartbeatMs\"\xb8\x06\n" +
 	"\fChangesFrame\x12\x1b\n" +
 	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12\x18\n" +
 	"\aaccount\x18\r \x01(\tR\aaccount\x120\n" +
@@ -522,7 +540,9 @@ const file_dieter_v1_state_proto_rawDesc = "" +
 	"activities\x120\n" +
 	"\x14removed_activity_ids\x18\v \x03(\tR\x12removedActivityIds\x126\n" +
 	"\tpeer_sync\x18\f \x01(\v2\x19.dieter.v1.PeerSyncStatusR\bpeerSync\x123\n" +
-	"\aprivacy\x18\x10 \x01(\v2\x19.dieter.v1.MachinePrivacyR\aprivacy\"G\n" +
+	"\aprivacy\x18\x10 \x01(\v2\x19.dieter.v1.MachinePrivacyR\aprivacy\x12)\n" +
+	"\x04mail\x18\x11 \x03(\v2\x15.dieter.v1.MailHeaderR\x04mail\x12(\n" +
+	"\x10removed_mail_ids\x18\x12 \x03(\tR\x0eremovedMailIds\"G\n" +
 	"\x0ePeerSyncStatus\x125\n" +
 	"\x06issues\x18\x01 \x03(\v2\x1d.dieter.v1.PeerSyncDiagnosticR\x06issues2\x8e\x01\n" +
 	"\fStateService\x128\n" +
@@ -554,8 +574,9 @@ var file_dieter_v1_state_proto_goTypes = []any{
 	(*Checkout)(nil),           // 7: dieter.v1.Checkout
 	(*Conversation)(nil),       // 8: dieter.v1.Conversation
 	(*MachinePrivacy)(nil),     // 9: dieter.v1.MachinePrivacy
-	(*PeerSyncDiagnostic)(nil), // 10: dieter.v1.PeerSyncDiagnostic
-	(*State)(nil),              // 11: dieter.v1.State
+	(*MailHeader)(nil),         // 10: dieter.v1.MailHeader
+	(*PeerSyncDiagnostic)(nil), // 11: dieter.v1.PeerSyncDiagnostic
+	(*State)(nil),              // 12: dieter.v1.State
 }
 var file_dieter_v1_state_proto_depIdxs = []int32{
 	1,  // 0: dieter.v1.ChangesRequest.after:type_name -> dieter.v1.ChangesCursor
@@ -566,16 +587,17 @@ var file_dieter_v1_state_proto_depIdxs = []int32{
 	8,  // 5: dieter.v1.ChangesFrame.activities:type_name -> dieter.v1.Conversation
 	4,  // 6: dieter.v1.ChangesFrame.peer_sync:type_name -> dieter.v1.PeerSyncStatus
 	9,  // 7: dieter.v1.ChangesFrame.privacy:type_name -> dieter.v1.MachinePrivacy
-	10, // 8: dieter.v1.PeerSyncStatus.issues:type_name -> dieter.v1.PeerSyncDiagnostic
-	0,  // 9: dieter.v1.StateService.GetState:input_type -> dieter.v1.GetStateRequest
-	2,  // 10: dieter.v1.StateService.WatchChanges:input_type -> dieter.v1.ChangesRequest
-	11, // 11: dieter.v1.StateService.GetState:output_type -> dieter.v1.State
-	3,  // 12: dieter.v1.StateService.WatchChanges:output_type -> dieter.v1.ChangesFrame
-	11, // [11:13] is the sub-list for method output_type
-	9,  // [9:11] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	10, // 8: dieter.v1.ChangesFrame.mail:type_name -> dieter.v1.MailHeader
+	11, // 9: dieter.v1.PeerSyncStatus.issues:type_name -> dieter.v1.PeerSyncDiagnostic
+	0,  // 10: dieter.v1.StateService.GetState:input_type -> dieter.v1.GetStateRequest
+	2,  // 11: dieter.v1.StateService.WatchChanges:input_type -> dieter.v1.ChangesRequest
+	12, // 12: dieter.v1.StateService.GetState:output_type -> dieter.v1.State
+	3,  // 13: dieter.v1.StateService.WatchChanges:output_type -> dieter.v1.ChangesFrame
+	12, // [12:14] is the sub-list for method output_type
+	10, // [10:12] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_dieter_v1_state_proto_init() }
@@ -584,6 +606,7 @@ func file_dieter_v1_state_proto_init() {
 		return
 	}
 	file_dieter_v1_common_proto_init()
+	file_dieter_v1_mail_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

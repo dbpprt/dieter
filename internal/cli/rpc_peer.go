@@ -35,22 +35,22 @@ func (c *CLI) rpcPeer(args []string) error {
 		return nil
 	}
 	action := args[0]
-	usage := "Usage: dieter peer " + action + "\n"
+	usage := "Usage: dieter peer " + action
 	switch action {
 	case "show":
-		usage += "  --kind KIND --id ID\nRead one shared record.\n"
+		usage += " --kind KIND --id ID\n\nRead one shared record and all conflicting values.\n"
 	case "changes":
-		usage += "  [--account HASH] [--epoch EPOCH] [--sequence N]\nRead a bounded incremental change page.\n"
+		usage += " [--account HASH] [--epoch EPOCH] [--sequence N]\n\nRead a bounded incremental change page.\n"
 	case "status":
-		usage += "Show enrolled account, conflicts, and bounded per-peer attempts, successes, directions, checkpoints and sanitized record blockers. Catchup means durable page progress with more work pending. A successful exchange is not acknowledgement by every machine.\n"
+		usage += "\n\nShow the enrolled account, conflicts, and bounded per-peer attempts, successes,\ndirections, checkpoints and sanitized record blockers. Catchup means durable page\nprogress with more work pending. A successful exchange is not acknowledgement by\nevery machine.\n"
 	case "list":
-		usage += "  [--account HASH] [--after KEY --snapshot REVISION]\nReturn up to 64 records. Pass nextKey and snapshotRevision for the next page.\n"
+		usage += " [--account HASH] [--after KEY --snapshot REVISION]\n\nReturn up to 64 records. Pass nextKey and snapshotRevision for the next page.\n"
 	case "put":
-		usage += "  --kind KIND --id ENTITY.FIELD --file FILE [--revision HASH]\nFILE contains the JSON value for the typed shared field. Prefer project/board commands for normal edits; the daemon rejects unrecognized kinds and fields.\nOmit revision only for a new record. Resolve conflicts by supplying the current revision.\n"
+		usage += " --kind KIND --id ENTITY.FIELD --file FILE [--revision HASH]\n\nFILE contains the JSON value for the typed shared field. Prefer project and board\ncommands for normal edits; the daemon rejects unknown kinds and fields. Omit\n--revision only for a new record; resolve conflicts with the current revision.\n"
 	case "delete":
-		usage += "  --kind KIND --id ID --revision HASH\nPersist a tombstone; concurrent unseen writes remain visible as conflicts.\n"
+		usage += " --kind KIND --id ID --revision HASH\n\nPersist a tombstone; concurrent unseen writes remain visible as conflicts.\n"
 	case "merge":
-		usage += "  --file FILE\nImport at most 64 records (2 MiB total) using protobuf JSON with account and records fields.\nThis joins causal versions, never replaces the store or runs an agent.\n"
+		usage += " --file FILE\n\nImport at most 64 records (2 MiB total) from protobuf JSON with account and\nrecords fields. This joins causal versions; it never replaces the store or runs\nan agent.\n"
 	default:
 		return fmt.Errorf("unknown peer action %q; run dieter peer --help", action)
 	}

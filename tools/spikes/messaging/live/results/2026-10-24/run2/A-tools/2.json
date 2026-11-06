@@ -1,0 +1,10 @@
+{
+  "cardId": "c_8708738b3dfdaa2e208e953a",
+  "messageId": "msg_47751be74363b4203f",
+  "toolCallId": "toolu_01CgzaNbL41tvgW6aVaHH4b1",
+  "toolName": "bash",
+  "state": "output-error",
+  "inputJson": "eyJjb21tYW5kIjoiZGlldGVyIGNoYW5uZWwgY2hlY2sgc3JjL21vZHVsZTMuanMgc3JjL21vZHVsZTQuanMgc3JjL21vZHVsZTYuanMgc3JjL21vZHVsZTcuanMifQ==",
+  "errorText": "Error: Exit code 1\nerror: unknown command \"channel\"; run dieter --help",
+  "revision": "0a6b94584c947c8f353875f9"
+}

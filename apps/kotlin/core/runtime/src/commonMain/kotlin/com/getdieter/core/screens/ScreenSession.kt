@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import okio.ByteString
 
 /**
  * One screen-sharing session with a machine. The native media engine only moves pixels and packets;
@@ -58,7 +59,7 @@ class ScreenSession(
     private var factory: ScreenRouteFactory? = null
     private val recovery = ScreenRecovery()
     private var hevcFailed = false
-    private var certificatePin: String? = null
+    private var keyPin: ByteString? = null
     private var focused = true
     private var recoveryJob: Job? = null
     private var closing: CompletableDeferred<Unit>? = null
@@ -167,7 +168,7 @@ class ScreenSession(
         disconnect()
         factory = routes
         hevcFailed = false
-        certificatePin = null
+        keyPin = null
         mutableView.update { it.copy(codecFallbackReason = null, machineId = machineId) }
         beginAttempt()
     }
@@ -227,10 +228,10 @@ class ScreenSession(
                         ?: return@launch recover("Connection attempt timed out")
                 if (attemptToken != token) return@launch opened.close()
                 route = opened
-                val pin = certificatePin
-                if (pin != null && pin != opened.certificatePem)
+                val pin = keyPin
+                if (pin != null && pin != opened.daemonPublicKey)
                     return@launch fail(IDENTITY_CHANGED)
-                certificatePin = opened.certificatePem
+                keyPin = opened.daemonPublicKey
                 mutableView.update { it.copy(routeLabel = opened.label) }
                 val caps =
                     withDeadline(Deadlines.CALL) {
@@ -348,7 +349,7 @@ class ScreenSession(
                             renewed.close()
                             throw CancellationException("Screen replaced")
                         }
-                        if (renewed.certificatePem != certificatePin) {
+                        if (renewed.daemonPublicKey != keyPin) {
                             renewed.close()
                             throw ScreenTrustException(IDENTITY_CHANGED)
                         }

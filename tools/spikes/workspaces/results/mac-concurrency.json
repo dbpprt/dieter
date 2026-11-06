@@ -1,0 +1,82 @@
+{
+  "drivers": ["codex", "codex", "claude"],
+  "exp": "concurrency",
+  "forkMs": "110",
+  "forkTruth": ["Makefile", "fork-only.txt"],
+  "mergePreview": [
+    {
+      "a": "dieter/spike-0-61000",
+      "b": "dieter/spike-1-17000",
+      "clean": false,
+      "conflicts": ["docs/guide.md", "src/app/main.go"]
+    },
+    {
+      "a": "dieter/spike-0-61000",
+      "b": "dieter/spike-2-66000",
+      "clean": false,
+      "conflicts": ["docs/guide.md", "src/app/main.go"]
+    },
+    {
+      "a": "dieter/spike-1-17000",
+      "b": "dieter/spike-2-66000",
+      "clean": false,
+      "conflicts": ["docs/guide.md", "src/app/main.go"]
+    }
+  ],
+  "parentTurn2Truth": ["session-0-turn2.txt"],
+  "platform": "darwin",
+  "provider": "clone",
+  "sessions": [
+    {
+      "branchDiff": [
+        "M\tdocs/guide.md",
+        "A\tsession-0-turn2.txt",
+        "A\tsession-0.md",
+        "M\tsrc/app/main.go"
+      ],
+      "crossSessionPaths": [],
+      "driver": "codex",
+      "errors": null,
+      "published": "dieter/spike-0-61000@a5a5824a1f05",
+      "reportedTurn1": ["docs/guide.md", "session-0.md"],
+      "reportedTurn2": [],
+      "session": 0,
+      "truth": [["docs/guide.md", "session-0.md", "src/app/main.go"], ["session-0-turn2.txt"]]
+    },
+    {
+      "branchDiff": [
+        "M\tdocs/guide.md",
+        "A\tsession-1-turn2.txt",
+        "A\tsession-1.md",
+        "M\tsrc/app/main.go"
+      ],
+      "crossSessionPaths": [],
+      "driver": "codex",
+      "errors": null,
+      "published": "dieter/spike-1-17000@deb4ab2b15f0",
+      "reportedTurn1": ["docs/guide.md", "session-1.md"],
+      "reportedTurn2": [],
+      "session": 1,
+      "truth": [["docs/guide.md", "session-1.md", "src/app/main.go"], ["session-1-turn2.txt"]]
+    },
+    {
+      "branchDiff": [
+        "M\tdocs/guide.md",
+        "A\tsession-2-turn2.txt",
+        "A\tsession-2.md",
+        "M\tsrc/app/main.go"
+      ],
+      "crossSessionPaths": [],
+      "driver": "claude",
+      "errors": null,
+      "published": "dieter/spike-2-66000@ff8e36e9040b",
+      "reportedTurn1": ["docs/guide.md", "session-2.md", "src/app/main.go"],
+      "reportedTurn2": ["session-2-turn2.txt"],
+      "session": 2,
+      "truth": [["docs/guide.md", "session-2.md", "src/app/main.go"], ["session-2-turn2.txt"]]
+    }
+  ],
+  "sourceChanged": [],
+  "sourceStatus": "",
+  "turn1Wall": "20794"
+}

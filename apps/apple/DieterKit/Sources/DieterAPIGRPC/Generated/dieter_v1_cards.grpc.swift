@@ -6,7 +6,7 @@
 // Source: dieter/v1/cards.proto
 //
 // For information on using the generated types, please see the documentation:
-//   https://github.com/grpc/grpc-swift
+//   https://github.com/grpc/grpc-swift-2
 
 import GRPCCore
 import GRPCProtobuf
@@ -263,9 +263,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_BoardRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_CardsResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func listArchivedCards<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_BoardRef>,
@@ -282,9 +282,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_CreateConversationRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func createCard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_CreateConversationRequest>,
@@ -301,9 +301,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_CreateConversationRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func createChat<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_CreateConversationRequest>,
@@ -320,9 +320,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_ForkChatRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func forkChat<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ForkChatRequest>,
@@ -339,9 +339,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_ListChatsRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ChatsResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func listChats<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ListChatsRequest>,
@@ -358,9 +358,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_GetCardRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_CardDetail` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func getCard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_GetCardRequest>,
@@ -377,9 +377,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_MoveCardRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func moveCard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_MoveCardRequest>,
@@ -396,9 +396,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_MergeCardRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func mergeCard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_MergeCardRequest>,
@@ -421,9 +421,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_StartCardRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_StartCardResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func startCard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_StartCardRequest>,
@@ -440,9 +440,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_SetCardLabelsRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func setCardLabels<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_SetCardLabelsRequest>,
@@ -465,9 +465,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_GetCardRequest` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func cancelCard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_GetCardRequest>,
@@ -484,9 +484,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_RenameCardRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func renameCard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RenameCardRequest>,
@@ -503,9 +503,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_UpdateCardRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func updateCard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_UpdateCardRequest>,
@@ -522,9 +522,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_ArchiveCardRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func archiveCard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ArchiveCardRequest>,
@@ -541,9 +541,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_PinChatRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func pinChat<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_PinChatRequest>,
@@ -581,9 +581,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_BoardRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_CardsResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func listArchivedCards<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_BoardRef>,
@@ -611,9 +611,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_CreateConversationRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func createCard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_CreateConversationRequest>,
@@ -641,9 +641,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_CreateConversationRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func createChat<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_CreateConversationRequest>,
@@ -671,9 +671,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_ForkChatRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func forkChat<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ForkChatRequest>,
@@ -701,9 +701,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_ListChatsRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_ChatsResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func listChats<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ListChatsRequest>,
@@ -731,9 +731,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_GetCardRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_CardDetail` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func getCard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_GetCardRequest>,
@@ -761,9 +761,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_MoveCardRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func moveCard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_MoveCardRequest>,
@@ -791,9 +791,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_MergeCardRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func mergeCard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_MergeCardRequest>,
@@ -827,9 +827,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_StartCardRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_StartCardResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func startCard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_StartCardRequest>,
@@ -857,9 +857,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_SetCardLabelsRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func setCardLabels<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_SetCardLabelsRequest>,
@@ -893,9 +893,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_GetCardRequest` messages.
         ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func cancelCard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_GetCardRequest>,
@@ -923,9 +923,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_RenameCardRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func renameCard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RenameCardRequest>,
@@ -953,9 +953,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_UpdateCardRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func updateCard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_UpdateCardRequest>,
@@ -983,9 +983,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_ArchiveCardRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func archiveCard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ArchiveCardRequest>,
@@ -1013,9 +1013,9 @@ extension Dieter_V1_CardService {
         ///   - serializer: A serializer for `Dieter_V1_PinChatRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func pinChat<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_PinChatRequest>,
@@ -1046,9 +1046,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_BoardRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listArchivedCards<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_BoardRef>,
@@ -1071,9 +1071,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_CreateConversationRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func createCard<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_CreateConversationRequest>,
@@ -1096,9 +1096,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_CreateConversationRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func createChat<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_CreateConversationRequest>,
@@ -1121,9 +1121,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ForkChatRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func forkChat<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ForkChatRequest>,
@@ -1146,9 +1146,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ListChatsRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listChats<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ListChatsRequest>,
@@ -1171,9 +1171,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_GetCardRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getCard<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_GetCardRequest>,
@@ -1196,9 +1196,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_MoveCardRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func moveCard<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_MoveCardRequest>,
@@ -1221,9 +1221,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_MergeCardRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func mergeCard<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_MergeCardRequest>,
@@ -1252,9 +1252,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_StartCardRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func startCard<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_StartCardRequest>,
@@ -1277,9 +1277,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_SetCardLabelsRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func setCardLabels<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_SetCardLabelsRequest>,
@@ -1308,9 +1308,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_GetCardRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func cancelCard<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_GetCardRequest>,
@@ -1333,9 +1333,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_RenameCardRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func renameCard<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_RenameCardRequest>,
@@ -1358,9 +1358,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_UpdateCardRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func updateCard<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_UpdateCardRequest>,
@@ -1383,9 +1383,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ArchiveCardRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func archiveCard<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ArchiveCardRequest>,
@@ -1408,9 +1408,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_PinChatRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func pinChat<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_PinChatRequest>,
@@ -1438,9 +1438,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listArchivedCards<Result>(
         _ message: Dieter_V1_BoardRef,
@@ -1467,9 +1467,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func createCard<Result>(
         _ message: Dieter_V1_CreateConversationRequest,
@@ -1496,9 +1496,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func createChat<Result>(
         _ message: Dieter_V1_CreateConversationRequest,
@@ -1525,9 +1525,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func forkChat<Result>(
         _ message: Dieter_V1_ForkChatRequest,
@@ -1554,9 +1554,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listChats<Result>(
         _ message: Dieter_V1_ListChatsRequest,
@@ -1583,9 +1583,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getCard<Result>(
         _ message: Dieter_V1_GetCardRequest,
@@ -1612,9 +1612,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func moveCard<Result>(
         _ message: Dieter_V1_MoveCardRequest,
@@ -1641,9 +1641,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func mergeCard<Result>(
         _ message: Dieter_V1_MergeCardRequest,
@@ -1676,9 +1676,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func startCard<Result>(
         _ message: Dieter_V1_StartCardRequest,
@@ -1705,9 +1705,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func setCardLabels<Result>(
         _ message: Dieter_V1_SetCardLabelsRequest,
@@ -1740,9 +1740,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func cancelCard<Result>(
         _ message: Dieter_V1_GetCardRequest,
@@ -1769,9 +1769,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func renameCard<Result>(
         _ message: Dieter_V1_RenameCardRequest,
@@ -1798,9 +1798,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func updateCard<Result>(
         _ message: Dieter_V1_UpdateCardRequest,
@@ -1827,9 +1827,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func archiveCard<Result>(
         _ message: Dieter_V1_ArchiveCardRequest,
@@ -1856,9 +1856,9 @@ extension Dieter_V1_CardService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func pinChat<Result>(
         _ message: Dieter_V1_PinChatRequest,

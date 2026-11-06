@@ -24,6 +24,8 @@ func worker(name string) (func(args []string, output io.Writer) error, bool) {
 		return stageServiceRuntime, true
 	case "__harness-prepare":
 		return prepareHarnessRuntime, true
+	case "__harness-runtime-archive":
+		return buildHarnessRuntimeArchive, true
 	case "__daemon-update-worker":
 		return machine.RunDaemonUpdateWorker, true
 	case "__linux-update-worker":

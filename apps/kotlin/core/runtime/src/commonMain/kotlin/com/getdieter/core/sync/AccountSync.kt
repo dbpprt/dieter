@@ -7,8 +7,11 @@ import com.getdieter.core.storage.CoreStorage
 import com.getdieter.core.store.WorkspaceStore
 import kotlin.time.Clock
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -24,13 +27,21 @@ import kotlinx.coroutines.yield
  * to the same view. Each machine's applied view is persisted, so a cold start renders at once and
  * resumes every stream where it left off. The view goes to [store]. Confined to the core
  * dispatcher.
+ *
+ * A projection rebuilds the whole account, so live frames are projected at most once per
+ * [projectionInterval]: a working agent's machine streams its activity every few tens of
+ * milliseconds, and every view downstream recomputes from each projection. For the same reason a
+ * changed view is written at most once per [persistDebounce]; shutdown and every session's end
+ * write what is left, and a lost write only replays more of the stream.
  */
 class AccountSync(
     private val store: WorkspaceStore,
     private val scope: CoroutineScope,
     private val clock: Clock,
     private val logger: CoreLogger,
-    private val persistDebounce: Duration = 2.seconds,
+    private val persistDebounce: Duration = 10.seconds,
+    private val projectionInterval: Duration = 250.milliseconds,
+    private val timeSource: TimeSource = TimeSource.Monotonic,
 ) {
     private var storage: CoreStorage? = null
     private val replicas = LinkedHashMap<String, MachineReplica>()
@@ -39,6 +50,7 @@ class AccountSync(
     private val unsaved = HashSet<String>()
     private var persistJob: Job? = null
     private var projectJob: Job? = null
+    private var projectedAt: TimeMark? = null
 
     private val mutableSnapshot = MutableStateFlow(AccountSnapshot())
 
@@ -92,8 +104,12 @@ class AccountSync(
     /** Machines that observed every version of the register [key]. */
     fun observers(key: String): List<String> = records[key]?.observers.orEmpty()
 
-    /** Applies a frame, publishing a complete view before its stream may report Live. */
-    fun apply(machineId: String, frame: ChangesFrame): ReplicaChange {
+    /**
+     * Applies a frame, publishing a complete view before its stream may report Live. [live] means
+     * the stream already reported Live since it connected: its later frames are projected with the
+     * next scheduled projection instead.
+     */
+    fun apply(machineId: String, frame: ChangesFrame, live: Boolean = false): ReplicaChange {
         val replica = replicas.getOrPut(machineId) { MachineReplica(machineId) }
         val before = replica.cursor
         val change = replica.apply(frame)
@@ -109,7 +125,8 @@ class AccountSync(
         if (
             frame.caught_up &&
                 !replica.replaying &&
-                (projectJob != null || mutableLoaded.value != replicas.values.any { it.hasView })
+                ((projectJob != null && !live) ||
+                    mutableLoaded.value != replicas.values.any { it.hasView })
         )
             publish()
         return change
@@ -148,6 +165,7 @@ class AccountSync(
     fun publish() {
         projectJob?.cancel()
         projectJob = null
+        projectedAt = timeSource.markNow()
         val snapshot = projector.project(records, replicas.values)
         val loaded = replicas.values.any { it.hasView }
         mutableSnapshot.value = snapshot
@@ -175,11 +193,15 @@ class AccountSync(
         }
     }
 
-    /** Coalesces a burst of frames from any machines into one projection. */
+    /**
+     * Coalesces a burst of frames from any machines into one projection, at most one per
+     * [projectionInterval].
+     */
     private fun scheduleProjection() {
         if (projectJob?.isActive == true) return
         projectJob = scope.launch {
-            yield()
+            val wait = projectedAt?.let { projectionInterval - it.elapsedNow() } ?: Duration.ZERO
+            if (wait.isPositive()) delay(wait) else yield()
             projectJob = null
             publish()
         }

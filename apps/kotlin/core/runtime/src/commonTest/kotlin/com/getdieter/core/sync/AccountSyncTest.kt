@@ -2,6 +2,7 @@ package com.getdieter.core.sync
 
 import com.getdieter.api.v1.ChangesCursor
 import com.getdieter.api.v1.ChangesFrame
+import com.getdieter.api.v1.MailHeader
 import com.getdieter.core.runtime.SilentLogger
 import com.getdieter.core.storage.CoreStorage
 import com.getdieter.core.store.WorkspaceStore
@@ -16,6 +17,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.test.runTest
 import okio.Path.Companion.toPath
 import okio.fakefilesystem.FakeFileSystem
@@ -62,6 +64,40 @@ class AccountSyncTest {
             frame(3, field("item", "c", "summary", """{"runtime":"idle","responseSeq":9}""")),
         )
         assertEquals(9L, store.state.value.card("c")?.response_seq)
+    }
+
+    @Test
+    fun liveFramesAreProjectedAtMostOncePerInterval() = runTest {
+        val store = WorkspaceStore()
+        val sync =
+            AccountSync(
+                store,
+                backgroundScope,
+                clock,
+                SilentLogger,
+                projectionInterval = 250.milliseconds,
+                timeSource = testScheduler.timeSource,
+            )
+        sync.apply("studio", frame(1))
+        val revision = store.revision.value
+        // An agent's activity streams every few tens of milliseconds once the stream is Live.
+        for (sequence in 2L..6L) {
+            sync.apply(
+                "studio",
+                frame(
+                    sequence,
+                    field("item", "c", "title", "\"Step $sequence\"")
+                        .copy(revision = "r$sequence", value_revision = "r$sequence"),
+                ),
+                live = true,
+            )
+            testScheduler.runCurrent()
+        }
+        assertEquals("c", store.state.value.card("c")?.title, "the burst waits for the interval")
+        testScheduler.advanceTimeBy(250.milliseconds)
+        testScheduler.runCurrent()
+        assertEquals("Step 6", store.state.value.card("c")?.title)
+        assertEquals(revision + 1, store.revision.value, "one projection for the whole burst")
     }
 
     @Test
@@ -231,5 +267,31 @@ class AccountSyncTest {
         sync.publish()
         assertEquals("c", store.state.value.card("c")?.title, "then the replayed view replaces it")
         assertEquals("e2", sync.cursor("studio")?.records_epoch)
+    }
+
+    @Test
+    fun everyMachinesMailIsInTheViewAndInItsCache() = runTest {
+        val sync = AccountSync(WorkspaceStore(), backgroundScope, clock, SilentLogger)
+        sync.bind(storage)
+        val header = MailHeader(id = "ml_1", subject = "Audit")
+        sync.apply("studio", frame(1).copy(mail = listOf(header)))
+        sync.apply(
+            "office",
+            frame(1).copy(daemon_id = "office", records = emptyList(), mail = listOf(header)),
+        )
+        sync.publish()
+        assertEquals(
+            mapOf("studio" to mapOf("ml_1" to header), "office" to mapOf("ml_1" to header)),
+            sync.snapshot.value.mail,
+            "the same ID on two machines is two messages",
+        )
+        sync.flush()
+
+        val restored = AccountSync(WorkspaceStore(), backgroundScope, clock, SilentLogger)
+        restored.bind(storage)
+        assertEquals(sync.snapshot.value.mail, restored.snapshot.value.mail)
+        restored.forget("office")
+        restored.publish()
+        assertEquals(setOf("studio"), restored.snapshot.value.mail.keys)
     }
 }

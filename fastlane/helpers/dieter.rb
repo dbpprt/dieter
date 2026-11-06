@@ -106,8 +106,9 @@ module Dieter
 
   # Runs one exact argv in the repository root through Fastlane's sh (streamed
   # and returned). env is an optional leading hash.
-  def sh(*argv, env: {}, log: true)
-    Dir.chdir(ROOT) { Fastlane::Actions.sh(env, *argv.map(&:to_s), log: log) }
+  # Runs argv in the repository root, or in chdir.
+  def sh(*argv, env: {}, log: true, chdir: ROOT)
+    Dir.chdir(chdir) { Fastlane::Actions.sh(env, *argv.map(&:to_s), log: log) }
   end
 
   def group(title)

@@ -18,6 +18,18 @@ type Environment struct {
 	// PassThrough names additional variables forwarded to harness workers
 	// (DIETER_HARNESS_ENV).
 	PassThrough []string
+	// RuntimeArchive pins a prebuilt runtime archive. The zero value uses the
+	// archive this release binary was built with (ReleaseRuntimeArchive);
+	// source builds have none and install with npm.
+	RuntimeArchive RuntimeArchive
+}
+
+// runtimeArchive is the prebuilt runtime this environment installs, if any.
+func (e Environment) runtimeArchive() RuntimeArchive {
+	if e.RuntimeArchive.SHA256 != "" {
+		return e.RuntimeArchive
+	}
+	return ReleaseRuntimeArchive()
 }
 
 func (e Environment) environ() []string {

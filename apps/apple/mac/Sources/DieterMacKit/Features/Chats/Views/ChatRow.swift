@@ -4,10 +4,21 @@ import DieterCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct ChatRow: View {
+/// A chat's row. It depends on its card alone, so lists redraw only the
+/// rows whose chats changed.
+struct ChatRow: View, Equatable {
     @Environment(DieterStore.self) private var store
     let card: Dieter_V1_Card
-    var showsPinnedDragHandle = false
+    let showsPinnedDragHandle: Bool
+
+    init(card: Dieter_V1_Card, showsPinnedDragHandle: Bool = false) {
+        self.card = card
+        self.showsPinnedDragHandle = showsPinnedDragHandle
+    }
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.card == rhs.card && lhs.showsPinnedDragHandle == rhs.showsPinnedDragHandle
+    }
 
     var body: some View {
         ChatRowContent(card: card, showsPinnedDragHandle: showsPinnedDragHandle, unread: store.isChatUnread(card))
@@ -112,19 +123,7 @@ struct ChatRowContent: View, Equatable {
             .background { ChatRowBackground(cardID: card.id) }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .opacity(store.isPendingCard(card.id) ? 0.52 : 1)
-            .overlay(alignment: .bottomTrailing) {
-                if store.isPendingCard(card.id) {
-                    Image(
-                        systemName: store.isFailedOutboxItem(card.id) ? "exclamationmark.circle.fill" : "clock"
-                    )
-                    .font(.caption2)
-                    .foregroundStyle(
-                        store.isFailedOutboxItem(card.id) ? DieterTheme.coral : DieterTheme.tertiary
-                    )
-                    .padding(5)
-                }
-            }
+            .modifier(PendingCardMark(cardID: card.id, inset: 5))
         }
         .buttonStyle(.plain)
         .draggable(PinnedChatDragPayload(chatID: card.id).encoded) {
@@ -146,49 +145,9 @@ struct ChatContextMenu: ViewModifier {
     func body(content: Content) -> some View {
         content
             .contextMenu {
-                if store.isFailedOutboxItem(card.id) {
-                    Button("Retry queued creation") { Task { await store.retryOutboxItem(card.id) } }
-                    Button("Discard queued creation", role: .destructive) {
-                        Task { await store.discardOutboxItem(card.id) }
-                    }
-                    Divider()
-                }
-                if card.archived {
-                    Button("Restore") { Task { await store.archive(card, archived: false) } }
-                } else {
-                    Button(card.pinned ? "Unpin" : "Pin") {
-                        Task { await store.pin(card, pinned: !card.pinned) }
-                    }
-                }
-                let folders = store.navigation.chatFolders
-                if !folders.isEmpty {
-                    Menu("Move to folder", systemImage: "folder") {
-                        ForEach(folders, id: \.id) { folder in
-                            Button {
-                                moveChat(to: folder.id)
-                            } label: {
-                                if folder.itemIds.contains(card.id) {
-                                    Label(folder.name, systemImage: "checkmark")
-                                } else {
-                                    Text(folder.name)
-                                }
-                            }
-                        }
-                        if folders.folder(containing: card.id) != nil {
-                            Divider()
-                            Button("No folder", systemImage: "arrow.up.backward") {
-                                moveChat(to: nil)
-                            }
-                        }
-                    }
-                }
-                Button("Rename…", systemImage: "pencil") {
+                ChatMenuItems(card: card) {
                     renameText = card.title
                     renamePresented = true
-                }
-                if !card.archived {
-                    Divider()
-                    Button("Archive", role: .destructive) { Task { await store.archive(card, archived: true) } }
                 }
             }
             .sheet(isPresented: $renamePresented) {
@@ -215,6 +174,58 @@ struct ChatContextMenu: ViewModifier {
         guard !title.isEmpty else { return }
         Task { await store.rename(card, title: title) }
         renamePresented = false
+    }
+}
+
+/// A chat's context menu. Its outbox and folder reads belong to the menu, so
+/// they do not redraw every chat that offers one.
+private struct ChatMenuItems: View {
+    @Environment(DieterStore.self) private var store
+    let card: Dieter_V1_Card
+    let rename: () -> Void
+
+    var body: some View {
+        if store.isFailedOutboxItem(card.id) {
+            Button("Retry queued creation") { Task { await store.retryOutboxItem(card.id) } }
+            Button("Discard queued creation", role: .destructive) {
+                Task { await store.discardOutboxItem(card.id) }
+            }
+            Divider()
+        }
+        if card.archived {
+            Button("Restore") { Task { await store.archive(card, archived: false) } }
+        } else {
+            Button(card.pinned ? "Unpin" : "Pin") {
+                Task { await store.pin(card, pinned: !card.pinned) }
+            }
+        }
+        let folders = store.navigation.chatFolders
+        if !folders.isEmpty {
+            Menu("Move to folder", systemImage: "folder") {
+                ForEach(folders, id: \.id) { folder in
+                    Button {
+                        moveChat(to: folder.id)
+                    } label: {
+                        if folder.itemIds.contains(card.id) {
+                            Label(folder.name, systemImage: "checkmark")
+                        } else {
+                            Text(folder.name)
+                        }
+                    }
+                }
+                if folders.folder(containing: card.id) != nil {
+                    Divider()
+                    Button("No folder", systemImage: "arrow.up.backward") {
+                        moveChat(to: nil)
+                    }
+                }
+            }
+        }
+        Button("Rename…", systemImage: "pencil", action: rename)
+        if !card.archived {
+            Divider()
+            Button("Archive", role: .destructive) { Task { await store.archive(card, archived: true) } }
+        }
     }
 
     private func moveChat(to folderID: String?) {
@@ -245,6 +256,7 @@ struct ChatRowMachineBadge: View {
         if let machine = store.machine(for: card) {
             let online = store.machineIsAvailable(machine)
             ProjectMachineBadge(machine: machine, online: online, compact: true)
+                .equatable()
                 .frame(maxWidth: 72, alignment: .trailing)
                 .accessibilityIdentifier("chat.\(card.id).machine")
                 .e2eTarget("chat.\(card.id).machine.\(online ? "online" : "offline")")

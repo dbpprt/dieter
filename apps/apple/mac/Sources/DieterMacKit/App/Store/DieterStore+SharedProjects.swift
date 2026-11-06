@@ -86,9 +86,21 @@ extension DieterStore {
     /// on this Mac, else the core's choice (`CreationSlice.checkouts`); nil
     /// when the user must choose.
     func checkout(forProjectID id: String) -> Dieter_V1_Checkout? {
-        let values = projectDirectory[id]?.checkoutChoices ?? []
-        guard let chosen = creationCheckoutIDs[id] ?? creationMemory.checkouts[id] else { return nil }
-        return values.first { $0.id == chosen }
+        guard let chosen = creationCheckoutIDs[id] ?? creationMemory.checkouts[id],
+            let project = projectDirectory[id]
+        else { return nil }
+        return project.checkoutChoices.first { $0.id == chosen }
+    }
+
+    /// A mail sender's checkout on its machine, where the message's
+    /// workspace links resolve; nil when this Mac does not know it.
+    func mailCheckout(id: String, daemonID: String) -> (projectID: String, path: String)? {
+        for project in projectDirectory.values {
+            if let checkout = project.checkouts.first(where: { $0.id == id && $0.daemonID == daemonID }) {
+                return (project.id, checkout.path)
+            }
+        }
+        return nil
     }
 
     /// Picks the checkout new conversations in its project run on; the core remembers it.

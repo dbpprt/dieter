@@ -4,6 +4,8 @@ import com.getdieter.api.v1.MessagePart
 import com.getdieter.api.v1.Subagent
 import com.getdieter.api.v1.TaskPlan
 import com.getdieter.api.v1.UiMessage
+import com.getdieter.client.v1.TimelinePeerNotice
+import com.getdieter.core.channels.PeerNotices
 import kotlin.time.Instant
 
 enum class StepKind {
@@ -16,6 +18,9 @@ enum class StepKind {
 
     /** The message's delegated agents, where the first delegating tool call was. */
     SUBAGENTS,
+
+    /** An agent channel message that joined the running turn; never routine. */
+    PEER_NOTICE,
 }
 
 /** One visible part of a message; adjacent prose is coalesced into one step. */
@@ -32,6 +37,8 @@ data class TimelineStep(
      * [StepKind.SUBAGENTS].
      */
     val partIndex: Int = -1,
+    /** A [StepKind.PEER_NOTICE] step's channel message, read once from its payload. */
+    val peerNotice: TimelinePeerNotice? = null,
 ) {
     val routine: Boolean
         get() = kind == StepKind.TOOL && !Parts.isApprovalTool(part) || kind == StepKind.REASONING
@@ -361,6 +368,7 @@ object TimelineBuilder {
             // Reasoning that reports an error is a diagnostic, not routine work.
             val kind =
                 when {
+                    PeerNotices.isPeerNotice(part) -> StepKind.PEER_NOTICE
                     Parts.isToolCall(part) -> StepKind.TOOL
                     Parts.needsAttention(part) -> StepKind.ATTENTION
                     Parts.isReasoning(part) -> StepKind.REASONING
@@ -373,7 +381,16 @@ object TimelineBuilder {
                 steps[steps.lastIndex] = previous.copy(text = previous.text + "\n\n" + part.text)
                 continue
             }
-            steps += TimelineStep("$key:part:$index", message.id, kind, part, partIndex = index)
+            steps +=
+                TimelineStep(
+                    "$key:part:$index",
+                    message.id,
+                    kind,
+                    part,
+                    partIndex = index,
+                    peerNotice =
+                        if (kind == StepKind.PEER_NOTICE) PeerNotices.notice(part) else null,
+                )
         }
         showAgents()
         return steps

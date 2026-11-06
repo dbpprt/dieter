@@ -1,6 +1,8 @@
 package com.getdieter.core.sync
 
 import com.getdieter.api.v1.Card
+import com.getdieter.api.v1.ChangesCursor
+import com.getdieter.api.v1.ChangesFrame
 import com.getdieter.api.v1.Checkout
 import com.getdieter.api.v1.Conversation
 import com.getdieter.api.v1.Subagent
@@ -17,6 +19,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /** The daemon's projection rules, applied to joined records (`internal/store/shared.go`). */
@@ -144,6 +147,8 @@ class AccountViewTest {
                 initial_prompt = "Only the owner knows",
                 summary = "Doing it",
                 updated_at = "2026-10-01T11:00:00Z",
+                vault_access = true,
+                mail_access = true,
             )
         val activity =
             Conversation(
@@ -176,6 +181,7 @@ class AccountViewTest {
         assertEquals("Only the owner knows", shown.initial_prompt)
         assertEquals("Doing it", shown.summary)
         assertEquals("2026-10-01T11:00:00Z", shown.updated_at)
+        assertTrue(shown.vault_access && shown.mail_access, "the owner's capabilities")
         assertEquals(listOf("s1"), shown.active_subagents.map { it.id })
         assertEquals(activity, view.activities["c"])
         assertEquals("/work/atlas", view.projects.getValue("p").checkouts.single().path)
@@ -189,6 +195,7 @@ class AccountViewTest {
         // Without its owner's stream, an item has only the shared fields.
         val shared = TestRecords.project(laptop).directory.item("c")!!
         assertEquals("", shared.initial_prompt)
+        assertFalse(shared.mail_access)
         assertTrue(shared.active_subagents.isEmpty())
     }
 
@@ -287,5 +294,39 @@ class AccountViewTest {
                 .getValue("x")
         assertTrue(deleted.deleted)
         assertNull(snapshot.kv["other"])
+    }
+
+    @Test
+    fun unchangedValuesKeepTheirInstancesAcrossProjections() {
+        val records =
+            base +
+                item("c", "p", "co", owner = "studio", boardId = "b") +
+                item("d", "p", "co", owner = "studio", boardId = "b") +
+                item("chat", "p", "co", owner = "studio")
+        val studio = replica("studio", records)
+        val joined = AccountRecords()
+        joined.update(listOf(studio), studio.recordKeys)
+        val projector = AccountProjector()
+        val first = projector.project(joined, listOf(studio))
+        assertSame(first, projector.project(joined, listOf(studio)), "nothing changed")
+
+        val renamed = field("item", "c", "title", "\"Renamed\"").copy(revision = "r2")
+        studio.apply(
+            ChangesFrame(
+                daemon_id = "studio",
+                account = "account",
+                cursor = ChangesCursor(records_epoch = "e", records_sequence = 2),
+                caught_up = true,
+                records = listOf(renamed),
+            )
+        )
+        joined.update(listOf(studio), listOf(recordKey(renamed)))
+        val second = projector.project(joined, listOf(studio))
+        assertEquals("Renamed", second.directory.item("c")?.title)
+        assertSame(first.directory.item("d"), second.directory.item("d"))
+        assertSame(first.directory.chats, second.directory.chats)
+        assertSame(first.directory.projects, second.directory.projects)
+        assertSame(first.directory.boards, second.directory.boards)
+        assertSame(first.kv, second.kv)
     }
 }

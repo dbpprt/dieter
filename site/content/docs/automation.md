@@ -29,7 +29,7 @@ dieter terminal create --home --name shell --format id
 dieter --machine MACHINE_ID terminal list --format jsonl
 ```
 
-{{< screenshot src="macos-terminal.png" width="1380" height="870" alt="Native Mac terminal connected to Build Mac with eight passing demo tests and Git status" caption="A host-owned shell in the native terminal workspace. The output is from a small disposable sample project." >}}
+{{< screenshot src="macos-terminal.png" width="1380" height="870" alt="Native Mac terminal on Office mini in the Atlas API checkout, showing Git history, working-tree status, and passing Go race tests" caption="A host-owned shell in the native terminal workspace. The output is from a demo project." >}}
 
 ## Run a command without an interactive shell
 

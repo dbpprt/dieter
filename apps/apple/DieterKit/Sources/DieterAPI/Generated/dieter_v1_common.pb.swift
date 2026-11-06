@@ -734,6 +734,13 @@ public nonisolated struct Dieter_V1_Card: @unchecked Sendable {
     set {_uniqueStorage()._vaultAccess = newValue}
   }
 
+  /// Owner-local: agent turns of this conversation may send the user mail.
+  /// Set only at creation; forks and merges never inherit it.
+  public var mailAccess: Bool {
+    get {_storage._mailAccess}
+    set {_uniqueStorage()._mailAccess = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -1303,6 +1310,12 @@ public nonisolated struct Dieter_V1_MessagePart: @unchecked Sendable {
   public var payloadRevision: String {
     get {_storage._payloadRevision}
     set {_uniqueStorage()._payloadRevision = newValue}
+  }
+
+  /// JSON payload of a "data-*" part, e.g. a data-peer-notice from agent channels.
+  public var dataJson: Data {
+    get {_storage._dataJson}
+    set {_uniqueStorage()._dataJson = newValue}
   }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -2916,7 +2929,7 @@ nonisolated extension Dieter_V1_CardStateField: SwiftProtobuf.Message, SwiftProt
 
 nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Card"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}scope\0\u{3}project_id\0\u{3}board_id\0\u{1}lane\0\u{1}position\0\u{1}title\0\u{3}initial_prompt\0\u{3}initial_prompt_sent_at\0\u{3}phase_changed_at\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{1}runtime\0\u{1}summary\0\u{3}runtime_updated_at\0\u{3}last_activity_at\0\u{1}archived\0\u{3}done_archive_exempt\0\u{1}pinned\0\u{3}created_at\0\u{3}updated_at\0\u{3}label_ids\0\u{2}\u{2}origin\0\u{3}active_subagents\0\u{3}provider_options\0\u{3}workspace_mode\0\u{3}workspace_branch\0\u{3}workspace_base_branch\0\u{1}workspace\0\u{3}pull_request\0\u{3}workspace_base_remote\0\u{3}remote_publish_mode\0\u{3}token_usage\0\u{3}merged_into_card_id\0\u{3}provider_account_key\0\u{3}owner_daemon_id\0\u{3}checkout_id\0\u{3}order_key\0\u{3}conflict_keys\0\u{3}placement_revision\0\u{3}response_seq\0\u{3}response_message_id\0\u{3}seen_response_seq\0\u{3}state_fields\0\u{3}vault_access\0\u{c}\u{18}\u{1}")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}scope\0\u{3}project_id\0\u{3}board_id\0\u{1}lane\0\u{1}position\0\u{1}title\0\u{3}initial_prompt\0\u{3}initial_prompt_sent_at\0\u{3}phase_changed_at\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{1}runtime\0\u{1}summary\0\u{3}runtime_updated_at\0\u{3}last_activity_at\0\u{1}archived\0\u{3}done_archive_exempt\0\u{1}pinned\0\u{3}created_at\0\u{3}updated_at\0\u{3}label_ids\0\u{2}\u{2}origin\0\u{3}active_subagents\0\u{3}provider_options\0\u{3}workspace_mode\0\u{3}workspace_branch\0\u{3}workspace_base_branch\0\u{1}workspace\0\u{3}pull_request\0\u{3}workspace_base_remote\0\u{3}remote_publish_mode\0\u{3}token_usage\0\u{3}merged_into_card_id\0\u{3}provider_account_key\0\u{3}owner_daemon_id\0\u{3}checkout_id\0\u{3}order_key\0\u{3}conflict_keys\0\u{3}placement_revision\0\u{3}response_seq\0\u{3}response_message_id\0\u{3}seen_response_seq\0\u{3}state_fields\0\u{3}vault_access\0\u{3}mail_access\0\u{c}\u{18}\u{1}")
 
   fileprivate class _StorageClass {
     var _stateFields: [Dieter_V1_CardStateField] = []
@@ -2965,6 +2978,7 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
     var _mergedIntoCardID: String = String()
     var _providerAccountKey: String = String()
     var _vaultAccess: Bool = false
+    var _mailAccess: Bool = false
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -3021,6 +3035,7 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
       _mergedIntoCardID = source._mergedIntoCardID
       _providerAccountKey = source._providerAccountKey
       _vaultAccess = source._vaultAccess
+      _mailAccess = source._mailAccess
     }
   }
 
@@ -3085,6 +3100,7 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
         case 45: try { try decoder.decodeSingularInt64Field(value: &_storage._seenResponseSeq) }()
         case 46: try { try decoder.decodeRepeatedMessageField(value: &_storage._stateFields) }()
         case 47: try { try decoder.decodeSingularBoolField(value: &_storage._vaultAccess) }()
+        case 48: try { try decoder.decodeSingularBoolField(value: &_storage._mailAccess) }()
         default: break
         }
       }
@@ -3235,6 +3251,9 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
       if _storage._vaultAccess != false {
         try visitor.visitSingularBoolField(value: _storage._vaultAccess, fieldNumber: 47)
       }
+      if _storage._mailAccess != false {
+        try visitor.visitSingularBoolField(value: _storage._mailAccess, fieldNumber: 48)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -3290,6 +3309,7 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
         if _storage._mergedIntoCardID != rhs_storage._mergedIntoCardID {return false}
         if _storage._providerAccountKey != rhs_storage._providerAccountKey {return false}
         if _storage._vaultAccess != rhs_storage._vaultAccess {return false}
+        if _storage._mailAccess != rhs_storage._mailAccess {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -4188,7 +4208,7 @@ nonisolated extension Dieter_V1_UiMessage: SwiftProtobuf.Message, SwiftProtobuf.
 
 nonisolated extension Dieter_V1_MessagePart: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".MessagePart"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}type\0\u{1}text\0\u{3}media_type\0\u{1}filename\0\u{1}url\0\u{1}state\0\u{3}tool_call_id\0\u{3}tool_name\0\u{3}input_json\0\u{3}output_json\0\u{3}error_text\0\u{1}data\0\u{3}has_input\0\u{3}has_output\0\u{3}input_size\0\u{3}output_size\0\u{3}input_preview\0\u{3}output_preview\0\u{3}payload_revision\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}type\0\u{1}text\0\u{3}media_type\0\u{1}filename\0\u{1}url\0\u{1}state\0\u{3}tool_call_id\0\u{3}tool_name\0\u{3}input_json\0\u{3}output_json\0\u{3}error_text\0\u{1}data\0\u{3}has_input\0\u{3}has_output\0\u{3}input_size\0\u{3}output_size\0\u{3}input_preview\0\u{3}output_preview\0\u{3}payload_revision\0\u{3}data_json\0")
 
   fileprivate class _StorageClass {
     var _type: String = String()
@@ -4210,6 +4230,7 @@ nonisolated extension Dieter_V1_MessagePart: SwiftProtobuf.Message, SwiftProtobu
     var _inputPreview: String = String()
     var _outputPreview: String = String()
     var _payloadRevision: String = String()
+    var _dataJson: Data = Data()
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -4239,6 +4260,7 @@ nonisolated extension Dieter_V1_MessagePart: SwiftProtobuf.Message, SwiftProtobu
       _inputPreview = source._inputPreview
       _outputPreview = source._outputPreview
       _payloadRevision = source._payloadRevision
+      _dataJson = source._dataJson
     }
   }
 
@@ -4276,6 +4298,7 @@ nonisolated extension Dieter_V1_MessagePart: SwiftProtobuf.Message, SwiftProtobu
         case 17: try { try decoder.decodeSingularStringField(value: &_storage._inputPreview) }()
         case 18: try { try decoder.decodeSingularStringField(value: &_storage._outputPreview) }()
         case 19: try { try decoder.decodeSingularStringField(value: &_storage._payloadRevision) }()
+        case 20: try { try decoder.decodeSingularBytesField(value: &_storage._dataJson) }()
         default: break
         }
       }
@@ -4341,6 +4364,9 @@ nonisolated extension Dieter_V1_MessagePart: SwiftProtobuf.Message, SwiftProtobu
       if !_storage._payloadRevision.isEmpty {
         try visitor.visitSingularStringField(value: _storage._payloadRevision, fieldNumber: 19)
       }
+      if !_storage._dataJson.isEmpty {
+        try visitor.visitSingularBytesField(value: _storage._dataJson, fieldNumber: 20)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -4369,6 +4395,7 @@ nonisolated extension Dieter_V1_MessagePart: SwiftProtobuf.Message, SwiftProtobu
         if _storage._inputPreview != rhs_storage._inputPreview {return false}
         if _storage._outputPreview != rhs_storage._outputPreview {return false}
         if _storage._payloadRevision != rhs_storage._payloadRevision {return false}
+        if _storage._dataJson != rhs_storage._dataJson {return false}
         return true
       }
       if !storagesAreEqual {return false}

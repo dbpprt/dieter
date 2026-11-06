@@ -13,54 +13,33 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.getdieter.client.v1.SessionSlice
 import com.getdieter.mobile.board.*
+import com.getdieter.mobile.channels.*
 import com.getdieter.mobile.conversation.*
 import com.getdieter.mobile.creation.*
 import com.getdieter.mobile.design.*
+import com.getdieter.mobile.mail.*
 import com.getdieter.mobile.navigation.*
 import com.getdieter.mobile.platform.*
 import com.getdieter.mobile.screens.*
+import com.getdieter.mobile.settings.PairingScreen
 import com.getdieter.mobile.share.*
 import com.getdieter.mobile.store.*
 import com.getdieter.mobile.tools.*
 import com.getdieter.mobile.workspace.*
 
 /**
- * The Material host used on Android and in JVM tests. iOS hosts each route natively. [onWindow]
- * receives the theme's darkness and background ARGB so the host can style its window.
+ * The touch shell Android hosts on phones, tablets and foldables (see `MobileApp`, which is only
+ * compiled for Android and the JVM). iOS hosts each route natively.
  */
 @Composable
-fun MobileApp(
-    store: MobileStore,
-    openUrl: (String) -> Unit = {},
-    onWindow: (dark: Boolean, background: Int) -> Unit = { _, _ -> },
-) {
-    val signInUrl by store.session.signInUrl.collectAsState()
-    LaunchedEffect(signInUrl) {
-        if (signInUrl.isNotEmpty()) {
-            openUrl(signInUrl)
-            store.session.signInUrl.value = ""
-        }
-    }
-    MobileTheme(store, apple = false) {
-        val dark = store.isDark()
-        val background = palette.background.toArgb()
-        SideEffect { onWindow(dark, background) }
-        CompositionLocalProvider(LocalMobileStore provides store) {
-            Surface(Modifier.fillMaxSize(), color = palette.background) {
-                MaterialShell(store, openUrl)
-            }
-        }
-    }
-}
-
-@Composable
-private fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
+internal fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
     val session by store.session.slice.collectAsState()
     val workspace by store.workspace.slice.collectAsState()
     val navigation by store.routes.collectAsState()
@@ -72,21 +51,35 @@ private fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
             store.error.value = ""
         }
     }
+    val signIn = session.phase == SessionSlice.Phase.PHASE_AUTH_REQUIRED && !workspace.loaded
     SystemBackHandler(
-        navigation.modal != null || navigation.stack.size > 1 || navigation.tab != MobileTab.INBOX
+        !signIn &&
+            !session.pairing &&
+            (navigation.modal != null ||
+                navigation.stack.size > 1 ||
+                navigation.tab != MobileTab.INBOX)
     ) {
         store.handleBack()
     }
-    if (session.phase == SessionSlice.Phase.PHASE_AUTH_REQUIRED && !workspace.loaded) {
+    if (signIn) {
         SignInScreen(store)
         return
     }
+    if (session.pairing) {
+        PairingScreen(store)
+        return
+    }
+    var moreOpen by remember { mutableStateOf(false) }
+    val collapse by store.layout.paneCollapse.collectAsState()
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val rail = maxWidth >= 600.dp
-        val twoPane = maxWidth >= 840.dp
-        val immersive = !twoPane && navigation.top.immersive
+        // Unfolded foldables and tablets show a list beside its detail; landscape phones don't.
+        val twoPane = maxWidth >= 600.dp && maxHeight >= 480.dp
+        val rail = maxWidth >= 840.dp
+        // With its list sent away, an open conversation fills the screen as on a phone.
+        val listHidden = twoPane && collapse.shown(navigation.detailOpen) == PaneCollapse.LIST
+        val immersive = (!twoPane || listHidden) && navigation.top.immersive
         Row(Modifier.fillMaxSize()) {
-            if (rail) NavigationRailBar(store, navigation)
+            if (rail) NavigationRailBar(store, navigation) { moreOpen = true }
             Column(Modifier.weight(1f)) {
                 val bottomInsets =
                     if (rail || immersive) WindowInsets.navigationBars else WindowInsets(0, 0, 0, 0)
@@ -104,7 +97,7 @@ private fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
                     enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
                     exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
                 ) {
-                    BottomBar(store, navigation)
+                    BottomBar(store, navigation) { moreOpen = true }
                 }
             }
         }
@@ -114,6 +107,7 @@ private fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
                 .navigationBarsPadding()
                 .padding(bottom = if (!rail && !immersive) 80.dp else 16.dp),
         )
+        if (moreOpen) MoreSheet(store, navigation, showBar = !rail) { moreOpen = false }
         val modal = navigation.modal
         AnimatedVisibility(
             modal != null,
@@ -132,30 +126,73 @@ private fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
     }
 }
 
+/** Each tab's badge: Inbox attention, unread mail, and unread channel messages on More. */
 @Composable
-private fun BottomBar(store: MobileStore, navigation: MobileNavigation) {
+private fun rememberTabBadges(store: MobileStore): (MobileTab) -> String {
     val activity by store.workspace.activity.collectAsState()
-    NavigationBar(containerColor = colors.surfaceContainer) {
-        MobileTab.entries.forEach { tab ->
-            NavigationBarItem(
-                selected = navigation.tab == tab,
-                onClick = { store.selectTab(tab) },
-                icon = {
-                    val attention =
-                        if (tab == MobileTab.INBOX) activity.summary?.attention ?: 0 else 0
-                    BadgedBox(badge = { if (attention > 0) Badge { Text("$attention") } }) {
-                        Icon(tab.glyph, null, size = 24.dp)
-                    }
+    val channels by store.channels.slice.collectAsState()
+    val mail by store.mail.slice.collectAsState()
+    val attention = activity.summary?.attention ?: 0
+    return { tab ->
+        when (tab) {
+            MobileTab.INBOX -> if (attention > 0) attention.toString() else ""
+            MobileTab.MAIL -> mail.unread_label
+            MobileTab.MORE -> channels.unread_label
+            else -> ""
+        }
+    }
+}
+
+/** More shows a grid until its sheet is open, then the chevron that closes it. */
+@Composable
+private fun TabIcon(tab: MobileTab, badge: String, moreOpen: Boolean) {
+    BadgedBox(badge = { if (badge.isNotEmpty() && !moreOpen) Badge { Text(badge) } }) {
+        Crossfade(tab == MobileTab.MORE && moreOpen, label = "more") { open ->
+            Icon(if (open) Glyph.CHEVRON_DOWN else tab.glyph, null, size = 24.dp)
+        }
+    }
+}
+
+/** The bar's items; More opens its sheet instead of switching tabs. */
+@Composable
+internal fun RowScope.NavigationItems(
+    store: MobileStore,
+    navigation: MobileNavigation,
+    moreOpen: Boolean,
+    onSelect: (MobileTab) -> Unit,
+) {
+    val badge = rememberTabBadges(store)
+    MobileTab.entries.forEach { tab ->
+        NavigationBarItem(
+            selected = if (moreOpen) tab == MobileTab.MORE else navigation.tab == tab,
+            onClick = { onSelect(tab) },
+            icon = { TabIcon(tab, badge(tab), moreOpen) },
+            label = { Text(tab.title) },
+            modifier =
+                Modifier.testTag("nav-${tab.name.lowercase()}").semantics {
+                    if (tab == MobileTab.MORE)
+                        contentDescription = if (moreOpen) "Close More" else "Open More"
                 },
-                label = { Text(tab.title) },
-                modifier = Modifier.testTag("nav-${tab.name.lowercase()}"),
-            )
+        )
+    }
+}
+
+@Composable
+private fun BottomBar(store: MobileStore, navigation: MobileNavigation, onMore: () -> Unit) {
+    NavigationBar(containerColor = colors.surfaceContainer) {
+        NavigationItems(store, navigation, moreOpen = false) { tab ->
+            if (tab == MobileTab.MORE) onMore() else store.selectTab(tab)
         }
     }
 }
 
 @Composable
-private fun NavigationRailBar(store: MobileStore, navigation: MobileNavigation) {
+private fun NavigationRailBar(
+    store: MobileStore,
+    navigation: MobileNavigation,
+    onMore: () -> Unit,
+) {
+    val badge = rememberTabBadges(store)
     NavigationRail(
         containerColor = colors.surfaceContainer,
         header = {
@@ -178,8 +215,8 @@ private fun NavigationRailBar(store: MobileStore, navigation: MobileNavigation) 
         MobileTab.entries.forEach { tab ->
             NavigationRailItem(
                 selected = navigation.tab == tab,
-                onClick = { store.selectTab(tab) },
-                icon = { Icon(tab.glyph, null, size = 24.dp) },
+                onClick = { if (tab == MobileTab.MORE) onMore() else store.selectTab(tab) },
+                icon = { TabIcon(tab, badge(tab), moreOpen = false) },
                 label = { Text(tab.title) },
                 modifier = Modifier.testTag("nav-${tab.name.lowercase()}"),
             )
@@ -202,18 +239,38 @@ private fun TabStack(
         val list = stack[listIndex]
         val details = stack.drop(listIndex + 1)
         val detail = details.lastOrNull()
-        Row(Modifier.fillMaxSize()) {
-            Box(Modifier.width(400.dp).fillMaxHeight()) {
+        val collapse by store.layout.paneCollapse.collectAsState()
+        // Opening something from a list that fills the window brings the detail back.
+        var opened by remember { mutableStateOf(navigation.tab to detail?.key) }
+        LaunchedEffect(navigation.tab, detail?.key) {
+            val now = navigation.tab to detail?.key
+            if (
+                now != opened &&
+                    now.first == opened.first &&
+                    now.second != null &&
+                    store.layout.paneCollapse.value == PaneCollapse.DETAIL
+            )
+                store.layout.setPaneCollapse(PaneCollapse.NONE)
+            opened = now
+        }
+        // Without its list beside it, the open page goes back to the list.
+        val listHidden = collapse.shown(detail != null) == PaneCollapse.LIST
+        ListDetailSplit(
+            store,
+            detailOpen = detail != null,
+            list = {
                 CompositionLocalProvider(
                     LocalBackAction provides if (listIndex > 0) store::pop else null
                 ) {
                     holder.SaveableStateProvider(list.key) { RouteContent(store, list, openUrl) }
                 }
-            }
-            VerticalDivider(color = colors.outlineVariant)
-            Box(Modifier.weight(1f).fillMaxHeight()) {
+            },
+        ) {
+            Box(Modifier.fillMaxSize()) {
                 CompositionLocalProvider(
-                    LocalBackAction provides if (details.size > 1) store::pop else null
+                    LocalBackAction provides
+                        if (details.size > 1 || (listHidden && details.isNotEmpty())) store::pop
+                        else null
                 ) {
                     AnimatedContent(
                         detail,
@@ -224,7 +281,7 @@ private fun TabStack(
                                 Modifier.fillMaxSize().background(palette.background),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                val empty = navigation.tab.emptyDetail
+                                val empty = list.emptyDetail(navigation.tab)
                                 EmptyState(empty.glyph, empty.title, empty.message)
                             }
                         else
@@ -260,6 +317,10 @@ private fun TabStack(
     }
 }
 
+/** Something is open after the stack's last list, i.e. beside it on wide layouts. */
+private val MobileNavigation.detailOpen: Boolean
+    get() = stack.indexOfLast { it.list }.let { it >= 0 && it < stack.lastIndex }
+
 private fun depthOf(store: MobileStore, route: MobileRoute): Int =
     store.routes.value.stack.indexOf(route).let { if (it < 0) Int.MAX_VALUE / 2 else it }
 
@@ -274,18 +335,27 @@ internal fun RouteContent(store: MobileStore, route: MobileRoute, openUrl: (Stri
             when (route.tab) {
                 MobileTab.INBOX -> InboxScreen(store)
                 MobileTab.PROJECTS -> ProjectsScreen(store)
+                MobileTab.MAIL -> MailScreen(store)
                 MobileTab.CHATS -> ChatsScreen(store)
-                MobileTab.TOOLS -> ToolsScreen(store)
+                MobileTab.MORE -> MoreScreen(store)
             }
+        is MobileRoute.Channels -> ChannelsScreen(store)
         is MobileRoute.Project -> ProjectScreen(store, route.projectId)
         is MobileRoute.Board -> BoardScreen(store, route.boardId)
         is MobileRoute.Conversation -> ConversationScreen(store, card(route.cardId), openUrl)
+        is MobileRoute.Channel -> ChannelScreen(store, route.projectId, openUrl)
+        is MobileRoute.MailMessage -> MailMessageScreen(store, route, openUrl)
         is MobileRoute.Pane -> CardPaneScreen(store, card(route.cardId), route.pane, openUrl)
-        is MobileRoute.Tool -> ToolScreen(store, route.page)
+        is MobileRoute.Tool -> ToolScreen(store, route)
         is MobileRoute.NewTask -> CreationScreen(store, route.chat)
         is MobileRoute.ShareTarget -> ShareTargetScreen(store, route.chat)
         is MobileRoute.FilePath ->
-            FilesScreen(store, inConversation = route.cardId.isNotEmpty(), route = route)
+            FilesScreen(
+                store,
+                inConversation = route.cardId.isNotEmpty(),
+                route = route,
+                openUrl = openUrl,
+            )
         is MobileRoute.Machine -> MachineScreen(store, route.machineId)
         is MobileRoute.TerminalSession ->
             TerminalSessionScreen(store, route.terminalId, card(route.cardId))
@@ -358,5 +428,12 @@ private fun SignInScreen(store: MobileStore) {
     }
 }
 
-/** Sign-in screen hosted directly by the iOS app before a session exists. */
-@Composable internal fun SignInContent(store: MobileStore) = SignInScreen(store)
+/**
+ * What the iOS app hosts before it shows machine content: sign-in, then pairing until this device
+ * is trusted.
+ */
+@Composable
+internal fun SignInContent(store: MobileStore) {
+    val session by store.session.slice.collectAsState()
+    if (session.pairing) PairingScreen(store) else SignInScreen(store)
+}

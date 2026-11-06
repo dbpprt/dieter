@@ -9,9 +9,11 @@ name: Release
 #   the next version, build per signing domain, publish a prerelease, TestFlight.
 # stable: dispatch with the tested dev tag; promotes those exact bytes.
 #
-# Signing material lives only in GitHub environments (apple-signing,
-# android-signing, stable-release) restricted to main; the builder jobs
-# reference their environment, so no secret is passed or inherited.
+# Signing jobs run in GitHub environments (apple-signing, android-signing,
+# stable-release) restricted to main, and each environment holds its domain's
+# secrets; the repository has no signing secrets. A reusable builder sees its
+# environment's secrets only when its caller passes `secrets: inherit`, so the
+# builder calls (and nightly.yml's call of this workflow) keep it.
 on:
   workflow_call:
     inputs:
@@ -25,12 +27,12 @@ on:
   workflow_dispatch:
     inputs:
       channel:
-        description: dev builds and publishes a prerelease of main; stable promotes `tag`
+        description: dev builds and publishes a prerelease of main; stable promotes `tag`; testflight (re)delivers `tag`'s IPA
         type: choice
-        options: [dev, stable]
+        options: [dev, stable, testflight]
         default: dev
       tag:
-        description: "stable only: the tested dev release to promote (vX.Y.Z)"
+        description: "stable and testflight: the published release (vX.Y.Z)"
         type: string
         default: ""
 
@@ -52,7 +54,7 @@ env:
 
 jobs:
   version:
-    if: inputs.channel != 'stable' && github.ref == 'refs/heads/main'
+    if: (inputs.channel == 'dev' || inputs.channel == '') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -78,6 +80,7 @@ jobs:
         with:
           tools: ruby gem:bundler
           bundle: "true"
+          cache-scope: release
       - name: Reserve the next version
         id: reserve
         run: |
@@ -104,6 +107,7 @@ jobs:
     with:
       version: ${{ needs.version.outputs.version }}
       build: ${{ needs.version.outputs.build }}
+    secrets: inherit
 
   android:
     needs: version
@@ -114,6 +118,7 @@ jobs:
     with:
       version: ${{ needs.version.outputs.version }}
       build: ${{ needs.version.outputs.build }}
+    secrets: inherit
 
   publish:
     needs: [version, server, apple, android]
@@ -141,12 +146,13 @@ jobs:
         with:
           tools: ruby gem:bundler python cosign oras
           bundle: "true"
+          cache-scope: release
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: release-*
           path: dist/built
           merge-multiple: true
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -237,10 +243,47 @@ jobs:
         with:
           tools: ruby gem:bundler
           bundle: "true"
+          cache-scope: release
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-ios
           path: dist/ios
+      - name: Upload and deliver to internal testers
+        env:
+          IOS_APP_STORE_CONNECT_KEY_BASE64: ${{ secrets.IOS_APP_STORE_CONNECT_KEY_BASE64 }}
+          IOS_APP_STORE_CONNECT_KEY_ID: ${{ secrets.IOS_APP_STORE_CONNECT_KEY_ID }}
+          IOS_APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.IOS_APP_STORE_CONNECT_ISSUER_ID }}
+        run: bundle exec fastlane ios beta ipa:dist/ios/Dieter-iOS.ipa
+
+  # Delivers an already published release's IPA to TestFlight, e.g. to retry
+  # a failed delivery without rebuilding. The lane skips the upload when the
+  # build is already in App Store Connect.
+  testflight-only:
+    if: inputs.channel == 'testflight' && github.ref == 'refs/heads/main'
+    runs-on: macos-26
+    timeout-minutes: 60
+    environment: apple-signing
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: '[[ "$GITHUB_REPOSITORY" == "$(jq -r .repository config/identity.json)" ]]'
+      - uses: ./.github/actions/setup
+        with:
+          tools: ruby gem:bundler
+          bundle: "true"
+          cache-scope: release
+      - name: Release identity and IPA
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.([0-9]+)$ ]] || { echo "::error::tag must be vX.Y.Z"; exit 1; }
+          echo "DIETER_RELEASE_VERSION=${TAG#v}" >> "$GITHUB_ENV"
+          echo "DIETER_RELEASE_BUILD=${BASH_REMATCH[1]}" >> "$GITHUB_ENV"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern Dieter-iOS.ipa --dir dist/ios
       - name: Upload and deliver to internal testers
         env:
           IOS_APP_STORE_CONNECT_KEY_BASE64: ${{ secrets.IOS_APP_STORE_CONNECT_KEY_BASE64 }}
@@ -264,6 +307,7 @@ jobs:
         with:
           tools: ruby gem:bundler cosign
           bundle: "true"
+          cache-scope: release
       - name: Verify and promote the tested bytes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

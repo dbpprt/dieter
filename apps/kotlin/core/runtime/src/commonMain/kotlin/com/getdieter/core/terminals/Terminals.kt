@@ -529,6 +529,7 @@ class Terminals(
         watch?.cancel()
         watch = null
         watchedId = null
+        mutableView.update { it.copy(streamConnected = false) }
     }
 
     private fun upsert(terminal: Terminal) = mutableView.update { state ->

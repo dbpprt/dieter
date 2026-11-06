@@ -8,7 +8,8 @@ import (
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/platform/fault"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/commands"
+	"github.com/dbpprt/dieter/internal/store/home"
 )
 
 func (api *conversationsAPI) PresentConversationContent(ctx context.Context, request *dieterv1.PresentConversationContentRequest) (*dieterv1.ContentPresentation, error) {
@@ -99,7 +100,7 @@ func (api *conversationsAPI) SendMessage(_ context.Context, request *dieterv1.Se
 	}
 	api.server.commandMu.Lock()
 	defer api.server.commandMu.Unlock()
-	if result, ok, loadErr := api.server.store.LoadCommandResult(clientID, commandID); loadErr != nil {
+	if result, ok, loadErr := api.server.store.Commands.Load(clientID, commandID); loadErr != nil {
 		return nil, loadErr
 	} else if ok {
 		if result.Kind != "send_message" {
@@ -109,7 +110,7 @@ func (api *conversationsAPI) SendMessage(_ context.Context, request *dieterv1.Se
 	}
 	messageID := strings.TrimSpace(request.GetMessageId())
 	if messageID == "" {
-		messageID, err = store.DeterministicCommandID("msg_", clientID, commandID)
+		messageID, err = commands.DeterministicID("msg_", clientID, commandID)
 		if err != nil {
 			return nil, err
 		}
@@ -117,11 +118,11 @@ func (api *conversationsAPI) SendMessage(_ context.Context, request *dieterv1.Se
 	if len(messageID) > 200 || strings.ContainsAny(messageID, `/\\`) {
 		return nil, fault.New(fault.Invalid, "message_id is invalid")
 	}
-	if conversation, conversationErr := api.server.store.Conversation(request.GetCardId()); conversationErr == nil {
+	if conversation, conversationErr := api.server.store.Conversations.Get(request.GetCardId()); conversationErr == nil {
 		for _, message := range conversation.Messages {
 			if message.ID == messageID {
-				result := store.CommandResult{Kind: "send_message", MessageID: messageID, Sent: true}
-				if saveErr := api.server.store.SaveCommandResult(clientID, commandID, result); saveErr != nil {
+				result := commands.Result{Kind: "send_message", MessageID: messageID, Sent: true}
+				if saveErr := api.server.store.Commands.Save(clientID, commandID, result); saveErr != nil {
 					return nil, saveErr
 				}
 				return &dieterv1.SendMessageResponse{Sent: true, MessageId: messageID}, nil
@@ -129,8 +130,8 @@ func (api *conversationsAPI) SendMessage(_ context.Context, request *dieterv1.Se
 		}
 		for _, queuedMessage := range conversation.Queue {
 			if queuedMessage.ID == messageID {
-				result := store.CommandResult{Kind: "send_message", MessageID: messageID, Queued: true}
-				if saveErr := api.server.store.SaveCommandResult(clientID, commandID, result); saveErr != nil {
+				result := commands.Result{Kind: "send_message", MessageID: messageID, Queued: true}
+				if saveErr := api.server.store.Commands.Save(clientID, commandID, result); saveErr != nil {
 					return nil, saveErr
 				}
 				return &dieterv1.SendMessageResponse{Queued: true, MessageId: messageID}, nil
@@ -144,15 +145,15 @@ func (api *conversationsAPI) SendMessage(_ context.Context, request *dieterv1.Se
 	if err != nil {
 		return nil, sendMessageFailure(err)
 	}
-	result := store.CommandResult{Kind: "send_message", MessageID: messageID, Sent: !queued, Queued: queued}
-	if err := api.server.store.SaveCommandResult(clientID, commandID, result); err != nil {
+	result := commands.Result{Kind: "send_message", MessageID: messageID, Sent: !queued, Queued: queued}
+	if err := api.server.store.Commands.Save(clientID, commandID, result); err != nil {
 		return nil, err
 	}
 	return &dieterv1.SendMessageResponse{Sent: !queued, Queued: queued, MessageId: messageID}, nil
 }
 
 func (api *conversationsAPI) RemoveQueuedMessage(_ context.Context, request *dieterv1.RemoveQueuedMessageRequest) (*dieterv1.QueuedMessage, error) {
-	removed, _, err := api.server.store.RemoveQueuedConversationMessage(request.GetCardId(), request.GetMessageId())
+	removed, _, err := api.server.store.Conversations.RemoveQueuedMessage(request.GetCardId(), request.GetMessageId())
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +161,7 @@ func (api *conversationsAPI) RemoveQueuedMessage(_ context.Context, request *die
 }
 
 func (api *conversationsAPI) MarkConversationRead(_ context.Context, request *dieterv1.MarkConversationReadRequest) (*dieterv1.Card, error) {
-	card, err := api.server.store.MarkConversationRead(request.GetCardId(), request.GetResponseSeq())
+	card, err := api.server.store.Conversations.MarkRead(request.GetCardId(), request.GetResponseSeq())
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +169,7 @@ func (api *conversationsAPI) MarkConversationRead(_ context.Context, request *di
 }
 
 func (api *conversationsAPI) UpdateConversationWorkspace(_ context.Context, request *dieterv1.UpdateConversationWorkspaceRequest) (*dieterv1.Card, error) {
-	current, err := api.server.store.ResolveCard(request.GetCardId())
+	current, err := api.server.store.Kanban.ResolveCard(request.GetCardId())
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +181,7 @@ func (api *conversationsAPI) UpdateConversationWorkspace(_ context.Context, requ
 	if strings.TrimSpace(remotePublishMode) == "" {
 		remotePublishMode = current.RemotePublishMode
 	}
-	card, err := api.server.store.UpdateCardWorkspaceSelection(
+	card, err := api.server.store.Kanban.UpdateCardWorkspaceSelection(
 		request.GetCardId(), request.GetMode(), request.GetBranch(), request.GetBaseBranch(),
 		baseRemote, remotePublishMode, false,
 	)
@@ -195,7 +196,7 @@ func (api *conversationsAPI) UpdateConversationWorkspace(_ context.Context, requ
 // The metadata revision covers read receipts, workspace, project and board metadata as
 // well as peer commits; transcript revision also covers asynchronous checkpoints.
 type conversationWatchRevision struct {
-	metadata   store.StoreRevision
+	metadata   home.Revision
 	transcript string
 }
 
@@ -204,6 +205,6 @@ func (s *Server) conversationWatchRevision(cardID string) (conversationWatchRevi
 	if err != nil {
 		return conversationWatchRevision{}, false, err
 	}
-	transcript, err := s.store.ConversationRevisionByID(cardID)
+	transcript, err := s.store.Conversations.RevisionByID(cardID)
 	return conversationWatchRevision{metadata, transcript}, s.store.SyncMutationPending(), err
 }

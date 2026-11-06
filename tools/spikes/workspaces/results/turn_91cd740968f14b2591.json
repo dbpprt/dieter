@@ -1,0 +1,26 @@
+{
+  "card": "c_a09ef3d59fba80a85fe01050",
+  "changes": [
+    {
+      "path": "Makefile",
+      "status": "D"
+    },
+    {
+      "path": "docs/guide.md",
+      "status": "M"
+    },
+    {
+      "path": "notes.txt",
+      "status": "A"
+    },
+    {
+      "path": "src/app/main.go",
+      "status": "M"
+    }
+  ],
+  "end": "ba07b39a7dc9fabe018af284608cb92cb2d86460",
+  "snapshotMs": 249,
+  "start": "0dcdf712e4242bfe700d10cf3f2b80def89b53d8",
+  "turn": "turn_91cd740968f14b2591",
+  "workspace": "/Volumes/External/dieter-spike/phase-d/home/worktrees/p_28a650d24f93/c_a09ef3d59fba80a85fe01050"
+}

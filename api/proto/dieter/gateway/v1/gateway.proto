@@ -12,7 +12,9 @@ import "google/protobuf/empty.proto";
 // GatewayService is Dieter's account and machine directory. Project,
 // conversation, schedule, file, and provider credential data never enters this
 // service. The gateway may cache normalized, credential-free provider quota
-// snapshots for the authenticated account.
+// snapshots for the authenticated account. It also stores the account's signed
+// device roster and short-lived pairing requests: public keys and display
+// names that devices verify themselves. The gateway cannot extend the roster.
 service GatewayService {
   // GetCompatibility is the stable, unauthenticated bootstrap used before
   // sign-in. It contains no account or machine data.
@@ -42,11 +44,38 @@ service GatewayService {
   rpc RefreshProviderQuotas(RefreshProviderQuotasRequest) returns (RefreshProviderQuotasResponse);
   rpc SetProviderQuotaSummaryInclusion(SetProviderQuotaSummaryInclusionRequest) returns (SetProviderQuotaSummaryInclusionResponse);
   rpc ConsumeProviderQuotaReset(ConsumeProviderQuotaResetRequest) returns (ConsumeProviderQuotaResetResponse);
+  // The account's device roster: an append-only, hash-chained list of device
+  // keys. Every entry is signed by a device that is already a member; devices
+  // verify the chain against the root they pinned when they were paired.
+  rpc GetDeviceRoster(GetDeviceRosterRequest) returns (DeviceRoster);
+  // Streams the roster from from_sequence, then every appended entry.
+  rpc WatchDeviceRoster(GetDeviceRosterRequest) returns (stream DeviceRoster);
+  // Appends one entry if it extends the current head (compare-and-swap); a
+  // concurrent append fails with ABORTED. replace only accepts a genesis entry
+  // and starts a new roster, which every previously paired device rejects.
+  rpc AppendDeviceRoster(AppendDeviceRosterRequest) returns (DeviceRoster);
+  // Pairing requests are notes from a device that wants to join. The new
+  // device shows a one-time code; a person types it on a trusted device. The
+  // request's proof and the approver's confirmation are HMACs keyed by that
+  // code, so the gateway can neither substitute the new device's key nor
+  // approve a device into a roster of its own.
+  rpc PostPairingRequest(PostPairingRequestRequest) returns (PairingRequest);
+  rpc ListPairingRequests(google.protobuf.Empty) returns (ListPairingRequestsResponse);
+  rpc ConfirmPairingRequest(ConfirmPairingRequestRequest) returns (PairingRequest);
+  rpc DeletePairingRequest(PairingRequestRef) returns (google.protobuf.Empty);
 }
 
-// DaemonLinkService is a persistent daemon-initiated reverse tunnel. Every
-// logical Dieter RPC is framed independently so one slow conversation stream
-// cannot block unrelated calls on the same machine.
+// RelayService carries the daemon API between a client and one daemon as an
+// opaque byte stream. The client runs mutually authenticated TLS 1.3 inside
+// the tunnel to the daemon's own endpoint, so the gateway relays ciphertext
+// and never sees calls, responses, or credentials.
+service RelayService {
+  rpc OpenTunnel(stream TunnelFrame) returns (stream TunnelFrame);
+}
+
+// DaemonLinkService is a persistent daemon-initiated reverse link. It carries
+// presence, provider quota frames, and client tunnels. Every tunnel has its own
+// credit window, so one slow client cannot block other tunnels to the machine.
 service DaemonLinkService {
   rpc Connect(stream DaemonLinkFrame) returns (stream DaemonLinkFrame);
 }
@@ -191,8 +220,11 @@ message RecoverDaemonRequest {
 message DaemonCredential {
   string daemon_id = 1;
   string daemon_name = 2;
+  // The gateway's enrollment certificate. The daemon presents it only to the
+  // gateway; clients and peers trust the device roster instead.
   bytes certificate_pem = 3;
-  bytes daemon_ca_pem = 4;
+  reserved 4;
+  reserved "daemon_ca_pem";
   bytes gateway_signing_public_key = 5;
   string expires_at = 6;
   uint64 generation = 7;
@@ -207,8 +239,8 @@ message RenameDaemonRequest {
 
 message ExchangeDaemonTokenRequest {
   string daemon_id = 1;
-  // Reserved for a future proof-of-possession token profile. Empty for the
-  // current short-lived bearer profile.
+  // The caller's roster device ID. The token is bound to it: the daemon
+  // accepts the token only over TLS authenticated by that device's key.
   string client_key_thumbprint = 2;
 }
 
@@ -233,13 +265,9 @@ message DaemonRoute {
   bool relay_available = 2;
   repeated DirectCandidate direct_candidates = 3;
   uint64 generation = 4;
-  // Trust anchor for direct daemon TLS. It is returned only to the owning
-  // authenticated account and is never needed for the gateway relay path.
-  bytes daemon_ca_pem = 5;
-  // The authenticated owner uses the enrolled leaf certificate to verify
-  // daemon-signed remote-desktop session bindings on both relay and direct
-  // signaling routes.
-  bytes daemon_certificate_pem = 6;
+  // Daemon keys come from the device roster, never from the gateway.
+  reserved 5, 6;
+  reserved "daemon_ca_pem", "daemon_certificate_pem";
   bool control_webrtc = 7;
   repeated RelayLaneStatus relay_lanes = 8;
 }
@@ -506,15 +534,7 @@ enum DaemonLinkFrameKind {
   DAEMON_LINK_FRAME_KIND_HELLO_ACK = 2;
   DAEMON_LINK_FRAME_KIND_HEARTBEAT = 3;
   DAEMON_LINK_FRAME_KIND_ROUTES = 4;
-  DAEMON_LINK_FRAME_KIND_OPEN_RPC = 5;
-  DAEMON_LINK_FRAME_KIND_REQUEST_MESSAGE = 6;
-  DAEMON_LINK_FRAME_KIND_REQUEST_END = 7;
-  DAEMON_LINK_FRAME_KIND_CANCEL_RPC = 8;
-  DAEMON_LINK_FRAME_KIND_RESPONSE_HEADER = 9;
-  DAEMON_LINK_FRAME_KIND_RESPONSE_MESSAGE = 10;
-  DAEMON_LINK_FRAME_KIND_RESPONSE_END = 11;
-  DAEMON_LINK_FRAME_KIND_RPC_ERROR = 12;
-  DAEMON_LINK_FRAME_KIND_WINDOW_UPDATE = 13;
+  reserved 5 to 13;
   DAEMON_LINK_FRAME_KIND_PING = 14;
   DAEMON_LINK_FRAME_KIND_PONG = 15;
   DAEMON_LINK_FRAME_KIND_PROVIDER_ACCOUNTS = 16;
@@ -522,6 +542,16 @@ enum DaemonLinkFrameKind {
   DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_RESULT = 18;
   DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_REQUEST = 19;
   DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_RESULT = 20;
+  // Gateway to daemon: a client opened tunnel stream_id on this lane.
+  DAEMON_LINK_FRAME_KIND_TUNNEL_OPEN = 21;
+  // Daemon to gateway: the tunnel reached the daemon's TLS endpoint.
+  DAEMON_LINK_FRAME_KIND_TUNNEL_OPENED = 22;
+  // Opaque tunnel bytes, at most 64 KiB per frame.
+  DAEMON_LINK_FRAME_KIND_TUNNEL_DATA = 23;
+  // The receiver consumed credit DATA frames; the sender may send that many more.
+  DAEMON_LINK_FRAME_KIND_TUNNEL_WINDOW = 24;
+  // Either side ends the tunnel; status_code/status_message explain why.
+  DAEMON_LINK_FRAME_KIND_TUNNEL_CLOSE = 25;
 }
 
 // Each lane uses its own authenticated connection and flow-control window.
@@ -546,18 +576,18 @@ message RelayLaneStatus {
 
 message DaemonLinkFrame {
   DaemonLinkFrameKind kind = 1;
+  // The tunnel this frame belongs to.
   uint64 stream_id = 2;
   string daemon_id = 3;
   string request_id = 4;
-  string method = 5;
+  reserved 5, 7, 8, 9, 12, 30, 31, 32;
+  reserved "method", "payload_sha256", "delegation_assertion", "deadline_unix_millis", "metadata", "payload_size", "payload_offset";
+  // HELLO challenge proofs and TUNNEL_DATA bytes.
   bytes payload = 6;
-  bytes payload_sha256 = 7;
-  string delegation_assertion = 8;
-  int64 deadline_unix_millis = 9;
   int32 status_code = 10;
   string status_message = 11;
-  map<string, string> metadata = 12;
-  uint32 window_bytes = 13;
+  // TUNNEL_WINDOW: the number of DATA frames the receiver consumed.
+  uint32 credit = 13;
   string release_version = 14;
   uint64 generation = 15;
   repeated DirectCandidate direct_candidates = 16;
@@ -576,9 +606,136 @@ message DaemonLinkFrame {
   RelayLane lane = 28;
   // All lanes of one daemon process join this unpredictable session identity.
   string session_id = 29;
-  reserved 30;
-  // Fragmented payloads retain one logical message bound. Metadata is carried
-  // only by the first fragment; offsets must be contiguous within a stream.
-  uint32 payload_size = 31;
-  uint32 payload_offset = 32;
+}
+
+enum TunnelFrameKind {
+  TUNNEL_FRAME_KIND_UNSPECIFIED = 0;
+  // Client to gateway, first frame only: daemon_id and lane.
+  TUNNEL_FRAME_KIND_OPEN = 1;
+  // Gateway to client: the daemon accepted the tunnel.
+  TUNNEL_FRAME_KIND_OPENED = 2;
+  // Opaque bytes, at most 64 KiB per frame.
+  TUNNEL_FRAME_KIND_DATA = 3;
+  // The receiver consumed credit DATA frames.
+  TUNNEL_FRAME_KIND_WINDOW = 4;
+  // Ends the tunnel in both directions.
+  TUNNEL_FRAME_KIND_CLOSE = 5;
+}
+
+// TunnelFrame is one frame of a relay tunnel. Each side may have at most
+// tunnel_window DATA frames (8) that the other side has not credited with a
+// WINDOW frame; the gateway closes a tunnel whose peer exceeds it.
+message TunnelFrame {
+  TunnelFrameKind kind = 1;
+  string daemon_id = 2;
+  RelayLane lane = 3;
+  bytes data = 4;
+  uint32 credit = 5;
+  int32 status_code = 6;
+  string status_message = 7;
+}
+
+enum DeviceKind {
+  DEVICE_KIND_UNSPECIFIED = 0;
+  // An enrolled machine running the daemon (and its CLI).
+  DEVICE_KIND_DAEMON = 1;
+  // A native app.
+  DEVICE_KIND_CLIENT = 2;
+  // An offline recovery key. It may sign roster entries but never connects.
+  DEVICE_KIND_RECOVERY = 3;
+}
+
+enum DeviceKeyAlgorithm {
+  DEVICE_KEY_ALGORITHM_UNSPECIFIED = 0;
+  // Signature over the canonical entry bytes.
+  DEVICE_KEY_ALGORITHM_ED25519 = 1;
+  // DER ECDSA signature over SHA-256 of the canonical entry bytes.
+  DEVICE_KEY_ALGORITHM_ECDSA_P256_SHA256 = 2;
+}
+
+enum DeviceRosterOperation {
+  DEVICE_ROSTER_OPERATION_UNSPECIFIED = 0;
+  // Sequence 0, self-signed by the account's first device.
+  DEVICE_ROSTER_OPERATION_GENESIS = 1;
+  DEVICE_ROSTER_OPERATION_ADD = 2;
+  DEVICE_ROSTER_OPERATION_REVOKE = 3;
+}
+
+message DeviceDescriptor {
+  // "dv_" + lowercase Crockford base32 of the first 16 bytes of SHA-256(public_key).
+  string device_id = 1;
+  DeviceKind kind = 2;
+  // "macos", "linux", "ios", "android", "jvm", or "recovery". Display only.
+  string platform = 3;
+  // Display only, at most 64 bytes.
+  string name = 4;
+  DeviceKeyAlgorithm algorithm = 5;
+  // DER SubjectPublicKeyInfo.
+  bytes public_key = 6;
+  // The gateway daemon ID of a daemon device.
+  string daemon_id = 7;
+}
+
+message DeviceRosterEntry {
+  // "<gateway issuer>|github:<numeric id>"; binds the roster to one account.
+  string account = 1;
+  uint64 sequence = 2;
+  // SHA-256 of the previous entry's canonical bytes; empty for genesis.
+  bytes previous = 3;
+  DeviceRosterOperation operation = 4;
+  // The added device, or the revoked device (device_id is enough).
+  DeviceDescriptor device = 5;
+  // Device ID of the member that signed this entry.
+  string signer = 6;
+  // RFC 3339; informational.
+  string created_at = 7;
+  bytes signature = 8;
+}
+
+message DeviceRoster {
+  repeated DeviceRosterEntry entries = 1;
+  // Sequence and hash of the newest entry, when any exists.
+  uint64 head_sequence = 2;
+  bytes head_hash = 3;
+  // Total number of entries; 0 before the account has a roster.
+  uint64 length = 4;
+}
+
+message GetDeviceRosterRequest {
+  uint64 from_sequence = 1;
+}
+
+message AppendDeviceRosterRequest {
+  DeviceRosterEntry entry = 1;
+  bool replace = 2;
+}
+
+message PostPairingRequestRequest {
+  DeviceDescriptor device = 1;
+  // HMAC-SHA256 keyed by the pairing secret over the descriptor.
+  bytes proof = 2;
+}
+
+message PairingRequest {
+  string id = 1;
+  DeviceDescriptor device = 2;
+  string requested_at = 3;
+  string expires_at = 4;
+  bytes proof = 5;
+  // Set by the approver: HMAC-SHA256 keyed by the pairing secret over the
+  // roster root and the hash of the entry that added the device.
+  bytes confirmation = 6;
+}
+
+message ConfirmPairingRequestRequest {
+  string id = 1;
+  bytes confirmation = 2;
+}
+
+message ListPairingRequestsResponse {
+  repeated PairingRequest requests = 1;
+}
+
+message PairingRequestRef {
+  string id = 1;
 }

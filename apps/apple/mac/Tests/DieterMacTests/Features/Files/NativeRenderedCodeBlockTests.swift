@@ -108,6 +108,96 @@ struct NativeRenderedCodeBlockTests {
         #expect(fixture.editor.undoManager?.canUndo != true)
     }
 
+    @Test func failedPreviewRevealsOnlyItsSourceWithoutEditingTheReport() throws {
+        let source = "```mermaid\ngraph LR\n A-->B\n```\n\nUnrelated prose\n\n```vega-lite\n{broken}\n```\n"
+        let fixture = try EditorFixture(source)
+        fixture.editor.isEditable = false
+        let storage = try #require(fixture.editor.textStorage)
+        let first = try #require(fixture.imageAnchors().first)
+        let image = storage.attribute(.latexImage, at: first.location, effectiveRange: nil) as? NSImage
+        let prose = (source as NSString).range(of: "Unrelated prose")
+        let sentinel = NSAttributedString.Key("UnrelatedProsePresentation")
+        storage.addAttribute(sentinel, value: "preserved", range: prose)
+        let failed = try #require(fixture.renderer.requests.first { $0.code.contains("{broken}") })
+        fixture.renderer.unavailableSources.insert(failed.code)
+        NotificationCenter.default.post(name: fixture.renderer.notification, object: nil)
+
+        #expect(fixture.imageAnchors().count == 1)
+        let invalid = (source as NSString).range(of: "{broken}")
+        #expect(storage.attribute(.renderedCodeBlockSource, at: invalid.location, effectiveRange: nil) == nil)
+        #expect((storage.attribute(.font, at: invalid.location, effectiveRange: nil) as? NSFont)?.pointSize ?? 0 > 1)
+        #expect(
+            (storage.attribute(.foregroundColor, at: invalid.location, effectiveRange: nil) as? NSColor)?.alphaComponent
+                ?? 0 > 0)
+        #expect(storage.attribute(sentinel, at: prose.location, effectiveRange: nil) as? String == "preserved")
+        #expect(storage.attribute(.latexImage, at: first.location, effectiveRange: nil) as? NSImage === image)
+        #expect(fixture.editor.string == source && fixture.source == source)
+        #expect(fixture.editor.undoManager?.canUndo != true)
+    }
+
+    @Test(arguments: [false, true])
+    func completedDiagramsKeepWideTablesAtTheirTextAnchors(readingColumn: Bool) async throws {
+        let table = """
+            | EditionIdentifierThatCannotWrap | PublishedArticlesIdentifierThatCannotWrap | ImageLicencesIdentifierThatCannotWrap |
+            |---|---|---|
+            | Sample edition | 88 | 18 |
+            """
+        let source = """
+            Introductory paragraph.
+
+            \(table)
+
+            ```vega-lite
+            {"mark":"line"}
+            ```
+
+            \(table)
+
+            ```mermaid
+            graph LR
+             A-->B
+            ```
+
+            \(table)
+
+            Trailing paragraph.
+            """
+        let fixture = try EditorFixture(source, readOnly: true, readingWidth: readingColumn ? 500 : nil)
+        fixture.editor.updateWideTableOverlays(immediately: true)
+        #expect(fixture.editor.wideTableOverlays.count == 3)
+        let storage = try #require(fixture.editor.textStorage)
+        let sentinel = NSAttributedString.Key("UnrelatedTablePresentation")
+        let prose = (source as NSString).range(of: "Trailing paragraph.")
+        storage.addAttribute(sentinel, value: "preserved", range: prose)
+        let originalFrames = fixture.editor.wideTableOverlays.mapValues(\.frame)
+        for overlay in fixture.editor.wideTableOverlays.values { overlay.horizontalOffset = 25 }
+        let offsets = fixture.editor.wideTableOverlays.mapValues(\.horizontalOffset)
+
+        // A chart first grows from its placeholder, then shrinks after a theme
+        // or width change. Tables both before and after it must follow TextKit.
+        for height: CGFloat in [440, 90] {
+            fixture.renderer.height = height
+            fixture.renderer.generation += 1
+            NotificationCenter.default.post(name: fixture.renderer.notification, object: nil)
+            try await Task.sleep(for: .milliseconds(30))
+            #expect(fixture.editor.wideTableOverlays.count == 3)
+            for overlay in fixture.editor.wideTableOverlays.values {
+                var expected = fixture.rect(for: NSRange(location: overlay.anchorTextLocation, length: 1))
+                expected.origin.y += fixture.editor.textContainerOrigin.y
+                if readingColumn { expected.origin.y += fixture.editor.frame.origin.y }
+                #expect(abs(overlay.frame.minY - expected.minY) < 1)
+                #expect(overlay.horizontalOffset == offsets[overlay.sourceID])
+            }
+        }
+        let moved = fixture.editor.wideTableOverlays.values.filter {
+            abs($0.frame.minY - (originalFrames[$0.sourceID]?.minY ?? $0.frame.minY)) > 50
+        }
+        #expect(moved.count == 2)
+        #expect(storage.attribute(sentinel, at: prose.location, effectiveRange: nil) as? String == "preserved")
+        #expect(fixture.editor.string == source && fixture.source == source)
+        #expect(fixture.editor.undoManager?.canUndo != true)
+    }
+
     @Test func largeReportUsesBoundedStylesAndRefreshesOnlyDiagramAnchors() throws {
         let rows = (0..<925).map { "            {\"x\": \($0), \"y\": \($0 % 10)}," }.joined(separator: "\n")
         let source =
@@ -183,14 +273,18 @@ private final class TestCodeRenderer: RenderedCodeBlockRenderer, @unchecked Send
     var cache: [String: RenderedCodeBlockResult] = [:]
     var height: CGFloat = 160
     var generation = 0
+    var unavailableSources: Set<String> = []
     let notification = Notification.Name("DieterRenderedCodeTest.\(UUID().uuidString)")
     var renderingDidChangeNotification: Notification.Name? { notification }
     func fingerprint() -> AnyHashable { generation }
+    func shouldRevealSource(code: String, language: String) -> Bool { unavailableSources.contains(code) }
     func render(code: String, language: String, availableWidth: CGFloat, theme: MarkdownEditorTheme)
         -> RenderedCodeBlockResult?
     {
         requests.append(Request(code: code, language: language, width: availableWidth))
-        guard ["mermaid", "vega", "vega-lite"].contains(language) else { return nil }
+        guard ["mermaid", "vega", "vega-lite"].contains(language), !unavailableSources.contains(code) else {
+            return nil
+        }
         let key = "\(generation)|\(availableWidth)|\(height)|\(language)|\(code)"
         if let result = cache[key] { return result }
         let size = CGSize(width: availableWidth, height: height)
@@ -210,7 +304,10 @@ private final class EditorFixture {
     let sourceBox: SourceBox
     var source: String { sourceBox.text }
 
-    init(_ source: String, highlighter: CountingHighlighter? = nil) throws {
+    init(
+        _ source: String, highlighter: CountingHighlighter? = nil,
+        readOnly: Bool = false, readingWidth: CGFloat? = nil
+    ) throws {
         _ = NSApplication.shared
         let box = SourceBox(source)
         sourceBox = box
@@ -225,10 +322,12 @@ private final class EditorFixture {
         container.addSubview(editor)
         scrollView.documentView = container
         var configuration = MarkdownEditorConfiguration.default
+        configuration.readingWidth = readingWidth
+        if readOnly { configuration.heightBehavior = .fitsContent }
         configuration.services.renderedCodeBlocks = renderer
         if let highlighter { configuration.services.syntaxHighlighter = highlighter }
         editor.configuration = configuration
-        editor.isEditable = true
+        editor.isEditable = !readOnly
         editor.isRichText = true
         editor.allowsUndo = true
         editor.textContainerInset = .zero

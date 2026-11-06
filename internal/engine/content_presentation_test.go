@@ -11,12 +11,13 @@ import (
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 )
 
 func TestContentPresentationValidationAndPersistence(t *testing.T) {
 	t.Parallel()
 	service, _, project, board := appSetup(t)
-	card, err := service.Store.CreateCard(store.CreateCardInput{Project: project.ID, Board: board.ID, Title: "Presentation", WorkspaceMode: model.WorkspaceModeProject})
+	card, err := service.Store.Kanban.CreateCard(kanban.CreateCardInput{Project: project.ID, Board: board.ID, Title: "Presentation", WorkspaceMode: model.WorkspaceModeProject})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +76,7 @@ func TestContentPresentationValidationAndPersistence(t *testing.T) {
 	if _, err := service.PresentConversationContent(ctx, "missing-card", "", model.ContentPresentation{URL: "https://example.test"}); err == nil {
 		t.Fatal("unknown conversation accepted")
 	}
-	conversation, err := store.New(service.Store.Root).Conversation(card.ID)
+	conversation, err := store.New(service.Store.Root).Conversations.Get(card.ID)
 	if err != nil || conversation.PresentedContent == nil || *conversation.PresentedContent != first || conversation.LastSeq != 1 || len(conversation.Messages) != 0 || conversation.Status != "idle" {
 		t.Fatalf("stored=%#v err=%v", conversation, err)
 	}
@@ -83,7 +84,7 @@ func TestContentPresentationValidationAndPersistence(t *testing.T) {
 	if err != nil || second.ID == first.ID {
 		t.Fatalf("second=%#v err=%v", second, err)
 	}
-	conversation, _ = service.Store.Conversation(card.ID)
+	conversation, _ = service.Store.Conversations.Get(card.ID)
 	if conversation.PresentedContent.URL != second.URL || conversation.LastSeq != 2 {
 		t.Fatalf("latest=%#v", conversation)
 	}
@@ -114,7 +115,7 @@ func TestHarnessPresentationBindsOwningConversation(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(project.Path, "report.md"), []byte("# Report"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	other, err := service.Store.CreateCard(store.CreateCardInput{Project: project.ID, Board: board.ID, Title: "Other"})
+	other, err := service.Store.Kanban.CreateCard(kanban.CreateCardInput{Project: project.ID, Board: board.ID, Title: "Other"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,11 +125,11 @@ func TestHarnessPresentationBindsOwningConversation(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool {
-		value, err := service.Store.ResolveCard(card.ID)
+		value, err := service.Store.Kanban.ResolveCard(card.ID)
 		return err == nil && value.Runtime == "idle" && !hasActiveTurn(service, project.ID)
 	})
-	current, _ := service.Store.Conversation(card.ID)
-	untouched, _ := service.Store.Conversation(other.ID)
+	current, _ := service.Store.Conversations.Get(card.ID)
+	untouched, _ := service.Store.Conversations.Get(other.ID)
 	if current.PresentedContent == nil || current.PresentedContent.Path != "report.md" || untouched.PresentedContent != nil {
 		t.Fatalf("owner=%#v other=%#v", current, untouched)
 	}

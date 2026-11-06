@@ -102,8 +102,9 @@ payload: 64 KiB for each daemon HELLO and challenge proof, and 8 KiB for public
 unary messages (whose complete HTTP body is also limited to 8 KiB). Public
 messages cannot use compression. Up to 64 daemon handshakes and 32 public unary
 requests are admitted before body readers start. A daemon cannot pipeline later
-frames into the gateway until its key proof succeeds; authenticated relay frames
-retain the 16 MiB limit. HTTP/2 receive windows are 64 KiB per stream and 1 MiB per
+frames into the gateway until its key proof succeeds; authenticated messages are
+limited to 1 MiB, and relay tunnel frames carry at most 64 KiB of opaque data
+within an eight-frame credit window. HTTP/2 receive windows are 64 KiB per stream and 1 MiB per
 connection. These are ingress bounds, not a total-process memory guarantee.
 
 The deployment integration suite exhausts one client's enrollment bucket through

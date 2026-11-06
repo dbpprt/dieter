@@ -64,6 +64,7 @@ extension MarkdownStyler {
         let identity = "\(ctx.baseFont.fontName)|\(ctx.baseFont.pointSize)|\(appearance.name.rawValue)|"
             + "\(ObjectIdentifier(theme.bodyText))|\(ObjectIdentifier(theme.mutedText))|"
             + "\(ObjectIdentifier(theme.highlightColor))|\(ObjectIdentifier(ctx.codeBackgroundColor))|"
+            + "\(ObjectIdentifier(theme.link))|"
             + "\(ObjectIdentifier(theme.latexLightModeText))|\(ObjectIdentifier(theme.latexDarkModeText))|"
             + "\(ObjectIdentifier(type(of: ctx.services.latex)))"
 
@@ -85,6 +86,7 @@ extension MarkdownStyler {
             colorKey(theme.mutedText, under: appearance),
             colorKey(theme.highlightColor, under: appearance),
             colorKey(ctx.codeBackgroundColor, under: appearance),
+            colorKey(theme.link, under: appearance),   // Dieter: cell links
             colorKey(theme.latexLightModeText, under: appearance),
             colorKey(theme.latexDarkModeText, under: appearance),
             "\(ObjectIdentifier(type(of: ctx.services.latex)))",
@@ -141,7 +143,11 @@ extension MarkdownStyler {
         appearance: NSAppearance,
         availableWidth: CGFloat
     ) -> (image: NSImage, rendered: Bool) {
-        let widthKey = Int(availableWidth.rounded())
+        // Rendering consumes the exact point width. Key it losslessly as well:
+        // fractional SwiftUI/split-view widths can differ by more than 0.5 pt
+        // while rounding to the same integer, which would otherwise reuse a
+        // stale image with the wrong wrapping, height, or right inset.
+        let widthKey = Double(availableWidth).bitPattern
         // The extension registry is part of the key: `==x==` in a cell renders
         // highlighted under one config and literal under another — those must
         // never share a cached image.
@@ -249,7 +255,14 @@ extension MarkdownStyler {
             if rendered { renderedCount += 1 }
             let imageBounds = CGRect(x: 0, y: 0, width: image.size.width, height: image.size.height)
             // Wide tables → scrollable mode (NSScrollView overlay); narrow → collapsed.
-            let isWide = image.size.width > containerWidth + 0.5
+            // Geometry is fractional in split-view and SwiftUI layouts. Use
+            // only a floating-point noise allowance here; a real sub-point
+            // overflow still needs horizontal scrolling.
+            let widthEpsilon = max(
+                image.size.width.ulp,
+                containerWidth.ulp
+            ) * 8
+            let isWide = image.size.width - containerWidth > widthEpsilon
             let computedSourceID = stableTableSourceID(
                 for: source,
                 occurrenceIndex: occurrenceIndex
@@ -310,13 +323,37 @@ extension MarkdownStyler {
         return ParsedTable(header: paddedHeader, alignments: paddedAlign, rows: rows)
     }
 
+    /// Splits on UNESCAPED `|` only. GFM escapes the delimiter as `\\|`, and
+    /// the escape wins over every inline context (a table row is split before
+    /// inline parsing runs) — so a cell holding `` `a \\| b` `` is one cell, not
+    /// two. Splitting on the raw character silently truncated such a row to the
+    /// header's column count.
     private static func parseTableRow(_ line: String) -> [String] {
-        var s = line.trimmingCharacters(in: .whitespaces)
-        if s.hasPrefix("|") { s.removeFirst() }
-        if s.hasSuffix("|") { s.removeLast() }
-        return s.split(separator: "|", omittingEmptySubsequences: false).map {
-            $0.trimmingCharacters(in: .whitespaces)
+        var s = Substring(line.trimmingCharacters(in: .whitespaces))
+        if s.hasPrefix("|") { s = s.dropFirst() }
+        if s.hasSuffix("|"), !s.dropLast().hasSuffix("\\") { s = s.dropLast() }
+
+        var cells: [String] = []
+        var current = ""
+        var escaped = false
+        for ch in s {
+            if escaped {
+                // Only the delimiter escape is resolved here; every other `\x`
+                // stays intact so inline parsing still owns its own escapes.
+                if ch == "|" { current.append("|") } else { current.append("\\"); current.append(ch) }
+                escaped = false
+            } else if ch == "\\" {
+                escaped = true
+            } else if ch == "|" {
+                cells.append(current.trimmingCharacters(in: .whitespaces))
+                current = ""
+            } else {
+                current.append(ch)
+            }
         }
+        if escaped { current.append("\\") }
+        cells.append(current.trimmingCharacters(in: .whitespaces))
+        return cells
     }
 
     private static func parseTableAlignments(_ line: String) -> [TableAlignment] {
@@ -334,6 +371,16 @@ extension MarkdownStyler {
     }
 
     // MARK: - Inline-formatted cell strings
+
+    /// `<br>` → a real newline. A GFM row IS one source line, so `<br>` is the
+    /// only in-cell line break the format has; without this it drew literally.
+    static func expandCellLineBreaks(_ raw: String) -> String {
+        raw.replacingOccurrences(
+            of: #"<br\s*/?>"#,
+            with: "\n",
+            options: [.regularExpression, .caseInsensitive]
+        )
+    }
 
     /// Raw cell → `NSAttributedString`: inline markdown applied, markers stripped, LaTeX as attachments.
     static func formattedCellString(
@@ -354,6 +401,9 @@ extension MarkdownStyler {
         let out = NSMutableAttributedString()
         var extensionsByID: [String: any MarkdownExtension] = [:]
         for ext in extensions { extensionsByID[ext.id] = ext }
+        // Substituted BEFORE inline parsing so the AST offsets index the same
+        // string that gets drawn.
+        let raw = expandCellLineBreaks(raw)
         appendInlineCell(
             InlineParser.parse(raw, registry: ExtensionRegistry(extensions: extensions)),
             in: raw as NSString, into: out,
@@ -378,7 +428,7 @@ extension MarkdownStyler {
         return NSFont(descriptor: baseDescriptor.withSymbolicTraits(traits), size: pointSize) ?? current
     }
 
-    /// Walk the inline AST into marker-stripped runs; LaTeX as attachments, links/embeds emitted raw.
+    /// Walk the inline AST into marker-stripped runs; LaTeX as attachments, links as their labels, embeds emitted raw.
     private static func appendInlineCell(
         _ nodes: [InlineNode],
         in ns: NSString,
@@ -434,7 +484,12 @@ extension MarkdownStyler {
                     .font: codeFont, .backgroundColor: codeBackgroundColor, .foregroundColor: theme.bodyText
                 ]))
             case .inlineLatex(let range, let content, _):
-                if let entry = latex.render(latex: ns.substring(with: content), fontSize: pointSize, theme: theme) {
+                if let entry = latex.render(
+                    latex: ns.substring(with: content),
+                    mode: .inline,
+                    fontSize: pointSize,
+                    theme: theme
+                ) {
                     let attachment = NSTextAttachment()
                     attachment.image = entry.image
                     attachment.bounds = CGRect(x: 0, y: entry.baselineOffset,
@@ -443,8 +498,21 @@ extension MarkdownStyler {
                 } else {
                     appendPlain(range, font)   // renderer unavailable → keep raw `$…$`
                 }
-            case .link(let range, _, _, _, _),
-                 .image(let range, _, _, _),
+            case .link(let range, _, let url, _, let children):
+                // Dieter: the label, styled like a body link, carrying its
+                // original destination so a click inside the image can follow it.
+                let start = out.length
+                recurse(children, font)
+                guard out.length > start else {
+                    appendPlain(range, font)
+                    break
+                }
+                out.addAttributes([
+                    .foregroundColor: theme.link,
+                    .underlineStyle: NSUnderlineStyle.single.rawValue,
+                    .tableCellLinkDestination: ns.substring(with: url),
+                ], range: NSRange(location: start, length: out.length - start))
+            case .image(let range, _, _, _),
                  .wikiLink(let range, _, _, _),
                  .imageEmbed(let range, _, _):
                 appendPlain(range, font)
@@ -528,8 +596,17 @@ extension MarkdownStyler {
         }
         var maxWidths = [CGFloat](repeating: minColumnContentWidth, count: columnCount)
         var minWidths = [CGFloat](repeating: minColumnContentWidth, count: columnCount)
+        // `size()` lays a cell out as ONE line, so a cell broken by `<br>`
+        // would report the sum of its lines as its natural width.
+        func naturalWidth(_ cell: NSAttributedString) -> CGFloat {
+            guard cell.string.contains("\n") else { return ceil(cell.size().width) }
+            return ceil(cell.boundingRect(
+                with: NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin]
+            ).width)
+        }
         func considerCell(_ cell: NSAttributedString, col: Int) {
-            maxWidths[col] = max(maxWidths[col], ceil(cell.size().width))
+            maxWidths[col] = max(maxWidths[col], naturalWidth(cell))
             minWidths[col] = max(minWidths[col], widestUnbreakableSegment(cell))
         }
         for (i, cell) in headerCells.enumerated() where i < columnCount {
@@ -562,7 +639,7 @@ extension MarkdownStyler {
                 let extra = contentAvailable - sumMin
                 let totalStretch = sumMax - sumMin
                 columnWidths = zip(minWidths, maxWidths).map { mn, mx in
-                    mn + ((mx - mn) / totalStretch * extra).rounded(.down)
+                    mn + (mx - mn) / totalStretch * extra
                 }
             }
         }
@@ -609,8 +686,83 @@ extension MarkdownStyler {
         let alignments = table.alignments
         let headerFill = mutedColor(alpha: 0.08)
 
+        /// A cell's content box in the image's top-down coordinates.
+        func cellRect(col: Int, row: Int) -> NSRect {
+            let cellLeft = columnLeft[col] + cellHPadding
+            let cellRight = columnLeft[col + 1] - borderWidth - cellHPadding
+            return NSRect(
+                x: cellLeft,
+                y: rowTop[row] + cellVPadding,
+                width: cellRight - cellLeft,
+                height: rowContentHeights[row]
+            )
+        }
+        /// Align via NSParagraphStyle; word-wrap fills the row height
+        /// measured above (long words fall back to character breaks).
+        func alignedCell(_ s: NSAttributedString, col: Int) -> NSAttributedString {
+            let paragraph = NSMutableParagraphStyle()
+            switch alignments[col] {
+            case .left:   paragraph.alignment = .left
+            case .center: paragraph.alignment = .center
+            case .right:  paragraph.alignment = .right
+            }
+            paragraph.lineBreakMode = .byWordWrapping
+            let aligned = NSMutableAttributedString(attributedString: s)
+            aligned.addAttribute(
+                .paragraphStyle,
+                value: paragraph,
+                range: NSRange(location: 0, length: aligned.length)
+            )
+            return aligned
+        }
+
+        // Dieter: where each cell link lands in the image, laid out exactly as
+        // `drawCell` draws it, so clicks on the image can follow the link.
+        var linkRegions: [RenderedTableImage.LinkRegion] = []
+        func collectLinks(_ s: NSAttributedString, col: Int, row: Int) {
+            guard col < columnCount else { return }
+            var hasLink = false
+            s.enumerateAttribute(.tableCellLinkDestination, in: NSRange(location: 0, length: s.length)) { value, _, stop in
+                if value is String { hasLink = true; stop.pointee = true }
+            }
+            guard hasLink else { return }
+            let rect = cellRect(col: col, row: row)
+            let storage = NSTextStorage(attributedString: alignedCell(s, col: col))
+            let layout = NSLayoutManager()
+            layout.usesFontLeading = false
+            let container = NSTextContainer(size: NSSize(width: rect.width, height: .greatestFiniteMagnitude))
+            container.lineFragmentPadding = 0
+            layout.addTextContainer(container)
+            storage.addLayoutManager(layout)
+            layout.ensureLayout(for: container)
+            storage.enumerateAttribute(.tableCellLinkDestination, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+                guard let destination = value as? String else { return }
+                let glyphs = layout.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                layout.enumerateEnclosingRects(
+                    forGlyphRange: glyphs,
+                    withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
+                    in: container
+                ) { linkRect, _ in
+                    linkRegions.append(.init(
+                        rect: linkRect.offsetBy(dx: rect.minX, dy: rect.minY),
+                        destination: destination
+                    ))
+                }
+            }
+        }
+        for (col, cell) in headerCells.enumerated() {
+            collectLinks(cell, col: col, row: 0)
+        }
+        for (rowIdx, row) in bodyCells.enumerated() {
+            for (col, cell) in row.enumerated() {
+                collectLinks(cell, col: col, row: rowIdx + 1)
+            }
+        }
+
         // Flipped image so AppKit handles the y-flip; a manual transform mirror would flip glyphs too.
-        return NSImage(size: size, flipped: true) { _ in
+        let image = RenderedTableImage(size: size)
+        image.linkRegions = linkRegions
+        image.addRepresentation(NSCustomImageRep(size: size, flipped: true) { _ in
             // Header row fill
             headerFill.setFill()
             NSBezierPath(rect: NSRect(
@@ -648,31 +800,7 @@ extension MarkdownStyler {
 
             func drawCell(_ s: NSAttributedString, col: Int, row: Int) {
                 guard col < columnCount else { return }
-                let cellLeft = columnLeft[col] + cellHPadding
-                let cellRight = columnLeft[col + 1] - borderWidth - cellHPadding
-                let cellContentWidth = cellRight - cellLeft
-                // Align via NSParagraphStyle; word-wrap fills the row height
-                // measured above (long words fall back to character breaks).
-                let paragraph = NSMutableParagraphStyle()
-                switch alignments[col] {
-                case .left:   paragraph.alignment = .left
-                case .center: paragraph.alignment = .center
-                case .right:  paragraph.alignment = .right
-                }
-                paragraph.lineBreakMode = .byWordWrapping
-                let aligned = NSMutableAttributedString(attributedString: s)
-                aligned.addAttribute(
-                    .paragraphStyle,
-                    value: paragraph,
-                    range: NSRange(location: 0, length: aligned.length)
-                )
-                let drawRect = NSRect(
-                    x: cellLeft,
-                    y: rowTop[row] + cellVPadding,
-                    width: cellContentWidth,
-                    height: rowContentHeights[row]
-                )
-                aligned.draw(with: drawRect, options: [.usesLineFragmentOrigin], context: nil)
+                alignedCell(s, col: col).draw(with: cellRect(col: col, row: row), options: [.usesLineFragmentOrigin], context: nil)
             }
 
             for (col, cell) in headerCells.enumerated() {
@@ -684,7 +812,8 @@ extension MarkdownStyler {
                 }
             }
             return true
-        }
+        })
+        return image
     }
 
     // MARK: - Scrollable table helpers
@@ -692,6 +821,17 @@ extension MarkdownStyler {
     /// Container width with fallback chain for "styler runs before layout" case.
     static func effectiveContainerWidth(for ctx: StylingContext) -> CGFloat {
         if let container = ctx.layoutBridge?.firstTextContainer {
+            // During SwiftUI-hosted window resizing, NSTextView bounds can be
+            // updated before a width-tracking NSTextContainer publishes its
+            // derived size. The view is the width owner in this mode, so use
+            // its live geometry instead of rerasterizing tables at a stale
+            // container width. Fixed reading columns do not track the view and
+            // continue to use their explicit container width below.
+            if container.widthTracksTextView, let textView = container.textView {
+                let inset = textView.textContainerInset
+                let usable = textView.bounds.width - inset.width * 2
+                if usable.isFinite, usable > 0 { return usable }
+            }
             let raw = container.size.width
             if raw.isFinite, raw > 0, raw < 100_000 { return raw }
             if let textView = container.textView {

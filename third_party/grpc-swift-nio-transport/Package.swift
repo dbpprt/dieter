@@ -35,11 +35,11 @@ let products: [Product] = [
 let dependencies: [Package.Dependency] = [
   .package(
     url: "https://github.com/grpc/grpc-swift-2.git",
-    from: "2.3.0"
+    from: "2.4.0"
   ),
   .package(
     url: "https://github.com/apple/swift-nio.git",
-    from: "2.96.0"
+    from: "2.104.0"
   ),
   .package(
     url: "https://github.com/apple/swift-nio-http2.git",
@@ -71,7 +71,7 @@ let dependencies: [Package.Dependency] = [
 
 // This adds some build settings which allow us to map "@available(gRPCSwiftNIOTransport 2.x, *)" to
 // the appropriate OS platforms.
-let nextMinorVersion = 9
+let nextMinorVersion = 10
 let availabilitySettings: [SwiftSetting] = (0 ... nextMinorVersion).map { minor in
   let name = "gRPCSwiftNIOTransport"
   let version = "2.\(minor)"
@@ -106,6 +106,8 @@ let targets: [Target] = [
     dependencies: [
       .product(name: "GRPCCore", package: "grpc-swift-2"),
       .product(name: "NIOCore", package: "swift-nio"),
+      .product(name: "NIOHTTP1", package: "swift-nio"),
+      .product(name: "NIOTLS", package: "swift-nio"),
       .product(name: "NIOHTTP2", package: "swift-nio-http2"),
       .product(name: "NIOExtras", package: "swift-nio-extras"),
       .target(name: "CGRPCNIOTransportZlib"),

@@ -28,6 +28,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -177,14 +178,7 @@ internal fun MobileTextField(
         )
         return
     }
-    Column(modifier) {
-        if (label != null && placeholder != null)
-            CompositionLocalProvider(
-                LocalTextStyle provides type.footnote,
-                LocalContentColor provides palette.secondaryLabel,
-            ) {
-                Box(Modifier.padding(start = 4.dp, bottom = 6.dp)) { label() }
-            }
+    AppleField(modifier, label, placeholder, supportingText) {
         BasicTextField(
             value,
             onValueChange,
@@ -194,52 +188,110 @@ internal fun MobileTextField(
             singleLine = singleLine,
             maxLines = maxLines,
             minLines = minLines,
-            textStyle =
-                type.body
-                    .merge(textStyle.copy(color = palette.label))
-                    .copy(color = if (enabled) palette.label else palette.secondaryLabel),
+            textStyle = appleFieldStyle(textStyle, enabled),
             cursorBrush = SolidColor(palette.info),
             keyboardOptions = keyboardOptions,
             keyboardActions = keyboardActions,
             decorationBox = { inner ->
-                Row(
-                    Modifier.fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(palette.fill)
-                        .heightIn(min = 44.dp)
-                        .padding(horizontal = 14.dp, vertical = 11.dp),
-                    verticalAlignment =
-                        if (singleLine) Alignment.CenterVertically else Alignment.Top,
-                ) {
-                    if (leadingIcon != null) {
-                        CompositionLocalProvider(
-                            LocalContentColor provides palette.secondaryLabel
-                        ) {
-                            leadingIcon()
-                        }
-                        Spacer(Modifier.width(8.dp))
-                    }
-                    Box(Modifier.weight(1f)) {
-                        if (value.isEmpty())
-                            CompositionLocalProvider(
-                                LocalTextStyle provides type.body,
-                                LocalContentColor provides palette.secondaryLabel,
-                            ) {
-                                (placeholder ?: label)?.invoke()
-                            }
-                        inner()
-                    }
-                    if (trailingIcon != null) {
-                        Spacer(Modifier.width(8.dp))
-                        CompositionLocalProvider(
-                            LocalContentColor provides palette.secondaryLabel
-                        ) {
-                            trailingIcon()
-                        }
-                    }
-                }
+                AppleFieldDecoration(
+                    value.isEmpty(),
+                    singleLine,
+                    placeholder ?: label,
+                    leadingIcon,
+                    trailingIcon,
+                    inner,
+                )
             },
         )
+    }
+}
+
+/**
+ * [MobileTextField] for a value whose selection the caller sets, e.g. a field that reformats what
+ * is typed and keeps the cursor at the end.
+ */
+@Composable
+internal fun MobileTextField(
+    value: TextFieldValue,
+    onValueChange: (TextFieldValue) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    textStyle: TextStyle = LocalTextStyle.current,
+    label: (@Composable () -> Unit)? = null,
+    placeholder: (@Composable () -> Unit)? = null,
+    trailingIcon: (@Composable () -> Unit)? = null,
+    supportingText: (@Composable () -> Unit)? = null,
+    singleLine: Boolean = false,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+) {
+    if (!apple) {
+        OutlinedTextField(
+            value,
+            onValueChange,
+            modifier,
+            enabled = enabled,
+            textStyle = textStyle,
+            label = label,
+            placeholder = placeholder,
+            trailingIcon = trailingIcon,
+            supportingText = supportingText,
+            singleLine = singleLine,
+            shape = RoundedCornerShape(14.dp),
+            keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
+        )
+        return
+    }
+    AppleField(modifier, label, placeholder, supportingText) {
+        BasicTextField(
+            value,
+            onValueChange,
+            Modifier.fillMaxWidth(),
+            enabled = enabled,
+            singleLine = singleLine,
+            textStyle = appleFieldStyle(textStyle, enabled),
+            cursorBrush = SolidColor(palette.info),
+            keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
+            decorationBox = { inner ->
+                AppleFieldDecoration(
+                    value.text.isEmpty(),
+                    singleLine,
+                    placeholder ?: label,
+                    null,
+                    trailingIcon,
+                    inner,
+                )
+            },
+        )
+    }
+}
+
+@Composable
+private fun appleFieldStyle(textStyle: TextStyle, enabled: Boolean): TextStyle =
+    type.body
+        .merge(textStyle.copy(color = palette.label))
+        .copy(color = if (enabled) palette.label else palette.secondaryLabel)
+
+/** The iOS field's optional caption above (with a placeholder) and supporting text below. */
+@Composable
+private fun AppleField(
+    modifier: Modifier,
+    label: (@Composable () -> Unit)?,
+    placeholder: (@Composable () -> Unit)?,
+    supportingText: (@Composable () -> Unit)?,
+    field: @Composable () -> Unit,
+) {
+    Column(modifier) {
+        if (label != null && placeholder != null)
+            CompositionLocalProvider(
+                LocalTextStyle provides type.footnote,
+                LocalContentColor provides palette.secondaryLabel,
+            ) {
+                Box(Modifier.padding(start = 4.dp, bottom = 6.dp)) { label() }
+            }
+        field()
         if (supportingText != null)
             CompositionLocalProvider(
                 LocalTextStyle provides type.footnote,
@@ -247,5 +299,48 @@ internal fun MobileTextField(
             ) {
                 Box(Modifier.padding(start = 4.dp, top = 6.dp)) { supportingText() }
             }
+    }
+}
+
+/** The filled, rounded iOS field around the text, with its hint while empty. */
+@Composable
+private fun AppleFieldDecoration(
+    empty: Boolean,
+    singleLine: Boolean,
+    hint: (@Composable () -> Unit)?,
+    leadingIcon: (@Composable () -> Unit)?,
+    trailingIcon: (@Composable () -> Unit)?,
+    inner: @Composable () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(palette.fill)
+            .heightIn(min = 44.dp)
+            .padding(horizontal = 14.dp, vertical = 11.dp),
+        verticalAlignment = if (singleLine) Alignment.CenterVertically else Alignment.Top,
+    ) {
+        if (leadingIcon != null) {
+            CompositionLocalProvider(LocalContentColor provides palette.secondaryLabel) {
+                leadingIcon()
+            }
+            Spacer(Modifier.width(8.dp))
+        }
+        Box(Modifier.weight(1f)) {
+            if (empty)
+                CompositionLocalProvider(
+                    LocalTextStyle provides type.body,
+                    LocalContentColor provides palette.secondaryLabel,
+                ) {
+                    hint?.invoke()
+                }
+            inner()
+        }
+        if (trailingIcon != null) {
+            Spacer(Modifier.width(8.dp))
+            CompositionLocalProvider(LocalContentColor provides palette.secondaryLabel) {
+                trailingIcon()
+            }
+        }
     }
 }

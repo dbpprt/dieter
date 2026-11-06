@@ -50,12 +50,12 @@ Sources/DieterMacKit/Features/Sidebar/Views/SidebarProjectRow.swift the sidebar 
 # Workspace, Changeset, ChangedFile, FileDiff, GitOperation, and ChangeComment
 # values the review renders; ChangedFileLabel/DiffDisplayRow cover only part.
 Sources/DieterMacKit/Features/Changes/Model/ProjectChangesModel.swift holds ClientProjectChangesSlice's dieter.v1 Changeset, FileDiff, GitOperation, and ChangedFiles
-Sources/DieterMacKit/Features/Changes/Model/WorkspaceReview.swift diff lines keep ClientDiffDisplayLine's dieter.v1 ChangeComment threads
+Sources/DieterMacKit/Features/Changes/Model/WorkspaceReview.swift diff lines present ClientDiffDisplayLine's dieter.v1 ChangeComment threads
 Sources/DieterMacKit/Features/Changes/Model/WorktreeChangesModel.swift holds ClientReviewSlice's dieter.v1 Workspace, Changeset, SCMCapabilities, FileDiff, GitOperation(+logs), ChangeComments, and the conversation's Card
 Sources/DieterMacKit/Features/Changes/Views/MergeIntoBaseSheet.swift reads the dieter.v1 Card, Workspace, and Changeset (branches, title, prompt, counts) to draft a merge
 Sources/DieterMacKit/Features/Changes/Views/ProjectChangesView.swift lists and acts on dieter.v1 ChangedFiles (stage, discard, open)
 Sources/DieterMacKit/Features/Changes/Views/WorkspaceChangesView.swift renders the dieter.v1 Workspace, Changeset, ChangedFiles, and GitOperation of a conversation's Card
-Sources/DieterMacKit/Features/Changes/Views/WorkspaceRows.swift rows render dieter.v1 ChangedFile, WorkspaceCommit, and ChangeComment
+Sources/DieterMacKit/Features/Changes/Views/WorkspaceRows.swift rows render dieter.v1 ChangedFile and WorkspaceCommit
 
 # Conversation: the transcript renders ClientConversationSlice's dieter.v1
 # UiMessages, MessageParts, TaskPlans, Subagents, PendingTools, QueuedMessages,

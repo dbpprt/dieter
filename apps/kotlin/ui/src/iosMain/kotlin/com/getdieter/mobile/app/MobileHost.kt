@@ -26,18 +26,35 @@ import platform.UIKit.UIViewController
 class MobileRouteHandle internal constructor(internal val route: MobileRoute) {
     val key: String = route.key
     val immersive: Boolean = route.immersive
+    /** Lists stay in the primary column of a regular-width split view. */
+    val list: Boolean = route.list
 }
+
+/** A tab the shell shows: [key] is stable ("inbox", "more"), [symbol] an SF Symbol name. */
+class NativeTab(val key: String, val title: String, val symbol: String)
 
 /** One immutable navigation state for the UIKit tab and navigation controllers. */
 class NativeNavigation(
+    /** The selected tab's index in [tabs]. */
     val tab: Int,
+    /** The tabs, in order: Inbox, Mail, Projects, Chats and More on every layout. */
+    val tabs: List<NativeTab>,
+    /** Each visible tab's stack, in the order of [tabs]. */
     val stacks: List<List<MobileRouteHandle>>,
     val modal: MobileRouteHandle?,
+    /**
+     * False shows [MobileHost.signInController]: sign-in, then pairing until this device is
+     * trusted.
+     */
     val signedIn: Boolean,
     val appearance: String,
     val attention: Int,
     /** ARGB accent for native controls; 0 means the label color (monochrome). */
     val accent: Long,
+    /** The Mail tab badge: unread Inbox mail, "4", "99+", or empty. */
+    val mailUnread: String,
+    /** The More tab badge: unread channel messages, "3", "99+", or empty. */
+    val moreUnread: String,
 )
 
 interface MobileNavigationObserver {
@@ -91,13 +108,19 @@ class MobileHost(private val shared: DieterShared, private val nativeViews: Mobi
         )
     private val hostScope = MainScope()
     private val openUrl: (String) -> Unit = { url ->
-        NSURL.URLWithString(url)?.let {
-            UIApplication.sharedApplication.openURL(
-                it,
-                options = emptyMap<Any?, Any>(),
-                completionHandler = null,
-            )
-        }
+        val destination = NSURL.URLWithString(url)
+        if (destination == null) store.error.value = "This link could not be opened."
+        else
+            destination.let {
+                UIApplication.sharedApplication.openURL(
+                    it,
+                    options = emptyMap<Any?, Any>(),
+                    completionHandler = { opened ->
+                        if (!opened)
+                            store.error.value = "This link could not be opened on this device."
+                    },
+                )
+            }
     }
 
     init {
@@ -128,7 +151,12 @@ class MobileHost(private val shared: DieterShared, private val nativeViews: Mobi
                     store.session.slice,
                     store.workspace.slice,
                     combine(store.theme.appearance, store.theme.palette, ::Pair),
-                    store.workspace.activity,
+                    combine(store.workspace.activity, store.channels.slice, store.mail.slice) {
+                        _,
+                        _,
+                        _ ->
+                        Unit
+                    },
                 ) { _, _, _, _, _ ->
                     navigation()
                 }
@@ -141,18 +169,26 @@ class MobileHost(private val shared: DieterShared, private val nativeViews: Mobi
     fun navigation(): NativeNavigation {
         val routes = store.routes.value
         val palette = store.theme.palette.value
+        val tabs = MobileTab.entries
         return NativeNavigation(
-            MobileTab.entries.indexOf(routes.tab),
-            MobileTab.entries.map { tab -> routes.stacks.getValue(tab).map(::MobileRouteHandle) },
+            tabs.indexOf(routes.tab).coerceAtLeast(0),
+            tabs.map { NativeTab(it.name.lowercase(), it.title, it.glyph.symbol) },
+            tabs.map { tab -> routes.stacks.getValue(tab).map(::MobileRouteHandle) },
             routes.modal?.let(::MobileRouteHandle),
             !(store.session.slice.value.phase == SessionSlice.Phase.PHASE_AUTH_REQUIRED &&
-                !store.workspace.slice.value.loaded),
+                !store.workspace.slice.value.loaded) && !store.session.slice.value.pairing,
             store.theme.appearance.value,
             store.workspace.activity.value.summary?.attention ?: 0,
             if (palette == com.getdieter.mobile.settings.DieterPalette.MONOCHROME) 0L
             else palette.tokens.shellEnd,
+            store.mail.slice.value.unread_label,
+            store.channels.slice.value.unread_label,
         )
     }
+
+    /** The tab at [index] in [NativeNavigation.tabs]. */
+    private fun visibleTab(index: Int): MobileTab =
+        MobileTab.entries.getOrElse(index) { MobileTab.INBOX }
 
     /** A Compose screen for one route. [chrome] receives its navigation item contents. */
     fun controller(route: MobileRouteHandle, chrome: NativeChromeSink): UIViewController {
@@ -178,9 +214,12 @@ class MobileHost(private val shared: DieterShared, private val nativeViews: Mobi
         return controller
     }
 
-    /** The iPad detail column's empty state for a tab, in Apple title case. */
+    /** The iPad detail column's empty state beside the tab's current list, in Apple title case. */
     fun emptyDetail(tab: Int): NativeEmptyDetail {
-        val empty = MobileTab.entries.getOrElse(tab) { MobileTab.INBOX }.emptyDetail
+        val shown = visibleTab(tab)
+        val empty =
+            store.routes.value.stacks.getValue(shown).lastOrNull { it.list }?.emptyDetail(shown)
+                ?: shown.emptyDetail
         val title =
             empty.title.split(" ").joinToString(" ") { word ->
                 word.replaceFirstChar(Char::uppercaseChar)
@@ -188,12 +227,10 @@ class MobileHost(private val shared: DieterShared, private val nativeViews: Mobi
         return NativeEmptyDetail(empty.glyph.symbol, title, empty.message)
     }
 
-    fun selectTab(index: Int) =
-        store.selectTab(MobileTab.entries.getOrElse(index) { MobileTab.INBOX })
+    fun selectTab(index: Int) = store.selectTab(visibleTab(index))
 
     /** A native back gesture or button left [depth] routes on the tab's stack. */
-    fun popTo(tab: Int, depth: Int) =
-        store.popTo(MobileTab.entries.getOrElse(tab) { MobileTab.INBOX }, depth)
+    fun popTo(tab: Int, depth: Int) = store.popTo(visibleTab(tab), depth)
 
     fun dismissModal() = store.dismiss()
 
@@ -223,8 +260,14 @@ class MobileHost(private val shared: DieterShared, private val nativeViews: Mobi
 
     fun setForeground(active: Boolean) = store.setForeground(active)
 
-    fun adoptFixture(url: String, token: String) = store.action {
-        store.core.dispatch(Command(adopt_session = AdoptSession(url, token, "Isolated journey")))
+    /** Maestro flows: the isolated fixture's session and the code its machine approves. */
+    fun adoptFixture(url: String, token: String, pairingCode: String) = store.action {
+        store.core.dispatch(
+            Command(
+                adopt_session =
+                    AdoptSession(url, token, "Isolated journey", pairing_code = pairingCode)
+            )
+        )
         store.creation.agentSelection = com.getdieter.api.v1.HarnessSelection("mock", "mock", "low")
     }
 

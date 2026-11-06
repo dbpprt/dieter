@@ -67,7 +67,7 @@ typedef struct {
     GThread *bus_thread;
     gchar *encoder_name;
     gchar encoder_factory[32];
-    gint x, y, source_width, source_height;
+    gint x, y, source_width, source_height, output_width, output_height;
     gboolean credit, stopping;
     GMutex lock;
 } CaptureStream;
@@ -638,24 +638,40 @@ static gboolean portal_start(CaptureApp *app, gboolean embedded_cursor, GError *
     GVariant *results = portal_request(portal, owner, "CreateSession",
         g_variant_new("(@a{sv})", g_variant_builder_end(&options)), nonce, error);
     if (results == NULL) goto failed;
+    /* The specification types session_handle as a string (xdg-desktop-portal
+     * 1.21 sends "s"); accept an object path from backends that send "o". */
+    GVariant *session_value = g_variant_lookup_value(results, "session_handle", NULL);
     const gchar *session_path = NULL;
-    if (!g_variant_lookup(results, "session_handle", "&o", &session_path) || session_path == NULL) {
+    if (session_value != NULL && (g_variant_is_of_type(session_value, G_VARIANT_TYPE_STRING) ||
+                                  g_variant_is_of_type(session_value, G_VARIANT_TYPE_OBJECT_PATH)))
+        session_path = g_variant_get_string(session_value, NULL);
+    if (session_path == NULL || !g_variant_is_object_path(session_path)) {
         g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, "portal did not return a session handle");
+        if (session_value != NULL) g_variant_unref(session_value);
         g_variant_unref(results);
         goto failed;
     }
     portal->session_path = g_strdup(session_path);
+    g_variant_unref(session_value);
     g_variant_unref(results);
 
+    /* Remote desktop sessions persist through SelectDevices (RemoteDesktop
+     * v2); the portal rejects persistence on their SelectSources. */
+    gboolean persist_devices = app->allow_input && portal_version("org.freedesktop.portal.RemoteDesktop") >= 2;
+    gchar *restore = app->allow_input && !persist_devices ? NULL : load_restore_token(portal->state_path);
     if (app->allow_input) {
         gchar *token = g_strdup_printf("devices%s", nonce);
         g_variant_builder_init(&options, G_VARIANT_TYPE_VARDICT);
         variant_option(&options, "handle_token", g_variant_new_string(token));
         variant_option(&options, "types", g_variant_new_uint32(3));
+        if (persist_devices) {
+            variant_option(&options, "persist_mode", g_variant_new_uint32(2));
+            if (restore != NULL) variant_option(&options, "restore_token", g_variant_new_string(restore));
+        }
         results = portal_request(portal, "org.freedesktop.portal.RemoteDesktop", "SelectDevices",
             g_variant_new("(o@a{sv})", portal->session_path, g_variant_builder_end(&options)), token, error);
         g_free(token);
-        if (results == NULL) goto failed;
+        if (results == NULL) { g_free(restore); goto failed; }
         g_variant_unref(results);
     }
 
@@ -667,9 +683,10 @@ static gboolean portal_start(CaptureApp *app, gboolean embedded_cursor, GError *
     /* ScreenCast cursor modes: hidden=1, embedded=2. Controlling Mac clients
      * request hidden and render their local cursor without a video round trip. */
     variant_option(&options, "cursor_mode", g_variant_new_uint32(embedded_cursor ? 2U : 1U));
-    variant_option(&options, "persist_mode", g_variant_new_uint32(2));
-    gchar *restore = load_restore_token(portal->state_path);
-    if (restore != NULL) variant_option(&options, "restore_token", g_variant_new_string(restore));
+    if (!app->allow_input) {
+        variant_option(&options, "persist_mode", g_variant_new_uint32(2));
+        if (restore != NULL) variant_option(&options, "restore_token", g_variant_new_string(restore));
+    }
     results = portal_request(portal, "org.freedesktop.portal.ScreenCast", "SelectSources",
         g_variant_new("(o@a{sv})", portal->session_path, g_variant_builder_end(&options)), token, error);
     g_free(token); g_free(restore);
@@ -767,8 +784,8 @@ static void emit_event(CaptureApp *app, guint64 stream_id, guint64 ack, const gc
     }
     if (stream != NULL) {
         json_builder_set_member_name(builder, "state"); json_builder_begin_object(builder);
-        json_builder_set_member_name(builder, "width"); json_builder_add_int_value(builder, stream->config.max_width);
-        json_builder_set_member_name(builder, "height"); json_builder_add_int_value(builder, stream->config.max_height);
+        json_builder_set_member_name(builder, "width"); json_builder_add_int_value(builder, stream->output_width);
+        json_builder_set_member_name(builder, "height"); json_builder_add_int_value(builder, stream->output_height);
         json_builder_set_member_name(builder, "fps"); json_builder_add_int_value(builder, stream->config.fps);
         json_builder_set_member_name(builder, "bitrate_kbps"); json_builder_add_int_value(builder, stream->config.bitrate_kbps);
         json_builder_set_member_name(builder, "display_id"); json_builder_add_string_value(builder, stream->config.display_id);
@@ -884,7 +901,7 @@ static GstFlowReturn new_sample(GstAppSink *sink, gpointer data) {
     guint64 frame_id = ++stream->frame_id;
     guint64 generation = stream->generation;
     guint64 dropped = stream->dropped;
-    gint width = stream->config.max_width, height = stream->config.max_height;
+    gint width = stream->output_width, height = stream->output_height;
     stream->last_pts += GST_SECOND / (guint64)MAX(1, stream->config.fps);
     guint64 pts = stream->last_pts;
     g_mutex_unlock(&stream->lock);
@@ -970,6 +987,18 @@ static void stop_pipeline(CaptureStream *stream) {
     g_clear_pointer(&stream->encoder_name, g_free);
 }
 
+/* Like the macOS helper, fit the source inside the configured ceiling without
+ * upscaling or changing its aspect ratio. Normalized input then addresses the
+ * same source pixels the viewer sees, with no letterbox borders. */
+static void fit_output(CaptureStream *stream) {
+    gint width = stream->source_width > 0 ? stream->source_width : stream->config.max_width;
+    gint height = stream->source_height > 0 ? stream->source_height : stream->config.max_height;
+    gdouble scale = MIN(1.0, MIN((gdouble)stream->config.max_width / (gdouble)width,
+                                 (gdouble)stream->config.max_height / (gdouble)height));
+    stream->output_width = MAX(2, (gint)((gdouble)width * scale)) & ~1;
+    stream->output_height = MAX(2, (gint)((gdouble)height * scale)) & ~1;
+}
+
 static gboolean start_pipeline(CaptureStream *stream, GError **error) {
     CaptureApp *app = stream->app;
     gchar *source = NULL;
@@ -996,6 +1025,7 @@ static gboolean start_pipeline(CaptureStream *stream, GError **error) {
             stream->config.embedded_cursor ? "true" : "false", stream->x, stream->y,
             stream->x + stream->source_width - 1, stream->y + stream->source_height - 1);
     }
+    fit_output(stream);
 
     const gchar *production[] = {"vah264enc", "nvh264enc", "v4l2h264enc", "x264enc", "openh264enc", NULL};
     const gchar *fixture[] = {"x264enc", "openh264enc", "vah264enc", "nvh264enc", "v4l2h264enc", NULL};
@@ -1009,7 +1039,7 @@ static gboolean start_pipeline(CaptureStream *stream, GError **error) {
             "video/x-raw,format=NV12,width=%d,height=%d,framerate=%d/1 ! %s ! "
             "h264parse config-interval=-1 disable-passthrough=true ! video/x-h264,stream-format=byte-stream,alignment=au ! "
             "appsink name=dieter_sink emit-signals=true sync=false max-buffers=1 drop=true",
-            source, stream->config.fps, stream->config.max_width, stream->config.max_height, stream->config.fps, encoder);
+            source, stream->config.fps, stream->output_width, stream->output_height, stream->config.fps, encoder);
         GError *pipeline_error = NULL;
         GstElement *pipeline = gst_parse_launch(pipeline_text, &pipeline_error);
         g_free(pipeline_text); g_free(encoder);

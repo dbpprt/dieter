@@ -155,7 +155,7 @@ func TestCodexTurnSurvivesTransientProviderDropEndToEnd(t *testing.T) {
 	var reconnecting *model.ProviderStatus
 	deadline := time.Now().Add(90 * time.Second)
 	for reconnecting == nil && time.Now().Before(deadline) {
-		conversation, err := service.Store.Conversation(card.ID)
+		conversation, err := service.Store.Conversations.Get(card.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -174,7 +174,7 @@ func TestCodexTurnSurvivesTransientProviderDropEndToEnd(t *testing.T) {
 	if terminal := awaitTurn(t, updates); terminal.Err != nil {
 		t.Fatalf("turn failed after the provider recovered: %v", terminal.Err)
 	}
-	conversation, err := service.Store.Conversation(card.ID)
+	conversation, err := service.Store.Conversations.Get(card.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestCodexTurnFailsWithFinalProviderErrorEndToEnd(t *testing.T) {
 	if terminal.Err == nil {
 		t.Fatal("turn succeeded without a provider response")
 	}
-	conversation, err := service.Store.Conversation(card.ID)
+	conversation, err := service.Store.Conversations.Get(card.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

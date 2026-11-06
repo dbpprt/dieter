@@ -11,6 +11,7 @@ extension DieterStore {
             failedItem: { [weak self] in self?.isFailedOutboxItem($0) ?? false },
             creationError: { [weak self] in self?.failedCreationError($0) })
         context.onAddAttachments = { [weak self] urls in self?.addAttachments(urls) }
+        context.onOpenChannel = { [weak self] projectID in self?.openChannel(projectID: projectID) }
         context.onAddPastedAttachments = { [weak self] providers in self?.addPastedAttachments(providers) }
         context.onArchive = { [weak self] card, archived in await self?.archive(card, archived: archived) }
         context.onAttachPasteboard = { [weak self] pasteboard in self?.attachPasteboard(pasteboard) ?? false }

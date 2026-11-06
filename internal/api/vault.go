@@ -8,6 +8,7 @@ import (
 	"time"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/platform/fault"
 	"github.com/dbpprt/dieter/internal/security/vault"
 	"github.com/dbpprt/dieter/internal/store/vaults"
@@ -19,22 +20,19 @@ import (
 //   - Calls carrying an agent turn token act for that conversation and may use
 //     items only when it was created with vault access. Agents never change
 //     vault membership or keys.
-//   - Calls without a token are the operator's: local CLI, or a remote client
-//     forwarded over direct TLS/WebRTC.
-//   - Decrypted content never crosses the gateway relay, where the gateway
-//     sees request and response payloads.
+//   - Calls without a token are the operator's: the local CLI, or a remote
+//     roster device forwarded by the DirectServer. Every remote carrier
+//     (direct TCP, WebRTC, relay tunnel) is TLS end to end between that
+//     device and this daemon, so the gateway never sees vault contents.
 //
 // Agents run unsandboxed as the operator's user, so these rules guard against
 // accidental use and leave an audit trail; they are not a hard boundary.
 
-const (
-	routeMetadata     = "x-dieter-route"
-	turnTokenMetadata = "x-dieter-turn-token"
-)
+const turnTokenMetadata = "x-dieter-turn-token"
 
 type vaultHeadersKey struct{}
 
-type vaultHeaders struct{ route, operator, token string }
+type vaultHeaders struct{ operator, device, token string }
 
 func vaultHeadersFrom(ctx context.Context) vaultHeaders {
 	if value, ok := ctx.Value(vaultHeadersKey{}).(vaultHeaders); ok {
@@ -47,12 +45,12 @@ func vaultHeadersFrom(ctx context.Context) vaultHeaders {
 		}
 		return ""
 	}
-	return vaultHeaders{route: first(routeMetadata), operator: first(operatorSubjectMetadata), token: first(turnTokenMetadata)}
+	return vaultHeaders{operator: first(operatorSubjectMetadata), device: first(deviceIDMetadata), token: first(turnTokenMetadata)}
 }
 
 type vaultCaller struct {
-	kind, cardID, route, subject string
-	access                       bool
+	kind, cardID, route, subject, device string
+	access                               bool
 }
 
 func (c vaultCaller) actor() string {
@@ -60,6 +58,9 @@ func (c vaultCaller) actor() string {
 	case "agent":
 		return "agent:" + c.cardID
 	case "remote":
+		if c.device != "" {
+			return "remote:" + c.subject + "/" + c.device
+		}
 		return "remote:" + c.subject
 	}
 	return "operator"
@@ -71,10 +72,7 @@ func (c vaultCaller) proto() *dieterv1.VaultCaller {
 
 type vaultRule int
 
-const (
-	vaultAllowRelay vaultRule = 1 << iota
-	vaultOperatorOnly
-)
+const vaultOperatorOnly vaultRule = 1
 
 func protoVaultStatus(value vaults.Status, caller vaultCaller) *dieterv1.VaultStatus {
 	result := &dieterv1.VaultStatus{
@@ -161,14 +159,8 @@ func canonicalTOTP(value string) (string, error) {
 func (s *Server) vaultCaller(ctx context.Context) (vaultCaller, error) {
 	headers := vaultHeadersFrom(ctx)
 	caller := vaultCaller{kind: "operator", route: "local", access: true}
-	switch {
-	case headers.route == "relay":
-		caller.route = "relay"
-	case headers.operator != "":
-		caller.route = "direct"
-	}
 	if headers.operator != "" {
-		caller.kind, caller.subject = "remote", headers.operator
+		caller.kind, caller.route, caller.subject, caller.device = "remote", "remote", headers.operator, headers.device
 	}
 	// Remote metadata is never forwarded, so a turn token can only come from
 	// a local process.
@@ -179,11 +171,52 @@ func (s *Server) vaultCaller(ctx context.Context) (vaultCaller, error) {
 	if err != nil {
 		return caller, fault.New(fault.PermissionDenied, err.Error())
 	}
-	card, err := s.store.ResolveCard(cardID)
+	card, err := s.store.Kanban.ResolveCard(cardID)
 	if err != nil {
 		return caller, err
 	}
 	return vaultCaller{kind: "agent", cardID: cardID, route: caller.route, access: card.VaultAccess}, nil
+}
+
+// turnCaller resolves the conversation of an agent turn: a live turn token on
+// the local route. ok is false for the operator, the local CLI without a
+// token or a remote device, whose metadata the DirectServer never forwards a
+// token with.
+func (s *Server) turnCaller(ctx context.Context) (card model.Card, turnID string, ok bool, err error) {
+	token := requestHeader(ctx, turnTokenMetadata)
+	if token == "" || requestHeader(ctx, operatorSubjectMetadata) != "" {
+		return model.Card{}, "", false, nil
+	}
+	cardID, turnID, err := s.app.VerifyTurn(token)
+	if err != nil {
+		return model.Card{}, "", false, fault.New(fault.PermissionDenied, err.Error())
+	}
+	if card, err = s.store.Kanban.ResolveCard(cardID); err != nil {
+		return model.Card{}, "", false, err
+	}
+	return card, turnID, true, nil
+}
+
+// capabilityCaller is who creates a conversation or schedule. The operator
+// may grant every capability; an agent turn only those its own conversation
+// has, so a turn cannot escalate through a sibling it creates.
+type capabilityCaller struct {
+	agent bool
+	card  model.Card
+}
+
+func (s *Server) capabilityCaller(ctx context.Context) (capabilityCaller, error) {
+	card, _, agent, err := s.turnCaller(ctx)
+	return capabilityCaller{agent: agent, card: card}, err
+}
+
+// grantMail refuses an agent turn that would turn mail access on for a
+// conversation or schedule while its own conversation lacks it.
+func (c capabilityCaller) grantMail(granted bool) error {
+	if granted && c.agent && !c.card.MailAccess {
+		return fault.New(fault.PermissionDenied, "a conversation without mail access cannot grant it")
+	}
+	return nil
 }
 
 // vaultAdmit classifies the caller and enforces the access rules.
@@ -201,9 +234,6 @@ func (s *Server) vaultAdmit(ctx context.Context, action string, rules vaultRule)
 	}
 	if rules&vaultOperatorOnly != 0 && caller.kind == "agent" {
 		return deny(fault.PermissionDenied, "agents cannot change vault membership or keys; ask the operator")
-	}
-	if rules&vaultAllowRelay == 0 && caller.route == "relay" {
-		return deny(fault.FailedPrecondition, "vault contents never cross the gateway relay; use a direct or WebRTC route, or run the command on that machine")
 	}
 	return caller, nil
 }
@@ -225,7 +255,7 @@ func (s *Server) vaultStatus(caller vaultCaller) (*dieterv1.VaultStatus, error) 
 
 func (s *Server) memberIdentity() (string, string) {
 	name, _ := os.Hostname()
-	if identity, err := s.store.PeerIdentity(); err == nil {
+	if identity, err := s.store.Replica.PeerIdentity(); err == nil {
 		return name, identity.DaemonID
 	}
 	return name, ""
@@ -295,7 +325,7 @@ func (api *vaultAPI) JoinVault(ctx context.Context, request *dieterv1.JoinVaultR
 
 func (api *vaultAPI) ApproveVaultMember(ctx context.Context, request *dieterv1.ApproveVaultMemberRequest) (*dieterv1.VaultStatus, error) {
 	ctx = vaultContext(ctx)
-	caller, err := api.server.vaultAdmit(ctx, "approve-member", vaultOperatorOnly|vaultAllowRelay)
+	caller, err := api.server.vaultAdmit(ctx, "approve-member", vaultOperatorOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -309,7 +339,7 @@ func (api *vaultAPI) ApproveVaultMember(ctx context.Context, request *dieterv1.A
 
 func (api *vaultAPI) RemoveVaultMember(ctx context.Context, request *dieterv1.VaultMemberRef) (*dieterv1.VaultStatus, error) {
 	ctx = vaultContext(ctx)
-	caller, err := api.server.vaultAdmit(ctx, "remove-member", vaultOperatorOnly|vaultAllowRelay)
+	caller, err := api.server.vaultAdmit(ctx, "remove-member", vaultOperatorOnly)
 	if err != nil {
 		return nil, err
 	}

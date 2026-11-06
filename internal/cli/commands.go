@@ -86,7 +86,7 @@ func commandTable() []command {
 			aliases:     []string{"chats"},
 			summary:     "Manage standalone conversations and present files or URLs",
 			run:         func(c *CLI, args []string) error { return c.rpcCard(args, true) },
-			subcommands: []string{"present", "create", "list", "show", "context", "transcript", "poll", "watch", "tool-output", "fork", "send", "queue", "queue remove", "read", "start", "labels", "cancel", "rename", "update", "archive", "unarchive", "workspace", "pin", "unpin"},
+			subcommands: []string{"present", "create", "list", "show", "context", "transcript", "poll", "watch", "tool-output", "fork", "send", "queue", "queue remove", "read", "cancel", "rename", "update", "archive", "unarchive", "workspace", "pin", "unpin"},
 		},
 		{
 			name:        "workspace",
@@ -98,9 +98,9 @@ func commandTable() []command {
 		{
 			name:        "file",
 			aliases:     []string{"files"},
-			summary:     "Browse and edit project/workspace files with revision checks",
+			summary:     "Browse, edit, copy and sync project/workspace files",
 			run:         (*CLI).rpcFile,
-			subcommands: []string{"list", "read", "save", "create", "move", "delete"},
+			subcommands: []string{"list", "read", "save", "create", "move", "delete", "cp", "sync", "stat", "scan", "upload"},
 		},
 		{
 			name:        "terminal",
@@ -136,10 +136,30 @@ func commandTable() []command {
 			subcommands: []string{"get", "list", "put", "delete", "move", "watch"},
 		},
 		{
+			name:        "channel",
+			aliases:     []string{"channels"},
+			summary:     "Agent channels (experimental): messages, claims and decisions between agents",
+			run:         (*CLI).rpcChannel,
+			subcommands: []string{"list", "messages", "post", "inbox", "check", "claims", "release", "pin", "read", "settings", "watch", "hook"},
+		},
+		{
+			name:        "mail",
+			summary:     "Send Markdown reports to Dieter Mail; read, flag, file and delete them",
+			run:         (*CLI).rpcMail,
+			subcommands: []string{"send", "list", "show", "mark", "delete"},
+		},
+		{
 			name:        "vault",
 			summary:     "End-to-end encrypted passwords and TOTP shared by your machines",
 			run:         (*CLI).rpcVault,
 			subcommands: []string{"status", "members", "init", "join", "approve", "remove-member", "rotate", "list", "show", "add", "edit", "remove", "get", "totp", "exec", "audit"},
+		},
+		{
+			name:        "device",
+			aliases:     []string{"devices"},
+			summary:     "Pair, approve, revoke, and inspect the account's trusted devices",
+			run:         (*CLI).rpcDevice,
+			subcommands: []string{"status", "roster", "sync", "init", "requests", "approve", "revoke", "recover"},
 		},
 		{
 			name:        "peer",

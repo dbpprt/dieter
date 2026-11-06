@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
@@ -47,7 +48,10 @@ func (c *CLI) rpcKV(args []string) error {
 	if !ok {
 		return fmt.Errorf("unknown kv action %q", action)
 	}
-	usage := "Usage: dieter kv " + action + " " + detail + "\nMutations may pass --account ID --daemon ID to pin an uncertain retry.\nRetry identical input and --operation only on that same daemon.\n"
+	usage := "Usage: dieter kv " + action + " " + strings.Replace(detail, "\n", "\n\n", 1) + "\n"
+	if action == "put" || action == "delete" || action == "move" {
+		usage += "Pass --account ID --daemon ID to pin an uncertain retry, and retry identical\ninput and --operation only on that same daemon.\n"
+	}
 	if wantsHelp(args[1:]) {
 		fmt.Fprint(c.Out, usage)
 		return nil

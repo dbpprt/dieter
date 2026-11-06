@@ -24,6 +24,10 @@ internal actual val platformSupportsDynamicColor: Boolean
 
 @Composable internal actual fun SystemBackHandler(enabled: Boolean, onBack: () -> Unit) = Unit
 
+@Composable
+internal actual fun androidx.compose.ui.Modifier.exposingTestTags(): androidx.compose.ui.Modifier =
+    this
+
 private val monospace: androidx.compose.ui.text.font.FontFamily by lazy {
     val typeface =
         listOf("SFMono-Regular", ".AppleSystemUIFontMonospaced", "Menlo-Regular")
@@ -95,3 +99,6 @@ internal fun NSData.bytesArray(): ByteArray =
     ByteArray(length.toInt()).also { result ->
         if (result.isNotEmpty()) result.usePinned { memcpy(it.addressOf(0), bytes, length) }
     }
+
+internal actual val horizontalResizePointer: androidx.compose.ui.input.pointer.PointerIcon =
+    androidx.compose.ui.input.pointer.PointerIcon.Default

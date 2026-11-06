@@ -46,7 +46,7 @@ func TestEnrollmentRetryPreservesCompletedIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := identity.SaveCredential("d_original", "enrolled", []byte("certificate"), nil, nil, "", 1); err != nil {
+	if err := identity.SaveCredential("d_original", "enrolled", []byte("certificate"), nil, "", 1); err != nil {
 		t.Fatal(err)
 	}
 	after, err := LoadOrCreateEnrollmentIdentity(root, "replacement", "https://other.example")

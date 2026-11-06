@@ -14,6 +14,7 @@ import (
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/leases"
 )
 
 type Service struct {
@@ -23,17 +24,25 @@ type Service struct {
 	Workspaces          *workspace.Manager
 	BackgroundProcesses func(context.Context, string, harness.ProcessCall) (json.RawMessage, error)
 	ProviderAccountKey  func(string) string
+	// CLIExecutable is the dieter binary that turn instructions tell agents to
+	// run and that channel file-claim hooks run (DaemonExecutable in a daemon).
+	// Naming the daemon's own binary keeps an older dieter earlier on a login
+	// shell's PATH (macOS path_helper) from shadowing it. Empty means "dieter"
+	// from PATH and no channel hooks.
+	CLIExecutable string
+
+	channels channelHub
 
 	mu               sync.Mutex
 	active           map[string]*activeTurn
-	strandedLeases   map[string]store.RuntimeLease
+	strandedLeases   map[string]leases.RuntimeLease
 	shuttingDown     bool
 	quickTitleJobs   map[string]*quickTitleJob
 	quickTitleSlots  chan struct{}
 	minimumFreeBytes uint64
 	diskAvailable    func(string) (uint64, error)
 	turnTokenKey     []byte
-	releaseLease     func(store.RuntimeLease) error
+	releaseLease     func(leases.RuntimeLease) error
 }
 
 type activeTurn struct {
@@ -41,7 +50,7 @@ type activeTurn struct {
 	cancel         context.CancelFunc
 	cardID         string
 	turnID         string
-	lease          store.RuntimeLease
+	lease          leases.RuntimeLease
 	done           chan struct{}
 	suspend        bool
 	startedAt      time.Time
@@ -53,6 +62,8 @@ type activeTurn struct {
 	// vaultSecrets are values revealed to this turn; stored transcript chunks
 	// redact them.
 	vaultSecrets []string
+	// channel is set while agent channels are on for this turn.
+	channel *activeChannel
 }
 
 type TurnUpdate struct {
@@ -92,8 +103,8 @@ func NewWithOptions(data *store.Store, options Options) *Service {
 		minimumFreeBytes = *options.MinimumFreeBytes
 	}
 	return &Service{
-		Store: data, Runner: runner, Catalog: catalog, Workspaces: workspace.New(data, nil), active: map[string]*activeTurn{}, strandedLeases: map[string]store.RuntimeLease{},
-		minimumFreeBytes: minimumFreeBytes, diskAvailable: availableDiskBytes, turnTokenKey: newTurnTokenKey(), releaseLease: data.ReleaseRuntimeLease,
+		Store: data, Runner: runner, Catalog: catalog, Workspaces: workspace.New(data, nil), active: map[string]*activeTurn{}, strandedLeases: map[string]leases.RuntimeLease{},
+		minimumFreeBytes: minimumFreeBytes, diskAvailable: availableDiskBytes, turnTokenKey: newTurnTokenKey(), releaseLease: data.Leases.Release,
 		quickTitleJobs: map[string]*quickTitleJob{}, quickTitleSlots: make(chan struct{}, quickTaskTitleConcurrency),
 	}
 }

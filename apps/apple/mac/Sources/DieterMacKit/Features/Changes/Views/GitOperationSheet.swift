@@ -22,6 +22,9 @@ struct GitOperationSheet: View {
     }
 
     var body: some View {
+        // The core reads the form once per render, not once per input.
+        let rules = form.rulesData
+        let ready = SharedRules.shared.gitOperationReady(form: rules)
         VStack(spacing: 0) {
             WorkspaceSheetHeader(
                 eyebrow: spec.destructive ? "DESTRUCTIVE WORKSPACE ACTION" : "GIT WORKFLOW",
@@ -33,7 +36,7 @@ struct GitOperationSheet: View {
             Divider().overlay(DieterTheme.paneSeparator)
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    ForEach(spec.inputs, id: \.self) { input in field(input) }
+                    ForEach(spec.inputs, id: \.self) { input in field(input, rules: rules) }
                     notice
                 }
                 .padding(20)
@@ -57,11 +60,9 @@ struct GitOperationSheet: View {
         .frame(width: 560).background(DieterTheme.background)
     }
 
-    private var ready: Bool { SharedRules.shared.gitOperationReady(form: form.rulesData) }
-
-    @ViewBuilder private func field(_ input: ClientGitOperationFormSpec.Input) -> some View {
+    @ViewBuilder private func field(_ input: ClientGitOperationFormSpec.Input, rules: Data) -> some View {
         let copy = spec.copy
-        if SharedRules.shared.gitOperationShows(form: form.rulesData, input: Int32(input.rawValue)) {
+        if SharedRules.shared.gitOperationShows(form: rules, input: Int32(input.rawValue)) {
             switch input {
             case .subject:
                 WorkspaceSheetField(

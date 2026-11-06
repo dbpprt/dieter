@@ -199,7 +199,10 @@ func (s *nativeHelperSource) SetEventHandler(f func(SourceEvent)) {
 
 func (s *nativeHelperSource) send(ctx context.Context, command nativeCommand, acknowledge bool) error {
 	timeout := nativeCommandTimeout
-	if command.Kind == "create" || command.Kind == "remove" || command.Kind == "configure" || command.Kind == "frame_consumed" {
+	if command.Kind == "create" || command.Kind == "remove" || command.Kind == "configure" || command.Kind == "frame_consumed" || command.Kind == "wake_display" {
+		// Waking is the first command sent to a cold helper, before capture
+		// starts. Include process initialization in its lifecycle budget; the
+		// independent liveness watchdog still bounds an unresponsive helper.
 		timeout = nativeStartupTimeout
 	} else if command.Kind == "heartbeat" {
 		// A scheduling stall must not have a shorter lifetime than the native

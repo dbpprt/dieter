@@ -166,39 +166,50 @@ func Run(ctx context.Context, cfg Config) error {
 	state := daemonstate.New(data)
 	var quotaSource *providerquota.Manager
 	var controlRTC *controlrtc.Manager
+	var deviceTrust *link.Trust
 	if enrolled {
+		deviceTrust, err = link.OpenTrust(identity, logger)
+		if err != nil {
+			return fmt.Errorf("open device trust: %w", err)
+		}
+		defer deviceTrust.Close()
 		quotaSource = providerquota.NewWithRuntime(data.Root, logger, runner, providerquota.Accounts{
 			CodexHome: env.CodexHome, ClaudeConfigDir: env.ClaudeConfigDir,
 			CodexAccountHomes: env.CodexAccountHomes, ClaudeAccountHomes: env.ClaudeAccountHomes,
 			Environment: env.Environment.List(),
 		})
 		var routes []*gatewayv1.DirectCandidate
-		loopback, loopbackErr := link.NewDirectRoute(identity, address, localToken, "loopback", "127.0.0.1:0", "127.0.0.1", "loopback", 1000)
+		tunnelTarget := ""
+		loopback, loopbackErr := link.NewDirectRoute(identity, deviceTrust, address, localToken, "loopback", "127.0.0.1:0", "127.0.0.1", "loopback", 1000)
 		if loopbackErr != nil {
-			logger.Warn("automatic local route is unavailable; clients will use the gateway relay", "error", loopbackErr)
+			logger.Warn("automatic local route is unavailable; remote clients cannot connect", "error", loopbackErr)
 		} else {
 			routes = append(routes, loopback.Candidate)
-			controlRTC = controlrtc.New(controlrtc.Identity{DaemonID: identity.ID, GatewayURL: identity.Issuer(), Generation: identity.Generation, GatewaySigningPublicKey: identity.GatewaySigningPublicKey}, loopback.Listener.Addr().String())
+			// Relay tunnels and WebRTC data channels reach the same mutually
+			// authenticated TLS endpoint as direct clients.
+			tunnelTarget = loopback.Listener.Addr().String()
+			controlRTC = controlrtc.New(controlrtc.Identity{DaemonID: identity.ID, GatewayURL: identity.Issuer(), Generation: identity.Generation, GatewaySigningPublicKey: identity.GatewaySigningPublicKey}, tunnelTarget)
 			loopback.Serve(ctx, cancel, logger)
-			logger.Info("automatic authenticated local route enabled", "address", loopback.Listener.Addr().String())
+			logger.Info("automatic authenticated local route enabled", "address", tunnelTarget)
 		}
 		if strings.TrimSpace(cfg.DirectAddr) != "" {
 			if strings.TrimSpace(cfg.DirectHost) == "" {
 				return errors.New("--direct-host is required with --direct-addr")
 			}
-			direct, directErr := link.NewDirectRoute(identity, address, localToken, "direct", cfg.DirectAddr, cfg.DirectHost, cfg.DirectNetwork, 100)
+			direct, directErr := link.NewDirectRoute(identity, deviceTrust, address, localToken, "direct", cfg.DirectAddr, cfg.DirectHost, cfg.DirectNetwork, 100)
 			if directErr != nil {
 				return directErr
 			}
 			routes = append(routes, direct.Candidate)
 			direct.Serve(ctx, cancel, logger)
 		}
+		go deviceTrust.Run(ctx)
 		go runGatewayLink(ctx, cancel, gatewayLink{
 			data: data, state: state, identity: identity, logger: logger, statusWriter: statusWriter,
-			localTarget: address, localToken: localToken, routes: routes,
+			tunnelTarget: tunnelTarget, routes: routes,
 			remoteDesktop: remoteDesktop, quotas: quotaSource, controlRTC: controlRTC != nil,
 		})
-		go (&peersync.PeerSync{Identity: identity, Store: data, Log: logger}).Run(ctx)
+		go (&peersync.PeerSync{Identity: identity, Trust: deviceTrust, Store: data, Log: logger}).Run(ctx)
 	} else if identityErr != nil && !errors.Is(identityErr, os.ErrNotExist) {
 		return identityErr
 	} else {
@@ -214,6 +225,9 @@ func Run(ctx context.Context, cfg Config) error {
 		return serviceRuntime.Ready()
 	}
 	options := ServiceOptions{Env: *env, Runner: runner, Catalog: catalog, RemoteDesktop: remoteDesktop, ControlRTC: controlRTC, DaemonState: state}
+	if deviceTrust != nil {
+		options.Trust = deviceTrust
+	}
 	if quotaSource != nil {
 		options.ProviderAccountKey = quotaSource.ActiveAccountKey
 	}
@@ -284,8 +298,7 @@ type gatewayLink struct {
 	identity      *link.Identity
 	logger        *slog.Logger
 	statusWriter  *link.StatusWriter
-	localTarget   string
-	localToken    string
+	tunnelTarget  string
 	routes        []*gatewayv1.DirectCandidate
 	remoteDesktop *remotedesktop.Manager
 	quotas        *providerquota.Manager
@@ -351,7 +364,7 @@ func runGatewayLink(ctx context.Context, cancel context.CancelFunc, l gatewayLin
 		return err
 	}
 	client := &link.GatewayClient{
-		Identity: l.identity, LocalTarget: l.localTarget, LocalToken: l.localToken, Version: buildinfo.ReleaseVersion, Routes: l.routes,
+		Identity: l.identity, TunnelTarget: l.tunnelTarget, Version: buildinfo.ReleaseVersion, Routes: l.routes,
 		Log: l.logger, OnStatus: l.statusWriter.Gateway, OnAcknowledged: l.statusWriter.GatewayAcknowledged,
 		OnCompatibilityPolicy: onCompatibilityPolicy, OnUpdateRequired: onUpdateRequired,
 		RemoteDesktopPresence: l.remoteDesktop.Presence, ProviderQuotas: l.quotas,

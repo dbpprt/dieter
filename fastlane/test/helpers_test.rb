@@ -6,6 +6,7 @@ require "tmpdir"
 require_relative "../helpers/dieter"
 require_relative "../helpers/changes"
 require_relative "../helpers/e2e"
+require_relative "../helpers/format"
 require_relative "../helpers/release"
 require_relative "../helpers/swift"
 
@@ -235,28 +236,61 @@ class ReleaseTest < Minitest::Test
     assert_raises(Dieter::Unavailable) { Dieter::Release.changelog_section(text, "0.4.3") }
   end
 
-  def test_homebrew_rewrite_touches_only_version_url_and_digest
-    formula = <<~RUBY
-      class Dieter < Formula
-        url "https://github.com/old/tap/releases/download/v0.4.1/dieter-darwin-arm64.tar.gz"
-        version "0.4.1"
-        sha256 "#{"0" * 64}"
-      end
-    RUBY
-    updated =
+  def test_homebrew_files_render_from_the_identity_and_release
+    identity = {
+      "repository" => "owner/dieter",
+      "homebrew_tap" => "owner/homebrew-tap",
+      "bundle_prefix" => "org.example"
+    }
+    formula =
       Dieter::Release.homebrew(
-        formula,
-        version: "0.4.2",
+        "dieter.rb.erb",
+        version: "0.5.9",
         sha256: "f" * 64,
-        repository: "owner/dieter"
+        identity: identity
       )
-    assert_includes updated,
-                    %(url "https://github.com/owner/dieter/releases/download/v0.4.2/dieter-darwin-arm64.tar.gz")
-    assert_includes updated, %(version "0.4.2")
-    assert_includes updated, %(sha256 "#{"f" * 64}")
-    assert_raises(ArgumentError) do
-      Dieter::Release.homebrew("class X; end", version: "1", sha256: "a", repository: "o/r")
+    assert_includes formula,
+                    %(url "https://github.com/owner/dieter/releases/download/v0.5.9/dieter-darwin-arm64.tar.gz")
+    assert_includes formula, %(version "0.5.9")
+    assert_includes formula, %(sha256 "#{"f" * 64}")
+    assert_includes formula, "process_type :standard"
+    refute_includes formula, "process_type :background"
+    cask =
+      Dieter::Release.homebrew(
+        "dieter-app.rb.erb",
+        version: "0.5.9",
+        sha256: "e" * 64,
+        identity: identity
+      )
+    assert_includes cask,
+                    %(url "https://github.com/owner/dieter/releases/download/v\#{version}/Dieter-macOS-arm64.zip")
+    assert_includes cask, %("~/Library/Application Support/org.example.mac")
+    refute_match(/<%|dbpprt|getdieter/, formula + cask)
+    Dieter::Release::HOMEBREW.each_value do |template, _asset|
+      assert File.file?(Dieter.path("deploy/homebrew", template)), template
     end
+    assert_raises(ArgumentError) do
+      Dieter::Release.homebrew("dieter.rb.erb", version: "1", sha256: "a", identity: identity)
+    end
+  end
+
+  def test_daemon_ldflags_pin_the_harness_runtime_archive
+    package = "github.com/dbpprt/dieter/internal/platform/buildinfo"
+    plain = Dieter::Release.ldflags("0.5.9", "abc123")
+    assert_includes plain, "-X #{package}.ReleaseVersion=0.5.9"
+    assert_includes plain, "-X #{package}.SourceRevision=abc123"
+    refute_includes plain, "HarnessRuntimeSHA256"
+    pinned = Dieter::Release.ldflags("0.5.9", "abc123", harness_runtime_sha256: "a" * 64)
+    assert pinned.start_with?(plain)
+    assert pinned.end_with?(" -X #{package}.HarnessRuntimeSHA256=#{"a" * 64}")
+    assert_raises(ArgumentError) do
+      Dieter::Release.ldflags("0.5.9", "abc123", harness_runtime_sha256: "a" * 63)
+    end
+    assert_raises(ArgumentError) do
+      Dieter::Release.ldflags("0.5.9", "abc123", harness_runtime_sha256: "a" * 64 + " -X x=y")
+    end
+    assert_equal "dieter-harness-runtime-linux-arm64.tar.gz",
+                 Dieter::Release.harness_runtime_archive("linux", "arm64")
   end
 
   def test_retention_keeps_recent_and_newest_dev_releases_only
@@ -300,6 +334,61 @@ class WorkflowContractTest < Minitest::Test
     assert_includes File.read(Dieter.path("deploy/install/install.sh")), Dieter::Release.signer
   end
 
+  # Release daemons download their platform's harness runtime archive from
+  # their own release; every daemon builder must publish its archive. Building
+  # an archive runs third-party installers, so no job that does holds secrets.
+  def test_daemon_builders_publish_their_harness_runtime_archives
+    server = workflow("_build-server.yml").fetch("jobs").fetch("linux")
+    assert_equal %w[amd64 arm64],
+                 server.dig("strategy", "matrix", "include").map { |item| item["arch"] }
+    apple = workflow("_build-apple.yml").fetch("jobs")
+    archive = Dieter::Release.harness_runtime_archive("darwin", "arm64")
+    {
+      server => "dist/server/*.tar.gz",
+      apple.fetch("harness-runtime") => "dist/harness-runtime/#{archive}"
+    }.each do |job, path|
+      refute job.key?("environment")
+      steps = job.fetch("steps")
+      setup = steps.find { |step| step["uses"] == "./.github/actions/setup" }
+      assert_includes setup.dig("with", "tools").split, "node"
+      upload = steps.find { |step| step["uses"].to_s.start_with?("actions/upload-artifact@") }
+      assert_includes upload.dig("with", "path").split, path
+    end
+    daemon = apple.fetch("daemon")
+    assert_equal "harness-runtime", daemon.fetch("needs")
+    { server => "dist/server/*.tar.gz", daemon => "dist/daemon/#{archive}" }.each do |job, path|
+      upload =
+        job.fetch("steps").find { |step| step["uses"].to_s.start_with?("actions/upload-artifact@") }
+      assert_includes upload.dig("with", "path").split, path
+      assert upload.dig("with", "name").start_with?("release-")
+    end
+    publish = workflow("release.yml").fetch("jobs").fetch("publish").fetch("steps")
+    assert_includes publish.map { |step| step["run"].to_s }.join("\n"), "cp dist/built/*.tar.gz"
+  end
+
+  # CI and the secret-free builders run third-party code that could poison a
+  # cache, so jobs holding signing secrets or a write token restore only
+  # release-scoped caches, which only such jobs write.
+  def test_privileged_jobs_use_release_caches
+    Dir
+      .glob(Dieter.path(".github/workflows/*.yml"))
+      .each do |file|
+        workflow = YAML.safe_load(File.read(file), aliases: true)
+        workflow
+          .fetch("jobs")
+          .each do |name, job|
+            setup = Array(job["steps"]).find { |step| step["uses"] == "./.github/actions/setup" }
+            next unless setup
+            permissions =
+              (job["permissions"] || workflow["permissions"]).to_h.except("security-events")
+            privileged = job.key?("environment") || permissions.value?("write")
+            assert_equal privileged,
+                         setup.dig("with", "cache-scope") == "release",
+                         "#{File.basename(file)}: #{name}"
+          end
+      end
+  end
+
   def test_ci_ok_gates_every_job_and_every_job_has_a_timeout
     jobs = workflow("ci.yml").fetch("jobs")
     assert_equal (jobs.keys - ["ci-ok"]).sort, jobs.fetch("ci-ok").fetch("needs").sort
@@ -336,5 +425,48 @@ class WorkflowContractTest < Minitest::Test
               end
           end
       end
+  end
+end
+
+class SwiftWebRTCCacheTest < Minitest::Test
+  def test_only_invalidates_webrtc_modules_when_the_binary_artifact_changes
+    Dir.mktmpdir do |directory|
+      manifest = File.join(directory, "Package.swift")
+      artifact = ->(version) do
+        %(.binaryTarget(\n    name: "WebRTC",\n    url: "https://example.com/#{version}.zip",\n    checksum: "#{version}"\n))
+      end
+      File.write(manifest, artifact.call("old"))
+      modules = File.join(directory, "Intermediates.noindex/SwiftExplicitPrecompiledModules")
+      FileUtils.mkdir_p(modules)
+      webrtc = File.join(modules, "WebRTC-cached.pcm")
+      unrelated = File.join(modules, "AppKit-cached.pcm")
+      File.write(webrtc, "old module")
+      File.write(unrelated, "keep")
+
+      Dieter::Swift.prepare_webrtc_module_cache(directory, manifest: manifest)
+      refute File.exist?(webrtc)
+      assert_equal "keep", File.read(unrelated)
+      File.write(webrtc, "current module")
+      Dieter::Swift.prepare_webrtc_module_cache(directory, manifest: manifest)
+      assert_equal "current module", File.read(webrtc)
+
+      File.write(manifest, artifact.call("new"))
+      Dieter::Swift.prepare_webrtc_module_cache(directory, manifest: manifest)
+      refute File.exist?(webrtc)
+      assert_equal "keep", File.read(unrelated)
+    end
+  end
+end
+
+class FormatTest < Minitest::Test
+  def test_integrity_accepts_empty_files_and_reports_text_defects
+    Dir.mktmpdir do |tree|
+      File.write(File.join(tree, "empty.md"), "")
+      File.write(File.join(tree, "binary.png"), "\x89PNG\0 \n")
+      File.write(File.join(tree, "open.md"), "no newline")
+      File.write(File.join(tree, "trail.rb"), "ok\nbad \n")
+      problems = Dieter::Format.integrity(tree, %w[empty.md binary.png open.md trail.rb])
+      assert_equal ["open.md: missing final newline", "trail.rb:2: trailing whitespace"], problems
+    end
   end
 end

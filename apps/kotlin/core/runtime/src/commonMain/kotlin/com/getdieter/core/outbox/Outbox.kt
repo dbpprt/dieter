@@ -5,18 +5,24 @@ import com.getdieter.api.v1.Card
 import com.getdieter.api.v1.Conversation
 import com.getdieter.api.v1.ConversationSnapshot
 import com.getdieter.api.v1.CreateConversationRequest
+import com.getdieter.api.v1.DeleteMailRequest
 import com.getdieter.api.v1.HarnessSelection
+import com.getdieter.api.v1.MailFolder
+import com.getdieter.api.v1.MailHeader
 import com.getdieter.api.v1.MessagePart
 import com.getdieter.api.v1.SendMessageRequest
 import com.getdieter.api.v1.StartCardRequest
+import com.getdieter.api.v1.UpdateMailRequest
 import com.getdieter.core.board.CardPolicy
 import com.getdieter.core.machines.MachineChoice
+import com.getdieter.core.mail.MailRules
 import com.getdieter.core.outbox.OutboxPolicy.accepted
 import com.getdieter.core.outbox.OutboxPolicy.createsConversation
 import com.getdieter.core.runtime.CoreException
 import com.getdieter.core.runtime.CoreLogger
 import com.getdieter.core.runtime.FailureKind
 import com.getdieter.core.runtime.Failures
+import com.getdieter.core.runtime.Timestamps
 import com.getdieter.core.session.MachineSessions
 import com.getdieter.core.storage.CoreStorage
 import com.getdieter.core.store.CardOverlay
@@ -78,9 +84,11 @@ data class OutboxView(
 }
 
 /**
- * The durable outbox for one gateway account: create card/chat, send message, and start card. Every
- * command is journaled atomically before it is acknowledged, delivered at least once per machine in
- * order, and applied exactly once by the daemon. Confined to the core dispatcher.
+ * The durable outbox for one gateway account: create card/chat, send message, start card, and mail
+ * changes. Every command is journaled atomically before it is acknowledged, delivered at least once
+ * per machine in order, and applied exactly once by the daemon (mail changes set states, so
+ * applying one again changes nothing). [mail] is every machine's mail headers as synced, which
+ * settles accepted mail changes. Confined to the core dispatcher.
  */
 class Outbox(
     private val clientId: String,
@@ -89,6 +97,7 @@ class Outbox(
     private val choice: MachineChoice,
     private val clock: Clock,
     private val logger: CoreLogger,
+    private val mail: () -> Map<String, Map<String, MailHeader>> = { emptyMap() },
 ) {
     private var storage: CoreStorage? = null
     private var journal = OutboxJournal()
@@ -317,6 +326,57 @@ class Outbox(
         }
     }
 
+    /**
+     * Queues read, flag or folder changes of [ids] on [daemonId], at most [MailRules.BATCH] per
+     * command. Unset fields stay as they are.
+     */
+    fun changeMail(
+        daemonId: String,
+        ids: List<String>,
+        read: Boolean? = null,
+        flagged: Boolean? = null,
+        folder: MailFolder = MailFolder.MAIL_FOLDER_UNSPECIFIED,
+    ) {
+        if (read == null && flagged == null && folder == MailFolder.MAIL_FOLDER_UNSPECIFIED) return
+        queueMail(daemonId, ids, OutboxKind.OUTBOX_KIND_UPDATE_MAIL) { batch ->
+            UpdateMailRequest.ADAPTER.encode(
+                UpdateMailRequest(ids = batch, read = read, flagged = flagged, folder = folder)
+            )
+        }
+    }
+
+    /** Queues deleting [ids] on [daemonId] for good, at most [MailRules.BATCH] per command. */
+    fun deleteMail(daemonId: String, ids: List<String>) {
+        queueMail(daemonId, ids, OutboxKind.OUTBOX_KIND_DELETE_MAIL) { batch ->
+            DeleteMailRequest.ADAPTER.encode(DeleteMailRequest(ids = batch))
+        }
+    }
+
+    private fun queueMail(
+        daemonId: String,
+        ids: List<String>,
+        kind: OutboxKind,
+        request: (List<String>) -> ByteArray,
+    ) {
+        val distinct = ids.filter { it.isNotBlank() }.distinct()
+        if (daemonId.isBlank() || distinct.isEmpty()) return
+        transaction { entries, _ ->
+            for (batch in distinct.chunked(MailRules.BATCH)) {
+                val commandId = newCommandId()
+                entries +=
+                    OutboxEntry(
+                        command_id = commandId,
+                        client_id = clientId,
+                        daemon_id = daemonId,
+                        kind = kind,
+                        request = request(batch).toByteString(),
+                        optimistic_id = MAIL_PREFIX + commandId.replace("-", ""),
+                        created_at_millis = clock.now().toEpochMilliseconds(),
+                    )
+            }
+        }
+    }
+
     /** Re-arms failed or waiting commands for [id] (a conversation, message, or card). */
     fun retry(id: String) = transaction { entries, _ ->
         for (index in entries.indices) {
@@ -424,6 +484,21 @@ class Outbox(
                             val response = client.StartCard().execute(request)
                             response.card?.id?.ifEmpty { null } ?: request.card_id
                         }
+                        // The newest state the daemon reports settles the change once synced.
+                        OutboxKind.OUTBOX_KIND_UPDATE_MAIL ->
+                            client
+                                .UpdateMail()
+                                .execute(UpdateMailRequest.ADAPTER.decode(entry.request))
+                                .messages
+                                .mapNotNull { Timestamps.parse(it.state_changed_at) }
+                                .maxOrNull()
+                                ?.toString() ?: MAIL_ACCEPTED
+                        OutboxKind.OUTBOX_KIND_DELETE_MAIL -> {
+                            client
+                                .DeleteMail()
+                                .execute(DeleteMailRequest.ADAPTER.decode(entry.request))
+                            MAIL_ACCEPTED
+                        }
                         else ->
                             throw CoreException(FailureKind.PERMANENT, "Unknown pending command.")
                     }
@@ -526,9 +601,10 @@ class Outbox(
                         )
                     accept(entries, resolutions, entry.optimistic_id, serverId)
                 }
+                val headers = mail()
                 entries.removeAll { entry ->
                     entry.accepted &&
-                        (OutboxPolicy.isSynced(entry, cards, activities) ||
+                        (OutboxPolicy.isSynced(entry, cards, activities, headers) ||
                             now - entry.accepted_at_millis > ACCEPTED_RETENTION.inWholeMilliseconds)
                 }
             }
@@ -562,7 +638,10 @@ class Outbox(
                 entries = current,
                 pendingCardIds =
                     current
-                        .filter { it.kind != OutboxKind.OUTBOX_KIND_SEND_MESSAGE }
+                        .filter {
+                            it.kind != OutboxKind.OUTBOX_KIND_SEND_MESSAGE &&
+                                !MailRules.changesMail(it)
+                        }
                         .flatMapTo(HashSet(), OutboxPolicy::conversationIds),
                 pendingMessageIds =
                     buildSet {
@@ -702,6 +781,12 @@ class Outbox(
     companion object {
         const val FILE = "outbox.pb"
         const val VERSION = 1
+
+        /** Mail changes are known by `mail_` and their command ID. */
+        const val MAIL_PREFIX = "mail_"
+
+        /** What an accepted mail change without a newer state records as its server ID. */
+        private const val MAIL_ACCEPTED = "accepted"
 
         const val MAX_ENTRIES = 1_000
         const val MAX_BYTES = 64 * 1024 * 1024

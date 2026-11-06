@@ -1,0 +1,52 @@
+/Volumes/External/dieter-spike/tree-dev/small: ignored entries=4 scanned files=1999 hits=0 abs-symlinks=0 time=0.84s
+/Volumes/External/dieter-spike/tree-dev/js: ignored entries=4 scanned files=39999 hits=0 abs-symlinks=0 time=8.13s
+/Volumes/External/dieter-spike/pathrelo/py/src-uv: ignored entries=1 scanned files=986 hits=130 abs-symlinks=0 time=0.4s
+    118 .venv/lib/python3.12
+      1 .venv/bin/relo
+      1 .venv/bin/pytest
+      1 .venv/bin/pygmentize
+      1 .venv/bin/py.test
+      1 .venv/bin/normalizer
+/Volumes/External/dieter-spike/pathrelo/py/src-pip: ignored entries=1 scanned files=2416 hits=1145 abs-symlinks=0 time=0.61s
+   1131 .venv/lib/python3.12
+      1 .venv/pyvenv.cfg
+      1 .venv/bin/relo
+      1 .venv/bin/pytest
+      1 .venv/bin/pygmentize
+      1 .venv/bin/py.test
+/Volumes/External/dieter-spike/pathrelo/cm/src: ignored entries=1 scanned files=162 hits=143 abs-symlinks=0 time=0.33s
+    125 build/CMakeFiles/relolib.dir
+      7 build/CMakeFiles/relo.dir
+      1 build/relo
+      1 build/librelolib.a
+      1 build/cmake_install.cmake
+      1 build/Makefile
+/Volumes/External/dieter-spike/pathrelo/rs/src: ignored entries=0 scanned files=0 hits=0 abs-symlinks=0 time=0.2s
+/Volumes/External/dieter-spike/pathrelo/swift/xcs-plain/Relo: ignored entries=1 scanned files=1614 hits=305 abs-symlinks=0 time=0.77s
+    123 DD/Build/Intermediates.noindex
+     73 DD/Index.noindex/DataStore
+     25 DD/ModuleCache.noindex/XCY0D3Q30GKJ
+     25 DD/ModuleCache.noindex/2MW2B7RYFDY5M
+     25 DD/ModuleCache.noindex/26Q3WF1CSK8OT
+      7 DD/Build/Products
+/Volumes/External/dieter-spike/pathrelo/swift/spm-src: ignored entries=1 scanned files=1592 hits=255 abs-symlinks=0 time=0.73s
+    113 .build/out/Intermediates.noindex
+     76 .build/out/ModuleCache.noindex
+     33 .build/out/v5
+     25 .build/out/SDKExplicitPrecompiledModules
+      7 .build/out/Products
+      1 .build/manifest.pif
+/Volumes/External/dieter-spike/pathrelo/node/src: ignored entries=3 scanned files=1104 hits=4 abs-symlinks=0 time=0.48s
+      2 addon/build/Release
+      1 addon/build/config.gypi
+      1 addon/build/Makefile
+/Volumes/External/dieter-spike/pathrelo/go/src-plain: ignored entries=0 scanned files=0 hits=0 abs-symlinks=0 time=0.25s
+/Volumes/External/dieter-spike/pathrelo/rs/src: ignored entries=6 scanned files=471 hits=159 abs-symlinks=0 time=0.49s
+     82 target/debug/deps
+     54 target/debug/incremental
+     17 target/debug/build
+      1 target/debug/libutil.rlib
+      1 target/debug/libutil.d
+      1 target/debug/libcore.rlib
+/Volumes/External/dieter-spike/pathrelo/go/src-plain: ignored entries=1 scanned files=1 hits=1 abs-symlinks=0 time=0.31s
+      1 bin/dieter

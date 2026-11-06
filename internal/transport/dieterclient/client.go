@@ -29,6 +29,9 @@ type Client interface {
 	dieterv1.VaultServiceClient
 	dieterv1.KVServiceClient
 	dieterv1.PeerServiceClient
+	dieterv1.TrustServiceClient
+	dieterv1.ChannelServiceClient
+	dieterv1.MailServiceClient
 }
 
 type client struct {
@@ -49,6 +52,9 @@ type client struct {
 	dieterv1.VaultServiceClient
 	dieterv1.KVServiceClient
 	dieterv1.PeerServiceClient
+	dieterv1.TrustServiceClient
+	dieterv1.ChannelServiceClient
+	dieterv1.MailServiceClient
 }
 
 // New returns the gRPC clients of every dieter.v1 service sharing conn.
@@ -71,6 +77,9 @@ func New(conn grpc.ClientConnInterface) Client {
 		VaultServiceClient:        dieterv1.NewVaultServiceClient(conn),
 		KVServiceClient:           dieterv1.NewKVServiceClient(conn),
 		PeerServiceClient:         dieterv1.NewPeerServiceClient(conn),
+		TrustServiceClient:        dieterv1.NewTrustServiceClient(conn),
+		ChannelServiceClient:      dieterv1.NewChannelServiceClient(conn),
+		MailServiceClient:         dieterv1.NewMailServiceClient(conn),
 	}
 }
 
@@ -93,6 +102,9 @@ type ConnectClient interface {
 	dieterv1connect.VaultServiceClient
 	dieterv1connect.KVServiceClient
 	dieterv1connect.PeerServiceClient
+	dieterv1connect.TrustServiceClient
+	dieterv1connect.ChannelServiceClient
+	dieterv1connect.MailServiceClient
 }
 
 type connectClient struct {
@@ -113,6 +125,9 @@ type connectClient struct {
 	dieterv1connect.VaultServiceClient
 	dieterv1connect.KVServiceClient
 	dieterv1connect.PeerServiceClient
+	dieterv1connect.TrustServiceClient
+	dieterv1connect.ChannelServiceClient
+	dieterv1connect.MailServiceClient
 }
 
 // NewConnect returns the Connect clients of every dieter.v1 service at baseURL.
@@ -135,5 +150,8 @@ func NewConnect(httpClient connect.HTTPClient, baseURL string, options ...connec
 		VaultServiceClient:        dieterv1connect.NewVaultServiceClient(httpClient, baseURL, options...),
 		KVServiceClient:           dieterv1connect.NewKVServiceClient(httpClient, baseURL, options...),
 		PeerServiceClient:         dieterv1connect.NewPeerServiceClient(httpClient, baseURL, options...),
+		TrustServiceClient:        dieterv1connect.NewTrustServiceClient(httpClient, baseURL, options...),
+		ChannelServiceClient:      dieterv1connect.NewChannelServiceClient(httpClient, baseURL, options...),
+		MailServiceClient:         dieterv1connect.NewMailServiceClient(httpClient, baseURL, options...),
 	}
 }

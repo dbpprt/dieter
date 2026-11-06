@@ -170,6 +170,39 @@ class ConversationReducerTest {
     }
 
     @Test
+    fun aNewerRevisionWinsOverARicherPageAtTheSameSequence() {
+        val old = snapshot(5, "a", "b", "c")
+        val incoming =
+            snapshot(5, "c", start = 2, total = 3, updatedAt = "2026-09-30T12:00:01Z").let {
+                it.copy(
+                    conversation =
+                        it.conversation!!.copy(
+                            status = "idle",
+                            messages = listOf(message("c", "finished")),
+                            queue = listOf(com.getdieter.api.v1.QueuedMessage(id = "next")),
+                        )
+                )
+            }
+        val state =
+            ConversationReducer.applySnapshot(TranscriptState(snapshot = old), incoming, retention)
+        assertEquals("idle", state.conversation!!.status)
+        assertEquals("finished", state.messages.last().parts.single().text)
+        assertEquals(
+            listOf("a", "b", "c"),
+            state.messages.map { it.id },
+            "the larger page survives as history",
+        )
+        assertEquals("next", state.conversation!!.queue.single().id)
+        val delayed = ConversationReducer.applySnapshot(state, old, retention)
+        assertEquals(
+            state.messages,
+            delayed.messages,
+            "a delayed richer page cannot roll back content",
+        )
+        assertEquals("idle", delayed.conversation!!.status)
+    }
+
+    @Test
     fun snapshotsKeepHistoryThatStillJoinsTheWindow() {
         var state =
             TranscriptState(

@@ -3,20 +3,33 @@ import DieterCore
 import DieterIdentity
 import DieterMacTestSupport
 import DieterPlatform
+import DieterTransport
 import Foundation
 import Synchronization
 import Testing
 @testable import DieterMacKit
 
 /// What the disposable native screen fixture (`tools/fixtures/screens`)
-/// writes once it listens: a loopback daemon API, its signing certificate,
-/// ICE configuration, and a bearer token.
+/// writes once it listens: a loopback daemon API, its signing certificate
+/// (PEM), ICE configuration, and a bearer token.
 struct ScreenFixtureConnection: Decodable {
     var url: String
     var certificate: Data
     var rtc: Data
     var clipboardName: String?
     var token: String
+
+    var daemonPublicKey: Data { screenFixtureDaemonPublicKey(certificate) }
+}
+
+/// A fixture daemon's Ed25519 key as a device roster lists it: the DER
+/// SubjectPublicKeyInfo of its PEM signing certificate.
+func screenFixtureDaemonPublicKey(_ certificatePEM: Data) -> Data {
+    let body = String(decoding: certificatePEM, as: UTF8.self)
+        .replacingOccurrences(of: "-----BEGIN CERTIFICATE-----", with: "")
+        .replacingOccurrences(of: "-----END CERTIFICATE-----", with: "")
+        .components(separatedBy: .whitespacesAndNewlines).joined()
+    return Data(base64Encoded: body).flatMap { DaemonKeyPinning.subjectPublicKeyInfo(certificateDER: $0) } ?? Data()
 }
 
 /// The fixture's signaling routes as the core opens them; tests count the
@@ -44,8 +57,7 @@ final class ScreenFixtureRoutes: NSObject, NativeScreenFixture, @unchecked Senda
         }
         guard available else { return nil }
         return NativeScreenFixtureRoute(
-            url: fixture.url, token: fixture.token,
-            certificatePem: String(decoding: fixture.certificate, as: UTF8.self),
+            url: fixture.url, token: fixture.token, daemonPublicKey: fixture.daemonPublicKey,
             rtc: fixture.rtc, label: "Fixture loopback")
     }
 }
@@ -70,7 +82,8 @@ final class ScreenFixtureRoutes: NSObject, NativeScreenFixture, @unchecked Senda
                 root: root, clientVersion: DieterRelease.current,
                 logSubsystem: DistributionIdentity.macBundleID + ".tests"),
             platform: .mac(
-                credentialsFile: root.appending(path: "gateway-sessions.json"), notificationsEnabled: { false },
+                credentialsFile: root.appending(path: "gateway-sessions.json"),
+                deviceKeyFile: root.appending(path: "device-key.json"), notificationsEnabled: { false },
                 clipboard: clipboard),
             defaults: defaults, screens: CoreHostScreens(media: media, fixture: routes))
     }

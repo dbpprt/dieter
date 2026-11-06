@@ -5,7 +5,7 @@ import SwiftUI
 
 /// A row's time and copy action: the core says when its last message was
 /// written and whether it has prose; copying asks the core for that prose.
-struct MessageFooterContent {
+struct MessageFooterContent: Equatable {
     let timestamp: Date?
     let copyable: Bool
     private let messages: ClientTimelineMessages
@@ -51,6 +51,7 @@ struct MessageFooter: View {
     private var showsActions: Bool { isHovered || copyFocused || voiceOverEnabled }
 
     var body: some View {
+        let description = content.timestampDescription
         HStack(spacing: 6) {
             Text(content.timestampLabel)
                 .font(.caption2)
@@ -58,9 +59,9 @@ struct MessageFooter: View {
                 .monospacedDigit()
                 .lineLimit(1)
                 .textSelection(.disabled)
-                .quickHelp(content.timestampDescription)
+                .quickHelp(description)
                 .opacity(isLatest || showsActions ? 1 : 0)
-                .accessibilityLabel(content.timestampDescription)
+                .accessibilityLabel(description)
                 .accessibilityHidden(!isLatest && !showsActions)
                 .accessibilityIdentifier("conversation.message.timestamp.\(messageID)")
                 .e2eTarget("conversation.message.timestamp.\(messageID)")

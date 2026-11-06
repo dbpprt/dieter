@@ -16,7 +16,7 @@ import (
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/home"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -36,12 +36,12 @@ const (
 const localDiagnosticsInterval = 10 * time.Second
 
 // localChanges indexes what only this daemon knows: owner-only details of the
-// cards it runs and of its checkouts, the activity of its conversations and
-// its peer replication diagnostics. Changes are detected by content, so no
-// writer declares what it touched. Change streams bring it current whenever
-// the store changes, so every frame's local half matches its records. The
-// index lives as long as the process; a restart changes the epoch and
-// clients replay it.
+// cards it runs and of its checkouts, the activity of its conversations, the
+// headers of its mail and its peer replication diagnostics. Changes are
+// detected by content, so no writer declares what it touched. Change streams
+// bring it current whenever the store changes, so every frame's local half
+// matches its records. The index lives as long as the process; a restart
+// changes the epoch and clients replay it.
 type localChanges struct {
 	server *Server
 	// diagnosticsInterval is localDiagnosticsInterval; tests shorten it.
@@ -54,12 +54,15 @@ type localChanges struct {
 	advanced chan struct{}
 
 	// Inputs of the last refresh, so unchanged parts are not rebuilt.
-	scanned     bool
-	metadata    store.StoreRevision
-	owned       []model.Card
-	checkouts   []model.Checkout
-	transcripts map[string]string
-	diagnosed   time.Time
+	scanned      bool
+	metadata     home.Revision
+	owned        []model.Card
+	checkouts    []model.Checkout
+	transcripts  map[string]string
+	mail         []*dieterv1.MailHeader
+	mailScanned  bool
+	mailRevision uint64
+	diagnosed    time.Time
 }
 
 type localEntry struct {
@@ -72,6 +75,7 @@ type localEntry struct {
 	activity *dieterv1.Conversation
 	peerSync *dieterv1.PeerSyncStatus
 	privacy  *dieterv1.MachinePrivacy
+	mail     *dieterv1.MailHeader
 }
 
 type localChange struct {
@@ -116,11 +120,11 @@ func (l *localChanges) refresh(ctx context.Context) error {
 		return err
 	}
 	if !l.scanned || revision != l.metadata {
-		owned, err := l.server.store.OwnedCards(ctx)
+		owned, err := l.server.store.Kanban.OwnedCards(ctx)
 		if err != nil {
 			return err
 		}
-		checkouts, err := l.server.store.OwnedCheckouts()
+		checkouts, err := l.server.store.Kanban.OwnedCheckouts()
 		if err != nil {
 			return err
 		}
@@ -138,7 +142,7 @@ func (l *localChanges) refresh(ctx context.Context) error {
 	transcripts := map[string]string{}
 	for _, id := range activityCards(l.owned) {
 		key := "activity/" + id
-		transcript, err := l.server.store.ConversationRevisionByID(id)
+		transcript, err := l.server.store.Conversations.RevisionByID(id)
 		if err != nil {
 			continue
 		}
@@ -149,9 +153,9 @@ func (l *localChanges) refresh(ctx context.Context) error {
 			}
 			continue
 		}
-		conversation, err := l.server.store.ActivityConversation(id, activityMessages)
+		conversation, err := l.server.store.Conversations.Activity(id, activityMessages)
 		if err != nil {
-			if !errors.Is(err, store.ErrNotFound) && !errors.Is(err, os.ErrNotExist) {
+			if !errors.Is(err, home.ErrNotFound) && !errors.Is(err, os.ErrNotExist) {
 				l.server.log.Warn("conversation activity unavailable", "card", id, "error", err)
 			}
 			continue
@@ -169,6 +173,28 @@ func (l *localChanges) refresh(ctx context.Context) error {
 		next[peerSyncKey] = entry.peerSync
 	}
 	next["machine-privacy"] = l.server.privacyState(ctx)
+	// Mail headers are reread only when the mailbox changed. A mailbox that
+	// cannot be read keeps its last headers, so it never stalls the rest.
+	if revision, err := l.server.store.Mail.Revision(); err != nil {
+		l.server.log.Warn("mail headers unavailable", "error", err)
+	} else if !l.mailScanned || revision != l.mailRevision {
+		headers, revision, err := l.server.store.Mail.Headers()
+		if err != nil {
+			l.server.log.Warn("mail headers unavailable", "error", err)
+		} else {
+			l.mail, l.mailRevision, l.mailScanned = make([]*dieterv1.MailHeader, len(headers)), revision, true
+			for index, header := range headers {
+				l.mail[index] = protoMailHeader(header)
+				// An unchanged header keeps its value, so apply skips it.
+				if entry := l.entries["mail/"+header.ID]; entry != nil && !entry.removed && proto.Equal(entry.mail, l.mail[index]) {
+					l.mail[index] = entry.mail
+				}
+			}
+		}
+	}
+	for _, header := range l.mail {
+		next["mail/"+header.GetId()] = header
+	}
 	if err := l.apply(next); err != nil {
 		return err
 	}
@@ -185,6 +211,11 @@ func (l *localChanges) apply(next map[string]proto.Message) error {
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
+		if header, ok := next[key].(*dieterv1.MailHeader); ok {
+			if entry := l.entries[key]; entry != nil && !entry.removed && entry.mail == header {
+				continue
+			}
+		}
 		raw, err := proto.MarshalOptions{Deterministic: true}.Marshal(next[key])
 		if err != nil {
 			return err
@@ -206,6 +237,8 @@ func (l *localChanges) apply(next map[string]proto.Message) error {
 			entry.peerSync = value
 		case *dieterv1.MachinePrivacy:
 			entry.privacy = value
+		case *dieterv1.MailHeader:
+			entry.mail = value
 		}
 		l.entries[key] = entry
 		changed = true
@@ -301,7 +334,7 @@ func protoOwnedCard(card model.Card) *dieterv1.Card {
 		InitialPrompt: full.InitialPrompt, Summary: full.Summary, Origin: full.Origin,
 		ProviderOptions: full.ProviderOptions, ProviderAccountKey: full.ProviderAccountKey,
 		WorkspaceMode: full.WorkspaceMode, WorkspaceBranch: full.WorkspaceBranch, WorkspaceBaseBranch: full.WorkspaceBaseBranch,
-		WorkspaceBaseRemote: full.WorkspaceBaseRemote, RemotePublishMode: full.RemotePublishMode, VaultAccess: full.VaultAccess,
+		WorkspaceBaseRemote: full.WorkspaceBaseRemote, RemotePublishMode: full.RemotePublishMode, VaultAccess: full.VaultAccess, MailAccess: full.MailAccess,
 		Workspace: full.Workspace, PullRequest: full.PullRequest, TokenUsage: full.TokenUsage, UpdatedAt: full.UpdatedAt,
 	}
 }
@@ -358,14 +391,14 @@ func boundedText(text string) string {
 
 func (s *Server) peerSyncStatus() (*dieterv1.PeerSyncStatus, error) {
 	status := &dieterv1.PeerSyncStatus{}
-	identity, err := s.store.PeerIdentity()
+	identity, err := s.store.Replica.PeerIdentity()
 	if errors.Is(err, os.ErrNotExist) {
 		return status, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	diagnostics, err := s.store.PeerSyncDiagnostics(identity.Account)
+	diagnostics, err := s.store.Replica.PeerSyncDiagnostics(identity.Account)
 	if err != nil {
 		return nil, err
 	}

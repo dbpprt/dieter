@@ -155,15 +155,15 @@ func TestVaultCLIGrantsAccessAtCreation(t *testing.T) {
 		t.Fatalf("card without --vault = %q", plain)
 	}
 	chat := runDaemonCLI(t, client, output, "chat", "create", "--project", created.Project.ID, "--title", "Vault chat", "--workspace", "project", "--provider", "mock", "--model", "mock", "--vault", "--format", "id")
-	stored, err := data.ResolveCard(strings.TrimSpace(chat))
+	stored, err := data.Kanban.ResolveCard(strings.TrimSpace(chat))
 	if err != nil || !stored.VaultAccess {
 		t.Fatalf("chat = %q %+v %v", chat, stored, err)
 	}
 	// Chats start immediately; let the mock turn finish before cleanup.
 	for deadline := time.Now().Add(testkit.Budget(30 * time.Second)); stored.Runtime != "idle" && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-		stored, _ = data.ResolveCard(stored.ID)
+		stored, _ = data.Kanban.ResolveCard(stored.ID)
 	}
-	if _, err := data.GlobalStateContext(t.Context()); err != nil {
+	if _, err := data.Kanban.GlobalStateContext(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	schedule := runDaemonCLI(t, client, output, "schedule", "create", "--project", created.Project.ID, "--board", created.Board.ID, "--name", "Nightly login", "--cron", "0 3 * * *", "--title", "Login", "--prompt", "Check login", "--provider", "mock", "--model", "mock", "--vault")
@@ -192,15 +192,14 @@ func assertVaultDirectCLI(t *testing.T, client *CLI, output *bytes.Buffer) {
 	}
 }
 
-// assertVaultRelayRefusedCLI runs on the gateway relay route, where the
-// gateway sees payloads: status works, decrypted content is refused.
-func assertVaultRelayRefusedCLI(t *testing.T, client *CLI, output *bytes.Buffer) {
+// assertVaultRelayCLI runs on the gateway relay route. The relay carries an
+// opaque tunnel with TLS end to end, so vault contents work as on any route.
+func assertVaultRelayCLI(t *testing.T, client *CLI, output *bytes.Buffer) {
 	t.Helper()
-	if status := runDaemonCLI(t, client, output, "vault", "status"); !strings.Contains(status, "unlocked") || !strings.Contains(status, "via relay") {
+	if status := runDaemonCLI(t, client, output, "vault", "status"); !strings.Contains(status, "unlocked") || !strings.Contains(status, "via remote") {
 		t.Fatalf("relay vault status = %q", status)
 	}
-	output.Reset()
-	if err := client.Run([]string{"vault", "get", "Remote", "--reveal"}); err == nil || !strings.Contains(err.Error(), "gateway relay") {
-		t.Fatalf("relay vault get = %v %q", err, output.String())
+	if value := runDaemonCLI(t, client, output, "vault", "get", "Remote", "--reveal"); value != "remote-secret\n" {
+		t.Fatalf("relay vault get = %q", value)
 	}
 }

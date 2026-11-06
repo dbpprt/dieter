@@ -13,7 +13,7 @@ import (
 	"time"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit"
 	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 	"google.golang.org/grpc"
@@ -27,7 +27,7 @@ func TestExecutionGRPCResumesAfterDisconnectAndPreservesStreams(t *testing.T) {
 		t.Fatal(err)
 	}
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Execution fixture", Path: repository})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Execution fixture", Path: repository})
 	if err != nil {
 		t.Fatal(err)
 	}

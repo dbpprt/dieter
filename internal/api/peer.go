@@ -8,7 +8,8 @@ import (
 	"github.com/dbpprt/dieter/internal/link"
 	"github.com/dbpprt/dieter/internal/platform/fault"
 	"github.com/dbpprt/dieter/internal/replication/crdt"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/home"
+	"github.com/dbpprt/dieter/internal/store/replica"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -20,12 +21,12 @@ func peerRecord(r crdt.Record) *dieterv1.PeerRecord {
 	return v
 }
 
-func protoPeerDiagnostic(d store.PeerSyncDiagnostic) *dieterv1.PeerSyncDiagnostic {
+func protoPeerDiagnostic(d replica.PeerSyncDiagnostic) *dieterv1.PeerSyncDiagnostic {
 	return &dieterv1.PeerSyncDiagnostic{PeerId: d.PeerID, LastAttemptAt: d.LastAttemptAt, LastSuccessAt: d.LastSuccessAt, Route: d.Route, Direction: d.Direction, FailureCode: d.FailureCode, RecordKind: d.RecordKind, RecordId: d.RecordID, Field: d.Field, Actor: d.Actor, PullEpoch: d.Pull.Epoch, PullSequence: d.Pull.Sequence, PushEpoch: d.Push.Epoch, PushSequence: d.Push.Sequence}
 }
 
-func (s *Server) peerIdentity(ctx context.Context, account string) (store.PeerIdentity, error) {
-	identity, err := s.store.PeerIdentity()
+func (s *Server) peerIdentity(ctx context.Context, account string) (replica.PeerIdentity, error) {
+	identity, err := s.store.Replica.PeerIdentity()
 	if err != nil {
 		return identity, fault.New(fault.FailedPrecondition, "peer store awaits enrolled account discovery")
 	}
@@ -49,12 +50,12 @@ func (api *peerAPI) GetPeerStoreStatus(ctx context.Context, _ *emptypb.Empty) (*
 	if err != nil {
 		return nil, err
 	}
-	data, err := api.server.store.PeerStoreInfo(ctx, identity.Account)
+	data, err := api.server.store.Replica.PeerStoreInfo(ctx, identity.Account)
 	if err != nil {
 		return nil, domainFailure(err)
 	}
 	out := &dieterv1.PeerStoreStatus{Account: identity.Account, Actor: identity.Actor, Records: data.Records, Conflicts: data.Conflicts, LastSyncAt: data.LastSyncAt, LastPeerId: data.LastPeerID, LastRoute: data.LastRoute}
-	diagnostics, err := api.server.store.PeerSyncDiagnostics(identity.Account)
+	diagnostics, err := api.server.store.Replica.PeerSyncDiagnostics(identity.Account)
 	if err != nil {
 		return nil, domainFailure(err)
 	}
@@ -73,7 +74,7 @@ func (api *peerAPI) ListPeerRecords(ctx context.Context, r *dieterv1.PeerSnapsho
 	if r.GetAfterKey() != "" && r.GetSnapshotRevision() == "" {
 		return nil, fault.New(fault.Invalid, "continuation requires snapshot revision")
 	}
-	page, err := api.server.store.ListPeerRecordPage(ctx, identity.Account, "", "", r.GetAfterKey(), r.GetSnapshotRevision(), nil)
+	page, err := api.server.store.Replica.ListPeerRecordPage(ctx, identity.Account, "", "", r.GetAfterKey(), r.GetSnapshotRevision(), nil)
 	if err != nil {
 		return nil, domainFailure(err)
 	}
@@ -90,7 +91,7 @@ func (api *peerAPI) PutPeerRecord(ctx context.Context, r *dieterv1.PutPeerRecord
 	if err != nil {
 		return nil, err
 	}
-	record, err := api.server.store.PutPeerRecord(identity, r.GetKind(), r.GetId(), r.GetExpectedRevision(), r.GetValueJson(), r.GetDeleted())
+	record, err := api.server.store.Replica.PutPeerRecord(identity, r.GetKind(), r.GetId(), r.GetExpectedRevision(), r.GetValueJson(), r.GetDeleted())
 	if err != nil {
 		return nil, domainFailure(err)
 	}
@@ -117,7 +118,7 @@ func (api *peerAPI) MergePeerRecords(ctx context.Context, r *dieterv1.MergePeerR
 		}
 		records = append(records, record)
 	}
-	return &emptypb.Empty{}, domainFailure(api.server.store.MergePeerRecords(identity, records))
+	return &emptypb.Empty{}, domainFailure(api.server.store.Replica.MergePeerRecords(identity, records))
 }
 
 func (api *peerAPI) GetPeerRecord(ctx context.Context, r *dieterv1.PeerRecordRef) (*dieterv1.PeerRecord, error) {
@@ -126,8 +127,8 @@ func (api *peerAPI) GetPeerRecord(ctx context.Context, r *dieterv1.PeerRecordRef
 	if err != nil {
 		return nil, err
 	}
-	record, err := api.server.store.ReadPeerRecord(ctx, identity.Account, r.GetKind(), r.GetId())
-	if errors.Is(err, store.ErrNotFound) {
+	record, err := api.server.store.Replica.ReadPeerRecord(ctx, identity.Account, r.GetKind(), r.GetId())
+	if errors.Is(err, home.ErrNotFound) {
 		return nil, fault.New(fault.NotFound, "shared record not found")
 	}
 	if err != nil {
@@ -142,7 +143,7 @@ func (api *peerAPI) GetPeerChanges(ctx context.Context, r *dieterv1.PeerChangesR
 	if err != nil {
 		return nil, err
 	}
-	changes, err := api.server.store.PeerChanges(identity.Account, r.GetEpoch(), r.GetAfterSequence())
+	changes, err := api.server.store.Replica.PeerChanges(identity.Account, r.GetEpoch(), r.GetAfterSequence())
 	if err != nil {
 		return nil, domainFailure(err)
 	}

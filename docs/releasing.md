@@ -39,10 +39,39 @@ approves the steps that reach users.
 
 A release contains the daemon/CLI archives for macOS arm64 and Linux
 amd64/arm64 (each with its screen-capture helper; macOS also with the privacy
-helper), gateway binaries for Linux amd64/arm64, the signed gateway container
-image and deployment bundle, the notarized Mac app, `Dieter-Android.apk`, the
-iOS build in TestFlight, the installer script, and `SHA256SUMS` with its
-signature.
+helper), the prebuilt harness runtime of each daemon platform, gateway binaries
+for Linux amd64/arm64, the signed gateway container image and deployment bundle,
+the notarized Mac app, `Dieter-Android.apk`, the iOS build in TestFlight, the
+installer script, and `SHA256SUMS` with its signature.
+
+The Mac app ships stripped. Its dSYMs stay with the release run as the
+`symbols-mac` workflow artifact for 90 days, not as a release asset; samples and
+crash reports from that exact build (its binary UUID) symbolicate against them
+with `atos` or `symbolicatecrash`.
+
+Release daemons never run npm to install their harness runtime or their
+Claude Code, Codex and OMP bridges. On each daemon platform the builder first
+runs `dieter __harness-runtime-archive` from a development build of the same
+source: it installs the embedded runtime (`npm ci --omit=dev --ignore-scripts`)
+and the managed Bun package exactly as a daemon built from source would, writes
+`dieter-harness-runtime-<os>-<arch>.tar.gz` (sorted entries, fixed times, root
+ownership, normalized modes, and a manifest naming the runtime digest and the
+`package-lock.json` SHA-256), and verifies it by installing it and running each
+agent CLI from it (`verify-agents.mjs`: the build host's native package must be
+present and every CLI must report its locked version). The archive therefore
+carries the agent CLIs and their platform executables; none of them needs an
+install script. Linux archives are built on glibc runners: npm adds the Claude
+Code musl executable there too, while OMP has no musl build. The release daemon
+is then linked with the archive's SHA-256 (`Dieter::Release.ldflags`) and
+downloads exactly that file from its own release. Removing or replacing a
+published archive breaks first runs and updates of that release.
+
+The agent versions live only in `internal/harness/runtime/package.json` and its
+lockfile. Dependabot raises the agents group (`@anthropic-ai/*`,
+`@openai/codex`, `@oh-my-pi/*`, `@ai-sdk/*`, `ai`) to the latest releases daily
+and merges it once a code owner approves and CI passes, so the next nightly
+ships the current CLIs; the runtime tests fail a bump whose bridges need a
+package the runtime does not ship.
 
 ## Signing identity
 
@@ -100,20 +129,28 @@ built-in actions (`fastlane/Fastfile`); run a lane locally with
 ## Repository configuration
 
 Publishing jobs run only in the upstream repository; forks build but do not
-publish. Signing secrets are available only to the jobs that sign for their
-domain. Names, not values:
+publish. Each signing domain's secrets live in its GitHub environment, which
+only `main` may use, so only the jobs that sign for that domain see them; there
+are no repository-level signing secrets. Names, not values:
 
-| Domain   | Secrets                                                                                                                                                                                                                                                                |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| macOS    | `MACOS_DEVELOPER_ID_CERTIFICATE_BASE64`, `MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD`, `MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_BASE64`, `MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_PASSWORD`, `MACOS_NOTARY_KEY_ID`, `MACOS_NOTARY_ISSUER_ID`, `MACOS_NOTARY_KEY_BASE64` |
-| iOS      | `IOS_APP_STORE_CONNECT_KEY_ID`, `IOS_APP_STORE_CONNECT_ISSUER_ID`, `IOS_APP_STORE_CONNECT_KEY_BASE64`, `IOS_DISTRIBUTION_CERTIFICATE_BASE64`, `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD`, `IOS_PROVISIONING_PROFILE_BASE64`, `IOS_SHARE_PROVISIONING_PROFILE_BASE64`      |
-| Android  | `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`                                                                                                                                                                    |
-| Homebrew | `HOMEBREW_TAP_TOKEN`                                                                                                                                                                                                                                                   |
+| Domain (environment)        | Secrets                                                                                                                                                                                                                                                                |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| macOS (`apple-signing`)     | `MACOS_DEVELOPER_ID_CERTIFICATE_BASE64`, `MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD`, `MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_BASE64`, `MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_PASSWORD`, `MACOS_NOTARY_KEY_ID`, `MACOS_NOTARY_ISSUER_ID`, `MACOS_NOTARY_KEY_BASE64` |
+| iOS (`apple-signing`)       | `IOS_APP_STORE_CONNECT_KEY_ID`, `IOS_APP_STORE_CONNECT_ISSUER_ID`, `IOS_APP_STORE_CONNECT_KEY_BASE64`, `IOS_DISTRIBUTION_CERTIFICATE_BASE64`, `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD`, `IOS_PROVISIONING_PROFILE_BASE64`, `IOS_SHARE_PROVISIONING_PROFILE_BASE64`      |
+| Android (`android-signing`) | `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`                                                                                                                                                                    |
+| Homebrew (`stable-release`) | `HOMEBREW_TAP_TOKEN`                                                                                                                                                                                                                                                   |
 
 Protected environments: `stable-release` (promotion) and `gateway-production`
 (gateway deployment preparation). Configure required reviewers on both. Branch
-protection on `main` requires the `ci-ok` check; changes land through squash
-merged pull requests.
+protection on `main` requires the `ci-ok` check and a code owner's approval of
+the latest push, so no unreviewed change, Dependabot's included, reaches the
+jobs that hold these secrets; changes land through squash merged pull requests.
+
+Jobs holding signing secrets never run npm install scripts: the darwin harness
+runtime archive is built in a job without secrets, and the signing `daemon` job
+pins it by hash. Jobs with an environment or a write token restore only
+`release`-scoped caches (the setup action's `cache-scope`), which CI and the
+secret-free builders never write.
 
 ## Cutting a release
 

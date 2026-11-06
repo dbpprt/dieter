@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/platform/buildinfo"
 	"github.com/dbpprt/dieter/internal/platform/version"
 	"github.com/dbpprt/dieter/internal/security/linkauth"
@@ -29,6 +30,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -164,7 +166,16 @@ func (a *Auth) StreamInterceptor(service any, stream grpc.ServerStream, info *gr
 	if len(headers.Get("authorization")) != 1 {
 		return status.Error(codes.Unauthenticated, "authentication required")
 	}
-	ctx, cancel, err := a.authenticateLane(stream.Context(), headers.Get("authorization")[0], relay.Subscription)
+	authorization, lane := headers.Get("authorization")[0], relay.Subscription
+	if info.FullMethod == gatewayv1.RelayService_OpenTunnel_FullMethodName {
+		// A tunnel counts against the stream budget of the lane it opens.
+		opened, err := a.receiveTunnelOpen(stream, authorization)
+		if opened == nil {
+			return err
+		}
+		stream, lane = opened, opened.open.GetLane()
+	}
+	ctx, cancel, err := a.authenticateLane(stream.Context(), authorization, lane)
 	if err != nil {
 		return err
 	}
@@ -177,6 +188,59 @@ func (a *Auth) StreamInterceptor(service any, stream grpc.ServerStream, info *gr
 	case <-ctx.Done():
 		return context.Cause(ctx)
 	}
+}
+
+// tunnelOpenTimeout bounds how long an authenticated tunnel stream may wait
+// for its OPEN frame before it is admitted to a lane's stream budget.
+const tunnelOpenTimeout = 10 * time.Second
+
+// receiveTunnelOpen reads a tunnel's OPEN frame, which names the lane whose
+// stream budget admits it. It returns nil after answering an invalid first
+// frame with CLOSE.
+func (a *Auth) receiveTunnelOpen(stream grpc.ServerStream, authorization string) (*openedTunnelStream, error) {
+	if _, ok := a.AuthenticateBearer(authorization); !ok {
+		return nil, status.Error(codes.Unauthenticated, "authentication required")
+	}
+	open := &gatewayv1.TunnelFrame{}
+	received := make(chan error, 1)
+	// Returning the RPC cancels its transport and releases this receive.
+	go func() { received <- stream.RecvMsg(open) }()
+	timer := time.NewTimer(tunnelOpenTimeout)
+	defer timer.Stop()
+	select {
+	case err := <-received:
+		if err != nil {
+			return nil, err
+		}
+	case <-timer.C:
+		return nil, status.Error(codes.DeadlineExceeded, "tunnel OPEN frame was not received")
+	case <-stream.Context().Done():
+		return nil, status.FromContextError(stream.Context().Err()).Err()
+	}
+	if open.GetKind() != gatewayv1.TunnelFrameKind_TUNNEL_FRAME_KIND_OPEN || !relay.Valid(open.GetLane()) {
+		return nil, stream.SendMsg(tunnelClose(codes.InvalidArgument, "the first tunnel frame must be OPEN with a valid lane"))
+	}
+	return &openedTunnelStream{ServerStream: stream, open: open}, nil
+}
+
+// openedTunnelStream replays the OPEN frame the interceptor read.
+type openedTunnelStream struct {
+	grpc.ServerStream
+	open *gatewayv1.TunnelFrame
+}
+
+func (s *openedTunnelStream) RecvMsg(message any) error {
+	if s.open == nil {
+		return s.ServerStream.RecvMsg(message)
+	}
+	target, ok := message.(*gatewayv1.TunnelFrame)
+	if !ok {
+		return status.Error(codes.Internal, "tunnel stream received an unexpected message type")
+	}
+	proto.Reset(target)
+	proto.Merge(target, s.open)
+	s.open = nil
+	return nil
 }
 
 func (a *Auth) requireCompatibleClient(ctx context.Context) error {

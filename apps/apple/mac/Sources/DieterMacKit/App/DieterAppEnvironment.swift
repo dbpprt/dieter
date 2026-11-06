@@ -19,6 +19,13 @@ struct DieterAppEnvironment {
         storageRoot?.appending(path: "gateway-sessions.json") ?? Self.defaultCredentialsFile()
     }
 
+    /// This install's device key, beside the gateway sessions: a Secure
+    /// Enclave key's opaque representation (or a software key) in a user-only
+    /// file, never a Keychain item.
+    var deviceKeyFile: URL {
+        credentialsFile.deletingLastPathComponent().appending(path: "device-key.json", directoryHint: .notDirectory)
+    }
+
     static func live(arguments: [String] = ProcessInfo.processInfo.arguments) -> Self {
         .init(
             arguments: arguments, defaults: DieterAppearance.applicationDefaults(arguments: arguments),

@@ -3,6 +3,7 @@ package com.getdieter.core.navigation
 import com.getdieter.api.v1.Card
 import com.getdieter.api.v1.KVEntry
 import com.getdieter.api.v1.PeerVersion
+import com.getdieter.core.activity.InboxRule
 import com.getdieter.core.runtime.CoreException
 import com.getdieter.core.runtime.SilentLogger
 import com.getdieter.core.storage.CoreStorage
@@ -25,14 +26,70 @@ class NavigationTest {
      * A namespace bound to a gateway but never connected: edits stay pending and project locally.
      */
     private fun offlineKv(): SharedKv =
-        SharedKv("navigation", offlineSessions(), acceptor = { null }, SilentLogger).also {
-            it.bind(CoreStorage(fileSystem, "/state".toPath()))
-        }
+        SharedKv("navigation", offlineSessions().kvMachines(), acceptor = { null }, SilentLogger)
+            .also {
+                it.bind(CoreStorage(fileSystem, "/state".toPath()))
+            }
 
     private fun layout(kv: SharedKv) = NavigationLayout(kv.values.value)
 
     private fun position(parent: String, rank: String) =
         SharedKv.encodePosition(KvPosition(parent, rank))
+
+    @Test
+    fun inboxPinsPersistIndependentlyAndUnpinWithoutChangingOtherCards() {
+        val kv = offlineKv()
+        val editor = NavigationEditor(kv)
+        editor.pinInboxCard("c1", true)
+        editor.pinInboxCard("c2", true)
+        assertEquals(setOf("c1", "c2"), layout(kv).inboxPins())
+        editor.pinInboxCard("c1", false)
+        assertEquals(setOf("c2"), layout(kv).inboxPins())
+        val restored = offlineKv()
+        assertEquals(setOf("c2"), layout(restored).inboxPins())
+        assertTrue(layout(restored).savedPinnedChatOrder().isEmpty())
+    }
+
+    @Test
+    fun inboxPinsReadSharedValuesAndIgnoreInvalidValues() {
+        val layout =
+            NavigationLayout(
+                mapOf(
+                    "inbox-pin.remote.pinned" to "true".encodeUtf8(),
+                    "inbox-pin.removed.pinned" to "false".encodeUtf8(),
+                    "inbox-pin.invalid.pinned" to "invalid".encodeUtf8(),
+                )
+            )
+        assertEquals(setOf("remote"), layout.inboxPins())
+    }
+
+    @Test
+    fun inboxRulesSaveEditDeleteAndRestoreInTheOrderTheyWereMade() {
+        val kv = offlineKv()
+        val editor = NavigationEditor(kv)
+        val quiet = editor.saveInboxRule(InboxRule("", name = "Quiet", projects = setOf("p1")), 10)
+        val urgent =
+            editor.saveInboxRule(
+                InboxRule("", hide = false, labels = setOf("l1"), matchAll = true),
+                20,
+            )
+        assertEquals(listOf(quiet, urgent), layout(kv).inboxRules().map { it.id })
+        // An edit keeps the rule's place.
+        editor.saveInboxRule(
+            InboxRule(quiet, name = "Quieter", projects = setOf("p1", "p2"), created = 99),
+            30,
+        )
+        val rules = layout(kv).inboxRules()
+        assertEquals(listOf(quiet, urgent), rules.map { it.id })
+        assertEquals(10, rules.first().created)
+        assertEquals(setOf("p1", "p2"), rules.first().projects)
+        assertFalse(rules.last().hide)
+        assertEquals(rules, layout(offlineKv()).inboxRules())
+        editor.deleteInboxRule(quiet)
+        assertEquals(listOf(urgent), layout(kv).inboxRules().map { it.id })
+        assertTrue(layout(kv).inboxPins().isEmpty())
+        assertFailsWith<CoreException> { editor.saveInboxRule(InboxRule("", name = "Empty"), 40) }
+    }
 
     @Test
     fun foldersKeepSingleMembershipAndDeletionOnlyUnfiles() {
@@ -209,7 +266,13 @@ class NavigationTest {
         val restored = offlineKv()
         assertEquals(1, restored.status.value.pending)
         assertFalse(NavigationLayout(restored.values.value).laneDescending("b", "l"))
-        val unbound = SharedKv("navigation", offlineSessions(), acceptor = { null }, SilentLogger)
+        val unbound =
+            SharedKv(
+                "navigation",
+                offlineSessions().kvMachines(),
+                acceptor = { null },
+                SilentLogger,
+            )
         assertFailsWith<CoreException> {
             NavigationEditor(unbound).setLaneDescending("b", "l", false)
         }

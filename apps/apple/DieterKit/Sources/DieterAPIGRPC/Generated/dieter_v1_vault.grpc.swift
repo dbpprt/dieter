@@ -6,7 +6,7 @@
 // Source: dieter/v1/vault.proto
 //
 // For information on using the generated types, please see the documentation:
-//   https://github.com/grpc/grpc-swift
+//   https://github.com/grpc/grpc-swift-2
 
 import GRPCCore
 import GRPCProtobuf
@@ -241,9 +241,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_VaultStatus` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func getVaultStatus<Result>(
             request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -260,9 +260,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `Dieter_V1_InitVaultRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_InitVaultResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func initVault<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_InitVaultRequest>,
@@ -279,9 +279,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `Dieter_V1_JoinVaultRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_JoinVaultResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func joinVault<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_JoinVaultRequest>,
@@ -298,9 +298,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `Dieter_V1_ApproveVaultMemberRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_VaultStatus` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func approveVaultMember<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ApproveVaultMemberRequest>,
@@ -317,9 +317,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `Dieter_V1_VaultMemberRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_VaultStatus` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func removeVaultMember<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_VaultMemberRef>,
@@ -336,9 +336,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `Dieter_V1_RotateVaultRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RotateVaultResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func rotateVault<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RotateVaultRequest>,
@@ -355,9 +355,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `Dieter_V1_ListVaultItemsRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_VaultItemsResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func listVaultItems<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ListVaultItemsRequest>,
@@ -374,9 +374,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `Dieter_V1_VaultItemRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_VaultItem` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func getVaultItem<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_VaultItemRef>,
@@ -393,9 +393,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `Dieter_V1_RevealVaultItemRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RevealVaultItemResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func revealVaultItem<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RevealVaultItemRequest>,
@@ -412,9 +412,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `Dieter_V1_CreateVaultItemRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_VaultItem` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func createVaultItem<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_CreateVaultItemRequest>,
@@ -431,9 +431,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `Dieter_V1_UpdateVaultItemRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_VaultItem` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func updateVaultItem<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_UpdateVaultItemRequest>,
@@ -450,9 +450,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `Dieter_V1_VaultItemRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_VaultItem` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func deleteVaultItem<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_VaultItemRef>,
@@ -469,9 +469,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `Dieter_V1_ListVaultAuditRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_VaultAuditResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         func listVaultAudit<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ListVaultAuditRequest>,
@@ -515,9 +515,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_VaultStatus` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func getVaultStatus<Result>(
             request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -545,9 +545,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `Dieter_V1_InitVaultRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_InitVaultResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func initVault<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_InitVaultRequest>,
@@ -575,9 +575,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `Dieter_V1_JoinVaultRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_JoinVaultResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func joinVault<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_JoinVaultRequest>,
@@ -605,9 +605,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `Dieter_V1_ApproveVaultMemberRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_VaultStatus` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func approveVaultMember<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ApproveVaultMemberRequest>,
@@ -635,9 +635,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `Dieter_V1_VaultMemberRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_VaultStatus` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func removeVaultMember<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_VaultMemberRef>,
@@ -665,9 +665,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `Dieter_V1_RotateVaultRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RotateVaultResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func rotateVault<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RotateVaultRequest>,
@@ -695,9 +695,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `Dieter_V1_ListVaultItemsRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_VaultItemsResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func listVaultItems<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ListVaultItemsRequest>,
@@ -725,9 +725,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `Dieter_V1_VaultItemRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_VaultItem` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func getVaultItem<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_VaultItemRef>,
@@ -755,9 +755,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `Dieter_V1_RevealVaultItemRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_RevealVaultItemResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func revealVaultItem<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_RevealVaultItemRequest>,
@@ -785,9 +785,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `Dieter_V1_CreateVaultItemRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_VaultItem` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func createVaultItem<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_CreateVaultItemRequest>,
@@ -815,9 +815,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `Dieter_V1_UpdateVaultItemRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_VaultItem` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func updateVaultItem<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_UpdateVaultItemRequest>,
@@ -845,9 +845,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `Dieter_V1_VaultItemRef` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_VaultItem` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func deleteVaultItem<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_VaultItemRef>,
@@ -875,9 +875,9 @@ extension Dieter_V1_VaultService {
         ///   - serializer: A serializer for `Dieter_V1_ListVaultAuditRequest` messages.
         ///   - deserializer: A deserializer for `Dieter_V1_VaultAuditResponse` messages.
         ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
         /// - Returns: The result of `handleResponse`.
         public func listVaultAudit<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_ListVaultAuditRequest>,
@@ -914,9 +914,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getVaultStatus<Result>(
         request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
@@ -939,9 +939,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_InitVaultRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func initVault<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_InitVaultRequest>,
@@ -964,9 +964,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_JoinVaultRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func joinVault<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_JoinVaultRequest>,
@@ -989,9 +989,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ApproveVaultMemberRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func approveVaultMember<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ApproveVaultMemberRequest>,
@@ -1014,9 +1014,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_VaultMemberRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func removeVaultMember<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_VaultMemberRef>,
@@ -1039,9 +1039,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_RotateVaultRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func rotateVault<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_RotateVaultRequest>,
@@ -1064,9 +1064,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ListVaultItemsRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listVaultItems<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ListVaultItemsRequest>,
@@ -1089,9 +1089,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_VaultItemRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getVaultItem<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_VaultItemRef>,
@@ -1114,9 +1114,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_RevealVaultItemRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func revealVaultItem<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_RevealVaultItemRequest>,
@@ -1139,9 +1139,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_CreateVaultItemRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func createVaultItem<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_CreateVaultItemRequest>,
@@ -1164,9 +1164,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_UpdateVaultItemRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func updateVaultItem<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_UpdateVaultItemRequest>,
@@ -1189,9 +1189,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_VaultItemRef` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func deleteVaultItem<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_VaultItemRef>,
@@ -1214,9 +1214,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_ListVaultAuditRequest` message.
     ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listVaultAudit<Result>(
         request: GRPCCore.ClientRequest<Dieter_V1_ListVaultAuditRequest>,
@@ -1250,9 +1250,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getVaultStatus<Result>(
         _ message: SwiftProtobuf.Google_Protobuf_Empty,
@@ -1279,9 +1279,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func initVault<Result>(
         _ message: Dieter_V1_InitVaultRequest,
@@ -1308,9 +1308,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func joinVault<Result>(
         _ message: Dieter_V1_JoinVaultRequest,
@@ -1337,9 +1337,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func approveVaultMember<Result>(
         _ message: Dieter_V1_ApproveVaultMemberRequest,
@@ -1366,9 +1366,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func removeVaultMember<Result>(
         _ message: Dieter_V1_VaultMemberRef,
@@ -1395,9 +1395,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func rotateVault<Result>(
         _ message: Dieter_V1_RotateVaultRequest,
@@ -1424,9 +1424,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listVaultItems<Result>(
         _ message: Dieter_V1_ListVaultItemsRequest,
@@ -1453,9 +1453,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func getVaultItem<Result>(
         _ message: Dieter_V1_VaultItemRef,
@@ -1482,9 +1482,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func revealVaultItem<Result>(
         _ message: Dieter_V1_RevealVaultItemRequest,
@@ -1511,9 +1511,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func createVaultItem<Result>(
         _ message: Dieter_V1_CreateVaultItemRequest,
@@ -1540,9 +1540,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func updateVaultItem<Result>(
         _ message: Dieter_V1_UpdateVaultItemRequest,
@@ -1569,9 +1569,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func deleteVaultItem<Result>(
         _ message: Dieter_V1_VaultItemRef,
@@ -1598,9 +1598,9 @@ extension Dieter_V1_VaultService.ClientProtocol {
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
     ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
     /// - Returns: The result of `handleResponse`.
     public func listVaultAudit<Result>(
         _ message: Dieter_V1_ListVaultAuditRequest,

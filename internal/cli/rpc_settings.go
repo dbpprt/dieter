@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
@@ -178,8 +179,16 @@ func promptText(c *CLI, inline, path string) (string, error) {
 }
 
 func (c *CLI) rpcPromptUpdate(args []string) error {
-	const usage = "Usage: dieter prompt update [--template TEXT|--template-file FILE] [--board-skill TEXT|--board-skill-file FILE] [--chat-skill TEXT|--chat-skill-file FILE]\n"
+	const usage = `Usage: dieter prompt update [--template TEXT|--template-file FILE] [--board-skill TEXT|--board-skill-file FILE] [--chat-skill TEXT|--chat-skill-file FILE] [--reset template|board-skill|chat-skill]...
+
+The template opens every turn's instructions; the board skill follows it for
+cards and the chat skill for standalone chats. dieter prompt show lists their
+variables and dieter prompt preview renders them. --reset restores a template
+to this release's default, which then follows later releases.
+`
 	set := flags("prompt update")
+	var resets repeatedStrings
+	set.Var(&resets, "reset", "template, board-skill or chat-skill to restore to the default")
 	template := set.String("template", "", "global prompt template")
 	templateFile := set.String("template-file", "", "global prompt template file or -")
 	boardSkill := set.String("board-skill", "", "board skill template")
@@ -221,6 +230,18 @@ func (c *CLI) rpcPromptUpdate(args []string) error {
 		current.ChatSkillTemplate, err = promptText(c, *chatSkill, *chatSkillFile)
 		if err != nil {
 			return err
+		}
+	}
+	for _, name := range resets {
+		switch name {
+		case "template":
+			current.PromptTemplate = dieterprompt.DefaultTemplate
+		case "board-skill":
+			current.BoardSkillTemplate = dieterprompt.DefaultBoardSkillTemplate
+		case "chat-skill":
+			current.ChatSkillTemplate = dieterprompt.DefaultChatSkillTemplate
+		default:
+			return fmt.Errorf("--reset takes template, board-skill or chat-skill, not %q", name)
 		}
 	}
 	value, err := client.UpdatePromptSettings(rpcCtx, &dieterv1.UpdatePromptSettingsRequest{PromptTemplate: current.GetPromptTemplate(), BoardSkillTemplate: current.GetBoardSkillTemplate(), ChatSkillTemplate: current.GetChatSkillTemplate()})

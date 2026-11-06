@@ -18,6 +18,8 @@ import (
 	"github.com/dbpprt/dieter/internal/replication/schema"
 	"github.com/dbpprt/dieter/internal/security/vault"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/home"
+	"github.com/dbpprt/dieter/internal/store/replica"
 )
 
 // Store is the account vault: its replicated root, members and items in the
@@ -132,11 +134,11 @@ func (s *Store) writeVaultMember(file vaultMemberFile) error {
 	if err := os.MkdirAll(s.vaultDir(), 0o700); err != nil {
 		return err
 	}
-	return store.WriteJSON(s.vaultMemberPath(), file)
+	return home.WriteJSON(s.vaultMemberPath(), file)
 }
 
 type vaultView struct {
-	data    store.PeerData
+	data    replica.PeerData
 	record  vault.Record
 	exists  bool
 	member  vaultMemberFile
@@ -156,7 +158,7 @@ func selectedJSON(record crdt.Record, value any) (bool, error) {
 // vaultRecord returns the vault metadata. Concurrent rotations leave siblings
 // of one vault; siblings with different vault IDs mean two machines initialized
 // a vault concurrently, which needs an explicit operator decision.
-func vaultRecord(data store.PeerData) (vault.Record, bool, error) {
+func vaultRecord(data replica.PeerData) (vault.Record, bool, error) {
 	record := data.Record(vaultKey(vault.KindVault, vault.VaultRecordID))
 	var selected vault.Record
 	ok, err := selectedJSON(record, &selected)
@@ -172,7 +174,7 @@ func vaultRecord(data store.PeerData) (vault.Record, bool, error) {
 	return selected, true, nil
 }
 
-func (s *Store) openVault(data store.PeerData) (vaultView, error) {
+func (s *Store) openVault(data replica.PeerData) (vaultView, error) {
 	view := vaultView{data: data}
 	var err error
 	view.record, view.exists, err = vaultRecord(data)
@@ -234,15 +236,15 @@ func (v vaultView) currentKey() string {
 	return v.record.Root
 }
 
-func (s *Store) vaultSnapshot() (store.PeerData, error) {
-	identity, err := s.store.PeerIdentity()
+func (s *Store) vaultSnapshot() (replica.PeerData, error) {
+	identity, err := s.store.Replica.PeerIdentity()
 	if errors.Is(err, os.ErrNotExist) {
-		return store.PeerData{State: crdt.State{Records: map[string]crdt.Record{}}}, nil
+		return replica.PeerData{State: crdt.State{Records: map[string]crdt.Record{}}}, nil
 	}
 	if err != nil {
-		return store.PeerData{}, err
+		return replica.PeerData{}, err
 	}
-	return s.store.OpenPeerSnapshot(identity.Account)
+	return s.store.Replica.OpenPeerSnapshot(identity.Account)
 }
 
 func (s *Store) withVault(read func(vaultView) error) error {
@@ -261,8 +263,8 @@ func (s *Store) withVault(read func(vaultView) error) error {
 	return data.Err()
 }
 
-func (s *Store) mutateVault(mutate func(identity store.PeerIdentity, view vaultView) error) error {
-	identity, err := s.store.KVIdentity()
+func (s *Store) mutateVault(mutate func(identity replica.PeerIdentity, view vaultView) error) error {
+	identity, err := s.store.Replica.EnsureIdentity()
 	if err != nil {
 		return err
 	}
@@ -271,14 +273,14 @@ func (s *Store) mutateVault(mutate func(identity store.PeerIdentity, view vaultV
 		return err
 	}
 	defer release()
-	if err = s.store.CheckPeerIdentity(identity); err != nil {
+	if err = s.store.Replica.CheckPeerIdentity(identity); err != nil {
 		return err
 	}
-	data, err := s.store.OpenPeerView(identity.Account)
+	data, err := s.store.Replica.OpenPeerView(identity.Account)
 	if err != nil {
 		return err
 	}
-	data.State = store.ClonePeerState(data.State)
+	data.State = replica.ClonePeerState(data.State)
 	view, err := s.openVault(data)
 	if err != nil {
 		return err
@@ -292,10 +294,10 @@ func (s *Store) mutateVault(mutate func(identity store.PeerIdentity, view vaultV
 	if len(data.Dirty) == 0 {
 		return nil
 	}
-	return s.store.SavePeerData(identity.Account, data)
+	return s.store.Replica.SavePeerData(identity.Account, data)
 }
 
-func putVaultRecord(data store.PeerData, identity store.PeerIdentity, kind, id string, value any, deleted bool) error {
+func putVaultRecord(data replica.PeerData, identity replica.PeerIdentity, kind, id string, value any, deleted bool) error {
 	key := vaultKey(kind, id)
 	old := data.Record(key)
 	var raw []byte
@@ -316,7 +318,7 @@ func putVaultRecord(data store.PeerData, identity store.PeerIdentity, kind, id s
 	return nil
 }
 
-func vaultMembers(data store.PeerData) (map[string]vault.Member, error) {
+func vaultMembers(data replica.PeerData) (map[string]vault.Member, error) {
 	members := map[string]vault.Member{}
 	err := data.Each(vault.KindMember+"/", func(record crdt.Record) error {
 		if record.Kind != vault.KindMember {
@@ -392,7 +394,7 @@ func (s *Store) Status() (Status, error) {
 // which is never stored.
 func (s *Store) Init(name, daemonID string) (string, error) {
 	var recoveryKey string
-	err := s.mutateVault(func(identity store.PeerIdentity, view vaultView) error {
+	err := s.mutateVault(func(identity replica.PeerIdentity, view vaultView) error {
 		if view.exists {
 			return fault.New(fault.Invalid, "a vault already exists for this account; run `dieter vault join` on this machine instead")
 		}
@@ -430,7 +432,7 @@ func (s *Store) Init(name, daemonID string) (string, error) {
 	return recoveryKey, err
 }
 
-func sealVaultMember(data store.PeerData, identity store.PeerIdentity, id string, value vault.Member, own vaultMemberFile, ring vault.Keyring) error {
+func sealVaultMember(data replica.PeerData, identity replica.PeerIdentity, id string, value vault.Member, own vaultMemberFile, ring vault.Keyring) error {
 	if value.PublicKey == "" {
 		seed, err := own.seed()
 		if err != nil {
@@ -452,7 +454,7 @@ func sealVaultMember(data store.PeerData, identity store.PeerIdentity, id string
 	return putVaultRecord(data, identity, vault.KindMember, id, value, false)
 }
 
-func sealRecoveryMember(data store.PeerData, identity store.PeerIdentity, seed []byte, ring vault.Keyring) error {
+func sealRecoveryMember(data replica.PeerData, identity replica.PeerIdentity, seed []byte, ring vault.Keyring) error {
 	public, err := vault.PublicKey(seed)
 	if err != nil {
 		return err
@@ -469,7 +471,7 @@ func sealRecoveryMember(data store.PeerData, identity store.PeerIdentity, seed [
 // shows before that member approves this machine.
 func (s *Store) RequestJoin(name, daemonID string) (string, error) {
 	var code string
-	err := s.mutateVault(func(identity store.PeerIdentity, view vaultView) error {
+	err := s.mutateVault(func(identity replica.PeerIdentity, view vaultView) error {
 		if !view.exists {
 			return fault.New(fault.Invalid, "no vault has replicated to this machine yet; wait for peer sync, run `dieter vault init` on the first machine, or join with --recovery-key-stdin")
 		}
@@ -511,7 +513,7 @@ func (s *Store) JoinWithRecovery(recoveryKey, name, daemonID string) error {
 	if err != nil {
 		return err
 	}
-	return s.mutateVault(func(identity store.PeerIdentity, view vaultView) error {
+	return s.mutateVault(func(identity replica.PeerIdentity, view vaultView) error {
 		if !view.exists {
 			return fault.New(fault.Invalid, "no vault has replicated to this machine yet; wait for peer sync")
 		}
@@ -562,7 +564,7 @@ func (s *Store) JoinWithRecovery(recoveryKey, name, daemonID string) error {
 // ApproveVaultMember seals the keyring to a pending member after the operator
 // confirms the code shown on the joining machine.
 func (s *Store) ApproveMember(memberID, code string) error {
-	return s.mutateVault(func(identity store.PeerIdentity, view vaultView) error {
+	return s.mutateVault(func(identity replica.PeerIdentity, view vaultView) error {
 		if err := view.unlocked(); err != nil {
 			return err
 		}
@@ -589,7 +591,7 @@ func (s *Store) ApproveMember(memberID, code string) error {
 // RemoveVaultMember revokes a machine and rotates to a key it never received.
 // A removed machine keeps whatever it already decrypted.
 func (s *Store) RemoveMember(memberID string) error {
-	return s.mutateVault(func(identity store.PeerIdentity, view vaultView) error {
+	return s.mutateVault(func(identity replica.PeerIdentity, view vaultView) error {
 		if err := view.unlocked(); err != nil {
 			return err
 		}
@@ -614,7 +616,7 @@ func (s *Store) RemoveMember(memberID string) error {
 // re-encrypts every item. A new recovery key is returned when requested.
 func (s *Store) Rotate(newRecovery bool) (string, error) {
 	var printed string
-	err := s.mutateVault(func(identity store.PeerIdentity, view vaultView) error {
+	err := s.mutateVault(func(identity replica.PeerIdentity, view vaultView) error {
 		if err := view.unlocked(); err != nil {
 			return err
 		}
@@ -625,7 +627,7 @@ func (s *Store) Rotate(newRecovery bool) (string, error) {
 	return printed, err
 }
 
-func rotateVault(view vaultView, identity store.PeerIdentity, newRecovery bool) (string, error) {
+func rotateVault(view vaultView, identity replica.PeerIdentity, newRecovery bool) (string, error) {
 	ring, current, err := view.ring.Rotate(view.keys, view.currentKey())
 	if err != nil {
 		return "", err
@@ -733,7 +735,7 @@ func resolveVaultItem(items []Item, ref string) (Item, error) {
 	}
 	switch len(matches) {
 	case 0:
-		return Item{}, fmt.Errorf("%w: vault item %q", store.ErrNotFound, ref)
+		return Item{}, fmt.Errorf("%w: vault item %q", home.ErrNotFound, ref)
 	case 1:
 		return matches[0], nil
 	}
@@ -784,7 +786,7 @@ func uniqueVaultName(items []Item, name, except string) error {
 
 func (s *Store) CreateItem(item vault.Item, actor string) (Item, error) {
 	var result Item
-	err := s.mutateVault(func(identity store.PeerIdentity, view vaultView) error {
+	err := s.mutateVault(func(identity replica.PeerIdentity, view vaultView) error {
 		if err := view.unlocked(); err != nil {
 			return err
 		}
@@ -812,7 +814,7 @@ func (s *Store) CreateItem(item vault.Item, actor string) (Item, error) {
 // concurrent siblings, which resolves an item conflict.
 func (s *Store) UpdateItem(ref string, edit func(*vault.Item) error, actor string) (Item, error) {
 	var result Item
-	err := s.mutateVault(func(identity store.PeerIdentity, view vaultView) error {
+	err := s.mutateVault(func(identity replica.PeerIdentity, view vaultView) error {
 		if err := view.unlocked(); err != nil {
 			return err
 		}
@@ -844,7 +846,7 @@ func (s *Store) UpdateItem(ref string, edit func(*vault.Item) error, actor strin
 
 func (s *Store) DeleteItem(ref string) (Item, error) {
 	var result Item
-	err := s.mutateVault(func(identity store.PeerIdentity, view vaultView) error {
+	err := s.mutateVault(func(identity replica.PeerIdentity, view vaultView) error {
 		if err := view.unlocked(); err != nil {
 			return err
 		}

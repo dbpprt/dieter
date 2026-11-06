@@ -16,6 +16,11 @@ struct ProjectChangeSelection: Hashable, Sendable {
 final class ProjectChangesModel {
     private(set) var projectID = ""
     private(set) var changes: Dieter_V1_Changeset?
+    /// The changed files with staged edits, and those with unstaged ones.
+    private(set) var stagedFiles: [Dieter_V1_ChangedFile] = []
+    private(set) var unstagedFiles: [Dieter_V1_ChangedFile] = []
+    /// Changes whenever the changed files do, so a view lays them out once per change.
+    private(set) var filesRevision = 0
     private(set) var diff: Dieter_V1_FileDiff?
     /// The diff laid out for this view, as the core lays it out.
     private(set) var diffLayout = WorkspaceDiffLayout()
@@ -50,10 +55,10 @@ final class ProjectChangesModel {
     @ObservationIgnored private var queued: Task<Void, Never>?
     /// A selection on its way to the core; it shows until the core reports it.
     @ObservationIgnored private var requested: ProjectChangeSelection?
+    /// The layout last asked of the core.
+    @ObservationIgnored private var requestedSplit: Bool?
     private var mutable = false
 
-    var stagedFiles: [Dieter_V1_ChangedFile] { changes?.files.filter(\.staged) ?? [] }
-    var unstagedFiles: [Dieter_V1_ChangedFile] { changes?.files.filter(\.unstaged) ?? [] }
     var mutationsDisabled: Bool { core == nil || !mutable }
 
     /// Whether the checkout operation `kind` can run now.
@@ -77,7 +82,7 @@ final class ProjectChangesModel {
         }
         guard next != bound else { return }
         if self.projectID != projectID {
-            changes = nil; diff = nil; diffLayout = WorkspaceDiffLayout(); selection = nil; operation = nil
+            show(nil); diff = nil; diffLayout = WorkspaceDiffLayout(); selection = nil; operation = nil
             allowed = []
             commitSubject = ""; commitBody = ""; operationError = nil; notice = nil
         }
@@ -99,7 +104,7 @@ final class ProjectChangesModel {
             slice.daemonID == bound.daemonID
         else { return }
         let changes = slice.hasChanges ? slice.changes : nil
-        if self.changes != changes { self.changes = changes }
+        show(changes)
         let reported =
             slice.hasSelection
             ? ProjectChangeSelection(
@@ -107,7 +112,9 @@ final class ProjectChangesModel {
             : nil
         // The core answered for the requested file (it may have followed it to
         // the other half), or the file is gone.
-        if reported?.path == requested?.path || changes?.files.contains(where: { $0.path == requested?.path }) != true {
+        if let wanted = requested,
+            reported?.path == wanted.path || changes?.files.contains(where: { $0.path == wanted.path }) != true
+        {
             requested = nil
         }
         let selection = reported ?? requested
@@ -115,7 +122,7 @@ final class ProjectChangesModel {
         let diff = slice.hasDiff ? slice.diff : nil
         if self.diff != diff { self.diff = diff }
         let layout = diffLayout.folding(
-            rows: slice.displayRows, unchanged: slice.diffUnchanged, maxColumns: slice.diffMaxColumns,
+            rows: slice.displayRows, unchanged: slice.diffUnchanged,
             split: slice.split, more: slice.diffMore, note: slice.diffTooLarge ? slice.diffNote : "")
         if diffLayout != layout { diffLayout = layout }
         let allowed = Set(slice.allowed)
@@ -137,6 +144,18 @@ final class ProjectChangesModel {
         if self.operationError != operationError { self.operationError = operationError }
         let notice = slice.notice.isEmpty ? nil : slice.notice
         if self.notice != notice { self.notice = notice }
+    }
+
+    /// Shows `changes`, splitting its files into the two halves only when they change.
+    private func show(_ changes: Dieter_V1_Changeset?) {
+        guard self.changes != changes else { return }
+        let files = changes?.files ?? []
+        if files != (self.changes?.files ?? []) {
+            stagedFiles = files.filter(\.staged)
+            unstagedFiles = files.filter(\.unstaged)
+            filesRevision &+= 1
+        }
+        self.changes = changes
     }
 
     /// Sends a command without waiting for it, after those sent before.
@@ -196,7 +215,12 @@ final class ProjectChangesModel {
     }
 
     /// Lays the diff out side by side or in one column; the core keeps the choice.
+    /// Shows the diff side by side or unified. The view asks each time it
+    /// appears; the core is asked only for a layout it does not have, as its
+    /// answer carries the whole diff.
     func setLayout(split: Bool) {
+        guard requestedSplit != split || diffLayout.split != split else { return }
+        requestedSplit = split
         send { $0.layout = .with { $0.split = split } }
     }
 

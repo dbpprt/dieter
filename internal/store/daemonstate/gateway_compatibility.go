@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/dbpprt/dieter/internal/platform/fault"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/home"
 )
 
 type GatewayCompatibilityPolicy struct {
@@ -29,7 +29,7 @@ func (s *Store) SaveGatewayCompatibilityPolicy(value GatewayCompatibilityPolicy)
 		return err
 	}
 	defer release()
-	if err := store.WriteJSON(s.gatewayCompatibilityPath(), value); err != nil {
+	if err := home.WriteJSON(s.gatewayCompatibilityPath(), value); err != nil {
 		return err
 	}
 	s.compatibilityMu.Lock()

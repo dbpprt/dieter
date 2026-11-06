@@ -1,11 +1,22 @@
 import DieterCore
 import SwiftUI
 
-/// Compact host marker shown beside each chat.
-struct ProjectMachineBadge: View {
+/// Compact host marker shown beside each chat. It shows only the machine's
+/// name and availability, so presence refreshes that keep them leave it alone.
+struct ProjectMachineBadge: View, Equatable {
     let machine: MachineEndpoint
     let online: Bool
-    var compact = false
+    let compact: Bool
+
+    init(machine: MachineEndpoint, online: Bool, compact: Bool = false) {
+        self.machine = machine
+        self.online = online
+        self.compact = compact
+    }
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.machine.name == rhs.machine.name && lhs.online == rhs.online && lhs.compact == rhs.compact
+    }
 
     var body: some View {
         Group {

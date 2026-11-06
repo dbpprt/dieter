@@ -20,7 +20,11 @@ const (
 	maxChangesFrameBytes = 8 << 20
 	defaultChangesBeat   = 15 * time.Second
 	changesCoalescing    = 25 * time.Millisecond
-	changesRecoveryPoll  = 2 * time.Second
+	// A working agent rewrites its conversation many times a second, and each
+	// write would resend its latest turn to every client. Data frames after
+	// the first in a burst wait until this much time passed since the last.
+	changesFrameGap     = 250 * time.Millisecond
+	changesRecoveryPoll = 2 * time.Second
 )
 
 type changeStream struct {
@@ -56,7 +60,7 @@ func (s *changeStream) next() (*dieterv1.ChangesFrame, bool, error) {
 // records adds the next page of this machine's peer records. The account can
 // appear (first shared write) or change (enrollment); its log then restarts.
 func (s *changeStream) records(frame *dieterv1.ChangesFrame) (bool, error) {
-	identity, err := s.server.store.PeerIdentity()
+	identity, err := s.server.store.Replica.PeerIdentity()
 	if errors.Is(err, os.ErrNotExist) {
 		frame.ResetRecords = s.resetRecords
 		s.resetRecords = false
@@ -66,10 +70,10 @@ func (s *changeStream) records(frame *dieterv1.ChangesFrame) (bool, error) {
 		return false, err
 	}
 	s.daemonID, s.account = identity.DaemonID, identity.Account
-	page, err := s.server.store.PeerChanges(identity.Account, s.cursor.GetRecordsEpoch(), s.cursor.GetRecordsSequence())
+	page, err := s.server.store.Replica.PeerChanges(identity.Account, s.cursor.GetRecordsEpoch(), s.cursor.GetRecordsSequence())
 	if errors.Is(err, crdt.ErrConflict) {
 		s.cursor.RecordsEpoch, s.cursor.RecordsSequence, s.resetRecords = "", 0, true
-		page, err = s.server.store.PeerChanges(identity.Account, "", 0)
+		page, err = s.server.store.Replica.PeerChanges(identity.Account, "", 0)
 	}
 	if err != nil {
 		return false, err
@@ -83,10 +87,26 @@ func (s *changeStream) records(frame *dieterv1.ChangesFrame) (bool, error) {
 	return page.More, nil
 }
 
+// pauseChanges waits for wait, or returns the context's error.
+func pauseChanges(ctx context.Context, wait time.Duration) error {
+	if wait <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
 func (s *changeStream) hasContent(frame *dieterv1.ChangesFrame) bool {
 	return frame.ResetRecords || frame.ResetLocal || len(frame.Records) > 0 || len(frame.OwnedCards) > 0 ||
 		len(frame.RemovedOwnedCardIds) > 0 || len(frame.OwnedCheckouts) > 0 || len(frame.RemovedOwnedCheckoutIds) > 0 ||
-		len(frame.Activities) > 0 || len(frame.RemovedActivityIds) > 0 || frame.PeerSync != nil || frame.Privacy != nil
+		len(frame.Activities) > 0 || len(frame.RemovedActivityIds) > 0 || frame.PeerSync != nil || frame.Privacy != nil ||
+		len(frame.Mail) > 0 || len(frame.RemovedMailIds) > 0
 }
 
 func addLocalChange(frame *dieterv1.ChangesFrame, change localChange) {
@@ -112,6 +132,10 @@ func addLocalChange(frame *dieterv1.ChangesFrame, change localChange) {
 		frame.RemovedActivityIds = append(frame.RemovedActivityIds, id)
 	case kind == "activity":
 		frame.Activities = append(frame.Activities, change.entry.activity)
+	case kind == "mail" && change.entry.removed:
+		frame.RemovedMailIds = append(frame.RemovedMailIds, id)
+	case kind == "mail":
+		frame.Mail = append(frame.Mail, change.entry.mail)
 	}
 }
 
@@ -167,6 +191,7 @@ func (s *Server) watchChanges(ctx context.Context, request *dieterv1.ChangesRequ
 	recovery := time.NewTicker(changesRecoveryPoll)
 	defer recovery.Stop()
 	first := true
+	var sent time.Time
 	for {
 		// Taken before draining: an index update during the drain wakes the
 		// next wait instead of being missed.
@@ -181,6 +206,7 @@ func (s *Server) watchChanges(ctx context.Context, request *dieterv1.ChangesRequ
 					return err
 				}
 				first = false
+				sent = time.Now()
 				beat.Reset(heartbeat)
 			}
 			if !more {
@@ -191,17 +217,18 @@ func (s *Server) watchChanges(ctx context.Context, request *dieterv1.ChangesRequ
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-changes:
-			// Coalesce a burst of writes into one frame.
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(changesCoalescing):
+			// Coalesce a burst of writes into one frame, at most one per gap.
+			if err := pauseChanges(ctx, max(changesCoalescing, changesFrameGap-time.Since(sent))); err != nil {
+				return err
 			}
 			select {
 			case <-changes:
 			default:
 			}
 		case <-local:
+			if err := pauseChanges(ctx, changesFrameGap-time.Since(sent)); err != nil {
+				return err
+			}
 		case <-recovery.C:
 		case <-beat.C:
 			if err := send(&dieterv1.ChangesFrame{DaemonId: stream.daemonID, Account: stream.account, Cursor: proto.Clone(stream.cursor).(*dieterv1.ChangesCursor), CaughtUp: true, Heartbeat: true}); err != nil {

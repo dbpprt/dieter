@@ -79,13 +79,13 @@ func TestQuickTaskCanStartWhileTitleIsPendingAndKeepsIdentity(t *testing.T) {
 	}
 	for range updates {
 	}
-	before, err := service.Store.ResolveCard(card.ID)
+	before, err := service.Store.Kanban.ResolveCard(card.ID)
 	if err != nil || before.InitialPromptSentAt == "" || before.Title != card.Title {
 		t.Fatalf("started card=%#v err=%v", before, err)
 	}
 	close(runner.release)
 	waitFor(t, func() bool { return quickTitleJobsFinished(service) })
-	after, err := service.Store.ResolveCard(card.ID)
+	after, err := service.Store.Kanban.ResolveCard(card.ID)
 	if err != nil || after.ID != card.ID || after.Title != "Add Keyboard Board Navigation" || after.InitialPromptSentAt != before.InitialPromptSentAt || after.Lane != before.Lane || actual.Count() != 1 {
 		t.Fatalf("rename changed task lifecycle: before=%#v after=%#v requests=%d err=%v", before, after, actual.Count(), err)
 	}
@@ -126,21 +126,21 @@ func TestQuickTaskGeneratedTitleNeverOverwritesManualChanges(t *testing.T) {
 			expected := "Manual title"
 			switch change {
 			case "rename", "rename-and-restore":
-				_, err = service.Store.RenameCard(card.ID, expected)
+				_, err = service.Store.Kanban.RenameCard(card.ID, expected)
 				if err == nil && change == "rename-and-restore" {
 					expected = card.Title
-					_, err = service.Store.RenameCard(card.ID, expected)
+					_, err = service.Store.Kanban.RenameCard(card.ID, expected)
 				}
 			case "edit-task":
 				expected = card.Title
-				_, err = service.Store.UpdateCard(card.ID, expected, "Different task instructions")
+				_, err = service.Store.Kanban.UpdateCard(card.ID, expected, "Different task instructions")
 			}
 			if err != nil {
 				t.Fatal(err)
 			}
 			close(runner.release)
 			waitFor(t, func() bool { return quickTitleJobsFinished(service) })
-			updated, err := service.Store.ResolveCard(card.ID)
+			updated, err := service.Store.Kanban.ResolveCard(card.ID)
 			if err != nil || updated.Title != expected {
 				t.Fatalf("manual change lost: %#v err=%v", updated, err)
 			}
@@ -163,7 +163,7 @@ func TestQuickTaskTitleFailureLeavesSavedFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool { return quickTitleJobsFinished(service) })
-	updated, err := service.Store.ResolveCard(card.ID)
+	updated, err := service.Store.Kanban.ResolveCard(card.ID)
 	if err != nil || updated.ID != card.ID || updated.Title != "Keep this task available" {
 		t.Fatalf("fallback=%#v err=%v", updated, err)
 	}

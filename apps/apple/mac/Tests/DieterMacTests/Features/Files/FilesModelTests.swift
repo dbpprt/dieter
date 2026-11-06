@@ -225,3 +225,89 @@ private actor ConflictingFilesFixture: FilesRPC {
     #expect(!model.fileEditorSession.isDirty)
     #expect(model.fileEditorSession.currentText() == "theirs")
 }
+
+@Test @MainActor func filesRefreshRetainsTheBaseRevisionWhenTypingRacesTheDiskRead() async throws {
+    let core = ScriptedCoreClient(), model = FilesModel()
+    let target = ClientFilesTarget.with {
+        $0.daemonID = "machine"; $0.projectID = "project"
+    }
+    var disk = Dieter_V1_FileDocument.with {
+        $0.path = "notes.md"; $0.name = "notes.md"; $0.content = "original"; $0.revision = "1"
+    }
+    var pending: CheckedContinuation<ClientResult, Error>?
+    func result(conflict: Bool = false, error: String = "") -> ClientResult {
+        .with {
+            $0.files = .with {
+                $0.target = target; $0.documentKey = "document"; $0.selectedPath = disk.path
+                $0.document = disk; $0.conflict = conflict; $0.documentError = error
+            }
+        }
+    }
+    core.asyncHandler = { command in
+        if case .refresh? = command.files.action {
+            return try await withCheckedThrowingContinuation { pending = $0 }
+        }
+        if case .overwrite(let text)? = command.files.action {
+            disk.content = text.text; disk.revision = "3"
+            return .with { $0.fileDocument = disk }
+        }
+        return result()
+    }
+    model.bind(target: .init(endpointID: "gateway#machine", projectID: "project"), core: core)
+    model.isLive = true
+    await model.openFile(path: "notes.md")
+    let editor = model.fileEditorSession
+    let refresh = Task { await model.refreshCurrentDocument() }
+    try await waitForFiles { pending != nil }
+    #expect(core.commands.last?.files.refresh.dirty == false)
+    #expect(editor.applyReplacement("my draft", documentKey: model.documentKey))
+    disk.content = "external edit"; disk.revision = "2"
+    pending?.resume(returning: result()); pending = nil
+    await refresh.value
+    #expect(editor.currentText() == "my draft" && editor.isDirty)
+    #expect(model.fileDocument?.revision == "1", "The save must still guard the editor's original base")
+
+    let next = Task { await model.refreshCurrentDocument() }
+    try await waitForFiles { pending != nil }
+    #expect(core.commands.last?.files.refresh.dirty == true)
+    #expect(core.commands.last?.files.refresh.revision == "1")
+    pending?.resume(returning: result(conflict: true, error: "Changed on disk")); pending = nil
+    await next.value
+    #expect(model.conflict && editor.currentText() == "my draft")
+    await model.overwriteCurrentDocument()
+    #expect(core.commands.last?.files.overwrite.text == "my draft")
+    #expect(model.fileDocument?.revision == "3" && !editor.isDirty)
+}
+
+@Test @MainActor func filesRefreshUpdatesCleanBuffersAndFailedReloadKeepsDirtyEdits() async throws {
+    let core = ScriptedCoreClient(), model = FilesModel()
+    let target = ClientFilesTarget.with {
+        $0.daemonID = "machine"; $0.projectID = "project"
+    }
+    var disk = Dieter_V1_FileDocument.with {
+        $0.path = "notes.md"; $0.name = "notes.md"; $0.content = "original"; $0.revision = "1"
+    }
+    var reloadError = ""
+    core.handler = { _ in
+        .with {
+            $0.files = .with {
+                $0.target = target; $0.documentKey = "document"; $0.selectedPath = disk.path
+                $0.document = disk; $0.documentError = reloadError
+            }
+        }
+    }
+    model.bind(target: .init(endpointID: "gateway#machine", projectID: "project"), core: core)
+    model.isLive = true
+    await model.openFile(path: "notes.md")
+    disk.content = "disk changed"; disk.revision = "2"
+    await model.refreshCurrentDocument()
+    #expect(model.fileDocument?.revision == "2")
+    #expect(model.fileEditorSession.currentText() == "disk changed" && !model.fileEditorSession.isDirty)
+    #expect(model.fileEditorSession.applyReplacement("my edit", documentKey: model.documentKey))
+    reloadError = "File unavailable"
+    await model.reloadDocument()
+    #expect(model.fileEditorSession.currentText() == "my edit" && model.fileEditorSession.isDirty)
+    reloadError = ""
+    await model.reloadDocument()
+    #expect(model.fileEditorSession.currentText() == "disk changed" && !model.fileEditorSession.isDirty)
+}

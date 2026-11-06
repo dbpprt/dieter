@@ -22,8 +22,8 @@ private import Synchronization
 
 @available(gRPCSwiftNIOTransport 2.6, *)
 extension HTTP2ServerTransport {
-  /// A NIO-based server transport that handles HTTP/2 connections using a pluggable
-  /// ``HTTP2ServerTransport/ListenerFactory``.
+  /// A NIO-based server transport that handles HTTP/2 connections using a pluggable listener
+  /// factory.
   ///
   /// This transport provides the core functionality for accepting HTTP/2 connections and
   /// dispatching RPC streams. It delegates the creation of the listening channel to a
@@ -42,6 +42,7 @@ extension HTTP2ServerTransport {
   public final class Custom<
     ListenerFactory: HTTP2ServerTransport.ListenerFactory
   >: ServerTransport {
+    /// The concrete type of bytes this transport produces and consumes.
     public typealias Bytes = GRPCNIOTransportBytes
 
     /// Configuration for the custom HTTP/2 server transport.
@@ -63,7 +64,7 @@ extension HTTP2ServerTransport {
       /// Channel callbacks for debugging.
       public var channelDebuggingCallbacks: HTTP2ServerTransport.Config.ChannelDebuggingCallbacks
 
-      /// Creates a new configuration.
+      /// Creates a configuration.
       ///
       /// - Parameters:
       ///   - compression: Compression configuration.
@@ -85,7 +86,7 @@ extension HTTP2ServerTransport {
         self.channelDebuggingCallbacks = channelDebuggingCallbacks
       }
 
-      /// Default values.
+      /// Default values, combining the defaults of each nested configuration.
       ///
       /// - SeeAlso: ``HTTP2ServerTransport/Config/Compression/defaults``
       /// - SeeAlso: ``HTTP2ServerTransport/Config/Connection/defaults``
@@ -172,7 +173,7 @@ extension HTTP2ServerTransport {
     ///
     /// It is an `async` property because it will only return once the listening channel has been
     /// created. Returns `nil` if the listening channel doesn't have a corresponding socket address
-    /// (e.g. when using a non-socket-based transport) or if the server has been closed.
+    /// (for example, when using a non-socket-based transport) or if the server has been closed.
     public var listeningAddress: SocketAddress? {
       get async {
         switch self.listeningAddressState.withLock({ $0.listeningAddress }) {
@@ -185,7 +186,7 @@ extension HTTP2ServerTransport {
       }
     }
 
-    /// Creates a new NIO-based HTTP/2 server transport.
+    /// Creates a NIO-based HTTP/2 server transport.
     ///
     /// - Parameters:
     ///   - listenerFactory: The factory responsible for creating the listening channel.
@@ -234,6 +235,7 @@ extension HTTP2ServerTransport {
       }
     }
 
+    /// Starts serving, using the listener factory to create the listening channel.
     public func listen(
       streamHandler:
         @escaping @Sendable (
@@ -324,15 +326,24 @@ extension HTTP2ServerTransport {
           }
 
           do {
+            // Computed on the first stream so that any TLS handshake has completed.
+            let makeContext = self.transportSpecificContext
+            var transportSpecific: (any ServerContext.TransportSpecific)?
+
             for try await (stream, descriptor) in multiplexer.inbound {
+              if transportSpecific == nil {
+                transportSpecific = await makeContext?(connection.channel)
+              }
+
+              let connectionContext = transportSpecific
               group.addTask {
                 await self.handleStream(
                   stream,
-                  connection,
                   handler: streamHandler,
                   descriptor: descriptor,
                   remotePeer: remotePeer,
-                  localPeer: localPeer
+                  localPeer: localPeer,
+                  transportSpecific: connectionContext
                 )
               }
             }
@@ -345,7 +356,6 @@ extension HTTP2ServerTransport {
 
     private func handleStream(
       _ stream: NIOAsyncChannel<RPCRequestPart<Bytes>, RPCResponsePart<Bytes>>,
-      _ connection: NIOAsyncChannel<HTTP2Frame, HTTP2Frame>,
       handler streamHandler:
         @escaping @Sendable (
           _ stream: RPCStream<Inbound, Outbound>,
@@ -353,7 +363,8 @@ extension HTTP2ServerTransport {
         ) async -> Void,
       descriptor: EventLoopFuture<MethodDescriptor>,
       remotePeer: String,
-      localPeer: String
+      localPeer: String,
+      transportSpecific: (any ServerContext.TransportSpecific)?
     ) async {
       // It's okay to ignore these errors:
       // - If we get an error because the http2Stream failed to close, then there's nothing we can do
@@ -397,9 +408,7 @@ extension HTTP2ServerTransport {
             localPeer: localPeer,
             cancellation: handle
           )
-          if let transportSpecificContext = self.transportSpecificContext {
-            context.transportSpecific = await transportSpecificContext(connection.channel)
-          }
+          context.transportSpecific = transportSpecific
           await streamHandler(rpcStream, context)
         }
 
@@ -416,10 +425,12 @@ extension HTTP2ServerTransport {
       }
     }
 
+    /// Begins graceful shutdown of the listening channel.
     public func beginGracefulShutdown() {
       self.serverQuiescingHelper.initiateShutdown(promise: nil)
     }
 
+    /// Stores the server context, making it available to accepted connections.
     public func configure(context: GRPCServerContext) {
       self.serverContext.withLock { $0 = context }
     }

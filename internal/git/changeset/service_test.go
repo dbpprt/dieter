@@ -15,7 +15,7 @@ import (
 	"github.com/dbpprt/dieter/internal/git/changeset"
 	"github.com/dbpprt/dieter/internal/git/workspace"
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit"
 )
 
@@ -32,7 +32,7 @@ func TestProjectChangesUseOneStatusAndLoadUntrackedContentOnlyForSelectedDiff(t 
 	t.Parallel()
 	repository := testkit.GitRepo(t)
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Read cost", Path: repository, BaseBranch: "main"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Read cost", Path: repository, BaseBranch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestConcurrentProjectRefreshesShareOneStatusCommand(t *testing.T) {
 	t.Parallel()
 	repository := testkit.GitRepo(t)
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Coalesced", Path: repository, BaseBranch: "main"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Coalesced", Path: repository, BaseBranch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestProjectChangesWithOneThousandFilesStillUsesOneStatusCommand(t *testing.
 		}
 	}
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Scale", Path: repository, BaseBranch: "main"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Scale", Path: repository, BaseBranch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,11 +175,11 @@ func TestChangesetIncludesTrackedAndUntrackedDiffsAndRejectsStaleRevision(t *tes
 	t.Parallel()
 	repository := testkit.GitRepo(t)
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	chat, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Changes", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
+	chat, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Changes", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,11 +231,11 @@ func TestProjectDirectoryChangesetUsesItsCurrentFeatureBranch(t *testing.T) {
 	}
 
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	chat, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Direct", Prompt: "work", WorkspaceMode: model.WorkspaceModeProject})
+	chat, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Direct", Prompt: "work", WorkspaceMode: model.WorkspaceModeProject})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,11 +265,11 @@ func TestChangesetSeparatesStagedAndUnstagedSections(t *testing.T) {
 	t.Parallel()
 	repository := testkit.GitRepo(t)
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	chat, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Sections", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
+	chat, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Sections", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,11 +311,11 @@ func TestCommitDiffWithoutPathReturnsTheWholeCommitPatch(t *testing.T) {
 	t.Parallel()
 	repository := testkit.GitRepo(t)
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	chat, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Commits", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
+	chat, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Commits", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -377,7 +377,7 @@ func TestProjectChangesPreserveGitStatusesAndUnusualPaths(t *testing.T) {
 	testkit.RunGit(t, repository, "add", "-A")
 	write("README.md", "modified working tree\n")
 	data := testkit.Store(t)
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Statuses", Path: repository, BaseBranch: "main"})
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Statuses", Path: repository, BaseBranch: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}

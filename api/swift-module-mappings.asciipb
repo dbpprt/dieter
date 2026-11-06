@@ -4,6 +4,7 @@ mapping {
   module_name: "DieterAPI"
   proto_file_path: "dieter/v1/boards.proto"
   proto_file_path: "dieter/v1/cards.proto"
+  proto_file_path: "dieter/v1/channels.proto"
   proto_file_path: "dieter/v1/common.proto"
   proto_file_path: "dieter/v1/control.proto"
   proto_file_path: "dieter/v1/conversations.proto"

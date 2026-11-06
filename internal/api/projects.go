@@ -9,12 +9,12 @@ import (
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/platform/fault"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/home"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 func (api *projectsAPI) AttachCheckout(ctx context.Context, r *dieterv1.AttachCheckoutRequest) (*dieterv1.Checkout, error) {
-	value, err := api.server.store.AttachCheckout(r.GetProjectId(), r.GetPath(), r.GetName())
+	value, err := api.server.store.Kanban.AttachCheckout(r.GetProjectId(), r.GetPath(), r.GetName())
 	if err != nil {
 		return nil, err
 	}
@@ -22,11 +22,11 @@ func (api *projectsAPI) AttachCheckout(ctx context.Context, r *dieterv1.AttachCh
 }
 
 func (api *projectsAPI) DetachCheckout(ctx context.Context, r *dieterv1.CheckoutRef) (*emptypb.Empty, error) {
-	return &emptypb.Empty{}, api.server.store.DetachCheckout(r.GetCheckoutId())
+	return &emptypb.Empty{}, api.server.store.Kanban.DetachCheckout(r.GetCheckoutId())
 }
 
 func (api *projectsAPI) ListCheckouts(ctx context.Context, r *dieterv1.ProjectRef) (*dieterv1.CheckoutsResponse, error) {
-	values, err := api.server.store.ListCheckouts(r.GetProjectId())
+	values, err := api.server.store.Kanban.ListCheckouts(r.GetProjectId())
 	if err != nil {
 		return nil, err
 	}
@@ -38,7 +38,7 @@ func (api *projectsAPI) ListCheckouts(ctx context.Context, r *dieterv1.ProjectRe
 }
 
 func (api *projectsAPI) ConsolidateProject(ctx context.Context, r *dieterv1.ConsolidateProjectRequest) (*dieterv1.Project, error) {
-	value, err := api.server.store.ConsolidateProject(r.GetSourceProjectId(), r.GetDestinationProjectId())
+	value, err := api.server.store.Kanban.ConsolidateProject(r.GetSourceProjectId(), r.GetDestinationProjectId())
 	if err != nil {
 		return nil, err
 	}
@@ -86,9 +86,9 @@ func (api *projectsAPI) CreateProject(ctx context.Context, request *dieterv1.Cre
 	if err != nil {
 		return nil, err
 	}
-	board, err := api.server.store.InitialBoard(project.ID)
-	if errors.Is(err, store.ErrNotFound) {
-		boards, listErr := api.server.store.ListBoards(project.ID)
+	board, err := api.server.store.Kanban.InitialBoard(project.ID)
+	if errors.Is(err, home.ErrNotFound) {
+		boards, listErr := api.server.store.Kanban.ListBoards(project.ID)
 		if listErr != nil {
 			return nil, listErr
 		}
@@ -109,7 +109,7 @@ func (api *projectsAPI) UpdateProject(_ context.Context, request *dieterv1.Updat
 		values := request.Hostnames.GetValues()
 		hostnames = &values
 	}
-	value, err := api.server.store.UpdateProjectWithHostnames(request.GetProjectId(), request.Name, request.Summary, request.Prompt, request.Path, hostnames)
+	value, err := api.server.store.Kanban.UpdateProjectWithHostnames(request.GetProjectId(), request.Name, request.Summary, request.Prompt, request.Path, hostnames)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +123,7 @@ func (api *projectsAPI) UpdateProjectWorkspaceSettings(_ context.Context, reques
 	} else if len(request.GetValidationCommands()) > 0 {
 		return nil, fault.New(fault.Invalid, "choose a checkout to update its validation commands")
 	}
-	value, err := api.server.store.UpdateProjectWorkspaceSettings(
+	value, err := api.server.store.Kanban.UpdateProjectWorkspaceSettings(
 		request.GetProjectId(), request.GetBaseRemote(), request.GetBaseBranch(), validation, request.GetCheckoutId(),
 	)
 	if err != nil {
@@ -133,7 +133,7 @@ func (api *projectsAPI) UpdateProjectWorkspaceSettings(_ context.Context, reques
 }
 
 func (api *projectsAPI) ArchiveProject(_ context.Context, request *dieterv1.ArchiveProjectRequest) (*dieterv1.Project, error) {
-	value, err := api.server.store.ArchiveProject(request.GetProjectId(), request.GetArchived())
+	value, err := api.server.store.Kanban.ArchiveProject(request.GetProjectId(), request.GetArchived())
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +141,7 @@ func (api *projectsAPI) ArchiveProject(_ context.Context, request *dieterv1.Arch
 }
 
 func (api *projectsAPI) ListArchivedProjects(context.Context, *emptypb.Empty) (*dieterv1.ProjectsResponse, error) {
-	values, err := api.server.store.ListArchivedProjects()
+	values, err := api.server.store.Kanban.ListArchivedProjects()
 	if err != nil {
 		return nil, err
 	}

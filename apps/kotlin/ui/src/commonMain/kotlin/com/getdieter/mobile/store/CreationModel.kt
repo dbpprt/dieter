@@ -49,21 +49,24 @@ internal constructor(
         this.chat.value = chat
     }
 
-    internal fun initialIntent() =
-        CreationIntent(
-            project_id = boards.currentProjectId(),
-            board_id = boards.selectedBoard.value,
-            selection = agentSelection,
-        )
+    internal fun initialIntent() = CreationIntent(selection = agentSelection)
 
     /** Takes the form's [intent] and previews it with the core, applying [choice] once. */
     fun update(intent: CreationIntent, choice: AgentChoice? = null) {
+        val destinationChanged =
+            intent.project_id != this.intent.value.project_id ||
+                intent.checkout_id != this.intent.value.checkout_id
+        // Choices made against the previous destination's menu no longer apply. A new
+        // provider also supersedes queued model, effort and option choices for the old one.
+        if (destinationChanged || choice?.provider != null) pendingAgentChoices.clear()
         choice?.let { pendingAgentChoices += it }
+        if (choice != null) context.error.value = ""
         this.intent.value = intent
         previewJob?.cancel()
         previewJob =
             context.scope.launch {
-                delay(100)
+                // Debounce typing, while destination and picker taps respond immediately.
+                if (!destinationChanged && pendingAgentChoices.isEmpty()) delay(100)
                 try {
                     val choices = pendingAgentChoices.toList()
                     var resolvedIntent = intent
@@ -89,6 +92,9 @@ internal constructor(
                     ensureActive()
                     if (response != null) {
                         preview.value = response
+                        // Once the user chooses, subsequent forms follow the core's saved
+                        // preference instead of an externally supplied initial agent.
+                        if (choices.isNotEmpty()) agentSelection = null
                         // Previews leave attachments out; the form keeps its own.
                         this@CreationModel.intent.value =
                             (response.intent ?: intent).copy(attachments = intent.attachments)
@@ -99,20 +105,48 @@ internal constructor(
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Throwable) {
+                    ensureActive()
+                    // Replaying a rejected choice before every later tap makes the form
+                    // impossible to repair, especially after switching machine catalogs.
+                    pendingAgentChoices.clear()
                     context.error.value = failure.message ?: "Unable to preview the task."
+                    try {
+                        val refreshed =
+                            context.core
+                                .dispatch(
+                                    Command(
+                                        creation_preview =
+                                            CreationPreviewCommand(
+                                                scope = MobileStore.FORM_SCOPE,
+                                                intent = intent,
+                                                chat = chat.value,
+                                            )
+                                    )
+                                )
+                                .creation_preview
+                        ensureActive()
+                        if (refreshed != null) preview.value = refreshed
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Throwable) {
+                        // Keep the original error when refreshing the menu also fails.
+                    }
                 }
             }
     }
 
-    suspend fun submit(intent: CreationIntent): String =
-        context.core
+    suspend fun submit(intent: CreationIntent): String {
+        previewJob?.join()
+        val resolved = this.intent.value.copy(lane = intent.lane)
+        return context.core
             .dispatch(
                 Command(
-                    create_conversation = CreateConversation(chat = chat.value, intent = intent)
+                    create_conversation = CreateConversation(chat = chat.value, intent = resolved)
                 )
             )
             .card
             ?.id ?: error("The core returned no conversation.")
+    }
 
     /** Creates a task on the selected board, or the first one. */
     suspend fun create(title: String, prompt: String, run: Boolean): String {

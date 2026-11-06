@@ -158,6 +158,23 @@ class WorkspaceStore(private val clock: Clock = Clock.System) {
     }
 
     /**
+     * [cardId] was restored: drops an archive the account view has not shown yet. The view can go
+     * from the live card straight to the restored one without ever listing it gone, and the archive
+     * would keep hiding it.
+     */
+    fun dropArchive(cardId: String) {
+        val card = directory.item(cardId) ?: return
+        val archives = overlays.filterValues { it.cardId == cardId && it.apply(card).archived }.keys
+        if (archives.isEmpty()) return
+        for (id in archives) {
+            overlays.remove(id)
+            confirmedAt.remove(id)
+            shown.remove(id)
+        }
+        publish()
+    }
+
+    /**
      * Shows a project an administrative call returned until the account view is at least as new;
      * another peer's later edit is never pinned. Its checkouts route the calls that follow.
      */

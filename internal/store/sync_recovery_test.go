@@ -1,112 +1,84 @@
-package store
+package store_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/platform/fsx"
+	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/home"
+	"github.com/dbpprt/dieter/internal/store/kanban"
+	"github.com/dbpprt/dieter/internal/testkit"
 )
 
 func TestGlobalStateNeverCachesPreparedDomainMutation(t *testing.T) {
 	t.Parallel()
-	s, p, b := setup(t, model.WorkflowReview)
-	card, err := s.CreateCard(CreateCardInput{Project: p.ID, Board: b.ID, Title: "before"})
+	s, p, b := testkit.BoardStore(t, model.WorkflowReview)
+	card, err := s.Kanban.CreateCard(kanban.CreateCardInput{Project: p.ID, Board: b.ID, Title: "before"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.GlobalState(); err != nil {
+	if _, err := s.Kanban.GlobalState(); err != nil {
 		t.Fatal(err)
 	}
-	release, err := s.beginWrite()
+	release, err := s.BeginWrite()
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
-	_, err = s.GlobalStateContext(ctx)
+	_, err = s.Kanban.GlobalStateContext(ctx)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		release()
 		t.Fatalf("active writer read: %v", err)
 	}
 	card.Title = "after"
-	err = s.writeCard(card)
+	err = s.Kanban.WriteCard(card)
 	release()
 	if err != nil {
 		t.Fatal(err)
 	}
-	state, err := s.GlobalState()
+	state, err := s.Kanban.GlobalState()
 	if err != nil || state.Cards[0].Title != "after" {
 		t.Fatalf("stale state: %+v %v", state, err)
 	}
 }
 
-func TestQueuedWriterAdmissionCancelsWithoutTakingOrLeakingTheLock(t *testing.T) {
-	t.Parallel()
-	var gate contextMutex
-	if err := gate.LockContext(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	result := make(chan error, 1)
-	go func() { result <- gate.LockContext(ctx) }()
-	cancel()
-	select {
-	case err := <-result:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("canceled admission: %v", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("canceled waiter blocked behind active writer")
-	}
-	if gate.TryLock() {
-		t.Fatal("canceled waiter released another writer's lock")
-	}
-	gate.Unlock()
-	if !gate.TryLock() {
-		t.Fatal("canceled waiter leaked admission")
-	}
-	gate.Unlock()
-}
-
 func TestPendingMutationRecoveredByReader(t *testing.T) {
 	t.Parallel()
-	s, p, b := setup(t, model.WorkflowReview)
-	card, err := s.CreateCard(CreateCardInput{Project: p.ID, Board: b.ID, Title: "before"})
+	s, p, b := testkit.BoardStore(t, model.WorkflowReview)
+	card, err := s.Kanban.CreateCard(kanban.CreateCardInput{Project: p.ID, Board: b.ID, Title: "before"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.GlobalState(); err != nil {
+	if _, err := s.Kanban.GlobalState(); err != nil {
 		t.Fatal(err)
 	}
-	release, err := s.beginWriteLock()
+	release, err := s.BeginWriteLock()
 	if err != nil {
 		t.Fatal(err)
 	}
-	pending, err := s.prepareSyncMutation(conversationChange)
+	pending, err := s.PrepareMutation(home.ConversationChange)
 	if err != nil {
 		release()
 		t.Fatal(err)
 	}
 	card.Title = "partial crash write"
-	err = s.writeCard(card)
+	err = s.Kanban.WriteCard(card)
 	release()
 	if err != nil {
 		t.Fatal(err)
 	}
-	state, err := s.GlobalStateContext(context.Background())
+	state, err := s.Kanban.GlobalStateContext(context.Background())
 	if err != nil || state.Cards[0].Title != card.Title {
 		t.Fatalf("recovery: %+v %v", state, err)
 	}
 	// A recovered write counts as metadata even if it started as text.
-	if changes, metadata := changeCounters(t, s); changes != pending.Sequence || metadata != pending.Sequence {
+	if changes, metadata := testkit.ChangeCounters(t, s); changes != pending.Sequence || metadata != pending.Sequence {
 		t.Fatalf("recovered counters %d/%d, want %d", changes, metadata, pending.Sequence)
 	}
 	if s.SyncMutationPending() {
@@ -114,214 +86,32 @@ func TestPendingMutationRecoveredByReader(t *testing.T) {
 	}
 }
 
-func TestWriterLockDoesNotExpireWhileOwnerAlive(t *testing.T) {
-	t.Parallel()
-	s := New(t.TempDir())
-	if err := s.Ensure(); err != nil {
-		t.Fatal(err)
-	}
-	release, err := s.writerAdmission(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer release()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
-	defer cancel()
-	if release, err := s.beginWriteLockContext(ctx); !errors.Is(err, context.DeadlineExceeded) {
-		if release != nil {
-			release()
-		}
-		t.Fatalf("live writer stolen: %v", err)
-	}
-}
-
-func TestConversationCacheReplaysOnlyAppendedTailAndInvalidatesAcrossStores(t *testing.T) {
-	t.Parallel()
-	s, p, b := setup(t, model.WorkflowReview)
-	card, err := s.CreateCard(CreateCardInput{Project: p.ID, Board: b.ID, Title: "cache"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.StartConversationTurn(card.ID, "turn", "user", "hello"); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := s.AppendUIChunk(card.ID, "turn", json.RawMessage(`{"type":"text-delta","delta":"one"}`)); err != nil {
-		t.Fatal(err)
-	}
-	first, err := s.Conversation(card.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	first.Messages[1].Parts[0].Text = "caller mutation"
-	other := New(s.Root)
-	if _, _, err := other.AppendUIChunk(card.ID, "turn", json.RawMessage(`{"type":"text-delta","delta":"two"}`)); err != nil {
-		t.Fatal(err)
-	}
-	got, err := s.Conversation(card.ID)
-	if err != nil || got.Messages[1].Parts[0].Text != "onetwo" {
-		t.Fatalf("cache/replay alias: %+v %v", got, err)
-	}
-	// An inode replacement must invalidate even at the same length.
-	eventPath := filepath.Join(s.conversationPath(card.ID), "events.ndjson")
-	raw, _ := os.ReadFile(eventPath)
-	raw = []byte(strings.Replace(string(raw), `"delta":"two"`, `"delta":"six"`, 1))
-	if err := fsx.WriteFile(eventPath, raw, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	got, err = s.Conversation(card.ID)
-	if err != nil || got.Messages[1].Parts[0].Text != "onesix" {
-		t.Fatalf("replacement: %+v %v", got, err)
-	}
-}
-
-func TestTextDeltaDoesNotRewriteCheckpoint(t *testing.T) {
-	t.Parallel()
-	s, p, b := setup(t, model.WorkflowReview)
-	card, err := s.CreateCard(CreateCardInput{Project: p.ID, Board: b.ID, Title: "checkpoint"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.StartConversationTurn(card.ID, "turn", "user", strings.Repeat("history", 100000)); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(s.conversationPath(card.ID), "snapshot.json")
-	before, _ := os.Stat(path)
-	for range 10 {
-		if _, _, err := s.AppendUIChunk(card.ID, "turn", json.RawMessage(`{"type":"text-delta","delta":"x"}`)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	after, _ := os.Stat(path)
-	if !sameFileRevision(before, after) {
-		t.Fatal("text chunks rewrote the full snapshot")
-	}
-	fresh, err := New(s.Root).Conversation(card.ID)
-	if err != nil || fresh.Messages[1].Parts[0].Text != "xxxxxxxxxx" {
-		t.Fatalf("journal recovery failed: %+v %v", fresh, err)
-	}
-}
-
-func TestTornConversationJournalDoesNotSwallowNextAcknowledgedEvent(t *testing.T) {
-	t.Parallel()
-	s, p, b := setup(t, model.WorkflowReview)
-	card, err := s.CreateCard(CreateCardInput{Project: p.ID, Board: b.ID, Title: "torn"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.StartConversationTurn(card.ID, "turn", "user", "hello"); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(s.conversationPath(card.ID), "events.ndjson")
-	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = file.WriteString(`{"seq":2,"type":"ui-chunk","data":`)
-	_ = file.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := s.AppendUIChunk(card.ID, "turn", json.RawMessage(`{"type":"text-delta","delta":"survived"}`)); err != nil {
-		t.Fatal(err)
-	}
-	fresh, err := New(s.Root).Conversation(card.ID)
-	if err != nil || fresh.LastSeq != 2 || fresh.Messages[1].Parts[0].Text != "survived" {
-		t.Fatalf("torn suffix lost acknowledged event: %+v %v", fresh, err)
-	}
-}
-
-func TestRuntimeStatusReplaysEventsNewerThanDelayedCheckpoint(t *testing.T) {
-	t.Parallel()
-	s, p, b := setup(t, model.WorkflowReview)
-	card, err := s.CreateCard(CreateCardInput{Project: p.ID, Board: b.ID, Title: "delayed checkpoint"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.StartConversationTurn(card.ID, "turn", "user", "hello"); err != nil {
-		t.Fatal(err)
-	}
-	reader := New(s.Root)
-	if status, err := reader.conversationStatus(card.ID); err != nil || status != "running" {
-		t.Fatalf("initial status=%q, error=%v", status, err)
-	}
-	path := filepath.Join(s.conversationPath(card.ID), "snapshot.json")
-	older, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := s.AppendUIChunk(card.ID, "turn", json.RawMessage(`{"type":"finish"}`)); err != nil {
-		t.Fatal(err)
-	}
-	// Model a checkpoint captured before finish whose rename completes later.
-	if err := fsx.WriteFile(path, older, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	for name, view := range map[string]*Store{"cached reader": reader, "cold reader": New(s.Root)} {
-		status, err := view.conversationStatus(card.ID)
-		if err != nil || status != "idle" {
-			t.Fatalf("%s: status=%q, error=%v; checkpoint time hid durable finish", name, status, err)
-		}
-	}
-}
-
-func TestCompleteJSONWithoutJournalTerminatorIsNotCommitted(t *testing.T) {
-	t.Parallel()
-	s, p, b := setup(t, model.WorkflowReview)
-	card, err := s.CreateCard(CreateCardInput{Project: p.ID, Board: b.ID, Title: "unterminated record"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.StartConversationTurn(card.ID, "turn", "user", "hello"); err != nil {
-		t.Fatal(err)
-	}
-	file, err := os.OpenFile(filepath.Join(s.conversationPath(card.ID), "events.ndjson"), os.O_APPEND|os.O_WRONLY, 0600)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = file.WriteString(`{"seq":2,"type":"ui-chunk","turnId":"turn","data":{"type":"text-delta","delta":"uncommitted"}}`)
-	_ = file.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	before, err := New(s.Root).Conversation(card.ID)
-	if err != nil || before.LastSeq != 1 {
-		t.Fatalf("unterminated event was replayed: seq=%d err=%v", before.LastSeq, err)
-	}
-	if _, _, err := s.AppendUIChunk(card.ID, "turn", json.RawMessage(`{"type":"text-delta","delta":"survived"}`)); err != nil {
-		t.Fatal(err)
-	}
-	fresh, err := New(s.Root).Conversation(card.ID)
-	if err != nil || fresh.LastSeq != 2 || fresh.Messages[1].Parts[0].Text != "survived" {
-		t.Fatalf("repaired journal and projection diverged: %+v %v", fresh, err)
-	}
-}
-
 func TestKilledWriterRecovery(t *testing.T) {
 	t.Parallel()
 	if root := os.Getenv("DIETER_TEST_CRASH_STORE"); root != "" {
-		data := New(root)
-		_, err := data.beginWrite()
+		data := store.New(root)
+		_, err := data.BeginWrite()
 		if err != nil {
 			os.Exit(2)
 		}
-		card, err := data.ResolveCard(os.Getenv("DIETER_TEST_CRASH_CARD"))
+		card, err := data.Kanban.ResolveCard(os.Getenv("DIETER_TEST_CRASH_CARD"))
 		if err != nil {
 			os.Exit(3)
 		}
 		card.Title = "committed before process death"
-		if err := data.writeCard(card); err != nil {
+		if err := data.Kanban.WriteCard(card); err != nil {
 			os.Exit(4)
 		}
 		// Simulate death after the atomic domain write and before sync publication.
 		// No defers run; the kernel releases admission but the owner directory stays.
 		os.Exit(0)
 	}
-	data, p, b := setup(t, model.WorkflowReview)
-	card, err := data.CreateCard(CreateCardInput{Project: p.ID, Board: b.ID, Title: "before"})
+	data, p, b := testkit.BoardStore(t, model.WorkflowReview)
+	card, err := data.Kanban.CreateCard(kanban.CreateCardInput{Project: p.ID, Board: b.ID, Title: "before"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := data.GlobalState(); err != nil {
+	if _, err := data.Kanban.GlobalState(); err != nil {
 		t.Fatal(err)
 	}
 	command := exec.Command(os.Args[0], "-test.run=^TestKilledWriterRecovery$")
@@ -331,11 +121,46 @@ func TestKilledWriterRecovery(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	state, err := data.GlobalStateContext(ctx)
+	state, err := data.Kanban.GlobalStateContext(ctx)
 	if err != nil || state.Cards[0].Title != "committed before process death" {
 		t.Fatalf("killed writer lost update: %+v %v", state, err)
 	}
 	if data.SyncMutationPending() {
 		t.Fatal("recovery left pending revision")
+	}
+}
+
+// A writer that lost its sync publication leaves a pending mutation. A no-op
+// conditional write neither publishes nor duplicates it; the recovery sweep
+// (and the next real write) commits it without an empty transaction.
+func TestRecoverySweepCommitsPendingMutationAfterNoopWrite(t *testing.T) {
+	t.Parallel()
+	s, project, _ := testkit.BoardStore(t, model.WorkflowReview)
+	card, err := s.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "before"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	release, err := s.BeginWriteLock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := s.PrepareMutation(home.MetadataChange)
+	if err == nil {
+		card.Title = "recovered"
+		err = s.Kanban.WriteCard(card)
+	}
+	release() // simulate a writer that lost its sync publication
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Kanban.UpdateCardCache(card.ID, kanban.CardCacheInput{Title: card.Title})
+	if err != nil || got.Title != card.Title {
+		t.Fatalf("no-op write: %+v %v", got, err)
+	}
+	if err := s.Recover(); err != nil || s.SyncMutationPending() {
+		t.Fatalf("recovery sweep left the pending mutation: %v", err)
+	}
+	if changes, _ := testkit.ChangeCounters(t, s); changes != pending.Sequence {
+		t.Fatalf("recovery added an empty transaction: changes=%d want %d", changes, pending.Sequence)
 	}
 }

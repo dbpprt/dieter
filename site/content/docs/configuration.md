@@ -84,7 +84,3 @@ clients share one release version; the gateway publishes minimum client and
 daemon releases. `just generate` regenerates the Go and Swift bindings; the
 Kotlin build generates its own. There is no historical API
 compatibility branch, REST application API, or browser application.
-
-## Mac workspace panel
-
-**Settings → Experimental → Show the workspace side panel** enables files, browser previews, terminals, changes, and processes alongside conversations. It is off by default. See [Conversation workspace](/docs/workspace/).

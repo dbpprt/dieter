@@ -16,6 +16,39 @@ tags: [smoke]
 - tapOn:
     id: chrome-new-task
     waitToSettleTimeoutMs: 500
+# Android choice dialogs stay readable and selections survive closing the form.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - scrollUntilVisible:
+          element:
+            id: picker-effort
+          direction: DOWN
+      - tapOn:
+          id: picker-effort
+          waitToSettleTimeoutMs: 500
+      - assertVisible:
+          text: "High"
+      - takeScreenshot: task-effort-picker
+      - tapOn:
+          text: "High"
+          waitToSettleTimeoutMs: 500
+      - tapOn:
+          id: chrome-cancel-creation
+          waitToSettleTimeoutMs: 500
+      - tapOn:
+          id: chrome-new-task
+          waitToSettleTimeoutMs: 500
+      - scrollUntilVisible:
+          element:
+            id: picker-effort
+          direction: DOWN
+      - assertVisible: "High"
+      - scrollUntilVisible:
+          element:
+            id: task-title
+          direction: UP
 - tapOn:
     id: task-title
     waitToSettleTimeoutMs: 500
@@ -27,10 +60,11 @@ tags: [smoke]
 - tapOn:
     id: chrome-start-working
     waitToSettleTimeoutMs: 500
-# A hosted runner's first harness turn starts cold and has taken over 70 s.
+# A safety bound: mock turns take seconds, but hosted macOS runners shared with
+# the simulator have stalled worker start-up for minutes.
 - extendedWaitUntil:
     visible: "Mock harness received: First turn.*"
-    timeout: 180000
+    timeout: 300000
 - tapOn:
     id: message-input
     waitToSettleTimeoutMs: 500
@@ -40,14 +74,41 @@ tags: [smoke]
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: "Mock harness received: Second turn.*"
-    timeout: 180000
+    timeout: 300000
+# Review becomes available once the turn has settled, which trails its reply.
+# It is the last chip of a horizontally scrolling row and can sit past the
+# right edge on phones (for example once the context chip appears), so scroll
+# the row until it shows; on wider screens the swipes do nothing.
+- repeat:
+    while:
+      notVisible:
+        id: move-review
+    times: 15
+    commands:
+      - swipe:
+          from:
+            id: composer-chips
+          direction: LEFT
+      - waitForAnimationToEnd:
+          timeout: 2000
+- extendedWaitUntil:
+    visible:
+      id: move-review
+    timeout: 60000
 - tapOn:
     id: move-review
     waitToSettleTimeoutMs: 500
 # Android draws its own back button; iOS uses the system one.
-- tapOn:
-    id: "chrome-back|BackButton"
-    waitToSettleTimeoutMs: 500
+- runFlow: common/back.yaml
+# On iPad, going back from the task returns to the project list; reopen the board.
+- runFlow:
+    when:
+      notVisible:
+        id: lane-2
+    commands:
+      - tapOn:
+          text: "Main"
+          waitToSettleTimeoutMs: 500
 - tapOn:
     id: lane-2
     waitToSettleTimeoutMs: 500

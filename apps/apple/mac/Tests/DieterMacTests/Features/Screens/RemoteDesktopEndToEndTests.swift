@@ -232,7 +232,8 @@ import Testing
             #expect(controller.phase == .streaming, "Signaling retry covered live native video")
         }
         #expect(controller.renderer.framesPresented > beforeSignalingRetry)
-        #expect(routes.openings == 1)
+        // Signaling renews its failed route while the existing peer keeps rendering.
+        #expect(routes.openings == 2)
         // Continue real native media/feedback for longer than the 15-second
         // session lease while every unary renewal fails. No reconnect allowed.
         try await inject("/test/reject-screen-signals?enabled=true")
@@ -488,13 +489,13 @@ import Testing
         "Latency stages: capture→send \(controller.sessionState.captureToSendMs) ms, paced send \(controller.sessionState.sendMs) ms, jitter buffer \(controller.sessionState.jitterBufferMs) ms, render \(controller.sessionState.renderMs) ms. Cursor embedded=\(controller.sessionState.embeddedCursor); displayed \(controller.sessionState.width)x\(controller.sessionState.height), \(controller.sessionState.receiverFps) fps, encode \(controller.sessionState.encodeMs) ms, RTT \(controller.sessionState.rttMs) ms, \(controller.session.mediaRoute)"
     )
     if !real {
-        #expect(routes.openings == 1, "A healthy peer must survive missing unary lease renewals")
+        #expect(routes.openings == 2, "Missing unary renewals must not open further routes")
         let rejected = try await inject("/test/reject-screen-signals?enabled=false")
         #expect(rejected >= 3, "Fault injection must actually reject multiple renewal calls")
         routes.failNext(5)
         try await inject("/test/expire-screen")
         try await screenWait("expired session survives five unavailable routes and reauthenticates", timeout: 25) {
-            routes.openings == 7 && controller.controlActive && controller.sessionState.receiverFps > 0
+            routes.openings == 8 && controller.controlActive && controller.sessionState.receiverFps > 0
         }
         #expect(controller.errorMessage == nil)
         #expect(controller.sessionState.configuration.quality == .detail)
@@ -502,7 +503,7 @@ import Testing
         // well as the authenticated route and native WebRTC peer.
         try await inject("/test/stop-capture")
         try await screenWait("native helper shutdown automatically restarts capture", timeout: 15) {
-            routes.openings == 8 && controller.controlActive && controller.sessionState.receiverFps > 0
+            routes.openings == 9 && controller.controlActive && controller.sessionState.receiverFps > 0
         }
         #expect(controller.errorMessage == nil)
         #expect(controller.sessionState.configuration.quality == .detail)
@@ -510,17 +511,17 @@ import Testing
         #expect(controller.systemSleeping)
         NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
         try await screenWait("wake immediately rebuilds the peer and authenticated route", timeout: 12) {
-            routes.openings == 9 && controller.controlActive && controller.sessionState.receiverFps > 0
+            routes.openings == 10 && controller.controlActive && controller.sessionState.receiverFps > 0
         }
         // Disconnect during a further interruption must cancel delayed recovery.
         try await inject("/test/expire-screen")
         try await screenWait("second interruption enters recovery", timeout: 4) { controller.phase == .reconnecting }
         controller.disconnect()
         try await Task.sleep(nanoseconds: 2_500_000_000)
-        #expect(routes.openings == 9)
+        #expect(routes.openings == 10)
         NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
         try await Task.sleep(for: .milliseconds(300))
-        #expect(routes.openings == 9, "Explicit disconnect must not reconnect on wake")
+        #expect(routes.openings == 10, "Explicit disconnect must not reconnect on wake")
         #expect(controller.phase == .idle)
         controller.connect(daemonID: "fixture", machineName: "Interrupted clipboard fixture")
         try await screenWait("reconnect for interrupted binary transfer", timeout: 12) { controller.controlActive }

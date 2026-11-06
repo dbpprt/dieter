@@ -19,6 +19,8 @@ import (
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/platform/fault"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/home"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 )
 
 var branchUnsafe = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
@@ -67,20 +69,20 @@ func selectedMode(card model.Card) (string, error) {
 }
 
 func (m *Manager) Ensure(ctx context.Context, cardRef string) (model.Workspace, error) {
-	if existing, err := m.Store.Workspace(cardRef); err == nil {
+	if existing, err := m.Store.Workspaces.Get(cardRef); err == nil {
 		if existing.State == model.WorkspaceStateReady || existing.State == model.WorkspaceStateConflicted {
 			return m.Refresh(ctx, existing.CardID, false)
 		} else if existing.State == model.WorkspaceStateCleanupPending || existing.State == model.WorkspaceStateRecoveryRequired {
 			return m.Refresh(ctx, existing.CardID, false)
 		}
-	} else if !errors.Is(err, store.ErrNotFound) {
+	} else if !errors.Is(err, home.ErrNotFound) {
 		return model.Workspace{}, err
 	}
-	detail, err := m.Store.CardDetail(cardRef)
+	detail, err := m.Store.Kanban.CardDetail(cardRef)
 	if err != nil {
 		return model.Workspace{}, err
 	}
-	if workspaces, listErr := m.Store.ListWorkspaces(detail.Project.ID); listErr == nil {
+	if workspaces, listErr := m.Store.Workspaces.List(detail.Project.ID); listErr == nil {
 		for _, candidate := range workspaces {
 			for _, previousID := range candidate.PreviousCardIDs {
 				if previousID == detail.Card.ID {
@@ -98,7 +100,7 @@ func (m *Manager) Ensure(ctx context.Context, cardRef string) (model.Workspace, 
 		return model.Workspace{}, err
 	}
 	defer release()
-	if existing, err := m.Store.WorkspaceByCardID(detail.Card.ID); err == nil && (existing.State == model.WorkspaceStateReady || existing.State == model.WorkspaceStateConflicted) {
+	if existing, err := m.Store.Workspaces.ByCardID(detail.Card.ID); err == nil && (existing.State == model.WorkspaceStateReady || existing.State == model.WorkspaceStateConflicted) {
 		return m.Refresh(ctx, detail.Card.ID, false)
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
@@ -123,17 +125,17 @@ func (m *Manager) Ensure(ctx context.Context, cardRef string) (model.Workspace, 
 	if value.BaseBranch == "" {
 		value.BaseBranch = strings.TrimSpace(detail.Project.BaseBranch)
 	}
-	if _, err := m.Store.SaveWorkspace(value); err != nil {
+	if _, err := m.Store.Workspaces.Save(value); err != nil {
 		return model.Workspace{}, err
 	}
 	value, err = m.provision(ctx, detail, value)
 	if err != nil {
 		value.State = model.WorkspaceStateFailed
-		_, _ = m.Store.SaveWorkspace(value)
+		_, _ = m.Store.Workspaces.Save(value)
 		return model.Workspace{}, err
 	}
 	value.State = model.WorkspaceStateReady
-	if _, err := m.Store.SaveWorkspace(value); err != nil {
+	if _, err := m.Store.Workspaces.Save(value); err != nil {
 		return model.Workspace{}, err
 	}
 	value, err = m.Refresh(ctx, value.CardID, false)
@@ -173,7 +175,7 @@ func (m *Manager) provision(ctx context.Context, detail model.CardDetail, value 
 			value.ManagedBranch = true
 		}
 		value.Path = filepath.Join(m.Store.WorktreeRoot(), detail.Project.ID, detail.Card.ID)
-		release, err := m.LockRepository(store.WithCheckout(ctx, detail.Card.CheckoutID), detail.Project.ID)
+		release, err := m.LockRepository(kanban.WithCheckout(ctx, detail.Card.CheckoutID), detail.Project.ID)
 		if err != nil {
 			return value, err
 		}
@@ -222,7 +224,7 @@ func branchName(card model.Card) string {
 }
 
 func (m *Manager) Refresh(ctx context.Context, cardRef string, includeSize bool) (model.Workspace, error) {
-	value, err := m.Store.Workspace(cardRef)
+	value, err := m.Store.Workspaces.Get(cardRef)
 	if err != nil {
 		return model.Workspace{}, err
 	}
@@ -231,17 +233,17 @@ func (m *Manager) Refresh(ctx context.Context, cardRef string, includeSize bool)
 	}
 	if _, err := os.Stat(value.Path); err != nil {
 		value.State = model.WorkspaceStateOrphaned
-		return m.Store.UpdateWorkspaceGitState(value, includeSize)
+		return m.Store.Workspaces.UpdateGitState(value, includeSize)
 	}
 	value = m.refreshGitState(ctx, value, includeSize)
-	return m.Store.UpdateWorkspaceGitState(value, includeSize)
+	return m.Store.Workspaces.UpdateGitState(value, includeSize)
 }
 
 // ProjectCheckout returns live Git state for the registered checkout without
 // creating a card-owned workspace record. Project-directory changes are shared
 // project state; cards in project mode are only execution-location selectors.
 func (m *Manager) ProjectCheckout(ctx context.Context, projectRef string, includeSize bool) (model.Workspace, error) {
-	project, err := m.Store.ProjectForCheckout(projectRef, store.CheckoutFromContext(ctx))
+	project, err := m.Store.Kanban.ProjectForCheckout(projectRef, kanban.CheckoutFromContext(ctx))
 	if err != nil {
 		return model.Workspace{}, err
 	}
@@ -327,7 +329,7 @@ func (m *Manager) LockWorkspace(ctx context.Context, cardID string) (func(), err
 }
 
 func (m *Manager) LockRepository(ctx context.Context, projectID string) (func(), error) {
-	project, err := m.Store.ProjectForCheckout(projectID, store.CheckoutFromContext(ctx))
+	project, err := m.Store.Kanban.ProjectForCheckout(projectID, kanban.CheckoutFromContext(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -340,7 +342,7 @@ func (m *Manager) LockRepository(ctx context.Context, projectID string) (func(),
 }
 
 func (m *Manager) LockCheckout(ctx context.Context, projectID string) (func(), error) {
-	project, err := m.Store.ProjectForCheckout(projectID, store.CheckoutFromContext(ctx))
+	project, err := m.Store.Kanban.ProjectForCheckout(projectID, kanban.CheckoutFromContext(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -349,7 +351,7 @@ func (m *Manager) LockCheckout(ctx context.Context, projectID string) (func(), e
 }
 
 func (m *Manager) List(ctx context.Context, projectRef string, refresh, includeSize bool) ([]model.Workspace, error) {
-	items, err := m.Store.ListWorkspaces(projectRef)
+	items, err := m.Store.Workspaces.List(projectRef)
 	if err != nil || !refresh {
 		return items, err
 	}

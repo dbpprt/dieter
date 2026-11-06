@@ -887,6 +887,15 @@ h3 {
   width: auto;
   margin: auto;
 }
+.shot--tablet {
+  max-width: 560px;
+  margin-inline: auto !important;
+}
+.shot--tablet img {
+  max-height: 740px;
+  width: auto;
+  margin: auto;
+}
 .prose .shot a {
   display: block;
 }

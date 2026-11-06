@@ -171,6 +171,7 @@ struct ScheduleRow: View {
 }
 
 /// A schedule's next run in its own time zone, or the core's fallback.
+@MainActor
 private func nextRun(_ schedule: Dieter_V1_Schedule, _ row: ClientScheduleRow) -> String {
     row.nextRunFallback.isEmpty
         ? ScheduleDateFormatting.compact(schedule.nextRunAt, timezone: schedule.timezone) : row.nextRunFallback

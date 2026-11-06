@@ -739,3 +739,64 @@ func TestResubscribeReplaysNegotiationWithOnlyCurrentState(t *testing.T) {
 		t.Fatal("subscriber owns live state")
 	}
 }
+
+// A renegotiated answer gets its own binding, so a viewer checks the DTLS
+// fingerprint of every answer against the daemon's roster key.
+func TestRenegotiatedAnswerCarriesAFreshBinding(t *testing.T) {
+	manager, request, daemonPublic := testManagerAndRequest(t, "github:7")
+	client := testViewer(t, request)
+	defer client.Close()
+	subscription, err := manager.Start(request, "github:7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer subscription.Close()
+	defer manager.CloseActive("test complete")
+	verify := func(binding *dieterv1.RemoteDesktopSessionBinding, offer string) {
+		t.Helper()
+		offerHash := sha256.Sum256([]byte(offer))
+		message := SessionBindingMessage(subscription.SessionID, binding.GetClientNonce(), binding.GetHelperDtlsFingerprint(), binding.GetExpiresAt(), offerHash[:], binding.GetControlGranted(), binding.GetDisplayId(), binding.GetInputProtocolVersion(), binding.GetInputEpoch())
+		if binding.GetHelperDtlsFingerprint() == "" || string(binding.GetOfferSha256()) != string(offerHash[:]) || !ed25519.Verify(daemonPublic, message, binding.GetDaemonSignature()) {
+			t.Fatalf("binding does not sign this answer: %#v", binding)
+		}
+	}
+	// next returns the binding and then the answer that follows it.
+	next := func() (*dieterv1.RemoteDesktopSessionBinding, string) {
+		t.Helper()
+		var binding *dieterv1.RemoteDesktopSessionBinding
+		deadline := time.After(30 * time.Second)
+		for {
+			select {
+			case <-deadline:
+				t.Fatal("timed out waiting for a signed answer")
+			case signal := <-subscription.Signals:
+				switch payload := signal.GetPayload().(type) {
+				case *dieterv1.RemoteDesktopSignal_Binding:
+					binding = payload.Binding
+				case *dieterv1.RemoteDesktopSignal_Description:
+					if binding == nil {
+						t.Fatal("an answer arrived without a binding")
+					}
+					return binding, payload.Description.GetSdp()
+				}
+			}
+		}
+	}
+	binding, answer := next()
+	verify(binding, request.GetOffer().GetSdp())
+	if err := client.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: answer}); err != nil {
+		t.Fatal(err)
+	}
+	offer, err := client.CreateOffer(&webrtc.OfferOptions{ICERestart: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.SetLocalDescription(offer); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Signal(&dieterv1.RemoteDesktopSignal{SessionId: subscription.SessionID, Payload: &dieterv1.RemoteDesktopSignal_Description{Description: &dieterv1.RemoteDesktopSessionDescription{Type: "offer", Sdp: offer.SDP}}}); err != nil {
+		t.Fatal(err)
+	}
+	renegotiated, _ := next()
+	verify(renegotiated, offer.SDP)
+}

@@ -26,18 +26,19 @@ struct MarkdownFileEditor: View {
     let filename: String
     var active = true
     var revealID: UUID?
+    var requestedLine: Int?
     @State private var sourceActivated = false
     @State private var mode = MarkdownFileEditorMode.edit
     @State private var scrollCoordinator = MarkdownScrollCoordinator()
     @Environment(\.colorScheme) private var colorScheme
 
-    private var editing: Bool { mode == .edit }
-    private var showingSource: Bool { mode == .source }
-    private var layout: MarkdownEditorLayout { mode.layout }
+    private var editing: Bool { !session.usesLargeDocumentMode && mode == .edit }
+    private var showingSource: Bool { session.usesLargeDocumentMode || mode == .source }
+    private var layout: MarkdownEditorLayout { showingSource ? .source : mode.layout }
 
     init(
         session: FileEditorSession, documentKey: String, text: String, filename: String, active: Bool = true,
-        revealID: UUID? = nil
+        revealID: UUID? = nil, requestedLine: Int? = nil
     ) {
         self.session = session
         self.documentKey = documentKey
@@ -45,21 +46,27 @@ struct MarkdownFileEditor: View {
         self.filename = filename
         self.active = active
         self.revealID = revealID
+        self.requestedLine = requestedLine
     }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                DieterSegmentedPicker(
-                    title: "Markdown mode", selection: $mode, options: MarkdownFileEditorMode.allCases,
-                    fillsWidth: true
-                ) { option in
-                    Label(option.title, systemImage: option.symbol)
+                if session.usesLargeDocumentMode {
+                    Text("Large document • Source editing keeps this file responsive.")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    DieterSegmentedPicker(
+                        title: "Markdown mode", selection: $mode, options: MarkdownFileEditorMode.allCases,
+                        fillsWidth: true
+                    ) { option in
+                        Label(option.title, systemImage: option.symbol)
+                    }
+                    .frame(width: MarkdownFileEditorMode.pickerWidth)
+                    .accessibilityIdentifier("files.markdown.layout")
+                    .e2eTarget("files.markdown.layout")
+                    .e2eTarget("files.markdown.layout.\(documentKey)")
                 }
-                .frame(width: MarkdownFileEditorMode.pickerWidth)
-                .accessibilityIdentifier("files.markdown.layout")
-                .e2eTarget("files.markdown.layout")
-                .e2eTarget("files.markdown.layout.\(documentKey)")
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 12)
@@ -81,25 +88,27 @@ struct MarkdownFileEditor: View {
 
     private var sourcePane: some View {
         VStack(spacing: 0) {
-            if sourceActivated {
+            if sourceActivated || session.usesLargeDocumentMode {
                 SyntaxHighlightedEditor(
                     session: session, documentKey: documentKey, text: text, filename: filename,
-                    active: showingSource && active
+                    active: showingSource && active, requestedLine: requestedLine, revealID: revealID
                 )
-                .accessibilityIdentifier("files.editor")
-                .e2eTarget("files.markdown.source")
+                .accessibilityIdentifier(session.usesLargeDocumentMode ? "files.markdown.large-source" : "files.editor")
+                .e2eTarget(session.usesLargeDocumentMode ? "files.markdown.large-source" : "files.markdown.source")
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var richTextPane: some View {
-        NativeMarkdownEditor(
-            session: session, documentKey: documentKey, active: editing && active,
-            scrollCoordinator: scrollCoordinator
-        )
-        .allowsHitTesting(editing)
-        .accessibilityHidden(!editing)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    @ViewBuilder private var richTextPane: some View {
+        if !session.usesLargeDocumentMode {
+            NativeMarkdownEditor(
+                session: session, documentKey: documentKey, active: editing && active,
+                scrollCoordinator: scrollCoordinator
+            )
+            .allowsHitTesting(editing)
+            .accessibilityHidden(!editing)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
 }

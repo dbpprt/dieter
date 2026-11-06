@@ -1,0 +1,8 @@
+source: configure 2.31s, build 10.25s
+A in-tree build dir in clone: rc=0; view binary prints: source\n; source binary prints: source\n; source build/relo mtime changed: no
+   CMake Error: The current CMakeCache.txt directory /Volumes/External/dieter-spike/pathrelo/cm/viewA/build/CMakeCache.txt is different than the directory /Volumes/External/dieter-spike/pathrelo/cm/src/build where CMakeCache.txt was created. This may result in binaries being created in the wrong place. If you are not sure, reedit the CMakeCache.txt
+   CMakeCache lines naming source path: 4
+B fresh build dir in view: configure 1.56s, build 3.38s, prints viewA\n
+C rewrite: 80 files in 2.33s
+C build after rewrite, no edit: rc=0 compiled=0 relinked=0 reconfigured=0
+C after editing 2 files: rc=0 compiled=2; view prints: viewC\n; source prints: source\n

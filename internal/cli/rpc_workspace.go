@@ -12,7 +12,7 @@ const workspaceHelp = `Usage: dieter workspace <action>
 
 Actions:
   show CARD                 Provision and show a conversation workspace
-  list [--project PROJECT]  List durable project workspaces
+  list --project PROJECT    List durable project workspaces
   changes [target]          Show local changes for a worktree card or project
   diff [target]             Read a staged, unstaged, or combined file diff
   comments CARD             List changeset review comments
@@ -23,13 +23,12 @@ Actions:
   run --kind KIND [target]  Start a serialized durable Git operation
   cancel OPERATION          Request cancellation of an operation
 
-Project targets support stage, unstage, discard_changes, commit, update,
-validate, and push.
-Worktree cards additionally support update, continue_conflict, abort_conflict,
-validate, merge_local, push, cleanup, discard, adopt, create_pr, refresh_pr,
-and merge_pr. Commit uses the staged index; pass --param stage_all=true only
-when explicitly committing every local change. Repeat --param KEY=VALUE for
-kind-specific parameters.
+A target is --project PROJECT or a CARD. Run kinds for a project: stage,
+unstage, discard_changes, commit, update, validate and push. A worktree card
+also supports continue_conflict, abort_conflict, merge_local, cleanup, discard,
+adopt, create_pr, refresh_pr and merge_pr. Commit uses the staged index; pass
+--param stage_all=true only when explicitly committing every local change.
+Repeat --param KEY=VALUE for kind-specific parameters.
 `
 
 func (c *CLI) rpcWorkspace(args []string) error {

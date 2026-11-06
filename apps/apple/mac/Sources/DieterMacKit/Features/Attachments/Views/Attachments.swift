@@ -187,6 +187,9 @@ struct AttachmentPreviewTile: View {
     private static let tileHeight: CGFloat = 68
 
     var body: some View {
+        // Looking the image up hashes an unrevisioned payload, up to the
+        // attachment limit; do it once per evaluation.
+        let thumbnail = self.thumbnail
         Group {
             if let thumbnail { imageTile(thumbnail) } else { fileTile }
         }

@@ -13,12 +13,12 @@ import (
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/platform/fault"
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 func (api *filesAPI) ListFiles(ctx context.Context, request *dieterv1.ListFilesRequest) (*dieterv1.FileList, error) {
-	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
+	ctx = kanban.WithCheckout(ctx, request.GetCheckoutId())
 	api.server.filesMu.RLock()
 	defer api.server.filesMu.RUnlock()
 	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())
@@ -73,7 +73,7 @@ func (api *filesAPI) ListFiles(ctx context.Context, request *dieterv1.ListFilesR
 }
 
 func (api *filesAPI) ReadFile(ctx context.Context, request *dieterv1.ReadFileRequest) (*dieterv1.FileDocument, error) {
-	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
+	ctx = kanban.WithCheckout(ctx, request.GetCheckoutId())
 	api.server.filesMu.RLock()
 	defer api.server.filesMu.RUnlock()
 	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())
@@ -114,7 +114,7 @@ func (api *filesAPI) ReadFile(ctx context.Context, request *dieterv1.ReadFileReq
 }
 
 func (api *filesAPI) SaveFile(ctx context.Context, request *dieterv1.SaveFileRequest) (*dieterv1.FileDocument, error) {
-	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
+	ctx = kanban.WithCheckout(ctx, request.GetCheckoutId())
 	api.server.filesMu.Lock()
 	defer api.server.filesMu.Unlock()
 	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())
@@ -162,7 +162,7 @@ func (api *filesAPI) SaveFile(ctx context.Context, request *dieterv1.SaveFileReq
 }
 
 func (api *filesAPI) CreateFile(ctx context.Context, request *dieterv1.CreateFileRequest) (*dieterv1.FileEntry, error) {
-	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
+	ctx = kanban.WithCheckout(ctx, request.GetCheckoutId())
 	api.server.filesMu.Lock()
 	defer api.server.filesMu.Unlock()
 	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())
@@ -198,7 +198,7 @@ func (api *filesAPI) CreateFile(ctx context.Context, request *dieterv1.CreateFil
 }
 
 func (api *filesAPI) MoveFile(ctx context.Context, request *dieterv1.MoveFileRequest) (*dieterv1.MoveFileResponse, error) {
-	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
+	ctx = kanban.WithCheckout(ctx, request.GetCheckoutId())
 	api.server.filesMu.Lock()
 	defer api.server.filesMu.Unlock()
 	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())
@@ -236,7 +236,7 @@ func (api *filesAPI) MoveFile(ctx context.Context, request *dieterv1.MoveFileReq
 }
 
 func (api *filesAPI) DeleteFile(ctx context.Context, request *dieterv1.DeleteFileRequest) (*emptypb.Empty, error) {
-	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
+	ctx = kanban.WithCheckout(ctx, request.GetCheckoutId())
 	api.server.filesMu.Lock()
 	defer api.server.filesMu.Unlock()
 	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())

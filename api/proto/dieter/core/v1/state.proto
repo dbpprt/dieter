@@ -79,3 +79,19 @@ message CreationPreferences {
   // Project ID → the checkout last chosen in it.
   map<string, string> checkouts = 9;
 }
+
+// Mail bodies kept on this device, least recently used first. Each body is a
+// file of its own; an entry whose digest no longer matches its header is
+// stale.
+message MailBodyIndex {
+  repeated MailBodyEntry entries = 1;
+}
+
+message MailBodyEntry {
+  // The machine that holds the message.
+  string daemon_id = 1;
+  string id = 2;
+  string body_digest = 3;
+  int64 bytes = 4;
+  string name = 5;
+}

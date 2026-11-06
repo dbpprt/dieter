@@ -10,6 +10,7 @@ struct InboxFeed: View {
     @State private var hours = 1
     @State private var visibleLimit = 20
     @State private var newTaskPresented = false
+    @State private var rulesPresented = false
 
     var body: some View {
         let entries = store.inboxEntries
@@ -32,23 +33,28 @@ struct InboxFeed: View {
                         if filtered.isEmpty {
                             emptyState(filtered: !query.isEmpty || !selectedProject.isEmpty)
                         } else {
+                            section("Pinned", id: "pinned", entries: filtered.filter { $0.row.pinned })
                             section(
-                                "Running", id: "running", entries: filtered.filter { $0.section == .running }, now: now)
+                                "Running", id: "running",
+                                entries: filtered.filter { $0.section == .running && !$0.row.pinned })
                             section(
                                 "Needs attention", id: "needs-you",
-                                entries: filtered.filter { $0.section == .attention },
-                                now: now)
+                                entries: filtered.filter { $0.section == .attention && !$0.row.pinned })
                             section(
-                                "Recent", id: "recent", entries: filtered.filter { $0.section == .recent }, now: now)
+                                "Recent", id: "recent",
+                                entries: filtered.filter { $0.section == .recent && !$0.row.pinned })
                         }
                     }
                     .padding(.leading, 14).padding(.trailing, 6).padding(.vertical, 6)
                 }
+                // Each tick reaches only the rows' ages, not the rows.
+                .environment(\.inboxNow, now)
                 .accessibilityIdentifier("inbox.feed").e2eTarget("inbox.feed")
             }
         }
         .foregroundStyle(DieterTheme.text)
         .ignoresSafeArea(.container, edges: .top)
+        .sheet(isPresented: $rulesPresented) { InboxRulesSheet().environment(store) }
         .onChange(of: query) { _, _ in visibleLimit = 20 }
         .onChange(of: projectID) { _, _ in visibleLimit = 20 }
         .onChange(of: hours) { _, _ in visibleLimit = 20 }
@@ -59,10 +65,12 @@ struct InboxFeed: View {
 
     private func filteredEntries(_ entries: [InboxActivityEntry], projectID: String) -> [InboxActivityEntry] {
         entries.filter { entry in
+            // The core's rule matches every row for a blank query.
             (projectID.isEmpty || entry.row.card.projectID == projectID)
-                && SharedRules.shared.activityMatches(
-                    query: query, title: entry.row.card.title, projectName: entry.row.projectName,
-                    boardName: entry.row.boardName)
+                && (query.isEmpty
+                    || SharedRules.shared.activityMatches(
+                        query: query, title: entry.row.card.title, projectName: entry.row.projectName,
+                        boardName: entry.row.boardName))
         }
     }
 
@@ -154,6 +162,32 @@ struct InboxFeed: View {
                     .dieterMenuChrome()
                     .accessibilityLabel("Filter by project")
                     .accessibilityIdentifier("inbox.project-filter").e2eTarget("inbox.project-filter")
+                    Button {
+                        rulesPresented = true
+                    } label: {
+                        Image(
+                            systemName: store.navigation.inboxRules.contains(where: \.enabled)
+                                ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle"
+                        )
+                        .font(.system(size: 14))
+                        .foregroundStyle(DieterTheme.subtle)
+                        .frame(width: 30, height: 30)
+                        .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Inbox rules: show or hide projects and labels")
+                    .accessibilityLabel("Inbox rules")
+                    .accessibilityIdentifier("inbox.rules").e2eTarget("inbox.rules")
+                }
+                if store.activity.summary.hidden > 0 {
+                    Button {
+                        rulesPresented = true
+                    } label: {
+                        Text("\(store.activity.summary.hidden) hidden by Inbox rules")
+                            .font(DieterFont.meta).foregroundStyle(DieterTheme.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("inbox.hidden")
                 }
             }
             .padding(.leading, 14).padding(.trailing, 6)
@@ -205,21 +239,27 @@ struct InboxFeed: View {
     }
 
     @ViewBuilder
-    private func section(_ title: String, id: String, entries: [InboxActivityEntry], now: Date) -> some View {
-        if !entries.isEmpty {
-            HStack {
-                Text(title).font(.system(size: 11.5, weight: .semibold))
-                Spacer()
-                Text("\(entries.count)").font(DieterFont.monoSmall)
-            }
-            .foregroundStyle(DieterTheme.tertiary).padding(.horizontal, 4).padding(.top, 12).padding(.bottom, 2)
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("inbox.section.\(id)").e2eTarget("inbox.section.\(id)")
-            ForEach(entries.prefix(visibleLimit)) { entry in
-                InboxActivityRow(entry: entry, now: now, onOpen: onOpen)
+    private func section(_ title: String, id: String, entries: [InboxActivityEntry]) -> some View {
+        Section {
+            ForEach(entries.prefix(visibleLimit), id: \.rowIdentity) { entry in
+                InboxActivityRow(entry: entry, onOpen: onOpen).equatable()
             }
             if entries.count > visibleLimit { showMore }
+        } header: {
+            if !entries.isEmpty {
+                HStack {
+                    Text(title).font(.system(size: 11.5, weight: .semibold))
+                    Spacer()
+                    Text("\(entries.count)").font(DieterFont.monoSmall)
+                }
+                .foregroundStyle(DieterTheme.tertiary).padding(.horizontal, 4).padding(.top, 12).padding(.bottom, 2)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("inbox.section.\(id)").e2eTarget("inbox.section.\(id)")
+            }
         }
+        // Scope the lazy container's identity, including its header and rows. A row
+        // moving sections must not retain the old section's rendered content.
+        .id(id)
     }
 
     private var showMore: some View {
@@ -249,23 +289,27 @@ struct InboxFeed: View {
 
 }
 
-private struct InboxActivityRow: View {
+/// A row redraws when its entry changes. Selection, the clock, and what the
+/// Finish action needs are read by small parts of it.
+private struct InboxActivityRow: View, Equatable {
     @Environment(DieterStore.self) private var store
     let entry: InboxActivityEntry
-    let now: Date
+    /// Always opens the entry, so rows compare by their entries.
     let onOpen: (InboxActivityEntry) -> Void
     @State private var renamePresented = false
     @State private var editPresented = false
     @State private var renameText = ""
 
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool { lhs.entry == rhs.entry }
+
     var body: some View {
         if entry.row.chat {
             row.modifier(ChatContextMenu(card: entry.row.card))
         } else {
-            let board = store.board(id: entry.row.card.boardID)
+            // The card's flags are read by its menu, when the menu is built.
             row.modifier(
                 BoardCardContextMenu(
-                    card: entry.row.card, currentBoard: board, flags: store.cardFlags(entry.row.card, board: board),
+                    card: entry.row.card, currentBoard: store.board(id: entry.row.card.boardID), flags: nil,
                     open: { onOpen(entry) },
                     renamePresented: $renamePresented, editPresented: $editPresented, renameText: $renameText
                 )
@@ -274,7 +318,6 @@ private struct InboxActivityRow: View {
     }
 
     private var row: some View {
-        let selected = (store.selectedCardID ?? store.selectedChatID) == entry.id
         let accent = inboxAccent(entry.kind)
         return ZStack(alignment: .bottomTrailing) {
             Button {
@@ -285,6 +328,7 @@ private struct InboxActivityRow: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(entry.row.title)
                             .e2eTarget("inbox.title.\(entry.id).\(entry.row.title)")
+                            .padding(.trailing, 22)
                             .font(.system(size: 13, weight: .semibold)).lineLimit(2)
                             .foregroundStyle(DieterTheme.text)
                             .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
@@ -300,14 +344,18 @@ private struct InboxActivityRow: View {
                                 .font(.system(size: 10)).foregroundStyle(DieterTheme.amber).lineLimit(1)
                         }
                         HStack(spacing: 5) {
+                            if entry.row.pinned {
+                                Image(systemName: "pin.fill").font(.system(size: 9))
+                                    .accessibilityLabel("Pinned in inbox")
+                            }
                             Image(systemName: statusSymbol(entry.kind)).font(.system(size: 9, weight: .semibold))
                             Text(entry.row.kindLabel).font(.system(size: 10, weight: .medium))
+                                .e2eTarget(
+                                    "inbox.status.\(entry.id).\(entry.row.kind)",
+                                    text: "\(entry.row.title) · \(entry.row.kindLabel)")
                             Spacer(minLength: 4)
-                            Text(
-                                SharedRules.shared.activityAge(
-                                    atMillis: entry.row.shownAtMillis, nowMillis: now.epochMillis, suffix: false)
-                            )
-                            .font(.system(size: 9, design: .monospaced)).foregroundStyle(DieterTheme.tertiary)
+                            InboxActivityAge(atMillis: entry.row.shownAtMillis)
+                                .font(.system(size: 9, design: .monospaced)).foregroundStyle(DieterTheme.tertiary)
                             if entry.canFinish { Color.clear.frame(width: 62, height: 20) }
                         }
                         .foregroundStyle(accent)
@@ -316,29 +364,30 @@ private struct InboxActivityRow: View {
                 }
                 .padding(10)
                 .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
-                .dieterTile(selected ? .selected : .rest)
+                .modifier(InboxRowSelection(entryID: entry.id, tile: true))
                 .contentShape(RoundedRectangle(cornerRadius: DieterMetrics.cardRadius))
             }
             .buttonStyle(.plain)
             .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(selected ? .isSelected : [])
+            .modifier(InboxRowSelection(entryID: entry.id, tile: false))
             .accessibilityIdentifier("inbox.row.\(entry.id)").e2eTarget("inbox.row.\(entry.id)")
             if entry.canFinish {
-                Button {
-                    Task { await store.finish(entry.row.card) }
-                } label: {
-                    Label("Finish", systemImage: "checkmark")
-                        .font(.system(size: 10, weight: .semibold))
-                        .padding(.horizontal, 8).frame(height: 22)
-                        .foregroundStyle(DieterTheme.text)
-                        .dieterCapsuleChrome()
-                }
-                .buttonStyle(.plain)
-                .disabled(store.movingCardIDs.contains(entry.id) || !store.projectIsAvailable(entry.row.card.projectID))
-                .accessibilityLabel("Finish \(entry.row.title)")
-                .accessibilityIdentifier("inbox.finish.\(entry.id)").e2eTarget("inbox.finish.\(entry.id)")
-                .padding(10)
+                InboxFinishButton(entry: entry)
             }
+        }
+        .overlay(alignment: .topTrailing) {
+            Button {
+                store.setInboxCardPinned(entry.id, pinned: !entry.row.pinned)
+            } label: {
+                Image(systemName: entry.row.pinned ? "pin.fill" : "pin")
+                    .font(.system(size: 11))
+            }
+            .buttonStyle(.plain)
+            .help(entry.row.pinned ? "Unpin from inbox" : "Pin in inbox")
+            .accessibilityLabel(entry.row.pinned ? "Unpin from inbox" : "Pin in inbox")
+            .accessibilityIdentifier("inbox.pin.\(entry.id)")
+            .e2eTarget("inbox.pin.\(entry.id)", text: entry.row.pinned ? "Unpin from inbox" : "Pin in inbox")
+            .padding(10)
         }
         .accessibilityElement(children: .contain)
     }
@@ -347,6 +396,68 @@ private struct InboxActivityRow: View {
         let chat = entry.row.chat
         return [entry.row.projectName, chat ? "" : entry.row.boardName, chat ? "Chat" : "Card"]
             .filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+}
+
+/// The feed's clock: live time, or the last sync while the workspace is cached.
+private struct InboxNowKey: EnvironmentKey {
+    static let defaultValue = Date.distantPast
+}
+
+extension EnvironmentValues {
+    fileprivate var inboxNow: Date {
+        get { self[InboxNowKey.self] }
+        set { self[InboxNowKey.self] = newValue }
+    }
+}
+
+/// How long ago a row's activity was, by the feed's clock.
+private struct InboxActivityAge: View {
+    @Environment(\.inboxNow) private var now
+    let atMillis: Int64
+
+    var body: some View {
+        Text(SharedRules.shared.activityAge(atMillis: atMillis, nowMillis: now.epochMillis, suffix: false))
+    }
+}
+
+/// A selected row's tile, or its selected trait.
+private struct InboxRowSelection: ViewModifier {
+    @Environment(DieterStore.self) private var store
+    let entryID: String
+    /// The tile, else the accessibility trait.
+    let tile: Bool
+
+    func body(content: Content) -> some View {
+        let selected = (store.selectedCardID ?? store.selectedChatID) == entryID
+        if tile {
+            content.dieterTile(selected ? .selected : .rest)
+        } else {
+            content.accessibilityAddTraits(selected ? .isSelected : [])
+        }
+    }
+}
+
+/// Moves a reviewable card to Done while a machine that hosts its project can take it.
+private struct InboxFinishButton: View {
+    @Environment(DieterStore.self) private var store
+    let entry: InboxActivityEntry
+
+    var body: some View {
+        Button {
+            Task { await store.finish(entry.row.card) }
+        } label: {
+            Label("Finish", systemImage: "checkmark")
+                .font(.system(size: 10, weight: .semibold))
+                .padding(.horizontal, 8).frame(height: 22)
+                .foregroundStyle(DieterTheme.text)
+                .dieterCapsuleChrome()
+        }
+        .buttonStyle(.plain)
+        .disabled(store.movingCardIDs.contains(entry.id) || !store.projectIsAvailable(entry.row.card.projectID))
+        .accessibilityLabel("Finish \(entry.row.title)")
+        .accessibilityIdentifier("inbox.finish.\(entry.id)").e2eTarget("inbox.finish.\(entry.id)")
+        .padding(10)
     }
 }
 

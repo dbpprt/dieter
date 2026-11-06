@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/home"
 )
 
 // The heartbeat watchdog detects a silent worker. It must not blame the worker
@@ -40,7 +40,7 @@ const storeBusyWriteAttempts = 6
 func retryWhileStoreBusy(ctx context.Context, write func() error) error {
 	for attempt := 1; ; attempt++ {
 		err := write()
-		if !errors.Is(err, store.ErrWriterBusy) || attempt >= storeBusyWriteAttempts || ctx.Err() != nil {
+		if !errors.Is(err, home.ErrWriterBusy) || attempt >= storeBusyWriteAttempts || ctx.Err() != nil {
 			return err
 		}
 		slog.Warn("retrying agent turn write while storage is busy", "attempt", attempt)

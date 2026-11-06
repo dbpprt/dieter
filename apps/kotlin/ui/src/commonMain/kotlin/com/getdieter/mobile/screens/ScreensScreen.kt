@@ -4,8 +4,6 @@ package com.getdieter.mobile.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -372,41 +370,5 @@ private fun ScreenTool(
             tint = if (enabled) Color.White else Color(0x66FFFFFF),
             size = 20.dp,
         )
-    }
-}
-
-@Composable
-internal fun ScreensScreen(store: MobileStore) {
-    val session by store.session.slice.collectAsState()
-    Screen(ScreenChrome("Screens", subtitle = "View and control a machine’s display")) {
-        LazyColumn(
-            Modifier.fillMaxSize().testTag("screens-list"),
-            state = listState,
-            contentPadding = padding,
-        ) {
-            item { Spacer(Modifier.height(8.dp)) }
-            if (session.machines.isEmpty())
-                item {
-                    EmptyState(
-                        Glyph.SCREENS,
-                        "No machines",
-                        "Enrolled machines that share their screen appear here.",
-                        Modifier.padding(top = 40.dp),
-                    )
-                }
-            itemsIndexed(session.machines, key = { _, machine -> machine.id }) { index, machine ->
-                ListRow(
-                    machine.display_name,
-                    Modifier.testTag("screen-${machine.id}"),
-                    position = Position.of(index, session.machines.size),
-                    subtitle = machine.screen_status.ifEmpty { machine.remote_desktop_reason },
-                    glyph = Glyph.SCREENS,
-                    tile = if (machine.can_share_screen) Color(0xFF5E5CE6) else Color(0xFF8E8E93),
-                    accessory = Accessory.CHEVRON,
-                    enabled = machine.can_share_screen,
-                    onClick = { store.push(MobileRoute.ScreenSession(machine.id)) },
-                )
-            }
-        }
     }
 }

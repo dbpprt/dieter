@@ -8,6 +8,7 @@ completeness. Rules belong in the Kotlin core and its unit tests, not here.
 tests/maestro/
   mobile/         Android and iOS run the same flows (one Compose UI)
     common/       subflows, never run on their own
+  desktop/        Android's desktop shell (DeX, desktop windowing)
   mac/            Maestro syntax interpreted in-app on the Mac
 ```
 
@@ -23,6 +24,7 @@ mise exec -- just e2e ios
 mise exec -- just e2e mac
 mise exec -- just e2e ios tags:full profile:ios-ipad
 mise exec -- just e2e android profile:android-emulator flows:task
+mise exec -- just e2e android profile:android-emulator desktop:true
 ```
 
 Each run builds the app it tests, starts one isolated gateway fixture
@@ -30,18 +32,30 @@ Each run builds the app it tests, starts one isolated gateway fixture
 application (`com.getdieter.android.e2e`, `com.getdieter.ios.e2e`), and runs
 the selected flows. Evidence, `results.json`,
 Maestro's `junit.xml` and its screenshots are in
-`tmp/app-pipelines/<run>/`. The fixture token is redacted from Maestro's
+`tmp/pipeline/<run>/`. The fixture token is redacted from Maestro's
 evidence.
 
 - **Android** borrows the warm emulator if one runs (see `AGENTS.md`), never a
   phone unless a profile names its exact serial. The fixture is reachable
   through an owned `adb reverse` port.
+- **Android desktop** (`desktop:true`) runs `desktop/` with the app forced
+  into the desktop shell (`interface: desktop`). An emulator becomes a
+  1920 × 1080 dp display (`wm size`/`wm density`) for the run and is reset
+  afterwards; a device already in DeX keeps its own display. The shell's
+  keyboard shortcuts, pane layout and rendering are also covered offscreen by
+  the `:ui:jvmTest` desktop UI tests, which write screenshots to
+  `apps/kotlin/ui/build/desktop-screenshots/`.
 - **iOS** creates, boots and deletes its own simulator for every run. The boot
   overlaps the build.
 - **macOS** needs the logged-in desktop and refuses while any `DieterMac` runs.
   Maestro has no macOS driver, so the pipeline converts each flow to a JSON
   plan and the debug app (`DIETER_E2E`) runs it with
-  `--e2e-flow PLAN --e2e-output DIR`.
+  `--e2e-flow PLAN --e2e-output DIR`. Add `screenshots:compositor` to capture
+  the actual window, including layer-backed SwiftUI/native content, instead of
+  the default in-process view capture. It requires Screen Recording permission
+  and fails if capture is unavailable; visual qualification must open these PNGs.
+  The in-process capture can omit composited layers and is insufficient for Mail
+  transparency/selection verification.
 
 The run installs the pinned, checksum-verified Maestro CLI. Use that same
 binary for `maestro studio` or `maestro hierarchy` while writing a flow.
@@ -50,6 +64,8 @@ binary for `maestro studio` or `maestro hierarchy` while writing a flow.
 
 - Select by the shared Compose `testTag`s (`id:`), which Android exposes as
   resource ids in debug builds. Use text only for tabs and seeded content.
+  Open Channels, Terminals, a machine or an account page through
+  `common/more.yaml` (`PLACE: settings`), which works on every layout.
 - `id:` and `text:` are regular expressions matched against the whole value.
   iOS uses the system back button: tap `id: "chrome-back|BackButton"`.
 - Every tap costs about 1–3 s on Android, and typing costs time per character.
@@ -63,5 +79,5 @@ binary for `maestro studio` or `maestro hierarchy` while writing a flow.
 
 The Mac interpreter supports `launchApp`, `tapOn`, `assertVisible`,
 `assertNotVisible`, `inputText`, `extendedWaitUntil`, `takeScreenshot` and
-`pressKey`. Any other command fails the flow, and `just check-changed` lints
+`pressKey` and `scroll` (a downward wheel event at the window center). Any other command fails the flow, and `just check-changed` lints
 every flow without a device.

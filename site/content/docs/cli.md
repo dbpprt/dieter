@@ -35,8 +35,11 @@ dieter --machine MACHINE_ID status
 dieter --machine MACHINE_ID project list --format jsonl
 ```
 
-Remote authentication uses the local daemon enrollment, not a second CLI login.
-Verified direct TLS is preferred, followed by supported WebRTC and gateway relay.
+Remote authentication uses the local machine's enrollment key, which is also its
+key in the account's [trusted devices](/docs/machines/#trusted-devices); there is
+no second CLI login. Both machines must be trusted. Verified direct TLS is
+preferred, followed by supported WebRTC and the gateway relay; every route is
+end-to-end encrypted between the two machines.
 `--checkout` chooses among checkouts on the selected machine, not a different host.
 Quota commands are account-wide and reject `--machine`.
 
@@ -45,6 +48,7 @@ Quota commands are account-wide and reject `--machine`.
 | Group                                   | Use it for                                                                                             |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `setup`, `doctor`, `daemon`             | Enrollment, prerequisites, permissions, service state, logs, and Linux user units                      |
+| `device`                                | Trusted devices: pairing approvals, removal, roster history, sync and recovery                         |
 | `machine`                               | Directory, routes, live telemetry, contract/release versions, updates, power, and connection signaling |
 | `harness`, `quota`                      | Host model catalogs and account quota windows                                                          |
 | `project`, `board`                      | Shared project identities, local checkouts, board settings, labels, host mappings, retention           |
@@ -58,6 +62,7 @@ Quota commands are account-wide and reject `--machine`.
 | `settings`, `prompt`                    | Portable settings and scoped prompt configuration                                                      |
 | `peer`, `kv`                            | Peer synchronization, portable records, revisions, ordering, and subscriptions                         |
 | `vault`                                 | End-to-end encrypted logins and TOTP, machine membership, agent use, and the access audit              |
+| `channel`                               | Agent channels (experimental): messages, file claims and decisions between agents on a project         |
 | `watch`, `status`, `storage`, `version` | Bounded observation, counts, paths, and build identity                                                 |
 
 ## Common recipes
@@ -75,6 +80,22 @@ dieter daemon logs --follow
 Setup defaults to `https://gateway.getdieter.com`; for self-hosting, pass
 `--gateway https://YOUR-GATEWAY`. Run `daemon start` or `serve` for foreground
 operation only when a daemon is not already running.
+
+### Pair and manage devices
+
+```sh
+dieter device status                  # trust state, the pairing code while PENDING, all devices
+dieter device requests                # devices waiting to join, by name only
+dieter device approve CODE            # approve the new device that shows CODE
+dieter device revoke DEVICE_ID        # remove a device
+dieter device roster                  # signed history of additions and removals
+```
+
+Type only a code you see on your own new device. `dieter device init` starts
+the roster on the account's first machine and prints a recovery key once;
+`dieter device recover --recovery-key -` adds a machine back with it. Both run
+only on the machine itself, and agent turns cannot change device trust. See
+[trusted devices](/docs/machines/#trusted-devices).
 
 ### Create and follow a task
 
@@ -147,6 +168,30 @@ dieter quota watch --count 3
 
 Continue paginated schedule output with its opaque `--page-token`. Each quota
 account/window remains separate; provider summaries never combine allowances.
+
+## How agents use the CLI
+
+Every agent turn starts with short instructions that name its card or chat and
+the daemon's own `dieter` binary by absolute path, so an older `dieter` earlier
+on a login shell's `PATH` cannot shadow it. They give the few commands a card
+needs (re-read the task, move the card when it is done, create a follow-up card
+when asked, set labels) and point the agent at `dieter --help` for everything
+else. Every harness gets the same instructions. The presentation and background
+process tools come with their own instructions and CLI equivalents.
+
+See exactly what a conversation receives, or replace the defaults:
+
+```sh
+dieter prompt preview --card CARD_ID
+dieter prompt show
+dieter prompt update --board-skill-file board-instructions.md
+dieter prompt update --reset board-skill
+```
+
+`dieter prompt show` lists the template variables, such as `{{card.id}}`,
+`{{board.target_lane}}` and `{{dieter.cli}}` (the daemon's binary). Templates
+you have not changed, or have reset, follow the defaults of the installed
+release.
 
 ## Automation rules
 

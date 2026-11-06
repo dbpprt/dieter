@@ -47,11 +47,17 @@ struct WorkspaceEmptyRow: View {
     }
 }
 
-struct WorkspaceFileRow: View {
+/// Equatable over what it shows: its action opens `file`, so equal rows act
+/// alike and an unrelated update of the list re-renders none of them.
+struct WorkspaceFileRow: View, Equatable {
     let file: Dieter_V1_ChangedFile
     let selected: Bool
     var viewed = false
     let action: () -> Void
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.file == rhs.file && lhs.selected == rhs.selected && lhs.viewed == rhs.viewed
+    }
 
     private var tint: Color {
         if file.conflicted { return DieterTheme.coral }
@@ -181,83 +187,6 @@ struct PullRequestSignalLabel: View {
     }
 
     private var color: Color { WorkspaceToneStyle.color(signal.tone) }
-}
-
-struct WorkspaceDiffLineRow: View {
-    let line: UnifiedDiffLine
-    let comments: [Dieter_V1_ChangeComment]
-    let canComment: Bool
-    let minimumWidth: CGFloat
-    let addComment: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 0) {
-                lineNumber(line.oldLine).frame(width: 42, alignment: .trailing)
-                lineNumber(line.newLine).frame(width: 42, alignment: .trailing)
-                Group {
-                    if canComment {
-                        Button(action: addComment) {
-                            Image(systemName: "plus").font(.system(size: 8, weight: .bold)).frame(width: 22, height: 20)
-                        }
-                        .buttonStyle(.plain).foregroundStyle(DieterTheme.shell).opacity(
-                            hovering || !comments.isEmpty ? 1 : 0)
-                    } else {
-                        Text(line.kind == .addition ? "+" : line.kind == .deletion ? "−" : " ")
-                            .frame(width: 22, height: 23)
-                    }
-                }
-                Text(codeText).textSelection(.enabled).fixedSize(horizontal: true, vertical: false)
-                    .padding(.leading, 5).padding(.trailing, 12)
-            }
-            .font(.system(size: 12, design: .monospaced)).foregroundStyle(foreground)
-            .frame(minWidth: minimumWidth, minHeight: 23, alignment: .topLeading)
-            .background(background)
-            ForEach(comments, id: \.id) { comment in
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "text.bubble.fill").foregroundStyle(DieterTheme.shell)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(comment.body).font(.system(size: 11)).textSelection(.enabled)
-                        Text(comment.author.isEmpty ? comment.createdAt : "\(comment.author) · \(comment.createdAt)")
-                            .font(.system(size: 9)).foregroundStyle(DieterTheme.tertiary)
-                    }
-                }
-                .padding(9).padding(.leading, 88).frame(minWidth: minimumWidth, alignment: .leading).background(
-                    DieterTheme.raised)
-            }
-        }
-        .onHover { hovering = $0 }
-    }
-
-    private func lineNumber(_ value: Int?) -> some View {
-        Text(value.map(String.init) ?? "").foregroundStyle(DieterTheme.tertiary)
-            .padding(.trailing, 7).frame(maxHeight: .infinity).background(DieterTheme.sidebar.opacity(0.72))
-    }
-
-    private var codeText: String {
-        let text = canComment || line.kind == .header || line.kind == .hunk ? line.text : String(line.text.dropFirst())
-        return text.isEmpty ? " " : text.replacingOccurrences(of: "\t", with: "    ")
-    }
-
-    private var background: Color {
-        switch line.kind {
-        case .addition: DieterTheme.diffAddition.opacity(0.14)
-        case .deletion: DieterTheme.coral.opacity(0.14)
-        case .hunk: DieterTheme.selection
-        case .header: DieterTheme.sidebar
-        case .context: .clear
-        }
-    }
-
-    private var foreground: Color {
-        switch line.kind {
-        case .addition: DieterTheme.diffAddition
-        case .deletion: DieterTheme.coral
-        case .header, .hunk: DieterTheme.shell
-        case .context: DieterTheme.text
-        }
-    }
 }
 
 // MARK: - Merge sheet

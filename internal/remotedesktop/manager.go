@@ -747,15 +747,7 @@ func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, o
 	if local == nil {
 		return fail(errors.New("local remote desktop description is missing"))
 	}
-	fingerprint := sdpFingerprint(local.SDP)
-	expiresAt := session.leaseExpiresAt.Format(time.RFC3339Nano)
-	bindingMessage := SessionBindingMessage(session.id, session.clientNonce, fingerprint, expiresAt, offerHash[:], session.control, session.displayID, session.protocol, session.inputEpoch)
-	signature := ed25519.Sign(manager.options.Identity.PrivateKey, bindingMessage)
-	session.emit(&dieterv1.RemoteDesktopSignal{Payload: &dieterv1.RemoteDesktopSignal_Binding{Binding: &dieterv1.RemoteDesktopSessionBinding{
-		ClientNonce: session.clientNonce, HelperDtlsFingerprint: fingerprint, ExpiresAt: expiresAt,
-		OfferSha256: offerHash[:], DaemonSignature: signature, ControlGranted: session.control,
-		DisplayId: session.displayID, InputProtocolVersion: session.protocol, InputEpoch: session.inputEpoch,
-	}}})
+	session.emit(session.binding(local.SDP, offerHash[:]))
 	session.emit(&dieterv1.RemoteDesktopSignal{Payload: &dieterv1.RemoteDesktopSignal_Description{Description: &dieterv1.RemoteDesktopSessionDescription{Type: "answer", Sdp: local.SDP}}})
 	session.emitState("connecting", "")
 	sourceAccepted = true
@@ -936,6 +928,11 @@ func (s *Session) signal(value *dieterv1.RemoteDesktopSignal) error {
 			return err
 		}
 		if local := s.pc.LocalDescription(); local != nil {
+			// A renegotiated answer carries its own binding, so the client
+			// checks the DTLS fingerprint of every answer against the daemon's
+			// roster key, whatever carried the signaling.
+			offerHash := sha256.Sum256([]byte(payload.Description.GetSdp()))
+			s.emit(s.binding(local.SDP, offerHash[:]))
 			s.emit(&dieterv1.RemoteDesktopSignal{Payload: &dieterv1.RemoteDesktopSignal_Description{Description: &dieterv1.RemoteDesktopSessionDescription{Type: "answer", Sdp: local.SDP}}})
 		}
 		return nil
@@ -1074,6 +1071,22 @@ func sdpFingerprint(sdp string) string {
 		}
 	}
 	return ""
+}
+
+// binding signs the session's DTLS fingerprint in answer, the offer it
+// answers, the lease and the grants with the daemon's identity key, the key
+// the device roster pins for this machine.
+func (s *Session) binding(answer string, offerHash []byte) *dieterv1.RemoteDesktopSignal {
+	fingerprint := sdpFingerprint(answer)
+	s.mu.Lock()
+	expiresAt, control := s.leaseExpiresAt.Format(time.RFC3339Nano), s.control
+	s.mu.Unlock()
+	message := SessionBindingMessage(s.id, s.clientNonce, fingerprint, expiresAt, offerHash, control, s.displayID, s.protocol, s.inputEpoch)
+	return &dieterv1.RemoteDesktopSignal{Payload: &dieterv1.RemoteDesktopSignal_Binding{Binding: &dieterv1.RemoteDesktopSessionBinding{
+		ClientNonce: s.clientNonce, HelperDtlsFingerprint: fingerprint, ExpiresAt: expiresAt,
+		OfferSha256: append([]byte(nil), offerHash...), DaemonSignature: ed25519.Sign(s.manager.options.Identity.PrivateKey, message), ControlGranted: control,
+		DisplayId: s.displayID, InputProtocolVersion: s.protocol, InputEpoch: s.inputEpoch,
+	}}}
 }
 
 func SessionBindingMessage(sessionID, nonce, fingerprint, expiresAt string, offerHash []byte, control bool, displayID string, protocolVersion uint32, inputEpoch []byte) []byte {

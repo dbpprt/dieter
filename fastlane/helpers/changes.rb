@@ -30,7 +30,7 @@ module Dieter
     NATIVE = {
       "apple" => ["just pipeline mac e2e"],
       "ios" => ["just pipeline ios e2e"],
-      "android" => ["just pipeline android e2e"],
+      "android" => ["just pipeline android e2e", "just pipeline android e2e desktop:true"],
       "deploy-gateway" => ["python3 deploy/gateway/tests/integration.py"]
     }.freeze
 

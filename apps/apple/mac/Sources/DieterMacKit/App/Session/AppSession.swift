@@ -45,12 +45,22 @@ final class AppSession {
     var machineEntries: [String: ClientMachineEntry] = [:] {
         didSet { if machineEntries != oldValue { refreshLiveFlags() } }
     }
+    /// The machines that are this Mac, by daemon ID; views that ask whether a
+    /// machine is local observe these rather than every session change.
+    var localDaemonIDs: Set<String> = []
+    /// Another device has yet to approve this one (the session's device
+    /// trust), kept apart so the window observes only a change of it.
+    var deviceNeedsPairing = false
 
     /// Surfaces can change what lives on a machine while that machine is available.
+    /// Every workspace fold asks; only a change reaches the surfaces' views.
     func refreshLiveFlags() {
-        filesModel.isLive = filesAreLive
-        schedulesModel.isLive = schedulesAreLive
-        terminalsModel.isLive = terminalsAreLive
+        let files = filesAreLive
+        if filesModel.isLive != files { filesModel.isLive = files }
+        let schedules = schedulesAreLive
+        if schedulesModel.isLive != schedules { schedulesModel.isLive = schedules }
+        let terminals = terminalsAreLive
+        if terminalsModel.isLive != terminals { terminalsModel.isLive = terminals }
     }
     /// The gateway this Mac signs in to; its machines come with the session.
     var activeGateway: MachineEndpoint
@@ -62,8 +72,17 @@ final class AppSession {
     @ObservationIgnored let coreHost: CoreHost?
     @ObservationIgnored var coreStart: Task<Void, Never>?
     @ObservationIgnored var coreSubscriptions: [SliceSubscription] = []
+    /// The latest slices the core delivered. A burst of updates is applied
+    /// here and folded into the observed state below once (`unfoldedSlices`).
+    @ObservationIgnored var coreSession = ClientSessionSlice()
     @ObservationIgnored var coreWorkspace = ClientWorkspaceSlice()
+    @ObservationIgnored var coreOutbox = ClientOutboxSlice()
     @ObservationIgnored var coreMetadata = ClientMetadataSlice()
+    @ObservationIgnored var coreActivity = ClientActivitySlice()
+    @ObservationIgnored var coreCreation = ClientCreationSlice()
+    @ObservationIgnored var coreNavigation = ClientNavigationSlice()
+    @ObservationIgnored var coreBoard = ClientBoardSlice()
+    @ObservationIgnored var unfoldedSlices: Set<ClientSlice> = []
     var session = ClientSessionSlice()
     var outboxState = ClientOutboxSlice()
     var boardState = ClientBoardSlice()
@@ -83,8 +102,10 @@ final class AppSession {
     @ObservationIgnored var coreFoldsHeld = false {
         didSet { if oldValue, !coreFoldsHeld { releaseHeldFolds() } }
     }
-    /// A session this launch adopts from `--dieter-endpoint` and `--dieter-access-token-file`.
-    let launchSession: (gateway: MachineEndpoint, token: String)?
+    /// A session this launch adopts from `--dieter-endpoint` and
+    /// `--dieter-access-token-file`, with the isolated fixture's pairing code
+    /// from `--dieter-pairing-code-file` when given.
+    let launchSession: (gateway: MachineEndpoint, token: String, pairingCode: String)?
     @ObservationIgnored lazy var fleet = FleetModel(
         machines: { [weak self] in
             guard let self else { return [] }
@@ -116,6 +137,13 @@ final class AppSession {
     /// The selected project's conversation workspaces, as the core lists them.
     var projectWorkspaces: [ClientProjectWorkspaceRow] = []
     let schedulesModel = SchedulesModel()
+    /// Agent channels (experimental) across machines, and their settings.
+    let channelsModel = ChannelsModel()
+    /// Agent mail across machines: the mailbox, its badge and preferences.
+    let mailModel = MailModel()
+    /// Routes taps on the core's notifications; the notification center
+    /// holds its delegate weakly, so the session keeps it while the app runs.
+    @ObservationIgnored var notificationResponder: CoreNotificationResponder?
     let terminalsModel: TerminalsModel
     let screensModel: ScreensModel
     @ObservationIgnored lazy var terminalOverview = TerminalOverviewModel(
@@ -124,6 +152,8 @@ final class AppSession {
         active: { [weak self] in self?.section == .terminals && self?.terminalsModel.terminalScopeCardID == nil },
         reportError: { [weak self] in self?.errorMessage = $0 })
     let filesModel = FilesModel()
+    /// This device's trust and the account's devices.
+    let devicesModel = DevicesModel()
     let worktreeChanges = WorktreeChangesModel()
     let projectChanges = ProjectChangesModel()
     /// Counts `refreshState()` calls; navigating never makes one.
@@ -186,6 +216,21 @@ final class AppSession {
     var machineOutboxes: [ClientMachineOutbox] = []
     /// When some machine's view last changed, kept with the cached views.
     var lastSyncedAt: Date?
+    /// The selected card or chat, kept apart from the cards it is found in
+    /// (`refreshSelectedCard`), so its views skip every other card's change.
+    private(set) var selectedCard: Dieter_V1_Card?
+
+    /// Looks the selected card or chat up again after the selection, the
+    /// selected project's state, or the chats changed; views observe only a
+    /// change of the card itself.
+    func refreshSelectedCard() {
+        let id = selectedCardID ?? selectedChatID
+        let card =
+            id.flatMap { id in
+                state.cards.first { $0.id == id } ?? state.chats.first { $0.id == id } ?? chats.first { $0.id == id }
+            }
+        if selectedCard != card { selectedCard = card }
+    }
     var islandActivity = DieterIslandActivity.empty
     var boardProjection = BoardProjection.empty
 
@@ -256,17 +301,20 @@ final class AppSession {
         themeSelection = initialTheme
         DieterTheme.install(selection: initialTheme)
         let arguments = environment.arguments
-        var tokenOverride: String?
-        if let flag = arguments.firstIndex(of: "--dieter-access-token-file"), arguments.indices.contains(flag + 1),
-            let token = try? String(contentsOfFile: arguments[flag + 1], encoding: .utf8)
-                .trimmingCharacters(in: .whitespacesAndNewlines), !token.isEmpty
-        {
-            tokenOverride = token
+        // The trimmed contents of the file named by `flag`, if any.
+        func launchFile(_ flag: String) -> String? {
+            guard let index = arguments.firstIndex(of: flag), arguments.indices.contains(index + 1),
+                let value = try? String(contentsOfFile: arguments[index + 1], encoding: .utf8)
+                    .trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty
+            else { return nil }
+            return value
         }
+        let tokenOverride = launchFile("--dieter-access-token-file")
+        let pairingCode = launchFile("--dieter-pairing-code-file") ?? ""
         let override = arguments.firstIndex(of: "--dieter-endpoint")
             .flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
             .flatMap { MachineEndpoint(address: $0, name: "Command line") }
-        launchSession = override.flatMap { gateway in tokenOverride.map { (gateway, $0) } }
+        launchSession = override.flatMap { gateway in tokenOverride.map { (gateway, $0, pairingCode) } }
         let gateway = override ?? MachineEndpoint.defaultGateway
         endpoints = []
         activeGateway = gateway
@@ -281,8 +329,8 @@ final class AppSession {
                 configuration: CoreHostConfiguration(
                     root: root, clientVersion: DieterRelease.current, logSubsystem: DistributionIdentity.macBundleID),
                 platform: .mac(
-                    credentialsFile: environment.credentialsFile, notificationsEnabled: { true },
-                    clipboard: CoreScreenClipboard()),
+                    credentialsFile: environment.credentialsFile, deviceKeyFile: environment.deviceKeyFile,
+                    notificationsEnabled: { true }, clipboard: CoreScreenClipboard()),
                 defaults: defaults, screens: CoreHostScreens(media: media))
         }
         let resolved: CoreClient = core ?? host?.client ?? ScriptedCoreClient()
@@ -292,13 +340,28 @@ final class AppSession {
         composer = ComposerModel(store: composerDrafts)
         conversationModel.core = resolved
         screensModel.core = resolved
+        devicesModel.core = resolved
         screensModel.media = screenMedia
         quickTaskForm.remember = { [weak self] remember in
             Task { await self?.perform { $0.rememberCreation = remember } }
         }
+        if host != nil {
+            // The live app routes notification taps through the core and
+            // shows the unread mail badge the core words.
+            let responder = CoreNotificationResponder { [weak self] key, action in
+                await self?.respondToNotification(key: key, action: action)
+            }
+            responder.install()
+            notificationResponder = responder
+            mailModel.onAppBadgeChange = { Self.applyAppBadge($0) }
+        }
     }
 
+    /// Counts presentations, so a fold that already presented skips another.
+    @ObservationIgnored var replicaPresentations: UInt64 = 0
+
     func refreshReplicaPresentation() {
+        replicaPresentations &+= 1
         refreshBoardProjection()
     }
 

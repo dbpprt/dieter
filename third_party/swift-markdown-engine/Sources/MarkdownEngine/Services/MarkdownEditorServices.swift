@@ -154,12 +154,35 @@ public struct PlainTextSyntaxHighlighter: SyntaxHighlighter {
 
 // MARK: - LaTeX
 
-/// Renders LaTeX formulas to images for inline display.
+/// The typesetting mode of a LaTeX formula.
+public enum LatexRenderMode: Hashable, Sendable {
+    case inline
+    case display
+}
+
+/// Renders LaTeX formulas to images.
+///
+/// The mode-aware overload lets renderers distinguish `$ … $` from `$$ … $$`.
+/// Existing renderers remain source-compatible because its default
+/// implementation forwards to the original overload.
 public protocol LatexRenderer: Sendable {
-    /// Render `latex` at the requested font size, optionally tinted by `theme`.
+    /// Render `latex` without an explicit mode.
     /// - Returns: A rendered result, or `nil` if the renderer cannot produce
     ///   an image (unsupported syntax, missing dependency, …).
     func render(latex: String, fontSize: CGFloat, theme: MarkdownEditorTheme) -> LatexRenderResult?
+
+    /// Render `latex` using the mode implied by its Markdown delimiters:
+    /// `.display` for `$$ … $$`, `.inline` for `$ … $`.
+    ///
+    /// This is the only overload the engine calls.
+    func render(latex: String, mode: LatexRenderMode, fontSize: CGFloat, theme: MarkdownEditorTheme) -> LatexRenderResult?
+}
+
+public extension LatexRenderer {
+    /// Mode-unaware renderers keep receiving the same delimiter-free LaTeX.
+    func render(latex: String, mode: LatexRenderMode, fontSize: CGFloat, theme: MarkdownEditorTheme) -> LatexRenderResult? {
+        render(latex: latex, fontSize: fontSize, theme: theme)
+    }
 }
 
 /// Output of a LaTeX render call.
@@ -194,11 +217,15 @@ public protocol RenderedCodeBlockRenderer: Sendable {
     func render(code: String, language: String, availableWidth: CGFloat, theme: MarkdownEditorTheme) -> RenderedCodeBlockResult?
     func fingerprint() -> AnyHashable
     var renderingDidChangeNotification: Notification.Name? { get }
+    /// A terminal failure can reveal source; temporary unavailability keeps
+    /// the previous image (for example while a retained editor is hidden).
+    func shouldRevealSource(code: String, language: String) -> Bool
 }
 
 public extension RenderedCodeBlockRenderer {
     func fingerprint() -> AnyHashable { 0 }
     var renderingDidChangeNotification: Notification.Name? { nil }
+    func shouldRevealSource(code: String, language: String) -> Bool { false }
 }
 
 public struct RenderedCodeBlockResult: Sendable {
