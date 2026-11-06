@@ -149,6 +149,13 @@ test(
     const first = await runWorker(base, environment);
     assert.equal(first.code, 0, first.stderr);
     assert(
+      !first.frames.some(
+        (frame) =>
+          frame.type === "error" || (frame.type === "chunk" && frame.chunk.type === "error"),
+      ),
+      first.stderr,
+    );
+    assert(
       first.frames.some(
         (frame) =>
           frame.type === "chunk" &&

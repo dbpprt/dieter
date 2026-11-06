@@ -1,14 +1,18 @@
-import { open } from 'node:fs/promises';
-import { createTerminalStepReconciler } from './stream-reconciliation.mjs';
+import { open } from "node:fs/promises";
+import { createTerminalStepReconciler } from "./stream-reconciliation.mjs";
 
-const terminalStatuses = new Set(['completed', 'failed', 'aborted']);
-const terminalPlanStates = new Set(['completed', 'stopped', 'failed', 'aborted']);
+const terminalStatuses = new Set(["completed", "failed", "aborted"]);
+const terminalPlanStates = new Set(["completed", "stopped", "failed", "aborted"]);
 const progressHeartbeatMs = 60_000;
 const tailerReadChunkBytes = 256 * 1024;
 
 function compactLines(value, limit = 5) {
-  const text = typeof value === 'string' ? value : value == null ? '' : JSON.stringify(value);
-  return text.split('\n').map(line => line.trim()).filter(Boolean).slice(-limit);
+  const text = typeof value === "string" ? value : value == null ? "" : JSON.stringify(value);
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-limit);
 }
 
 function clean(value) {
@@ -23,19 +27,30 @@ const maxProviderNoticeLength = 1024;
  * exec appends " (details)". Other stream errors are not retry notices.
  */
 export function parseProviderRetryNotice(message) {
-  if (typeof message !== 'string') return undefined;
+  if (typeof message !== "string") return undefined;
   const text = message.trim();
   const match = text.match(/^Reconnecting\.\.\.(?:\s+(\d+)\/(\d+))?/);
   if (!match) return undefined;
   return clean({
-    state: /^Reconnecting\.\.\.\s+waiting for network/.test(text) ? 'waiting-for-network' : 'reconnecting',
+    state: /^Reconnecting\.\.\.\s+waiting for network/.test(text)
+      ? "waiting-for-network"
+      : "reconnecting",
     attempt: match[1] ? Number(match[1]) : undefined,
     maxAttempts: match[2] ? Number(match[2]) : undefined,
-    message: text.length <= maxProviderNoticeLength ? text : `${text.slice(0, maxProviderNoticeLength - 1)}…`,
+    message:
+      text.length <= maxProviderNoticeLength
+        ? text
+        : `${text.slice(0, maxProviderNoticeLength - 1)}…`,
   });
 }
 
-export function createSubagentCapabilityCollector({ provider, adapter = provider, messageId, emit, now = () => new Date().toISOString() }) {
+export function createSubagentCapabilityCollector({
+  provider,
+  adapter = provider,
+  messageId,
+  emit,
+  now = () => new Date().toISOString(),
+}) {
   const subagents = new Map();
   const emittedSubagents = new Map();
   const claudeToolNames = new Map();
@@ -43,26 +58,35 @@ export function createSubagentCapabilityCollector({ provider, adapter = provider
   const claudeTasks = new Map();
   let claudeTaskSequence = 0;
   let taskPlan;
-  let taskPlanFingerprint = '';
+  let taskPlanFingerprint = "";
   let taskPlanRevision = 0;
-  let providerStatusFingerprint = '';
+  let providerStatusFingerprint = "";
 
   function normalizeTaskStatus(status) {
-    if (status === 'in_progress' || status === 'inProgress' || status === 'in-progress' || status === 'running') return 'in_progress';
-    if (status === 'completed' || status === 'done') return 'completed';
-    if (status === 'blocked') return 'blocked';
-    if (status === 'abandoned' || status === 'cancelled' || status === 'canceled') return 'abandoned';
-    return 'pending';
+    if (
+      status === "in_progress" ||
+      status === "inProgress" ||
+      status === "in-progress" ||
+      status === "running"
+    )
+      return "in_progress";
+    if (status === "completed" || status === "done") return "completed";
+    if (status === "blocked") return "blocked";
+    if (status === "abandoned" || status === "cancelled" || status === "canceled")
+      return "abandoned";
+    return "pending";
   }
 
   function normalizeTask(task, index) {
-    if (!task || typeof task !== 'object') return undefined;
-    const content = String(task.content || task.text || task.step || task.subject || '').trim();
+    if (!task || typeof task !== "object") return undefined;
+    const content = String(task.content || task.text || task.step || task.subject || "").trim();
     if (!content) return undefined;
     return clean({
       ...(task.id ? { id: String(task.id) } : {}),
       content,
-      ...(task.activeForm || task.active_form ? { activeForm: String(task.activeForm || task.active_form) } : {}),
+      ...(task.activeForm || task.active_form
+        ? { activeForm: String(task.activeForm || task.active_form) }
+        : {}),
       status: normalizeTaskStatus(task.status),
       ...(task.blocker || task.reason ? { blocker: String(task.blocker || task.reason) } : {}),
       ...(task.priority ? { priority: String(task.priority) } : {}),
@@ -72,34 +96,49 @@ export function createSubagentCapabilityCollector({ provider, adapter = provider
 
   function normalizePhases(phases) {
     if (!Array.isArray(phases)) return [];
-    return phases.map((phase, phaseIndex) => {
-      const source = Array.isArray(phase) ? { tasks: phase } : phase;
-      if (!source || typeof source !== 'object') return undefined;
-      const tasks = (Array.isArray(source.tasks) ? source.tasks : Array.isArray(source.items) ? source.items : [])
-        .map(normalizeTask)
-        .filter(Boolean);
-      if (!tasks.length) return undefined;
-      return clean({
-        name: String(source.name || source.phase || (phases.length > 1 ? `Phase ${phaseIndex + 1}` : '')).trim(),
-        tasks,
-      });
-    }).filter(Boolean);
+    return phases
+      .map((phase, phaseIndex) => {
+        const source = Array.isArray(phase) ? { tasks: phase } : phase;
+        if (!source || typeof source !== "object") return undefined;
+        const tasks = (
+          Array.isArray(source.tasks)
+            ? source.tasks
+            : Array.isArray(source.items)
+              ? source.items
+              : []
+        )
+          .map(normalizeTask)
+          .filter(Boolean);
+        if (!tasks.length) return undefined;
+        return clean({
+          name: String(
+            source.name || source.phase || (phases.length > 1 ? `Phase ${phaseIndex + 1}` : ""),
+          ).trim(),
+          tasks,
+        });
+      })
+      .filter(Boolean);
   }
 
   function tasksToPhase(tasks) {
     const normalized = (Array.isArray(tasks) ? tasks : []).map(normalizeTask).filter(Boolean);
-    return normalized.length ? [{ name: '', tasks: normalized }] : [];
+    return normalized.length ? [{ name: "", tasks: normalized }] : [];
   }
 
-  function replaceTaskPlan({ phases, tasks, explanation = '', state = 'active', source = '' }) {
-    if ((source === 'acp-plan' || source === 'todo-reminder') && taskPlan?.source === 'todo') return;
+  function replaceTaskPlan({ phases, tasks, explanation = "", state = "active", source = "" }) {
+    if ((source === "acp-plan" || source === "todo-reminder") && taskPlan?.source === "todo")
+      return;
     const normalizedPhases = phases ? normalizePhases(phases) : tasksToPhase(tasks);
     if (!normalizedPhases.length) {
-      if (taskPlan && state !== 'active') finishTaskPlan(state);
+      if (taskPlan && state !== "active") finishTaskPlan(state);
       return;
     }
-    const normalizedState = terminalPlanStates.has(state) ? state : 'active';
-    const fingerprint = JSON.stringify({ normalizedPhases, explanation: String(explanation || ''), state: normalizedState });
+    const normalizedState = terminalPlanStates.has(state) ? state : "active";
+    const fingerprint = JSON.stringify({
+      normalizedPhases,
+      explanation: String(explanation || ""),
+      state: normalizedState,
+    });
     if (fingerprint === taskPlanFingerprint) return;
     taskPlanRevision += 1;
     taskPlanFingerprint = fingerprint;
@@ -109,23 +148,25 @@ export function createSubagentCapabilityCollector({ provider, adapter = provider
       messageId,
       revision: taskPlanRevision,
       state: normalizedState,
-      explanation: String(explanation || ''),
-      source: String(source || ''),
+      explanation: String(explanation || ""),
+      source: String(source || ""),
       phases: normalizedPhases,
       updatedAt: now(),
     });
-    emit({ id: 'task-plan', operation: 'replace', plan: taskPlan });
+    emit({ id: "task-plan", operation: "replace", plan: taskPlan });
   }
 
   function finishTaskPlan(state) {
     if (!taskPlan || terminalPlanStates.has(taskPlan.state)) return;
-    const tasks = taskPlan.phases.flatMap(phase => phase.tasks);
-    const allSettled = tasks.length > 0 && tasks.every(task => task.status === 'completed' || task.status === 'abandoned');
+    const tasks = taskPlan.phases.flatMap((phase) => phase.tasks);
+    const allSettled =
+      tasks.length > 0 &&
+      tasks.every((task) => task.status === "completed" || task.status === "abandoned");
     replaceTaskPlan({
       phases: taskPlan.phases,
       explanation: taskPlan.explanation,
       source: taskPlan.source,
-      state: state === 'completed' && !allSettled ? 'stopped' : state,
+      state: state === "completed" && !allSettled ? "stopped" : state,
     });
   }
 
@@ -136,7 +177,7 @@ export function createSubagentCapabilityCollector({ provider, adapter = provider
       id,
       provider,
       messageId,
-      status: 'pending',
+      status: "pending",
       startedAt: timestamp,
     };
     const next = clean({
@@ -149,50 +190,83 @@ export function createSubagentCapabilityCollector({ provider, adapter = provider
       ...(terminalStatuses.has(patch.status) ? { endedAt: timestamp } : {}),
     });
     subagents.set(id, next);
-    const { updatedAt: _updatedAt, durationMs = 0, recentOutput: _recentOutput, ...material } = next;
-    const fingerprint = JSON.stringify({ ...material, progressMinute: Math.floor(Number(durationMs) / progressHeartbeatMs) });
+    const {
+      updatedAt: _updatedAt,
+      durationMs = 0,
+      recentOutput: _recentOutput,
+      ...material
+    } = next;
+    const fingerprint = JSON.stringify({
+      ...material,
+      progressMinute: Math.floor(Number(durationMs) / progressHeartbeatMs),
+    });
     if (!force && emittedSubagents.get(id) === fingerprint) return;
     emittedSubagents.set(id, fingerprint);
-    emit({ id: 'subagents', operation: 'upsert', subagent: next });
+    emit({ id: "subagents", operation: "upsert", subagent: next });
   }
 
   function emitClaudeTasks() {
-    const tasks = [...claudeTasks.values()].sort((left, right) => Number(left.id) - Number(right.id));
-    replaceTaskPlan({ tasks, source: 'Tasks' });
+    const tasks = [...claudeTasks.values()].sort(
+      (left, right) => Number(left.id) - Number(right.id),
+    );
+    replaceTaskPlan({ tasks, source: "Tasks" });
   }
 
   function consumeUIChunk(chunk) {
-    if (!chunk || typeof chunk !== 'object') return;
+    if (!chunk || typeof chunk !== "object") return;
     const id = chunk.toolCallId;
-    if (adapter === 'claude-code' && chunk.type === 'tool-input-available' && id && chunk.toolName) {
+    if (
+      adapter === "claude-code" &&
+      chunk.type === "tool-input-available" &&
+      id &&
+      chunk.toolName
+    ) {
       claudeToolNames.set(id, String(chunk.toolName));
     }
-    const resolvedToolName = chunk.toolName || claudeToolNames.get(id) || '';
+    const resolvedToolName = chunk.toolName || claudeToolNames.get(id) || "";
     const toolName = String(resolvedToolName).toLowerCase();
-    if (adapter === 'claude-code' && chunk.type === 'tool-input-available' && toolName === 'todowrite') {
-      replaceTaskPlan({ tasks: chunk.input?.todos, source: 'TodoWrite' });
+    if (
+      adapter === "claude-code" &&
+      chunk.type === "tool-input-available" &&
+      toolName === "todowrite"
+    ) {
+      replaceTaskPlan({ tasks: chunk.input?.todos, source: "TodoWrite" });
       return;
     }
-    if (adapter === 'dsh-acp' && chunk.type === 'tool-input-available' && toolName === 'todo_write') {
-      replaceTaskPlan({ tasks: chunk.input?.todos, source: 'todo_write' });
+    if (
+      adapter === "dsh-acp" &&
+      chunk.type === "tool-input-available" &&
+      toolName === "todo_write"
+    ) {
+      replaceTaskPlan({ tasks: chunk.input?.todos, source: "todo_write" });
       return;
     }
-    if (adapter === 'claude-code' && chunk.type === 'tool-input-available' && toolName === 'taskcreate' && id) {
-      const input = chunk.input && typeof chunk.input === 'object' ? chunk.input : {};
+    if (
+      adapter === "claude-code" &&
+      chunk.type === "tool-input-available" &&
+      toolName === "taskcreate" &&
+      id
+    ) {
+      const input = chunk.input && typeof chunk.input === "object" ? chunk.input : {};
       const taskId = String(++claudeTaskSequence);
       claudeTaskCreates.set(id, taskId);
       claudeTasks.set(taskId, {
         id: taskId,
         content: input.subject || input.description || `Task ${taskId}`,
         activeForm: input.activeForm,
-        status: 'pending',
+        status: "pending",
       });
       emitClaudeTasks();
       return;
     }
-    if (adapter === 'claude-code' && chunk.type === 'tool-output-available' && toolName === 'taskcreate' && id) {
+    if (
+      adapter === "claude-code" &&
+      chunk.type === "tool-output-available" &&
+      toolName === "taskcreate" &&
+      id
+    ) {
       const provisionalId = claudeTaskCreates.get(id);
-      const actualId = /Task #(\d+)/i.exec(String(chunk.output || ''))?.[1];
+      const actualId = /Task #(\d+)/i.exec(String(chunk.output || ""))?.[1];
       if (provisionalId && actualId && actualId !== provisionalId) {
         const task = claudeTasks.get(provisionalId);
         claudeTasks.delete(provisionalId);
@@ -201,11 +275,19 @@ export function createSubagentCapabilityCollector({ provider, adapter = provider
       }
       return;
     }
-    if (adapter === 'claude-code' && chunk.type === 'tool-input-available' && toolName === 'taskupdate') {
-      const input = chunk.input && typeof chunk.input === 'object' ? chunk.input : {};
-      const taskId = String(input.taskId || '').trim();
+    if (
+      adapter === "claude-code" &&
+      chunk.type === "tool-input-available" &&
+      toolName === "taskupdate"
+    ) {
+      const input = chunk.input && typeof chunk.input === "object" ? chunk.input : {};
+      const taskId = String(input.taskId || "").trim();
       if (!taskId) return;
-      const previous = claudeTasks.get(taskId) || { id: taskId, content: `Task ${taskId}`, status: 'pending' };
+      const previous = claudeTasks.get(taskId) || {
+        id: taskId,
+        content: `Task ${taskId}`,
+        status: "pending",
+      };
       claudeTasks.set(taskId, {
         ...previous,
         ...(input.subject ? { content: input.subject } : {}),
@@ -216,156 +298,201 @@ export function createSubagentCapabilityCollector({ provider, adapter = provider
       emitClaudeTasks();
       return;
     }
-    if (adapter === 'pi' && chunk.type === 'tool-input-available' && toolName === 'board_task_plan') {
-      replaceTaskPlan({ tasks: chunk.input?.tasks, explanation: chunk.input?.explanation, source: 'board_task_plan' });
+    if (
+      adapter === "pi" &&
+      chunk.type === "tool-input-available" &&
+      toolName === "board_task_plan"
+    ) {
+      replaceTaskPlan({
+        tasks: chunk.input?.tasks,
+        explanation: chunk.input?.explanation,
+        source: "board_task_plan",
+      });
       return;
     }
-    if (adapter !== 'claude-code') return;
-    if (toolName !== 'agent' && toolName !== 'task') return;
+    if (adapter !== "claude-code") return;
+    if (toolName !== "agent" && toolName !== "task") return;
     if (!id) return;
-    if (chunk.type === 'tool-input-available') {
-      const input = chunk.input && typeof chunk.input === 'object' ? chunk.input : {};
+    if (chunk.type === "tool-input-available") {
+      const input = chunk.input && typeof chunk.input === "object" ? chunk.input : {};
       upsert(id, {
         parentToolCallId: id,
-        name: input.description || input.name || input.subagent_type || 'Subagent',
-        agentType: input.subagent_type || resolvedToolName || 'Agent',
-        description: input.description || '',
-        task: input.prompt || input.task || '',
-        status: 'running',
+        name: input.description || input.name || input.subagent_type || "Subagent",
+        agentType: input.subagent_type || resolvedToolName || "Agent",
+        description: input.description || "",
+        task: input.prompt || input.task || "",
+        status: "running",
       });
-    } else if (chunk.type === 'tool-output-available') {
+    } else if (chunk.type === "tool-output-available") {
       upsert(id, {
-        status: 'completed',
+        status: "completed",
         recentOutput: compactLines(chunk.output),
       });
-    } else if (chunk.type === 'tool-output-error') {
+    } else if (chunk.type === "tool-output-error") {
       upsert(id, {
-        status: 'failed',
-        error: chunk.errorText || 'Subagent failed',
+        status: "failed",
+        error: chunk.errorText || "Subagent failed",
       });
     }
   }
 
   function consumeOMPEnvelope(envelope) {
-    if (adapter !== 'omp-acp' && provider !== 'omp') return;
-    if (!envelope || typeof envelope !== 'object') return;
+    if (adapter !== "omp-acp" && provider !== "omp") return;
+    if (!envelope || typeof envelope !== "object") return;
     const payload = envelope.payload;
-    if (!payload || typeof payload !== 'object') return;
-    if (envelope.kind === 'task-plan') {
+    if (!payload || typeof payload !== "object") return;
+    if (envelope.kind === "task-plan") {
       replaceTaskPlan({
         phases: payload.phases,
         tasks: payload.tasks,
         explanation: payload.explanation,
-        state: payload.state || 'active',
-        source: payload.source || 'todo',
+        state: payload.state || "active",
+        source: payload.source || "todo",
       });
       return;
     }
-    if (envelope.kind === 'task-plan-clear') {
-      finishTaskPlan('completed');
+    if (envelope.kind === "task-plan-clear") {
+      finishTaskPlan("completed");
       return;
     }
-    if (envelope.kind === 'lifecycle') {
-      const status = payload.status === 'started' ? 'running' : payload.status;
-      upsert(payload.id, {
-        parentToolCallId: payload.parentToolCallId || '',
-        name: payload.description || payload.agent || 'Subagent',
-        agentType: payload.agent || '',
-        agentSource: payload.agentSource || '',
-        description: payload.description || '',
+    if (envelope.kind === "lifecycle") {
+      const status = payload.status === "started" ? "running" : payload.status;
+      upsert(
+        payload.id,
+        {
+          parentToolCallId: payload.parentToolCallId || "",
+          name: payload.description || payload.agent || "Subagent",
+          agentType: payload.agent || "",
+          agentSource: payload.agentSource || "",
+          description: payload.description || "",
+          status,
+          detached: Boolean(payload.detached),
+          transcriptAvailable: Boolean(payload.sessionFile),
+        },
+        { force: terminalStatuses.has(status) },
+      );
+      return;
+    }
+    if (envelope.kind !== "progress") return;
+    const progress =
+      payload.progress && typeof payload.progress === "object" ? payload.progress : {};
+    const retryState =
+      progress.retryState && typeof progress.retryState === "object"
+        ? progress.retryState
+        : undefined;
+    const retryFailure =
+      progress.retryFailure && typeof progress.retryFailure === "object"
+        ? progress.retryFailure
+        : undefined;
+    const status = progress.status || "running";
+    upsert(
+      progress.id || payload.id,
+      {
+        parentToolCallId: payload.parentToolCallId || "",
+        name:
+          progress.description ||
+          payload.description ||
+          payload.agent ||
+          progress.agent ||
+          "Subagent",
+        agentType: payload.agent || progress.agent || "",
+        agentSource: payload.agentSource || progress.agentSource || "",
+        description: progress.description || payload.description || "",
+        task: payload.task || progress.task || "",
+        assignment: payload.assignment || progress.assignment || "",
         status,
         detached: Boolean(payload.detached),
+        model: progress.resolvedModel || "",
+        activity: progress.lastIntent || progress.currentTool || "",
+        currentTool: progress.currentTool || "",
+        currentToolArgs: progress.currentToolArgs || "",
+        toolCount: Number(progress.toolCount) || 0,
+        requests: Number(progress.requests) || 0,
+        tokens: Number(progress.tokens) || 0,
+        contextTokens: Number(progress.contextTokens) || 0,
+        contextWindow: Number(progress.contextWindow) || 0,
+        cost: Number(progress.cost) || 0,
+        durationMs: Number(progress.durationMs) || 0,
+        recentOutput: Array.isArray(progress.recentOutput)
+          ? progress.recentOutput.slice(-5).map(String)
+          : [],
         transcriptAvailable: Boolean(payload.sessionFile),
-      }, { force: terminalStatuses.has(status) });
-      return;
-    }
-    if (envelope.kind !== 'progress') return;
-    const progress = payload.progress && typeof payload.progress === 'object' ? payload.progress : {};
-    const retryState = progress.retryState && typeof progress.retryState === 'object' ? progress.retryState : undefined;
-    const retryFailure = progress.retryFailure && typeof progress.retryFailure === 'object' ? progress.retryFailure : undefined;
-    const status = progress.status || 'running';
-    upsert(progress.id || payload.id, {
-      parentToolCallId: payload.parentToolCallId || '',
-      name: progress.description || payload.description || payload.agent || progress.agent || 'Subagent',
-      agentType: payload.agent || progress.agent || '',
-      agentSource: payload.agentSource || progress.agentSource || '',
-      description: progress.description || payload.description || '',
-      task: payload.task || progress.task || '',
-      assignment: payload.assignment || progress.assignment || '',
-      status,
-      detached: Boolean(payload.detached),
-      model: progress.resolvedModel || '',
-      activity: progress.lastIntent || progress.currentTool || '',
-      currentTool: progress.currentTool || '',
-      currentToolArgs: progress.currentToolArgs || '',
-      toolCount: Number(progress.toolCount) || 0,
-      requests: Number(progress.requests) || 0,
-      tokens: Number(progress.tokens) || 0,
-      contextTokens: Number(progress.contextTokens) || 0,
-      contextWindow: Number(progress.contextWindow) || 0,
-      cost: Number(progress.cost) || 0,
-      durationMs: Number(progress.durationMs) || 0,
-      recentOutput: Array.isArray(progress.recentOutput) ? progress.recentOutput.slice(-5).map(String) : [],
-      transcriptAvailable: Boolean(payload.sessionFile),
-      ...(retryState ? { retry: `Retry ${retryState.attempt}/${retryState.maxAttempts}: ${retryState.errorMessage || 'provider unavailable'}` } : {}),
-      ...(retryFailure ? { error: retryFailure.errorMessage || 'Provider retries exhausted' } : {}),
-    }, { force: terminalStatuses.has(status) });
+        ...(retryState
+          ? {
+              retry: `Retry ${retryState.attempt}/${retryState.maxAttempts}: ${retryState.errorMessage || "provider unavailable"}`,
+            }
+          : {}),
+        ...(retryFailure
+          ? { error: retryFailure.errorMessage || "Provider retries exhausted" }
+          : {}),
+      },
+      { force: terminalStatuses.has(status) },
+    );
   }
 
   function consumeACPToolCall(toolCall) {
-    if (adapter !== 'dsh-acp' || !toolCall || typeof toolCall !== 'object') return;
-    if (String(toolCall.title || '').toLowerCase() !== 'todo_write') return;
-    replaceTaskPlan({ tasks: toolCall.rawInput?.todos, source: 'todo_write' });
+    if (adapter !== "dsh-acp" || !toolCall || typeof toolCall !== "object") return;
+    if (String(toolCall.title || "").toLowerCase() !== "todo_write") return;
+    replaceTaskPlan({ tasks: toolCall.rawInput?.todos, source: "todo_write" });
   }
 
   function setProviderStatus(notice) {
     if (!notice) {
-      if (providerStatusFingerprint) emit({ id: 'provider-status', operation: 'clear' });
-      providerStatusFingerprint = '';
+      if (providerStatusFingerprint) emit({ id: "provider-status", operation: "clear" });
+      providerStatusFingerprint = "";
       return;
     }
     const status = clean({ ...notice, provider, messageId });
     const fingerprint = JSON.stringify(status);
     if (fingerprint === providerStatusFingerprint) return;
     providerStatusFingerprint = fingerprint;
-    emit({ id: 'provider-status', operation: 'replace', status: { ...status, updatedAt: now() } });
+    emit({ id: "provider-status", operation: "replace", status: { ...status, updatedAt: now() } });
   }
 
   function consumeHarnessEvent(event) {
-    if (adapter === 'codex' && event?.type === 'raw' && event.rawValue?.type === 'error') {
+    if (adapter === "codex" && event?.type === "raw" && event.rawValue?.type === "error") {
       const notice = parseProviderRetryNotice(event.rawValue.message);
       if (notice) setProviderStatus(notice);
       return;
     }
     // Any other provider event after a retry notice means the stream is back.
     if (event) setProviderStatus(undefined);
-    if (!event || event.type !== 'raw' || !event.rawValue || typeof event.rawValue !== 'object') return;
+    if (!event || event.type !== "raw" || !event.rawValue || typeof event.rawValue !== "object")
+      return;
     const raw = event.rawValue;
-    if ((adapter === 'omp-acp' || provider === 'omp') && raw.sessionUpdate === 'plan') {
+    if ((adapter === "omp-acp" || provider === "omp") && raw.sessionUpdate === "plan") {
       if (!Array.isArray(raw.entries) || raw.entries.length === 0) {
-        finishTaskPlan('completed');
+        finishTaskPlan("completed");
         return;
       }
-      replaceTaskPlan({ tasks: raw.entries, source: 'acp-plan' });
+      replaceTaskPlan({ tasks: raw.entries, source: "acp-plan" });
       return;
     }
-    const item = raw.item && typeof raw.item === 'object' ? raw.item : undefined;
-    if (adapter === 'codex' && item?.type === 'todo_list') {
+    const item = raw.item && typeof raw.item === "object" ? raw.item : undefined;
+    if (adapter === "codex" && item?.type === "todo_list") {
       const items = Array.isArray(item.items) ? item.items : [];
-      const firstIncomplete = items.findIndex(task => !task?.completed);
+      const firstIncomplete = items.findIndex((task) => !task?.completed);
       replaceTaskPlan({
         tasks: items.map((task, index) => ({
           id: task?.id,
           content: task?.text,
-          status: task?.completed ? 'completed' : index === firstIncomplete ? 'in_progress' : 'pending',
+          status: task?.completed
+            ? "completed"
+            : index === firstIncomplete
+              ? "in_progress"
+              : "pending",
         })),
-        source: 'todo_list',
+        source: "todo_list",
       });
     }
   }
 
   function consumeBoardTaskPlan(input) {
-    replaceTaskPlan({ tasks: input?.tasks, explanation: input?.explanation, source: 'board_task_plan' });
+    replaceTaskPlan({
+      tasks: input?.tasks,
+      explanation: input?.explanation,
+      source: "board_task_plan",
+    });
     return { accepted: true, revision: taskPlanRevision };
   }
 
@@ -375,7 +502,15 @@ export function createSubagentCapabilityCollector({ provider, adapter = provider
     }
   }
 
-  return { consumeUIChunk, consumeOMPEnvelope, consumeACPToolCall, consumeHarnessEvent, consumeBoardTaskPlan, finishTaskPlan, finalize };
+  return {
+    consumeUIChunk,
+    consumeOMPEnvelope,
+    consumeACPToolCall,
+    consumeHarnessEvent,
+    consumeBoardTaskPlan,
+    finishTaskPlan,
+    finalize,
+  };
 }
 
 const codexTodoNeedle = `    if (item.type === "agent_message" && typeof item.text === "string") {`;
@@ -385,9 +520,12 @@ const codexTodoForwarder = `    if (item.type === "todo_list") {
       return;
     }
 ${codexTodoNeedle}`;
-const codexAppServerTodoNeedle = '\t\tif (item.type === "agent_message" && typeof item.text === "string") {';
-const codexAppServerPlanNeedle = '\t\t\tif (notification.method === "item/started" && params != null) {';
-const codexAppServerErrorNeedle = '\t\t\t\tif (params.willRetry === true) emitWarning({ message });';
+const codexAppServerTodoNeedle =
+  '\t\tif (item.type === "agent_message" && typeof item.text === "string") {';
+const codexAppServerPlanNeedle =
+  '\t\t\tif (notification.method === "item/started" && params != null) {';
+const codexAppServerErrorNeedle =
+  "\t\t\t\tif (params.willRetry === true) emitWarning({ message });";
 const codexAppServerStreamNeedle = '\t\tif (event.type === "error") {\n\t\t\temitError({';
 const codexAppServerRetryMarker = 'emitStreamEvent({ type: "error", message, willRetry: true })';
 
@@ -433,15 +571,48 @@ const codexTurnEndGuard = `      emitStreamEvent(event);
   } catch (err) {`;
 
 function patchCodexBridge(content) {
+  // Codex 0.166 validates the active process provider when turn/start supplies
+  // a model. Thread-only configuration leaves that provider at its default,
+  // so pass the same provider and registry to the app-server process too.
+  const providerArgs =
+    "args: createCodexAppServerArgs({ cliOverrides: trustedHook?.cliOverrides }),";
+  if (content.includes(providerArgs)) {
+    content = content.replace(
+      providerArgs,
+      "args: createCodexAppServerArgs({ cliOverrides: [...(trustedHook?.cliOverrides ?? []), ...dieterCodexProviderOverrides(codexConfig)] }),",
+    );
+    content += `
+function dieterCodexProviderOverrides(config) {
+  if (!config.model_provider) return [];
+  const flatten = (value, path) => Object.entries(value).flatMap(([key, item]) => {
+    if (!/^[A-Za-z0-9_-]+$/.test(key)) throw new Error("Invalid Codex provider configuration key");
+    const next = [...path, key];
+    return item != null && typeof item === "object" && !Array.isArray(item)
+      ? flatten(item, next)
+      : [next.join(".") + "=" + JSON.stringify(item)];
+  });
+  return ["model_provider=" + JSON.stringify(config.model_provider),
+    ...flatten(config.model_providers ?? {}, ["model_providers"])];
+}
+`;
+  } else if (!content.includes("function dieterCodexProviderOverrides(")) {
+    throw new Error("Codex bridge provider configuration changed; review the runtime integration");
+  }
+
   if (!content.includes('send({ type: "raw", rawValue: event });')) {
     if (content.includes(codexAppServerTodoNeedle) && content.includes(codexAppServerPlanNeedle)) {
-      content = content.replace(codexAppServerTodoNeedle, `\t\tif (item.type === "todo_list") {
+      content = content.replace(
+        codexAppServerTodoNeedle,
+        `\t\tif (item.type === "todo_list") {
 \t\t\tsend({ type: "raw", rawValue: event });
 \t\t\tobserveStep();
 \t\t\treturn;
 \t\t}
-${codexAppServerTodoNeedle}`);
-      content = content.replace(codexAppServerPlanNeedle, `\t\t\tif (notification.method === "turn/plan/updated" && params != null && matchesActiveTurn({
+${codexAppServerTodoNeedle}`,
+      );
+      content = content.replace(
+        codexAppServerPlanNeedle,
+        `\t\t\tif (notification.method === "turn/plan/updated" && params != null && matchesActiveTurn({
 \t\t\t\tparams, activeThreadId, activeTurnId
 \t\t\t})) {
 \t\t\t\temitStreamEvent({
@@ -455,17 +626,26 @@ ${codexAppServerTodoNeedle}`);
 \t\t\t\t});
 \t\t\t\treturn;
 \t\t\t}
-${codexAppServerPlanNeedle}`);
+${codexAppServerPlanNeedle}`,
+      );
     } else if (content.includes(codexTodoNeedle)) {
       content = content.replace(codexTodoNeedle, codexTodoForwarder);
     } else {
-      throw new Error('Dieter could not find the Codex todo bridge insertion point');
+      throw new Error("Dieter could not find the Codex todo bridge insertion point");
     }
   }
-  if (!content.includes(codexAppServerRetryMarker) && content.includes(codexAppServerErrorNeedle) && content.includes(codexAppServerStreamNeedle)) {
-    content = content.replace(codexAppServerErrorNeedle,
-      '\t\t\t\tif (params.willRetry === true) emitStreamEvent({ type: "error", message, willRetry: true });');
-    content = content.replace(codexAppServerStreamNeedle, `\t\tif (event.type === "error") {
+  if (
+    !content.includes(codexAppServerRetryMarker) &&
+    content.includes(codexAppServerErrorNeedle) &&
+    content.includes(codexAppServerStreamNeedle)
+  ) {
+    content = content.replace(
+      codexAppServerErrorNeedle,
+      '\t\t\t\tif (params.willRetry === true) emitStreamEvent({ type: "error", message, willRetry: true });',
+    );
+    content = content.replace(
+      codexAppServerStreamNeedle,
+      `\t\tif (event.type === "error") {
 \t\t\tif (event.willRetry === true) {
 \t\t\t\tconst message = event.message?.startsWith("Reconnecting...")
 \t\t\t\t\t? event.message : \`Reconnecting... waiting for network (\${event.message ?? "codex error"})\`;
@@ -473,17 +653,21 @@ ${codexAppServerPlanNeedle}`);
 \t\t\t\temitWarning({ message });
 \t\t\t\treturn;
 \t\t\t}
-\t\t\temitError({`);
+\t\t\temitError({`,
+    );
   } else if (!content.includes(codexAppServerRetryMarker)) {
     if (!content.includes(codexStreamErrorForwarder)) {
-      if (!content.includes(codexStreamErrorNeedle)) throw new Error('Dieter could not find the Codex stream error handler');
+      if (!content.includes(codexStreamErrorNeedle))
+        throw new Error("Dieter could not find the Codex stream error handler");
       content = content.replace(codexStreamErrorNeedle, codexStreamErrorForwarder);
     }
-    if (!content.includes('dieterTurnSettled')) {
+    if (!content.includes("dieterTurnSettled")) {
       if (!content.includes(codexTurnLoopNeedle) || !content.includes(codexTurnEndNeedle)) {
-        throw new Error('Dieter could not find the Codex turn loop');
+        throw new Error("Dieter could not find the Codex turn loop");
       }
-      content = content.replace(codexTurnLoopNeedle, codexTurnLoopTracker).replace(codexTurnEndNeedle, codexTurnEndGuard);
+      content = content
+        .replace(codexTurnLoopNeedle, codexTurnLoopTracker)
+        .replace(codexTurnEndNeedle, codexTurnEndGuard);
     }
   }
   return patchDurableBridge(content);
@@ -497,7 +681,7 @@ function patchDurableBridge(content) {
   // surface a recoverable failed turn instead of a ghost-running one.
   content = content.replace(
     /await appendFile\(eventLogPath, buf\)\.catch\(\(\) => \{\s*\}\);/,
-    'await appendFile(eventLogPath, buf);',
+    "await appendFile(eventLogPath, buf);",
   );
   content = content.replace(
     /(?:void )?flushEventsToDisk\(\)\.finally\(resolve\);/,
@@ -527,7 +711,7 @@ function patchDurableBridge(content) {
           throw new Error(\`non-contiguous bridge replay sequence at entry \${index}\`);
         }
       }`;
-  if (!content.includes('non-contiguous bridge replay sequence')) {
+  if (!content.includes("non-contiguous bridge replay sequence")) {
     content = content.replace(
       /(eventLog = [^;]*?\.map\(\(line\) => \(\{\s*seq: JSON\.parse\(line\)\.seq,\s*line\s*\}\)\);)/,
       `$1${replayValidation}`,
@@ -539,17 +723,26 @@ function patchDurableBridge(content) {
       throw new Error('bridge replay log is corrupt; refusing to rerun an in-flight turn', { cause: error });
     }`,
   );
-  if (content.includes('appendFile(eventLogPath') && /appendFile\(eventLogPath, buf\)\.catch/.test(content)) {
-    throw new Error('Dieter could not make bridge event persistence fail closed');
+  if (
+    content.includes("appendFile(eventLogPath") &&
+    /appendFile\(eventLogPath, buf\)\.catch/.test(content)
+  ) {
+    throw new Error("Dieter could not make bridge event persistence fail closed");
   }
-  if (content.includes('flushEventsToDisk') && content.includes('finally(resolve)')) {
-    throw new Error('Dieter could not attach bridge persistence failure handling');
+  if (content.includes("flushEventsToDisk") && content.includes("finally(resolve)")) {
+    throw new Error("Dieter could not attach bridge persistence failure handling");
   }
-  if (content.includes('BRIDGE_REPLAY_FROM_DISK') && !content.includes('non-contiguous bridge replay sequence')) {
-    throw new Error('Dieter could not add bridge replay sequence validation');
+  if (
+    content.includes("BRIDGE_REPLAY_FROM_DISK") &&
+    !content.includes("non-contiguous bridge replay sequence")
+  ) {
+    throw new Error("Dieter could not add bridge replay sequence validation");
   }
-  if (content.includes('BRIDGE_REPLAY_FROM_DISK') && !content.includes('refusing to rerun an in-flight turn')) {
-    throw new Error('Dieter could not disable unsafe bridge reruns after replay corruption');
+  if (
+    content.includes("BRIDGE_REPLAY_FROM_DISK") &&
+    !content.includes("refusing to rerun an in-flight turn")
+  ) {
+    throw new Error("Dieter could not disable unsafe bridge reruns after replay corruption");
   }
   return content;
 }
@@ -562,9 +755,9 @@ export function observeHarnessCapabilities(harness, collector) {
       const session = await harness.doStart(options);
       return new Proxy(session, {
         get(target, property, receiver) {
-          if (property === 'doPromptTurn' || property === 'doContinueTurn') {
-            return turnOptions => {
-              const emit = createTerminalStepReconciler(event => {
+          if (property === "doPromptTurn" || property === "doContinueTurn") {
+            return (turnOptions) => {
+              const emit = createTerminalStepReconciler((event) => {
                 collector.consumeHarnessEvent(event);
                 turnOptions.emit(event);
               });
@@ -572,19 +765,27 @@ export function observeHarnessCapabilities(harness, collector) {
             };
           }
           const value = Reflect.get(target, property, receiver);
-          return typeof value === 'function' ? value.bind(target) : value;
+          return typeof value === "function" ? value.bind(target) : value;
         },
       });
     },
   };
   if (harness.getBootstrap) {
-    observed.getBootstrap = async options => {
+    observed.getBootstrap = async (options) => {
       const recipe = await harness.getBootstrap(options);
       return {
         ...recipe,
-        files: recipe.files.map(file => file.path.endsWith('/bridge.mjs')
-          ? { ...file, content: harness.harnessId === 'codex' ? patchCodexBridge(file.content) : patchDurableBridge(file.content) }
-          : file),
+        files: recipe.files.map((file) =>
+          file.path.endsWith("/bridge.mjs")
+            ? {
+                ...file,
+                content:
+                  harness.harnessId === "codex"
+                    ? patchCodexBridge(file.content)
+                    : patchDurableBridge(file.content),
+              }
+            : file,
+        ),
       };
     };
   }
@@ -597,12 +798,15 @@ function createCapabilityEventCoalescer() {
   let progressSequence = 0;
 
   function flushProgress() {
-    for (const { event } of [...pendingProgress.values()].sort((left, right) => left.sequence - right.sequence)) result.push(event);
+    for (const { event } of [...pendingProgress.values()].sort(
+      (left, right) => left.sequence - right.sequence,
+    ))
+      result.push(event);
     pendingProgress.clear();
   }
 
   function consume(event) {
-    if (event?.kind === 'progress') {
+    if (event?.kind === "progress") {
       const id = event.payload?.progress?.id || event.payload?.id;
       if (!id) {
         flushProgress();
@@ -610,7 +814,10 @@ function createCapabilityEventCoalescer() {
         return;
       }
       if (!pendingProgress.has(id)) progressSequence += 1;
-      pendingProgress.set(id, { event, sequence: pendingProgress.get(id)?.sequence || progressSequence });
+      pendingProgress.set(id, {
+        event,
+        sequence: pendingProgress.get(id)?.sequence || progressSequence,
+      });
       return;
     }
     flushProgress();
@@ -634,7 +841,7 @@ export function coalesceCapabilityEvents(events) {
 
 export function createNDJSONTailer(path, consume, intervalMs = 40) {
   let offset = 0;
-  let remainder = '';
+  let remainder = "";
   let pending = Promise.resolve();
   let timer;
   let stopped = false;
@@ -643,16 +850,16 @@ export function createNDJSONTailer(path, consume, intervalMs = 40) {
   async function readNewLines() {
     let file;
     try {
-      file = await open(path, 'r');
+      file = await open(path, "r");
     } catch (error) {
-      if (error?.code === 'ENOENT') return;
+      if (error?.code === "ENOENT") return;
       throw error;
     }
     try {
       const { size } = await file.stat();
       if (size < offset) {
         offset = 0;
-        remainder = '';
+        remainder = "";
       }
       if (size === offset) return;
       const coalescer = createCapabilityEventCoalescer();
@@ -661,12 +868,14 @@ export function createNDJSONTailer(path, consume, intervalMs = 40) {
         const result = await file.read(bytes, 0, bytes.length, offset);
         if (result.bytesRead === 0) break;
         offset += result.bytesRead;
-        const text = remainder + bytes.subarray(0, result.bytesRead).toString('utf8');
-        const lines = text.split('\n');
-        remainder = lines.pop() || '';
+        const text = remainder + bytes.subarray(0, result.bytesRead).toString("utf8");
+        const lines = text.split("\n");
+        remainder = lines.pop() || "";
         for (const line of lines) {
           if (!line.trim()) continue;
-          try { coalescer.consume(JSON.parse(line)); } catch {}
+          try {
+            coalescer.consume(JSON.parse(line));
+          } catch {}
         }
       }
       for (const event of coalescer.finish()) consume(event);
@@ -678,7 +887,7 @@ export function createNDJSONTailer(path, consume, intervalMs = 40) {
   function poll() {
     if (stopped) return;
     pending = readNewLines()
-      .catch(error => {
+      .catch((error) => {
         failure = error;
         stopped = true;
       })
@@ -700,8 +909,10 @@ export function createNDJSONTailer(path, consume, intervalMs = 40) {
       if (failure) throw failure;
       await readNewLines();
       if (remainder.trim()) {
-        try { consume(JSON.parse(remainder)); } catch {}
-        remainder = '';
+        try {
+          consume(JSON.parse(remainder));
+        } catch {}
+        remainder = "";
       }
     },
   };

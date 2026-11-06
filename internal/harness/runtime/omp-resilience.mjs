@@ -1,9 +1,9 @@
+import { acpSettings } from "./acp-runtime.mjs";
 import { createHash, randomUUID } from "node:crypto";
 import { chmod, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-const acpImplementationMismatch =
-  "ACP lifecycle state is incompatible with the configured implementation.";
+const acpImplementationMismatch = "ACP lifecycle state is incompatible with the configured agent.";
 const stagedRuntimeDirectory = /^[a-f0-9]{16}$/;
 const stableHookFile = /^omp-capabilities-[a-f0-9]{64}\.mjs$/;
 
@@ -21,6 +21,7 @@ function sortIdentityValue(value) {
 
 /** Mirror the pinned ACP package's identity contract for preflight selection. */
 export function acpImplementationIdentity({ settings, acpPackageVersion }) {
+  settings = acpSettings(settings);
   if (settings.providerAuthentication != null) {
     throw new Error("static ACP identity selection does not support provider authentication");
   }
@@ -39,7 +40,7 @@ export function acpImplementationIdentity({ settings, acpPackageVersion }) {
   const literal = Object.fromEntries(
     Object.entries(settings.env ?? {})
       .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, value]) => [key, { value }]),
+      .map(([key, value]) => [key, value]),
   );
   const payload = {
     harnessId: settings.harnessId,
@@ -53,6 +54,7 @@ export function acpImplementationIdentity({ settings, acpPackageVersion }) {
     environment: { forwarded, credential, literal },
     providerAuthentication: null,
     permissionModeMapping: settings.permissionModeMapping ?? null,
+    nonTextContentTypes: [...new Set(settings.nonTextContentTypes ?? [])].sort(),
   };
   return createHash("sha256")
     .update(JSON.stringify(sortIdentityValue(payload)))
@@ -80,7 +82,7 @@ export function prioritizeOMPLaunchCandidates({
   settingsForCandidate,
   acpPackageVersion,
 }) {
-  const expected = lifecycleState?.data?.implementationIdentity;
+  const expected = lifecycleState?.data?.agentIdentity;
   if (typeof expected !== "string" || !expected) return candidates;
   const match = candidates.find(
     (candidate) =>

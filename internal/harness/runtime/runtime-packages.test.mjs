@@ -14,7 +14,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import { createACP } from "@ai-sdk/harness-acp";
+import { createACP } from "./acp-runtime.mjs";
 import { createClaudeCode } from "@ai-sdk/harness-claude-code";
 import { createCodex } from "@ai-sdk/harness-codex";
 import { createLocalClaudeCode } from "./claude-runtime.mjs";

@@ -313,7 +313,7 @@ const [
 ] = await Promise.all([
   import("@ai-sdk/harness/agent"),
   import("@ai-sdk/harness-pi"),
-  import("@ai-sdk/harness-acp"),
+  import("./acp-runtime.mjs"),
   import("ai"),
   import("zod"),
   import("./codex-runtime.mjs"),
