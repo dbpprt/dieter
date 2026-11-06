@@ -179,11 +179,18 @@ func (t *tunnel) abort(code codes.Code, message string) {
 	default:
 	}
 	t.reset(code, message)
-	t.finish()
+	t.Close()
 }
 
 // Close ends the tunnel locally, e.g. when its carrier disconnected.
-func (t *tunnel) Close() { t.finish() }
+func (t *tunnel) Close() {
+	// A cancelled carrier cannot drain queued TCP bytes. Discard them rather
+	// than leaving a kernel-owned connection waiting on a stalled endpoint.
+	if socket, ok := t.local.(*net.TCPConn); ok {
+		_ = socket.SetLinger(0)
+	}
+	t.finish()
+}
 
 // DialTunnel opens a relay tunnel to daemonID on lane through conn, a gateway
 // connection whose calls already carry credentials. The returned connection

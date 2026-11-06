@@ -400,6 +400,8 @@ func TestChannelClaimsHoldWritersAndReleaseWakesThem(t *testing.T) {
 	if origin != "channel" {
 		t.Fatalf("wake message origin = %q, want channel", origin)
 	}
+	// Idle is published before asynchronous claim cleanup completes.
+	waitFor(t, func() bool { return len(service.ChannelClaims(project.ID)) == 0 })
 	if claims := service.ChannelClaims(project.ID); len(claims) != 0 {
 		t.Fatalf("claims after both turns ended = %+v", claims)
 	}
