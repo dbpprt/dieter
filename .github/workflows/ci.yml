@@ -338,11 +338,10 @@ jobs:
     needs: plan
     if: needs.plan.outputs.ios == 'true'
     runs-on: macos-26
-    # With updated native dependencies, cold Release linking exceeded 148
-    # minutes before the old job limit cancelled it. Allow three hours for
-    # Kotlin/Native plus Xcode, the full 25-minute Maestro deadline, setup,
-    # evidence upload and cleanup. The device-test deadline stays unchanged.
-    timeout-minutes: 240
+    # Measured cold Release framework builds take 108 minutes, followed by
+    # ~15 minutes for Xcode. Retain the full 25-minute Maestro deadline plus
+    # setup, evidence upload, cache saving, and cleanup.
+    timeout-minutes: 165
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.5.app/Contents/Developer
     steps:
