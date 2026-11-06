@@ -3,7 +3,8 @@ import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { VERSION as acpPackageVersion, createACP } from "@ai-sdk/harness-acp";
+import { VERSION as acpPackageVersion } from "@ai-sdk/harness-acp";
+import { createACP } from "./acp-runtime.mjs";
 import {
   acpImplementationIdentity,
   createOMPLaunchCandidates,
@@ -101,9 +102,7 @@ test("retries an ACP implementation mismatch with a legacy OMP hook path", async
       async createSession(options) {
         attempts.push({ candidate, options });
         if (candidate.hookPath.startsWith("/stable")) {
-          throw new Error(
-            "ACP lifecycle state is incompatible with the configured implementation.",
-          );
+          throw new Error("ACP lifecycle state is incompatible with the configured agent.");
         }
         return expectedSession;
       },
@@ -129,7 +128,7 @@ test("preselects the legacy launch matching the persisted ACP implementation ide
   });
   const lifecycleState = {
     data: {
-      implementationIdentity: acpImplementationIdentity({
+      agentIdentity: acpImplementationIdentity({
         settings: ompSettings(legacyHookPath, undefined),
         acpPackageVersion,
       }),
@@ -184,7 +183,7 @@ test("matches the implementation identity contract of the pinned ACP runtime", a
     harnessId: "omp",
     specificationVersion: "harness-v1",
     data: {
-      implementationIdentity,
+      agentIdentity: implementationIdentity,
       authenticationProfile: { digest: "deliberately-wrong" },
     },
   };
@@ -216,7 +215,7 @@ test("matches the implementation identity contract of the pinned ACP runtime", a
         sandboxSession,
         sessionWorkDir: "/tmp",
       }),
-    /configured implementation/,
+    /configured agent/,
   );
 });
 
