@@ -805,7 +805,9 @@ class ScreenCanvasView(context: Context, val host: ScreenCanvasHost) : FrameLayo
 
     override fun onCreateInputConnection(info: EditorInfo): InputConnection {
         info.inputType =
+            // Some IMEs ignore NO_SUGGESTIONS for ordinary text fields.
             InputType.TYPE_CLASS_TEXT or
+                InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD or
                 InputType.TYPE_TEXT_FLAG_MULTI_LINE or
                 InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
         info.imeOptions =
