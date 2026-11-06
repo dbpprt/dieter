@@ -12,11 +12,11 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
@@ -30,12 +30,16 @@ class TunnelBridgeTest {
     /** Frames the gateway sends to the bridge. */
     private val fromGateway = Channel<TunnelFrame>(Channel.UNLIMITED)
     private val closes = AtomicInteger()
+    private val closeCompleted = CompletableDeferred<Unit>()
     private val bridge =
         TunnelBridge(
             toGateway,
             fromGateway,
             CoroutineScope(SupervisorJob() + Dispatchers.IO),
-            onClose = { closes.incrementAndGet() },
+            onClose = {
+                closes.incrementAndGet()
+                closeCompleted.complete(Unit)
+            },
         )
     private val socket by lazy { Socket("127.0.0.1", bridge.port) }
 
@@ -115,7 +119,9 @@ class TunnelBridgeTest {
         socket.soTimeout = 5_000
         fromGateway.send(TunnelFrame(kind = TunnelFrameKind.TUNNEL_FRAME_KIND_CLOSE))
         assertEquals(-1, socket.getInputStream().read())
-        withTimeout(5.seconds) { while (!bridge.isClosed) delay(10) }
+        // isClosed marks the start of shutdown; the callback completes after resource cleanup.
+        withTimeout(5.seconds) { closeCompleted.await() }
+        assertTrue(bridge.isClosed)
         bridge.close()
         bridge.close()
         assertEquals(1, closes.get())
@@ -128,7 +134,7 @@ class TunnelBridgeTest {
         withTimeout(5.seconds) {
             for (frame in toGateway) frames += frame
             // The gateway side ends before the bridge finishes closing.
-            while (closes.get() == 0) delay(10)
+            closeCompleted.await()
         }
         assertEquals(TunnelFrameKind.TUNNEL_FRAME_KIND_CLOSE, frames.last().kind)
         assertEquals(1, closes.get())
@@ -139,6 +145,7 @@ class TunnelBridgeTest {
         socket.soTimeout = 5_000
         fromGateway.send(TunnelFrame(kind = TunnelFrameKind.TUNNEL_FRAME_KIND_WINDOW, credit = 1))
         assertEquals(-1, socket.getInputStream().read())
-        withTimeout(5.seconds) { while (!bridge.isClosed) delay(10) }
+        withTimeout(5.seconds) { closeCompleted.await() }
+        assertTrue(bridge.isClosed)
     }
 }
