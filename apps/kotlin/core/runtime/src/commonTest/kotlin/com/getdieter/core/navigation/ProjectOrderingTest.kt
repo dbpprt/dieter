@@ -58,9 +58,15 @@ class ProjectOrderingTest {
         )
 
         val kv =
-            SharedKv("navigation", offlineSessions(), acceptor = { null }, SilentLogger).also {
-                it.bind(CoreStorage(FakeFileSystem(), "/state".toPath()))
-            }
+            SharedKv(
+                    "navigation",
+                    offlineSessions().kvMachines(),
+                    acceptor = { null },
+                    SilentLogger,
+                )
+                .also {
+                    it.bind(CoreStorage(FakeFileSystem(), "/state".toPath()))
+                }
         val editor = NavigationEditor(kv)
         editor.setProjectOrder(listOf("beta", "gamma", "alpha"))
         assertEquals(
