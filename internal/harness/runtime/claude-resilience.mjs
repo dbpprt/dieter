@@ -1,6 +1,8 @@
-const claudeRetryExhaustedPattern = /Claude Code API retry:\s*attempt\s+(\d+)\/(\d+);\s*HTTP\s+(\d+)/i;
+const claudeRetryExhaustedPattern =
+  /Claude Code API retry:\s*attempt\s+(\d+)\/(\d+);\s*HTTP\s+(\d+)/i;
 
-export const emptyClaudeResumePrompt = 'The previous continuation ended without producing any output. Continue from the current session state and respond to the user\'s latest message now. Inspect the current state before repeating any action that may already have completed.';
+export const emptyClaudeResumePrompt =
+  "The previous continuation ended without producing any output. Continue from the current session state and respond to the user's latest message now. Inspect the current state before repeating any action that may already have completed.";
 
 function totalTokens(chunk) {
   const direct = chunk?.messageMetadata?.usage?.totalTokens ?? chunk?.usage?.totalTokens;
@@ -13,20 +15,20 @@ export function createClaudeTurnSummary() {
 }
 
 export function observeClaudeTurnChunk(summary, chunk) {
-  if (!summary || !chunk || typeof chunk !== 'object') return false;
+  if (!summary || !chunk || typeof chunk !== "object") return false;
   const tokens = totalTokens(chunk);
   if (tokens !== undefined) summary.totalTokens = tokens;
 
   let meaningful = false;
   switch (chunk.type) {
-    case 'text-delta':
-    case 'reasoning-delta':
-      meaningful = Boolean(String(chunk.delta || '').trim());
+    case "text-delta":
+    case "reasoning-delta":
+      meaningful = Boolean(String(chunk.delta || "").trim());
       break;
-    case 'tool-input-available':
-    case 'tool-output-available':
-    case 'tool-output-error':
-    case 'tool-approval-request':
+    case "tool-input-available":
+    case "tool-output-available":
+    case "tool-output-error":
+    case "tool-approval-request":
       meaningful = true;
       break;
   }
@@ -38,13 +40,26 @@ export function isCompletelyEmptyClaudeTurn(summary) {
   return Boolean(summary) && !summary.meaningful && summary.totalTokens === 0;
 }
 
-export async function retryEmptyClaudeResume({ adapter, hasResumeSession, continuing, firstSummary, retry }) {
-  if (adapter !== 'claude-code' || !hasResumeSession || continuing || !isCompletelyEmptyClaudeTurn(firstSummary)) {
+export async function retryEmptyClaudeResume({
+  adapter,
+  hasResumeSession,
+  continuing,
+  firstSummary,
+  retry,
+}) {
+  if (
+    adapter !== "claude-code" ||
+    !hasResumeSession ||
+    continuing ||
+    !isCompletelyEmptyClaudeTurn(firstSummary)
+  ) {
     return firstSummary;
   }
   const retriedSummary = await retry(emptyClaudeResumePrompt);
   if (isCompletelyEmptyClaudeTurn(retriedSummary)) {
-    throw new Error('Claude Code resumed the session twice without producing output; the durable session is preserved and can be resumed with another message.');
+    throw new Error(
+      "Claude Code resumed the session twice without producing output; the durable session is preserved and can be resumed with another message.",
+    );
   }
   return retriedSummary;
 }
@@ -55,15 +70,17 @@ export async function retryEmptyClaudeResume({ adapter, hasResumeSession, contin
 // a terminal 401, while a fresh process started a moment later reads the
 // current credentials and works. Recorded history: 26 of 30 such failures were
 // followed by a turn that ran fine, usually within minutes.
-const claudeAuthFailurePattern = /authentication_failed|\bHTTP 401\b|Failed to authenticate|OAuth (?:access )?token (?:has )?(?:expired|been revoked)/i;
+const claudeAuthFailurePattern =
+  /authentication_failed|\bHTTP 401\b|Failed to authenticate|OAuth (?:access )?token (?:has )?(?:expired|been revoked)/i;
 
 export const claudeAuthRetryDelayMs = 2000;
 
-export const claudeAuthResumePrompt = 'The previous continuation was interrupted by a temporary authentication error, and the sign-in has since been renewed. Continue from the current session state and respond to the user\'s latest message now. Inspect the current state before repeating any action that may already have completed.';
+export const claudeAuthResumePrompt =
+  "The previous continuation was interrupted by a temporary authentication error, and the sign-in has since been renewed. Continue from the current session state and respond to the user's latest message now. Inspect the current state before repeating any action that may already have completed.";
 
 export function claudeAuthFailureText(chunk) {
-  if (chunk?.type !== 'error') return undefined;
-  const text = String(chunk.errorText || '').trim();
+  if (chunk?.type !== "error") return undefined;
+  const text = String(chunk.errorText || "").trim();
   return claudeAuthFailurePattern.test(text) ? text : undefined;
 }
 
@@ -71,29 +88,36 @@ export function claudeAuthFailureText(chunk) {
 // summarize a failure by its first line, so lead with what to do about it.
 export function claudeAuthFailureMessage(detail) {
   return [
-    'Claude Code sign-in was rejected, even after retrying. Run `claude auth login` on the host that runs this agent, then retry.',
+    "Claude Code sign-in was rejected, even after retrying. Run `claude auth login` on the host that runs this agent, then retry.",
     detail,
-  ].filter(Boolean).join('\n');
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
-export async function retryClaudeAuthFailure({ adapter, authFailure, retry, delayMs = claudeAuthRetryDelayMs }) {
-  if (adapter !== 'claude-code' || !authFailure) return undefined;
+export async function retryClaudeAuthFailure({
+  adapter,
+  authFailure,
+  retry,
+  delayMs = claudeAuthRetryDelayMs,
+}) {
+  if (adapter !== "claude-code" || !authFailure) return undefined;
   // Give a process that is mid-refresh time to persist the rotated credentials.
-  if (delayMs > 0) await new Promise(resolve => setTimeout(resolve, delayMs));
+  if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
   return retry(claudeAuthResumePrompt);
 }
 
 function chunkText(chunk, encoding) {
-  if (typeof chunk === 'string') return chunk;
+  if (typeof chunk === "string") return chunk;
   try {
-    return Buffer.from(chunk).toString(typeof encoding === 'string' ? encoding : 'utf8');
+    return Buffer.from(chunk).toString(typeof encoding === "string" ? encoding : "utf8");
   } catch {
-    return '';
+    return "";
   }
 }
 
 export function createClaudeDiagnosticTracker() {
-  let buffered = '';
+  let buffered = "";
   let activeTurn;
 
   function inspectLine(line) {
@@ -115,8 +139,8 @@ export function createClaudeDiagnosticTracker() {
     observeStderr(chunk, encoding) {
       const text = chunkText(chunk, encoding);
       if (!text) return;
-      const lines = `${buffered}${text}`.replace(/\r\n/g, '\n').split('\n');
-      buffered = lines.pop() || '';
+      const lines = `${buffered}${text}`.replace(/\r\n/g, "\n").split("\n");
+      buffered = lines.pop() || "";
       for (const line of lines) inspectLine(line);
     },
     observeActivity(turn) {
@@ -126,7 +150,7 @@ export function createClaudeDiagnosticTracker() {
       if (activeTurn !== turn) return undefined;
       if (buffered) {
         inspectLine(buffered);
-        buffered = '';
+        buffered = "";
       }
       activeTurn = undefined;
       return turn.providerFailure;
