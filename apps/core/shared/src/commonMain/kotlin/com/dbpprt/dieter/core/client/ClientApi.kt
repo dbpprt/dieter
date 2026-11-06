@@ -29,6 +29,7 @@ import com.dbpprt.dieter.core.files.FilesView
 import com.dbpprt.dieter.core.identity.Gateway
 import com.dbpprt.dieter.core.navigation.FolderScope
 import com.dbpprt.dieter.core.navigation.NavigationFolder
+import com.dbpprt.dieter.core.navigation.ProjectOrdering
 import com.dbpprt.dieter.core.presentation.ConversationPresenter
 import com.dbpprt.dieter.core.presentation.TimelineCache
 import com.dbpprt.dieter.core.runtime.CoreException
@@ -298,7 +299,7 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
             return done
         }
         command.set_project_order?.let {
-            runtime.navigation.setProjectOrder(it.project_ids)
+            ProjectOrdering.replaceSavedOrder(runtime.navigationKv, it.project_ids)
             return done
         }
         command.set_project_expanded?.let {

@@ -508,6 +508,33 @@ struct AppSidebar: View {
         return VStack(alignment: .leading, spacing: 0) {
             DieterSectionHeader(title: "Projects") {
                 if projectsHeaderHovering {
+                    Menu {
+                        Button {
+                            store.resetProjectOrder()
+                        } label: {
+                            Label(
+                                "Recent activity",
+                                systemImage: store.navigation.projectOrder.isEmpty ? "checkmark" : "clock")
+                        }
+                        .disabled(store.navigation.projectOrder.isEmpty)
+                        Divider()
+                        Text(
+                            store.navigation.projectOrder.isEmpty
+                                ? "Drag projects or use their menus to set a custom order."
+                                : "Projects use a custom order. Drag or use their menus to rearrange it."
+                        )
+                    } label: {
+                        Image(systemName: "arrow.up.arrow.down").font(.system(size: 10.5, weight: .medium))
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .foregroundStyle(DieterTheme.tertiary)
+                    .help(
+                        store.navigation.projectOrder.isEmpty
+                            ? "Projects are sorted by recent activity" : "Projects use a custom order"
+                    )
+                    .accessibilityLabel("Project order")
+                    .accessibilityIdentifier("sidebar.project-order")
                     Button {
                         folderEditor = .create(title: "New project folder")
                     } label: {
@@ -531,6 +558,7 @@ struct AppSidebar: View {
             .padding(.horizontal, 10).frame(height: 24)
             .contentShape(Rectangle())
             .onHover { projectsHeaderHovering = $0 }
+            .help("Projects sort by recent activity until you rearrange them")
             .background(
                 unfiledDropTargeted ? DieterTheme.tileSelected : .clear,
                 in: RoundedRectangle(cornerRadius: DieterMetrics.rowRadius, style: .continuous)
@@ -1290,6 +1318,10 @@ private struct ProjectContextMenuModifier: ViewModifier {
                 Button(pinned ? "Unpin project" : "Pin project", systemImage: pinned ? "pin.slash" : "pin") {
                     store.setProjectPinned(project.id, pinned: !pinned)
                 }
+                Button("Move up", systemImage: "arrow.up", action: moveUp)
+                    .disabled(!canMoveUp)
+                Button("Move down", systemImage: "arrow.down", action: moveDown)
+                    .disabled(!canMoveDown)
                 Divider()
                 Button("Rename project…", systemImage: "pencil") {
                     store.presentRenameProject(projectID: project.id)
@@ -1348,6 +1380,34 @@ private struct ProjectContextMenuModifier: ViewModifier {
 
     private func moveProject(to folderID: String?) {
         store.moveToFolder(.projects, itemID: project.id, folderID: folderID)
+    }
+
+    private var siblingProjectIDs: [String] {
+        let layout = store.navigation.projects
+        return layout.folders.folder(containing: project.id)?.itemIds ?? layout.unfiled
+    }
+
+    private var projectIndex: Int? { siblingProjectIDs.firstIndex(of: project.id) }
+
+    private var canMoveUp: Bool { (projectIndex ?? 0) > 0 }
+
+    private var canMoveDown: Bool {
+        guard let projectIndex else { return false }
+        return projectIndex + 1 < siblingProjectIDs.count
+    }
+
+    private func moveUp() {
+        guard let projectIndex, projectIndex > 0 else { return }
+        store.moveProject(project.id, before: siblingProjectIDs[projectIndex - 1], ungrouped: false)
+    }
+
+    private func moveDown() {
+        guard let projectIndex, projectIndex + 1 < siblingProjectIDs.count else { return }
+        let afterNext = projectIndex + 2
+        store.moveProject(
+            project.id,
+            before: siblingProjectIDs.indices.contains(afterNext) ? siblingProjectIDs[afterNext] : nil,
+            ungrouped: false)
     }
 }
 

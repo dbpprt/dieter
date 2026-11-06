@@ -46,6 +46,14 @@ import Testing
     #expect(await navigationEdits(core, of: store).count == 2, "showing the core sends nothing back")
 }
 
+@Test @MainActor func projectOrderCanResetToRecentActivity() async throws {
+    let core = ScriptedCoreClient()
+    let store = DieterStore(core: core, liveEnvironment: false)
+    store.resetProjectOrder()
+    let sent = await navigationCommands(core, of: store)
+    #expect(sent == [.setProjectOrder(.with { $0.projectIds = [] })])
+}
+
 @Test @MainActor func projectFolderEditsGoToTheCore() async throws {
     let core = ScriptedCoreClient()
     let store = DieterStore(core: core, liveEnvironment: false)
