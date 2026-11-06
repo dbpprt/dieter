@@ -19,7 +19,7 @@
     "@earendil-works/pi-coding-agent": "1.4.0",
     "@modelcontextprotocol/sdk": "1.32.2",
     "@oh-my-pi/pi-coding-agent": "18.12.6",
-    "@openai/codex": "0.164.0",
+    "@openai/codex": "0.166.0",
     "ai": "7.0.161",
     "smol-toml": "1.9.1",
     "ws": "8.22.1",

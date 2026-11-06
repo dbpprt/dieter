@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { harnessStateDirectoryPath } from "@ai-sdk/harness";
 import { prepareSandboxForHarness } from "@ai-sdk/harness/agent";
 import { resolveSandboxHomeDir } from "@ai-sdk/harness/utils";
-import { createACP } from "@ai-sdk/harness-acp";
+import { createACP } from "./acp-runtime.mjs";
 import { createLocalSandboxProvider } from "./local-sandbox.mjs";
 import { parseDSHModelOptions } from "./dsh-models.mjs";
 import { dshACPArgs, dshPackageVersion } from "./provider-options.mjs";

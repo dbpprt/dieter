@@ -1,4 +1,4 @@
-import { createACP } from "@ai-sdk/harness-acp";
+import { createACP } from "./acp-runtime.mjs";
 import { runtimeLinkedBootstrap, runtimePackageVersion } from "./runtime-packages.mjs";
 
 export const ompPackageName = "@oh-my-pi/pi-coding-agent";
@@ -21,10 +21,46 @@ export function createLocalOMP(settings) {
   return {
     ...harness,
     async getBootstrap(options) {
-      return runtimeLinkedBootstrap(await harness.getBootstrap(options), {
-        agent: "omp",
-        implementation: true,
-      });
+      const recipe = await harness.getBootstrap(options);
+      const linked = runtimeLinkedBootstrap(
+        {
+          ...recipe,
+          files: [
+            ...recipe.files,
+            {
+              path: `${recipe.bootstrapDir}/implementation/package.json`,
+              content: JSON.stringify({
+                dependencies: { [settings.source.packageName]: settings.source.packageVersion },
+              }),
+            },
+          ],
+        },
+        {
+          agent: "omp",
+          implementation: true,
+        },
+      );
+      // install-command agents launch from their private home. Link that entry
+      // to the same verified implementation without invoking a package manager.
+      return {
+        ...linked,
+        files: linked.files.map((file) =>
+          file.path.endsWith("/dieter-runtime-link.mjs")
+            ? {
+                ...file,
+                content:
+                  file.content +
+                  `
+import { mkdir, rm, symlink } from "node:fs/promises";
+import { resolve } from "node:path";
+await mkdir("home/.local/bin", { recursive: true });
+await rm("home/.local/bin/omp", { force: true });
+await symlink(resolve("implementation/node_modules/.bin/omp"), "home/.local/bin/omp");
+`,
+              }
+            : file,
+        ),
+      };
     },
   };
 }
