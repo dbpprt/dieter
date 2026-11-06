@@ -10,7 +10,34 @@ copy the **Unreleased** notes into a section named after that exact version
 
 Nothing yet.
 
-## 0.6.435
+## 0.6.439
+
+### Fixed
+
+- **Workspace file links open in the mobile apps.** On Android, iPhone and
+  iPad, file links in conversations and Markdown previews now open through
+  Files in the owning workspace. Relative links resolve from the document's
+  folder, and image and PDF links open native previews automatically.
+- Conversations show the latest file or page an agent explicitly presents.
+  iOS also reports failures to open links or attachments.
+
+## 0.6.438
+
+### Fixed
+
+- **Screen sharing works from Ubuntu and other GNOME Wayland desktops.**
+  Connecting to a Linux machine running a current desktop portal (Ubuntu 26.04,
+  GNOME 50) failed every time with "portal did not return a session handle".
+  The host now shows the desktop's approval prompt on its own screen; approve it
+  once there, and Dieter asks the portal to remember it so later connections
+  can start without a prompt.
+- **The first connection to a Mac screen no longer fails** with "Unknown native
+  stream" when you take control. Connecting again used to work; now the first
+  attempt does.
+- Linux screen shares keep the desktop's aspect ratio instead of stretching it
+  to the viewer's window, so clicks land where you see them.
+
+## 0.6.437
 
 ### Added
 
@@ -33,6 +60,19 @@ Nothing yet.
 - Android's More sheet shows four equal tiles in one row: Channels,
   Terminals, Devices and Settings. Provider usage stays on the Inbox (and in
   the More page's list), so no tile is taller than the others.
+
+### Fixed
+
+- **The Mac app no longer burns a CPU core while agents work.** Each working
+  agent's machine streams its progress several times a second, and every one of
+  those updates rebuilt the whole account view and compared it with the last
+  one card by card. With many cards the app ran at 100–150% CPU and could stop
+  responding. Updates now reach the views at most four times a second, cards
+  that did not change are not compared again, and machines send a working
+  agent's progress at most four times a second. The Android and iPhone apps
+  share this code and use less battery while agents work.
+- The working indicator at the end of a running conversation animates at up to
+  30 frames a second instead of at the display's refresh rate.
 
 ## 0.6.433
 

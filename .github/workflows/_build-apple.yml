@@ -60,6 +60,14 @@ jobs:
           retention-days: 30
           if-no-files-found: error
           compression-level: 0
+      # The shipped binary is stripped; samples and crash reports of this exact
+      # build (matching UUIDs) symbolicate against these. Not a release asset.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: symbols-mac
+          path: dist/apple/Dieter.xcarchive/dSYMs
+          retention-days: 90
+          if-no-files-found: warn
 
   ios:
     runs-on: macos-26

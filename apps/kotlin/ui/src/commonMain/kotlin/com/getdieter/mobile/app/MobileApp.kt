@@ -350,7 +350,12 @@ internal fun RouteContent(store: MobileStore, route: MobileRoute, openUrl: (Stri
         is MobileRoute.NewTask -> CreationScreen(store, route.chat)
         is MobileRoute.ShareTarget -> ShareTargetScreen(store, route.chat)
         is MobileRoute.FilePath ->
-            FilesScreen(store, inConversation = route.cardId.isNotEmpty(), route = route)
+            FilesScreen(
+                store,
+                inConversation = route.cardId.isNotEmpty(),
+                route = route,
+                openUrl = openUrl,
+            )
         is MobileRoute.Machine -> MachineScreen(store, route.machineId)
         is MobileRoute.TerminalSession ->
             TerminalSessionScreen(store, route.terminalId, card(route.cardId))

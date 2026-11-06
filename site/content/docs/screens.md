@@ -108,7 +108,9 @@ Linux service setup.
 
 Wayland portal sources can be represented as a locally approved selection
 rather than a passively enumerable monitor. A viewer shows “waiting for approval
-on Linux host” while that bounded local prompt is open.
+on Linux host” while that bounded local prompt is open. Dieter asks the portal
+to remember the approval, so later connections can start without a prompt
+where the desktop supports restoring it.
 
 ## Transport and admission
 

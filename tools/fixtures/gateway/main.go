@@ -549,6 +549,11 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute, mailR
 		return err
 	}
 	go approvePairingCode(ctx, primaryTrust, pairingCode, logger)
+	if streams := os.Getenv("DIETER_PERFORMANCE_STREAMS"); streams != "" {
+		if err = startPerformanceStreams(ctx, localConnectClient(boardListener.Addr().String(), localToken), data, project, streams); err != nil {
+			return err
+		}
+	}
 	if showcased != nil {
 		if err = showcased.connect(ctx, showcaseEnvironment{
 			logger: logger, gateway: isolated, enroll: enroll, newServer: newFixtureServer, account: account, subject: subject,
@@ -773,6 +778,9 @@ func (runner *isolatedRunner) Run(ctx context.Context, request harness.Request, 
 }
 
 func (runner *isolatedRunner) run(ctx context.Context, request harness.Request, emit func(harness.Output) error) error {
+	if request.Prompt == performanceStreamPrompt {
+		return runPerformanceStream(ctx, request, emit)
+	}
 	if runner.showcase {
 		if script := showcaseScript(request); script != nil {
 			return runShowcaseTurn(ctx, request, emit, script)

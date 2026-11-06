@@ -225,6 +225,67 @@ class MobileStore(
         creation.update(creation.initialIntent())
     }
 
+    /** Resolve authored links against the owning workspace, then use the existing files surface. */
+    fun openContentLink(
+        url: String,
+        openWeb: (String) -> Unit,
+        cardId: String = "",
+        relativeTo: String = "",
+    ) = action {
+        val navigation = routes.value
+        val target =
+            if (cardId.isNotEmpty()) {
+                val view = conversation.slice.value
+                check(view.card_id == cardId) { "This conversation is no longer available." }
+                FilesTarget(
+                    daemon_id = view.daemon_id,
+                    project_id = view.card?.project_id.orEmpty(),
+                    card_id = cardId,
+                )
+            } else files.slice.value.target
+        // Web links need no workspace lookup or file binding.
+        val web = Regex("(?i)^https?://").containsMatchIn(url)
+        val root =
+            if (web) null
+            else if (cardId.isNotEmpty()) {
+                core
+                    .dispatch(
+                        Command(admin = AdminCommand(conversation_workspace = AdminCard(cardId)))
+                    )
+                    .workspace
+                    ?.path
+            } else {
+                workspace.slice.value.projects
+                    .flatMap { it.checkouts }
+                    .firstOrNull { it.id == target?.checkout_id }
+                    ?.path
+            }
+        val link =
+            com.getdieter.core.presentation.ContentLinks.resolve(
+                url,
+                root,
+                relativeTo.ifEmpty { null },
+            )
+        if (routes.value != navigation) return@action
+        when (link) {
+            is com.getdieter.core.presentation.ContentLink.Web -> openWeb(link.url)
+            is com.getdieter.core.presentation.ContentLink.File -> {
+                checkNotNull(target) { "The file workspace is unavailable." }
+                core.dispatch(Command(files = FilesCommand(scope = FILES_SCOPE, bind = target)))
+                push(
+                    MobileRoute.FilePath(
+                        link.path,
+                        true,
+                        cardId,
+                        daemonId = if (cardId.isEmpty()) target.daemon_id else "",
+                        projectId = if (cardId.isEmpty()) target.project_id else "",
+                        checkoutId = if (cardId.isEmpty()) target.checkout_id else "",
+                    )
+                )
+            }
+        }
+    }
+
     /** Debug builds replay navigation steps for screenshots; see [runDebugScript]. */
     fun debugScript(script: String) {
         context.scope.launch { runDebugScript(script) }

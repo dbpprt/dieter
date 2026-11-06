@@ -291,3 +291,11 @@ binary). Every end-to-end test starts its own gateway and daemon with a
 temporary `DIETER_HOME` and random loopback ports, and never touches an
 operator's daemon. The Android and iOS Maestro flows in
 [`tests/maestro`](../../tests/maestro/README.md) cover the shells on devices.
+
+## Workspace links on mobile
+
+Links in the transcript and Markdown file previews open workspace files through
+the owning daemon, including absolute paths in conversation worktrees. Relative
+links in a document resolve against its folder. Web links open in the system
+browser. Image links open the native attachment preview (Quick Look on iOS),
+and the latest explicit content presentation is available from the transcript.
