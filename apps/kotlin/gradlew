@@ -1,5 +1,18 @@
 #!/bin/sh
 
+# Device tasks never pick a device on their own: name it with ANDROID_SERIAL.
+for dieter_task_arg in "$@"; do
+    case "$dieter_task_arg" in
+        connected*AndroidTest|*:connected*AndroidTest|install*|*:install*)
+            if [ -z "${ANDROID_SERIAL:-}" ]; then
+                echo 'Set ANDROID_SERIAL explicitly before a device Gradle task.' >&2
+                exit 2
+            fi
+            break
+            ;;
+    esac
+done
+
 #
 # Copyright © 2015 the original authors.
 #
