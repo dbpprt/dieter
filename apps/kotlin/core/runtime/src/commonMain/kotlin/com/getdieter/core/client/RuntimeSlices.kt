@@ -46,6 +46,7 @@ import com.getdieter.core.machines.MachineRows
 import com.getdieter.core.machines.PrivacyPresentation
 import com.getdieter.core.navigation.FolderScope
 import com.getdieter.core.navigation.NavigationLayout
+import com.getdieter.core.navigation.ProjectOrdering
 import com.getdieter.core.outbox.DeliveryPhase
 import com.getdieter.core.routing.RouteKind
 import com.getdieter.core.session.MachineRoute
@@ -240,9 +241,9 @@ internal fun CoreRuntime.navigationSlices(): Flow<NavigationSlice> =
     combine(
         navigationKv.values,
         navigationKv.status,
-        // The sidebar shows the listed, unarchived projects.
+        // Without a saved manual order, the sidebar follows recent activity.
         workspace.state
-            .map { view -> view.projects.filterNot { it.archived }.map { it.id } }
+            .map { view -> ProjectOrdering.byActivity(view.projects, view.allItems) }
             .distinctUntilChanged(),
     ) { values, status, available ->
         val layout = NavigationLayout(values)

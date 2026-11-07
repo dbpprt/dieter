@@ -34,6 +34,7 @@ import com.getdieter.core.files.FilesView
 import com.getdieter.core.identity.Gateway
 import com.getdieter.core.navigation.FolderScope
 import com.getdieter.core.navigation.NavigationFolder
+import com.getdieter.core.navigation.ProjectOrdering
 import com.getdieter.core.presentation.ConversationPresenter
 import com.getdieter.core.presentation.TimelineCache
 import com.getdieter.core.runtime.CoreException
@@ -313,7 +314,7 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
             return done
         }
         command.set_project_order?.let {
-            runtime.navigation.setProjectOrder(it.project_ids)
+            ProjectOrdering.replaceSavedOrder(runtime.navigationKv, it.project_ids)
             return done
         }
         command.set_project_expanded?.let {

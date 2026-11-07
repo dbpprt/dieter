@@ -15,6 +15,7 @@ import com.getdieter.core.navigation.ChatsSurface
 import com.getdieter.core.navigation.ChatsView
 import com.getdieter.core.navigation.FolderScope
 import com.getdieter.core.navigation.NavigationLayout
+import com.getdieter.core.navigation.ProjectOrdering
 
 // The chats surface (SLICE_CHATS), its commands, and navigation edits made on
 // the layout as shown.
@@ -75,7 +76,10 @@ internal fun chatsSlice(view: ChatsView) =
 internal fun CoreRuntime.applyNavigation(command: NavigationCommand): Result {
     val done = Result(done = Done())
     command.move_project?.let { move ->
-        val available = workspace.state.value.projects.filterNot { it.archived }.map { it.id }
+        val view = workspace.state.value
+        val available =
+            if (move.ungrouped) view.projects.filterNot { it.archived }.map { it.id }
+            else ProjectOrdering.byActivity(view.projects, view.allItems)
         navigation.moveProjectBefore(
             move.project_id,
             move.before_project_id.ifEmpty { null },

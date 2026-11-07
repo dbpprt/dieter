@@ -45,6 +45,13 @@ extension AppSession {
         }
     }
 
+    /// Removes custom positions so projects follow activity again.
+    func resetProjectOrder() {
+        editNavigation {
+            $0.setProjectOrder = .with { $0.projectIds = [] }
+        }
+    }
+
     func setInboxCardPinned(_ cardID: String, pinned: Bool) {
         navigate {
             $0.pinInboxCard = .with {

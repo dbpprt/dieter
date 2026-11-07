@@ -408,6 +408,10 @@ private struct ProjectMenuItems: View {
         Button(pinned ? "Unpin project" : "Pin project", systemImage: pinned ? "pin.slash" : "pin") {
             store.setProjectPinned(project.id, pinned: !pinned)
         }
+        Button("Move up", systemImage: "arrow.up", action: moveUp)
+            .disabled(!canMoveUp)
+        Button("Move down", systemImage: "arrow.down", action: moveDown)
+            .disabled(!canMoveDown)
         Divider()
         Button("Rename project…", systemImage: "pencil") {
             store.presentRenameProject(projectID: project.id)
@@ -449,6 +453,34 @@ private struct ProjectMenuItems: View {
 
     private func moveProject(to folderID: String?) {
         store.moveToFolder(.projects, itemID: project.id, folderID: folderID)
+    }
+
+    private var siblingProjectIDs: [String] {
+        let layout = store.navigation.projects
+        return layout.folders.folder(containing: project.id)?.itemIds ?? layout.unfiled
+    }
+
+    private var projectIndex: Int? { siblingProjectIDs.firstIndex(of: project.id) }
+
+    private var canMoveUp: Bool { (projectIndex ?? 0) > 0 }
+
+    private var canMoveDown: Bool {
+        guard let projectIndex else { return false }
+        return projectIndex + 1 < siblingProjectIDs.count
+    }
+
+    private func moveUp() {
+        guard let projectIndex, projectIndex > 0 else { return }
+        store.moveProject(project.id, before: siblingProjectIDs[projectIndex - 1], ungrouped: false)
+    }
+
+    private func moveDown() {
+        guard let projectIndex, projectIndex + 1 < siblingProjectIDs.count else { return }
+        let afterNext = projectIndex + 2
+        store.moveProject(
+            project.id,
+            before: siblingProjectIDs.indices.contains(afterNext) ? siblingProjectIDs[afterNext] : nil,
+            ungrouped: false)
     }
 }
 

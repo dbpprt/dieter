@@ -245,6 +245,33 @@ private struct SidebarProjectsSection: View {
         return VStack(alignment: .leading, spacing: 0) {
             DieterSectionHeader(title: "Projects") {
                 if projectsHeaderHovering {
+                    Menu {
+                        Button {
+                            store.resetProjectOrder()
+                        } label: {
+                            Label(
+                                "Recent activity",
+                                systemImage: store.navigation.projectOrder.isEmpty ? "checkmark" : "clock")
+                        }
+                        .disabled(store.navigation.projectOrder.isEmpty)
+                        Divider()
+                        Text(
+                            store.navigation.projectOrder.isEmpty
+                                ? "Drag projects or use their menus to set a custom order."
+                                : "Projects use a custom order. Drag or use their menus to rearrange it."
+                        )
+                    } label: {
+                        Image(systemName: "arrow.up.arrow.down").font(.system(size: 10.5, weight: .medium))
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .foregroundStyle(DieterTheme.tertiary)
+                    .help(
+                        store.navigation.projectOrder.isEmpty
+                            ? "Projects are sorted by recent activity" : "Projects use a custom order"
+                    )
+                    .accessibilityLabel("Project order")
+                    .accessibilityIdentifier("sidebar.project-order")
                     Button {
                         folderEditor = .create(title: "New project folder")
                     } label: {
@@ -268,6 +295,7 @@ private struct SidebarProjectsSection: View {
             .padding(.horizontal, 10).frame(height: 24)
             .contentShape(Rectangle())
             .onHover { projectsHeaderHovering = $0 }
+            .help("Projects sort by recent activity until you rearrange them")
             .background(
                 unfiledDropTargeted ? DieterTheme.tileSelected : .clear,
                 in: RoundedRectangle(cornerRadius: DieterMetrics.rowRadius, style: .continuous)
