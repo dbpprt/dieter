@@ -273,6 +273,51 @@ class ConversationPresentationTest {
     }
 
     @Test
+    fun aStoppingTurnDoesNotOfferAnotherSendNow() {
+        val queued = Conversation(status = "running", queue = listOf(QueuedMessage(id = "next")))
+        for (state in
+            listOf(
+                present(started, queued, operation = CardOperation.CANCELLING),
+                present(started.copy(runtime = "cancelling"), queued),
+                present(started, queued.copy(status = "cancelling")),
+            )) {
+            assertTrue(state.interrupting)
+            assertNull(state.steerableId)
+            assertTrue(state.working, "the queued message waits for cleanup")
+            val row = ConversationPresenter.state(state).queued_messages.single()
+            assertTrue(row.stopping)
+            assertEquals("Waiting for agent to stop…", row.delivery_label)
+            assertFalse(row.can_edit || row.can_remove || row.can_send_now)
+        }
+    }
+
+    @Test
+    fun queueActionsWaitForTheMachineToConfirmAnOptimisticMessage() {
+        val queue = Conversation(status = "running", queue = listOf(QueuedMessage(id = "next")))
+        for (accepted in listOf(emptySet(), setOf("next"))) {
+            val pending =
+                present(
+                    started,
+                    queue,
+                    OutboxView(pendingMessageIds = setOf("next"), acceptedIds = accepted),
+                )
+            assertNull(pending.steerableId)
+            val row = ConversationPresenter.state(pending).queued_messages.single()
+            assertTrue(row.pending_delivery)
+            assertFalse(row.can_send_now || row.can_edit || row.can_remove)
+            assertEquals(
+                if (accepted.isEmpty()) "Waiting to send" else "Accepted by daemon",
+                row.delivery_label,
+            )
+        }
+        val confirmed =
+            ConversationPresenter.state(present(started, queue)).queued_messages.single()
+        assertFalse(confirmed.pending_delivery)
+        assertTrue(confirmed.can_edit && confirmed.can_remove && confirmed.can_send_now)
+        assertEquals("Queued · runs after the current turn", confirmed.delivery_label)
+    }
+
+    @Test
     fun neverStartedCardsExposeTheirDraftAndReviewCardsWaitForTheUser() {
         val draft = present(todo)
         assertEquals("Verify the native flow", draft.unsentTask)

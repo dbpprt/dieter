@@ -1771,6 +1771,19 @@ message ConversationState {
   // the conversation's agent, against the conversation machine's catalog.
   // Unset until the conversation's card is known.
   AgentControlsState agent = 30;
+  // Delivery and available actions for each message in Conversation.queue.
+  repeated QueuedMessageState queued_messages = 31;
+}
+
+// A follow-up can be journaled on this device before its machine confirms the queue.
+message QueuedMessageState {
+  string id = 1;
+  string delivery_label = 2;
+  bool pending_delivery = 3;
+  bool stopping = 4;
+  bool can_edit = 5;
+  bool can_remove = 6;
+  bool can_send_now = 7;
 }
 
 // ---------------------------------------------------------------------------

@@ -16,6 +16,7 @@ import com.getdieter.api.v1.ToolOutput
 import com.getdieter.api.v1.UiMessage
 import com.getdieter.api.v1.WatchConversationRequest
 import com.getdieter.core.board.BoardOperations
+import com.getdieter.core.board.CardOperation
 import com.getdieter.core.board.Runtimes
 import com.getdieter.core.composition.Attachments
 import com.getdieter.core.composition.ConversationDrafts
@@ -173,6 +174,9 @@ internal constructor(
     )
 
     private var awaiting: Awaiting? = null
+    // Keep an acknowledged handoff latched until that message leaves the queue. A second
+    // cancellation must never reach the next turn while the transcript is catching up.
+    private var steeringMessageId: String? = null
 
     val cardId: String
         get() = mutableView.value.cardId
@@ -644,6 +648,13 @@ internal constructor(
     /** Only the next queued message may interrupt the running turn. */
     fun canSteer(messageId: String): Boolean {
         val conversation = transcript.conversation ?: return false
+        if (steeringMessageId != null) return false
+        if (
+            board.view.value.operations[cardId] == CardOperation.CANCELLING ||
+                conversation.status == "cancelling" ||
+                runCatching { card().runtime == "cancelling" }.getOrDefault(false)
+        )
+            return false
         val working =
             Runtimes.isActive(conversation.status) ||
                 runCatching { Runtimes.isActive(card().runtime) }.getOrDefault(false)
@@ -654,8 +665,15 @@ internal constructor(
 
     /** Stops the running turn so the next queued message runs now. */
     suspend fun steer(messageId: String): Boolean {
+        if (steeringMessageId == messageId) return true
         if (!canSteer(messageId)) return false
-        return board.cancel(cardId)
+        steeringMessageId = messageId
+        try {
+            return board.cancel(cardId).also { if (!it) steeringMessageId = null }
+        } catch (error: Throwable) {
+            steeringMessageId = null
+            throw error
+        }
     }
 
     /**
@@ -782,6 +800,8 @@ internal constructor(
     }
 
     private fun publish() {
+        if (transcript.conversation?.queue?.none { it.id == steeringMessageId } == true)
+            steeringMessageId = null
         store.state.value.activities[cardId]?.let { incoming ->
             if (latestActivity?.let { TranscriptFreshness.compare(incoming, it) > 0 } != false)
                 latestActivity = incoming

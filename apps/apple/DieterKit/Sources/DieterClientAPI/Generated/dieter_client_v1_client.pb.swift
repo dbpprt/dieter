@@ -7659,11 +7659,42 @@ public nonisolated struct ClientConversationState: @unchecked Sendable {
   /// Clears the value of `agent`. Subsequent reads from it will return its default value.
   public mutating func clearAgent() {_uniqueStorage()._agent = nil}
 
+  /// Delivery and available actions for each message in Conversation.queue.
+  public var queuedMessages: [ClientQueuedMessageState] {
+    get {_storage._queuedMessages}
+    set {_uniqueStorage()._queuedMessages = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
   fileprivate var _storage = _StorageClass.defaultInstance
+}
+
+/// A follow-up can be journaled on this device before its machine confirms the queue.
+public nonisolated struct ClientQueuedMessageState: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var id: String = String()
+
+  public var deliveryLabel: String = String()
+
+  public var pendingDelivery: Bool = false
+
+  public var stopping: Bool = false
+
+  public var canEdit: Bool = false
+
+  public var canRemove: Bool = false
+
+  public var canSendNow: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
 }
 
 /// One transcript row: a user or assistant message, or a run of routine agent
@@ -25786,7 +25817,7 @@ nonisolated extension ClientConversationSlice: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ConversationState"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}runtime\0\u{3}active_turn\0\u{1}working\0\u{3}live_activity\0\u{3}live_reasoning\0\u{3}turn_started_at_millis\0\u{3}responding_model\0\u{3}unsent_task\0\u{3}steerable_id\0\u{4}\u{3}can_start\0\u{1}starting\0\u{3}context_used_tokens\0\u{3}context_window_tokens\0\u{3}unsent_attachments\0\u{3}context_percent\0\u{3}context_near_limit\0\u{3}pending_tools_summary\0\u{3}pending_tool_ids\0\u{3}can_halt\0\u{1}chat\0\u{3}show_reasoning\0\u{2}\u{7}agent\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}runtime\0\u{3}active_turn\0\u{1}working\0\u{3}live_activity\0\u{3}live_reasoning\0\u{3}turn_started_at_millis\0\u{3}responding_model\0\u{3}unsent_task\0\u{3}steerable_id\0\u{4}\u{3}can_start\0\u{1}starting\0\u{3}context_used_tokens\0\u{3}context_window_tokens\0\u{3}unsent_attachments\0\u{3}context_percent\0\u{3}context_near_limit\0\u{3}pending_tools_summary\0\u{3}pending_tool_ids\0\u{3}can_halt\0\u{1}chat\0\u{3}show_reasoning\0\u{2}\u{7}agent\0\u{3}queued_messages\0")
 
   fileprivate class _StorageClass {
     var _runtime: String = String()
@@ -25811,6 +25842,7 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
     var _chat: Bool = false
     var _showReasoning: Bool = false
     var _agent: ClientAgentControlsState? = nil
+    var _queuedMessages: [ClientQueuedMessageState] = []
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -25843,6 +25875,7 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
       _chat = source._chat
       _showReasoning = source._showReasoning
       _agent = source._agent
+      _queuedMessages = source._queuedMessages
     }
   }
 
@@ -25883,6 +25916,7 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
         case 22: try { try decoder.decodeSingularBoolField(value: &_storage._chat) }()
         case 23: try { try decoder.decodeSingularBoolField(value: &_storage._showReasoning) }()
         case 30: try { try decoder.decodeSingularMessageField(value: &_storage._agent) }()
+        case 31: try { try decoder.decodeRepeatedMessageField(value: &_storage._queuedMessages) }()
         default: break
         }
       }
@@ -25961,6 +25995,9 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
       try { if let v = _storage._agent {
         try visitor.visitSingularMessageField(value: v, fieldNumber: 30)
       } }()
+      if !_storage._queuedMessages.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._queuedMessages, fieldNumber: 31)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -25992,10 +26029,71 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
         if _storage._chat != rhs_storage._chat {return false}
         if _storage._showReasoning != rhs_storage._showReasoning {return false}
         if _storage._agent != rhs_storage._agent {return false}
+        if _storage._queuedMessages != rhs_storage._queuedMessages {return false}
         return true
       }
       if !storagesAreEqual {return false}
     }
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientQueuedMessageState: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".QueuedMessageState"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}delivery_label\0\u{3}pending_delivery\0\u{1}stopping\0\u{3}can_edit\0\u{3}can_remove\0\u{3}can_send_now\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.deliveryLabel) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self.pendingDelivery) }()
+      case 4: try { try decoder.decodeSingularBoolField(value: &self.stopping) }()
+      case 5: try { try decoder.decodeSingularBoolField(value: &self.canEdit) }()
+      case 6: try { try decoder.decodeSingularBoolField(value: &self.canRemove) }()
+      case 7: try { try decoder.decodeSingularBoolField(value: &self.canSendNow) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.id.isEmpty {
+      try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
+    }
+    if !self.deliveryLabel.isEmpty {
+      try visitor.visitSingularStringField(value: self.deliveryLabel, fieldNumber: 2)
+    }
+    if self.pendingDelivery != false {
+      try visitor.visitSingularBoolField(value: self.pendingDelivery, fieldNumber: 3)
+    }
+    if self.stopping != false {
+      try visitor.visitSingularBoolField(value: self.stopping, fieldNumber: 4)
+    }
+    if self.canEdit != false {
+      try visitor.visitSingularBoolField(value: self.canEdit, fieldNumber: 5)
+    }
+    if self.canRemove != false {
+      try visitor.visitSingularBoolField(value: self.canRemove, fieldNumber: 6)
+    }
+    if self.canSendNow != false {
+      try visitor.visitSingularBoolField(value: self.canSendNow, fieldNumber: 7)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientQueuedMessageState, rhs: ClientQueuedMessageState) -> Bool {
+    if lhs.id != rhs.id {return false}
+    if lhs.deliveryLabel != rhs.deliveryLabel {return false}
+    if lhs.pendingDelivery != rhs.pendingDelivery {return false}
+    if lhs.stopping != rhs.stopping {return false}
+    if lhs.canEdit != rhs.canEdit {return false}
+    if lhs.canRemove != rhs.canRemove {return false}
+    if lhs.canSendNow != rhs.canSendNow {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

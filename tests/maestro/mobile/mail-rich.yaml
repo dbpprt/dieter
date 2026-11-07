@@ -67,6 +67,13 @@ tags: [smoke]
 - tapOn:
     text: "Release smoke results: all platforms passed"
     waitToSettleTimeoutMs: 500
+# Reopening restores the reader's position. Start at the header before
+# looking down the report for diagrams that may now be above the viewport.
+- scrollUntilVisible:
+    element:
+      id: mail-subject
+    direction: UP
+    timeout: 30000
 - scrollUntilVisible:
     element:
       id: mail-diagram-mermaid-rendered
@@ -92,6 +99,11 @@ tags: [smoke]
 - tapOn:
     text: "Release smoke results: all platforms passed"
     waitToSettleTimeoutMs: 500
+- scrollUntilVisible:
+    element:
+      id: mail-subject
+    direction: UP
+    timeout: 30000
 - scrollUntilVisible:
     element:
       id: mail-diagram-mermaid-rendered
