@@ -21,11 +21,26 @@ Local alerts and badges work while the app receives workspace updates. APNs is
 required for alerts while iOS suspends or terminates Dieter; the app does not
 keep a background connection alive.
 
+A stable Dieter release or production promotion is not required. This feature
+can run in a development build or a TestFlight **dev** prerelease. Apple's APNs
+environment is determined by the app's signing profile:
+
+| App installation                                    | APNs environment          |
+| --------------------------------------------------- | ------------------------- |
+| Xcode Debug build signed with a development profile | Sandbox (`development`)   |
+| TestFlight build, including a Dieter dev prerelease | Production (`production`) |
+| App Store distribution                              | Production (`production`) |
+
+Here, **production APNs** names Apple's delivery endpoint; it does not mean a
+stable Dieter release. The gateway already selects the sandbox or production
+endpoint for each registered device.
+
 1. Enable **Push Notifications** for the `com.getdieter.ios` App ID in the Apple
-   Developer account. Regenerate the main app's App Store profile with
-   `aps-environment = production`, preserving the existing App Group. The Share
-   extension does not need a push entitlement. Debug development profiles use
-   `development`; TestFlight and release builds use `production`.
+   Developer account. Refresh the main app's signing profile with the push
+   entitlement, preserving the existing App Group. Use a development profile
+   for an Xcode Debug install, or an App Store profile with
+   `aps-environment = production` for TestFlight, including dev prereleases.
+   The Share extension does not need a push entitlement.
 2. Create an Apple Push Notification service signing key for that team. Keep its
    `.p8` private key, Key ID and Team ID in the protected gateway secret input.
    Add all three optional fields alongside the existing secrets:
@@ -42,9 +57,12 @@ keep a background connection alive.
    the complete gateway configuration. The deployment renderer places them
    only in the mode-0600 private gateway environment.
 
-3. Release the gateway, daemons and iOS client together through the normal
-   qualification/release process. No live service needs to be changed to run
-   the isolated tests for this feature.
+3. Run gateway, daemon and iOS builds containing this change. For the shared dev
+   environment, use the normal qualified dev prerelease and TestFlight process;
+   stable promotion and production activation are separate and unnecessary.
+   For local development, use an isolated development gateway/daemon and a
+   signed Xcode Debug app. Existing binaries need an updated build containing
+   the notification code; APNs configuration alone cannot add it.
 4. Install the signed app, sign in and allow notifications. Run a task, leave
    its conversation, lock the phone, and let it finish. Confirm the generic
    **Task needs you** alert, badge count and notification tap. Read the reply on
