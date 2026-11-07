@@ -35,7 +35,7 @@ final class IOSAttentionNotifications: NSObject, NativeAttentionNotifications, U
     /// respected; the operator can change alerts, Lock Screen and badges in Settings.
     func requestPermission(force: Bool = false) {
         guard (!permissionRequested || force), UIApplication.shared.applicationState == .active else { return }
-        #if DEBUG
+        #if DEBUG || targetEnvironment(simulator)
             if ProcessInfo.processInfo.arguments.contains(where: { $0.contains("fixture_url") }) { return }
         #endif
         permissionRequested = true

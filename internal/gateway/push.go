@@ -72,6 +72,14 @@ func (s *Service) SetPushDevice(ctx context.Context, request *gatewayv1.SetPushD
 		if _, err = probe.ECDH(key); err != nil {
 			return nil, status.Error(codes.InvalidArgument, "invalid push public key")
 		}
+		trusted, _, _, err := s.rosterSnapshot(principal.GitHubID)
+		if err != nil {
+			return nil, err
+		}
+		binding := &gatewayv1.PushDestination{DeviceId: request.GetDeviceId(), PublicKey: request.GetPublicKey(), Signature: request.GetSignature()}
+		if trusted == nil || trusted.Account() != roster.Account(s.config.IdentityOrigin(), principal.GitHubID) || !roster.VerifyPushKey(trusted, binding) {
+			return nil, status.Error(codes.PermissionDenied, "push key requires a trusted device signature")
+		}
 	}
 	token := strings.ToLower(request.GetToken())
 	available := s.hub.push != nil

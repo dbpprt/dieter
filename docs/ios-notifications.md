@@ -79,15 +79,19 @@ credentials the gateway remains usable and the iOS client uses local alerts.
 
 Push tokens and recipient public keys are attached to expiring, revocable native
 sessions. Machine credentials cannot register a phone. A token moves to its
-latest signed-in session, and sign-out unregisters it when the gateway is
+latest signed-in session. Each push key is signed by the phone’s paired device
+key and bound to the pinned roster’s account identity. The daemon verifies this
+proof against its own roster before encrypting a card destination, preventing
+a gateway from substituting a decryption key. Revoked devices lose delivery
+and cannot register again. Sign-out unregisters the route when the gateway is
 reachable. Expired/revoked sessions and APNs-invalid tokens stop delivery.
 
 The daemon uses the same attention rules as the shared core. Its authenticated
-control tunnel sends coarse counts and an X25519/HKDF-SHA256/AES-GCM envelope
+control link sends coarse counts and an X25519/HKDF-SHA256/AES-GCM envelope
 containing the destination card ID. Each recipient's private key stays in its
-device-only Keychain, scoped to gateway and account. Neither card IDs, titles,
-transcripts nor private keys are stored on the gateway. APNs gets a generic
-alert and the encrypted destination. Counts from enrolled machines are summed
+device-only Keychain, scoped to the pinned roster's stable account identity.
+Neither card IDs, titles, transcripts nor private keys are stored on the gateway.
+APNs gets a generic alert and the encrypted destination. Counts from enrolled machines are summed
 for the badge, and foreground reconciliation uses the current account view.
 
 Initial snapshots establish a baseline without replaying old alerts. Live
@@ -100,14 +104,14 @@ and OS delivery policy can delay or drop alerts; Inbox remains authoritative.
 
 ## Verification
 
-`just pipeline core_test` covers attention rules and notification navigation
+`just pipeline core_test e2e:true` covers attention rules and notification navigation
 through sign-in/sync. Gateway and daemon Go tests cover account binding, token
 validation, badge totals, provider JWTs and encrypted payload integrity. The
 normal protobuf generation includes the internal native-session registration
 RPC; no new user-facing daemon operation is introduced. Existing `card read`
 and `chat read` commands acknowledge displayed replies.
 
-`just pipeline ios build` and the existing iOS smoke flows require Xcode and an
+`just ios build` and `just e2e ios` require Xcode and an
 iOS simulator runtime. The E2E fixture skips the OS permission prompt; real APNs
 delivery requires the signed build, configured gateway and the manual phone
 check above. Simulator/local tests never send a production push.

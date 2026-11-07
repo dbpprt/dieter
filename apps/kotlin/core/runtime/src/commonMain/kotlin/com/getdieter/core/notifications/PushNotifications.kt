@@ -41,10 +41,8 @@ class PushNotifications(
                 while (true) {
                     try {
                         withTimeoutOrNull(15.seconds) {
-                            val account = session.client.GetAccount().execute(Unit)
                             val device =
-                                sink.device("${session.gateway.origin}/${account.github_id}")
-                                    ?: return@withTimeoutOrNull
+                                sink.device(view.roster.account) ?: return@withTimeoutOrNull
                             val response =
                                 session.client
                                     .SetPushDevice()
