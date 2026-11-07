@@ -1,8 +1,10 @@
 import DieterIOS
 import SwiftUI
+import UIKit
 
 @main
 struct DieterApp: App {
+    @UIApplicationDelegateAdaptor(PushApplicationDelegate.self) private var applicationDelegate
     @State private var host = ComposeHost(
         version: Bundle.main.object(forInfoDictionaryKey: "DieterReleaseVersion") as? String ?? "0.0.0-dev.0")
     @Environment(\.scenePhase) private var scenePhase
@@ -11,6 +13,8 @@ struct DieterApp: App {
             ShellView(host: host)
                 .ignoresSafeArea()
                 .task {
+                    applicationDelegate.receive = { host.setPushToken($0) }
+                    if let token = applicationDelegate.token { host.setPushToken(token) }
                     #if DEBUG || targetEnvironment(simulator)
                         // Simulator flows also exercise the optimized Kotlin/Native framework.
                         if let url = launchArgument("fixture_url"), let token = launchArgument("fixture_token") {
@@ -27,6 +31,16 @@ struct DieterApp: App {
                 // only the background ends the connection.
                 .onChange(of: scenePhase) { _, phase in host.setForeground(phase != .background) }
         }
+    }
+}
+
+@MainActor
+final class PushApplicationDelegate: NSObject, UIApplicationDelegate {
+    var token: Data?
+    var receive: ((Data) -> Void)?
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        token = deviceToken
+        receive?(deviceToken)
     }
 }
 

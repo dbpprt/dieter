@@ -1295,6 +1295,11 @@ Production rollout updates/restarts are operator work, never a testing method.
 
 ### Unseen model replies
 
+The iOS app can badge and notify for the same attention state. APNs setup and
+signing are described in [iOS notifications](../../../docs/ios-notifications.md).
+OS token registration is internal to the native session; use the existing
+`card read` / `chat read` operations for response acknowledgement.
+
 Activity on macOS (**Needs attention**) and the Android and iOS Inbox (**Needs
 you**) flag completed model replies that have not been viewed and questions
 waiting for an answer.

@@ -8,7 +8,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** The account session: connection, sign-in, and replays a person asks for. */
-class SessionModel internal constructor(private val context: StoreContext) {
+class SessionModel
+internal constructor(private val context: StoreContext, private val changed: () -> Unit = {}) {
     val slice = MutableStateFlow(SessionSlice())
     val signInUrl = MutableStateFlow("")
     val refreshing = MutableStateFlow(false)
@@ -19,6 +20,7 @@ class SessionModel internal constructor(private val context: StoreContext) {
         context.observeAlways(Slice.SLICE_SESSION, "") { update ->
             update.session?.let {
                 slice.value = it
+                changed()
                 if (refreshCompletion != null) {
                     if (!it.synced) refreshSawReplay = true
                     if (refreshSawReplay && (it.synced || it.notice?.offline == true))

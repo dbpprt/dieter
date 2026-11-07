@@ -16,6 +16,7 @@ import "google/protobuf/empty.proto";
 // device roster and short-lived pairing requests: public keys and display
 // names that devices verify themselves. The gateway cannot extend the roster.
 service GatewayService {
+  rpc SetPushDevice(SetPushDeviceRequest) returns (SetPushDeviceResponse);
   // GetCompatibility is the stable, unauthenticated bootstrap used before
   // sign-in. It contains no account or machine data.
   rpc GetCompatibility(CompatibilityRequest) returns (CompatibilityResponse);
@@ -552,6 +553,7 @@ enum DaemonLinkFrameKind {
   DAEMON_LINK_FRAME_KIND_TUNNEL_WINDOW = 24;
   // Either side ends the tunnel; status_code/status_message explain why.
   DAEMON_LINK_FRAME_KIND_TUNNEL_CLOSE = 25;
+  DAEMON_LINK_FRAME_KIND_ATTENTION = 26;
 }
 
 // Each lane uses its own authenticated connection and flow-control window.
@@ -606,6 +608,8 @@ message DaemonLinkFrame {
   RelayLane lane = 28;
   // All lanes of one daemon process join this unpredictable session identity.
   string session_id = 29;
+  repeated PushDestination push_destinations = 33;
+  AttentionPresence attention = 34;
 }
 
 enum TunnelFrameKind {
@@ -738,4 +742,35 @@ message ListPairingRequestsResponse {
 
 message PairingRequestRef {
   string id = 1;
+}
+
+
+// Registers this native session's APNs route. Empty token unregisters it.
+message SetPushDeviceRequest {
+  string token = 1;
+  // X25519, 32 bytes; the private key stays on the phone.
+  bytes public_key = 2;
+  bool sandbox = 3;
+  string device_id = 4;
+  // Device-roster signature of the account-bound push key binding.
+  bytes signature = 5;
+}
+message SetPushDeviceResponse {
+  bool available = 1;
+}
+message PushDestination {
+  // Opaque native-session receipt, never an APNs token.
+  string id = 1;
+  bytes public_key = 2;
+  string device_id = 3;
+  bytes signature = 4;
+}
+message SealedAttention {
+  string destination_id = 1;
+  // Ephemeral X25519 public key (32), AES-GCM nonce (12), ciphertext and tag.
+  bytes sealed = 2;
+}
+message AttentionPresence {
+  uint32 count = 1;
+  repeated SealedAttention alerts = 2;
 }

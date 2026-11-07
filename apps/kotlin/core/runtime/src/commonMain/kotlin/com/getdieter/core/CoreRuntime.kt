@@ -51,8 +51,10 @@ import com.getdieter.core.navigation.NavigationEditor
 import com.getdieter.core.navigation.NavigationLayout
 import com.getdieter.core.navigation.SharedKv
 import com.getdieter.core.navigation.kvMachines
+import com.getdieter.core.notifications.AttentionNotifications
 import com.getdieter.core.notifications.NotificationPlanner
 import com.getdieter.core.notifications.NotificationSettings
+import com.getdieter.core.notifications.PushNotifications
 import com.getdieter.core.outbox.Outbox
 import com.getdieter.core.outbox.OutboxPolicy
 import com.getdieter.core.outbox.OutboxView
@@ -192,6 +194,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
             onGatewayPrepared = { _, prepared ->
                 // Overlays and pending results belong to the previous account; everything below
                 // rebinds.
+                attentionNotifications?.reset()
                 workspace.clear()
                 trust.forget()
                 gatewayStorage = prepared
@@ -352,6 +355,41 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
                 }
                 .collect { chats -> if (chats != null) navigation.initializePinnedChatOrder(chats) }
         }
+        attentionNotifications?.let { planner ->
+            scope.launch {
+                var account: String? = null
+                var current = emptySet<String>()
+                combine(workspace.state, accounts.state, connection.state) {
+                        view,
+                        accounts,
+                        connection ->
+                        view to
+                            accounts.active.origin.takeUnless {
+                                connection.phase == ConnectionPhase.AUTH_REQUIRED
+                            }
+                    }
+                    .collect { (view, active) ->
+                        if (active != account) {
+                            planner.reset()
+                            current = emptySet()
+                            account = active
+                        }
+                        if (active == null) return@collect
+                        if (!view.loaded) return@collect
+                        val before = current
+                        planner.frame(
+                            view.allItems,
+                            visibleConversationId.takeIf { appActive },
+                            replaying = { card ->
+                                workspace.directoryProjection.owner(card) !in before
+                            },
+                        )
+                        current = connection.syncs.value.filterValues { it.current }.keys
+                    }
+            }
+        }
+        pushNotifications?.let { push -> scope.launch { push.run(connection.session) } }
+
         notificationPlanner?.let { planner ->
             scope.launch {
                 accounts.state.map { it.active }.distinctUntilChanged().collect { planner.reset() }
@@ -450,7 +488,11 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
             .distinctUntilChanged()
 
     /** Foreground, or a background window the platform allows (e.g. Android's sync service). */
-    fun setActive(active: Boolean) = connection.setRunning(active)
+    fun setActive(active: Boolean) {
+        appActive = active
+        platform.attentionNotifications?.visible(visibleConversationId.takeIf { active })
+        connection.setRunning(active)
+    }
 
     /** Runs [block] on the core's confined dispatcher. */
     suspend fun <T> onCore(block: suspend CoroutineScope.() -> T): T =
@@ -506,6 +548,8 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
      */
     suspend fun signOut() = onCore {
         val gateway = accounts.state.value.active
+        pushNotifications?.unregister(connection.session.value)
+        attentionNotifications?.reset()
         credentials.remove(gateway)
         // Detach the journals first, so nothing writes the namespace while it is removed.
         outbox.bind(null)
@@ -885,6 +929,18 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
         )
     }
 
+    @Volatile private var appActive = true
+    private val attentionNotifications =
+        platform.attentionNotifications?.let(::AttentionNotifications)
+    private val pushNotifications =
+        platform.attentionNotifications?.let {
+            PushNotifications(it, platform.logger, platform.deviceKeys, trust)
+        }
+
+    fun refreshPushRegistration() {
+        pushNotifications?.refresh()
+    }
+
     private val notificationPlanner =
         platform.notifications?.let { NotificationPlanner(it, platform.settings) }
 
@@ -935,7 +991,12 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
     }
 
     /** The conversation on screen; its results and review requests are not notified. */
-    @Volatile var visibleConversationId: String? = null
+    @Volatile
+    var visibleConversationId: String? = null
+        set(value) {
+            field = value
+            platform.attentionNotifications?.visible(value.takeIf { appActive })
+        }
 
     /** Runs a board or card mutation on the core dispatcher. */
     suspend fun <T> onBoard(block: suspend BoardOperations.() -> T): T = onCore { board.block() }

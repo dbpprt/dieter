@@ -68,6 +68,7 @@ type Hub struct {
 	revision      atomic.Uint64
 	changed       chan struct{}
 	quota         *QuotaManager
+	push          *PushManager
 }
 
 type daemonLink struct {
@@ -316,6 +317,7 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 		DaemonId: identity, Generation: record.Generation, ReleaseVersion: buildinfo.ReleaseVersion, Lane: link.lane, SessionId: link.sessionID,
 		CompatibilityPolicy: protoCompatibilityPolicy(policy),
 		Compatibility:       gatewayv1.CompatibilityStatus_COMPATIBILITY_STATUS_COMPATIBLE,
+		PushDestinations:    h.pushDestinations(record.GitHubID, link.lane),
 	}
 	if link.lane == relay.Control && h.quota != nil && link.capabilities[providerQuotaCapability] {
 		correlationKey, err := h.store.ProviderCorrelationKey(record.GitHubID)
@@ -344,6 +346,15 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 			}
 			link.markSeen(time.Now())
 			switch frame.GetKind() {
+			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_ATTENTION:
+				if h.push == nil || link.lane != relay.Control || frame.GetDaemonId() != identity {
+					recvErr <- status.Error(codes.PermissionDenied, "push is unavailable on this route")
+					return
+				}
+				if err := h.push.handle(record, frame.GetAttention()); err != nil {
+					recvErr <- status.Error(codes.ResourceExhausted, "attention delivery was not admitted")
+					return
+				}
 			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HEARTBEAT:
 				if proto.Size(frame) > maxDaemonPresenceBytes {
 					recvErr <- status.Error(codes.ResourceExhausted, "daemon presence exceeds 64 KiB")
@@ -368,6 +379,7 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 					if err := link.sendControlFrame(&gatewayv1.DaemonLinkFrame{
 						Kind:     gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG,
 						DaemonId: identity, RequestId: frame.GetRequestId(),
+						PushDestinations: h.pushDestinations(record.GitHubID, link.lane),
 					}); err != nil {
 						recvErr <- err
 						return

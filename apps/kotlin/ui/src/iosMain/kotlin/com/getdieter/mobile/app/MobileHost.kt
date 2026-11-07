@@ -49,6 +49,7 @@ class NativeNavigation(
     val signedIn: Boolean,
     val appearance: String,
     val attention: Int,
+    val canNotify: Boolean,
     /** ARGB accent for native controls; 0 means the label color (monochrome). */
     val accent: Long,
     /** The Mail tab badge: unread Inbox mail, "4", "99+", or empty. */
@@ -179,6 +180,8 @@ class MobileHost(private val shared: DieterShared, private val nativeViews: Mobi
                 !store.workspace.slice.value.loaded) && !store.session.slice.value.pairing,
             store.theme.appearance.value,
             store.workspace.activity.value.summary?.attention ?: 0,
+            store.session.slice.value.phase != SessionSlice.Phase.PHASE_AUTH_REQUIRED &&
+                !store.session.slice.value.pairing,
             if (palette == com.getdieter.mobile.settings.DieterPalette.MONOCHROME) 0L
             else palette.tokens.shellEnd,
             store.mail.slice.value.unread_label,
@@ -253,6 +256,8 @@ class MobileHost(private val shared: DieterShared, private val nativeViews: Mobi
         )
 
     fun newTask() = store.newConversation(store.routes.value.tab == MobileTab.CHATS)
+
+    fun openNotification(cardId: String) = store.openNotification(cardId)
 
     fun reconnect() = store.session.retry()
 

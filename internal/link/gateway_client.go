@@ -19,6 +19,7 @@ import (
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/security/linkauth"
 	"github.com/dbpprt/dieter/internal/security/trust"
+	"github.com/dbpprt/dieter/internal/store"
 	"github.com/dbpprt/dieter/internal/transport/relay"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -28,6 +29,8 @@ import (
 )
 
 type GatewayClient struct {
+	Store         *store.Store
+	attention     attentionTracker
 	ControlWebRTC bool
 	Identity      *Identity
 	// TunnelTarget is the daemon's loopback TLS endpoint (a DirectRoute) that
@@ -506,6 +509,19 @@ func (c *GatewayClient) runLaneOnce(ctx context.Context, lane relay.Lane, sessio
 		}()
 	}
 	var quotaCalls sync.Map
+	var pushDestinations chan []*gatewayv1.PushDestination
+	if lane == relay.Control && c.Store != nil {
+		pushDestinations = make(chan []*gatewayv1.PushDestination, 1)
+		pushDestinations <- first.GetPushDestinations()
+		go c.runAttention(linkCtx, pushDestinations, func(frame *gatewayv1.DaemonLinkFrame) bool {
+			select {
+			case quotaSend <- frame:
+				return true
+			case <-linkCtx.Done():
+				return false
+			}
+		})
+	}
 	quotaProbes := make(chan struct{}, maxGatewayProviderQuotaProbes)
 	wakeCheck := time.NewTicker(time.Second)
 	defer wakeCheck.Stop()
@@ -543,6 +559,12 @@ func (c *GatewayClient) runLaneOnce(ctx context.Context, lane relay.Lane, sessio
 			heartbeatInterval = nextGatewayHeartbeatIntervalWithin(heartbeatInterval, active, timing.HeartbeatActiveInterval, timing.HeartbeatIdleMaxInterval)
 			heartbeat.Reset(heartbeatInterval)
 		case frame := <-recv:
+			if pushDestinations != nil && frame.GetKind() == gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG {
+				select {
+				case pushDestinations <- frame.GetPushDestinations():
+				default:
+				}
+			}
 			if len(frame.Payload) > relay.ChunkBytes || proto.Size(frame) > 2*relay.ChunkBytes {
 				return finish(errors.New("gateway relay fragment exceeds its wire limit"))
 			}
