@@ -51,16 +51,16 @@ tags: [smoke]
     from:
       text: "Invoice migration finished: 12,408 rows moved"
     direction: LEFT
-- extendedWaitUntil:
-    visible: "Undo"
-    timeout: 5000
-- takeScreenshot: mail-archived
+# Undo is timed: tap it immediately instead of spending its lifetime on a
+# separate visibility query and screenshot on a slow simulator. tapOn requires
+# the action to be visible; the following assertion verifies the restoration.
 - tapOn:
     text: "Undo"
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: "Invoice migration finished: 12,408 rows moved"
     timeout: 40000
+- takeScreenshot: mail-restored
 - tapOn:
     id: chrome-title-menu
     waitToSettleTimeoutMs: 500

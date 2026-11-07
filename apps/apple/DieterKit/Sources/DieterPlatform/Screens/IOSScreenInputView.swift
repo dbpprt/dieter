@@ -344,6 +344,12 @@
             set {}
         }
 
+        @available(iOS 17.0, *)
+        public var inlinePredictionType: UITextInlinePredictionType {
+            get { .no }
+            set {}
+        }
+
         public var autocapitalizationType: UITextAutocapitalizationType {
             get { .none }
             set {}
