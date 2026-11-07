@@ -32,6 +32,8 @@ func (api *executionsAPI) ListExecutions(ctx context.Context, request *dieterv1.
 }
 
 func (api *executionsAPI) StartExecution(ctx context.Context, request *dieterv1.StartExecutionRequest) (*dieterv1.Execution, error) {
+	api.server.filesMu.RLock()
+	defer api.server.filesMu.RUnlock()
 	ctx = kanban.WithCheckout(ctx, request.GetCheckoutId())
 	timeoutMilliseconds := request.GetTimeoutMs()
 	if timeoutMilliseconds < 0 || timeoutMilliseconds > (7*24*time.Hour).Milliseconds() {

@@ -224,6 +224,16 @@ public nonisolated struct Dieter_V1_UpdateProjectRequest: Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
+  /// Absent preserves the preference. False stops future cleanup.
+  public var deleteWorktreesOnArchive: Bool {
+    get {_deleteWorktreesOnArchive ?? false}
+    set {_deleteWorktreesOnArchive = newValue}
+  }
+  /// Returns true if `deleteWorktreesOnArchive` has been explicitly set.
+  public var hasDeleteWorktreesOnArchive: Bool {self._deleteWorktreesOnArchive != nil}
+  /// Clears the value of `deleteWorktreesOnArchive`. Subsequent reads from it will return its default value.
+  public mutating func clearDeleteWorktreesOnArchive() {self._deleteWorktreesOnArchive = nil}
+
   public var projectID: String = String()
 
   public var name: String {
@@ -276,6 +286,7 @@ public nonisolated struct Dieter_V1_UpdateProjectRequest: Sendable {
 
   public init() {}
 
+  fileprivate var _deleteWorktreesOnArchive: Bool? = nil
   fileprivate var _name: String? = nil
   fileprivate var _summary: String? = nil
   fileprivate var _prompt: String? = nil
@@ -794,7 +805,7 @@ nonisolated extension Dieter_V1_CreateProjectResponse: SwiftProtobuf.Message, Sw
 
 nonisolated extension Dieter_V1_UpdateProjectRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".UpdateProjectRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}name\0\u{1}summary\0\u{1}prompt\0\u{1}path\0\u{1}hostnames\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}name\0\u{1}summary\0\u{1}prompt\0\u{1}path\0\u{1}hostnames\0\u{3}delete_worktrees_on_archive\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -808,6 +819,7 @@ nonisolated extension Dieter_V1_UpdateProjectRequest: SwiftProtobuf.Message, Swi
       case 4: try { try decoder.decodeSingularStringField(value: &self._prompt) }()
       case 5: try { try decoder.decodeSingularStringField(value: &self._path) }()
       case 6: try { try decoder.decodeSingularMessageField(value: &self._hostnames) }()
+      case 7: try { try decoder.decodeSingularBoolField(value: &self._deleteWorktreesOnArchive) }()
       default: break
       }
     }
@@ -836,10 +848,14 @@ nonisolated extension Dieter_V1_UpdateProjectRequest: SwiftProtobuf.Message, Swi
     try { if let v = self._hostnames {
       try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
     } }()
+    try { if let v = self._deleteWorktreesOnArchive {
+      try visitor.visitSingularBoolField(value: v, fieldNumber: 7)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Dieter_V1_UpdateProjectRequest, rhs: Dieter_V1_UpdateProjectRequest) -> Bool {
+    if lhs._deleteWorktreesOnArchive != rhs._deleteWorktreesOnArchive {return false}
     if lhs.projectID != rhs.projectID {return false}
     if lhs._name != rhs._name {return false}
     if lhs._summary != rhs._summary {return false}

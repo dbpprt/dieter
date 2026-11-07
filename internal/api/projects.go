@@ -109,7 +109,7 @@ func (api *projectsAPI) UpdateProject(_ context.Context, request *dieterv1.Updat
 		values := request.Hostnames.GetValues()
 		hostnames = &values
 	}
-	value, err := api.server.store.Kanban.UpdateProjectWithHostnames(request.GetProjectId(), request.Name, request.Summary, request.Prompt, request.Path, hostnames)
+	value, err := api.server.store.Kanban.UpdateProjectWithHostnames(request.GetProjectId(), request.Name, request.Summary, request.Prompt, request.Path, hostnames, request.DeleteWorktreesOnArchive)
 	if err != nil {
 		return nil, err
 	}

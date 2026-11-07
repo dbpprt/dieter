@@ -40,15 +40,19 @@ func changesFixture(t *testing.T) (*store.Store, *service, model.Card) {
 }
 
 // watchChangesFrames runs a stream until stop is called or the stream fails.
-func watchChangesFrames(t *testing.T, api *service, request *dieterv1.ChangesRequest) (<-chan *dieterv1.ChangesFrame, func() error) {
+func watchChangesFrames(t *testing.T, api *service, request *dieterv1.ChangesRequest, observe ...func(*dieterv1.ChangesFrame, time.Time)) (<-chan *dieterv1.ChangesFrame, func() error) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
 	frames := make(chan *dieterv1.ChangesFrame, 256)
 	done := make(chan error, 1)
 	go func() {
 		done <- api.server.watchChanges(ctx, request, func(frame *dieterv1.ChangesFrame) error {
+			frame = proto.Clone(frame).(*dieterv1.ChangesFrame)
+			for _, onSend := range observe {
+				onSend(frame, time.Now())
+			}
 			select {
-			case frames <- proto.Clone(frame).(*dieterv1.ChangesFrame):
+			case frames <- frame:
 				return nil
 			case <-ctx.Done():
 				return ctx.Err()
@@ -184,11 +188,16 @@ func TestChangesStreamRecordsThenOnlyWhatChanged(t *testing.T) {
 func TestChangesSpaceTheDataFramesOfABurst(t *testing.T) {
 	t.Parallel()
 	data, api, card := changesFixture(t)
-	frames, _ := watchChangesFrames(t, api, &dieterv1.ChangesRequest{HeartbeatMs: 60_000})
-	untilCaughtUp(t, frames)
-	last := time.Now()
+	// Observe sends, so a delayed test receiver cannot compress measured gaps.
+	var sent sync.Map
+	frames, _ := watchChangesFrames(t, api, &dieterv1.ChangesRequest{HeartbeatMs: 60_000}, func(frame *dieterv1.ChangesFrame, at time.Time) { sent.Store(frame, at) })
+	initial := untilCaughtUp(t, frames)
+	first, _ := sent.Load(initial[len(initial)-1])
+	last := first.(time.Time)
 	const renames = 12
+	writerDone := make(chan struct{})
 	go func() {
+		defer close(writerDone)
 		for index := 1; index <= renames; index++ {
 			if _, err := data.Kanban.RenameCard(card.ID, fmt.Sprintf("after-%d", index)); err != nil {
 				t.Error(err)
@@ -197,14 +206,17 @@ func TestChangesSpaceTheDataFramesOfABurst(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}()
+	// Join the writer before the fixture closes its temporary store.
+	t.Cleanup(func() { <-writerDone })
 	final := fmt.Sprintf(`"after-%d"`, renames)
 	for count := 1; ; count++ {
 		frame := nextDataFrame(t, frames)
-		// The previous frame's send, less scheduling slack on the receiving side.
-		if gap := time.Since(last); gap < changesFrameGap-50*time.Millisecond {
+		at, _ := sent.LoadAndDelete(frame)
+		emitted := at.(time.Time)
+		if gap := emitted.Sub(last); gap < changesFrameGap {
 			t.Fatalf("data frame %d followed the previous one after %v", count, gap)
 		}
-		last = time.Now()
+		last = emitted
 		if record := recordIDs(frame)["item/"+card.ID+".title"]; record != nil && string(record.GetVersions()[0].GetValueJson()) == final {
 			if count >= renames {
 				t.Fatalf("%d renames took %d frames", renames, count)

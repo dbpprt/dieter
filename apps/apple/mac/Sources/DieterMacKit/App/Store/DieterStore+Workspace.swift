@@ -253,7 +253,9 @@ extension DieterStore {
     }
 
     @discardableResult
-    func updateProject(name: String, summary: String, prompt: String) async -> Bool {
+    func updateProject(name: String, summary: String, prompt: String, deleteWorktreesOnArchive: Bool? = nil) async
+        -> Bool
+    {
         let projectID = selectedProjectID
         do {
             _ = try await administer {
@@ -262,6 +264,7 @@ extension DieterStore {
                     $0.name = name
                     $0.summary = summary
                     $0.prompt = prompt
+                    if let deleteWorktreesOnArchive { $0.deleteWorktreesOnArchive = deleteWorktreesOnArchive }
                 }
             }
             projectContextPresented = false

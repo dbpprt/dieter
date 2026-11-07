@@ -174,7 +174,8 @@ func (s *Services) Serve(ctx context.Context, listener net.Listener, activating 
 	}()
 	s.API.RestorePrivacy(ctx)
 	go s.Store.RecoverEvery(ctx, storageRecoveryInterval, logger)
-	s.Schedules.Start(ctx)
+	stopSchedules := s.Schedules.Start(ctx)
+	defer stopSchedules()
 	httpServer := &http.Server{Addr: addr, Handler: s.API.Handler(), Protocols: api.LoopbackProtocols(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 1 << 20}
 	logger.Info("Dieter daemon is ready", "url", fmt.Sprintf("http://%s", addr), "store", s.Store.Root)
 	serveErr := make(chan error, 1)

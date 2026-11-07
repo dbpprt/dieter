@@ -63,6 +63,36 @@ class AccountViewTest {
     }
 
     @Test
+    fun projectArchiveCleanupDefaultsOffAndFollowsReplicatedPreference() {
+        assertFalse(
+            TestRecords.project(replica("studio", base))
+                .directory
+                .projects
+                .getValue("p")
+                .delete_worktrees_on_archive
+        )
+        val enabled = field("project", "p", "deleteWorktreesOnArchive", "true")
+        assertTrue(
+            TestRecords.project(replica("studio", base + enabled))
+                .directory
+                .projects
+                .getValue("p")
+                .delete_worktrees_on_archive
+        )
+        val disabled = record("project/p.deleteWorktreesOnArchive", version("false", "a" to 2L))
+        assertFalse(
+            TestRecords.project(
+                    replica("studio", base + enabled),
+                    replica("laptop", listOf(disabled)),
+                )
+                .directory
+                .projects
+                .getValue("p")
+                .delete_worktrees_on_archive
+        )
+    }
+
+    @Test
     fun anArchiveAnywhereWinsAndHidesTheItem() {
         val card = item("c", "p", "co", owner = "studio", boardId = "b")
         val archived = record("item/c.archived", version("true", "laptop" to 1L))

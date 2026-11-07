@@ -105,25 +105,26 @@ type Checkout struct {
 }
 
 type Project struct {
-	Checkouts          []Checkout                 `json:"checkouts" yaml:"-"`
-	ConflictKeys       []string                   `json:"conflictKeys,omitempty" yaml:"-"`
-	SharedBase         map[string]json.RawMessage `json:"-" yaml:"-"`
-	Hostnames          []string                   `json:"hostnames,omitempty" yaml:"hostnames,omitempty"`
-	ID                 string                     `json:"id" yaml:"id"`
-	Name               string                     `json:"name" yaml:"name"`
-	Path               string                     `json:"path" yaml:"path"`
-	Summary            string                     `json:"summary,omitempty" yaml:"summary,omitempty"`
-	Prompt             string                     `json:"prompt" yaml:"-"`
-	PromptTemplate     string                     `json:"promptTemplate,omitempty" yaml:"prompt_template,omitempty"`
-	Archived           bool                       `json:"archived,omitempty" yaml:"archived,omitempty"`
-	CreatedAt          string                     `json:"createdAt" yaml:"created_at"`
-	UpdatedAt          string                     `json:"updatedAt" yaml:"updated_at"`
-	BoardCount         int                        `json:"boardCount,omitempty" yaml:"-"`
-	CardCount          int                        `json:"cardCount,omitempty" yaml:"-"`
-	ChatCount          int                        `json:"chatCount,omitempty" yaml:"-"`
-	BaseRemote         string                     `json:"baseRemote,omitempty" yaml:"base_remote,omitempty"`
-	BaseBranch         string                     `json:"baseBranch,omitempty" yaml:"base_branch,omitempty"`
-	ValidationCommands []ValidationCommand        `json:"validationCommands,omitempty" yaml:"validation_commands,omitempty"`
+	DeleteWorktreesOnArchive bool                       `json:"deleteWorktreesOnArchive,omitempty" yaml:"delete_worktrees_on_archive,omitempty"`
+	Checkouts                []Checkout                 `json:"checkouts" yaml:"-"`
+	ConflictKeys             []string                   `json:"conflictKeys,omitempty" yaml:"-"`
+	SharedBase               map[string]json.RawMessage `json:"-" yaml:"-"`
+	Hostnames                []string                   `json:"hostnames,omitempty" yaml:"hostnames,omitempty"`
+	ID                       string                     `json:"id" yaml:"id"`
+	Name                     string                     `json:"name" yaml:"name"`
+	Path                     string                     `json:"path" yaml:"path"`
+	Summary                  string                     `json:"summary,omitempty" yaml:"summary,omitempty"`
+	Prompt                   string                     `json:"prompt" yaml:"-"`
+	PromptTemplate           string                     `json:"promptTemplate,omitempty" yaml:"prompt_template,omitempty"`
+	Archived                 bool                       `json:"archived,omitempty" yaml:"archived,omitempty"`
+	CreatedAt                string                     `json:"createdAt" yaml:"created_at"`
+	UpdatedAt                string                     `json:"updatedAt" yaml:"updated_at"`
+	BoardCount               int                        `json:"boardCount,omitempty" yaml:"-"`
+	CardCount                int                        `json:"cardCount,omitempty" yaml:"-"`
+	ChatCount                int                        `json:"chatCount,omitempty" yaml:"-"`
+	BaseRemote               string                     `json:"baseRemote,omitempty" yaml:"base_remote,omitempty"`
+	BaseBranch               string                     `json:"baseBranch,omitempty" yaml:"base_branch,omitempty"`
+	ValidationCommands       []ValidationCommand        `json:"validationCommands,omitempty" yaml:"validation_commands,omitempty"`
 }
 
 type ValidationCommand struct {

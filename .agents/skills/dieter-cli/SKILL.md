@@ -377,7 +377,15 @@ dieter card labels --set <label-id>,<label-id> <card-id>
 dieter card list --board <board-id> --label <label-id> --format jsonl
 ```
 
-Archiving is reversible. Inspect before changing retention or archive state:
+Archiving retains worktrees by default. Project settings expose an opt-in toggle
+with an impact notice; use `project update --delete-worktrees-on-archive=true|false
+PROJECT` in automation. Enabling also covers existing archives and automatic
+archiving of cards and chats. Cleanup removes idle, clean managed worktrees,
+permanently deleting ignored files and build output. Branches and conversation
+history remain; Restore recreates committed files only. Unsafe or busy worktrees
+stay and are retried every minute while enabled. Disabling stops future cleanup
+and cannot undo deletions. Shared project directories and shared dependency caches
+are preserved. Unarchive before resuming. Inspect before changing retention or archive state:
 
 ```sh
 dieter board retention --archive-done after_30_days <board-id>

@@ -35,6 +35,8 @@ func (api *terminalsAPI) ListTerminals(ctx context.Context, request *dieterv1.Li
 }
 
 func (api *terminalsAPI) CreateTerminal(ctx context.Context, request *dieterv1.CreateTerminalRequest) (*dieterv1.Terminal, error) {
+	api.server.filesMu.RLock()
+	defer api.server.filesMu.RUnlock()
 	ctx = kanban.WithCheckout(ctx, request.GetCheckoutId())
 	projectID, cardID := strings.TrimSpace(request.GetProjectId()), strings.TrimSpace(request.GetCardId())
 	workingDirectory := ""
