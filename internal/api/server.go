@@ -227,6 +227,11 @@ func NewWithOptions(data *store.Store, logger *slog.Logger, options Options) *Se
 		}
 		return false
 	}
+	s.workspaces.Busy = s.gitOperations.Busy
+	s.workspaces.CleanupGuard = func() func() {
+		s.filesMu.Lock()
+		return s.filesMu.Unlock
+	}
 	s.gitOperations.BusyPath = func(workspacePath string) bool {
 		if resolved, resolveErr := filepath.EvalSymlinks(workspacePath); resolveErr == nil {
 			workspacePath = resolved

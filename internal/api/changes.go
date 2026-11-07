@@ -230,6 +230,9 @@ func (s *Server) watchChanges(ctx context.Context, request *dieterv1.ChangesRequ
 				return err
 			}
 		case <-recovery.C:
+			if err := pauseChanges(ctx, changesFrameGap-time.Since(sent)); err != nil {
+				return err
+			}
 		case <-beat.C:
 			if err := send(&dieterv1.ChangesFrame{DaemonId: stream.daemonID, Account: stream.account, Cursor: proto.Clone(stream.cursor).(*dieterv1.ChangesCursor), CaughtUp: true, Heartbeat: true}); err != nil {
 				return err

@@ -11083,6 +11083,15 @@ public nonisolated struct ClientAdminUpdateProject: Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
+  public var deleteWorktreesOnArchive: Bool {
+    get {_deleteWorktreesOnArchive ?? false}
+    set {_deleteWorktreesOnArchive = newValue}
+  }
+  /// Returns true if `deleteWorktreesOnArchive` has been explicitly set.
+  public var hasDeleteWorktreesOnArchive: Bool {self._deleteWorktreesOnArchive != nil}
+  /// Clears the value of `deleteWorktreesOnArchive`. Subsequent reads from it will return its default value.
+  public mutating func clearDeleteWorktreesOnArchive() {self._deleteWorktreesOnArchive = nil}
+
   public var projectID: String = String()
 
   public var name: String {
@@ -11121,6 +11130,7 @@ public nonisolated struct ClientAdminUpdateProject: Sendable {
 
   public init() {}
 
+  fileprivate var _deleteWorktreesOnArchive: Bool? = nil
   fileprivate var _name: String? = nil
   fileprivate var _summary: String? = nil
   fileprivate var _prompt: String? = nil
@@ -12181,44 +12191,81 @@ public nonisolated struct ClientQuotaDetail: Sendable {
 
 /// The choices project and board forms offer, and what a new project or
 /// board starts with, as every client words them.
-public nonisolated struct ClientAdminOptions: Sendable {
+public nonisolated struct ClientAdminOptions: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var workflows: [ClientAdminChoice] = []
+  public var archiveWorktreeToggle: String {
+    get {_storage._archiveWorktreeToggle}
+    set {_uniqueStorage()._archiveWorktreeToggle = newValue}
+  }
 
-  public var publishModes: [ClientAdminChoice] = []
+  public var archiveWorktreeImpact: String {
+    get {_storage._archiveWorktreeImpact}
+    set {_uniqueStorage()._archiveWorktreeImpact = newValue}
+  }
 
-  public var archivePolicies: [ClientAdminChoice] = []
+  public var workflows: [ClientAdminChoice] {
+    get {_storage._workflows}
+    set {_uniqueStorage()._workflows = newValue}
+  }
 
-  public var defaultBoardName: String = String()
+  public var publishModes: [ClientAdminChoice] {
+    get {_storage._publishModes}
+    set {_uniqueStorage()._publishModes = newValue}
+  }
 
-  public var defaultWorkflow: String = String()
+  public var archivePolicies: [ClientAdminChoice] {
+    get {_storage._archivePolicies}
+    set {_uniqueStorage()._archivePolicies = newValue}
+  }
 
-  public var defaultBaseRemote: String = String()
+  public var defaultBoardName: String {
+    get {_storage._defaultBoardName}
+    set {_uniqueStorage()._defaultBoardName = newValue}
+  }
 
-  public var defaultBaseBranch: String = String()
+  public var defaultWorkflow: String {
+    get {_storage._defaultWorkflow}
+    set {_uniqueStorage()._defaultWorkflow = newValue}
+  }
 
-  public var defaultPublishMode: String = String()
+  public var defaultBaseRemote: String {
+    get {_storage._defaultBaseRemote}
+    set {_uniqueStorage()._defaultBaseRemote = newValue}
+  }
 
-  public var defaultArchivePolicy: String = String()
+  public var defaultBaseBranch: String {
+    get {_storage._defaultBaseBranch}
+    set {_uniqueStorage()._defaultBaseBranch = newValue}
+  }
+
+  public var defaultPublishMode: String {
+    get {_storage._defaultPublishMode}
+    set {_uniqueStorage()._defaultPublishMode = newValue}
+  }
+
+  public var defaultArchivePolicy: String {
+    get {_storage._defaultArchivePolicy}
+    set {_uniqueStorage()._defaultArchivePolicy = newValue}
+  }
 
   /// What a new validation command's form starts with.
   public var newValidation: ClientValidationDraft {
-    get {_newValidation ?? ClientValidationDraft()}
-    set {_newValidation = newValue}
+    get {_storage._newValidation ?? ClientValidationDraft()}
+    set {_uniqueStorage()._newValidation = newValue}
   }
   /// Returns true if `newValidation` has been explicitly set.
-  public var hasNewValidation: Bool {self._newValidation != nil}
+  public var hasNewValidation: Bool {_storage._newValidation != nil}
   /// Clears the value of `newValidation`. Subsequent reads from it will return its default value.
-  public mutating func clearNewValidation() {self._newValidation = nil}
+  public mutating func clearNewValidation() {_uniqueStorage()._newValidation = nil}
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
-  fileprivate var _newValidation: ClientValidationDraft? = nil
+  fileprivate var _storage = _StorageClass.defaultInstance
 }
 
 public nonisolated struct ClientAdminChoice: Sendable {
@@ -31637,7 +31684,7 @@ nonisolated extension ClientAdminCreateProject: SwiftProtobuf.Message, SwiftProt
 
 nonisolated extension ClientAdminUpdateProject: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".AdminUpdateProject"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}name\0\u{1}summary\0\u{1}prompt\0\u{3}set_hostnames\0\u{1}hostnames\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}name\0\u{1}summary\0\u{1}prompt\0\u{3}set_hostnames\0\u{1}hostnames\0\u{3}delete_worktrees_on_archive\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -31651,6 +31698,7 @@ nonisolated extension ClientAdminUpdateProject: SwiftProtobuf.Message, SwiftProt
       case 4: try { try decoder.decodeSingularStringField(value: &self._prompt) }()
       case 5: try { try decoder.decodeSingularBoolField(value: &self.setHostnames) }()
       case 6: try { try decoder.decodeRepeatedStringField(value: &self.hostnames) }()
+      case 7: try { try decoder.decodeSingularBoolField(value: &self._deleteWorktreesOnArchive) }()
       default: break
       }
     }
@@ -31679,10 +31727,14 @@ nonisolated extension ClientAdminUpdateProject: SwiftProtobuf.Message, SwiftProt
     if !self.hostnames.isEmpty {
       try visitor.visitRepeatedStringField(value: self.hostnames, fieldNumber: 6)
     }
+    try { if let v = self._deleteWorktreesOnArchive {
+      try visitor.visitSingularBoolField(value: v, fieldNumber: 7)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: ClientAdminUpdateProject, rhs: ClientAdminUpdateProject) -> Bool {
+    if lhs._deleteWorktreesOnArchive != rhs._deleteWorktreesOnArchive {return false}
     if lhs.projectID != rhs.projectID {return false}
     if lhs._name != rhs._name {return false}
     if lhs._summary != rhs._summary {return false}
@@ -33941,78 +33993,146 @@ nonisolated extension ClientQuotaDetail: SwiftProtobuf.Message, SwiftProtobuf._M
 
 nonisolated extension ClientAdminOptions: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".AdminOptions"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}workflows\0\u{3}publish_modes\0\u{3}archive_policies\0\u{3}default_board_name\0\u{3}default_workflow\0\u{3}default_base_remote\0\u{3}default_base_branch\0\u{3}default_publish_mode\0\u{3}default_archive_policy\0\u{3}new_validation\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}workflows\0\u{3}publish_modes\0\u{3}archive_policies\0\u{3}default_board_name\0\u{3}default_workflow\0\u{3}default_base_remote\0\u{3}default_base_branch\0\u{3}default_publish_mode\0\u{3}default_archive_policy\0\u{3}new_validation\0\u{3}archive_worktree_toggle\0\u{3}archive_worktree_impact\0")
+
+  fileprivate class _StorageClass {
+    var _archiveWorktreeToggle: String = String()
+    var _archiveWorktreeImpact: String = String()
+    var _workflows: [ClientAdminChoice] = []
+    var _publishModes: [ClientAdminChoice] = []
+    var _archivePolicies: [ClientAdminChoice] = []
+    var _defaultBoardName: String = String()
+    var _defaultWorkflow: String = String()
+    var _defaultBaseRemote: String = String()
+    var _defaultBaseBranch: String = String()
+    var _defaultPublishMode: String = String()
+    var _defaultArchivePolicy: String = String()
+    var _newValidation: ClientValidationDraft? = nil
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _archiveWorktreeToggle = source._archiveWorktreeToggle
+      _archiveWorktreeImpact = source._archiveWorktreeImpact
+      _workflows = source._workflows
+      _publishModes = source._publishModes
+      _archivePolicies = source._archivePolicies
+      _defaultBoardName = source._defaultBoardName
+      _defaultWorkflow = source._defaultWorkflow
+      _defaultBaseRemote = source._defaultBaseRemote
+      _defaultBaseBranch = source._defaultBaseBranch
+      _defaultPublishMode = source._defaultPublishMode
+      _defaultArchivePolicy = source._defaultArchivePolicy
+      _newValidation = source._newValidation
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.workflows) }()
-      case 2: try { try decoder.decodeRepeatedMessageField(value: &self.publishModes) }()
-      case 3: try { try decoder.decodeRepeatedMessageField(value: &self.archivePolicies) }()
-      case 4: try { try decoder.decodeSingularStringField(value: &self.defaultBoardName) }()
-      case 5: try { try decoder.decodeSingularStringField(value: &self.defaultWorkflow) }()
-      case 6: try { try decoder.decodeSingularStringField(value: &self.defaultBaseRemote) }()
-      case 7: try { try decoder.decodeSingularStringField(value: &self.defaultBaseBranch) }()
-      case 8: try { try decoder.decodeSingularStringField(value: &self.defaultPublishMode) }()
-      case 9: try { try decoder.decodeSingularStringField(value: &self.defaultArchivePolicy) }()
-      case 10: try { try decoder.decodeSingularMessageField(value: &self._newValidation) }()
-      default: break
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeRepeatedMessageField(value: &_storage._workflows) }()
+        case 2: try { try decoder.decodeRepeatedMessageField(value: &_storage._publishModes) }()
+        case 3: try { try decoder.decodeRepeatedMessageField(value: &_storage._archivePolicies) }()
+        case 4: try { try decoder.decodeSingularStringField(value: &_storage._defaultBoardName) }()
+        case 5: try { try decoder.decodeSingularStringField(value: &_storage._defaultWorkflow) }()
+        case 6: try { try decoder.decodeSingularStringField(value: &_storage._defaultBaseRemote) }()
+        case 7: try { try decoder.decodeSingularStringField(value: &_storage._defaultBaseBranch) }()
+        case 8: try { try decoder.decodeSingularStringField(value: &_storage._defaultPublishMode) }()
+        case 9: try { try decoder.decodeSingularStringField(value: &_storage._defaultArchivePolicy) }()
+        case 10: try { try decoder.decodeSingularMessageField(value: &_storage._newValidation) }()
+        case 11: try { try decoder.decodeSingularStringField(value: &_storage._archiveWorktreeToggle) }()
+        case 12: try { try decoder.decodeSingularStringField(value: &_storage._archiveWorktreeImpact) }()
+        default: break
+        }
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    // The use of inline closures is to circumvent an issue where the compiler
-    // allocates stack space for every if/case branch local when no optimizations
-    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
-    // https://github.com/apple/swift-protobuf/issues/1182
-    if !self.workflows.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.workflows, fieldNumber: 1)
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      if !_storage._workflows.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._workflows, fieldNumber: 1)
+      }
+      if !_storage._publishModes.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._publishModes, fieldNumber: 2)
+      }
+      if !_storage._archivePolicies.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._archivePolicies, fieldNumber: 3)
+      }
+      if !_storage._defaultBoardName.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._defaultBoardName, fieldNumber: 4)
+      }
+      if !_storage._defaultWorkflow.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._defaultWorkflow, fieldNumber: 5)
+      }
+      if !_storage._defaultBaseRemote.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._defaultBaseRemote, fieldNumber: 6)
+      }
+      if !_storage._defaultBaseBranch.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._defaultBaseBranch, fieldNumber: 7)
+      }
+      if !_storage._defaultPublishMode.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._defaultPublishMode, fieldNumber: 8)
+      }
+      if !_storage._defaultArchivePolicy.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._defaultArchivePolicy, fieldNumber: 9)
+      }
+      try { if let v = _storage._newValidation {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 10)
+      } }()
+      if !_storage._archiveWorktreeToggle.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._archiveWorktreeToggle, fieldNumber: 11)
+      }
+      if !_storage._archiveWorktreeImpact.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._archiveWorktreeImpact, fieldNumber: 12)
+      }
     }
-    if !self.publishModes.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.publishModes, fieldNumber: 2)
-    }
-    if !self.archivePolicies.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.archivePolicies, fieldNumber: 3)
-    }
-    if !self.defaultBoardName.isEmpty {
-      try visitor.visitSingularStringField(value: self.defaultBoardName, fieldNumber: 4)
-    }
-    if !self.defaultWorkflow.isEmpty {
-      try visitor.visitSingularStringField(value: self.defaultWorkflow, fieldNumber: 5)
-    }
-    if !self.defaultBaseRemote.isEmpty {
-      try visitor.visitSingularStringField(value: self.defaultBaseRemote, fieldNumber: 6)
-    }
-    if !self.defaultBaseBranch.isEmpty {
-      try visitor.visitSingularStringField(value: self.defaultBaseBranch, fieldNumber: 7)
-    }
-    if !self.defaultPublishMode.isEmpty {
-      try visitor.visitSingularStringField(value: self.defaultPublishMode, fieldNumber: 8)
-    }
-    if !self.defaultArchivePolicy.isEmpty {
-      try visitor.visitSingularStringField(value: self.defaultArchivePolicy, fieldNumber: 9)
-    }
-    try { if let v = self._newValidation {
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 10)
-    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: ClientAdminOptions, rhs: ClientAdminOptions) -> Bool {
-    if lhs.workflows != rhs.workflows {return false}
-    if lhs.publishModes != rhs.publishModes {return false}
-    if lhs.archivePolicies != rhs.archivePolicies {return false}
-    if lhs.defaultBoardName != rhs.defaultBoardName {return false}
-    if lhs.defaultWorkflow != rhs.defaultWorkflow {return false}
-    if lhs.defaultBaseRemote != rhs.defaultBaseRemote {return false}
-    if lhs.defaultBaseBranch != rhs.defaultBaseBranch {return false}
-    if lhs.defaultPublishMode != rhs.defaultPublishMode {return false}
-    if lhs.defaultArchivePolicy != rhs.defaultArchivePolicy {return false}
-    if lhs._newValidation != rhs._newValidation {return false}
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._archiveWorktreeToggle != rhs_storage._archiveWorktreeToggle {return false}
+        if _storage._archiveWorktreeImpact != rhs_storage._archiveWorktreeImpact {return false}
+        if _storage._workflows != rhs_storage._workflows {return false}
+        if _storage._publishModes != rhs_storage._publishModes {return false}
+        if _storage._archivePolicies != rhs_storage._archivePolicies {return false}
+        if _storage._defaultBoardName != rhs_storage._defaultBoardName {return false}
+        if _storage._defaultWorkflow != rhs_storage._defaultWorkflow {return false}
+        if _storage._defaultBaseRemote != rhs_storage._defaultBaseRemote {return false}
+        if _storage._defaultBaseBranch != rhs_storage._defaultBaseBranch {return false}
+        if _storage._defaultPublishMode != rhs_storage._defaultPublishMode {return false}
+        if _storage._defaultArchivePolicy != rhs_storage._defaultArchivePolicy {return false}
+        if _storage._newValidation != rhs_storage._newValidation {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

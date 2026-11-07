@@ -7,6 +7,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.getdieter.client.v1.*
 import com.getdieter.core.admin.PromptTemplates
@@ -142,10 +145,13 @@ private fun ProjectSettingsSheet(
     project: com.getdieter.api.v1.Project,
     dismiss: () -> Unit,
 ) {
+    val archiveOptions = com.getdieter.core.client.rules.AdminExports.options()
     var name by remember(project.id) { mutableStateOf(project.name) }
     var summary by remember(project.id) { mutableStateOf(project.summary) }
     var remote by remember(project.id) { mutableStateOf(project.base_remote) }
     var branch by remember(project.id) { mutableStateOf(project.base_branch) }
+    var deleteWorktreesOnArchive by
+        remember(project.id) { mutableStateOf(project.delete_worktrees_on_archive) }
     var instructions by remember(project.id) { mutableStateOf(project.prompt) }
     var template by remember(project.id) { mutableStateOf(project.prompt_template) }
     val templateProblem =
@@ -175,6 +181,7 @@ private fun ProjectSettingsSheet(
                                             name = name,
                                             summary = summary,
                                             prompt = instructions,
+                                            delete_worktrees_on_archive = deleteWorktreesOnArchive,
                                         )
                                 )
                         )
@@ -246,6 +253,23 @@ private fun ProjectSettingsSheet(
                 singleLine = true,
             )
         }
+        SectionHeader("Archive storage")
+        Group(listOf(0)) { _, position ->
+            ListRow(
+                archiveOptions.archive_worktree_toggle,
+                position = position,
+                trailing = {
+                    DSwitch(
+                        deleteWorktreesOnArchive,
+                        { deleteWorktreesOnArchive = it },
+                        Modifier.testTag("project.archive.cleanup").semantics {
+                            contentDescription = archiveOptions.archive_worktree_toggle
+                        },
+                    )
+                },
+            )
+        }
+        FormColumn { Text(archiveOptions.archive_worktree_impact) }
         SectionHeader("Agent instructions")
         FormColumn {
             MobileTextField(

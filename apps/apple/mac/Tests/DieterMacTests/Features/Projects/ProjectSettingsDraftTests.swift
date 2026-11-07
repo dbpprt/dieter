@@ -3,9 +3,11 @@ import Testing
 @testable import DieterMacKit
 
 @Test func projectSettingsDraftRetainsContextAndValidationWhenEditingName() {
+    #expect(!ProjectSettingsDraft().deleteWorktreesOnArchive)
     var project = Dieter_V1_Project()
     project.name = "Website"
     project.prompt = "Keep all public pages accessible."
+    project.deleteWorktreesOnArchive = true
     var validation = Dieter_V1_ValidationCommand()
     validation.name = "Tests"
     validation.executable = "just"
@@ -16,6 +18,7 @@ import Testing
     edited.name = "Website frontend"
     #expect(edited.isValid)
     #expect(edited.prompt == original.prompt)
+    #expect(edited.deleteWorktreesOnArchive)
     #expect(edited.validationCommands.map(\.value) == original.validationCommands.map(\.value))
     #expect(original.name == "Website")
     edited.validationCommands[0].executable = " "

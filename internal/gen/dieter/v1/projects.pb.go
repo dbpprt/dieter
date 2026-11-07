@@ -707,15 +707,17 @@ func (x *CreateProjectResponse) GetBoard() *Board {
 }
 
 type UpdateProjectRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Name          *string                `protobuf:"bytes,2,opt,name=name,proto3,oneof" json:"name,omitempty"`
-	Summary       *string                `protobuf:"bytes,3,opt,name=summary,proto3,oneof" json:"summary,omitempty"`
-	Prompt        *string                `protobuf:"bytes,4,opt,name=prompt,proto3,oneof" json:"prompt,omitempty"`
-	Path          *string                `protobuf:"bytes,5,opt,name=path,proto3,oneof" json:"path,omitempty"`
-	Hostnames     *ProjectHostnames      `protobuf:"bytes,6,opt,name=hostnames,proto3" json:"hostnames,omitempty"` // Absent preserves mappings; empty values clears them.
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Absent preserves the preference. False stops future cleanup.
+	DeleteWorktreesOnArchive *bool             `protobuf:"varint,7,opt,name=delete_worktrees_on_archive,json=deleteWorktreesOnArchive,proto3,oneof" json:"delete_worktrees_on_archive,omitempty"`
+	ProjectId                string            `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Name                     *string           `protobuf:"bytes,2,opt,name=name,proto3,oneof" json:"name,omitempty"`
+	Summary                  *string           `protobuf:"bytes,3,opt,name=summary,proto3,oneof" json:"summary,omitempty"`
+	Prompt                   *string           `protobuf:"bytes,4,opt,name=prompt,proto3,oneof" json:"prompt,omitempty"`
+	Path                     *string           `protobuf:"bytes,5,opt,name=path,proto3,oneof" json:"path,omitempty"`
+	Hostnames                *ProjectHostnames `protobuf:"bytes,6,opt,name=hostnames,proto3" json:"hostnames,omitempty"` // Absent preserves mappings; empty values clears them.
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *UpdateProjectRequest) Reset() {
@@ -746,6 +748,13 @@ func (x *UpdateProjectRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use UpdateProjectRequest.ProtoReflect.Descriptor instead.
 func (*UpdateProjectRequest) Descriptor() ([]byte, []int) {
 	return file_dieter_v1_projects_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *UpdateProjectRequest) GetDeleteWorktreesOnArchive() bool {
+	if x != nil && x.DeleteWorktreesOnArchive != nil {
+		return *x.DeleteWorktreesOnArchive
+	}
+	return false
 }
 
 func (x *UpdateProjectRequest) GetProjectId() string {
@@ -1019,15 +1028,17 @@ const file_dieter_v1_projects_proto_rawDesc = "" +
 	"\x13validation_commands\x18\v \x03(\v2\x1c.dieter.v1.ValidationCommandR\x12validationCommandsJ\x04\b\b\x10\tJ\x04\b\f\x10\rR\x16default_workspace_modeR\x13remote_publish_mode\"m\n" +
 	"\x15CreateProjectResponse\x12,\n" +
 	"\aproject\x18\x01 \x01(\v2\x12.dieter.v1.ProjectR\aproject\x12&\n" +
-	"\x05board\x18\x02 \x01(\v2\x10.dieter.v1.BoardR\x05board\"\x87\x02\n" +
-	"\x14UpdateProjectRequest\x12\x1d\n" +
+	"\x05board\x18\x02 \x01(\v2\x10.dieter.v1.BoardR\x05board\"\xeb\x02\n" +
+	"\x14UpdateProjectRequest\x12B\n" +
+	"\x1bdelete_worktrees_on_archive\x18\a \x01(\bH\x00R\x18deleteWorktreesOnArchive\x88\x01\x01\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x17\n" +
-	"\x04name\x18\x02 \x01(\tH\x00R\x04name\x88\x01\x01\x12\x1d\n" +
-	"\asummary\x18\x03 \x01(\tH\x01R\asummary\x88\x01\x01\x12\x1b\n" +
-	"\x06prompt\x18\x04 \x01(\tH\x02R\x06prompt\x88\x01\x01\x12\x17\n" +
-	"\x04path\x18\x05 \x01(\tH\x03R\x04path\x88\x01\x01\x129\n" +
-	"\thostnames\x18\x06 \x01(\v2\x1b.dieter.v1.ProjectHostnamesR\thostnamesB\a\n" +
+	"\x04name\x18\x02 \x01(\tH\x01R\x04name\x88\x01\x01\x12\x1d\n" +
+	"\asummary\x18\x03 \x01(\tH\x02R\asummary\x88\x01\x01\x12\x1b\n" +
+	"\x06prompt\x18\x04 \x01(\tH\x03R\x06prompt\x88\x01\x01\x12\x17\n" +
+	"\x04path\x18\x05 \x01(\tH\x04R\x04path\x88\x01\x01\x129\n" +
+	"\thostnames\x18\x06 \x01(\v2\x1b.dieter.v1.ProjectHostnamesR\thostnamesB\x1e\n" +
+	"\x1c_delete_worktrees_on_archiveB\a\n" +
 	"\x05_nameB\n" +
 	"\n" +
 	"\b_summaryB\t\n" +

@@ -30,6 +30,10 @@ type Manager struct {
 	Git    git.Runner
 	Status *git.StatusReader
 	Log    *slog.Logger
+	// Busy includes terminals and registered processes in this workspace.
+	Busy func(string) bool
+	// CleanupGuard serializes removal with daemon file/process admission.
+	CleanupGuard func() func()
 }
 
 func New(data *store.Store, logger *slog.Logger) *Manager {
@@ -69,6 +73,13 @@ func selectedMode(card model.Card) (string, error) {
 }
 
 func (m *Manager) Ensure(ctx context.Context, cardRef string) (model.Workspace, error) {
+	card, err := m.Store.Kanban.ResolveCard(cardRef)
+	if err != nil {
+		return model.Workspace{}, err
+	}
+	if card.Archived {
+		return model.Workspace{}, fault.New(fault.FailedPrecondition, "unarchive the conversation before accessing its workspace")
+	}
 	if existing, err := m.Store.Workspaces.Get(cardRef); err == nil {
 		if existing.State == model.WorkspaceStateReady || existing.State == model.WorkspaceStateConflicted {
 			return m.Refresh(ctx, existing.CardID, false)
@@ -100,6 +111,14 @@ func (m *Manager) Ensure(ctx context.Context, cardRef string) (model.Workspace, 
 		return model.Workspace{}, err
 	}
 	defer release()
+	// Archive can race the initial read while provisioning waits for the lock.
+	card, err = m.Store.Kanban.ResolveCard(detail.Card.ID)
+	if err != nil {
+		return model.Workspace{}, err
+	}
+	if card.Archived {
+		return model.Workspace{}, fault.New(fault.FailedPrecondition, "unarchive the conversation before accessing its workspace")
+	}
 	if existing, err := m.Store.Workspaces.ByCardID(detail.Card.ID); err == nil && (existing.State == model.WorkspaceStateReady || existing.State == model.WorkspaceStateConflicted) {
 		return m.Refresh(ctx, detail.Card.ID, false)
 	}
@@ -109,6 +128,13 @@ func (m *Manager) Ensure(ctx context.Context, cardRef string) (model.Workspace, 
 		BaseRemote: strings.TrimSpace(detail.Card.WorkspaceBaseRemote), BaseBranch: strings.TrimSpace(detail.Card.WorkspaceBaseBranch),
 		RemotePublishMode: strings.TrimSpace(detail.Card.RemotePublishMode),
 		Branch:            strings.TrimSpace(detail.Card.WorkspaceBranch), CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	}
+	if previous, readErr := m.Store.Workspaces.ByCardID(detail.Card.ID); readErr == nil && previous.Mode == model.WorkspaceModeWorktree && previous.HeadSHA != "" {
+		// Restore the exact branch and adoption history, even after a rename.
+		value = previous
+		value.State, value.UpdatedAt, value.LastActivityAt = model.WorkspaceStateProvisioning, now, now
+	} else if readErr != nil && !errors.Is(readErr, home.ErrNotFound) {
+		return model.Workspace{}, readErr
 	}
 	if value.BaseRemote == "" {
 		value.BaseRemote = strings.TrimSpace(detail.Board.BaseRemote)
@@ -161,7 +187,9 @@ func (m *Manager) provision(ctx context.Context, detail model.CardDetail, value 
 	if baseErr != nil && value.Mode == model.WorkspaceModeWorktree {
 		return value, fmt.Errorf("resolve base branch %q: %w", baseRef, baseErr)
 	}
-	value.BaseSHA = baseSHA
+	if value.BaseSHA == "" {
+		value.BaseSHA = baseSHA
+	}
 	value.CurrentBaseSHA = baseSHA
 	switch value.Mode {
 	case model.WorkspaceModeProject:
@@ -174,7 +202,9 @@ func (m *Manager) provision(ctx context.Context, detail model.CardDetail, value 
 			value.Branch = branchName(detail.Card)
 			value.ManagedBranch = true
 		}
-		value.Path = filepath.Join(m.Store.WorktreeRoot(), detail.Project.ID, detail.Card.ID)
+		if value.Path == "" {
+			value.Path = filepath.Join(m.Store.WorktreeRoot(), detail.Project.ID, detail.Card.ID)
+		}
 		release, err := m.LockRepository(kanban.WithCheckout(ctx, detail.Card.CheckoutID), detail.Project.ID)
 		if err != nil {
 			return value, err
@@ -195,6 +225,9 @@ func (m *Manager) provision(ctx context.Context, detail model.CardDetail, value 
 		if _, err := m.Git.Run(ctx, projectPath, "show-ref", "--verify", "--quiet", "refs/heads/"+value.Branch); err == nil {
 			args = append(args, value.Path, value.Branch)
 		} else {
+			if value.HeadSHA != "" {
+				return value, fault.New(fault.FailedPrecondition, "retained workspace branch is missing; restore it before resuming")
+			}
 			args = append(args, "-b", value.Branch, value.Path, baseRef)
 		}
 		if _, err := m.Git.Run(ctx, projectPath, args...); err != nil {
@@ -232,6 +265,9 @@ func (m *Manager) Refresh(ctx context.Context, cardRef string, includeSize bool)
 		value.RemotePublishMode = model.RemotePublishManual
 	}
 	if _, err := os.Stat(value.Path); err != nil {
+		if errors.Is(err, os.ErrNotExist) && value.State == model.WorkspaceStateReserved {
+			return value, nil
+		}
 		value.State = model.WorkspaceStateOrphaned
 		return m.Store.Workspaces.UpdateGitState(value, includeSize)
 	}
@@ -333,7 +369,11 @@ func (m *Manager) LockRepository(ctx context.Context, projectID string) (func(),
 	if err != nil {
 		return nil, err
 	}
-	common, err := m.output(ctx, project.Path, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	return m.lockRepositoryPath(ctx, project.Path)
+}
+
+func (m *Manager) lockRepositoryPath(ctx context.Context, projectPath string) (func(), error) {
+	common, err := m.output(ctx, projectPath, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil {
 		return nil, err
 	}

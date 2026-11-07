@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -186,6 +187,66 @@ func TestTickArchivesDoneCardsUsingBoardPolicy(t *testing.T) {
 	card, err = data.Kanban.ResolveCard(card.ID)
 	if err != nil || !card.Archived {
 		t.Fatalf("archived card=%#v err=%v", card, err)
+	}
+}
+
+func TestStartReclaimsOlderArchivedWorktreesAndJoinsCleanup(t *testing.T) {
+	t.Parallel()
+	manager, data, project, _ := setup(t)
+	enabled := true
+	if _, err := data.Kanban.UpdateProjectWithHostnames(project.ID, nil, nil, nil, nil, nil, &enabled); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"init", "-b", "main"}, {"config", "user.name", "Dieter Test"},
+		{"config", "user.email", "dieter@example.test"}, {"commit", "--allow-empty", "-m", "initial"},
+	} {
+		command := exec.Command("git", args...)
+		command.Dir = project.Path
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s %v", args, output, err)
+		}
+	}
+	card, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Older archive", WorkspaceMode: model.WorkspaceModeWorktree})
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := manager.app.Workspaces.Ensure(context.Background(), card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := data.Kanban.ArchiveCard(card.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	// Holding this guard models a file operation already in flight. Start must
+	// return while cleanup waits, rather than delaying the listener startup.
+	entered, release, finished := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	manager.app.Workspaces.CleanupGuard = func() func() { close(entered); <-release; return func() { close(finished) } }
+	stop := manager.Start(context.Background())
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		close(release)
+		stop()
+		t.Fatal("archive sweep did not start")
+	}
+	close(release)
+	select {
+	case <-finished:
+	case <-time.After(5 * time.Second):
+		stop()
+		t.Fatal("archive sweep did not finish")
+	}
+	if _, err := os.Stat(value.Path); !os.IsNotExist(err) {
+		stop()
+		t.Fatalf("archive sweep did not reclaim tree: %v", err)
+	}
+
+	stop()
+	// Closing storage after the returned stop function is safe: both workers
+	// have exited, including the durable metadata write after Git removal.
+	if err := data.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 

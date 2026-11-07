@@ -39,6 +39,9 @@ object AdminExports {
             default_base_branch = AdminForms.DEFAULT_BASE_BRANCH,
             default_publish_mode = AdminForms.DEFAULT_PUBLISH_MODE,
             default_archive_policy = AdminForms.DEFAULT_ARCHIVE_POLICY,
+            archive_worktree_toggle = "Delete worktrees when archiving",
+            archive_worktree_impact =
+                "Applies to manual and automatic archives of cards and chats in this project, including existing archives. Deletes clean, idle worktrees and their ignored files, dependencies, and build output. Git branches and conversation history are kept. Restore recreates committed files only; deleted ignored files and build output cannot be recovered by Dieter. Uncommitted or busy worktrees are kept until safe to remove. Turning this off stops future cleanup; it cannot undo deletions.",
             new_validation = ValidationCommandDraft().wire(),
         )
 

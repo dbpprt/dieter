@@ -341,6 +341,8 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	}
 	remoteStore := testkit.Store(t)
 	remoteRepository := initTestRepository(t, "remote-route")
+	testkit.RunGit(t, remoteRepository, "add", ".")
+	testkit.RunGit(t, remoteRepository, "commit", "-m", "initial")
 	remoteProject, err := remoteStore.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Remote route", Path: remoteRepository})
 	if err != nil {
 		t.Fatal(err)
@@ -474,6 +476,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 		return
 	}
 	assertPrivacyCLI(t, first, &firstOutput)
+	assertArchiveWorktreeCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	firstOutput.Reset()
 	if err := first.Run([]string{"machine", "info"}); err != nil || !strings.Contains(firstOutput.String(), `"daemonBuild"`) || !strings.Contains(firstOutput.String(), `"gpu"`) {
 		t.Fatalf("direct machine info output=%q err=%v", firstOutput.String(), err)
@@ -608,6 +611,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	assertContentPresentationCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertConversationReadCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertBackgroundProcessCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
+	assertArchiveWorktreeCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertChannelCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertMailCLI(t, second, &secondOutput, true)
 }

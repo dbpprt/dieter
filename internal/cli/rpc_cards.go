@@ -1033,7 +1033,12 @@ func (c *CLI) rpcCardArchive(args []string, archived bool) error {
 	if !archived {
 		action = "unarchive"
 	}
-	usage := fmt.Sprintf("Usage: dieter card %s CARD\n", action)
+	usage := fmt.Sprintf("Usage: dieter card %s CARD\n\n", action)
+	if archived {
+		usage += "Worktrees are kept by default. Enable project cleanup with project update\n--delete-worktrees-on-archive=true to reclaim idle, clean managed worktrees.\nIgnored files and build output are permanently removed; branches and history remain.\nDirty, busy, locked, or detached worktrees are retained and retried.\nUnarchive before resuming; Restore recreates committed files only after deletion.\n"
+	} else {
+		usage += "The worktree is recreated from its retained branch on the next workspace access.\n"
+	}
 	if wantsHelp(args) {
 		fmt.Fprint(c.Out, c.scoped(usage))
 		return nil

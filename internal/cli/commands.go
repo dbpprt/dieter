@@ -63,7 +63,7 @@ func commandTable() []command {
 		{
 			name:        "project",
 			aliases:     []string{"projects"},
-			summary:     "Create, browse, map hostnames, relocate, archive, and restore projects",
+			summary:     "Create, browse, configure archive cleanup, relocate, and restore projects",
 			run:         (*CLI).rpcProject,
 			subcommands: []string{"create", "open", "directories", "list", "show", "update", "workspace", "remove", "restore", "consolidate", "attach", "detach", "checkouts"},
 		},

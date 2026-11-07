@@ -354,7 +354,7 @@ func (s *Store) UpdateProject(ref string, name, summary, prompt *string, paths .
 	return s.UpdateProjectWithHostnames(ref, name, summary, prompt, path, nil)
 }
 
-func (s *Store) UpdateProjectWithHostnames(ref string, name, summary, prompt, path *string, hostnames *[]string) (model.Project, error) {
+func (s *Store) UpdateProjectWithHostnames(ref string, name, summary, prompt, path *string, hostnames *[]string, deleteWorktreesOnArchive ...*bool) (model.Project, error) {
 	release, err := s.home.BeginWrite()
 	if err != nil {
 		return model.Project{}, err
@@ -403,6 +403,9 @@ func (s *Store) UpdateProjectWithHostnames(ref string, name, summary, prompt, pa
 			return model.Project{}, err
 		}
 		project.Hostnames = normalized
+	}
+	if len(deleteWorktreesOnArchive) > 0 && deleteWorktreesOnArchive[0] != nil {
+		project.DeleteWorktreesOnArchive = *deleteWorktreesOnArchive[0]
 	}
 	project.UpdatedAt = home.Timestamp()
 	return s.saveProject(project)

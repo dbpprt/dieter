@@ -125,6 +125,12 @@ SwiftUI on macOS. Agents run unsandboxed with your user's permissions. Read the
 - [Contributor docs](docs/README.md): architecture, invariants, threat model,
   building, testing, releasing
 
+Archiving retains worktrees by default. Enable **Delete worktrees when archiving**
+in project settings, or use `dieter project update --delete-worktrees-on-archive=true PROJECT`,
+to reclaim clean, idle archived worktrees. The setting includes existing archives;
+branches and history remain, but ignored files and build output are deleted.
+Restore recreates committed files only. See [archive storage](https://getdieter.com/docs/projects/#organize-without-losing-history).
+
 ## Contributing
 
 Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) (commits need

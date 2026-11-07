@@ -87,6 +87,8 @@ message CreateProjectResponse {
 }
 
 message UpdateProjectRequest {
+  // Absent preserves the preference. False stops future cleanup.
+  optional bool delete_worktrees_on_archive = 7;
   string project_id = 1;
   optional string name = 2;
   optional string summary = 3;

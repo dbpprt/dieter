@@ -20,7 +20,7 @@ Actions:
   create PATH                     Create and register a Git working tree on the target daemon
   open PATH                       Register an existing Git working tree on the target daemon
   directories [PATH]              Browse daemon-host directories and Git repositories
-  update PROJECT                  Update path, name, summary, instructions or browser hostnames
+  update PROJECT                  Update project details, archive cleanup or browser hostnames
   workspace PROJECT               Update the Git base and validation commands
   remove PROJECT                  Archive a project
   restore PROJECT                 Restore an archived project
@@ -274,7 +274,7 @@ func (c *CLI) rpcProjectShow(args []string) error {
 }
 
 func (c *CLI) rpcProjectUpdate(args []string) error {
-	const usage = "Usage: dieter project update [--path PATH] [--name NAME] [--summary TEXT] [--prompt TEXT|--prompt-file FILE] [--hostname HOST[:PORT] ...|--clear-hostnames] PROJECT\n\nRepeat --hostname to replace the complete list of exact browser hosts or host:port mappings.\nPorts are 1-65535; use brackets for IPv6 ports, for example '[::1]:4018'. No URL, path, or wildcard.\nCapture tries board mappings before project mappings. Within each scope, an exact port wins,\nthen a bare host is the fallback; HTTP and HTTPS default to ports 80 and 443.\nUse --clear-hostnames to remove all mappings; omit both flags to preserve them.\n"
+	const usage = "Usage: dieter project update [--path PATH] [--name NAME] [--summary TEXT] [--prompt TEXT|--prompt-file FILE] [--hostname HOST[:PORT] ...|--clear-hostnames] [--delete-worktrees-on-archive=true|false] PROJECT\n\nArchive cleanup defaults to false; omit its flag to preserve the current preference.\nEnabling cleanup also includes existing archives. Ignored files and build output are\npermanently removed from clean, idle worktrees; branches and conversation history remain.\nRestore recreates committed files only. Disabling stops future cleanup, not past deletions.\n\nRepeat --hostname to replace the complete list of exact browser hosts or host:port mappings.\nPorts are 1-65535; use brackets for IPv6 ports, for example '[::1]:4018'. No URL, path, or wildcard.\nCapture tries board mappings before project mappings. Within each scope, an exact port wins,\nthen a bare host is the fallback; HTTP and HTTPS default to ports 80 and 443.\nUse --clear-hostnames to remove all mappings; omit both flags to preserve them.\n"
 	set := flags("project update")
 	path, name, summary, prompt := &optional{}, &optional{}, &optional{}, &optional{}
 	set.Var(path, "path", "new canonical Git working-tree path on the daemon host")
@@ -285,6 +285,7 @@ func (c *CLI) rpcProjectUpdate(args []string) error {
 	var hostnames repeatedStrings
 	set.Var(&hostnames, "hostname", "browser host or host:port (IPv6: [::1]:4018); repeat to replace all mappings")
 	clearHostnames := set.Bool("clear-hostnames", false, "remove all browser hostname mappings")
+	deleteWorktrees := set.Bool("delete-worktrees-on-archive", false, "delete clean, idle archived worktrees, including existing archives (default off)")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
 		return err
@@ -319,8 +320,15 @@ func (c *CLI) rpcProjectUpdate(args []string) error {
 	if err != nil {
 		return err
 	}
+	var deleteWorktreesValue *bool
+	set.Visit(func(value *flag.Flag) {
+		if value.Name == "delete-worktrees-on-archive" {
+			deleteWorktreesValue = deleteWorktrees
+		}
+	})
 	value, err := client.UpdateProject(rpcCtx, &dieterv1.UpdateProjectRequest{
 		ProjectId: project.GetId(), Name: name.ptr(), Summary: summary.ptr(), Prompt: promptValue, Path: path.ptr(), Hostnames: hostnameValues,
+		DeleteWorktreesOnArchive: deleteWorktreesValue,
 	})
 	if err != nil {
 		return err

@@ -150,6 +150,12 @@ public nonisolated struct Dieter_V1_Project: @unchecked Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
+  /// Opt-in archive cleanup retains branches and history; ignored files are deleted.
+  public var deleteWorktreesOnArchive: Bool {
+    get {_storage._deleteWorktreesOnArchive}
+    set {_uniqueStorage()._deleteWorktreesOnArchive = newValue}
+  }
+
   public var checkouts: [Dieter_V1_Checkout] {
     get {_storage._checkouts}
     set {_uniqueStorage()._checkouts = newValue}
@@ -2276,9 +2282,10 @@ nonisolated extension Dieter_V1_Checkout: SwiftProtobuf.Message, SwiftProtobuf._
 
 nonisolated extension Dieter_V1_Project: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Project"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{1}path\0\u{1}summary\0\u{1}prompt\0\u{1}archived\0\u{3}created_at\0\u{3}updated_at\0\u{3}board_count\0\u{3}card_count\0\u{3}chat_count\0\u{3}prompt_template\0\u{4}\u{2}base_remote\0\u{3}base_branch\0\u{3}validation_commands\0\u{1}hostnames\0\u{1}checkouts\0\u{3}conflict_keys\0\u{b}default_workspace_mode\0\u{c}\u{d}\u{1}")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{1}path\0\u{1}summary\0\u{1}prompt\0\u{1}archived\0\u{3}created_at\0\u{3}updated_at\0\u{3}board_count\0\u{3}card_count\0\u{3}chat_count\0\u{3}prompt_template\0\u{4}\u{2}base_remote\0\u{3}base_branch\0\u{3}validation_commands\0\u{1}hostnames\0\u{1}checkouts\0\u{3}conflict_keys\0\u{3}delete_worktrees_on_archive\0\u{b}default_workspace_mode\0\u{c}\u{d}\u{1}")
 
   fileprivate class _StorageClass {
+    var _deleteWorktreesOnArchive: Bool = false
     var _checkouts: [Dieter_V1_Checkout] = []
     var _conflictKeys: [String] = []
     var _id: String = String()
@@ -2307,6 +2314,7 @@ nonisolated extension Dieter_V1_Project: SwiftProtobuf.Message, SwiftProtobuf._M
     private init() {}
 
     init(copying source: _StorageClass) {
+      _deleteWorktreesOnArchive = source._deleteWorktreesOnArchive
       _checkouts = source._checkouts
       _conflictKeys = source._conflictKeys
       _id = source._id
@@ -2361,6 +2369,7 @@ nonisolated extension Dieter_V1_Project: SwiftProtobuf.Message, SwiftProtobuf._M
         case 17: try { try decoder.decodeRepeatedStringField(value: &_storage._hostnames) }()
         case 18: try { try decoder.decodeRepeatedMessageField(value: &_storage._checkouts) }()
         case 19: try { try decoder.decodeRepeatedStringField(value: &_storage._conflictKeys) }()
+        case 20: try { try decoder.decodeSingularBoolField(value: &_storage._deleteWorktreesOnArchive) }()
         default: break
         }
       }
@@ -2423,6 +2432,9 @@ nonisolated extension Dieter_V1_Project: SwiftProtobuf.Message, SwiftProtobuf._M
       if !_storage._conflictKeys.isEmpty {
         try visitor.visitRepeatedStringField(value: _storage._conflictKeys, fieldNumber: 19)
       }
+      if _storage._deleteWorktreesOnArchive != false {
+        try visitor.visitSingularBoolField(value: _storage._deleteWorktreesOnArchive, fieldNumber: 20)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -2432,6 +2444,7 @@ nonisolated extension Dieter_V1_Project: SwiftProtobuf.Message, SwiftProtobuf._M
       let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
         let _storage = _args.0
         let rhs_storage = _args.1
+        if _storage._deleteWorktreesOnArchive != rhs_storage._deleteWorktreesOnArchive {return false}
         if _storage._checkouts != rhs_storage._checkouts {return false}
         if _storage._conflictKeys != rhs_storage._conflictKeys {return false}
         if _storage._id != rhs_storage._id {return false}
