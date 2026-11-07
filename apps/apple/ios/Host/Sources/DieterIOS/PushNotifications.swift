@@ -39,7 +39,7 @@ final class IOSPushKeys: Sendable {
             let sandbox = Bundle.main.object(forInfoDictionaryKey: "DieterAPNSEnvironment") as? String == "development"
             return (
                 NativePushDevice(
-                    token: token, publicKey: agreement.publicKey.rawRepresentation as NSData, sandbox: sandbox),
+                    token: token, publicKey: agreement.publicKey.rawRepresentation, sandbox: sandbox),
                 agreement
             )
         }
