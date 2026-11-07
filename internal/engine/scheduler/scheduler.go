@@ -43,10 +43,29 @@ func New(data *store.Store, service *engine.Service) *Manager {
 	}
 }
 
-func (m *Manager) Start(ctx context.Context) {
+func (m *Manager) Start(ctx context.Context) func() {
+	ctx, cancel := context.WithCancel(ctx)
+	var workers sync.WaitGroup
+	workers.Add(2)
 	_ = m.store.Schedules.RecoverRuns()
 	m.Tick()
+	// Reclaim archived worktrees independently of schedule admission and server
+	// startup: a large directory must not delay listening or the next occurrence.
 	go func() {
+		defer workers.Done()
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			m.app.Workspaces.CleanupArchivedWorktrees(ctx)
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	go func() {
+		defer workers.Done()
 		ticker := time.NewTicker(m.interval)
 		defer ticker.Stop()
 		for {
@@ -58,6 +77,10 @@ func (m *Manager) Start(ctx context.Context) {
 			}
 		}
 	}()
+	return func() {
+		cancel()
+		workers.Wait()
+	}
 }
 
 func (m *Manager) validate(input schedules.Input) (schedules.Input, error) {

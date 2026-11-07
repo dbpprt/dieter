@@ -54,6 +54,7 @@ private suspend fun CoreRuntime.runAdministration(command: AdminCommand): Result
                     it.summary,
                     it.prompt,
                     if (it.set_hostnames) it.hostnames else null,
+                    it.delete_worktrees_on_archive,
                 )
         )
     }

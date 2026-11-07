@@ -14,7 +14,7 @@ import (
 // paths, credentials and conversation content are deliberately absent.
 var DomainFields = map[string]map[string]string{
 	"schedule":   {"summary": "object"},
-	"project":    {"updatedAt": "string", "identity": "object", "name": "string", "summary": "string", "prompt": "string", "promptTemplate": "string", "hostnames": "strings", "baseRemote": "string", "baseBranch": "string", "archived": "bool", "consolidatedInto": "string"},
+	"project":    {"updatedAt": "string", "identity": "object", "name": "string", "summary": "string", "prompt": "string", "promptTemplate": "string", "hostnames": "strings", "baseRemote": "string", "baseBranch": "string", "archived": "bool", "consolidatedInto": "string", "deleteWorktreesOnArchive": "bool"},
 	"board":      {"retired": "bool", "updatedAt": "string", "identity": "object", "name": "string", "description": "string", "promptTemplate": "string", "hostnames": "strings", "baseRemote": "string", "remotePublishMode": "string", "doneArchivePolicy": "string", "workflow": "string"},
 	"label":      {"identity": "object", "name": "string", "color": "string", "instructions": "string", "deleted": "bool"},
 	"item":       {"identity": "object", "title": "string", "placement": "object", "archived": "bool", "pinned": "bool", "doneArchiveExempt": "bool", "summary": "object"},

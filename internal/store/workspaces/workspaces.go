@@ -14,6 +14,7 @@ import (
 	"github.com/dbpprt/dieter/internal/platform/fault"
 	"github.com/dbpprt/dieter/internal/store/home"
 	"github.com/dbpprt/dieter/internal/store/kanban"
+	"github.com/dbpprt/dieter/internal/store/leases"
 )
 
 const maxGitOperationLogBytes = 8 << 20
@@ -91,6 +92,9 @@ func (s *Store) UpdateChangesetStats(cardID string, changedFiles, additions, del
 	if err := home.ReadJSON(filepath.Join(s.home.WorkspaceDir(), cardID+".json"), &value); err != nil {
 		return model.Workspace{}, err
 	}
+	if value.State == model.WorkspaceStateReserved {
+		return value, nil
+	}
 	value.ChangedFiles = changedFiles
 	value.Additions = additions
 	value.Deletions = deletions
@@ -116,6 +120,9 @@ func (s *Store) UpdateGitState(observed model.Workspace, includeSize bool) (mode
 	var current model.Workspace
 	if err := home.ReadJSON(filepath.Join(s.home.WorkspaceDir(), observed.CardID+".json"), &current); err != nil {
 		return model.Workspace{}, err
+	}
+	if current.State == model.WorkspaceStateReserved {
+		return current, nil
 	}
 	current.Mode, err = kanban.NormalizeWorkspaceMode(current.Mode)
 	if err != nil {
@@ -191,6 +198,78 @@ func (s *Store) Delete(cardID string) error {
 		return nil
 	}
 	return err
+}
+
+// CleanupArchivedWorkspace keeps archive/turn admission serialized with removal.
+// The caller must hold the workspace and repository locks; remove must not call
+// store writers. Keeping the workspace record preserves its branch for restore.
+func (s *Store) CleanupArchivedWorkspace(cardID string, remove func(model.Workspace) (model.Workspace, error)) error {
+	release, err := s.home.BeginWrite()
+	if err != nil {
+		return err
+	}
+	defer release()
+	card, err := s.kanban.ResolveCard(cardID)
+	if err != nil {
+		return err
+	}
+	if err := s.kanban.RequireLocalCard(card); err != nil {
+		return err
+	}
+	if !card.Archived {
+		return nil
+	}
+	project, err := s.kanban.ResolveProjectIncludingArchived(card.ProjectID)
+	if err != nil {
+		return err
+	}
+	if !project.DeleteWorktreesOnArchive {
+		return nil
+	}
+	for _, key := range project.ConflictKeys {
+		if strings.HasSuffix(key, ".deleteWorktreesOnArchive") {
+			return errors.New("resolve the project's archive cleanup setting conflict before deleting worktrees")
+		}
+	}
+	activeLeases, err := s.leases.Active()
+	if err != nil {
+		return err
+	}
+	for _, lease := range activeLeases {
+		if lease.CardID == card.ID {
+			return leases.ErrCardActive
+		}
+	}
+	if model.RuntimeHoldsTurn(card.Runtime) || card.MergePending {
+		return leases.ErrCardActive
+	}
+	value, err := s.ByCardID(card.ID)
+	if errors.Is(err, home.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if value.Mode != model.WorkspaceModeWorktree {
+		return nil
+	}
+	if value.CurrentOperationID != "" {
+		operation, err := s.GitOperation(value.CurrentOperationID)
+		if err != nil {
+			return err
+		}
+		if operation.Status == model.GitOperationQueued || operation.Status == model.GitOperationRunning || operation.Status == model.GitOperationWaitingForResolution {
+			return errors.New("workspace has an active Git operation")
+		}
+	}
+	value, err = remove(value)
+	if err != nil {
+		return err
+	}
+	value.State, value.SizeBytes = model.WorkspaceStateReserved, 0
+	value.Dirty, value.ChangedFiles, value.Additions, value.Deletions = false, 0, 0, 0
+	value.CurrentOperationID, value.UpdatedAt = "", home.Timestamp()
+	return home.WriteJSON(filepath.Join(s.home.WorkspaceDir(), card.ID+".json"), value)
 }
 
 func (s *Store) Transfer(fromCardRef, toCardRef string) (model.Workspace, error) {

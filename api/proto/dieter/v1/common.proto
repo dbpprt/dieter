@@ -51,6 +51,8 @@ message Checkout {
 }
 
 message Project {
+  // Opt-in archive cleanup retains branches and history; ignored files are deleted.
+  bool delete_worktrees_on_archive = 20;
  repeated Checkout checkouts = 18;
  repeated string conflict_keys = 19;
   reserved 13;

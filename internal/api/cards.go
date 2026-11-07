@@ -241,8 +241,8 @@ func (api *cardsAPI) UpdateCard(_ context.Context, request *dieterv1.UpdateCardR
 	return protoCard(value), nil
 }
 
-func (api *cardsAPI) ArchiveCard(_ context.Context, request *dieterv1.ArchiveCardRequest) (*dieterv1.Card, error) {
-	value, err := api.server.store.Kanban.ArchiveCard(request.GetCardId(), request.GetArchived())
+func (api *cardsAPI) ArchiveCard(ctx context.Context, request *dieterv1.ArchiveCardRequest) (*dieterv1.Card, error) {
+	value, err := api.server.workspaces.ArchiveCard(ctx, request.GetCardId(), request.GetArchived())
 	if err != nil {
 		return nil, err
 	}

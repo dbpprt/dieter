@@ -8,6 +8,7 @@ extension ProjectSettingsDraft {
         name = project.name
         summary = project.summary
         prompt = project.prompt
+        deleteWorktreesOnArchive = project.deleteWorktreesOnArchive
         baseRemote = project.baseRemote.isEmpty ? AdminChoices.options.defaultBaseRemote : project.baseRemote
         baseBranch = project.baseBranch.isEmpty ? AdminChoices.options.defaultBaseBranch : project.baseBranch
         validationCommands = project.validationCommands.map(ValidationCommandDraft.init)

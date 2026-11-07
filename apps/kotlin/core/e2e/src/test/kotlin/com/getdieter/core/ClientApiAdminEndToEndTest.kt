@@ -151,6 +151,7 @@ class ClientApiAdminEndToEndTest : EndToEnd() {
                             AdminUpdateProject(
                                 project_id = fixture.projectId,
                                 summary = "Isolated",
+                                delete_worktrees_on_archive = true,
                                 set_hostnames = true,
                                 hostnames = listOf("Localhost:3000"),
                             )
@@ -158,6 +159,33 @@ class ClientApiAdminEndToEndTest : EndToEnd() {
                 )
                 .project!!
         assertEquals("Isolated", project.summary)
+        assertTrue(project.delete_worktrees_on_archive)
+        val keptPreference =
+            admin(
+                    "rename keeps archive preference",
+                    AdminCommand(
+                        update_project =
+                            AdminUpdateProject(
+                                project_id = fixture.projectId,
+                                summary = "Still isolated",
+                            )
+                    ),
+                )
+                .project!!
+        assertTrue(keptPreference.delete_worktrees_on_archive)
+        val disabledPreference =
+            admin(
+                    "disable archive cleanup",
+                    AdminCommand(
+                        update_project =
+                            AdminUpdateProject(
+                                project_id = fixture.projectId,
+                                delete_worktrees_on_archive = false,
+                            )
+                    ),
+                )
+                .project!!
+        assertTrue(!disabledPreference.delete_worktrees_on_archive)
         assertEquals(listOf("localhost:3000"), project.hostnames)
         // The Mac project sheet saves workspace defaults, then name, summary and instructions.
         val projectCheckout = project.checkouts.first()

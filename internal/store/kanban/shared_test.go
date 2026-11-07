@@ -426,3 +426,37 @@ func TestReplicaArchivesRemainExplicitWithOwnerOffline(t *testing.T) {
 		t.Fatalf("project archive: %+v %v", state, err)
 	}
 }
+
+func TestArchiveCleanupPreferenceReplicatesAndDefaultsOff(t *testing.T) {
+	t.Parallel()
+	a, b := testkit.PeerStore(t, "archive_a"), testkit.PeerStore(t, "archive_b")
+	project, err := a.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Archive", Path: testkit.GitRepo(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.DeleteWorktreesOnArchive {
+		t.Fatal("cleanup must default off")
+	}
+	enabled := true
+	if _, err := a.Kanban.UpdateProjectWithHostnames(project.ID, nil, nil, nil, nil, nil, &enabled); err != nil {
+		t.Fatal(err)
+	}
+	testkit.JoinPeers(t, a, b)
+	replica, err := b.Kanban.ResolveProject(project.ID)
+	if err != nil || !replica.DeleteWorktreesOnArchive {
+		t.Fatalf("preference was not replicated: %+v %v", replica, err)
+	}
+	name := "Renamed"
+	if _, err := b.Kanban.UpdateProject(project.ID, &name, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	enabled = false
+	if _, err := b.Kanban.UpdateProjectWithHostnames(project.ID, nil, nil, nil, nil, nil, &enabled); err != nil {
+		t.Fatal(err)
+	}
+	testkit.JoinPeers(t, b, a)
+	replica, err = a.Kanban.ResolveProject(project.ID)
+	if err != nil || replica.DeleteWorktreesOnArchive || replica.Name != name {
+		t.Fatalf("disable was not replicated: %+v %v", replica, err)
+	}
+}

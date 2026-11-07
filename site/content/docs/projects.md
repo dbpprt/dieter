@@ -100,6 +100,36 @@ dieter card move CARD_ID --lane review
 
 Boards own their labels. Filter and assign by label ID in automation. Archives
 are reversible; retention settings can automatically archive Done cards.
+Automatic archiving defaults to `never`. Boards can archive Done cards immediately
+or after 1, 7, 30, or 90 days, for example:
+
+```sh
+dieter board retention BOARD_ID --archive-done after_7_days
+```
+
+Archiving keeps worktrees by default. In project settings, **Delete worktrees when
+archiving** opts this project into cleanup, with an impact notice beside the toggle.
+It applies to manual and automatic archives of cards and chats, including existing
+archives. The equivalent CLI command is:
+
+```sh
+dieter project update PROJECT_ID --delete-worktrees-on-archive=true
+```
+
+Cleanup removes clean, idle worktrees and permanently deletes their ignored files,
+dependencies, and build output. Git branches and conversation history are retained.
+The existing **Restore** action (`card unarchive` / `chat unarchive`) restores the
+conversation; its next workspace access recreates committed files only. Dieter
+cannot recover deleted ignored files or build output.
+
+Dirty, busy, locked, detached, or otherwise unsafe worktrees stay on disk and are
+retried every minute while cleanup is enabled. Turning the toggle off stops future
+cleanup; it cannot undo past deletions. Shared project directories and shared
+dependency caches are preserved.
+Dieter retains conversation history and Git branches without an automatic expiry
+or a global disk quota. It refuses new agent turns below 2 GiB free by default
+(`DIETER_MIN_FREE_BYTES` configures that floor); this guard does not reclaim disk.
+
 Mac, Android, and iOS synchronize project/chat folders, ordering, sort choices,
 and expansion state, including queued offline edits.
 

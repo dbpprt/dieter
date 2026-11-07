@@ -37,7 +37,8 @@ func protoState(value model.State) *dieterv1.State {
 
 func protoProject(value model.Project) *dieterv1.Project {
 	result := &dieterv1.Project{
-		Id: value.ID, Name: value.Name, Path: value.Path, Summary: value.Summary, ConflictKeys: value.ConflictKeys,
+		DeleteWorktreesOnArchive: value.DeleteWorktreesOnArchive,
+		Id:                       value.ID, Name: value.Name, Path: value.Path, Summary: value.Summary, ConflictKeys: value.ConflictKeys,
 		Prompt: value.Prompt, Archived: value.Archived, CreatedAt: value.CreatedAt,
 		UpdatedAt: value.UpdatedAt, BoardCount: int32(value.BoardCount),
 		CardCount: int32(value.CardCount), ChatCount: int32(value.ChatCount), PromptTemplate: value.PromptTemplate,

@@ -39,7 +39,7 @@ Commands:
   status       Show target daemon health, runtime, route, and state counts
   harness      List target daemon harnesses, models, and options
   quota        Show, summarize, refresh, and reset provider-account quotas
-  project      Create, browse, map hostnames, relocate, archive, and restore projects
+  project      Create, browse, configure archive cleanup, relocate, and restore projects
   board        Manage boards, retirement/restore, hostnames, workflows, and labels
   card         Create, edit, read, present files, merge, and manage board conversations
   chat         Manage standalone conversations and present files or URLs
@@ -355,7 +355,7 @@ Actions:
   create PATH                     Create and register a Git working tree on the target daemon
   open PATH                       Register an existing Git working tree on the target daemon
   directories [PATH]              Browse daemon-host directories and Git repositories
-  update PROJECT                  Update path, name, summary, instructions or browser hostnames
+  update PROJECT                  Update project details, archive cleanup or browser hostnames
   workspace PROJECT               Update the Git base and validation commands
   remove PROJECT                  Archive a project
   restore PROJECT                 Restore an archived project
@@ -424,7 +424,12 @@ Usage: dieter project show PROJECT
 ### dieter project update
 
 ```text
-Usage: dieter project update [--path PATH] [--name NAME] [--summary TEXT] [--prompt TEXT|--prompt-file FILE] [--hostname HOST[:PORT] ...|--clear-hostnames] PROJECT
+Usage: dieter project update [--path PATH] [--name NAME] [--summary TEXT] [--prompt TEXT|--prompt-file FILE] [--hostname HOST[:PORT] ...|--clear-hostnames] [--delete-worktrees-on-archive=true|false] PROJECT
+
+Archive cleanup defaults to false; omit its flag to preserve the current preference.
+Enabling cleanup also includes existing archives. Ignored files and build output are
+permanently removed from clean, idle worktrees; branches and conversation history remain.
+Restore recreates committed files only. Disabling stops future cleanup, not past deletions.
 
 Repeat --hostname to replace the complete list of exact browser hosts or host:port mappings.
 Ports are 1-65535; use brackets for IPv6 ports, for example '[::1]:4018'. No URL, path, or wildcard.
@@ -883,12 +888,20 @@ The task brief and agent settings are editable only before the first turn.
 
 ```text
 Usage: dieter card archive CARD
+
+Worktrees are kept by default. Enable project cleanup with project update
+--delete-worktrees-on-archive=true to reclaim idle, clean managed worktrees.
+Ignored files and build output are permanently removed; branches and history remain.
+Dirty, busy, locked, or detached worktrees are retained and retried.
+Unarchive before resuming; Restore recreates committed files only after deletion.
 ```
 
 ### dieter card unarchive
 
 ```text
 Usage: dieter card unarchive CARD
+
+The worktree is recreated from its retained branch on the next workspace access.
 ```
 
 ### dieter card workspace
@@ -1080,12 +1093,20 @@ The task brief and agent settings are editable only before the first turn.
 
 ```text
 Usage: dieter chat archive CHAT
+
+Worktrees are kept by default. Enable project cleanup with project update
+--delete-worktrees-on-archive=true to reclaim idle, clean managed worktrees.
+Ignored files and build output are permanently removed; branches and history remain.
+Dirty, busy, locked, or detached worktrees are retained and retried.
+Unarchive before resuming; Restore recreates committed files only after deletion.
 ```
 
 ### dieter chat unarchive
 
 ```text
 Usage: dieter chat unarchive CHAT
+
+The worktree is recreated from its retained branch on the next workspace access.
 ```
 
 ### dieter chat workspace

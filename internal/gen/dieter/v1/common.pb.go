@@ -400,27 +400,29 @@ func (x *Checkout) GetValidationCommands() []*ValidationCommand {
 }
 
 type Project struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	Checkouts          []*Checkout            `protobuf:"bytes,18,rep,name=checkouts,proto3" json:"checkouts,omitempty"`
-	ConflictKeys       []string               `protobuf:"bytes,19,rep,name=conflict_keys,json=conflictKeys,proto3" json:"conflict_keys,omitempty"`
-	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name               string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Path               string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
-	Summary            string                 `protobuf:"bytes,4,opt,name=summary,proto3" json:"summary,omitempty"`
-	Prompt             string                 `protobuf:"bytes,5,opt,name=prompt,proto3" json:"prompt,omitempty"`
-	Archived           bool                   `protobuf:"varint,6,opt,name=archived,proto3" json:"archived,omitempty"`
-	CreatedAt          string                 `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt          string                 `protobuf:"bytes,8,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	BoardCount         int32                  `protobuf:"varint,9,opt,name=board_count,json=boardCount,proto3" json:"board_count,omitempty"`
-	CardCount          int32                  `protobuf:"varint,10,opt,name=card_count,json=cardCount,proto3" json:"card_count,omitempty"`
-	ChatCount          int32                  `protobuf:"varint,11,opt,name=chat_count,json=chatCount,proto3" json:"chat_count,omitempty"`
-	PromptTemplate     string                 `protobuf:"bytes,12,opt,name=prompt_template,json=promptTemplate,proto3" json:"prompt_template,omitempty"`
-	BaseRemote         string                 `protobuf:"bytes,14,opt,name=base_remote,json=baseRemote,proto3" json:"base_remote,omitempty"`
-	BaseBranch         string                 `protobuf:"bytes,15,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
-	ValidationCommands []*ValidationCommand   `protobuf:"bytes,16,rep,name=validation_commands,json=validationCommands,proto3" json:"validation_commands,omitempty"`
-	Hostnames          []string               `protobuf:"bytes,17,rep,name=hostnames,proto3" json:"hostnames,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Opt-in archive cleanup retains branches and history; ignored files are deleted.
+	DeleteWorktreesOnArchive bool                 `protobuf:"varint,20,opt,name=delete_worktrees_on_archive,json=deleteWorktreesOnArchive,proto3" json:"delete_worktrees_on_archive,omitempty"`
+	Checkouts                []*Checkout          `protobuf:"bytes,18,rep,name=checkouts,proto3" json:"checkouts,omitempty"`
+	ConflictKeys             []string             `protobuf:"bytes,19,rep,name=conflict_keys,json=conflictKeys,proto3" json:"conflict_keys,omitempty"`
+	Id                       string               `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name                     string               `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Path                     string               `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
+	Summary                  string               `protobuf:"bytes,4,opt,name=summary,proto3" json:"summary,omitempty"`
+	Prompt                   string               `protobuf:"bytes,5,opt,name=prompt,proto3" json:"prompt,omitempty"`
+	Archived                 bool                 `protobuf:"varint,6,opt,name=archived,proto3" json:"archived,omitempty"`
+	CreatedAt                string               `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt                string               `protobuf:"bytes,8,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	BoardCount               int32                `protobuf:"varint,9,opt,name=board_count,json=boardCount,proto3" json:"board_count,omitempty"`
+	CardCount                int32                `protobuf:"varint,10,opt,name=card_count,json=cardCount,proto3" json:"card_count,omitempty"`
+	ChatCount                int32                `protobuf:"varint,11,opt,name=chat_count,json=chatCount,proto3" json:"chat_count,omitempty"`
+	PromptTemplate           string               `protobuf:"bytes,12,opt,name=prompt_template,json=promptTemplate,proto3" json:"prompt_template,omitempty"`
+	BaseRemote               string               `protobuf:"bytes,14,opt,name=base_remote,json=baseRemote,proto3" json:"base_remote,omitempty"`
+	BaseBranch               string               `protobuf:"bytes,15,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
+	ValidationCommands       []*ValidationCommand `protobuf:"bytes,16,rep,name=validation_commands,json=validationCommands,proto3" json:"validation_commands,omitempty"`
+	Hostnames                []string             `protobuf:"bytes,17,rep,name=hostnames,proto3" json:"hostnames,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *Project) Reset() {
@@ -451,6 +453,13 @@ func (x *Project) ProtoReflect() protoreflect.Message {
 // Deprecated: Use Project.ProtoReflect.Descriptor instead.
 func (*Project) Descriptor() ([]byte, []int) {
 	return file_dieter_v1_common_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *Project) GetDeleteWorktreesOnArchive() bool {
+	if x != nil {
+		return x.DeleteWorktreesOnArchive
+	}
+	return false
 }
 
 func (x *Project) GetCheckouts() []*Checkout {
@@ -5101,8 +5110,9 @@ const file_dieter_v1_common_proto_rawDesc = "" +
 	"\x04name\x18\x04 \x01(\tR\x04name\x12\x12\n" +
 	"\x04path\x18\x05 \x01(\tR\x04path\x12\x1a\n" +
 	"\bdetached\x18\x06 \x01(\bR\bdetached\x12M\n" +
-	"\x13validation_commands\x18\a \x03(\v2\x1c.dieter.v1.ValidationCommandR\x12validationCommands\"\xfa\x04\n" +
-	"\aProject\x121\n" +
+	"\x13validation_commands\x18\a \x03(\v2\x1c.dieter.v1.ValidationCommandR\x12validationCommands\"\xb9\x05\n" +
+	"\aProject\x12=\n" +
+	"\x1bdelete_worktrees_on_archive\x18\x14 \x01(\bR\x18deleteWorktreesOnArchive\x121\n" +
 	"\tcheckouts\x18\x12 \x03(\v2\x13.dieter.v1.CheckoutR\tcheckouts\x12#\n" +
 	"\rconflict_keys\x18\x13 \x03(\tR\fconflictKeys\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +

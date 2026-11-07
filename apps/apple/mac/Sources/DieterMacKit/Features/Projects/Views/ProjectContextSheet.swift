@@ -27,6 +27,7 @@ struct ProjectContextSheet: View {
                 ProjectContextFields(
                     name: $draft.name, summary: $draft.summary, prompt: $draft.prompt,
                     baseRemote: $draft.baseRemote, baseBranch: $draft.baseBranch,
+                    deleteWorktreesOnArchive: $draft.deleteWorktreesOnArchive,
                     validationCommands: $draft.validationCommands, workspacesPresented: $workspacesPresented)
                 Section("Checkouts & machines") {
                     ProjectCheckoutMenu(projectID: store.selectedProjectID, size: 28)
@@ -130,7 +131,9 @@ struct ProjectContextSheet: View {
                     )
                 else { return }
             }
-            await store.updateProject(name: draft.name, summary: draft.summary, prompt: draft.prompt)
+            await store.updateProject(
+                name: draft.name, summary: draft.summary, prompt: draft.prompt,
+                deleteWorktreesOnArchive: draft.deleteWorktreesOnArchive)
         }
     }
 
@@ -152,6 +155,7 @@ struct ProjectContextFields: View {
     @Binding var prompt: String
     @Binding var baseRemote: String
     @Binding var baseBranch: String
+    @Binding var deleteWorktreesOnArchive: Bool
     @Binding var validationCommands: [ValidationCommandDraft]
     @Binding var workspacesPresented: Bool
 
@@ -198,6 +202,13 @@ struct ProjectContextFields: View {
                         .buttonStyle(DieterBarButtonStyle(size: 26))
                 }
             }
+            Section("Archive storage") {
+                Toggle(AdminChoices.options.archiveWorktreeToggle, isOn: $deleteWorktreesOnArchive)
+                    .accessibilityIdentifier("project.archive.cleanup")
+                    .e2eTarget("project.archive.cleanup")
+                Text(AdminChoices.options.archiveWorktreeImpact)
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section {
                 DisclosureGroup("Validation commands") {
                     ForEach($validationCommands) { $command in
@@ -241,6 +252,7 @@ struct ProjectSettingsDraft: Equatable {
     var prompt = ""
     var baseRemote = AdminChoices.options.defaultBaseRemote
     var baseBranch = AdminChoices.options.defaultBaseBranch
+    var deleteWorktreesOnArchive = false
     var validationCommands: [ValidationCommandDraft] = []
 
     init() {}

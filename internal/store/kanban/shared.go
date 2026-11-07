@@ -651,3 +651,18 @@ type Hooks struct {
 
 // SetHooks installs the hooks. Call it before the store is used.
 func (s *Store) SetHooks(hooks Hooks) { s.hooks = hooks }
+
+// ProjectForArchivedWorkspace resolves an existing workspace's repository even
+// when its project is archived. It is only for reclamation, never admission.
+func (s *Store) ProjectForArchivedWorkspace(value model.Workspace) (model.Project, error) {
+	project, err := s.ResolveProjectIncludingArchived(value.ProjectID)
+	if err != nil {
+		return project, err
+	}
+	checkout, err := s.LocalCheckout(project.ID, value.CheckoutID)
+	if err != nil {
+		return project, err
+	}
+	project.Path, project.ValidationCommands = checkout.Path, checkout.ValidationCommands
+	return project, nil
+}

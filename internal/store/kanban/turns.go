@@ -26,6 +26,9 @@ func (s *Store) AcquireRuntimeLeaseFor(projectID, boardID, cardID, agent string)
 		if err := s.RequireLocalCard(card); err != nil {
 			return leases.RuntimeLease{}, err
 		}
+		if card.Archived {
+			return leases.RuntimeLease{}, fault.New(fault.FailedPrecondition, "unarchive the conversation before starting a turn")
+		}
 		if card.MergedIntoCardID != "" {
 			return leases.RuntimeLease{}, fault.New(fault.Invalid, "card has been merged into another conversation")
 		}

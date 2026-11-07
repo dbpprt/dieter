@@ -228,3 +228,18 @@ func TestReferenceCoversTheCommandTable(t *testing.T) {
 		t.Error("reference omits the daemon entry point")
 	}
 }
+
+func TestArchiveCleanupHelpExplainsRestoreImpact(t *testing.T) {
+	t.Parallel()
+	client := New(t.TempDir())
+	var output bytes.Buffer
+	client.Out = &output
+	if err := client.Run([]string{"project", "update", "--help"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{"--delete-worktrees-on-archive=true|false", "defaults to false", "existing archives", "permanently removed", "committed files only"} {
+		if !strings.Contains(output.String(), text) {
+			t.Errorf("cleanup help does not explain %q", text)
+		}
+	}
+}
