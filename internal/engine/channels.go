@@ -23,7 +23,7 @@ import (
 	"github.com/dbpprt/dieter/internal/store/kanban"
 )
 
-// Agent channels (experimental). Messages persist in Store.Channels; this
+// Agent channels. Messages persist in Store.Channels; this
 // file holds the in-process coordination state: live file claims, coalesced
 // steer frames into running turns and wake budgets of idle cards.
 
@@ -34,16 +34,12 @@ const (
 	channelWakesPerHour    = 4
 	channelWakeChain       = 3
 	channelWakeSpacing     = 2 * time.Second
-	channelSettingsMaxAge  = 2 * time.Second
 	channelCheckRecent     = 3
 	channelCheckDecisions  = 5
 	channelMaxCheckedFiles = 64
 	channelParkedClaim     = time.Hour
 	channelSteerRetries    = 30
 )
-
-// ErrChannelsOff reports a card or project whose agent channels are off.
-var ErrChannelsOff = fault.New(fault.FailedPrecondition, "agent channels are off for this card or project (an experimental setting)")
 
 // ChannelCaller identifies who calls a channel operation: an agent (the card
 // of a live turn token) or a human (CardID empty).
@@ -82,7 +78,6 @@ type ChannelCheck struct {
 type ChannelMember struct {
 	Card      model.Card
 	Status    string
-	Enabled   bool
 	Holds     []string
 	WaitingOn []string
 	// Daemon runs the card; Remote members run on another machine.
@@ -93,7 +88,6 @@ type ChannelMember struct {
 // ChannelSummary describes one project channel of this daemon.
 type ChannelSummary struct {
 	Project       model.Project
-	Enabled       bool
 	LastSeq       int64
 	SeenSeq       int64
 	Unread        int
@@ -104,15 +98,13 @@ type ChannelSummary struct {
 
 type channelHub struct {
 	// work counts deferred steer flushes, wakes and releases in flight.
-	work       atomic.Int64
-	mu         sync.Mutex
-	claims     map[string]*channelClaim
-	steering   map[string]bool
-	wakes      map[string][]time.Time
-	wakeChain  map[string]int
-	nextWake   time.Time
-	settings   model.ChannelSettings
-	settingsAt time.Time
+	work      atomic.Int64
+	mu        sync.Mutex
+	claims    map[string]*channelClaim
+	steering  map[string]bool
+	wakes     map[string][]time.Time
+	wakeChain map[string]int
+	nextWake  time.Time
 	// replication tracks published and ingested account-wide records.
 	replication channelReplication
 }
@@ -157,100 +149,6 @@ func (h *channelHub) init() {
 
 func claimKey(workspace, path string) string { return workspace + "\x00" + path }
 
-// ChannelSettings returns the replicated settings.
-func (s *Service) ChannelSettings() (model.ChannelSettings, error) {
-	settings, err := s.Store.KV.ChannelSettings()
-	if err == nil {
-		s.channels.mu.Lock()
-		s.channels.settings, s.channels.settingsAt = settings, time.Now()
-		s.channels.mu.Unlock()
-	}
-	return settings, err
-}
-
-// channelSettings is ChannelSettings cached for channelSettingsMaxAge; an
-// unreadable replica reads as off.
-func (s *Service) channelSettings() model.ChannelSettings {
-	s.channels.mu.Lock()
-	if time.Since(s.channels.settingsAt) < channelSettingsMaxAge {
-		settings := s.channels.settings
-		s.channels.mu.Unlock()
-		return settings
-	}
-	s.channels.mu.Unlock()
-	settings, err := s.ChannelSettings()
-	if err != nil {
-		slog.Warn("agent channel settings unavailable; channels read as off", "error", err)
-	}
-	return settings
-}
-
-// SetChannelSetting writes the global switch or a project/board override.
-func (s *Service) SetChannelSetting(scope, id, value string) (model.ChannelSettings, error) {
-	switch scope {
-	case "project":
-		project, err := s.Store.Kanban.ResolveProject(id)
-		if err != nil {
-			return model.ChannelSettings{}, err
-		}
-		id = project.ID
-	case "board":
-		board, err := s.resolveBoardByID(id)
-		if err != nil {
-			return model.ChannelSettings{}, err
-		}
-		id = board.ID
-	}
-	if err := s.Store.KV.SetChannelSetting(scope, id, value); err != nil {
-		return model.ChannelSettings{}, err
-	}
-	return s.ChannelSettings()
-}
-
-func (s *Service) resolveBoardByID(id string) (model.Board, error) {
-	projects, err := s.Store.Kanban.ListProjects()
-	if err != nil {
-		return model.Board{}, err
-	}
-	for _, project := range projects {
-		boards, err := s.Store.Kanban.ListBoards(project.ID)
-		if err != nil {
-			continue
-		}
-		for _, board := range boards {
-			if board.ID == id {
-				return board, nil
-			}
-		}
-	}
-	return model.Board{}, fault.New(fault.NotFound, "board not found")
-}
-
-func cardBoardID(card model.Card) string {
-	if card.Scope == model.ConversationScopeBoard {
-		return card.BoardID
-	}
-	return ""
-}
-
-// ChannelsEnabled resolves a card's setting.
-func (s *Service) ChannelsEnabled(card model.Card) bool {
-	return s.channelSettings().Enabled(card.ProjectID, cardBoardID(card))
-}
-
-func (s *Service) projectChannelsEnabled(projectID string) bool {
-	settings := s.channelSettings()
-	if settings.Enabled(projectID, "") {
-		return true
-	}
-	boards, _ := s.Store.Kanban.ListBoards(projectID)
-	ids := make([]string, 0, len(boards))
-	for _, board := range boards {
-		ids = append(ids, board.ID)
-	}
-	return settings.ProjectEnabled(projectID, ids)
-}
-
 // PostChannelMessage posts to a project channel and dispatches it: steered
 // into running recipients, woken (direct, budgeted) or kept for their digest.
 func (s *Service) PostChannelMessage(ctx context.Context, caller ChannelCaller, post ChannelPost) (model.ChannelMessage, error) {
@@ -271,9 +169,6 @@ func (s *Service) PostChannelMessage(ctx context.Context, caller ChannelCaller, 
 		if err != nil {
 			return model.ChannelMessage{}, err
 		}
-		if !s.ChannelsEnabled(detail.Card) {
-			return model.ChannelMessage{}, ErrChannelsOff
-		}
 		if post.ProjectID != "" && post.ProjectID != detail.Card.ProjectID {
 			return model.ChannelMessage{}, fault.New(fault.PermissionDenied, "an agent posts only to its own project channel")
 		}
@@ -283,9 +178,6 @@ func (s *Service) PostChannelMessage(ctx context.Context, caller ChannelCaller, 
 		project, err := s.Store.Kanban.ResolveProject(post.ProjectID)
 		if err != nil {
 			return model.ChannelMessage{}, err
-		}
-		if !s.projectChannelsEnabled(project.ID) {
-			return model.ChannelMessage{}, ErrChannelsOff
 		}
 		message.ProjectID = project.ID
 		message.Author = model.ChannelAuthor{Kind: model.ChannelAuthorHuman, DeviceID: caller.DeviceID}
@@ -568,7 +460,7 @@ func (s *Service) requestChannelWake(cardID string) {
 
 func (s *Service) wakeCard(cardID string) {
 	detail, err := s.Store.Kanban.CardDetail(cardID)
-	if err != nil || !s.ChannelsEnabled(detail.Card) || detail.Card.Archived || !s.ownsCard(detail.Card) {
+	if err != nil || detail.Card.Archived || !s.ownsCard(detail.Card) {
 		return
 	}
 	s.mu.Lock()
@@ -1092,14 +984,12 @@ func (s *Service) ChannelSummaries(ctx context.Context) ([]ChannelSummary, error
 	if err != nil {
 		return nil, err
 	}
-	logged, _ := s.Store.Channels.Projects()
 	// Members are the account's cards of the project on every machine.
 	cards, err := s.Store.Kanban.ListCards(kanban.CardFilter{})
 	if err != nil {
 		return nil, err
 	}
 	origin := s.channelOrigin()
-	settings := s.channelSettings()
 	claims := s.ChannelClaims("")
 	s.mu.Lock()
 	running := map[string]bool{}
@@ -1109,16 +999,7 @@ func (s *Service) ChannelSummaries(ctx context.Context) ([]ChannelSummary, error
 	s.mu.Unlock()
 	var summaries []ChannelSummary
 	for _, project := range projects {
-		boards, _ := s.Store.Kanban.ListBoards(project.ID)
-		boardIDs := make([]string, 0, len(boards))
-		for _, board := range boards {
-			boardIDs = append(boardIDs, board.ID)
-		}
-		enabled := settings.ProjectEnabled(project.ID, boardIDs)
-		if !enabled && !slices.Contains(logged, project.ID) {
-			continue
-		}
-		summary := ChannelSummary{Project: project, Enabled: enabled}
+		summary := ChannelSummary{Project: project}
 		summary.LastSeq, summary.LastMessageAt, _ = s.Store.Channels.LastSeq(project.ID)
 		summary.SeenSeq, summary.Unread, _ = s.Store.Channels.Unread(project.ID)
 		for _, claim := range claims {
@@ -1135,7 +1016,7 @@ func (s *Service) ChannelSummaries(ctx context.Context) ([]ChannelSummary, error
 				daemon = origin
 			}
 			remote := daemon != origin
-			member := ChannelMember{Card: card, Enabled: settings.Enabled(project.ID, cardBoardID(card)), Status: "idle", Daemon: daemon, Remote: remote}
+			member := ChannelMember{Card: card, Status: "idle", Daemon: daemon, Remote: remote}
 			if card.Runtime == model.RuntimeFailed {
 				member.Status = "failed"
 			}
@@ -1153,32 +1034,26 @@ func (s *Service) ChannelSummaries(ctx context.Context) ([]ChannelSummary, error
 			if len(member.WaitingOn) > 0 {
 				member.Status = "waiting"
 			}
-			if member.Enabled || len(member.Holds) > 0 {
-				summary.Members = append(summary.Members, member)
-			}
+			summary.Members = append(summary.Members, member)
 		}
 		summaries = append(summaries, summary)
 	}
 	return summaries, nil
 }
 
-// channelPlan is how agent channels change a starting turn: the static
-// instructions, the digest of undelivered messages ahead of the prompt, the
-// steer channel and, where the harness has hooks, the pre-write hook.
+// channelPlan is how agent channels change a starting turn: the digest of
+// undelivered messages ahead of the prompt, the steer channel and, where the
+// harness has hooks, the pre-write hook. The instructions are rendered with
+// the card's (prompt.ChannelInstructions).
 type channelPlan struct {
-	enabled   bool
 	projectID string
-	cli       string
 	digest    string
 	delivered []string
 }
 
 func (s *Service) planChannelTurn(detail model.CardDetail, messageID string) channelPlan {
 	s.channelTurnStarted(detail.Card.ID, messageID)
-	if !s.ChannelsEnabled(detail.Card) {
-		return channelPlan{}
-	}
-	plan := channelPlan{enabled: true, projectID: detail.Card.ProjectID, cli: s.CLIWord()}
+	plan := channelPlan{projectID: detail.Card.ProjectID}
 	pending, err := s.Store.Channels.Undelivered(detail.Card.ProjectID, detail.Card.ID, detail.Card.CreatedAt)
 	now := time.Now()
 	pending = keepMessages(pending, func(message model.ChannelMessage) bool { return digestible(message, detail.Card.ID, now) })
@@ -1191,13 +1066,6 @@ func (s *Service) planChannelTurn(detail model.CardDetail, messageID string) cha
 	return plan
 }
 
-func (p channelPlan) instructions(base string) string {
-	if !p.enabled {
-		return base
-	}
-	return strings.TrimSpace(base + "\n\n" + dieterprompt.ChannelInstructions(p.cli))
-}
-
 func (p channelPlan) prompt(base string) string {
 	if p.digest == "" {
 		return base
@@ -1208,9 +1076,6 @@ func (p channelPlan) prompt(base string) string {
 // commitChannelTurn configures the request and records the digest delivery
 // just before the worker starts.
 func (s *Service) commitChannelTurn(cardID string, plan channelPlan, request *harness.Request) {
-	if !plan.enabled {
-		return
-	}
 	request.SteerEnabled = true
 	if s.CLIExecutable != "" {
 		request.ChannelHookCommand = s.CLIWord() + " channel hook"

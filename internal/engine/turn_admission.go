@@ -155,7 +155,6 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 		messageID = newRuntimeID("msg_")
 	}
 	channelPlan := s.planChannelTurn(detail, messageID)
-	resolution.Instructions = channelPlan.instructions(resolution.Instructions)
 	var startErr error
 	if queueID == "" {
 		_, startErr = s.Store.Conversations.StartTurnParts(detail.Card.ID, turnID, messageID, parts)

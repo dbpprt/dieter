@@ -117,16 +117,15 @@ data class ChannelsView(
             return ChannelKey(daemon, project)
         }
 
-    /** Unread messages of channels that are on. */
+    /** Unread messages of every channel. */
     val unread: Int
-        get() = channels.filter { it.summary.enabled }.sumOf { it.summary.unread }
+        get() = channels.sumOf { it.summary.unread }
 
     /**
      * The client contract's view: the list, the empty state and the selected channel's stream.
      * [name] names a machine; [reachable] says whether one is reachable now.
      */
     fun slice(
-        switches: ChannelSwitches,
         name: (String) -> String,
         reachable: (String) -> Boolean,
         now: Instant,
@@ -141,7 +140,6 @@ data class ChannelsView(
         val (title, detail) =
             when {
                 !empty -> "" to ""
-                !switches.anyEnabled -> OFF_TITLE to OFF_DETAIL
                 loading || !loaded -> "" to ""
                 !this.reachable -> UNREACHABLE_TITLE to UNREACHABLE_DETAIL
                 error.isNotEmpty() -> FAILED_TITLE to error
@@ -154,7 +152,6 @@ data class ChannelsView(
                 },
             unread = unread,
             unread_label = ChannelRules.unreadLabel(unread),
-            enabled = switches.anyEnabled,
             loading = loading && empty,
             empty_title = title,
             empty_detail = detail,
@@ -172,7 +169,6 @@ data class ChannelsView(
         val key = streamKey
         val summary = stream.summary ?: key?.let { summary(it) }
         val title = summary?.project_name?.ifBlank { null } ?: projectId
-        val enabled = summary?.enabled ?: false
         val machine = key?.let { name(it.daemonId) }
         val titles = stream.titles
         val rows = ChannelRules.rows(stream.messages, summary?.seen_seq ?: 0, titles, name)
@@ -183,7 +179,6 @@ data class ChannelsView(
             channel = ChannelRef(projectId),
             title = "#$title",
             subtitle = if (machine == null) SHARED else "$SHARED · read from $machine",
-            enabled = enabled,
             loading = !stream.loaded,
             error = streamError.orEmpty(),
             claims_summary = ChannelRules.claimsSummary(stream.claims),
@@ -196,7 +191,6 @@ data class ChannelsView(
             composer =
                 ChannelRules.composer(
                     title,
-                    enabled,
                     key != null && reachable(key.daemonId),
                     machine,
                     members,
@@ -212,18 +206,15 @@ data class ChannelsView(
 
     companion object {
         const val SHARED = "Shared by your machines"
-        const val OFF_TITLE = "Agent channels are off"
-        const val OFF_DETAIL =
-            "Turn them on in Settings › Experimental, or for one project or board in its settings. " +
-                "Agents working in the same project, on any of your machines, can then message " +
-                "each other, claim the files they change, and pin decisions."
         const val UNREACHABLE_TITLE = "No machine is reachable"
         const val UNREACHABLE_DETAIL =
             "Channels are read from the machines that run your projects. They show here once one " +
                 "is reachable."
         const val FAILED_TITLE = "Channels could not be read"
         const val NONE_TITLE = "No channels yet"
-        const val NONE_DETAIL = "A project's channel shows here once agent channels are on for it."
+        const val NONE_DETAIL =
+            "Every project has a channel: agents working in it, on any of your machines, message " +
+                "each other, claim the files they change, and pin decisions."
     }
 }
 
@@ -233,12 +224,11 @@ data class ChannelsView(
  * from one machine that lists it, this device's first ([ChannelsView.channels]). The selected
  * channel streams from that machine, reconnecting after failures, and moves when another machine
  * comes first. Posts, pins and read positions go to it; a claim release goes to the claim's
- * machine. Nothing is read while every setting is off. Confined to the core dispatcher.
+ * machine. Confined to the core dispatcher.
  */
 class Channels(
     private val sessions: MachineSessions,
     private val reachable: () -> List<String>,
-    private val settings: StateFlow<ChannelSettingsView>,
     private val scope: CoroutineScope,
     private val logger: CoreLogger,
 ) {
@@ -261,18 +251,11 @@ class Channels(
     }
 
     /**
-     * Lists the channels while observed: at once, soon after a setting or the reachable machines
-     * change or a command asks for it, and every [ACTIVE_REFRESH] while the stream shows (else
-     * [IDLE_REFRESH], for the unread badge). Runs until cancelled.
+     * Lists the channels while observed: at once, soon after the reachable machines change or a
+     * command asks for it, and every [ACTIVE_REFRESH] while the stream shows (else [IDLE_REFRESH],
+     * for the unread badge). Runs until cancelled.
      */
     suspend fun run(reachability: Flow<Collection<String>>): Unit = coroutineScope {
-        launch {
-            settings
-                .map { it.switches }
-                .distinctUntilChanged()
-                .drop(1)
-                .collect { wake.trySend(Unit) }
-        }
         launch {
             reachability
                 .map { it.toSet() }
@@ -298,14 +281,6 @@ class Channels(
     /** Lists every reachable machine's channels now. */
     suspend fun refresh() {
         val bound = generation
-        if (!settings.value.switches.anyEnabled) {
-            show(null)
-            mutableView.update {
-                it.copy(machines = emptyList(), loading = false, loaded = true, reachable = true)
-            }
-            reconcileWatch()
-            return
-        }
         val machines = reachable()
         mutableView.update { if (it.loaded) it else it.copy(loading = true) }
         val results = coroutineScope { machines.map { id -> async { id to list(id) } }.awaitAll() }
@@ -346,10 +321,10 @@ class Channels(
                     else next.stream
             )
         }
-        // A shown list without a selection opens its first channel that is on.
+        // A shown list without a selection opens its first channel.
         val state = view.value
         if (state.selected == null && state.active) {
-            state.channels.firstOrNull { it.summary.enabled }?.let { show(it.summary.project_id) }
+            state.channels.firstOrNull()?.let { show(it.summary.project_id) }
         }
         retarget()
         reconcileWatch()

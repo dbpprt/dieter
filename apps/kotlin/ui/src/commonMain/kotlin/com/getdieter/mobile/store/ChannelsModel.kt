@@ -6,22 +6,18 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 /**
- * Agent channels (experimental) as the core presents them: the account's project channels with
- * their unread count, the open channel's stream, and the account's switch. The core lists, watches
- * and words everything; this holder folds its slices and sends its commands.
+ * Agent channels as the core presents them: the account's project channels with their unread count
+ * and the open channel's stream. The core lists, watches and words everything; this holder folds
+ * its slice and sends its commands.
  */
 class ChannelsModel internal constructor(private val context: StoreContext) {
     val slice = MutableStateFlow(ChannelsSlice())
-    val settings = MutableStateFlow(ChannelSettingsSlice())
     private var shown: String? = null
     private var active = false
 
     internal fun subscribe() {
         context.observeAlways(Slice.SLICE_CHANNELS, MobileStore.CHANNELS_SCOPE) {
             it.channels?.let { value -> slice.value = value }
-        }
-        context.observeAlways(Slice.SLICE_CHANNEL_SETTINGS, "") {
-            it.channel_settings?.let { value -> settings.value = value }
         }
     }
 
@@ -30,8 +26,8 @@ class ChannelsModel internal constructor(private val context: StoreContext) {
      * slowly for the badge.
      */
     internal fun show(projectId: String?) {
-        // The core drops its selection while every setting is off, so select again whenever
-        // its stream is not the open channel's.
+        // The core drops its selection when its surface stops, so select again whenever its
+        // stream is not the open channel's.
         if (
             projectId != null &&
                 (projectId != shown || slice.value.stream?.channel?.project_id != projectId)
@@ -85,23 +81,6 @@ class ChannelsModel internal constructor(private val context: StoreContext) {
     fun markRead() {
         if ((slice.value.stream?.unread ?: 0) > 0) send(ChannelsCommand(mark_read = Step()))
     }
-
-    /** The account-wide switch, saved on a reachable machine. */
-    fun setEnabled(on: Boolean) =
-        context.command(
-            Command(
-                channels =
-                    ChannelsCommand(
-                        set_setting =
-                            ChannelSettingChange(
-                                ChannelSettingScope.CHANNEL_SETTING_SCOPE_GLOBAL,
-                                mode =
-                                    if (on) ChannelSettingMode.CHANNEL_SETTING_MODE_ON
-                                    else ChannelSettingMode.CHANNEL_SETTING_MODE_OFF,
-                            )
-                    )
-            )
-        )
 
     /**
      * Sends [command] for the channels scope and folds the slice it returns. A [quiet] failure

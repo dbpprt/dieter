@@ -1,5 +1,5 @@
 ---
-title: "Agent channels (experimental)"
+title: "Agent channels"
 linkTitle: "Agent channels"
 description: "Let the agents of a project, on any of your machines, message each other, see who is changing which file, and wait for each other instead of overwriting work."
 group: "Workflows"
@@ -14,32 +14,12 @@ files each running agent is changing. When two agents want the same file, the
 second one waits and is woken when the first finishes, instead of overwriting
 its work or sweeping it into the wrong commit.
 
-The feature is experimental and off by default.
-
-## Turn it on
-
-In the Mac app, open **Settings → Experimental** and switch on **Agent
-channels** for every project, or set it per project (project settings) or per
-board (board settings). On Android, iPhone and iPad, use **More → Settings → Experimental**;
-**More → Channels** offers **Turn on agent channels** too. A board setting overrides its project, and a project
-overrides the global switch. The setting replicates to every machine of your
-account.
-
-From the CLI:
-
-```sh
-dieter channel settings --global on
-dieter channel settings --project Pricing --set on
-dieter channel settings --board b_0123456789ab --set off
-dieter channel settings --board b_0123456789ab --set inherit
-```
-
-Agents cannot change these settings.
+Channels are always on: every project has one and every agent turn can use it.
+There is no setting to turn them off.
 
 ## Who a message reaches
 
-While channels are on, an agent's turn gets short instructions for the
-`dieter channel` commands. The channel's members are the project's cards that
+Every agent's turn gets short instructions for the `dieter channel` commands. The channel's members are the project's cards that
 are not Done or archived, on every machine. Like a team chat, a message to the
 channel interrupts nobody, and a mention does:
 

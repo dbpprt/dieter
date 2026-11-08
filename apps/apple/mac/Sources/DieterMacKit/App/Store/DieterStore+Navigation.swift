@@ -86,7 +86,7 @@ extension DieterStore {
         section = .inbox
     }
 
-    /// The account's agent channels (experimental).
+    /// The account's agent channels.
     func openChannels() {
         guard section != .channels else { return }
         stopTerminalWatch()

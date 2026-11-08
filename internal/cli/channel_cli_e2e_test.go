@@ -40,17 +40,6 @@ func assertChannelCLI(t *testing.T, client *CLI, output *bytes.Buffer, data *sto
 	if err != nil {
 		t.Fatal(err)
 	}
-	var settings dieterv1.ChannelSettings
-	if err := protojson.Unmarshal([]byte(runDaemonCLI(t, client, output, "channel", "settings", "--board", board.ID, "--set", "on")), &settings); err != nil {
-		t.Fatal(err)
-	}
-	found := false
-	for _, override := range settings.GetOverrides() {
-		found = found || override.GetScope() == "board" && override.GetId() == board.ID && override.GetValue() == "on"
-	}
-	if !found {
-		t.Fatalf("settings after enabling the board: %v", &settings)
-	}
 	var posted dieterv1.ChannelMessage
 	raw := runDaemonCLI(t, client, output, "channel", "post", "--project", projectID, "--kind", "decision", "--file", "src/pricing.go", "Keep", "src/pricing.go", "rules", "pure.")
 	if err := protojson.Unmarshal([]byte(raw), &posted); err != nil {
@@ -73,11 +62,11 @@ func assertChannelCLI(t *testing.T, client *CLI, output *bytes.Buffer, data *sto
 	if err := protojson.Unmarshal([]byte(runDaemonCLI(t, client, output, "channel", "list", "--format", "json")), &channels); err != nil {
 		t.Fatal(err)
 	}
-	enabled := false
+	listed := false
 	for _, channel := range channels.GetChannels() {
-		enabled = enabled || channel.GetProjectId() == projectID && channel.GetEnabled() && channel.GetLastSeq() >= posted.GetSeq()
+		listed = listed || channel.GetProjectId() == projectID && channel.GetLastSeq() >= posted.GetSeq()
 	}
-	if !enabled {
+	if !listed {
 		t.Fatalf("channel list = %v", &channels)
 	}
 	if text := runDaemonCLI(t, client, output, "channel", "check", "--card", card.ID, "src/pricing.go"); !strings.Contains(text, "Pinned decisions") || !strings.Contains(text, "Keep src/pricing.go rules pure.") {
@@ -112,13 +101,5 @@ func assertChannelCLI(t *testing.T, client *CLI, output *bytes.Buffer, data *sto
 	client.In = strings.NewReader(`{"hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"src/pricing.go"}}`)
 	if text := runDaemonCLI(t, client, output, "channel", "hook"); text != "" {
 		t.Fatalf("hook = %q, want no opinion", text)
-	}
-	if err := protojson.Unmarshal([]byte(runDaemonCLI(t, client, output, "channel", "settings", "--board", board.ID, "--set", "inherit")), &settings); err != nil {
-		t.Fatal(err)
-	}
-	for _, override := range settings.GetOverrides() {
-		if override.GetId() == board.ID {
-			t.Fatalf("inherit kept the override: %v", &settings)
-		}
 	}
 }

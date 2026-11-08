@@ -16,8 +16,6 @@ import com.getdieter.core.admin.MachineAdmin
 import com.getdieter.core.admin.MachineTelemetry
 import com.getdieter.core.api.DaemonApi
 import com.getdieter.core.board.BoardOperations
-import com.getdieter.core.channels.ChannelSettingsStore
-import com.getdieter.core.channels.ChannelSwitches
 import com.getdieter.core.composition.ConversationDrafts
 import com.getdieter.core.composition.Creation
 import com.getdieter.core.composition.CreationDestinations
@@ -211,7 +209,6 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
                 telemetry.reset()
                 projectWorkspaces.reset()
                 quotas.reset()
-                channelSettings.reset()
                 gatewayListeners.forEach { it() }
             },
         )
@@ -241,8 +238,6 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
         )
     val navigation = NavigationEditor(navigationKv)
 
-    /** The account's agent channel settings (experimental), written on a reachable machine. */
-    val channelSettings = ChannelSettingsStore(sessions, choice::reachable, platform.logger)
     val metadata = MachineMetadataStore(sessions, scope, platform.clock, platform.logger)
     val drafts = ConversationDrafts(platform.clock, platform.logger, scope)
     val captures = TaskCaptures(platform.clock, platform.logger, scope)
@@ -333,12 +328,6 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
                 .map { it.kv[NAVIGATION_NAMESPACE].orEmpty() }
                 .distinctUntilChanged()
                 .collect(navigationKv::apply)
-        }
-        scope.launch {
-            accountSync.snapshot
-                .map { it.kv[ChannelSwitches.NAMESPACE].orEmpty() }
-                .distinctUntilChanged()
-                .collect(channelSettings::apply)
         }
         scope.launch {
             navigationKv.run(

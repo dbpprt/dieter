@@ -1,8 +1,7 @@
-# Agent channels (experimental): off by default and turned on from More →
-# Channels; the seeded project's channel opens and a post from the phone
-# shows in its live stream. A conversation highlights the channel message that
-# joined its turn and the turn a channel message woke, and opens the channel.
-# The switch is turned off again in Settings for the other flows.
+# Agent channels: More → Channels lists the seeded project's channel without
+# any setting; it opens and a post from the phone shows in its live stream. A
+# conversation highlights the channel message that joined its turn and the
+# turn a channel message woke, and opens the channel.
 appId: ${APP_ID}
 name: Channels
 tags: [full]

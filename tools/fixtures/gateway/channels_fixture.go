@@ -8,16 +8,13 @@ import (
 	"github.com/dbpprt/dieter/internal/store/kanban"
 )
 
-// seedChannelsFixture turns agent channels on for the account and seeds the
-// project channel with the two-agent coordination of the Atrium pair: a
-// request, Dieter's heads-up to the holder, the threaded "free" reply, the
-// release, a pinned human decision and their delivery receipts. The agents'
-// conversations show what reached them: the steered messages in the holder's
-// turn, and the waiter's turn that the release woke.
+// seedChannelsFixture seeds the project channel with the two-agent
+// coordination of the Atrium pair: a request, Dieter's heads-up to the holder,
+// the threaded "free" reply, the release, a pinned human decision and their
+// delivery receipts. The agents' conversations show what reached them: the
+// steered messages in the holder's turn, and the waiter's turn that the
+// release woke.
 func seedChannelsFixture(data *boardstore.Store, project model.Project, board model.Board) error {
-	if err := data.KV.SetChannelSetting("global", "", "on"); err != nil {
-		return err
-	}
 	holder, err := data.Kanban.CreateCard(kanban.CreateCardInput{
 		Project: project.ID, Board: board.ID, Lane: model.LaneRunning, Title: "Review headers of modules 3, 4, 6, 7",
 		Prompt: "Append ' (reviewed)' to the header of modules 3, 4, 6 and 7, then commit them.", Provider: "claude-code", Model: "sonnet",

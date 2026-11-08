@@ -30,8 +30,6 @@ const (
 	ChannelService_ListChannelClaims_FullMethodName    = "/dieter.v1.ChannelService/ListChannelClaims"
 	ChannelService_ReleaseChannelClaims_FullMethodName = "/dieter.v1.ChannelService/ReleaseChannelClaims"
 	ChannelService_HandleChannelHook_FullMethodName    = "/dieter.v1.ChannelService/HandleChannelHook"
-	ChannelService_GetChannelSettings_FullMethodName   = "/dieter.v1.ChannelService/GetChannelSettings"
-	ChannelService_SetChannelSetting_FullMethodName    = "/dieter.v1.ChannelService/SetChannelSetting"
 	ChannelService_WatchChannel_FullMethodName         = "/dieter.v1.ChannelService/WatchChannel"
 )
 
@@ -39,17 +37,13 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// Agent channels (experimental): one message channel per project on each
-// daemon, direct messages to cards, threads, pinned decisions and file claims
-// that keep agents sharing a checkout from overwriting each other.
-//
-// The feature is off unless the replicated KV namespace "experimental" enables
-// it globally (key "channels"), per project ("channels.project.<id>") or per
-// board ("channels.board.<id>"); board overrides project overrides global.
+// Agent channels: one message channel per project on each daemon, direct
+// messages to cards, threads, pinned decisions and file claims that keep
+// agents sharing a checkout from overwriting each other. Every project and
+// card has them; there is no switch.
 //
 // Callers are identified by the daemon: a live turn token (local route only)
-// makes the caller that card's agent; any other caller is a human. Agents
-// cannot change channel settings.
+// makes the caller that card's agent; any other caller is a human.
 type ChannelServiceClient interface {
 	// Lists the channels of this daemon's projects with read state and members.
 	ListChannels(ctx context.Context, in *ListChannelsRequest, opts ...grpc.CallOption) (*ListChannelsResponse, error)
@@ -74,10 +68,6 @@ type ChannelServiceClient interface {
 	// Answers a harness hook (Claude Code / Codex hook JSON on stdin) for the
 	// calling agent. An empty output means no opinion. Fails open.
 	HandleChannelHook(ctx context.Context, in *ChannelHookRequest, opts ...grpc.CallOption) (*ChannelHookResponse, error)
-	// Returns the replicated channel settings.
-	GetChannelSettings(ctx context.Context, in *GetChannelSettingsRequest, opts ...grpc.CallOption) (*ChannelSettings, error)
-	// Sets the global switch or a project/board override. Refuses agents.
-	SetChannelSetting(ctx context.Context, in *SetChannelSettingRequest, opts ...grpc.CallOption) (*ChannelSettings, error)
 	// Streams a project channel: new messages, claims and the summary.
 	WatchChannel(ctx context.Context, in *WatchChannelRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ChannelFrame], error)
 }
@@ -190,26 +180,6 @@ func (c *channelServiceClient) HandleChannelHook(ctx context.Context, in *Channe
 	return out, nil
 }
 
-func (c *channelServiceClient) GetChannelSettings(ctx context.Context, in *GetChannelSettingsRequest, opts ...grpc.CallOption) (*ChannelSettings, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ChannelSettings)
-	err := c.cc.Invoke(ctx, ChannelService_GetChannelSettings_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *channelServiceClient) SetChannelSetting(ctx context.Context, in *SetChannelSettingRequest, opts ...grpc.CallOption) (*ChannelSettings, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ChannelSettings)
-	err := c.cc.Invoke(ctx, ChannelService_SetChannelSetting_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *channelServiceClient) WatchChannel(ctx context.Context, in *WatchChannelRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ChannelFrame], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &ChannelService_ServiceDesc.Streams[0], ChannelService_WatchChannel_FullMethodName, cOpts...)
@@ -233,17 +203,13 @@ type ChannelService_WatchChannelClient = grpc.ServerStreamingClient[ChannelFrame
 // All implementations must embed UnimplementedChannelServiceServer
 // for forward compatibility.
 //
-// Agent channels (experimental): one message channel per project on each
-// daemon, direct messages to cards, threads, pinned decisions and file claims
-// that keep agents sharing a checkout from overwriting each other.
-//
-// The feature is off unless the replicated KV namespace "experimental" enables
-// it globally (key "channels"), per project ("channels.project.<id>") or per
-// board ("channels.board.<id>"); board overrides project overrides global.
+// Agent channels: one message channel per project on each daemon, direct
+// messages to cards, threads, pinned decisions and file claims that keep
+// agents sharing a checkout from overwriting each other. Every project and
+// card has them; there is no switch.
 //
 // Callers are identified by the daemon: a live turn token (local route only)
-// makes the caller that card's agent; any other caller is a human. Agents
-// cannot change channel settings.
+// makes the caller that card's agent; any other caller is a human.
 type ChannelServiceServer interface {
 	// Lists the channels of this daemon's projects with read state and members.
 	ListChannels(context.Context, *ListChannelsRequest) (*ListChannelsResponse, error)
@@ -268,10 +234,6 @@ type ChannelServiceServer interface {
 	// Answers a harness hook (Claude Code / Codex hook JSON on stdin) for the
 	// calling agent. An empty output means no opinion. Fails open.
 	HandleChannelHook(context.Context, *ChannelHookRequest) (*ChannelHookResponse, error)
-	// Returns the replicated channel settings.
-	GetChannelSettings(context.Context, *GetChannelSettingsRequest) (*ChannelSettings, error)
-	// Sets the global switch or a project/board override. Refuses agents.
-	SetChannelSetting(context.Context, *SetChannelSettingRequest) (*ChannelSettings, error)
 	// Streams a project channel: new messages, claims and the summary.
 	WatchChannel(*WatchChannelRequest, grpc.ServerStreamingServer[ChannelFrame]) error
 	mustEmbedUnimplementedChannelServiceServer()
@@ -313,12 +275,6 @@ func (UnimplementedChannelServiceServer) ReleaseChannelClaims(context.Context, *
 }
 func (UnimplementedChannelServiceServer) HandleChannelHook(context.Context, *ChannelHookRequest) (*ChannelHookResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method HandleChannelHook not implemented")
-}
-func (UnimplementedChannelServiceServer) GetChannelSettings(context.Context, *GetChannelSettingsRequest) (*ChannelSettings, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetChannelSettings not implemented")
-}
-func (UnimplementedChannelServiceServer) SetChannelSetting(context.Context, *SetChannelSettingRequest) (*ChannelSettings, error) {
-	return nil, status.Error(codes.Unimplemented, "method SetChannelSetting not implemented")
 }
 func (UnimplementedChannelServiceServer) WatchChannel(*WatchChannelRequest, grpc.ServerStreamingServer[ChannelFrame]) error {
 	return status.Error(codes.Unimplemented, "method WatchChannel not implemented")
@@ -524,42 +480,6 @@ func _ChannelService_HandleChannelHook_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ChannelService_GetChannelSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetChannelSettingsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ChannelServiceServer).GetChannelSettings(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ChannelService_GetChannelSettings_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ChannelServiceServer).GetChannelSettings(ctx, req.(*GetChannelSettingsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _ChannelService_SetChannelSetting_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SetChannelSettingRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ChannelServiceServer).SetChannelSetting(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ChannelService_SetChannelSetting_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ChannelServiceServer).SetChannelSetting(ctx, req.(*SetChannelSettingRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _ChannelService_WatchChannel_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(WatchChannelRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -617,14 +537,6 @@ var ChannelService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "HandleChannelHook",
 			Handler:    _ChannelService_HandleChannelHook_Handler,
-		},
-		{
-			MethodName: "GetChannelSettings",
-			Handler:    _ChannelService_GetChannelSettings_Handler,
-		},
-		{
-			MethodName: "SetChannelSetting",
-			Handler:    _ChannelService_SetChannelSetting_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

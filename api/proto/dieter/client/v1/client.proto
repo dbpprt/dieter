@@ -104,7 +104,7 @@ message Command {
     Reconnect reconnect = 79;
     DevicesCommand devices = 81;
     SystemWoke system_woke = 82;
-    // Agent channels (experimental); see ChannelsCommand.
+    // Agent channels; see ChannelsCommand.
     ChannelsCommand channels = 83;
     // Agent mail; see MailCommand.
     MailCommand mail = 84;
@@ -1328,8 +1328,6 @@ enum Slice {
   SLICE_DEVICES = 25;
   // Agent channels across machines. Scoped by the view's surface key.
   SLICE_CHANNELS = 26;
-  // The replicated agent channels settings.
-  SLICE_CHANNEL_SETTINGS = 27;
   // Agent mail across machines. Scoped by the view's surface key.
   SLICE_MAIL = 28;
 }
@@ -1368,7 +1366,6 @@ message Update {
     CreationPreview creation_preview = 35;
     DevicesSlice devices = 36;
     ChannelsSlice channels = 37;
-    ChannelSettingsSlice channel_settings = 38;
     MailSlice mail = 39;
     // The view's surface could not open, e.g. screen sharing on a device
     // without it. Sent once; nothing follows.
@@ -3948,15 +3945,13 @@ message DeviceNotice {
 }
 
 // ---------------------------------------------------------------------------
-// Agent channels (experimental): each machine hosts one channel per project
-// it has a checkout of. Agents (cards) and the user post notes, requests,
-// done reports and decisions; Dieter adds coordination events (claims, holds,
-// releases). The feature is off unless the account's settings switch it on
-// globally, per project or per board.
+// Agent channels: each machine hosts one channel per project it has a checkout
+// of. Agents (cards) and the user post notes, requests, done reports and
+// decisions; Dieter adds coordination events (claims, holds, releases). Every
+// project and card has them.
 
 // Commands of a channels surface (SLICE_CHANNELS, scoped by the view's
-// surface key; an empty scope reaches the unscoped surface). A setting change
-// needs no surface.
+// surface key; an empty scope reaches the unscoped surface).
 message ChannelsCommand {
   string scope = 1;
   oneof action {
@@ -3974,9 +3969,6 @@ message ChannelsCommand {
     // The selected channel's newest message is visible: marks it read.
     Step mark_read = 7;
     ChannelClaimRelease release_claim = 8;
-    // Sets the global switch or a project or board override on a reachable
-    // machine; the account's settings replicate it everywhere.
-    ChannelSettingChange set_setting = 9;
   }
 }
 
@@ -4015,28 +4007,6 @@ message ChannelClaimRelease {
   string path = 2;
 }
 
-message ChannelSettingChange {
-  ChannelSettingScope scope = 1;
-  // The project or board ID; empty for the global switch.
-  string id = 2;
-  // The global switch takes ON or OFF; an override also INHERIT, which
-  // removes it.
-  ChannelSettingMode mode = 3;
-}
-
-enum ChannelSettingScope {
-  CHANNEL_SETTING_SCOPE_UNSPECIFIED = 0;
-  CHANNEL_SETTING_SCOPE_GLOBAL = 1;
-  CHANNEL_SETTING_SCOPE_PROJECT = 2;
-  CHANNEL_SETTING_SCOPE_BOARD = 3;
-}
-
-enum ChannelSettingMode {
-  CHANNEL_SETTING_MODE_INHERIT = 0;
-  CHANNEL_SETTING_MODE_ON = 1;
-  CHANNEL_SETTING_MODE_OFF = 2;
-}
-
 enum ChannelMessageKind {
   CHANNEL_MESSAGE_KIND_NOTE = 0;
   CHANNEL_MESSAGE_KIND_REQUEST = 1;
@@ -4067,16 +4037,14 @@ enum ChannelPresence {
 message ChannelsSlice {
   // The account's project channels by name.
   repeated ChannelListRow channels = 1;
-  // Unread messages in channels that are on, for the sidebar badge.
+  // Unread messages, for the sidebar badge.
   int32 unread = 2;
   // "3", or "99+"; empty with nothing unread.
   string unread_label = 3;
-  // Agent channels are on somewhere: globally, for a project or a board.
-  bool enabled = 4;
   // Machines are being read and nothing is listed yet.
   bool loading = 5;
-  // What the list says when it lists nothing, e.g. how to turn the feature
-  // on in Settings > Experimental.
+  // What the list says when it lists nothing, e.g. that no machine is
+  // reachable.
   string empty_title = 6;
   string empty_detail = 7;
   // The selected channel; absent when none is selected.
@@ -4089,16 +4057,13 @@ message ChannelListRow {
   string project_id = 1;
   // The project's name, e.g. "pricing".
   string name = 2;
-  // On for the project or one of its boards. A channel that is off but has
-  // messages is listed read-only.
-  bool enabled = 3;
   int32 unread = 4;
   // Live file claims on every machine.
   int32 claims = 5;
   // Member agents on every machine.
   int32 members = 6;
   int32 running = 7;
-  // "4 agents · 1 running · 2 claims", or "Off".
+  // "4 agents · 1 running · 2 claims".
   string detail = 8;
   bool selected = 9;
   // When the newest message was written; 0 when it has none.
@@ -4112,7 +4077,6 @@ message ChannelStreamView {
   string title = 2;
   // "Shared by your machines · read from mbp-office".
   string subtitle = 3;
-  bool enabled = 4;
   // The first frame has not arrived yet.
   bool loading = 5;
   // Why the stream is reconnecting; empty while it is live.
@@ -4223,8 +4187,6 @@ message ChannelMemberRow {
   string detail = 9;
   repeated string holds = 10;
   repeated string waiting_on = 11;
-  // The card's own setting is on; a member listed only for a claim is not.
-  bool enabled = 12;
   string board_id = 13;
   // The machine that runs the card, e.g. "mbp-office".
   string machine = 14;
@@ -4244,7 +4206,7 @@ message ChannelComposerState {
   bool can_post = 1;
   // "Message #pricing".
   string placeholder = 2;
-  // Why it cannot, e.g. "Agent channels are off for this project.".
+  // Why it cannot, e.g. "mbp-office is not reachable.".
   string disabled_reason = 3;
   // The members a direct message can go to.
   repeated ChannelRecipientOption recipients = 4;
@@ -4275,43 +4237,6 @@ message ChannelKindOption {
   // "Note", "Request", "Done" or "Decision".
   string label = 2;
   string detail = 3;
-}
-
-// The account's agent channels settings (the replicated "experimental" KV
-// namespace) with this device's unconfirmed changes applied.
-message ChannelSettingsSlice {
-  bool global = 1;
-  // Every project, by name.
-  repeated ChannelSettingRow projects = 2;
-  // Every board, by project and name.
-  repeated ChannelSettingRow boards = 3;
-  // A change is being written.
-  bool saving = 4;
-  // Why the last change failed.
-  string error = 5;
-}
-
-message ChannelSettingRow {
-  // The project or board ID.
-  string id = 1;
-  string name = 2;
-  // A board's project; the project itself for a project row.
-  string project_id = 3;
-  ChannelSettingMode mode = 4;
-  // On after resolving: the board's override, the project's, then global.
-  bool effective = 5;
-  // The chosen mode as the picker shows it: "Inherit (On)", "On" or "Off".
-  string label = 6;
-  // The picker's choices, INHERIT first.
-  repeated ChannelSettingOption options = 7;
-  // Where the effective value comes from, e.g. "Inherits On from the
-  // project.".
-  string detail = 8;
-}
-
-message ChannelSettingOption {
-  ChannelSettingMode mode = 1;
-  string label = 2;
 }
 
 // An agent channel message steered into the conversation's running turn.

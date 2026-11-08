@@ -183,25 +183,6 @@ func (api *channelsAPI) HandleChannelHook(ctx context.Context, r *dieterv1.Chann
 	return &dieterv1.ChannelHookResponse{OutputJson: output}, nil
 }
 
-func (api *channelsAPI) GetChannelSettings(context.Context, *dieterv1.GetChannelSettingsRequest) (*dieterv1.ChannelSettings, error) {
-	settings, err := api.server.app.ChannelSettings()
-	if err != nil {
-		return nil, domainFailure(err)
-	}
-	return protoChannelSettings(settings), nil
-}
-
-func (api *channelsAPI) SetChannelSetting(ctx context.Context, r *dieterv1.SetChannelSettingRequest) (*dieterv1.ChannelSettings, error) {
-	if requestHeader(ctx, turnTokenMetadata) != "" && requestHeader(ctx, operatorSubjectMetadata) == "" {
-		return nil, fault.New(fault.PermissionDenied, "agents cannot change agent channel settings")
-	}
-	settings, err := api.server.app.SetChannelSetting(r.GetScope(), r.GetId(), r.GetValue())
-	if err != nil {
-		return nil, domainFailure(err)
-	}
-	return protoChannelSettings(settings), nil
-}
-
 func (api *channelsAPI) WatchChannel(ctx context.Context, r *dieterv1.WatchChannelRequest, stream *connect.ServerStream[dieterv1.ChannelFrame]) error {
 	return api.server.watchChannel(ctx, r, stream.Send)
 }
@@ -337,38 +318,17 @@ func protoChannelClaims(claims []model.ChannelClaim) *dieterv1.ChannelClaims {
 
 func protoChannelSummary(summary engine.ChannelSummary) *dieterv1.ChannelSummary {
 	result := &dieterv1.ChannelSummary{
-		ProjectId: summary.Project.ID, ProjectName: summary.Project.Name, Enabled: summary.Enabled,
+		ProjectId: summary.Project.ID, ProjectName: summary.Project.Name,
 		LastSeq: summary.LastSeq, SeenSeq: summary.SeenSeq, Unread: int32(summary.Unread), Claims: int32(summary.Claims),
 		LastMessageAt: summary.LastMessageAt,
 	}
 	for _, member := range summary.Members {
 		result.Members = append(result.Members, &dieterv1.ChannelMember{
 			CardId: member.Card.ID, Title: member.Card.Title, BoardId: member.Card.BoardID, Harness: member.Card.Provider,
-			Model: member.Card.Model, Status: member.Status, Enabled: member.Enabled,
+			Model: member.Card.Model, Status: member.Status,
 			Holds: slices.Clone(member.Holds), WaitingOn: slices.Clone(member.WaitingOn),
 			DaemonId: member.Daemon, Remote: member.Remote,
 		})
 	}
-	return result
-}
-
-func protoChannelSettings(settings model.ChannelSettings) *dieterv1.ChannelSettings {
-	result := &dieterv1.ChannelSettings{Global: settings.Global}
-	add := func(scope string, values map[string]bool) {
-		ids := make([]string, 0, len(values))
-		for id := range values {
-			ids = append(ids, id)
-		}
-		slices.Sort(ids)
-		for _, id := range ids {
-			value := "off"
-			if values[id] {
-				value = "on"
-			}
-			result.Overrides = append(result.Overrides, &dieterv1.ChannelSettingOverride{Scope: scope, Id: id, Value: value})
-		}
-	}
-	add("project", settings.Projects)
-	add("board", settings.Boards)
 	return result
 }

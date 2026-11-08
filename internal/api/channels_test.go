@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
@@ -15,7 +14,7 @@ import (
 	"github.com/dbpprt/dieter/internal/testkit"
 )
 
-func TestChannelServiceIdentifiesAgentsAndGuardsSettings(t *testing.T) {
+func TestChannelServiceIdentifiesAgents(t *testing.T) {
 	t.Parallel()
 	data := testkit.Store(t)
 	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Pricing", Path: testkit.CheckoutDir(t)})
@@ -38,23 +37,11 @@ func TestChannelServiceIdentifiesAgentsAndGuardsSettings(t *testing.T) {
 	client, _ := newConnectTestClient(t, data, runner, testkit.MockCatalog())
 	ctx := t.Context()
 
-	// Off by default: humans cannot post.
-	if _, err := client.PostChannelMessage(ctx, &dieterv1.PostChannelMessageRequest{ProjectId: project.ID, Body: "hello"}); err == nil {
-		t.Fatal("posted while agent channels are off")
-	}
-	settings, err := client.SetChannelSetting(ctx, &dieterv1.SetChannelSettingRequest{Scope: "board", Id: board.ID, Value: "on"})
-	if err != nil || len(settings.GetOverrides()) != 1 || settings.GetOverrides()[0].GetValue() != "on" || settings.GetGlobal() {
-		t.Fatalf("settings = %v, %v", settings, err)
-	}
-	if _, err := client.SetChannelSetting(ctx, &dieterv1.SetChannelSettingRequest{Scope: "board", Id: "b_missing", Value: "on"}); err == nil {
-		t.Fatal("an unknown board was accepted")
-	}
-
 	// A live turn token makes the caller that card's agent.
 	request := startVaultTurn(t, client, runner, agentCard.ID)
 	agent := withHeaders(ctx, map[string]string{turnTokenMetadata: request.Environment["DIETER_TURN_TOKEN"]})
-	if !request.SteerEnabled || !strings.Contains(request.Instructions, "Agent channels (experimental) are on") {
-		t.Fatalf("the turn of an enabled board lacks channels: steer=%v", request.SteerEnabled)
+	if !request.SteerEnabled || !strings.Contains(request.Instructions, "## Agent channels") {
+		t.Fatalf("the turn lacks channels: steer=%v", request.SteerEnabled)
 	}
 	posted, err := client.PostChannelMessage(agent, &dieterv1.PostChannelMessageRequest{Kind: "decision", Body: "Tier caps live next to their rules in src/module3.js."})
 	if err != nil {
@@ -62,11 +49,6 @@ func TestChannelServiceIdentifiesAgentsAndGuardsSettings(t *testing.T) {
 	}
 	if posted.GetAuthor().GetKind() != "agent" || posted.GetAuthor().GetCardId() != agentCard.ID || posted.GetProjectId() != project.ID || !posted.GetPinned() {
 		t.Fatalf("agent post = %v", posted)
-	}
-	if _, err := client.SetChannelSetting(agent, &dieterv1.SetChannelSettingRequest{Scope: "global", Value: "on"}); err == nil {
-		t.Fatal("an agent changed agent channel settings")
-	} else {
-		wantCode(t, err, connect.CodePermissionDenied, "agent settings write")
 	}
 	if _, err := client.GetChannelInbox(agent, &dieterv1.GetChannelInboxRequest{CardId: other.ID}); err == nil {
 		t.Fatal("an agent read another card's inbox")
@@ -107,7 +89,7 @@ func TestChannelServiceIdentifiesAgentsAndGuardsSettings(t *testing.T) {
 		t.Fatalf("delivered messages came back: %v", page)
 	}
 	channels, err := client.ListChannels(ctx, &dieterv1.ListChannelsRequest{})
-	if err != nil || len(channels.GetChannels()) != 1 || !channels.GetChannels()[0].GetEnabled() || channels.GetChannels()[0].GetClaims() != 1 || channels.GetChannels()[0].GetUnread() != 1 {
+	if err != nil || len(channels.GetChannels()) != 1 || channels.GetChannels()[0].GetClaims() != 1 || channels.GetChannels()[0].GetUnread() != 1 {
 		t.Fatalf("channels = %v, %v", channels, err)
 	}
 	var running bool
@@ -145,9 +127,6 @@ func TestWatchChannelStreamsNewAndChangedMessages(t *testing.T) {
 	client, _ := newConnectTestClient(t, data, &testkit.FakeRunner{}, testkit.MockCatalog())
 	ctx, cancel := context.WithTimeout(t.Context(), testkit.Budget(30*time.Second))
 	defer cancel()
-	if _, err := client.SetChannelSetting(ctx, &dieterv1.SetChannelSettingRequest{Scope: "global", Value: "on"}); err != nil {
-		t.Fatal(err)
-	}
 	first, err := client.PostChannelMessage(ctx, &dieterv1.PostChannelMessageRequest{ProjectId: project.ID, Body: "first"})
 	if err != nil {
 		t.Fatal(err)

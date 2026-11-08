@@ -122,10 +122,6 @@ func TestReloadPinsSeenAndTornLine(t *testing.T) {
 	if seen, unread, _ = reloaded.Unread("p_1"); seen != 2 || unread != 0 {
 		t.Fatalf("seen = %d unread = %d; want 2, 0 (never backwards)", seen, unread)
 	}
-	projects, _ := reloaded.Projects()
-	if len(projects) != 1 || projects[0] != "p_1" {
-		t.Fatalf("projects = %v", projects)
-	}
 	if _, _, err := reloaded.Post(model.ChannelMessage{ProjectID: "../escape", Author: agent("c_a"), Body: "x"}, ""); err == nil {
 		t.Fatal("an invalid project ID was accepted")
 	}

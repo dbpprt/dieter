@@ -334,9 +334,6 @@ public nonisolated enum ClientSlice: SwiftProtobuf.Enum, Swift.CaseIterable {
   /// Agent channels across machines. Scoped by the view's surface key.
   case channels // = 26
 
-  /// The replicated agent channels settings.
-  case channelSettings // = 27
-
   /// Agent mail across machines. Scoped by the view's surface key.
   case mail // = 28
   case UNRECOGNIZED(Int)
@@ -373,7 +370,6 @@ public nonisolated enum ClientSlice: SwiftProtobuf.Enum, Swift.CaseIterable {
     case 24: self = .creationPreview
     case 25: self = .devices
     case 26: self = .channels
-    case 27: self = .channelSettings
     case 28: self = .mail
     default: self = .UNRECOGNIZED(rawValue)
     }
@@ -407,7 +403,6 @@ public nonisolated enum ClientSlice: SwiftProtobuf.Enum, Swift.CaseIterable {
     case .creationPreview: return 24
     case .devices: return 25
     case .channels: return 26
-    case .channelSettings: return 27
     case .mail: return 28
     case .UNRECOGNIZED(let i): return i
     }
@@ -441,7 +436,6 @@ public nonisolated enum ClientSlice: SwiftProtobuf.Enum, Swift.CaseIterable {
     .creationPreview,
     .devices,
     .channels,
-    .channelSettings,
     .mail,
   ]
 
@@ -1276,86 +1270,6 @@ public nonisolated enum ClientDeviceTrust: SwiftProtobuf.Enum, Swift.CaseIterabl
 
 }
 
-public nonisolated enum ClientChannelSettingScope: SwiftProtobuf.Enum, Swift.CaseIterable {
-  public typealias RawValue = Int
-  case unspecified // = 0
-  case global // = 1
-  case project // = 2
-  case board // = 3
-  case UNRECOGNIZED(Int)
-
-  public init() {
-    self = .unspecified
-  }
-
-  public init?(rawValue: Int) {
-    switch rawValue {
-    case 0: self = .unspecified
-    case 1: self = .global
-    case 2: self = .project
-    case 3: self = .board
-    default: self = .UNRECOGNIZED(rawValue)
-    }
-  }
-
-  public var rawValue: Int {
-    switch self {
-    case .unspecified: return 0
-    case .global: return 1
-    case .project: return 2
-    case .board: return 3
-    case .UNRECOGNIZED(let i): return i
-    }
-  }
-
-  // The compiler won't synthesize support with the UNRECOGNIZED case.
-  public static let allCases: [ClientChannelSettingScope] = [
-    .unspecified,
-    .global,
-    .project,
-    .board,
-  ]
-
-}
-
-public nonisolated enum ClientChannelSettingMode: SwiftProtobuf.Enum, Swift.CaseIterable {
-  public typealias RawValue = Int
-  case inherit // = 0
-  case on // = 1
-  case off // = 2
-  case UNRECOGNIZED(Int)
-
-  public init() {
-    self = .inherit
-  }
-
-  public init?(rawValue: Int) {
-    switch rawValue {
-    case 0: self = .inherit
-    case 1: self = .on
-    case 2: self = .off
-    default: self = .UNRECOGNIZED(rawValue)
-    }
-  }
-
-  public var rawValue: Int {
-    switch self {
-    case .inherit: return 0
-    case .on: return 1
-    case .off: return 2
-    case .UNRECOGNIZED(let i): return i
-    }
-  }
-
-  // The compiler won't synthesize support with the UNRECOGNIZED case.
-  public static let allCases: [ClientChannelSettingMode] = [
-    .inherit,
-    .on,
-    .off,
-  ]
-
-}
-
 public nonisolated enum ClientChannelMessageKind: SwiftProtobuf.Enum, Swift.CaseIterable {
   public typealias RawValue = Int
   case note // = 0
@@ -2183,7 +2097,7 @@ public nonisolated struct ClientCommand: Sendable {
     set {command = .systemWoke(newValue)}
   }
 
-  /// Agent channels (experimental); see ChannelsCommand.
+  /// Agent channels; see ChannelsCommand.
   public var channels: ClientChannelsCommand {
     get {
       if case .channels(let v)? = command {return v}
@@ -2287,7 +2201,7 @@ public nonisolated struct ClientCommand: Sendable {
     case reconnect(ClientReconnect)
     case devices(ClientDevicesCommand)
     case systemWoke(ClientSystemWoke)
-    /// Agent channels (experimental); see ChannelsCommand.
+    /// Agent channels; see ChannelsCommand.
     case channels(ClientChannelsCommand)
     /// Agent mail; see MailCommand.
     case mail(ClientMailCommand)
@@ -6445,14 +6359,6 @@ public nonisolated struct ClientUpdate: Sendable {
     set {value = .channels(newValue)}
   }
 
-  public var channelSettings: ClientChannelSettingsSlice {
-    get {
-      if case .channelSettings(let v)? = value {return v}
-      return ClientChannelSettingsSlice()
-    }
-    set {value = .channelSettings(newValue)}
-  }
-
   public var mail: ClientMailSlice {
     get {
       if case .mail(let v)? = value {return v}
@@ -6501,7 +6407,6 @@ public nonisolated struct ClientUpdate: Sendable {
     case creationPreview(ClientCreationPreview)
     case devices(ClientDevicesSlice)
     case channels(ClientChannelsSlice)
-    case channelSettings(ClientChannelSettingsSlice)
     case mail(ClientMailSlice)
     /// The view's surface could not open, e.g. screen sharing on a device
     /// without it. Sent once; nothing follows.
@@ -13530,8 +13435,7 @@ public nonisolated struct ClientDeviceNotice: Sendable {
 }
 
 /// Commands of a channels surface (SLICE_CHANNELS, scoped by the view's
-/// surface key; an empty scope reaches the unscoped surface). A setting change
-/// needs no surface.
+/// surface key; an empty scope reaches the unscoped surface).
 public nonisolated struct ClientChannelsCommand: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -13604,16 +13508,6 @@ public nonisolated struct ClientChannelsCommand: Sendable {
     set {action = .releaseClaim(newValue)}
   }
 
-  /// Sets the global switch or a project or board override on a reachable
-  /// machine; the account's settings replicate it everywhere.
-  public var setSetting: ClientChannelSettingChange {
-    get {
-      if case .setSetting(let v)? = action {return v}
-      return ClientChannelSettingChange()
-    }
-    set {action = .setSetting(newValue)}
-  }
-
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Action: Equatable, Sendable {
@@ -13631,9 +13525,6 @@ public nonisolated struct ClientChannelsCommand: Sendable {
     /// The selected channel's newest message is visible: marks it read.
     case markRead(ClientStep)
     case releaseClaim(ClientChannelClaimRelease)
-    /// Sets the global switch or a project or board override on a reachable
-    /// machine; the account's settings replicate it everywhere.
-    case setSetting(ClientChannelSettingChange)
 
   }
 
@@ -13714,25 +13605,6 @@ public nonisolated struct ClientChannelClaimRelease: Sendable {
   public init() {}
 }
 
-public nonisolated struct ClientChannelSettingChange: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  public var scope: ClientChannelSettingScope = .unspecified
-
-  /// The project or board ID; empty for the global switch.
-  public var id: String = String()
-
-  /// The global switch takes ON or OFF; an override also INHERIT, which
-  /// removes it.
-  public var mode: ClientChannelSettingMode = .inherit
-
-  public var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  public init() {}
-}
-
 public nonisolated struct ClientChannelsSlice: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -13741,20 +13613,17 @@ public nonisolated struct ClientChannelsSlice: Sendable {
   /// The account's project channels by name.
   public var channels: [ClientChannelListRow] = []
 
-  /// Unread messages in channels that are on, for the sidebar badge.
+  /// Unread messages, for the sidebar badge.
   public var unread: Int32 = 0
 
   /// "3", or "99+"; empty with nothing unread.
   public var unreadLabel: String = String()
 
-  /// Agent channels are on somewhere: globally, for a project or a board.
-  public var enabled: Bool = false
-
   /// Machines are being read and nothing is listed yet.
   public var loading: Bool = false
 
-  /// What the list says when it lists nothing, e.g. how to turn the feature
-  /// on in Settings > Experimental.
+  /// What the list says when it lists nothing, e.g. that no machine is
+  /// reachable.
   public var emptyTitle: String = String()
 
   public var emptyDetail: String = String()
@@ -13789,10 +13658,6 @@ public nonisolated struct ClientChannelListRow: Sendable {
   /// The project's name, e.g. "pricing".
   public var name: String = String()
 
-  /// On for the project or one of its boards. A channel that is off but has
-  /// messages is listed read-only.
-  public var enabled: Bool = false
-
   public var unread: Int32 = 0
 
   /// Live file claims on every machine.
@@ -13803,7 +13668,7 @@ public nonisolated struct ClientChannelListRow: Sendable {
 
   public var running: Int32 = 0
 
-  /// "4 agents · 1 running · 2 claims", or "Off".
+  /// "4 agents · 1 running · 2 claims".
   public var detail: String = String()
 
   public var selected: Bool = false
@@ -13841,11 +13706,6 @@ public nonisolated struct ClientChannelStreamView: @unchecked Sendable {
   public var subtitle: String {
     get {_storage._subtitle}
     set {_uniqueStorage()._subtitle = newValue}
-  }
-
-  public var enabled: Bool {
-    get {_storage._enabled}
-    set {_uniqueStorage()._enabled = newValue}
   }
 
   /// The first frame has not arrived yet.
@@ -14160,9 +14020,6 @@ public nonisolated struct ClientChannelMemberRow: Sendable {
 
   public var waitingOn: [String] = []
 
-  /// The card's own setting is on; a member listed only for a claim is not.
-  public var enabled: Bool = false
-
   public var boardID: String = String()
 
   /// The machine that runs the card, e.g. "mbp-office".
@@ -14205,7 +14062,7 @@ public nonisolated struct ClientChannelComposerState: Sendable {
   /// "Message #pricing".
   public var placeholder: String = String()
 
-  /// Why it cannot, e.g. "Agent channels are off for this project.".
+  /// Why it cannot, e.g. "mbp-office is not reachable.".
   public var disabledReason: String = String()
 
   /// The members a direct message can go to.
@@ -14265,79 +14122,6 @@ public nonisolated struct ClientChannelKindOption: Sendable {
   public var label: String = String()
 
   public var detail: String = String()
-
-  public var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  public init() {}
-}
-
-/// The account's agent channels settings (the replicated "experimental" KV
-/// namespace) with this device's unconfirmed changes applied.
-public nonisolated struct ClientChannelSettingsSlice: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  public var global: Bool = false
-
-  /// Every project, by name.
-  public var projects: [ClientChannelSettingRow] = []
-
-  /// Every board, by project and name.
-  public var boards: [ClientChannelSettingRow] = []
-
-  /// A change is being written.
-  public var saving: Bool = false
-
-  /// Why the last change failed.
-  public var error: String = String()
-
-  public var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  public init() {}
-}
-
-public nonisolated struct ClientChannelSettingRow: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  /// The project or board ID.
-  public var id: String = String()
-
-  public var name: String = String()
-
-  /// A board's project; the project itself for a project row.
-  public var projectID: String = String()
-
-  public var mode: ClientChannelSettingMode = .inherit
-
-  /// On after resolving: the board's override, the project's, then global.
-  public var effective: Bool = false
-
-  /// The chosen mode as the picker shows it: "Inherit (On)", "On" or "Off".
-  public var label: String = String()
-
-  /// The picker's choices, INHERIT first.
-  public var options: [ClientChannelSettingOption] = []
-
-  /// Where the effective value comes from, e.g. "Inherits On from the
-  /// project.".
-  public var detail: String = String()
-
-  public var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  public init() {}
-}
-
-public nonisolated struct ClientChannelSettingOption: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  public var mode: ClientChannelSettingMode = .inherit
-
-  public var label: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -15201,7 +14985,7 @@ nonisolated extension ClientTerminalKey: SwiftProtobuf._ProtoNameProviding {
 }
 
 nonisolated extension ClientSlice: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0SLICE_UNSPECIFIED\0\u{1}SLICE_SESSION\0\u{1}SLICE_WORKSPACE\0\u{1}SLICE_OUTBOX\0\u{1}SLICE_ACTIVITY\0\u{1}SLICE_CONVERSATION\0\u{1}SLICE_METADATA\0\u{1}SLICE_BOARD\0\u{1}SLICE_NAVIGATION\0\u{1}SLICE_CREATION\0\u{1}SLICE_FILES\0\u{1}SLICE_FILE_TREE\0\u{1}SLICE_TERMINALS\0\u{1}SLICE_TERMINAL_OVERVIEW\0\u{1}SLICE_SCHEDULES\0\u{1}SLICE_REVIEW\0\u{1}SLICE_PROJECT_CHANGES\0\u{2}\u{2}SLICE_TELEMETRY\0\u{1}SLICE_QUOTAS\0\u{1}SLICE_PROCESSES\0\u{1}SLICE_SCREEN\0\u{1}SLICE_BOARD_VIEW\0\u{1}SLICE_CHATS\0\u{1}SLICE_CREATION_PREVIEW\0\u{1}SLICE_DEVICES\0\u{1}SLICE_CHANNELS\0\u{1}SLICE_CHANNEL_SETTINGS\0\u{1}SLICE_MAIL\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0SLICE_UNSPECIFIED\0\u{1}SLICE_SESSION\0\u{1}SLICE_WORKSPACE\0\u{1}SLICE_OUTBOX\0\u{1}SLICE_ACTIVITY\0\u{1}SLICE_CONVERSATION\0\u{1}SLICE_METADATA\0\u{1}SLICE_BOARD\0\u{1}SLICE_NAVIGATION\0\u{1}SLICE_CREATION\0\u{1}SLICE_FILES\0\u{1}SLICE_FILE_TREE\0\u{1}SLICE_TERMINALS\0\u{1}SLICE_TERMINAL_OVERVIEW\0\u{1}SLICE_SCHEDULES\0\u{1}SLICE_REVIEW\0\u{1}SLICE_PROJECT_CHANGES\0\u{2}\u{2}SLICE_TELEMETRY\0\u{1}SLICE_QUOTAS\0\u{1}SLICE_PROCESSES\0\u{1}SLICE_SCREEN\0\u{1}SLICE_BOARD_VIEW\0\u{1}SLICE_CHATS\0\u{1}SLICE_CREATION_PREVIEW\0\u{1}SLICE_DEVICES\0\u{1}SLICE_CHANNELS\0\u{2}\u{2}SLICE_MAIL\0")
 }
 
 nonisolated extension ClientMachineSyncState: SwiftProtobuf._ProtoNameProviding {
@@ -15262,14 +15046,6 @@ nonisolated extension ClientQuotaSeverity: SwiftProtobuf._ProtoNameProviding {
 
 nonisolated extension ClientDeviceTrust: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DEVICE_TRUST_UNKNOWN\0\u{1}DEVICE_TRUST_NO_ROSTER\0\u{1}DEVICE_TRUST_PENDING\0\u{1}DEVICE_TRUST_TRUSTED\0\u{1}DEVICE_TRUST_REVOKED\0\u{1}DEVICE_TRUST_CONFLICT\0")
-}
-
-nonisolated extension ClientChannelSettingScope: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CHANNEL_SETTING_SCOPE_UNSPECIFIED\0\u{1}CHANNEL_SETTING_SCOPE_GLOBAL\0\u{1}CHANNEL_SETTING_SCOPE_PROJECT\0\u{1}CHANNEL_SETTING_SCOPE_BOARD\0")
-}
-
-nonisolated extension ClientChannelSettingMode: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CHANNEL_SETTING_MODE_INHERIT\0\u{1}CHANNEL_SETTING_MODE_ON\0\u{1}CHANNEL_SETTING_MODE_OFF\0")
 }
 
 nonisolated extension ClientChannelMessageKind: SwiftProtobuf._ProtoNameProviding {
@@ -23845,7 +23621,7 @@ nonisolated extension ClientReply: SwiftProtobuf.Message, SwiftProtobuf._Message
 
 nonisolated extension ClientUpdate: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Update"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}slice\0\u{1}scope\0\u{1}sequence\0\u{2}\u{6}failure\0\u{1}session\0\u{1}workspace\0\u{3}workspace_delta\0\u{1}outbox\0\u{1}activity\0\u{1}conversation\0\u{3}conversation_delta\0\u{1}metadata\0\u{1}board\0\u{1}navigation\0\u{1}creation\0\u{1}files\0\u{3}file_tree\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedules\0\u{1}review\0\u{3}project_changes\0\u{2}\u{2}telemetry\0\u{1}quotas\0\u{1}processes\0\u{1}screen\0\u{3}board_view\0\u{1}chats\0\u{3}creation_preview\0\u{1}devices\0\u{1}channels\0\u{3}channel_settings\0\u{1}mail\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}slice\0\u{1}scope\0\u{1}sequence\0\u{2}\u{6}failure\0\u{1}session\0\u{1}workspace\0\u{3}workspace_delta\0\u{1}outbox\0\u{1}activity\0\u{1}conversation\0\u{3}conversation_delta\0\u{1}metadata\0\u{1}board\0\u{1}navigation\0\u{1}creation\0\u{1}files\0\u{3}file_tree\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedules\0\u{1}review\0\u{3}project_changes\0\u{2}\u{2}telemetry\0\u{1}quotas\0\u{1}processes\0\u{1}screen\0\u{3}board_view\0\u{1}chats\0\u{3}creation_preview\0\u{1}devices\0\u{1}channels\0\u{2}\u{2}mail\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -24220,19 +23996,6 @@ nonisolated extension ClientUpdate: SwiftProtobuf.Message, SwiftProtobuf._Messag
           self.value = .channels(v)
         }
       }()
-      case 38: try {
-        var v: ClientChannelSettingsSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .channelSettings(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .channelSettings(v)
-        }
-      }()
       case 39: try {
         var v: ClientMailSlice?
         var hadOneofValue = false
@@ -24377,10 +24140,6 @@ nonisolated extension ClientUpdate: SwiftProtobuf.Message, SwiftProtobuf._Messag
     case .channels?: try {
       guard case .channels(let v)? = self.value else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 37)
-    }()
-    case .channelSettings?: try {
-      guard case .channelSettings(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 38)
     }()
     case .mail?: try {
       guard case .mail(let v)? = self.value else { preconditionFailure() }
@@ -36612,7 +36371,7 @@ nonisolated extension ClientDeviceNotice: SwiftProtobuf.Message, SwiftProtobuf._
 
 nonisolated extension ClientChannelsCommand: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ChannelsCommand"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}scope\0\u{1}select\0\u{1}active\0\u{1}refresh\0\u{1}post\0\u{1}pin\0\u{3}mark_read\0\u{3}release_claim\0\u{3}set_setting\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}scope\0\u{1}select\0\u{1}active\0\u{1}refresh\0\u{1}post\0\u{1}pin\0\u{3}mark_read\0\u{3}release_claim\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -36712,19 +36471,6 @@ nonisolated extension ClientChannelsCommand: SwiftProtobuf.Message, SwiftProtobu
           self.action = .releaseClaim(v)
         }
       }()
-      case 9: try {
-        var v: ClientChannelSettingChange?
-        var hadOneofValue = false
-        if let current = self.action {
-          hadOneofValue = true
-          if case .setSetting(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.action = .setSetting(v)
-        }
-      }()
       default: break
       }
     }
@@ -36766,10 +36512,6 @@ nonisolated extension ClientChannelsCommand: SwiftProtobuf.Message, SwiftProtobu
     case .releaseClaim?: try {
       guard case .releaseClaim(let v)? = self.action else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 8)
-    }()
-    case .setSetting?: try {
-      guard case .setSetting(let v)? = self.action else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 9)
     }()
     case nil: break
     }
@@ -36939,49 +36681,9 @@ nonisolated extension ClientChannelClaimRelease: SwiftProtobuf.Message, SwiftPro
   }
 }
 
-nonisolated extension ClientChannelSettingChange: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".ChannelSettingChange"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}scope\0\u{1}id\0\u{1}mode\0")
-
-  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularEnumField(value: &self.scope) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.id) }()
-      case 3: try { try decoder.decodeSingularEnumField(value: &self.mode) }()
-      default: break
-      }
-    }
-  }
-
-  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if self.scope != .unspecified {
-      try visitor.visitSingularEnumField(value: self.scope, fieldNumber: 1)
-    }
-    if !self.id.isEmpty {
-      try visitor.visitSingularStringField(value: self.id, fieldNumber: 2)
-    }
-    if self.mode != .inherit {
-      try visitor.visitSingularEnumField(value: self.mode, fieldNumber: 3)
-    }
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  public static func ==(lhs: ClientChannelSettingChange, rhs: ClientChannelSettingChange) -> Bool {
-    if lhs.scope != rhs.scope {return false}
-    if lhs.id != rhs.id {return false}
-    if lhs.mode != rhs.mode {return false}
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
 nonisolated extension ClientChannelsSlice: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ChannelsSlice"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}channels\0\u{1}unread\0\u{3}unread_label\0\u{1}enabled\0\u{1}loading\0\u{3}empty_title\0\u{3}empty_detail\0\u{1}stream\0\u{1}error\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}channels\0\u{1}unread\0\u{3}unread_label\0\u{2}\u{2}loading\0\u{3}empty_title\0\u{3}empty_detail\0\u{1}stream\0\u{1}error\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -36992,7 +36694,6 @@ nonisolated extension ClientChannelsSlice: SwiftProtobuf.Message, SwiftProtobuf.
       case 1: try { try decoder.decodeRepeatedMessageField(value: &self.channels) }()
       case 2: try { try decoder.decodeSingularInt32Field(value: &self.unread) }()
       case 3: try { try decoder.decodeSingularStringField(value: &self.unreadLabel) }()
-      case 4: try { try decoder.decodeSingularBoolField(value: &self.enabled) }()
       case 5: try { try decoder.decodeSingularBoolField(value: &self.loading) }()
       case 6: try { try decoder.decodeSingularStringField(value: &self.emptyTitle) }()
       case 7: try { try decoder.decodeSingularStringField(value: &self.emptyDetail) }()
@@ -37017,9 +36718,6 @@ nonisolated extension ClientChannelsSlice: SwiftProtobuf.Message, SwiftProtobuf.
     if !self.unreadLabel.isEmpty {
       try visitor.visitSingularStringField(value: self.unreadLabel, fieldNumber: 3)
     }
-    if self.enabled != false {
-      try visitor.visitSingularBoolField(value: self.enabled, fieldNumber: 4)
-    }
     if self.loading != false {
       try visitor.visitSingularBoolField(value: self.loading, fieldNumber: 5)
     }
@@ -37042,7 +36740,6 @@ nonisolated extension ClientChannelsSlice: SwiftProtobuf.Message, SwiftProtobuf.
     if lhs.channels != rhs.channels {return false}
     if lhs.unread != rhs.unread {return false}
     if lhs.unreadLabel != rhs.unreadLabel {return false}
-    if lhs.enabled != rhs.enabled {return false}
     if lhs.loading != rhs.loading {return false}
     if lhs.emptyTitle != rhs.emptyTitle {return false}
     if lhs.emptyDetail != rhs.emptyDetail {return false}
@@ -37055,7 +36752,7 @@ nonisolated extension ClientChannelsSlice: SwiftProtobuf.Message, SwiftProtobuf.
 
 nonisolated extension ClientChannelListRow: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ChannelListRow"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}name\0\u{1}enabled\0\u{1}unread\0\u{1}claims\0\u{1}members\0\u{1}running\0\u{1}detail\0\u{1}selected\0\u{3}last_message_at_millis\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}name\0\u{2}\u{2}unread\0\u{1}claims\0\u{1}members\0\u{1}running\0\u{1}detail\0\u{1}selected\0\u{3}last_message_at_millis\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -37065,7 +36762,6 @@ nonisolated extension ClientChannelListRow: SwiftProtobuf.Message, SwiftProtobuf
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.projectID) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self.name) }()
-      case 3: try { try decoder.decodeSingularBoolField(value: &self.enabled) }()
       case 4: try { try decoder.decodeSingularInt32Field(value: &self.unread) }()
       case 5: try { try decoder.decodeSingularInt32Field(value: &self.claims) }()
       case 6: try { try decoder.decodeSingularInt32Field(value: &self.members) }()
@@ -37084,9 +36780,6 @@ nonisolated extension ClientChannelListRow: SwiftProtobuf.Message, SwiftProtobuf
     }
     if !self.name.isEmpty {
       try visitor.visitSingularStringField(value: self.name, fieldNumber: 2)
-    }
-    if self.enabled != false {
-      try visitor.visitSingularBoolField(value: self.enabled, fieldNumber: 3)
     }
     if self.unread != 0 {
       try visitor.visitSingularInt32Field(value: self.unread, fieldNumber: 4)
@@ -37115,7 +36808,6 @@ nonisolated extension ClientChannelListRow: SwiftProtobuf.Message, SwiftProtobuf
   public static func ==(lhs: ClientChannelListRow, rhs: ClientChannelListRow) -> Bool {
     if lhs.projectID != rhs.projectID {return false}
     if lhs.name != rhs.name {return false}
-    if lhs.enabled != rhs.enabled {return false}
     if lhs.unread != rhs.unread {return false}
     if lhs.claims != rhs.claims {return false}
     if lhs.members != rhs.members {return false}
@@ -37130,13 +36822,12 @@ nonisolated extension ClientChannelListRow: SwiftProtobuf.Message, SwiftProtobuf
 
 nonisolated extension ClientChannelStreamView: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ChannelStreamView"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}channel\0\u{1}title\0\u{1}subtitle\0\u{1}enabled\0\u{1}loading\0\u{1}error\0\u{3}claims_summary\0\u{1}rows\0\u{3}first_unread_row_id\0\u{1}unread\0\u{1}claims\0\u{1}members\0\u{1}pins\0\u{1}composer\0\u{3}claims_tab\0\u{3}members_tab\0\u{3}pins_tab\0\u{3}action_error\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}channel\0\u{1}title\0\u{1}subtitle\0\u{2}\u{2}loading\0\u{1}error\0\u{3}claims_summary\0\u{1}rows\0\u{3}first_unread_row_id\0\u{1}unread\0\u{1}claims\0\u{1}members\0\u{1}pins\0\u{1}composer\0\u{3}claims_tab\0\u{3}members_tab\0\u{3}pins_tab\0\u{3}action_error\0")
 
   fileprivate class _StorageClass {
     var _channel: ClientChannelRef? = nil
     var _title: String = String()
     var _subtitle: String = String()
-    var _enabled: Bool = false
     var _loading: Bool = false
     var _error: String = String()
     var _claimsSummary: String = String()
@@ -37164,7 +36855,6 @@ nonisolated extension ClientChannelStreamView: SwiftProtobuf.Message, SwiftProto
       _channel = source._channel
       _title = source._title
       _subtitle = source._subtitle
-      _enabled = source._enabled
       _loading = source._loading
       _error = source._error
       _claimsSummary = source._claimsSummary
@@ -37200,7 +36890,6 @@ nonisolated extension ClientChannelStreamView: SwiftProtobuf.Message, SwiftProto
         case 1: try { try decoder.decodeSingularMessageField(value: &_storage._channel) }()
         case 2: try { try decoder.decodeSingularStringField(value: &_storage._title) }()
         case 3: try { try decoder.decodeSingularStringField(value: &_storage._subtitle) }()
-        case 4: try { try decoder.decodeSingularBoolField(value: &_storage._enabled) }()
         case 5: try { try decoder.decodeSingularBoolField(value: &_storage._loading) }()
         case 6: try { try decoder.decodeSingularStringField(value: &_storage._error) }()
         case 7: try { try decoder.decodeSingularStringField(value: &_storage._claimsSummary) }()
@@ -37235,9 +36924,6 @@ nonisolated extension ClientChannelStreamView: SwiftProtobuf.Message, SwiftProto
       }
       if !_storage._subtitle.isEmpty {
         try visitor.visitSingularStringField(value: _storage._subtitle, fieldNumber: 3)
-      }
-      if _storage._enabled != false {
-        try visitor.visitSingularBoolField(value: _storage._enabled, fieldNumber: 4)
       }
       if _storage._loading != false {
         try visitor.visitSingularBoolField(value: _storage._loading, fieldNumber: 5)
@@ -37293,7 +36979,6 @@ nonisolated extension ClientChannelStreamView: SwiftProtobuf.Message, SwiftProto
         if _storage._channel != rhs_storage._channel {return false}
         if _storage._title != rhs_storage._title {return false}
         if _storage._subtitle != rhs_storage._subtitle {return false}
-        if _storage._enabled != rhs_storage._enabled {return false}
         if _storage._loading != rhs_storage._loading {return false}
         if _storage._error != rhs_storage._error {return false}
         if _storage._claimsSummary != rhs_storage._claimsSummary {return false}
@@ -37660,7 +37345,7 @@ nonisolated extension ClientChannelClaimRow: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension ClientChannelMemberRow: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ChannelMemberRow"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{1}title\0\u{1}initials\0\u{3}color_index\0\u{1}harness\0\u{1}model\0\u{1}presence\0\u{3}presence_label\0\u{1}detail\0\u{1}holds\0\u{3}waiting_on\0\u{1}enabled\0\u{3}board_id\0\u{1}machine\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{1}title\0\u{1}initials\0\u{3}color_index\0\u{1}harness\0\u{1}model\0\u{1}presence\0\u{3}presence_label\0\u{1}detail\0\u{1}holds\0\u{3}waiting_on\0\u{4}\u{2}board_id\0\u{1}machine\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -37679,7 +37364,6 @@ nonisolated extension ClientChannelMemberRow: SwiftProtobuf.Message, SwiftProtob
       case 9: try { try decoder.decodeSingularStringField(value: &self.detail) }()
       case 10: try { try decoder.decodeRepeatedStringField(value: &self.holds) }()
       case 11: try { try decoder.decodeRepeatedStringField(value: &self.waitingOn) }()
-      case 12: try { try decoder.decodeSingularBoolField(value: &self.enabled) }()
       case 13: try { try decoder.decodeSingularStringField(value: &self.boardID) }()
       case 14: try { try decoder.decodeSingularStringField(value: &self.machine) }()
       default: break
@@ -37721,9 +37405,6 @@ nonisolated extension ClientChannelMemberRow: SwiftProtobuf.Message, SwiftProtob
     if !self.waitingOn.isEmpty {
       try visitor.visitRepeatedStringField(value: self.waitingOn, fieldNumber: 11)
     }
-    if self.enabled != false {
-      try visitor.visitSingularBoolField(value: self.enabled, fieldNumber: 12)
-    }
     if !self.boardID.isEmpty {
       try visitor.visitSingularStringField(value: self.boardID, fieldNumber: 13)
     }
@@ -37745,7 +37426,6 @@ nonisolated extension ClientChannelMemberRow: SwiftProtobuf.Message, SwiftProtob
     if lhs.detail != rhs.detail {return false}
     if lhs.holds != rhs.holds {return false}
     if lhs.waitingOn != rhs.waitingOn {return false}
-    if lhs.enabled != rhs.enabled {return false}
     if lhs.boardID != rhs.boardID {return false}
     if lhs.machine != rhs.machine {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
@@ -37963,156 +37643,6 @@ nonisolated extension ClientChannelKindOption: SwiftProtobuf.Message, SwiftProto
     if lhs.kind != rhs.kind {return false}
     if lhs.label != rhs.label {return false}
     if lhs.detail != rhs.detail {return false}
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
-nonisolated extension ClientChannelSettingsSlice: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".ChannelSettingsSlice"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}global\0\u{1}projects\0\u{1}boards\0\u{1}saving\0\u{1}error\0")
-
-  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularBoolField(value: &self.global) }()
-      case 2: try { try decoder.decodeRepeatedMessageField(value: &self.projects) }()
-      case 3: try { try decoder.decodeRepeatedMessageField(value: &self.boards) }()
-      case 4: try { try decoder.decodeSingularBoolField(value: &self.saving) }()
-      case 5: try { try decoder.decodeSingularStringField(value: &self.error) }()
-      default: break
-      }
-    }
-  }
-
-  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if self.global != false {
-      try visitor.visitSingularBoolField(value: self.global, fieldNumber: 1)
-    }
-    if !self.projects.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.projects, fieldNumber: 2)
-    }
-    if !self.boards.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.boards, fieldNumber: 3)
-    }
-    if self.saving != false {
-      try visitor.visitSingularBoolField(value: self.saving, fieldNumber: 4)
-    }
-    if !self.error.isEmpty {
-      try visitor.visitSingularStringField(value: self.error, fieldNumber: 5)
-    }
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  public static func ==(lhs: ClientChannelSettingsSlice, rhs: ClientChannelSettingsSlice) -> Bool {
-    if lhs.global != rhs.global {return false}
-    if lhs.projects != rhs.projects {return false}
-    if lhs.boards != rhs.boards {return false}
-    if lhs.saving != rhs.saving {return false}
-    if lhs.error != rhs.error {return false}
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
-nonisolated extension ClientChannelSettingRow: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".ChannelSettingRow"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{3}project_id\0\u{1}mode\0\u{1}effective\0\u{1}label\0\u{1}options\0\u{1}detail\0")
-
-  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.name) }()
-      case 3: try { try decoder.decodeSingularStringField(value: &self.projectID) }()
-      case 4: try { try decoder.decodeSingularEnumField(value: &self.mode) }()
-      case 5: try { try decoder.decodeSingularBoolField(value: &self.effective) }()
-      case 6: try { try decoder.decodeSingularStringField(value: &self.label) }()
-      case 7: try { try decoder.decodeRepeatedMessageField(value: &self.options) }()
-      case 8: try { try decoder.decodeSingularStringField(value: &self.detail) }()
-      default: break
-      }
-    }
-  }
-
-  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if !self.id.isEmpty {
-      try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
-    }
-    if !self.name.isEmpty {
-      try visitor.visitSingularStringField(value: self.name, fieldNumber: 2)
-    }
-    if !self.projectID.isEmpty {
-      try visitor.visitSingularStringField(value: self.projectID, fieldNumber: 3)
-    }
-    if self.mode != .inherit {
-      try visitor.visitSingularEnumField(value: self.mode, fieldNumber: 4)
-    }
-    if self.effective != false {
-      try visitor.visitSingularBoolField(value: self.effective, fieldNumber: 5)
-    }
-    if !self.label.isEmpty {
-      try visitor.visitSingularStringField(value: self.label, fieldNumber: 6)
-    }
-    if !self.options.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.options, fieldNumber: 7)
-    }
-    if !self.detail.isEmpty {
-      try visitor.visitSingularStringField(value: self.detail, fieldNumber: 8)
-    }
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  public static func ==(lhs: ClientChannelSettingRow, rhs: ClientChannelSettingRow) -> Bool {
-    if lhs.id != rhs.id {return false}
-    if lhs.name != rhs.name {return false}
-    if lhs.projectID != rhs.projectID {return false}
-    if lhs.mode != rhs.mode {return false}
-    if lhs.effective != rhs.effective {return false}
-    if lhs.label != rhs.label {return false}
-    if lhs.options != rhs.options {return false}
-    if lhs.detail != rhs.detail {return false}
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
-nonisolated extension ClientChannelSettingOption: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".ChannelSettingOption"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}mode\0\u{1}label\0")
-
-  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularEnumField(value: &self.mode) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.label) }()
-      default: break
-      }
-    }
-  }
-
-  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if self.mode != .inherit {
-      try visitor.visitSingularEnumField(value: self.mode, fieldNumber: 1)
-    }
-    if !self.label.isEmpty {
-      try visitor.visitSingularStringField(value: self.label, fieldNumber: 2)
-    }
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  public static func ==(lhs: ClientChannelSettingOption, rhs: ClientChannelSettingOption) -> Bool {
-    if lhs.mode != rhs.mode {return false}
-    if lhs.label != rhs.label {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

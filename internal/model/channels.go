@@ -2,9 +2,9 @@ package model
 
 import "strings"
 
-// Agent channels (experimental): one message channel per project on each
-// daemon. Messages, deliveries and read positions are daemon-local; the
-// settings that switch the feature on are replicated (kv.experimental).
+// Agent channels: one message channel per project on each daemon, on for
+// every project and card. Messages, deliveries and read positions are
+// daemon-local.
 
 // Channel message kinds. Agents and humans write note, request, done and
 // decision; Dieter writes claim, hold and release coordination events.
@@ -153,40 +153,4 @@ type ChannelClaim struct {
 	// another machine's: advisory here, never blocking.
 	Daemon string `json:"daemon,omitempty"`
 	Remote bool   `json:"remote,omitempty"`
-}
-
-// ChannelSettings is the replicated switch of the feature: Global, plus
-// project and board overrides (true is on, false is off, absent inherits).
-type ChannelSettings struct {
-	Global   bool
-	Projects map[string]bool
-	Boards   map[string]bool
-}
-
-// Enabled resolves a card's setting: board overrides project overrides
-// global. boardID is empty for chats.
-func (s ChannelSettings) Enabled(projectID, boardID string) bool {
-	if boardID != "" {
-		if value, ok := s.Boards[boardID]; ok {
-			return value
-		}
-	}
-	if value, ok := s.Projects[projectID]; ok {
-		return value
-	}
-	return s.Global
-}
-
-// ProjectEnabled reports whether a project channel is in use: its own
-// resolution, or any board override that switches it on.
-func (s ChannelSettings) ProjectEnabled(projectID string, boardIDs []string) bool {
-	if s.Enabled(projectID, "") {
-		return true
-	}
-	for _, boardID := range boardIDs {
-		if s.Boards[boardID] {
-			return true
-		}
-	}
-	return false
 }

@@ -31,7 +31,6 @@ internal fun SettingsScreen(store: MobileStore) {
     val dynamic by store.theme.dynamicColor.collectAsState()
     val interfaceMode by store.layout.interfaceMode.collectAsState()
     val outbox by store.workspace.outbox.collectAsState()
-    val channels by store.channels.settings.collectAsState()
     var signOut by remember { mutableStateOf(false) }
     var gatewayEditor by remember { mutableStateOf<GatewayEntry?>(null) }
     var addGateway by remember { mutableStateOf(false) }
@@ -117,28 +116,6 @@ internal fun SettingsScreen(store: MobileStore) {
                         )
                     },
                 )
-            }
-            item("experimental") {
-                SectionHeader("Experimental")
-                ListRow(
-                    "Agent channels",
-                    position = Position.SINGLE,
-                    subtitle =
-                        "Agents of a project, on all your machines, message each other and claim " +
-                            "the files they change. Applies to every machine.",
-                    glyph = Glyph.TAG,
-                    tile = Color(0xFF0A84FF),
-                    subtitleMaxLines = 3,
-                    trailing = {
-                        DSwitch(
-                            channels.global,
-                            store.channels::setEnabled,
-                            Modifier.testTag("settings-channels"),
-                            enabled = !channels.saving,
-                        )
-                    },
-                )
-                if (channels.error.isNotEmpty()) SectionFooter(channels.error)
             }
             item("connection") {
                 SectionHeader("Connection")

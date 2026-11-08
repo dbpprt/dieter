@@ -151,32 +151,6 @@ public enum Dieter_V1_ChannelService: Sendable {
                 type: .unary
             )
         }
-        /// Namespace for "GetChannelSettings" metadata.
-        public enum GetChannelSettings: Sendable {
-            /// Request type for "GetChannelSettings".
-            public typealias Input = Dieter_V1_GetChannelSettingsRequest
-            /// Response type for "GetChannelSettings".
-            public typealias Output = Dieter_V1_ChannelSettings
-            /// Descriptor for "GetChannelSettings".
-            public static let descriptor = GRPCCore.MethodDescriptor(
-                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.ChannelService"),
-                method: "GetChannelSettings",
-                type: .unary
-            )
-        }
-        /// Namespace for "SetChannelSetting" metadata.
-        public enum SetChannelSetting: Sendable {
-            /// Request type for "SetChannelSetting".
-            public typealias Input = Dieter_V1_SetChannelSettingRequest
-            /// Response type for "SetChannelSetting".
-            public typealias Output = Dieter_V1_ChannelSettings
-            /// Descriptor for "SetChannelSetting".
-            public static let descriptor = GRPCCore.MethodDescriptor(
-                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.ChannelService"),
-                method: "SetChannelSetting",
-                type: .unary
-            )
-        }
         /// Namespace for "WatchChannel" metadata.
         public enum WatchChannel: Sendable {
             /// Request type for "WatchChannel".
@@ -202,8 +176,6 @@ public enum Dieter_V1_ChannelService: Sendable {
             ListChannelClaims.descriptor,
             ReleaseChannelClaims.descriptor,
             HandleChannelHook.descriptor,
-            GetChannelSettings.descriptor,
-            SetChannelSetting.descriptor,
             WatchChannel.descriptor
         ]
     }
@@ -226,17 +198,13 @@ extension Dieter_V1_ChannelService {
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > Agent channels (experimental): one message channel per project on each
-    /// > daemon, direct messages to cards, threads, pinned decisions and file claims
-    /// > that keep agents sharing a checkout from overwriting each other.
-    /// > 
-    /// > The feature is off unless the replicated KV namespace "experimental" enables
-    /// > it globally (key "channels"), per project ("channels.project.<id>") or per
-    /// > board ("channels.board.<id>"); board overrides project overrides global.
+    /// > Agent channels: one message channel per project on each daemon, direct
+    /// > messages to cards, threads, pinned decisions and file claims that keep
+    /// > agents sharing a checkout from overwriting each other. Every project and
+    /// > card has them; there is no switch.
     /// > 
     /// > Callers are identified by the daemon: a live turn token (local route only)
-    /// > makes the caller that card's agent; any other caller is a human. Agents
-    /// > cannot change channel settings.
+    /// > makes the caller that card's agent; any other caller is a human.
     public protocol ClientProtocol: Sendable {
         /// Call the "ListChannels" method.
         ///
@@ -471,52 +439,6 @@ extension Dieter_V1_ChannelService {
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ChannelHookResponse>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
-        /// Call the "GetChannelSettings" method.
-        ///
-        /// > Source IDL Documentation:
-        /// >
-        /// > Returns the replicated channel settings.
-        ///
-        /// - Parameters:
-        ///   - request: A request containing a single `Dieter_V1_GetChannelSettingsRequest` message.
-        ///   - serializer: A serializer for `Dieter_V1_GetChannelSettingsRequest` messages.
-        ///   - deserializer: A deserializer for `Dieter_V1_ChannelSettings` messages.
-        ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response and returns its result to
-        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
-        ///       already finished.
-        /// - Returns: The result of `handleResponse`.
-        func getChannelSettings<Result>(
-            request: GRPCCore.ClientRequest<Dieter_V1_GetChannelSettingsRequest>,
-            serializer: some GRPCCore.MessageSerializer<Dieter_V1_GetChannelSettingsRequest>,
-            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ChannelSettings>,
-            options: GRPCCore.CallOptions,
-            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ChannelSettings>) async throws -> Result
-        ) async throws -> Result where Result: Sendable
-
-        /// Call the "SetChannelSetting" method.
-        ///
-        /// > Source IDL Documentation:
-        /// >
-        /// > Sets the global switch or a project/board override. Refuses agents.
-        ///
-        /// - Parameters:
-        ///   - request: A request containing a single `Dieter_V1_SetChannelSettingRequest` message.
-        ///   - serializer: A serializer for `Dieter_V1_SetChannelSettingRequest` messages.
-        ///   - deserializer: A deserializer for `Dieter_V1_ChannelSettings` messages.
-        ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response and returns its result to
-        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
-        ///       already finished.
-        /// - Returns: The result of `handleResponse`.
-        func setChannelSetting<Result>(
-            request: GRPCCore.ClientRequest<Dieter_V1_SetChannelSettingRequest>,
-            serializer: some GRPCCore.MessageSerializer<Dieter_V1_SetChannelSettingRequest>,
-            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ChannelSettings>,
-            options: GRPCCore.CallOptions,
-            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ChannelSettings>) async throws -> Result
-        ) async throws -> Result where Result: Sendable
-
         /// Call the "WatchChannel" method.
         ///
         /// > Source IDL Documentation:
@@ -549,17 +471,13 @@ extension Dieter_V1_ChannelService {
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > Agent channels (experimental): one message channel per project on each
-    /// > daemon, direct messages to cards, threads, pinned decisions and file claims
-    /// > that keep agents sharing a checkout from overwriting each other.
-    /// > 
-    /// > The feature is off unless the replicated KV namespace "experimental" enables
-    /// > it globally (key "channels"), per project ("channels.project.<id>") or per
-    /// > board ("channels.board.<id>"); board overrides project overrides global.
+    /// > Agent channels: one message channel per project on each daemon, direct
+    /// > messages to cards, threads, pinned decisions and file claims that keep
+    /// > agents sharing a checkout from overwriting each other. Every project and
+    /// > card has them; there is no switch.
     /// > 
     /// > Callers are identified by the daemon: a live turn token (local route only)
-    /// > makes the caller that card's agent; any other caller is a human. Agents
-    /// > cannot change channel settings.
+    /// > makes the caller that card's agent; any other caller is a human.
     public struct Client<Transport>: ClientProtocol where Transport: GRPCCore.ClientTransport {
         private let client: GRPCCore.GRPCClient<Transport>
 
@@ -914,74 +832,6 @@ extension Dieter_V1_ChannelService {
             )
         }
 
-        /// Call the "GetChannelSettings" method.
-        ///
-        /// > Source IDL Documentation:
-        /// >
-        /// > Returns the replicated channel settings.
-        ///
-        /// - Parameters:
-        ///   - request: A request containing a single `Dieter_V1_GetChannelSettingsRequest` message.
-        ///   - serializer: A serializer for `Dieter_V1_GetChannelSettingsRequest` messages.
-        ///   - deserializer: A deserializer for `Dieter_V1_ChannelSettings` messages.
-        ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response and returns its result to
-        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
-        ///       already finished.
-        /// - Returns: The result of `handleResponse`.
-        public func getChannelSettings<Result>(
-            request: GRPCCore.ClientRequest<Dieter_V1_GetChannelSettingsRequest>,
-            serializer: some GRPCCore.MessageSerializer<Dieter_V1_GetChannelSettingsRequest>,
-            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ChannelSettings>,
-            options: GRPCCore.CallOptions = .defaults,
-            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ChannelSettings>) async throws -> Result = { response in
-                try response.message
-            }
-        ) async throws -> Result where Result: Sendable {
-            try await self.client.unary(
-                request: request,
-                descriptor: Dieter_V1_ChannelService.Method.GetChannelSettings.descriptor,
-                serializer: serializer,
-                deserializer: deserializer,
-                options: options,
-                onResponse: handleResponse
-            )
-        }
-
-        /// Call the "SetChannelSetting" method.
-        ///
-        /// > Source IDL Documentation:
-        /// >
-        /// > Sets the global switch or a project/board override. Refuses agents.
-        ///
-        /// - Parameters:
-        ///   - request: A request containing a single `Dieter_V1_SetChannelSettingRequest` message.
-        ///   - serializer: A serializer for `Dieter_V1_SetChannelSettingRequest` messages.
-        ///   - deserializer: A deserializer for `Dieter_V1_ChannelSettings` messages.
-        ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response and returns its result to
-        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
-        ///       already finished.
-        /// - Returns: The result of `handleResponse`.
-        public func setChannelSetting<Result>(
-            request: GRPCCore.ClientRequest<Dieter_V1_SetChannelSettingRequest>,
-            serializer: some GRPCCore.MessageSerializer<Dieter_V1_SetChannelSettingRequest>,
-            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ChannelSettings>,
-            options: GRPCCore.CallOptions = .defaults,
-            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ChannelSettings>) async throws -> Result = { response in
-                try response.message
-            }
-        ) async throws -> Result where Result: Sendable {
-            try await self.client.unary(
-                request: request,
-                descriptor: Dieter_V1_ChannelService.Method.SetChannelSetting.descriptor,
-                serializer: serializer,
-                deserializer: deserializer,
-                options: options,
-                onResponse: handleResponse
-            )
-        }
-
         /// Call the "WatchChannel" method.
         ///
         /// > Source IDL Documentation:
@@ -1307,64 +1157,6 @@ extension Dieter_V1_ChannelService.ClientProtocol {
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ChannelHookRequest>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_ChannelHookResponse>(),
-            options: options,
-            onResponse: handleResponse
-        )
-    }
-
-    /// Call the "GetChannelSettings" method.
-    ///
-    /// > Source IDL Documentation:
-    /// >
-    /// > Returns the replicated channel settings.
-    ///
-    /// - Parameters:
-    ///   - request: A request containing a single `Dieter_V1_GetChannelSettingsRequest` message.
-    ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response and returns its result to
-    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
-    ///       already finished.
-    /// - Returns: The result of `handleResponse`.
-    public func getChannelSettings<Result>(
-        request: GRPCCore.ClientRequest<Dieter_V1_GetChannelSettingsRequest>,
-        options: GRPCCore.CallOptions = .defaults,
-        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ChannelSettings>) async throws -> Result = { response in
-            try response.message
-        }
-    ) async throws -> Result where Result: Sendable {
-        try await self.getChannelSettings(
-            request: request,
-            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_GetChannelSettingsRequest>(),
-            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_ChannelSettings>(),
-            options: options,
-            onResponse: handleResponse
-        )
-    }
-
-    /// Call the "SetChannelSetting" method.
-    ///
-    /// > Source IDL Documentation:
-    /// >
-    /// > Sets the global switch or a project/board override. Refuses agents.
-    ///
-    /// - Parameters:
-    ///   - request: A request containing a single `Dieter_V1_SetChannelSettingRequest` message.
-    ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response and returns its result to
-    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
-    ///       already finished.
-    /// - Returns: The result of `handleResponse`.
-    public func setChannelSetting<Result>(
-        request: GRPCCore.ClientRequest<Dieter_V1_SetChannelSettingRequest>,
-        options: GRPCCore.CallOptions = .defaults,
-        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ChannelSettings>) async throws -> Result = { response in
-            try response.message
-        }
-    ) async throws -> Result where Result: Sendable {
-        try await self.setChannelSetting(
-            request: request,
-            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_SetChannelSettingRequest>(),
-            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_ChannelSettings>(),
             options: options,
             onResponse: handleResponse
         )
@@ -1728,72 +1520,6 @@ extension Dieter_V1_ChannelService.ClientProtocol {
             metadata: metadata
         )
         return try await self.handleChannelHook(
-            request: request,
-            options: options,
-            onResponse: handleResponse
-        )
-    }
-
-    /// Call the "GetChannelSettings" method.
-    ///
-    /// > Source IDL Documentation:
-    /// >
-    /// > Returns the replicated channel settings.
-    ///
-    /// - Parameters:
-    ///   - message: request message to send.
-    ///   - metadata: Additional metadata to send, defaults to empty.
-    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response and returns its result to
-    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
-    ///       already finished.
-    /// - Returns: The result of `handleResponse`.
-    public func getChannelSettings<Result>(
-        _ message: Dieter_V1_GetChannelSettingsRequest,
-        metadata: GRPCCore.Metadata = [:],
-        options: GRPCCore.CallOptions = .defaults,
-        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ChannelSettings>) async throws -> Result = { response in
-            try response.message
-        }
-    ) async throws -> Result where Result: Sendable {
-        let request = GRPCCore.ClientRequest<Dieter_V1_GetChannelSettingsRequest>(
-            message: message,
-            metadata: metadata
-        )
-        return try await self.getChannelSettings(
-            request: request,
-            options: options,
-            onResponse: handleResponse
-        )
-    }
-
-    /// Call the "SetChannelSetting" method.
-    ///
-    /// > Source IDL Documentation:
-    /// >
-    /// > Sets the global switch or a project/board override. Refuses agents.
-    ///
-    /// - Parameters:
-    ///   - message: request message to send.
-    ///   - metadata: Additional metadata to send, defaults to empty.
-    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response and returns its result to
-    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
-    ///       already finished.
-    /// - Returns: The result of `handleResponse`.
-    public func setChannelSetting<Result>(
-        _ message: Dieter_V1_SetChannelSettingRequest,
-        metadata: GRPCCore.Metadata = [:],
-        options: GRPCCore.CallOptions = .defaults,
-        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ChannelSettings>) async throws -> Result = { response in
-            try response.message
-        }
-    ) async throws -> Result where Result: Sendable {
-        let request = GRPCCore.ClientRequest<Dieter_V1_SetChannelSettingRequest>(
-            message: message,
-            metadata: metadata
-        )
-        return try await self.setChannelSetting(
             request: request,
             options: options,
             onResponse: handleResponse

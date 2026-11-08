@@ -64,12 +64,6 @@ const (
 	// ChannelServiceHandleChannelHookProcedure is the fully-qualified name of the ChannelService's
 	// HandleChannelHook RPC.
 	ChannelServiceHandleChannelHookProcedure = "/dieter.v1.ChannelService/HandleChannelHook"
-	// ChannelServiceGetChannelSettingsProcedure is the fully-qualified name of the ChannelService's
-	// GetChannelSettings RPC.
-	ChannelServiceGetChannelSettingsProcedure = "/dieter.v1.ChannelService/GetChannelSettings"
-	// ChannelServiceSetChannelSettingProcedure is the fully-qualified name of the ChannelService's
-	// SetChannelSetting RPC.
-	ChannelServiceSetChannelSettingProcedure = "/dieter.v1.ChannelService/SetChannelSetting"
 	// ChannelServiceWatchChannelProcedure is the fully-qualified name of the ChannelService's
 	// WatchChannel RPC.
 	ChannelServiceWatchChannelProcedure = "/dieter.v1.ChannelService/WatchChannel"
@@ -100,10 +94,6 @@ type ChannelServiceClient interface {
 	// Answers a harness hook (Claude Code / Codex hook JSON on stdin) for the
 	// calling agent. An empty output means no opinion. Fails open.
 	HandleChannelHook(context.Context, *v1.ChannelHookRequest) (*v1.ChannelHookResponse, error)
-	// Returns the replicated channel settings.
-	GetChannelSettings(context.Context, *v1.GetChannelSettingsRequest) (*v1.ChannelSettings, error)
-	// Sets the global switch or a project/board override. Refuses agents.
-	SetChannelSetting(context.Context, *v1.SetChannelSettingRequest) (*v1.ChannelSettings, error)
 	// Streams a project channel: new messages, claims and the summary.
 	WatchChannel(context.Context, *v1.WatchChannelRequest) (*connect.ServerStreamForClient[v1.ChannelFrame], error)
 }
@@ -179,18 +169,6 @@ func NewChannelServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(channelServiceMethods.ByName("HandleChannelHook")),
 			connect.WithClientOptions(opts...),
 		),
-		getChannelSettings: connect.NewClient[v1.GetChannelSettingsRequest, v1.ChannelSettings](
-			httpClient,
-			baseURL+ChannelServiceGetChannelSettingsProcedure,
-			connect.WithSchema(channelServiceMethods.ByName("GetChannelSettings")),
-			connect.WithClientOptions(opts...),
-		),
-		setChannelSetting: connect.NewClient[v1.SetChannelSettingRequest, v1.ChannelSettings](
-			httpClient,
-			baseURL+ChannelServiceSetChannelSettingProcedure,
-			connect.WithSchema(channelServiceMethods.ByName("SetChannelSetting")),
-			connect.WithClientOptions(opts...),
-		),
 		watchChannel: connect.NewClient[v1.WatchChannelRequest, v1.ChannelFrame](
 			httpClient,
 			baseURL+ChannelServiceWatchChannelProcedure,
@@ -212,8 +190,6 @@ type channelServiceClient struct {
 	listChannelClaims    *connect.Client[v1.ListChannelClaimsRequest, v1.ChannelClaims]
 	releaseChannelClaims *connect.Client[v1.ReleaseChannelClaimsRequest, v1.ChannelClaims]
 	handleChannelHook    *connect.Client[v1.ChannelHookRequest, v1.ChannelHookResponse]
-	getChannelSettings   *connect.Client[v1.GetChannelSettingsRequest, v1.ChannelSettings]
-	setChannelSetting    *connect.Client[v1.SetChannelSettingRequest, v1.ChannelSettings]
 	watchChannel         *connect.Client[v1.WatchChannelRequest, v1.ChannelFrame]
 }
 
@@ -307,24 +283,6 @@ func (c *channelServiceClient) HandleChannelHook(ctx context.Context, req *v1.Ch
 	return nil, err
 }
 
-// GetChannelSettings calls dieter.v1.ChannelService.GetChannelSettings.
-func (c *channelServiceClient) GetChannelSettings(ctx context.Context, req *v1.GetChannelSettingsRequest) (*v1.ChannelSettings, error) {
-	response, err := c.getChannelSettings.CallUnary(ctx, connect.NewRequest(req))
-	if response != nil {
-		return response.Msg, err
-	}
-	return nil, err
-}
-
-// SetChannelSetting calls dieter.v1.ChannelService.SetChannelSetting.
-func (c *channelServiceClient) SetChannelSetting(ctx context.Context, req *v1.SetChannelSettingRequest) (*v1.ChannelSettings, error) {
-	response, err := c.setChannelSetting.CallUnary(ctx, connect.NewRequest(req))
-	if response != nil {
-		return response.Msg, err
-	}
-	return nil, err
-}
-
 // WatchChannel calls dieter.v1.ChannelService.WatchChannel.
 func (c *channelServiceClient) WatchChannel(ctx context.Context, req *v1.WatchChannelRequest) (*connect.ServerStreamForClient[v1.ChannelFrame], error) {
 	return c.watchChannel.CallServerStream(ctx, connect.NewRequest(req))
@@ -355,10 +313,6 @@ type ChannelServiceHandler interface {
 	// Answers a harness hook (Claude Code / Codex hook JSON on stdin) for the
 	// calling agent. An empty output means no opinion. Fails open.
 	HandleChannelHook(context.Context, *v1.ChannelHookRequest) (*v1.ChannelHookResponse, error)
-	// Returns the replicated channel settings.
-	GetChannelSettings(context.Context, *v1.GetChannelSettingsRequest) (*v1.ChannelSettings, error)
-	// Sets the global switch or a project/board override. Refuses agents.
-	SetChannelSetting(context.Context, *v1.SetChannelSettingRequest) (*v1.ChannelSettings, error)
 	// Streams a project channel: new messages, claims and the summary.
 	WatchChannel(context.Context, *v1.WatchChannelRequest, *connect.ServerStream[v1.ChannelFrame]) error
 }
@@ -430,18 +384,6 @@ func NewChannelServiceHandler(svc ChannelServiceHandler, opts ...connect.Handler
 		connect.WithSchema(channelServiceMethods.ByName("HandleChannelHook")),
 		connect.WithHandlerOptions(opts...),
 	)
-	channelServiceGetChannelSettingsHandler := connect.NewUnaryHandlerSimple(
-		ChannelServiceGetChannelSettingsProcedure,
-		svc.GetChannelSettings,
-		connect.WithSchema(channelServiceMethods.ByName("GetChannelSettings")),
-		connect.WithHandlerOptions(opts...),
-	)
-	channelServiceSetChannelSettingHandler := connect.NewUnaryHandlerSimple(
-		ChannelServiceSetChannelSettingProcedure,
-		svc.SetChannelSetting,
-		connect.WithSchema(channelServiceMethods.ByName("SetChannelSetting")),
-		connect.WithHandlerOptions(opts...),
-	)
 	channelServiceWatchChannelHandler := connect.NewServerStreamHandlerSimple(
 		ChannelServiceWatchChannelProcedure,
 		svc.WatchChannel,
@@ -470,10 +412,6 @@ func NewChannelServiceHandler(svc ChannelServiceHandler, opts ...connect.Handler
 			channelServiceReleaseChannelClaimsHandler.ServeHTTP(w, r)
 		case ChannelServiceHandleChannelHookProcedure:
 			channelServiceHandleChannelHookHandler.ServeHTTP(w, r)
-		case ChannelServiceGetChannelSettingsProcedure:
-			channelServiceGetChannelSettingsHandler.ServeHTTP(w, r)
-		case ChannelServiceSetChannelSettingProcedure:
-			channelServiceSetChannelSettingHandler.ServeHTTP(w, r)
 		case ChannelServiceWatchChannelProcedure:
 			channelServiceWatchChannelHandler.ServeHTTP(w, r)
 		default:
@@ -523,14 +461,6 @@ func (UnimplementedChannelServiceHandler) ReleaseChannelClaims(context.Context, 
 
 func (UnimplementedChannelServiceHandler) HandleChannelHook(context.Context, *v1.ChannelHookRequest) (*v1.ChannelHookResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.ChannelService.HandleChannelHook is not implemented"))
-}
-
-func (UnimplementedChannelServiceHandler) GetChannelSettings(context.Context, *v1.GetChannelSettingsRequest) (*v1.ChannelSettings, error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.ChannelService.GetChannelSettings is not implemented"))
-}
-
-func (UnimplementedChannelServiceHandler) SetChannelSetting(context.Context, *v1.SetChannelSettingRequest) (*v1.ChannelSettings, error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.ChannelService.SetChannelSetting is not implemented"))
 }
 
 func (UnimplementedChannelServiceHandler) WatchChannel(context.Context, *v1.WatchChannelRequest, *connect.ServerStream[v1.ChannelFrame]) error {

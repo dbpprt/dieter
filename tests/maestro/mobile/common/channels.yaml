@@ -6,12 +6,6 @@ appId: ${APP_ID}
     env:
       PLACE: channels
 - extendedWaitUntil:
-    visible: "Agent channels are off"
-    timeout: 30000
-- tapOn:
-    id: channels-enable
-    waitToSettleTimeoutMs: 500
-- extendedWaitUntil:
     visible: "#Isolated E2E"
     timeout: 60000
 - tapOn:
@@ -61,14 +55,3 @@ appId: ${APP_ID}
 - extendedWaitUntil:
     visible: "From agent channels"
     timeout: 30000
-- runFlow: back.yaml
-- runFlow:
-    file: more.yaml
-    env:
-      PLACE: settings
-- scrollUntilVisible:
-    element:
-      id: settings-channels
-- tapOn:
-    id: settings-channels
-    waitToSettleTimeoutMs: 500

@@ -47,7 +47,6 @@ import kotlin.time.Instant
 @Composable
 internal fun ChannelsScreen(store: MobileStore) {
     val slice by store.channels.slice.collectAsState()
-    val settings by store.channels.settings.collectAsState()
     val navigation by store.routes.collectAsState()
     val root = MobileRoute.Channels
     val open =
@@ -92,18 +91,6 @@ internal fun ChannelsScreen(store: MobileStore) {
                                 slice.empty_title,
                                 slice.empty_detail,
                                 Modifier.testTag("channels-empty"),
-                                action =
-                                    if (slice.enabled) null
-                                    else {
-                                        {
-                                            DButton(
-                                                "Turn on agent channels",
-                                                { store.channels.setEnabled(true) },
-                                                Modifier.testTag("channels-enable"),
-                                                loading = settings.saving,
-                                            )
-                                        }
-                                    },
                             )
                     }
                 else {
@@ -114,7 +101,7 @@ internal fun ChannelsScreen(store: MobileStore) {
                             Modifier.testTag("channel-row-${row.project_id}"),
                             position = Position.of(index, slice.channels.size),
                             subtitle = row.detail,
-                            leading = { ChannelMark(row.enabled) },
+                            leading = { ChannelMark() },
                             trailing = {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -144,17 +131,17 @@ internal fun ChannelsScreen(store: MobileStore) {
 }
 
 @Composable
-private fun ChannelMark(enabled: Boolean) {
+private fun ChannelMark() {
     Box(
         Modifier.size(30.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(if (enabled) palette.info.copy(alpha = .14f) else palette.fill),
+            .background(palette.info.copy(alpha = .14f)),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             Glyph.TAG,
             null,
-            tint = if (enabled) palette.info else palette.tertiaryLabel,
+            tint = palette.info,
             size = 16.dp,
             weight = GlyphWeight.SEMIBOLD,
         )

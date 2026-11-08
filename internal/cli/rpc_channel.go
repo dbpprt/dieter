@@ -14,16 +14,16 @@ import (
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 )
 
-const channelHelp = `Usage: dieter channel <list|messages|post|inbox|check|claims|release|pin|read|settings|watch|hook> [options]
+const channelHelp = `Usage: dieter channel <list|messages|post|inbox|check|claims|release|pin|read|watch|hook> [options]
 
-Agent channels (experimental): one message channel per project, shared by
-every machine of the account, with direct messages to cards, threads, pinned
-decisions and file claims that keep agents sharing a checkout from overwriting
-each other. A channel post interrupts nobody: agents read it when their next
-turn starts. A direct message (--to) reaches a running agent in its turn, and
-a person's --here reaches every running agent. Inside an agent turn
-(DIETER_TURN_TOKEN) the caller is that card's agent; otherwise you act as a
-person. Channels are off until switched on with "channel settings".
+Agent channels: one message channel per project, shared by every machine of
+the account, with direct messages to cards, threads, pinned decisions and file
+claims that keep agents sharing a checkout from overwriting each other. Every
+project and card has them. A channel post interrupts nobody: agents read it
+when their next turn starts. A direct message (--to) reaches a running agent
+in its turn, and a person's --here reaches every running agent. Inside an
+agent turn (DIETER_TURN_TOKEN) the caller is that card's agent; otherwise you
+act as a person.
 
   list      List project channels with unread counts and members on every machine
   messages  Page a project channel or one thread
@@ -34,7 +34,6 @@ person. Channels are off until switched on with "channel settings".
   release   Release a card's file claims
   pin       Pin a message as a decision, or remove the pin with --off
   read      Mark a project channel read for humans
-  settings  Show or change the experimental switch (global, project, board)
   watch     Stream a project channel as JSON Lines
   hook      Harness hook adapter: reads hook JSON on stdin, prints the decision
 `
@@ -57,7 +56,7 @@ func (c *CLI) rpcChannel(args []string) error {
 	}
 	action := args[0]
 	usages := map[string]string{
-		"list":     "[--format table|json]\nList project channels: enabled state, unread count, live claims and members on every machine.",
+		"list":     "[--format table|json]\nList project channels: unread count, live claims and members on every machine.",
 		"messages": "--project PROJECT [--thread ID] [--after SEQ] [--before SEQ] [--limit N] [--format table|json]\nPage a project channel in sequence order (default: the newest 50 messages).",
 		"post":     "[--project PROJECT] [--to CARD]... [--here] [--thread ID] [--kind note|request|done|decision] [--file PATH]... [--wake] [--operation ID] [--stdin] TEXT...\nPost at most 4096 bytes to the project channel. Agents post to their own project. A post without\n--to interrupts nobody; agents read it when their next turn starts. --to sends a direct message\nthat reaches a running recipient in its turn, and --wake also starts idle direct recipients\nwithin their wake budget. --here (people only) reaches every running agent of the project.\nA decision is pinned.",
 		"inbox":    "[--card CARD] [--peek] [--format text|json]\nPrint a card's undelivered messages (direct messages, and channel posts from the last 24 hours)\nand mark them delivered (--peek keeps them). Agents read their own inbox; humans name --card.\nOnly the card's machine marks them; elsewhere, add --peek or --machine.",
@@ -66,7 +65,6 @@ func (c *CLI) rpcChannel(args []string) error {
 		"release":  "[--card CARD] [PATH...]\nRelease a card's claims (all without PATHs). Agents release their own; humans name --card.",
 		"pin":      "--project PROJECT [--off] MESSAGE_ID\nPin a message as a decision that check returns for the files it mentions, or unpin it.",
 		"read":     "--project PROJECT [--seq N]\nMark the project channel read for humans up to N (default: the newest message).",
-		"settings": "[--global on|off | --project PROJECT --set on|off|inherit | --board BOARD --set on|off|inherit]\nShow or change the replicated experimental switch. A board overrides its project, a project\noverrides the global switch. Agents cannot change settings.",
 		"watch":    "--project PROJECT [--after SEQ] [--count N]\nStream the project channel as JSON Lines: a reset frame with the newest page, then new and\nchanged messages, claims and the summary." + readRecoveryHelp,
 		"hook":     "\nHarness hook adapter for agent channel file claims. Reads one hook JSON object (Claude Code or\nCodex PreToolUse format, at most 1 MiB) on stdin, prints the hook decision and exits 0.\nPrints nothing (no opinion) outside an agent turn or when the daemon is unavailable.",
 	}
@@ -85,15 +83,12 @@ func (c *CLI) rpcChannel(args []string) error {
 	}
 	set := flags("channel " + action)
 	project := set.String("project", "", "project ID or name")
-	board := set.String("board", "", "board ID")
 	card := set.String("card", "", "card ID")
 	thread := set.String("thread", "", "thread root message ID")
 	kind := set.String("kind", "", "message kind")
 	format := set.String("format", "", "output format")
 	operation := set.String("operation", "", "stable post ID for retries")
 	intent := set.String("intent", "", "what you are about to do")
-	global := set.String("global", "", "global switch: on or off")
-	value := set.String("set", "", "override: on, off or inherit")
 	after := set.Int64("after", 0, "after sequence number")
 	before := set.Int64("before", 0, "before sequence number")
 	seq := set.Int64("seq", 0, "sequence number")
@@ -142,13 +137,13 @@ func (c *CLI) rpcChannel(args []string) error {
 			return protoJSONOut(c.Out, response)
 		}
 		writer := tabwriter.NewWriter(c.Out, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(writer, "PROJECT\tNAME\tENABLED\tMESSAGES\tUNREAD\tCLAIMS\tMEMBERS")
+		fmt.Fprintln(writer, "PROJECT\tNAME\tMESSAGES\tUNREAD\tCLAIMS\tMEMBERS")
 		for _, channel := range response.GetChannels() {
 			members := make([]string, 0, len(channel.GetMembers()))
 			for _, member := range channel.GetMembers() {
 				members = append(members, member.GetCardId()+"("+member.GetStatus()+")")
 			}
-			fmt.Fprintf(writer, "%s\t%s\t%t\t%d\t%d\t%d\t%s\n", channel.GetProjectId(), channel.GetProjectName(), channel.GetEnabled(), channel.GetLastSeq(), channel.GetUnread(), channel.GetClaims(), strings.Join(members, " "))
+			fmt.Fprintf(writer, "%s\t%s\t%d\t%d\t%d\t%s\n", channel.GetProjectId(), channel.GetProjectName(), channel.GetLastSeq(), channel.GetUnread(), channel.GetClaims(), strings.Join(members, " "))
 		}
 		return writer.Flush()
 	case "messages":
@@ -261,31 +256,6 @@ func (c *CLI) rpcChannel(args []string) error {
 		}
 		fmt.Fprintf(c.Out, "read through %d\n", target)
 		return nil
-	case "settings":
-		var request *dieterv1.SetChannelSettingRequest
-		switch {
-		case *global != "":
-			request = &dieterv1.SetChannelSettingRequest{Scope: "global", Value: *global}
-		case *project != "":
-			request = &dieterv1.SetChannelSettingRequest{Scope: "project", Id: *project, Value: *value}
-		case *board != "":
-			request = &dieterv1.SetChannelSettingRequest{Scope: "board", Id: *board, Value: *value}
-		}
-		if request == nil {
-			settings, err := client.GetChannelSettings(rpcCtx, &dieterv1.GetChannelSettingsRequest{})
-			if err != nil {
-				return err
-			}
-			return protoJSONOut(c.Out, settings)
-		}
-		if request.Scope != "global" && request.Value == "" {
-			return errors.New("--set on|off|inherit is required\n\n" + usage)
-		}
-		settings, err := client.SetChannelSetting(rpcCtx, request)
-		if err != nil {
-			return err
-		}
-		return protoJSONOut(c.Out, settings)
 	case "watch":
 		if err := needProject(); err != nil {
 			return err

@@ -138,9 +138,9 @@ func commandTable() []command {
 		{
 			name:        "channel",
 			aliases:     []string{"channels"},
-			summary:     "Agent channels (experimental): messages, claims and decisions between agents",
+			summary:     "Agent channels: messages, claims and decisions between agents",
 			run:         (*CLI).rpcChannel,
-			subcommands: []string{"list", "messages", "post", "inbox", "check", "claims", "release", "pin", "read", "settings", "watch", "hook"},
+			subcommands: []string{"list", "messages", "post", "inbox", "check", "claims", "release", "pin", "read", "watch", "hook"},
 		},
 		{
 			name:        "mail",

@@ -8,7 +8,12 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
-Nothing yet.
+### Changed
+
+- Agent channels are always on: every project has a channel and every agent
+  turn can use it. The opt-in switches are gone: **Settings → Experimental →
+  Agent channels** on the Mac, Android, iPhone and iPad, the project and board
+  overrides, and `dieter channel settings`.
 
 ## 0.6.441
 

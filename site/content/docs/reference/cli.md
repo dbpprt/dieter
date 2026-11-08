@@ -50,7 +50,7 @@ Commands:
   screen       Share screens/clipboard, configure virtual displays, inspect latency
   schedule     Create, preview, dispatch, pause, and inspect schedules
   kv           Shared portable JSON, ordering, and live account subscriptions
-  channel      Agent channels (experimental): messages, claims and decisions between agents
+  channel      Agent channels: messages, claims and decisions between agents
   mail         Send Markdown reports to Dieter Mail; read, flag, file and delete them
   vault        End-to-end encrypted passwords and TOTP shared by your machines
   device       Pair, approve, revoke, and inspect the account's trusted devices
@@ -2216,16 +2216,16 @@ Watch until canceled or count frames. Reset replaces the cache; publish at caugh
 ## dieter channel (alias: channels)
 
 ```text
-Usage: dieter channel <list|messages|post|inbox|check|claims|release|pin|read|settings|watch|hook> [options]
+Usage: dieter channel <list|messages|post|inbox|check|claims|release|pin|read|watch|hook> [options]
 
-Agent channels (experimental): one message channel per project, shared by
-every machine of the account, with direct messages to cards, threads, pinned
-decisions and file claims that keep agents sharing a checkout from overwriting
-each other. A channel post interrupts nobody: agents read it when their next
-turn starts. A direct message (--to) reaches a running agent in its turn, and
-a person's --here reaches every running agent. Inside an agent turn
-(DIETER_TURN_TOKEN) the caller is that card's agent; otherwise you act as a
-person. Channels are off until switched on with "channel settings".
+Agent channels: one message channel per project, shared by every machine of
+the account, with direct messages to cards, threads, pinned decisions and file
+claims that keep agents sharing a checkout from overwriting each other. Every
+project and card has them. A channel post interrupts nobody: agents read it
+when their next turn starts. A direct message (--to) reaches a running agent
+in its turn, and a person's --here reaches every running agent. Inside an
+agent turn (DIETER_TURN_TOKEN) the caller is that card's agent; otherwise you
+act as a person.
 
   list      List project channels with unread counts and members on every machine
   messages  Page a project channel or one thread
@@ -2236,7 +2236,6 @@ person. Channels are off until switched on with "channel settings".
   release   Release a card's file claims
   pin       Pin a message as a decision, or remove the pin with --off
   read      Mark a project channel read for humans
-  settings  Show or change the experimental switch (global, project, board)
   watch     Stream a project channel as JSON Lines
   hook      Harness hook adapter: reads hook JSON on stdin, prints the decision
 ```
@@ -2245,7 +2244,7 @@ person. Channels are off until switched on with "channel settings".
 
 ```text
 Usage: dieter channel list [--format table|json]
-List project channels: enabled state, unread count, live claims and members on every machine.
+List project channels: unread count, live claims and members on every machine.
 ```
 
 ### dieter channel messages
@@ -2311,14 +2310,6 @@ Pin a message as a decision that check returns for the files it mentions, or unp
 ```text
 Usage: dieter channel read --project PROJECT [--seq N]
 Mark the project channel read for humans up to N (default: the newest message).
-```
-
-### dieter channel settings
-
-```text
-Usage: dieter channel settings [--global on|off | --project PROJECT --set on|off|inherit | --board BOARD --set on|off|inherit]
-Show or change the replicated experimental switch. A board overrides its project, a project
-overrides the global switch. Agents cannot change settings.
 ```
 
 ### dieter channel watch

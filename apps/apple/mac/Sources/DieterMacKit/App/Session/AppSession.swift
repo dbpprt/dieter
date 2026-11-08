@@ -137,7 +137,7 @@ final class AppSession {
     /// The selected project's conversation workspaces, as the core lists them.
     var projectWorkspaces: [ClientProjectWorkspaceRow] = []
     let schedulesModel = SchedulesModel()
-    /// Agent channels (experimental) across machines, and their settings.
+    /// Agent channels across machines.
     let channelsModel = ChannelsModel()
     /// Agent mail across machines: the mailbox, its badge and preferences.
     let mailModel = MailModel()

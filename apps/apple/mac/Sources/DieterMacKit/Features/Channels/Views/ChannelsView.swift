@@ -2,7 +2,7 @@ import AppKit
 import DieterClientAPI
 import SwiftUI
 
-/// Agent channels (experimental): the account's project channels, shared by
+/// Agent channels: the account's project channels, shared by
 /// every machine, on the left, the selected channel's stream and composer in
 /// the middle, and its claims, members and pins on the right.
 struct ChannelsView: View {
@@ -11,7 +11,7 @@ struct ChannelsView: View {
     var body: some View {
         let model = store.channelsModel
         ChatPaneSplit(layout: .channels) {
-            ChannelListPane(model: model) { store.openSettings(section: .experimental) }
+            ChannelListPane(model: model)
                 .environment(store)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityElement(children: .contain)
@@ -32,7 +32,6 @@ struct ChannelsView: View {
 
 private struct ChannelListPane: View {
     let model: ChannelsModel
-    let openSettings: () -> Void
 
     var body: some View {
         let slice = model.slice
@@ -56,9 +55,7 @@ private struct ChannelListPane: View {
                     LoadFeedback(title: "Reading channels…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    ChannelsEmptyState(
-                        title: slice.emptyTitle, detail: slice.emptyDetail, showsSettings: !slice.enabled,
-                        openSettings: openSettings)
+                    ChannelsEmptyState(title: slice.emptyTitle, detail: slice.emptyDetail)
                 }
             } else {
                 if !slice.error.isEmpty {
@@ -95,7 +92,7 @@ private struct ChannelListRowView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(row.name)
                         .font(.system(size: 12.5, weight: row.unread > 0 || row.selected ? .semibold : .regular))
-                        .foregroundStyle(row.enabled ? DieterTheme.text : DieterTheme.tertiary)
+                        .foregroundStyle(DieterTheme.text)
                         .lineLimit(1)
                     Text(row.detail).font(.system(size: 10.5)).foregroundStyle(DieterTheme.tertiary).lineLimit(1)
                 }
@@ -130,8 +127,6 @@ private struct ChannelListRowView: View {
 private struct ChannelsEmptyState: View {
     let title: String
     let detail: String
-    let showsSettings: Bool
-    let openSettings: () -> Void
 
     var body: some View {
         VStack(spacing: 12) {
@@ -145,12 +140,6 @@ private struct ChannelsEmptyState: View {
                 .font(.system(size: 12)).foregroundStyle(DieterTheme.subtle)
                 .multilineTextAlignment(.center).lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
-            if showsSettings {
-                Button("Open Experimental settings", action: openSettings)
-                    .buttonStyle(DieterBarButtonStyle(prominent: true, size: 28))
-                    .accessibilityIdentifier("channels.empty.settings")
-                    .e2eTarget("channels.empty.settings")
-            }
         }
         .padding(22)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -209,9 +198,6 @@ private struct ChannelStreamHeader: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 8) {
                     Text(stream.title).font(DieterFont.paneTitle).lineLimit(1)
-                    if !stream.enabled {
-                        StatusPill(text: "Off", color: DieterTheme.tertiary, showsDot: false)
-                    }
                     if !stream.claimsSummary.isEmpty {
                         StatusPill(text: stream.claimsSummary, color: DieterTheme.amber)
                     }

@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -186,45 +185,46 @@ func waitSteers(t *testing.T, runner *channelRunner, contains ...string) []strin
 	return found
 }
 
-func enableChannels(t *testing.T, service *Service) {
-	t.Helper()
-	if _, err := service.SetChannelSetting("global", "", "on"); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestChannelsStayOffUntilEnabled(t *testing.T) {
+func TestChannelsAreOnWithoutASetting(t *testing.T) {
 	t.Parallel()
 	service, runner, project, board := channelSetup(t)
-	card := channelCard(t, service, project, board, "Off")
-	if _, err := service.PostChannelMessage(context.Background(), ChannelCaller{}, ChannelPost{ProjectID: project.ID, Body: "hello"}); !errors.Is(err, ErrChannelsOff) {
-		t.Fatalf("post with channels off = %v, want ErrChannelsOff", err)
-	}
-	startChannelTurn(t, service, card, "Plain work")
-	waitIdle(t, service, card.ID)
-	request := runner.turns(card.ID)[0]
-	if request.SteerEnabled || request.ChannelHookCommand != "" || strings.Contains(request.Instructions, "Agent channels") {
-		t.Fatalf("channels leaked into a turn while off: steer=%v hook=%q", request.SteerEnabled, request.ChannelHookCommand)
-	}
-	// A board override switches one board on without the global switch.
-	if _, err := service.SetChannelSetting("board", board.ID, "on"); err != nil {
+	card := channelCard(t, service, project, board, "Plain")
+	chat, err := service.CreateChat(context.Background(), CardInput{Project: project.ID, Title: "Chat", Prompt: "Work", Provider: "codex", Model: "gpt-5.6-sol", DeferStart: true})
+	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := service.PostChannelMessage(context.Background(), ChannelCaller{}, ChannelPost{ProjectID: project.ID, Body: "hello"}); err != nil {
-		t.Fatalf("post with a board override on: %v", err)
+		t.Fatalf("a person's post: %v", err)
 	}
-	if _, err := service.SetChannelSetting("project", project.ID, "off"); err != nil {
+	if _, err := service.PostChannelMessage(context.Background(), ChannelCaller{CardID: chat.ID}, ChannelPost{Body: "from a chat"}); err != nil {
+		t.Fatalf("a chat agent's post: %v", err)
+	}
+	for _, target := range []model.Card{card, chat} {
+		startChannelTurn(t, service, target, "Plain work")
+		waitIdle(t, service, target.ID)
+		request := runner.turns(target.ID)[0]
+		if !request.SteerEnabled || !strings.Contains(request.Instructions, "## Agent channels") {
+			t.Fatalf("%s turn lacks channels: steer=%v", target.Title, request.SteerEnabled)
+		}
+	}
+	summaries, err := service.ChannelSummaries(context.Background())
+	if err != nil {
 		t.Fatal(err)
 	}
-	if !service.ChannelsEnabled(card) {
-		t.Fatal("a board override must win over its project")
+	members := map[string]bool{}
+	for _, summary := range summaries {
+		for _, member := range summary.Members {
+			members[member.Card.ID] = summary.Project.ID == project.ID
+		}
+	}
+	if !members[card.ID] || !members[chat.ID] {
+		t.Fatalf("summaries = %+v; want the project channel with both cards as members", summaries)
 	}
 }
 
 func TestChannelDigestReachesTheNextTurn(t *testing.T) {
 	t.Parallel()
 	service, runner, project, board := channelSetup(t)
-	enableChannels(t, service)
 	service.CLIExecutable = "/opt/dieter's/bin/dieter"
 	author := channelCard(t, service, project, board, "Pricing refactor")
 	reader := channelCard(t, service, project, board, "Checkout tests")
@@ -276,7 +276,6 @@ func TestChannelDigestReachesTheNextTurn(t *testing.T) {
 func TestChannelMessageSteersIntoARunningTurn(t *testing.T) {
 	t.Parallel()
 	service, runner, project, board := channelSetup(t)
-	enableChannels(t, service)
 	card := channelCard(t, service, project, board, "Release notes")
 	startChannelTurn(t, service, card, "hold while writing notes")
 	waitFor(t, func() bool { return service.turnHasChannelFor(card.ID) })
@@ -324,7 +323,6 @@ func TestChannelMessageSteersIntoARunningTurn(t *testing.T) {
 func TestChannelClaimsHoldWritersAndReleaseWakesThem(t *testing.T) {
 	t.Parallel()
 	service, runner, project, board := channelSetup(t)
-	enableChannels(t, service)
 	holder := channelCard(t, service, project, board, "Rename tiers")
 	waiter := channelCard(t, service, project, board, "Add tier cap")
 	startChannelTurn(t, service, holder, "hold write:src/module3.js")
@@ -410,7 +408,6 @@ func TestChannelClaimsHoldWritersAndReleaseWakesThem(t *testing.T) {
 func TestObservedWriteToAHeldFileWarnsBothCards(t *testing.T) {
 	t.Parallel()
 	service, runner, project, board := channelSetup(t)
-	enableChannels(t, service)
 	holder := channelCard(t, service, project, board, "Holder")
 	writer := channelCard(t, service, project, board, "Writer")
 	startChannelTurn(t, service, holder, "hold write:src/app.go")
@@ -527,9 +524,6 @@ func TestChannelSteerThroughTheHarnessWorkerEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := NewWithOptions(data, Options{Runner: runner, Catalog: catalog})
-	if _, err := service.SetChannelSetting("project", project.ID, "on"); err != nil {
-		t.Fatal(err)
-	}
 	chat, err := service.CreateChat(context.Background(), CardInput{
 		Project: project.ID, Title: "Listener", Prompt: "mock-channel-steer", Provider: "mock", Model: "mock", DeferStart: true,
 	})
@@ -625,7 +619,6 @@ func TestCommitSweepGuardKeepsOtherCardsFilesOutOfACommit(t *testing.T) {
 func TestCheckRegistersTheWaiterAndTellsTheHolder(t *testing.T) {
 	t.Parallel()
 	service, runner, project, board := channelSetup(t)
-	enableChannels(t, service)
 	holder := channelCard(t, service, project, board, "Holder")
 	checker := channelCard(t, service, project, board, "Checker")
 	startChannelTurn(t, service, holder, "hold write:src/app.go")

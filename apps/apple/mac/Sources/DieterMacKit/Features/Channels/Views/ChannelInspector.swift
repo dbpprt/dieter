@@ -111,7 +111,6 @@ struct ChannelInspector: View {
             .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .dieterTile(radius: 10)
-            .opacity(member.enabled ? 1 : 0.6)
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("channels.member.\(member.cardID)")
         }

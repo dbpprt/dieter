@@ -11,8 +11,7 @@ class ChannelsModelTest {
     private fun TestScope.store(core: FakeMobileCore) =
         MobileStore(core, StandardTestDispatcher(testScheduler))
 
-    private fun channels(core: FakeMobileCore) =
-        core.sentOf { it.channels }.filter { it.set_setting == null }
+    private fun channels(core: FakeMobileCore) = core.sentOf { it.channels }
 
     @Test
     fun theChannelListWatchesOnlyTheOpenChannel() = runTest {
@@ -20,9 +19,8 @@ class ChannelsModelTest {
         val store = store(core)
         try {
             runCurrent()
-            // The list and the switch are observed for the badge and Settings.
+            // The list is observed for the badge.
             assertTrue(core.observing(Slice.SLICE_CHANNELS, MobileStore.CHANNELS_SCOPE))
-            assertTrue(core.observing(Slice.SLICE_CHANNEL_SETTINGS))
             store.openMore(MobileRoute.Channels)
             runCurrent()
             assertEquals(listOf(Step()), channels(core).mapNotNull { it.refresh })
@@ -103,12 +101,6 @@ class ChannelsModelTest {
             assertEquals(2, posted)
             // The command's reply is the surface after it, which feeds the tab badge.
             assertEquals("2", store.channels.slice.value.unread_label)
-
-            store.channels.setEnabled(true)
-            runCurrent()
-            val setting = core.sentOf { it.channels?.set_setting }.single()
-            assertEquals(ChannelSettingScope.CHANNEL_SETTING_SCOPE_GLOBAL, setting.scope)
-            assertEquals(ChannelSettingMode.CHANNEL_SETTING_MODE_ON, setting.mode)
         } finally {
             store.close()
         }

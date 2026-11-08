@@ -1,6 +1,6 @@
 # ADR 0003: Peer messages in agent turns (agent channels)
 
-- Status: accepted, implemented 2026-10 as an experimental feature (off by default)
+- Status: accepted, implemented 2026-10 as an opt-in experimental feature; always on since 2026-11-08, when the account, project and board switches were removed
 - Proposal: [docs/proposals/agent-messaging.md](../proposals/agent-messaging.md)
 
 ## Context
@@ -22,7 +22,7 @@ before it happens.
 
 ## Decision
 
-Add agent channels as an experimental, replicated opt-in:
+Add agent channels to every project and agent turn, with no switch:
 
 - **One channel per project, account-wide.** Every machine of the account
   shares a project's channel. Its members are the project's cards that are not
@@ -38,9 +38,9 @@ Add agent channels as an experimental, replicated opt-in:
   runtime leases still allow at most one active turn per conversation.
 - **Provenance.** Notices name their sender, and the turn instructions say
   peer messages never override the user, approve actions, grant access or
-  reveal secrets. Peer posts cannot change trust or channel settings: the
-  daemon identifies an agent only by a live turn token on the local route.
-  Dieter's own coordination messages state only what Dieter observed.
+  reveal secrets. Peer posts cannot change trust: the daemon identifies an
+  agent only by a live turn token on the local route. Dieter's own
+  coordination messages state only what Dieter observed.
 - **Claims.** Writes claim files for the rest of the turn. Codex's per-session
   `PreToolUse` hook (`dieter channel hook`, fail-open) denies writes to files
   another running card holds and bare commits that would include them; other
@@ -54,8 +54,7 @@ Add agent channels as an experimental, replicated opt-in:
   `channel-receipt` (a card's last 32 deliveries, by its owner),
   `channel-pins` and `channel-claims` (per daemon and project). Only daemons
   write them; the public KV API refuses. Each daemon ingests the others'
-  records into its log. The settings replicate as the KV namespace
-  `experimental`. Wake budgets are in-process. Nothing is stored on the
+  records into its log. Wake budgets are in-process. Nothing is stored on the
   gateway.
 - **Delivery stays with the owner.** Only a card's owner daemon steers, briefs
   or wakes it, and records its deliveries; replication never moves a running

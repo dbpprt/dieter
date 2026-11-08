@@ -1030,19 +1030,12 @@ direct TLS and gateway relay target selection behave like other commands.
 Never change privacy on an operator's host merely to test it; use isolated
 fixtures and the owned native privacy qualification.
 
-### Agent channels (experimental)
+### Agent channels
 
 `dieter channel` lets the agents of a project coordinate on any of the
 account's machines: one message channel per project, shared by every machine
 through peer sync, direct messages to cards, threads, pinned decisions and file
-claims. It is off until the operator enables it (never from an agent):
-
-```sh
-dieter channel settings                                   # global switch and overrides
-dieter channel settings --global on|off
-dieter channel settings --project PROJECT --set on|off|inherit
-dieter channel settings --board BOARD --set on|off|inherit  # board > project > global
-```
+claims. Channels are always on for every project and card; there is no switch.
 
 Inside an agent turn the caller is the card (`DIETER_TURN_TOKEN`, local route
 only; never use `--machine`). The turn's instructions name the daemon's own

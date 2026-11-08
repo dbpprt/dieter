@@ -291,39 +291,32 @@ class ChannelRulesTest {
             ChannelSummary(
                 project_id = "p",
                 project_name = "pricing",
-                enabled = true,
                 unread = 3,
                 claims = 2,
                 members =
                     listOf(
-                        ChannelMember(card_id = "c1", status = "running", enabled = true),
-                        ChannelMember(card_id = "c2", status = "idle", enabled = false),
+                        ChannelMember(card_id = "c1", status = "running"),
+                        ChannelMember(card_id = "c2", status = "idle"),
                     ),
             )
         val row = ChannelRules.listRow(summary, selected = true)
         assertEquals("p", row.project_id)
         assertEquals("2 agents · 1 running · 2 claims", row.detail)
         assertEquals(3, row.unread)
-        assertEquals("Off", ChannelRules.listDetail(summary.copy(enabled = false)))
-        assertEquals(0, ChannelRules.listRow(summary.copy(enabled = false), false).unread)
         assertEquals("", ChannelRules.unreadLabel(0))
         assertEquals("99+", ChannelRules.unreadLabel(120))
 
-        val composer = ChannelRules.composer("pricing", true, true, "mbp", summary.members, false)
+        val composer = ChannelRules.composer("pricing", true, "mbp", summary.members, false)
         assertTrue(composer.can_post)
         assertEquals("Message #pricing", composer.placeholder)
-        assertEquals(listOf("c1"), composer.recipients.map { it.card_id })
+        assertEquals(listOf("c1", "c2"), composer.recipients.map { it.card_id })
         assertEquals(4, composer.kinds.size)
-        val off = ChannelRules.composer("pricing", false, true, "mbp", summary.members, false)
-        assertFalse(off.can_post)
-        assertEquals(
-            "mbp is not reachable.",
-            ChannelRules.composer("pricing", true, false, "mbp", emptyList(), false)
-                .disabled_reason,
-        )
+        val offline = ChannelRules.composer("pricing", false, "mbp", emptyList(), false)
+        assertFalse(offline.can_post)
+        assertEquals("mbp is not reachable.", offline.disabled_reason)
         assertEquals(
             "No reachable machine has this channel yet.",
-            ChannelRules.composer("pricing", true, false, null, emptyList(), false).disabled_reason,
+            ChannelRules.composer("pricing", false, null, emptyList(), false).disabled_reason,
         )
         // The composer says what each audience does.
         assertEquals(ChannelRules.EVERYONE_HINT, composer.everyone_hint)

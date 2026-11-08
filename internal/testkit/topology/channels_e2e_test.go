@@ -111,9 +111,6 @@ func TestAgentChannelsSpanMachinesAndTheGatewaySeesNoMessage(t *testing.T) {
 		return created
 	}
 	idle, writer := card("Idle on A"), card("Writer on A")
-	if _, err := a.app.SetChannelSetting("global", "", "on"); err != nil {
-		t.Fatal(err)
-	}
 	updates, err := a.app.StartCard(writer.ID, "hold write:src/shared.go", "mock", "mock", "")
 	if err != nil {
 		t.Fatal(err)

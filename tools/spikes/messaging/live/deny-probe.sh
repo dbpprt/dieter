@@ -13,7 +13,6 @@ node "$HERE/fixture.mjs" "$DIR/project"
 CODEX_MODEL=$(sed -n 's/^model *= *"\(.*\)"/\1/p' "$ROOT/codex-home/config.toml")
 PROJECT=$("$DL" project open --name "deny-probe" --board-name "Deny" --workflow direct --format id "$DIR/project")
 BOARD=$("$DL" board list --project "$PROJECT" --format ids | head -1)
-"$DL" channel settings --board "$BOARD" --set on >/dev/null
 H=$("$DL" card create --project "$PROJECT" --board "$BOARD" --title "Hold module2" --workspace project --lane todo --provider claude-code --model haiku --effort low --format id \
     --prompt "Run exactly this one shell command and nothing else: echo '// hold' >> src/module2.js && sleep 45 && echo held. Then reply with one line.")
 W=$("$DL" card create --project "$PROJECT" --board "$BOARD" --title "Probe module2" --workspace project --lane todo --provider codex --model "$CODEX_MODEL" --effort low --format id \

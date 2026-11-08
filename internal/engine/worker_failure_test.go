@@ -27,7 +27,10 @@ func TestWorkerFailurePersistsTerminalCapabilities(t *testing.T) {
 			runtimeDir := t.TempDir()
 			// The production Go subprocess decoder, service lifecycle and store all
 			// run here; only the provider worker is a disposable local fixture.
+			// Steer frames keep stdin open; like the production worker, the
+			// fixture ends on its own rather than at stdin EOF.
 			script := `process.stdin.once('data', raw => {
+  process.stdin.destroy();
   const request = JSON.parse(raw);
   const send = value => process.stdout.write(JSON.stringify(value) + '\n');
   send({type:'chunk', chunk:{type:'start', messageId:request.responseMessageId}});

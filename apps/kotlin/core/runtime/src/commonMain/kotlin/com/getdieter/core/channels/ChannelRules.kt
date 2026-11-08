@@ -422,7 +422,6 @@ object ChannelRules {
                             .joinToString(" · "),
                     holds = member.holds,
                     waiting_on = member.waiting_on,
-                    enabled = member.enabled,
                     board_id = member.board_id,
                     machine = host,
                 )
@@ -488,9 +487,8 @@ object ChannelRules {
 
     // --- Lists and the composer ----------------------------------------------------------
 
-    /** "4 agents · 1 running · 2 claims", or "Off". */
+    /** "4 agents · 1 running · 2 claims". */
     fun listDetail(summary: ChannelSummary): String {
-        if (!summary.enabled) return "Off"
         val running =
             summary.members.count {
                 presence(it.status) == ChannelPresence.CHANNEL_PRESENCE_RUNNING
@@ -507,8 +505,7 @@ object ChannelRules {
         ChannelListRow(
             project_id = summary.project_id,
             name = summary.project_name.ifBlank { summary.project_id },
-            enabled = summary.enabled,
-            unread = if (summary.enabled) summary.unread else 0,
+            unread = summary.unread,
             claims = summary.claims,
             members = summary.members.size,
             running =
@@ -531,7 +528,6 @@ object ChannelRules {
      */
     fun composer(
         name: String,
-        enabled: Boolean,
         reachable: Boolean,
         machineName: String?,
         members: List<ChannelMember>,
@@ -542,7 +538,6 @@ object ChannelRules {
             when {
                 machineName == null -> "No reachable machine has this channel yet."
                 !reachable -> "$machineName is not reachable."
-                !enabled -> "Agent channels are off for this project. Turn them on in its settings."
                 else -> ""
             }
         return ChannelComposerState(
@@ -550,7 +545,7 @@ object ChannelRules {
             placeholder = "Message #$name",
             disabled_reason = reason,
             recipients =
-                members(members.filter { it.enabled }, machine).map {
+                members(members, machine).map {
                     ChannelRecipientOption(
                         card_id = it.card_id,
                         title = it.title,

@@ -184,8 +184,6 @@ public nonisolated struct Dieter_V1_ChannelMember: Sendable {
 
   public var status: String = String()
 
-  public var enabled: Bool = false
-
   public var holds: [String] = []
 
   public var waitingOn: [String] = []
@@ -208,9 +206,6 @@ public nonisolated struct Dieter_V1_ChannelSummary: Sendable {
   public var projectID: String = String()
 
   public var projectName: String = String()
-
-  /// enabled is true when the project or any of its boards has channels on.
-  public var enabled: Bool = false
 
   public var lastSeq: Int64 = 0
 
@@ -502,66 +497,6 @@ public nonisolated struct Dieter_V1_ChannelHookResponse: Sendable {
   // methods supported on all messages.
 
   public var outputJson: Data = Data()
-
-  public var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  public init() {}
-}
-
-public nonisolated struct Dieter_V1_GetChannelSettingsRequest: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  public var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  public init() {}
-}
-
-/// scope is "project" or "board"; value is "on" or "off". An absent override
-/// inherits.
-public nonisolated struct Dieter_V1_ChannelSettingOverride: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  public var scope: String = String()
-
-  public var id: String = String()
-
-  public var value: String = String()
-
-  public var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  public init() {}
-}
-
-public nonisolated struct Dieter_V1_ChannelSettings: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  public var global: Bool = false
-
-  public var overrides: [Dieter_V1_ChannelSettingOverride] = []
-
-  public var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  public init() {}
-}
-
-/// scope is "global" (value "on" or "off"), "project" or "board" (value "on",
-/// "off" or "inherit").
-public nonisolated struct Dieter_V1_SetChannelSettingRequest: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  public var scope: String = String()
-
-  public var id: String = String()
-
-  public var value: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -889,7 +824,7 @@ nonisolated extension Dieter_V1_ChannelMessage: SwiftProtobuf.Message, SwiftProt
 
 nonisolated extension Dieter_V1_ChannelMember: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ChannelMember"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{1}title\0\u{3}board_id\0\u{1}harness\0\u{1}model\0\u{1}status\0\u{1}enabled\0\u{1}holds\0\u{3}waiting_on\0\u{3}daemon_id\0\u{1}remote\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{1}title\0\u{3}board_id\0\u{1}harness\0\u{1}model\0\u{1}status\0\u{2}\u{2}holds\0\u{3}waiting_on\0\u{3}daemon_id\0\u{1}remote\0\u{b}enabled\0\u{c}\u{7}\u{1}")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -903,7 +838,6 @@ nonisolated extension Dieter_V1_ChannelMember: SwiftProtobuf.Message, SwiftProto
       case 4: try { try decoder.decodeSingularStringField(value: &self.harness) }()
       case 5: try { try decoder.decodeSingularStringField(value: &self.model) }()
       case 6: try { try decoder.decodeSingularStringField(value: &self.status) }()
-      case 7: try { try decoder.decodeSingularBoolField(value: &self.enabled) }()
       case 8: try { try decoder.decodeRepeatedStringField(value: &self.holds) }()
       case 9: try { try decoder.decodeRepeatedStringField(value: &self.waitingOn) }()
       case 10: try { try decoder.decodeSingularStringField(value: &self.daemonID) }()
@@ -932,9 +866,6 @@ nonisolated extension Dieter_V1_ChannelMember: SwiftProtobuf.Message, SwiftProto
     if !self.status.isEmpty {
       try visitor.visitSingularStringField(value: self.status, fieldNumber: 6)
     }
-    if self.enabled != false {
-      try visitor.visitSingularBoolField(value: self.enabled, fieldNumber: 7)
-    }
     if !self.holds.isEmpty {
       try visitor.visitRepeatedStringField(value: self.holds, fieldNumber: 8)
     }
@@ -957,7 +888,6 @@ nonisolated extension Dieter_V1_ChannelMember: SwiftProtobuf.Message, SwiftProto
     if lhs.harness != rhs.harness {return false}
     if lhs.model != rhs.model {return false}
     if lhs.status != rhs.status {return false}
-    if lhs.enabled != rhs.enabled {return false}
     if lhs.holds != rhs.holds {return false}
     if lhs.waitingOn != rhs.waitingOn {return false}
     if lhs.daemonID != rhs.daemonID {return false}
@@ -969,7 +899,7 @@ nonisolated extension Dieter_V1_ChannelMember: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension Dieter_V1_ChannelSummary: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ChannelSummary"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}project_name\0\u{1}enabled\0\u{3}last_seq\0\u{3}seen_seq\0\u{1}unread\0\u{1}claims\0\u{3}last_message_at\0\u{1}members\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}project_name\0\u{4}\u{2}last_seq\0\u{3}seen_seq\0\u{1}unread\0\u{1}claims\0\u{3}last_message_at\0\u{1}members\0\u{b}enabled\0\u{c}\u{3}\u{1}")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -979,7 +909,6 @@ nonisolated extension Dieter_V1_ChannelSummary: SwiftProtobuf.Message, SwiftProt
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.projectID) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self.projectName) }()
-      case 3: try { try decoder.decodeSingularBoolField(value: &self.enabled) }()
       case 4: try { try decoder.decodeSingularInt64Field(value: &self.lastSeq) }()
       case 5: try { try decoder.decodeSingularInt64Field(value: &self.seenSeq) }()
       case 6: try { try decoder.decodeSingularInt32Field(value: &self.unread) }()
@@ -997,9 +926,6 @@ nonisolated extension Dieter_V1_ChannelSummary: SwiftProtobuf.Message, SwiftProt
     }
     if !self.projectName.isEmpty {
       try visitor.visitSingularStringField(value: self.projectName, fieldNumber: 2)
-    }
-    if self.enabled != false {
-      try visitor.visitSingularBoolField(value: self.enabled, fieldNumber: 3)
     }
     if self.lastSeq != 0 {
       try visitor.visitSingularInt64Field(value: self.lastSeq, fieldNumber: 4)
@@ -1025,7 +951,6 @@ nonisolated extension Dieter_V1_ChannelSummary: SwiftProtobuf.Message, SwiftProt
   public static func ==(lhs: Dieter_V1_ChannelSummary, rhs: Dieter_V1_ChannelSummary) -> Bool {
     if lhs.projectID != rhs.projectID {return false}
     if lhs.projectName != rhs.projectName {return false}
-    if lhs.enabled != rhs.enabled {return false}
     if lhs.lastSeq != rhs.lastSeq {return false}
     if lhs.seenSeq != rhs.seenSeq {return false}
     if lhs.unread != rhs.unread {return false}
@@ -1676,140 +1601,6 @@ nonisolated extension Dieter_V1_ChannelHookResponse: SwiftProtobuf.Message, Swif
 
   public static func ==(lhs: Dieter_V1_ChannelHookResponse, rhs: Dieter_V1_ChannelHookResponse) -> Bool {
     if lhs.outputJson != rhs.outputJson {return false}
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
-nonisolated extension Dieter_V1_GetChannelSettingsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".GetChannelSettingsRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
-
-  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    // Load everything into unknown fields
-    while try decoder.nextFieldNumber() != nil {}
-  }
-
-  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  public static func ==(lhs: Dieter_V1_GetChannelSettingsRequest, rhs: Dieter_V1_GetChannelSettingsRequest) -> Bool {
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
-nonisolated extension Dieter_V1_ChannelSettingOverride: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".ChannelSettingOverride"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}scope\0\u{1}id\0\u{1}value\0")
-
-  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularStringField(value: &self.scope) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.id) }()
-      case 3: try { try decoder.decodeSingularStringField(value: &self.value) }()
-      default: break
-      }
-    }
-  }
-
-  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if !self.scope.isEmpty {
-      try visitor.visitSingularStringField(value: self.scope, fieldNumber: 1)
-    }
-    if !self.id.isEmpty {
-      try visitor.visitSingularStringField(value: self.id, fieldNumber: 2)
-    }
-    if !self.value.isEmpty {
-      try visitor.visitSingularStringField(value: self.value, fieldNumber: 3)
-    }
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  public static func ==(lhs: Dieter_V1_ChannelSettingOverride, rhs: Dieter_V1_ChannelSettingOverride) -> Bool {
-    if lhs.scope != rhs.scope {return false}
-    if lhs.id != rhs.id {return false}
-    if lhs.value != rhs.value {return false}
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
-nonisolated extension Dieter_V1_ChannelSettings: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".ChannelSettings"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}global\0\u{1}overrides\0")
-
-  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularBoolField(value: &self.global) }()
-      case 2: try { try decoder.decodeRepeatedMessageField(value: &self.overrides) }()
-      default: break
-      }
-    }
-  }
-
-  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if self.global != false {
-      try visitor.visitSingularBoolField(value: self.global, fieldNumber: 1)
-    }
-    if !self.overrides.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.overrides, fieldNumber: 2)
-    }
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  public static func ==(lhs: Dieter_V1_ChannelSettings, rhs: Dieter_V1_ChannelSettings) -> Bool {
-    if lhs.global != rhs.global {return false}
-    if lhs.overrides != rhs.overrides {return false}
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
-nonisolated extension Dieter_V1_SetChannelSettingRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".SetChannelSettingRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}scope\0\u{1}id\0\u{1}value\0")
-
-  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularStringField(value: &self.scope) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.id) }()
-      case 3: try { try decoder.decodeSingularStringField(value: &self.value) }()
-      default: break
-      }
-    }
-  }
-
-  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if !self.scope.isEmpty {
-      try visitor.visitSingularStringField(value: self.scope, fieldNumber: 1)
-    }
-    if !self.id.isEmpty {
-      try visitor.visitSingularStringField(value: self.id, fieldNumber: 2)
-    }
-    if !self.value.isEmpty {
-      try visitor.visitSingularStringField(value: self.value, fieldNumber: 3)
-    }
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  public static func ==(lhs: Dieter_V1_SetChannelSettingRequest, rhs: Dieter_V1_SetChannelSettingRequest) -> Bool {
-    if lhs.scope != rhs.scope {return false}
-    if lhs.id != rhs.id {return false}
-    if lhs.value != rhs.value {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

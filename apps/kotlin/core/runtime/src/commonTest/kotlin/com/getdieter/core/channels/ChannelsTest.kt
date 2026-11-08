@@ -17,16 +17,14 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Instant
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 
 class ChannelsTest {
     private val now = Instant.parse("2026-10-24T11:10:00Z")
     private val key = ChannelKey("d1", "p1")
 
-    private fun slice(channels: Channels, switches: ChannelSwitches, reachable: Boolean = true) =
+    private fun slice(channels: Channels, reachable: Boolean = true) =
         channels.view.value.slice(
-            switches,
             { if (it == "d1") "mbp-office" else it },
             { reachable },
             now,
@@ -36,7 +34,6 @@ class ChannelsTest {
         ChannelSummary(
             project_id = "p1",
             project_name = "pricing",
-            enabled = true,
             last_seq = 2,
             seen_seq = seen,
             unread = unread,
@@ -47,7 +44,6 @@ class ChannelsTest {
                         card_id = "c1",
                         title = "Review headers",
                         status = "running",
-                        enabled = true,
                     )
                 ),
         )
@@ -64,58 +60,33 @@ class ChannelsTest {
         )
 
     @Test
-    fun nothingIsListedWhileEverySettingIsOff() = runTest {
-        val settings = MutableStateFlow(ChannelSettingsView())
+    fun anEmptyListSaysWhy() = runTest {
         val channels =
-            Channels(
-                offlineSessions(),
-                { listOf("d1") },
-                settings,
-                backgroundScope,
-                object : CoreLogger {},
-            )
+            Channels(offlineSessions(), { listOf("d1") }, backgroundScope, object : CoreLogger {})
+        // The only machine cannot be reached: the list says why.
         channels.refresh()
-        val off = slice(channels, settings.value.switches)
-        assertFalse(off.enabled)
-        assertEquals(ChannelsView.OFF_TITLE, off.empty_title)
-        assertTrue(off.channels.isEmpty())
-
-        // On, but the only machine cannot be reached: the list says why.
-        settings.value = ChannelSettingsView(ChannelSwitches(global = true))
-        channels.refresh()
-        val failed = slice(channels, settings.value.switches)
-        assertTrue(failed.enabled)
+        val failed = slice(channels)
+        assertTrue(failed.channels.isEmpty())
         assertTrue(failed.error.startsWith("mbp-office: "))
         assertEquals(ChannelsView.FAILED_TITLE, failed.empty_title)
         assertEquals(failed.error, failed.empty_detail)
 
         channels.stop()
         val none =
-            Channels(
-                offlineSessions(),
-                { emptyList() },
-                settings,
-                backgroundScope,
-                object : CoreLogger {},
-            )
+            Channels(offlineSessions(), { emptyList() }, backgroundScope, object : CoreLogger {})
         none.refresh()
-        assertEquals(
-            ChannelsView.UNREACHABLE_TITLE,
-            slice(none, settings.value.switches).empty_title,
-        )
+        assertEquals(ChannelsView.UNREACHABLE_TITLE, slice(none).empty_title)
+
+        val empty =
+            Channels(offlineSessions(), { emptyList() }, backgroundScope, object : CoreLogger {})
+        empty.applyListing(listOf("d1" to Channels.Listing.Listed(emptyList())))
+        assertEquals(ChannelsView.NONE_TITLE, slice(empty).empty_title)
     }
 
     @Test
     fun aProjectHasOneChannelReadFromTheFirstMachineThatListsIt() = runTest {
-        val settings = MutableStateFlow(ChannelSettingsView(ChannelSwitches(global = true)))
         val channels =
-            Channels(
-                offlineSessions(),
-                { emptyList() },
-                settings,
-                backgroundScope,
-                object : CoreLogger {},
-            )
+            Channels(offlineSessions(), { emptyList() }, backgroundScope, object : CoreLogger {})
         val other = summary(unread = 0).copy(project_id = "p2", project_name = "checkout")
         // Every machine lists the account's channels; d1 is this device's.
         channels.applyListing(
@@ -124,7 +95,7 @@ class ChannelsTest {
                 "d2" to Channels.Listing.Listed(listOf(summary(unread = 5), other)),
             )
         )
-        val listed = slice(channels, settings.value.switches)
+        val listed = slice(channels)
         assertEquals(listOf("p2", "p1"), listed.channels.map { it.project_id })
         // The unread count is the serving machine's.
         assertEquals(3, listed.unread)
@@ -147,7 +118,7 @@ class ChannelsTest {
         )
         assertEquals(ChannelKey("d2", "p1"), channels.view.value.streamKey)
         assertTrue(channels.view.value.stream.messages.isEmpty())
-        val moved = slice(channels, settings.value.switches)
+        val moved = slice(channels)
         assertEquals("Shared by your machines · read from d2", moved.stream!!.subtitle)
         assertEquals(5, moved.unread)
         // One machine failing while another serves is no error.
@@ -156,18 +127,11 @@ class ChannelsTest {
 
     @Test
     fun theSelectedChannelFoldsItsStreamIntoTheSlice() = runTest {
-        val settings = MutableStateFlow(ChannelSettingsView(ChannelSwitches(global = true)))
         val channels =
-            Channels(
-                offlineSessions(),
-                { emptyList() },
-                settings,
-                backgroundScope,
-                object : CoreLogger {},
-            )
+            Channels(offlineSessions(), { emptyList() }, backgroundScope, object : CoreLogger {})
         channels.select("p1")
         assertEquals("p1", channels.view.value.selected)
-        val loading = slice(channels, settings.value.switches).stream!!
+        val loading = slice(channels).stream!!
         assertTrue(loading.loading)
         assertEquals("#p1", loading.title)
         assertEquals(ChannelsView.SHARED, loading.subtitle)
@@ -200,7 +164,7 @@ class ChannelsTest {
             ChannelFrame(messages = listOf(message(3)), reset = true),
         )
 
-        val stream = slice(channels, settings.value.switches).stream!!
+        val stream = slice(channels).stream!!
         assertFalse(stream.loading)
         assertEquals("#pricing", stream.title)
         assertEquals("Shared by your machines · read from mbp-office", stream.subtitle)
@@ -218,7 +182,7 @@ class ChannelsTest {
 
         // Reading needs the machine; without it the view still drops the badge until it answers.
         channels.markRead()
-        val read = slice(channels, settings.value.switches).stream!!
+        val read = slice(channels).stream!!
         assertEquals(0, read.unread)
         assertEquals("", read.first_unread_row_id)
 
@@ -232,6 +196,6 @@ class ChannelsTest {
         }
 
         channels.select(null)
-        assertNull(slice(channels, settings.value.switches).stream)
+        assertNull(slice(channels).stream)
     }
 }

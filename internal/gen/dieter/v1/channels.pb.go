@@ -343,7 +343,6 @@ type ChannelMember struct {
 	Harness   string                 `protobuf:"bytes,4,opt,name=harness,proto3" json:"harness,omitempty"`
 	Model     string                 `protobuf:"bytes,5,opt,name=model,proto3" json:"model,omitempty"`
 	Status    string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
-	Enabled   bool                   `protobuf:"varint,7,opt,name=enabled,proto3" json:"enabled,omitempty"`
 	Holds     []string               `protobuf:"bytes,8,rep,name=holds,proto3" json:"holds,omitempty"`
 	WaitingOn []string               `protobuf:"bytes,9,rep,name=waiting_on,json=waitingOn,proto3" json:"waiting_on,omitempty"`
 	// The machine that runs the card; remote members run on another one.
@@ -425,13 +424,6 @@ func (x *ChannelMember) GetStatus() string {
 	return ""
 }
 
-func (x *ChannelMember) GetEnabled() bool {
-	if x != nil {
-		return x.Enabled
-	}
-	return false
-}
-
 func (x *ChannelMember) GetHolds() []string {
 	if x != nil {
 		return x.Holds
@@ -461,17 +453,15 @@ func (x *ChannelMember) GetRemote() bool {
 }
 
 type ChannelSummary struct {
-	state       protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId   string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	ProjectName string                 `protobuf:"bytes,2,opt,name=project_name,json=projectName,proto3" json:"project_name,omitempty"`
-	// enabled is true when the project or any of its boards has channels on.
-	Enabled       bool             `protobuf:"varint,3,opt,name=enabled,proto3" json:"enabled,omitempty"`
-	LastSeq       int64            `protobuf:"varint,4,opt,name=last_seq,json=lastSeq,proto3" json:"last_seq,omitempty"`
-	SeenSeq       int64            `protobuf:"varint,5,opt,name=seen_seq,json=seenSeq,proto3" json:"seen_seq,omitempty"`
-	Unread        int32            `protobuf:"varint,6,opt,name=unread,proto3" json:"unread,omitempty"`
-	Claims        int32            `protobuf:"varint,7,opt,name=claims,proto3" json:"claims,omitempty"`
-	LastMessageAt string           `protobuf:"bytes,8,opt,name=last_message_at,json=lastMessageAt,proto3" json:"last_message_at,omitempty"`
-	Members       []*ChannelMember `protobuf:"bytes,9,rep,name=members,proto3" json:"members,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	ProjectName   string                 `protobuf:"bytes,2,opt,name=project_name,json=projectName,proto3" json:"project_name,omitempty"`
+	LastSeq       int64                  `protobuf:"varint,4,opt,name=last_seq,json=lastSeq,proto3" json:"last_seq,omitempty"`
+	SeenSeq       int64                  `protobuf:"varint,5,opt,name=seen_seq,json=seenSeq,proto3" json:"seen_seq,omitempty"`
+	Unread        int32                  `protobuf:"varint,6,opt,name=unread,proto3" json:"unread,omitempty"`
+	Claims        int32                  `protobuf:"varint,7,opt,name=claims,proto3" json:"claims,omitempty"`
+	LastMessageAt string                 `protobuf:"bytes,8,opt,name=last_message_at,json=lastMessageAt,proto3" json:"last_message_at,omitempty"`
+	Members       []*ChannelMember       `protobuf:"bytes,9,rep,name=members,proto3" json:"members,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -518,13 +508,6 @@ func (x *ChannelSummary) GetProjectName() string {
 		return x.ProjectName
 	}
 	return ""
-}
-
-func (x *ChannelSummary) GetEnabled() bool {
-	if x != nil {
-		return x.Enabled
-	}
-	return false
 }
 
 func (x *ChannelSummary) GetLastSeq() int64 {
@@ -1564,218 +1547,6 @@ func (x *ChannelHookResponse) GetOutputJson() []byte {
 	return nil
 }
 
-type GetChannelSettingsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *GetChannelSettingsRequest) Reset() {
-	*x = GetChannelSettingsRequest{}
-	mi := &file_dieter_v1_channels_proto_msgTypes[21]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *GetChannelSettingsRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GetChannelSettingsRequest) ProtoMessage() {}
-
-func (x *GetChannelSettingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_channels_proto_msgTypes[21]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GetChannelSettingsRequest.ProtoReflect.Descriptor instead.
-func (*GetChannelSettingsRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_channels_proto_rawDescGZIP(), []int{21}
-}
-
-// scope is "project" or "board"; value is "on" or "off". An absent override
-// inherits.
-type ChannelSettingOverride struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Scope         string                 `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
-	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
-	Value         string                 `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ChannelSettingOverride) Reset() {
-	*x = ChannelSettingOverride{}
-	mi := &file_dieter_v1_channels_proto_msgTypes[22]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ChannelSettingOverride) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ChannelSettingOverride) ProtoMessage() {}
-
-func (x *ChannelSettingOverride) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_channels_proto_msgTypes[22]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ChannelSettingOverride.ProtoReflect.Descriptor instead.
-func (*ChannelSettingOverride) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_channels_proto_rawDescGZIP(), []int{22}
-}
-
-func (x *ChannelSettingOverride) GetScope() string {
-	if x != nil {
-		return x.Scope
-	}
-	return ""
-}
-
-func (x *ChannelSettingOverride) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *ChannelSettingOverride) GetValue() string {
-	if x != nil {
-		return x.Value
-	}
-	return ""
-}
-
-type ChannelSettings struct {
-	state         protoimpl.MessageState    `protogen:"open.v1"`
-	Global        bool                      `protobuf:"varint,1,opt,name=global,proto3" json:"global,omitempty"`
-	Overrides     []*ChannelSettingOverride `protobuf:"bytes,2,rep,name=overrides,proto3" json:"overrides,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ChannelSettings) Reset() {
-	*x = ChannelSettings{}
-	mi := &file_dieter_v1_channels_proto_msgTypes[23]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ChannelSettings) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ChannelSettings) ProtoMessage() {}
-
-func (x *ChannelSettings) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_channels_proto_msgTypes[23]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ChannelSettings.ProtoReflect.Descriptor instead.
-func (*ChannelSettings) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_channels_proto_rawDescGZIP(), []int{23}
-}
-
-func (x *ChannelSettings) GetGlobal() bool {
-	if x != nil {
-		return x.Global
-	}
-	return false
-}
-
-func (x *ChannelSettings) GetOverrides() []*ChannelSettingOverride {
-	if x != nil {
-		return x.Overrides
-	}
-	return nil
-}
-
-// scope is "global" (value "on" or "off"), "project" or "board" (value "on",
-// "off" or "inherit").
-type SetChannelSettingRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Scope         string                 `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
-	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
-	Value         string                 `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SetChannelSettingRequest) Reset() {
-	*x = SetChannelSettingRequest{}
-	mi := &file_dieter_v1_channels_proto_msgTypes[24]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SetChannelSettingRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SetChannelSettingRequest) ProtoMessage() {}
-
-func (x *SetChannelSettingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_channels_proto_msgTypes[24]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SetChannelSettingRequest.ProtoReflect.Descriptor instead.
-func (*SetChannelSettingRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_channels_proto_rawDescGZIP(), []int{24}
-}
-
-func (x *SetChannelSettingRequest) GetScope() string {
-	if x != nil {
-		return x.Scope
-	}
-	return ""
-}
-
-func (x *SetChannelSettingRequest) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *SetChannelSettingRequest) GetValue() string {
-	if x != nil {
-		return x.Value
-	}
-	return ""
-}
-
 // heartbeat_ms is 0 (15 s) or at least 1000.
 type WatchChannelRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1788,7 +1559,7 @@ type WatchChannelRequest struct {
 
 func (x *WatchChannelRequest) Reset() {
 	*x = WatchChannelRequest{}
-	mi := &file_dieter_v1_channels_proto_msgTypes[25]
+	mi := &file_dieter_v1_channels_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1800,7 +1571,7 @@ func (x *WatchChannelRequest) String() string {
 func (*WatchChannelRequest) ProtoMessage() {}
 
 func (x *WatchChannelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_channels_proto_msgTypes[25]
+	mi := &file_dieter_v1_channels_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1813,7 +1584,7 @@ func (x *WatchChannelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchChannelRequest.ProtoReflect.Descriptor instead.
 func (*WatchChannelRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_channels_proto_rawDescGZIP(), []int{25}
+	return file_dieter_v1_channels_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *WatchChannelRequest) GetProjectId() string {
@@ -1855,7 +1626,7 @@ type ChannelFrame struct {
 
 func (x *ChannelFrame) Reset() {
 	*x = ChannelFrame{}
-	mi := &file_dieter_v1_channels_proto_msgTypes[26]
+	mi := &file_dieter_v1_channels_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1867,7 +1638,7 @@ func (x *ChannelFrame) String() string {
 func (*ChannelFrame) ProtoMessage() {}
 
 func (x *ChannelFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_channels_proto_msgTypes[26]
+	mi := &file_dieter_v1_channels_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1880,7 +1651,7 @@ func (x *ChannelFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChannelFrame.ProtoReflect.Descriptor instead.
 func (*ChannelFrame) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_channels_proto_rawDescGZIP(), []int{26}
+	return file_dieter_v1_channels_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ChannelFrame) GetMessages() []*ChannelMessage {
@@ -1962,32 +1733,30 @@ const file_dieter_v1_channels_proto_rawDesc = "" +
 	"deliveries\x18\r \x03(\v2\x1a.dieter.v1.ChannelDeliveryR\n" +
 	"deliveries\x12(\n" +
 	"\x10origin_daemon_id\x18\x0e \x01(\tR\x0eoriginDaemonId\x12\x12\n" +
-	"\x04here\x18\x0f \x01(\bR\x04here\"\xa5\x02\n" +
+	"\x04here\x18\x0f \x01(\bR\x04here\"\x9a\x02\n" +
 	"\rChannelMember\x12\x17\n" +
 	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x19\n" +
 	"\bboard_id\x18\x03 \x01(\tR\aboardId\x12\x18\n" +
 	"\aharness\x18\x04 \x01(\tR\aharness\x12\x14\n" +
 	"\x05model\x18\x05 \x01(\tR\x05model\x12\x16\n" +
-	"\x06status\x18\x06 \x01(\tR\x06status\x12\x18\n" +
-	"\aenabled\x18\a \x01(\bR\aenabled\x12\x14\n" +
+	"\x06status\x18\x06 \x01(\tR\x06status\x12\x14\n" +
 	"\x05holds\x18\b \x03(\tR\x05holds\x12\x1d\n" +
 	"\n" +
 	"waiting_on\x18\t \x03(\tR\twaitingOn\x12\x1b\n" +
 	"\tdaemon_id\x18\n" +
 	" \x01(\tR\bdaemonId\x12\x16\n" +
-	"\x06remote\x18\v \x01(\bR\x06remote\"\xae\x02\n" +
+	"\x06remote\x18\v \x01(\bR\x06remoteJ\x04\b\a\x10\bR\aenabled\"\xa3\x02\n" +
 	"\x0eChannelSummary\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12!\n" +
-	"\fproject_name\x18\x02 \x01(\tR\vprojectName\x12\x18\n" +
-	"\aenabled\x18\x03 \x01(\bR\aenabled\x12\x19\n" +
+	"\fproject_name\x18\x02 \x01(\tR\vprojectName\x12\x19\n" +
 	"\blast_seq\x18\x04 \x01(\x03R\alastSeq\x12\x19\n" +
 	"\bseen_seq\x18\x05 \x01(\x03R\aseenSeq\x12\x16\n" +
 	"\x06unread\x18\x06 \x01(\x05R\x06unread\x12\x16\n" +
 	"\x06claims\x18\a \x01(\x05R\x06claims\x12&\n" +
 	"\x0flast_message_at\x18\b \x01(\tR\rlastMessageAt\x122\n" +
-	"\amembers\x18\t \x03(\v2\x18.dieter.v1.ChannelMemberR\amembers\"\x15\n" +
+	"\amembers\x18\t \x03(\v2\x18.dieter.v1.ChannelMemberR\amembersJ\x04\b\x03\x10\x04R\aenabled\"\x15\n" +
 	"\x13ListChannelsRequest\"j\n" +
 	"\x14ListChannelsResponse\x12\x1b\n" +
 	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x125\n" +
@@ -2064,19 +1833,7 @@ const file_dieter_v1_channels_proto_rawDesc = "" +
 	"event_json\x18\x01 \x01(\fR\teventJson\"6\n" +
 	"\x13ChannelHookResponse\x12\x1f\n" +
 	"\voutput_json\x18\x01 \x01(\fR\n" +
-	"outputJson\"\x1b\n" +
-	"\x19GetChannelSettingsRequest\"T\n" +
-	"\x16ChannelSettingOverride\x12\x14\n" +
-	"\x05scope\x18\x01 \x01(\tR\x05scope\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\x12\x14\n" +
-	"\x05value\x18\x03 \x01(\tR\x05value\"j\n" +
-	"\x0fChannelSettings\x12\x16\n" +
-	"\x06global\x18\x01 \x01(\bR\x06global\x12?\n" +
-	"\toverrides\x18\x02 \x03(\v2!.dieter.v1.ChannelSettingOverrideR\toverrides\"V\n" +
-	"\x18SetChannelSettingRequest\x12\x14\n" +
-	"\x05scope\x18\x01 \x01(\tR\x05scope\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\x12\x14\n" +
-	"\x05value\x18\x03 \x01(\tR\x05value\"t\n" +
+	"outputJson\"t\n" +
 	"\x13WatchChannelRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x1b\n" +
@@ -2088,7 +1845,7 @@ const file_dieter_v1_channels_proto_rawDesc = "" +
 	"\x06claims\x18\x03 \x03(\v2\x17.dieter.v1.ChannelClaimR\x06claims\x12\x19\n" +
 	"\blast_seq\x18\x04 \x01(\x03R\alastSeq\x12\x1c\n" +
 	"\theartbeat\x18\x05 \x01(\bR\theartbeat\x12\x14\n" +
-	"\x05reset\x18\x06 \x01(\bR\x05reset2\xdb\b\n" +
+	"\x05reset\x18\x06 \x01(\bR\x05reset2\xad\a\n" +
 	"\x0eChannelService\x12O\n" +
 	"\fListChannels\x12\x1e.dieter.v1.ListChannelsRequest\x1a\x1f.dieter.v1.ListChannelsResponse\x12[\n" +
 	"\x13ListChannelMessages\x12%.dieter.v1.ListChannelMessagesRequest\x1a\x1d.dieter.v1.ChannelMessagePage\x12U\n" +
@@ -2099,9 +1856,7 @@ const file_dieter_v1_channels_proto_rawDesc = "" +
 	"\x11CheckChannelFiles\x12#.dieter.v1.CheckChannelFilesRequest\x1a\x17.dieter.v1.ChannelCheck\x12R\n" +
 	"\x11ListChannelClaims\x12#.dieter.v1.ListChannelClaimsRequest\x1a\x18.dieter.v1.ChannelClaims\x12X\n" +
 	"\x14ReleaseChannelClaims\x12&.dieter.v1.ReleaseChannelClaimsRequest\x1a\x18.dieter.v1.ChannelClaims\x12R\n" +
-	"\x11HandleChannelHook\x12\x1d.dieter.v1.ChannelHookRequest\x1a\x1e.dieter.v1.ChannelHookResponse\x12V\n" +
-	"\x12GetChannelSettings\x12$.dieter.v1.GetChannelSettingsRequest\x1a\x1a.dieter.v1.ChannelSettings\x12T\n" +
-	"\x11SetChannelSetting\x12#.dieter.v1.SetChannelSettingRequest\x1a\x1a.dieter.v1.ChannelSettings\x12I\n" +
+	"\x11HandleChannelHook\x12\x1d.dieter.v1.ChannelHookRequest\x1a\x1e.dieter.v1.ChannelHookResponse\x12I\n" +
 	"\fWatchChannel\x12\x1e.dieter.v1.WatchChannelRequest\x1a\x17.dieter.v1.ChannelFrame0\x01BR\n" +
 	"\x14com.getdieter.api.v1P\x01Z8github.com/dbpprt/dieter/internal/gen/dieter/v1;dieterv1b\x06proto3"
 
@@ -2117,7 +1872,7 @@ func file_dieter_v1_channels_proto_rawDescGZIP() []byte {
 	return file_dieter_v1_channels_proto_rawDescData
 }
 
-var file_dieter_v1_channels_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
+var file_dieter_v1_channels_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_dieter_v1_channels_proto_goTypes = []any{
 	(*ChannelAuthor)(nil),               // 0: dieter.v1.ChannelAuthor
 	(*ChannelDelivery)(nil),             // 1: dieter.v1.ChannelDelivery
@@ -2140,13 +1895,9 @@ var file_dieter_v1_channels_proto_goTypes = []any{
 	(*ReleaseChannelClaimsRequest)(nil), // 18: dieter.v1.ReleaseChannelClaimsRequest
 	(*ChannelHookRequest)(nil),          // 19: dieter.v1.ChannelHookRequest
 	(*ChannelHookResponse)(nil),         // 20: dieter.v1.ChannelHookResponse
-	(*GetChannelSettingsRequest)(nil),   // 21: dieter.v1.GetChannelSettingsRequest
-	(*ChannelSettingOverride)(nil),      // 22: dieter.v1.ChannelSettingOverride
-	(*ChannelSettings)(nil),             // 23: dieter.v1.ChannelSettings
-	(*SetChannelSettingRequest)(nil),    // 24: dieter.v1.SetChannelSettingRequest
-	(*WatchChannelRequest)(nil),         // 25: dieter.v1.WatchChannelRequest
-	(*ChannelFrame)(nil),                // 26: dieter.v1.ChannelFrame
-	(*emptypb.Empty)(nil),               // 27: google.protobuf.Empty
+	(*WatchChannelRequest)(nil),         // 21: dieter.v1.WatchChannelRequest
+	(*ChannelFrame)(nil),                // 22: dieter.v1.ChannelFrame
+	(*emptypb.Empty)(nil),               // 23: google.protobuf.Empty
 }
 var file_dieter_v1_channels_proto_depIdxs = []int32{
 	0,  // 0: dieter.v1.ChannelMessage.author:type_name -> dieter.v1.ChannelAuthor
@@ -2159,41 +1910,36 @@ var file_dieter_v1_channels_proto_depIdxs = []int32{
 	2,  // 7: dieter.v1.ChannelCheck.recent:type_name -> dieter.v1.ChannelMessage
 	14, // 8: dieter.v1.ChannelCheck.elsewhere:type_name -> dieter.v1.ChannelClaim
 	14, // 9: dieter.v1.ChannelClaims.claims:type_name -> dieter.v1.ChannelClaim
-	22, // 10: dieter.v1.ChannelSettings.overrides:type_name -> dieter.v1.ChannelSettingOverride
-	2,  // 11: dieter.v1.ChannelFrame.messages:type_name -> dieter.v1.ChannelMessage
-	4,  // 12: dieter.v1.ChannelFrame.summary:type_name -> dieter.v1.ChannelSummary
-	14, // 13: dieter.v1.ChannelFrame.claims:type_name -> dieter.v1.ChannelClaim
-	5,  // 14: dieter.v1.ChannelService.ListChannels:input_type -> dieter.v1.ListChannelsRequest
-	7,  // 15: dieter.v1.ChannelService.ListChannelMessages:input_type -> dieter.v1.ListChannelMessagesRequest
-	9,  // 16: dieter.v1.ChannelService.PostChannelMessage:input_type -> dieter.v1.PostChannelMessageRequest
-	10, // 17: dieter.v1.ChannelService.PinChannelMessage:input_type -> dieter.v1.PinChannelMessageRequest
-	11, // 18: dieter.v1.ChannelService.MarkChannelRead:input_type -> dieter.v1.MarkChannelReadRequest
-	12, // 19: dieter.v1.ChannelService.GetChannelInbox:input_type -> dieter.v1.GetChannelInboxRequest
-	13, // 20: dieter.v1.ChannelService.CheckChannelFiles:input_type -> dieter.v1.CheckChannelFilesRequest
-	16, // 21: dieter.v1.ChannelService.ListChannelClaims:input_type -> dieter.v1.ListChannelClaimsRequest
-	18, // 22: dieter.v1.ChannelService.ReleaseChannelClaims:input_type -> dieter.v1.ReleaseChannelClaimsRequest
-	19, // 23: dieter.v1.ChannelService.HandleChannelHook:input_type -> dieter.v1.ChannelHookRequest
-	21, // 24: dieter.v1.ChannelService.GetChannelSettings:input_type -> dieter.v1.GetChannelSettingsRequest
-	24, // 25: dieter.v1.ChannelService.SetChannelSetting:input_type -> dieter.v1.SetChannelSettingRequest
-	25, // 26: dieter.v1.ChannelService.WatchChannel:input_type -> dieter.v1.WatchChannelRequest
-	6,  // 27: dieter.v1.ChannelService.ListChannels:output_type -> dieter.v1.ListChannelsResponse
-	8,  // 28: dieter.v1.ChannelService.ListChannelMessages:output_type -> dieter.v1.ChannelMessagePage
-	2,  // 29: dieter.v1.ChannelService.PostChannelMessage:output_type -> dieter.v1.ChannelMessage
-	2,  // 30: dieter.v1.ChannelService.PinChannelMessage:output_type -> dieter.v1.ChannelMessage
-	27, // 31: dieter.v1.ChannelService.MarkChannelRead:output_type -> google.protobuf.Empty
-	8,  // 32: dieter.v1.ChannelService.GetChannelInbox:output_type -> dieter.v1.ChannelMessagePage
-	15, // 33: dieter.v1.ChannelService.CheckChannelFiles:output_type -> dieter.v1.ChannelCheck
-	17, // 34: dieter.v1.ChannelService.ListChannelClaims:output_type -> dieter.v1.ChannelClaims
-	17, // 35: dieter.v1.ChannelService.ReleaseChannelClaims:output_type -> dieter.v1.ChannelClaims
-	20, // 36: dieter.v1.ChannelService.HandleChannelHook:output_type -> dieter.v1.ChannelHookResponse
-	23, // 37: dieter.v1.ChannelService.GetChannelSettings:output_type -> dieter.v1.ChannelSettings
-	23, // 38: dieter.v1.ChannelService.SetChannelSetting:output_type -> dieter.v1.ChannelSettings
-	26, // 39: dieter.v1.ChannelService.WatchChannel:output_type -> dieter.v1.ChannelFrame
-	27, // [27:40] is the sub-list for method output_type
-	14, // [14:27] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	2,  // 10: dieter.v1.ChannelFrame.messages:type_name -> dieter.v1.ChannelMessage
+	4,  // 11: dieter.v1.ChannelFrame.summary:type_name -> dieter.v1.ChannelSummary
+	14, // 12: dieter.v1.ChannelFrame.claims:type_name -> dieter.v1.ChannelClaim
+	5,  // 13: dieter.v1.ChannelService.ListChannels:input_type -> dieter.v1.ListChannelsRequest
+	7,  // 14: dieter.v1.ChannelService.ListChannelMessages:input_type -> dieter.v1.ListChannelMessagesRequest
+	9,  // 15: dieter.v1.ChannelService.PostChannelMessage:input_type -> dieter.v1.PostChannelMessageRequest
+	10, // 16: dieter.v1.ChannelService.PinChannelMessage:input_type -> dieter.v1.PinChannelMessageRequest
+	11, // 17: dieter.v1.ChannelService.MarkChannelRead:input_type -> dieter.v1.MarkChannelReadRequest
+	12, // 18: dieter.v1.ChannelService.GetChannelInbox:input_type -> dieter.v1.GetChannelInboxRequest
+	13, // 19: dieter.v1.ChannelService.CheckChannelFiles:input_type -> dieter.v1.CheckChannelFilesRequest
+	16, // 20: dieter.v1.ChannelService.ListChannelClaims:input_type -> dieter.v1.ListChannelClaimsRequest
+	18, // 21: dieter.v1.ChannelService.ReleaseChannelClaims:input_type -> dieter.v1.ReleaseChannelClaimsRequest
+	19, // 22: dieter.v1.ChannelService.HandleChannelHook:input_type -> dieter.v1.ChannelHookRequest
+	21, // 23: dieter.v1.ChannelService.WatchChannel:input_type -> dieter.v1.WatchChannelRequest
+	6,  // 24: dieter.v1.ChannelService.ListChannels:output_type -> dieter.v1.ListChannelsResponse
+	8,  // 25: dieter.v1.ChannelService.ListChannelMessages:output_type -> dieter.v1.ChannelMessagePage
+	2,  // 26: dieter.v1.ChannelService.PostChannelMessage:output_type -> dieter.v1.ChannelMessage
+	2,  // 27: dieter.v1.ChannelService.PinChannelMessage:output_type -> dieter.v1.ChannelMessage
+	23, // 28: dieter.v1.ChannelService.MarkChannelRead:output_type -> google.protobuf.Empty
+	8,  // 29: dieter.v1.ChannelService.GetChannelInbox:output_type -> dieter.v1.ChannelMessagePage
+	15, // 30: dieter.v1.ChannelService.CheckChannelFiles:output_type -> dieter.v1.ChannelCheck
+	17, // 31: dieter.v1.ChannelService.ListChannelClaims:output_type -> dieter.v1.ChannelClaims
+	17, // 32: dieter.v1.ChannelService.ReleaseChannelClaims:output_type -> dieter.v1.ChannelClaims
+	20, // 33: dieter.v1.ChannelService.HandleChannelHook:output_type -> dieter.v1.ChannelHookResponse
+	22, // 34: dieter.v1.ChannelService.WatchChannel:output_type -> dieter.v1.ChannelFrame
+	24, // [24:35] is the sub-list for method output_type
+	13, // [13:24] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_dieter_v1_channels_proto_init() }
@@ -2207,7 +1953,7 @@ func file_dieter_v1_channels_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dieter_v1_channels_proto_rawDesc), len(file_dieter_v1_channels_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   27,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

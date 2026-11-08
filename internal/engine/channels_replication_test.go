@@ -44,7 +44,6 @@ func publishRemoteMessage(t *testing.T, service *Service, record schema.ChannelR
 func TestMessagesFromAnotherMachineReachTheirRecipientsHere(t *testing.T) {
 	t.Parallel()
 	service, runner, project, board := channelSetup(t)
-	enableChannels(t, service)
 	card := channelCard(t, service, project, board, "Checkout tests")
 	startChannelTurn(t, service, card, "hold while testing")
 	waitFor(t, func() bool { return service.turnHasChannelFor(card.ID) })
@@ -103,7 +102,6 @@ func TestMessagesFromAnotherMachineReachTheirRecipientsHere(t *testing.T) {
 func TestMessagesPostedHereReplicateIntoTheOriginRing(t *testing.T) {
 	t.Parallel()
 	service, _, project, board := channelSetup(t)
-	enableChannels(t, service)
 	card := channelCard(t, service, project, board, "Recipient")
 	posted, err := service.PostChannelMessage(context.Background(), ChannelCaller{DeviceID: "dv_1"}, ChannelPost{ProjectID: project.ID, To: []string{card.ID}, Body: "Ship it.", Kind: "decision"})
 	if err != nil {
@@ -141,7 +139,6 @@ func TestMessagesPostedHereReplicateIntoTheOriginRing(t *testing.T) {
 func TestAWakeFromAnotherMachineStartsAnIdleRecipient(t *testing.T) {
 	t.Parallel()
 	service, runner, project, board := channelSetup(t)
-	enableChannels(t, service)
 	card := channelCard(t, service, project, board, "Idle")
 	record := remoteMessage(project.ID, 1, "Your file is free now.", card.ID)
 	record.Wake = true
@@ -157,7 +154,6 @@ func TestAWakeFromAnotherMachineStartsAnIdleRecipient(t *testing.T) {
 func TestPinsAndReceiptsFromAnotherMachineApply(t *testing.T) {
 	t.Parallel()
 	service, _, project, _ := channelSetup(t)
-	enableChannels(t, service)
 	posted, err := service.PostChannelMessage(context.Background(), ChannelCaller{}, ChannelPost{ProjectID: project.ID, Body: "Use testdata/ for fixtures."})
 	if err != nil {
 		t.Fatal(err)
@@ -183,7 +179,6 @@ func TestPinsAndReceiptsFromAnotherMachineApply(t *testing.T) {
 func TestClaimsOnAnotherMachineAreAdvisory(t *testing.T) {
 	t.Parallel()
 	service, _, project, board := channelSetup(t)
-	enableChannels(t, service)
 	card := channelCard(t, service, project, board, "Local")
 	fresh := schema.ChannelClaimsRecord{At: time.Now().UTC().Format(time.RFC3339Nano), Claims: []schema.ChannelClaimEntry{{Path: "src/a.go", CardID: "c_remote", CardTitle: "Remote agent", Since: time.Now().UTC().Format(time.RFC3339Nano)}}}
 	publishRemote(t, service, schema.ChannelClaimsNamespace, schema.ChannelScopeKey(project.ID, remoteDaemon), fresh)
@@ -209,7 +204,6 @@ func TestClaimsOnAnotherMachineAreAdvisory(t *testing.T) {
 func TestLocalClaimsArePublishedForOtherMachines(t *testing.T) {
 	t.Parallel()
 	service, runner, project, board := channelSetup(t)
-	enableChannels(t, service)
 	card := channelCard(t, service, project, board, "Writer")
 	startChannelTurn(t, service, card, "hold write:src/claimed.go")
 	waitFor(t, func() bool { return len(service.localChannelClaims(project.ID)) == 1 })
@@ -266,7 +260,6 @@ func TestDigestsCarryDirectMessagesAndRecentPostsOnly(t *testing.T) {
 func TestHereReachesOnlyRunningTurns(t *testing.T) {
 	t.Parallel()
 	service, runner, project, board := channelSetup(t)
-	enableChannels(t, service)
 	busy, idle := channelCard(t, service, project, board, "Busy"), channelCard(t, service, project, board, "Idle")
 	startChannelTurn(t, service, busy, "hold while testing")
 	waitFor(t, func() bool { return service.turnHasChannelFor(busy.ID) })
@@ -287,7 +280,6 @@ func TestHereReachesOnlyRunningTurns(t *testing.T) {
 func TestReceiptsAndPinsThatArriveBeforeTheirMessageApplyOnceItDoes(t *testing.T) {
 	t.Parallel()
 	service, _, project, _ := channelSetup(t)
-	enableChannels(t, service)
 	record := remoteMessage(project.ID, 1, "Tier caps live next to their rules.")
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	publishRemote(t, service, schema.ChannelReceiptNamespace, "c_remote", schema.ChannelReceiptRecord{ProjectID: project.ID, Daemon: remoteDaemon, Deliveries: []schema.ChannelDeliveryEntry{{Message: record.ID, Mode: "steered", At: now}}})

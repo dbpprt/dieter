@@ -126,7 +126,6 @@ internal class ViewSurfaces(runtime: CoreRuntime, screenHost: ScreenHost?) {
             Channels(
                 runtime.sessions,
                 runtime.choice::reachable,
-                runtime.channelSettings.view,
                 runtime.scope,
                 runtime.platform.logger,
             )

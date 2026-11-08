@@ -30,20 +30,18 @@ struct ChannelsModelTests {
         }
     }
 
-    @Test func itFoldsTheChannelsAndSettingsTheCoreSends() {
+    @Test func itFoldsTheChannelsTheCoreSends() {
         let core = ScriptedCoreClient()
         let model = ChannelsModel(scope: "test-channels")
         model.attach(core)
         model.attach(core)
         #expect(core.isObserved(.channels, scope: "test-channels"))
-        #expect(core.isObserved(.channelSettings))
         #expect(model.stream == nil && model.unread == 0)
 
         core.emit(.channels, scope: "test-channels") {
             $0.channels = .with {
                 $0.unread = 3
                 $0.unreadLabel = "3"
-                $0.enabled = true
                 $0.channels = [
                     .with {
                         $0.projectID = "p1"; $0.name = "pricing"; $0.unread = 3
@@ -55,26 +53,6 @@ struct ChannelsModelTests {
         #expect(model.unread == 3)
         #expect(model.slice.channels.first?.name == "pricing")
         #expect(model.stream?.rows.map(\.id) == ["m1", "m2"])
-
-        core.emit(.channelSettings) {
-            $0.channelSettings = .with {
-                $0.global = true
-                $0.projects = [
-                    .with {
-                        $0.id = "p1"; $0.mode = .off; $0.label = "Off"
-                    }
-                ]
-                $0.boards = [
-                    .with {
-                        $0.id = "b1"; $0.mode = .inherit; $0.label = "Inherit (Off)"
-                    }
-                ]
-            }
-        }
-        #expect(model.settings.global)
-        #expect(model.projectSetting("p1")?.label == "Off")
-        #expect(model.boardSetting("b1")?.label == "Inherit (Off)")
-        #expect(model.boardSetting("gone") == nil)
     }
 
     @Test func commandsCarryTheViewsScopeAndTheUsersChoices() async {
@@ -88,8 +66,6 @@ struct ChannelsModelTests {
         await model.post(body: "stop pushing", to: ["c1"], here: true, kind: .note, wake: true)
         await model.pin("m1", pinned: true)
         await model.release(cardID: "c1", path: "src/a.ts")
-        await model.setSetting(scope: .board, id: "b1", mode: .inherit)
-        await model.setGlobal(true)
         #expect(posted)
 
         let commands = core.commands.map(\.channels)
@@ -103,8 +79,6 @@ struct ChannelsModelTests {
         #expect(!commands[4].post.wake, "@here never wakes")
         #expect(commands[5].pin.messageID == "m1" && commands[5].pin.pinned)
         #expect(commands[6].releaseClaim.cardID == "c1" && commands[6].releaseClaim.path == "src/a.ts")
-        #expect(commands[7].setSetting.scope == .board && commands[7].setSetting.mode == .inherit)
-        #expect(commands[8].setSetting.scope == .global && commands[8].setSetting.mode == .on)
     }
 
     @Test func markingReadWaitsForUnreadMessagesAndFailuresShow() async {
@@ -129,10 +103,10 @@ struct ChannelsModelTests {
         }
         #expect(model.stream?.unread == 0)
 
-        core.handler = { _ in throw CoreFailure(kind: .permanent, message: "agent channels are off") }
+        core.handler = { _ in throw CoreFailure(kind: .permanent, message: "mbp-office is not reachable") }
         let posted = await model.post(body: "anyone?", to: [], kind: .note, wake: false)
         #expect(!posted)
-        #expect(model.errorMessage == "agent channels are off")
+        #expect(model.errorMessage == "mbp-office is not reachable")
         core.handler = { _ in .with { $0.done = ClientDone() } }
         await model.refresh()
         #expect(model.errorMessage == nil, "a command that succeeds clears the failure")

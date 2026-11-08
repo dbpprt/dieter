@@ -87,24 +87,6 @@ func (s *Store) dir(projectID string) (string, error) {
 	return filepath.Join(s.home.Root, "channels", projectID), nil
 }
 
-// Projects lists the projects that have a channel log on this daemon.
-func (s *Store) Projects() ([]string, error) {
-	entries, err := os.ReadDir(filepath.Join(s.home.Root, "channels"))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var projects []string
-	for _, entry := range entries {
-		if entry.IsDir() && validProjectID.MatchString(entry.Name()) {
-			projects = append(projects, entry.Name())
-		}
-	}
-	return projects, nil
-}
-
 // load returns the cached log of projectID, rereading it when the file
 // changed size. Callers hold s.mu.
 func (s *Store) load(projectID string) (*projectLog, error) {

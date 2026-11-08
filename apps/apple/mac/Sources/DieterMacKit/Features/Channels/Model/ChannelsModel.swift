@@ -2,17 +2,14 @@ import DieterClientAPI
 import Foundation
 import Observation
 
-/// Agent channels (experimental) as the shared core presents them: the list
-/// of the account's project channels with the sidebar's unread count, the
-/// selected channel's stream and inspector, and the account's settings. The
-/// core lists, watches, groups and words everything; this model only folds
-/// its slices and sends its commands.
+/// Agent channels as the shared core presents them: the list of the account's
+/// project channels with the sidebar's unread count and the selected
+/// channel's stream and inspector. The core lists, watches, groups and words
+/// everything; this model only folds its slice and sends its commands.
 @MainActor @Observable
 final class ChannelsModel {
     /// The list, the empty state, and the selected channel's stream.
     private(set) var slice = ClientChannelsSlice()
-    /// The account's switches with this device's unconfirmed changes.
-    private(set) var settings = ClientChannelSettingsSlice()
     /// Why the last command failed; the channel view shows it.
     var errorMessage: String?
     @ObservationIgnored private var core: CoreClient?
@@ -26,8 +23,7 @@ final class ChannelsModel {
     var stream: ClientChannelStreamView? { slice.hasStream ? slice.stream : nil }
     var unread: Int { Int(slice.unread) }
 
-    /// Observes the channels and their settings; the core lists channels only
-    /// while some setting is on.
+    /// Observes the channels.
     func attach(_ core: CoreClient) {
         guard subscriptions.isEmpty else { return }
         self.core = core
@@ -35,42 +31,12 @@ final class ChannelsModel {
             SliceSubscription(client: core, slice: .channels, scope: scope) { [weak self] update in
                 guard let self, case .channels(let value) = update.value else { return }
                 self.fold(value)
-            },
-            SliceSubscription(client: core, slice: .channelSettings) { [weak self] update in
-                guard let self, case .channelSettings(let value) = update.value else { return }
-                if self.settings != value { self.settings = value }
-            },
+            }
         ]
     }
 
     private func fold(_ value: ClientChannelsSlice) {
         if slice != value { slice = value }
-    }
-
-    // MARK: Settings
-
-    /// The settings row of a project, or nil before the workspace lists it.
-    func projectSetting(_ projectID: String) -> ClientChannelSettingRow? {
-        settings.projects.first { $0.id == projectID }
-    }
-
-    func boardSetting(_ boardID: String) -> ClientChannelSettingRow? {
-        settings.boards.first { $0.id == boardID }
-    }
-
-    /// Writes a switch on a reachable machine; the settings show it at once.
-    func setSetting(scope: ClientChannelSettingScope, id: String = "", mode: ClientChannelSettingMode) async {
-        await run { command in
-            command.setSetting = .with {
-                $0.scope = scope
-                $0.id = id
-                $0.mode = mode
-            }
-        }
-    }
-
-    func setGlobal(_ on: Bool) async {
-        await setSetting(scope: .global, mode: on ? .on : .off)
     }
 
     // MARK: The channel view

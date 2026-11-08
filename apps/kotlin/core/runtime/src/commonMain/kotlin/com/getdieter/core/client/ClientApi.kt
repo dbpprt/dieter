@@ -24,7 +24,6 @@ import com.getdieter.client.v1.WorkspaceSlice
 import com.getdieter.core.CoreRuntime
 import com.getdieter.core.board.BoardOperations
 import com.getdieter.core.board.DropAnchors
-import com.getdieter.core.channels.ChannelSettingRules
 import com.getdieter.core.channels.ChannelsView
 import com.getdieter.core.composition.Attachments
 import com.getdieter.core.composition.DraftKey
@@ -512,18 +511,8 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
         invalid("Choose a command.")
     }
 
-    /**
-     * A channels command. A setting change reaches any reachable machine; everything else needs the
-     * view's channels surface (the unscoped one for an empty scope).
-     */
+    /** A channels command, on the view's channels surface (the unscoped one for an empty scope). */
     private suspend fun channels(command: ChannelsCommand): Result {
-        command.set_setting?.let {
-            runtime.channelSettings.set(it)
-            // The change showed before the write landed, so a listing it woke may
-            // predate it; list again now that the machine has it.
-            surfaces.channels.all.forEach { channels -> channels.requestRefresh() }
-            return Result(done = Done())
-        }
         val channels = surfaces.channels.scoped(command.scope, "Open the channels first.")
         val select = command.select
         val active = command.active
@@ -547,7 +536,6 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
         val directory = runtime.connection.machines.value
         val reachable = runtime.choice.reachable().toSet()
         return view.slice(
-            runtime.channelSettings.view.value.switches,
             name = { id -> directory.machine(id)?.name?.ifBlank { null } ?: id },
             reachable = { it in reachable },
             now = runtime.platform.clock.now(),
@@ -743,32 +731,11 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
                                 delay(CHANNEL_TICK)
                             }
                         }
-                        combine(
-                                channels.view,
-                                runtime.channelSettings.view,
-                                runtime.reachabilityChanges(),
-                                ticks,
-                            ) { view, _, _, _ ->
+                        combine(channels.view, runtime.reachabilityChanges(), ticks) { view, _, _ ->
                                 channelsSlice(view)
                             }
                             .distinctUntilChanged()
                             .map { Update(channels = it) }
-                    }
-                Slice.SLICE_CHANNEL_SETTINGS ->
-                    collect(
-                        combine(runtime.channelSettings.view, runtime.workspace.state) {
-                            settings,
-                            workspace ->
-                            ChannelSettingRules.slice(
-                                settings.switches,
-                                workspace.projects,
-                                workspace.boards.values.flatten(),
-                                settings.saving,
-                                settings.error,
-                            )
-                        }
-                    ) {
-                        emit(Update(channel_settings = it))
                     }
                 Slice.SLICE_CREATION_PREVIEW ->
                     observeSurface(surfaces.creationPreviews, scope, ::emit) { form ->

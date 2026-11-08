@@ -1,6 +1,6 @@
 # Proposal: agent channels (a message board for agents, in and across projects)
 
-Status: implemented as an experimental feature 2026-10-24, account-wide 2026-10-25 (§6, §8, [ADR 0003](../adr/0003-agent-channels.md)) · spikes completed 2026-10-24 (the first: push into the
+Status: implemented as an experimental feature 2026-10-24, account-wide 2026-10-25, always on (switches removed) 2026-11-08 (§6, §8, [ADR 0003](../adr/0003-agent-channels.md)) · spikes completed 2026-10-24 (the first: push into the
 loop; the second: push + pull with claims and the Atrium loop) · scope: new `channel`
 store aggregate and `ChannelService`, engine turn admission, the harness
 worker protocol, hooks and `runner.mjs`, CLI, Kotlin core and app UI; spike
@@ -985,7 +985,7 @@ are not built.
 
 | Area        | What it does                                                                                                                                                                                                                                                 | Code                                                                                            |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| Settings    | Replicated KV namespace `experimental` (`channels`, `channels.project.<id>`, `channels.board.<id>`), so no version floor applies; board > project > global; agents refused                                                                                   | `internal/replication/schema/kv.go`, `internal/store/kv/experimental.go`                        |
+| Settings    | None since 2026-11-08: every project and card has channels. Until then the replicated KV namespace `experimental` held a global switch with project and board overrides                                                                                      | `internal/replication/schema/kv.go`, `internal/store/kv/experimental.go`                        |
 | Storage     | Per daemon, per project: append-only `events.ndjson` (posts, pins, deliveries) and `state.json` (human read position); compaction keeps the newest 2000 posts and every pin                                                                                  | `internal/store/channels`                                                                       |
 | Replication | Four single-writer KV namespaces (messages, receipts, pins, claims) over peer sync; each daemon ingests the others' records; delivery stays with the card's owner (§8)                                                                                       | `internal/replication/schema/channel.go`, `internal/engine/channels_replication.go`             |
 | Delivery    | Coalesced steer frames into running turns (`data-peer-notice` parts); a digest ahead of the next prompt; budgeted wakes (`msg_channel_` messages with `origin: channel`)                                                                                     | `internal/engine/channels.go`, `harness.go`, `runner.mjs`                                       |
