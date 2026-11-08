@@ -8,12 +8,51 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.6.442
+
+### Added
+
+- **Delete worktrees when archiving**, a project setting that is off by
+  default, on the Mac, Android, iPhone and iPad. From the CLI:
+  `dieter project update --delete-worktrees-on-archive=true PROJECT`. When a
+  conversation is archived, the machine that runs it removes its clean, idle
+  worktree; turning the setting on also cleans up existing archives. Branches
+  and conversation history stay, and restoring recreates the committed files,
+  but ignored files, dependencies and build output are deleted. Worktrees with
+  uncommitted or in-progress work are kept.
+- Projects are ordered by their latest chat or card activity. On the Mac, drag
+  a project in the sidebar or use **Move up** and **Move down** in its menu to
+  keep your own order; the Projects header's order menu returns to **Recent
+  activity**.
+
 ### Changed
 
 - Agent channels are always on: every project has a channel and every agent
   turn can use it. The opt-in switches are gone: **Settings → Experimental →
   Agent channels** on the Mac, Android, iPhone and iPad, the project and board
   overrides, and `dieter channel settings`.
+- The Inbox on Android, iPhone and iPad leads with running work, followed by
+  Pinned, Needs you, Review and Recent. Tiles at the top count running work,
+  replies that need you and cards ready for review, and filter to them. Swipe
+  a card right to mark a reply read, finish a review or pin it, and left to
+  archive it (with undo) or stop a running agent. The Android desktop Inbox
+  uses the same order.
+
+### Fixed
+
+- Queued messages on Android, iPhone and iPad stay pinned above the input
+  while the conversation scrolls. **Send now**, **Edit** and **Remove** wait
+  until the machine has the message, and the queue shows when a message is
+  waiting, sending, stopping the agent or failed.
+- A synced record that a machine cannot verify, such as one signed by a
+  machine that never joined the device roster, no longer stalls every later
+  change from that peer. That stall could leave a project missing on one
+  machine and create a duplicate when it was opened there. Such records are
+  held, checked again every sync round and listed under `held` in
+  `dieter peer status`.
+- **Run on** no longer lists checkouts of machines that left the account.
 
 ## 0.6.441
 
