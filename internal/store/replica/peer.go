@@ -206,23 +206,23 @@ func (s *Store) MergePeerRecords(identity PeerIdentity, records []crdt.Record) e
 		return err
 	}
 	changed := false
+	var held []HeldPeerRecord
 	for _, record := range records {
-		if err = schema.Validate(record); err != nil {
-			return peerRecordFailure(record, "invalid_record", err)
+		merged, e := s.mergePeerRecord(&data, record)
+		var rejected *PeerRecordError
+		if errors.As(e, &rejected) && rejected.Code == "invalid_provenance" {
+			held = append(held, HeldPeerRecord{Record: record, Field: rejected.Field, Code: rejected.Code, HeldAt: time.Now().UTC().Format(time.RFC3339Nano)})
+			continue
 		}
-		key := crdt.Key(record.Kind, record.ID)
-		if err = s.validatePeerDomainMerge(data, data.Record(key), record); err != nil {
-			return peerRecordFailure(record, "invalid_provenance", err)
-		}
-		merged, e := crdt.Merge(data.Record(key), record)
 		if e != nil {
-			return peerRecordFailure(record, "causal_conflict", e)
+			return e
 		}
-		if data.Record(key).Revision() != merged.Revision() {
-			data.Records[key] = merged
-			data.Dirty[key] = true
-			changed = true
-		}
+		changed = changed || merged
+	}
+	// Held before the page commits: a failed commit repeats the page, and
+	// holding the same record again changes nothing.
+	if err = s.holdPeerRecords(identity.Account, held); err != nil {
+		return err
 	}
 	// A page that merges nothing records no change.
 	if !changed {
@@ -232,6 +232,30 @@ func (s *Store) MergePeerRecords(identity PeerIdentity, records []crdt.Record) e
 		return err
 	}
 	return s.SavePeerData(identity.Account, data)
+}
+
+// mergePeerRecord checks one received record and joins it into data,
+// reporting whether data changed. A record that must not merge fails with a
+// *PeerRecordError.
+func (s *Store) mergePeerRecord(data *PeerData, record crdt.Record) (bool, error) {
+	if err := schema.Validate(record); err != nil {
+		return false, peerRecordFailure(record, "invalid_record", err)
+	}
+	key := crdt.Key(record.Kind, record.ID)
+	current := data.Record(key)
+	if err := s.validatePeerDomainMerge(*data, current, record); err != nil {
+		return false, err
+	}
+	merged, err := crdt.Merge(current, record)
+	if err != nil {
+		return false, peerRecordFailure(record, "causal_conflict", err)
+	}
+	if current.Revision() == merged.Revision() {
+		return false, nil
+	}
+	data.Records[key] = merged
+	data.Dirty[key] = true
+	return true, nil
 }
 func (s *Store) PeerSynced(identity PeerIdentity, peer, route string) error {
 	release, err := s.home.BeginWriteLock()

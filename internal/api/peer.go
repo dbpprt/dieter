@@ -62,6 +62,13 @@ func (api *peerAPI) GetPeerStoreStatus(ctx context.Context, _ *emptypb.Empty) (*
 	for _, d := range diagnostics {
 		out.Peers = append(out.Peers, protoPeerDiagnostic(d))
 	}
+	held, err := api.server.store.Replica.HeldPeerRecords(identity.Account)
+	if err != nil {
+		return nil, domainFailure(err)
+	}
+	for _, h := range held {
+		out.Held = append(out.Held, &dieterv1.HeldPeerRecord{Kind: h.Record.Kind, Id: h.Record.ID, Field: h.Field, FailureCode: h.Code, HeldAt: h.HeldAt})
+	}
 	return out, nil
 }
 

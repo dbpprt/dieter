@@ -173,7 +173,11 @@ member, and send oversized or malformed peer traffic.
 - Owner-scoped fields carry provenance signatures verified against the owner
   daemon's roster key, so a peer can relay but not forge another machine's
   ownership claims (`internal/replication/crdt/provenance.go`,
-  `internal/store/replica/provenance.go`).
+  `internal/store/replica/provenance.go`). A received record whose proof does
+  not verify is held, never merged: the rest of its page still merges, every
+  sync round verifies it again, and `dieter peer status` lists it. The held set
+  is bounded (`internal/store/replica/held.go`); when it is full, such a record
+  fails its page as before.
 - `dieter device revoke DEVICE_ID` from any trusted device removes the machine
   from the roster; every daemon refuses it as soon as it sees the signed
   revocation, on established connections too. `dieter machine revoke` (gateway

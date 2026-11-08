@@ -48,6 +48,7 @@ class AccountSync(
     private val records = AccountRecords()
     private val projector = AccountProjector()
     private val unsaved = HashSet<String>()
+    private var listed: Set<String>? = null
     private var persistJob: Job? = null
     private var projectJob: Job? = null
     private var projectedAt: TimeMark? = null
@@ -77,6 +78,7 @@ class AccountSync(
         records.clear()
         projector.clear()
         unsaved.clear()
+        listed = null
         val updated = HashMap<String, Instant>()
         for (name in storage?.names().orEmpty()) {
             val machineId = decodeMachineId(name) ?: continue
@@ -143,9 +145,16 @@ class AccountSync(
         scheduleProjection()
     }
 
-    /** Forgets every machine but [machineIds], e.g. those the account still lists. */
+    /**
+     * Forgets every machine but [machineIds], e.g. those the account still lists. From then on the
+     * view keeps only checkouts on those machines.
+     */
     fun retain(machineIds: Set<String>) {
         for (machineId in replicas.keys.filter { it !in machineIds }) forget(machineId)
+        if (listed != machineIds) {
+            listed = machineIds
+            scheduleProjection()
+        }
     }
 
     /**
@@ -166,7 +175,7 @@ class AccountSync(
         projectJob?.cancel()
         projectJob = null
         projectedAt = timeSource.markNow()
-        val snapshot = projector.project(records, replicas.values)
+        val snapshot = projector.project(records, replicas.values, listed)
         val loaded = replicas.values.any { it.hasView }
         mutableSnapshot.value = snapshot
         mutableLoaded.value = loaded

@@ -23,15 +23,19 @@ const (
 )
 
 type PeerStoreStatus struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Account       string                 `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
-	Actor         string                 `protobuf:"bytes,2,opt,name=actor,proto3" json:"actor,omitempty"`
-	Records       uint32                 `protobuf:"varint,3,opt,name=records,proto3" json:"records,omitempty"`
-	Conflicts     uint32                 `protobuf:"varint,4,opt,name=conflicts,proto3" json:"conflicts,omitempty"`
-	LastSyncAt    string                 `protobuf:"bytes,5,opt,name=last_sync_at,json=lastSyncAt,proto3" json:"last_sync_at,omitempty"`
-	LastPeerId    string                 `protobuf:"bytes,6,opt,name=last_peer_id,json=lastPeerId,proto3" json:"last_peer_id,omitempty"`
-	LastRoute     string                 `protobuf:"bytes,7,opt,name=last_route,json=lastRoute,proto3" json:"last_route,omitempty"`
-	Peers         []*PeerSyncDiagnostic  `protobuf:"bytes,8,rep,name=peers,proto3" json:"peers,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Account    string                 `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	Actor      string                 `protobuf:"bytes,2,opt,name=actor,proto3" json:"actor,omitempty"`
+	Records    uint32                 `protobuf:"varint,3,opt,name=records,proto3" json:"records,omitempty"`
+	Conflicts  uint32                 `protobuf:"varint,4,opt,name=conflicts,proto3" json:"conflicts,omitempty"`
+	LastSyncAt string                 `protobuf:"bytes,5,opt,name=last_sync_at,json=lastSyncAt,proto3" json:"last_sync_at,omitempty"`
+	LastPeerId string                 `protobuf:"bytes,6,opt,name=last_peer_id,json=lastPeerId,proto3" json:"last_peer_id,omitempty"`
+	LastRoute  string                 `protobuf:"bytes,7,opt,name=last_route,json=lastRoute,proto3" json:"last_route,omitempty"`
+	Peers      []*PeerSyncDiagnostic  `protobuf:"bytes,8,rep,name=peers,proto3" json:"peers,omitempty"`
+	// Received records whose owner provenance this machine cannot verify. They
+	// are never merged, no longer stop the rest of their page, and are retried
+	// every sync round until they verify or a merged version supersedes them.
+	Held          []*HeldPeerRecord `protobuf:"bytes,9,rep,name=held,proto3" json:"held,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -122,6 +126,89 @@ func (x *PeerStoreStatus) GetPeers() []*PeerSyncDiagnostic {
 	return nil
 }
 
+func (x *PeerStoreStatus) GetHeld() []*HeldPeerRecord {
+	if x != nil {
+		return x.Held
+	}
+	return nil
+}
+
+type HeldPeerRecord struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	Field         string                 `protobuf:"bytes,3,opt,name=field,proto3" json:"field,omitempty"`
+	FailureCode   string                 `protobuf:"bytes,4,opt,name=failure_code,json=failureCode,proto3" json:"failure_code,omitempty"`
+	HeldAt        string                 `protobuf:"bytes,5,opt,name=held_at,json=heldAt,proto3" json:"held_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HeldPeerRecord) Reset() {
+	*x = HeldPeerRecord{}
+	mi := &file_dieter_v1_peer_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HeldPeerRecord) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HeldPeerRecord) ProtoMessage() {}
+
+func (x *HeldPeerRecord) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_peer_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HeldPeerRecord.ProtoReflect.Descriptor instead.
+func (*HeldPeerRecord) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_peer_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *HeldPeerRecord) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *HeldPeerRecord) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *HeldPeerRecord) GetField() string {
+	if x != nil {
+		return x.Field
+	}
+	return ""
+}
+
+func (x *HeldPeerRecord) GetFailureCode() string {
+	if x != nil {
+		return x.FailureCode
+	}
+	return ""
+}
+
+func (x *HeldPeerRecord) GetHeldAt() string {
+	if x != nil {
+		return x.HeldAt
+	}
+	return ""
+}
+
 type PeerSnapshotRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	Account          string                 `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
@@ -133,7 +220,7 @@ type PeerSnapshotRequest struct {
 
 func (x *PeerSnapshotRequest) Reset() {
 	*x = PeerSnapshotRequest{}
-	mi := &file_dieter_v1_peer_proto_msgTypes[1]
+	mi := &file_dieter_v1_peer_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -145,7 +232,7 @@ func (x *PeerSnapshotRequest) String() string {
 func (*PeerSnapshotRequest) ProtoMessage() {}
 
 func (x *PeerSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_peer_proto_msgTypes[1]
+	mi := &file_dieter_v1_peer_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -158,7 +245,7 @@ func (x *PeerSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PeerSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*PeerSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_peer_proto_rawDescGZIP(), []int{1}
+	return file_dieter_v1_peer_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *PeerSnapshotRequest) GetAccount() string {
@@ -194,7 +281,7 @@ type PeerSnapshot struct {
 
 func (x *PeerSnapshot) Reset() {
 	*x = PeerSnapshot{}
-	mi := &file_dieter_v1_peer_proto_msgTypes[2]
+	mi := &file_dieter_v1_peer_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -206,7 +293,7 @@ func (x *PeerSnapshot) String() string {
 func (*PeerSnapshot) ProtoMessage() {}
 
 func (x *PeerSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_peer_proto_msgTypes[2]
+	mi := &file_dieter_v1_peer_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -219,7 +306,7 @@ func (x *PeerSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PeerSnapshot.ProtoReflect.Descriptor instead.
 func (*PeerSnapshot) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_peer_proto_rawDescGZIP(), []int{2}
+	return file_dieter_v1_peer_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *PeerSnapshot) GetAccount() string {
@@ -264,7 +351,7 @@ type PutPeerRecordRequest struct {
 
 func (x *PutPeerRecordRequest) Reset() {
 	*x = PutPeerRecordRequest{}
-	mi := &file_dieter_v1_peer_proto_msgTypes[3]
+	mi := &file_dieter_v1_peer_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -276,7 +363,7 @@ func (x *PutPeerRecordRequest) String() string {
 func (*PutPeerRecordRequest) ProtoMessage() {}
 
 func (x *PutPeerRecordRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_peer_proto_msgTypes[3]
+	mi := &file_dieter_v1_peer_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -289,7 +376,7 @@ func (x *PutPeerRecordRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutPeerRecordRequest.ProtoReflect.Descriptor instead.
 func (*PutPeerRecordRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_peer_proto_rawDescGZIP(), []int{3}
+	return file_dieter_v1_peer_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *PutPeerRecordRequest) GetKind() string {
@@ -337,7 +424,7 @@ type MergePeerRecordsRequest struct {
 
 func (x *MergePeerRecordsRequest) Reset() {
 	*x = MergePeerRecordsRequest{}
-	mi := &file_dieter_v1_peer_proto_msgTypes[4]
+	mi := &file_dieter_v1_peer_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -349,7 +436,7 @@ func (x *MergePeerRecordsRequest) String() string {
 func (*MergePeerRecordsRequest) ProtoMessage() {}
 
 func (x *MergePeerRecordsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_peer_proto_msgTypes[4]
+	mi := &file_dieter_v1_peer_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -362,7 +449,7 @@ func (x *MergePeerRecordsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MergePeerRecordsRequest.ProtoReflect.Descriptor instead.
 func (*MergePeerRecordsRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_peer_proto_rawDescGZIP(), []int{4}
+	return file_dieter_v1_peer_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *MergePeerRecordsRequest) GetAccount() string {
@@ -389,7 +476,7 @@ type PeerRecordRef struct {
 
 func (x *PeerRecordRef) Reset() {
 	*x = PeerRecordRef{}
-	mi := &file_dieter_v1_peer_proto_msgTypes[5]
+	mi := &file_dieter_v1_peer_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -401,7 +488,7 @@ func (x *PeerRecordRef) String() string {
 func (*PeerRecordRef) ProtoMessage() {}
 
 func (x *PeerRecordRef) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_peer_proto_msgTypes[5]
+	mi := &file_dieter_v1_peer_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -414,7 +501,7 @@ func (x *PeerRecordRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PeerRecordRef.ProtoReflect.Descriptor instead.
 func (*PeerRecordRef) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_peer_proto_rawDescGZIP(), []int{5}
+	return file_dieter_v1_peer_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *PeerRecordRef) GetKind() string {
@@ -442,7 +529,7 @@ type PeerChangesRequest struct {
 
 func (x *PeerChangesRequest) Reset() {
 	*x = PeerChangesRequest{}
-	mi := &file_dieter_v1_peer_proto_msgTypes[6]
+	mi := &file_dieter_v1_peer_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -454,7 +541,7 @@ func (x *PeerChangesRequest) String() string {
 func (*PeerChangesRequest) ProtoMessage() {}
 
 func (x *PeerChangesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_peer_proto_msgTypes[6]
+	mi := &file_dieter_v1_peer_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -467,7 +554,7 @@ func (x *PeerChangesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PeerChangesRequest.ProtoReflect.Descriptor instead.
 func (*PeerChangesRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_peer_proto_rawDescGZIP(), []int{6}
+	return file_dieter_v1_peer_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *PeerChangesRequest) GetAccount() string {
@@ -503,7 +590,7 @@ type PeerChangesResponse struct {
 
 func (x *PeerChangesResponse) Reset() {
 	*x = PeerChangesResponse{}
-	mi := &file_dieter_v1_peer_proto_msgTypes[7]
+	mi := &file_dieter_v1_peer_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -515,7 +602,7 @@ func (x *PeerChangesResponse) String() string {
 func (*PeerChangesResponse) ProtoMessage() {}
 
 func (x *PeerChangesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_peer_proto_msgTypes[7]
+	mi := &file_dieter_v1_peer_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -528,7 +615,7 @@ func (x *PeerChangesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PeerChangesResponse.ProtoReflect.Descriptor instead.
 func (*PeerChangesResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_peer_proto_rawDescGZIP(), []int{7}
+	return file_dieter_v1_peer_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *PeerChangesResponse) GetEpoch() string {
@@ -563,7 +650,7 @@ var File_dieter_v1_peer_proto protoreflect.FileDescriptor
 
 const file_dieter_v1_peer_proto_rawDesc = "" +
 	"\n" +
-	"\x14dieter/v1/peer.proto\x12\tdieter.v1\x1a\x16dieter/v1/common.proto\x1a\x1bgoogle/protobuf/empty.proto\"\x91\x02\n" +
+	"\x14dieter/v1/peer.proto\x12\tdieter.v1\x1a\x16dieter/v1/common.proto\x1a\x1bgoogle/protobuf/empty.proto\"\xc0\x02\n" +
 	"\x0fPeerStoreStatus\x12\x18\n" +
 	"\aaccount\x18\x01 \x01(\tR\aaccount\x12\x14\n" +
 	"\x05actor\x18\x02 \x01(\tR\x05actor\x12\x18\n" +
@@ -575,7 +662,14 @@ const file_dieter_v1_peer_proto_rawDesc = "" +
 	"lastPeerId\x12\x1d\n" +
 	"\n" +
 	"last_route\x18\a \x01(\tR\tlastRoute\x123\n" +
-	"\x05peers\x18\b \x03(\v2\x1d.dieter.v1.PeerSyncDiagnosticR\x05peers\"y\n" +
+	"\x05peers\x18\b \x03(\v2\x1d.dieter.v1.PeerSyncDiagnosticR\x05peers\x12-\n" +
+	"\x04held\x18\t \x03(\v2\x19.dieter.v1.HeldPeerRecordR\x04held\"\x86\x01\n" +
+	"\x0eHeldPeerRecord\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\x12\x14\n" +
+	"\x05field\x18\x03 \x01(\tR\x05field\x12!\n" +
+	"\ffailure_code\x18\x04 \x01(\tR\vfailureCode\x12\x17\n" +
+	"\aheld_at\x18\x05 \x01(\tR\x06heldAt\"y\n" +
 	"\x13PeerSnapshotRequest\x12\x18\n" +
 	"\aaccount\x18\x01 \x01(\tR\aaccount\x12\x1b\n" +
 	"\tafter_key\x18\x02 \x01(\tR\bafterKey\x12+\n" +
@@ -628,42 +722,44 @@ func file_dieter_v1_peer_proto_rawDescGZIP() []byte {
 	return file_dieter_v1_peer_proto_rawDescData
 }
 
-var file_dieter_v1_peer_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_dieter_v1_peer_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_dieter_v1_peer_proto_goTypes = []any{
 	(*PeerStoreStatus)(nil),         // 0: dieter.v1.PeerStoreStatus
-	(*PeerSnapshotRequest)(nil),     // 1: dieter.v1.PeerSnapshotRequest
-	(*PeerSnapshot)(nil),            // 2: dieter.v1.PeerSnapshot
-	(*PutPeerRecordRequest)(nil),    // 3: dieter.v1.PutPeerRecordRequest
-	(*MergePeerRecordsRequest)(nil), // 4: dieter.v1.MergePeerRecordsRequest
-	(*PeerRecordRef)(nil),           // 5: dieter.v1.PeerRecordRef
-	(*PeerChangesRequest)(nil),      // 6: dieter.v1.PeerChangesRequest
-	(*PeerChangesResponse)(nil),     // 7: dieter.v1.PeerChangesResponse
-	(*PeerSyncDiagnostic)(nil),      // 8: dieter.v1.PeerSyncDiagnostic
-	(*PeerRecord)(nil),              // 9: dieter.v1.PeerRecord
-	(*emptypb.Empty)(nil),           // 10: google.protobuf.Empty
+	(*HeldPeerRecord)(nil),          // 1: dieter.v1.HeldPeerRecord
+	(*PeerSnapshotRequest)(nil),     // 2: dieter.v1.PeerSnapshotRequest
+	(*PeerSnapshot)(nil),            // 3: dieter.v1.PeerSnapshot
+	(*PutPeerRecordRequest)(nil),    // 4: dieter.v1.PutPeerRecordRequest
+	(*MergePeerRecordsRequest)(nil), // 5: dieter.v1.MergePeerRecordsRequest
+	(*PeerRecordRef)(nil),           // 6: dieter.v1.PeerRecordRef
+	(*PeerChangesRequest)(nil),      // 7: dieter.v1.PeerChangesRequest
+	(*PeerChangesResponse)(nil),     // 8: dieter.v1.PeerChangesResponse
+	(*PeerSyncDiagnostic)(nil),      // 9: dieter.v1.PeerSyncDiagnostic
+	(*PeerRecord)(nil),              // 10: dieter.v1.PeerRecord
+	(*emptypb.Empty)(nil),           // 11: google.protobuf.Empty
 }
 var file_dieter_v1_peer_proto_depIdxs = []int32{
-	8,  // 0: dieter.v1.PeerStoreStatus.peers:type_name -> dieter.v1.PeerSyncDiagnostic
-	9,  // 1: dieter.v1.PeerSnapshot.records:type_name -> dieter.v1.PeerRecord
-	9,  // 2: dieter.v1.MergePeerRecordsRequest.records:type_name -> dieter.v1.PeerRecord
-	9,  // 3: dieter.v1.PeerChangesResponse.records:type_name -> dieter.v1.PeerRecord
-	6,  // 4: dieter.v1.PeerService.GetPeerChanges:input_type -> dieter.v1.PeerChangesRequest
-	5,  // 5: dieter.v1.PeerService.GetPeerRecord:input_type -> dieter.v1.PeerRecordRef
-	10, // 6: dieter.v1.PeerService.GetPeerStoreStatus:input_type -> google.protobuf.Empty
-	1,  // 7: dieter.v1.PeerService.ListPeerRecords:input_type -> dieter.v1.PeerSnapshotRequest
-	3,  // 8: dieter.v1.PeerService.PutPeerRecord:input_type -> dieter.v1.PutPeerRecordRequest
-	4,  // 9: dieter.v1.PeerService.MergePeerRecords:input_type -> dieter.v1.MergePeerRecordsRequest
-	7,  // 10: dieter.v1.PeerService.GetPeerChanges:output_type -> dieter.v1.PeerChangesResponse
-	9,  // 11: dieter.v1.PeerService.GetPeerRecord:output_type -> dieter.v1.PeerRecord
-	0,  // 12: dieter.v1.PeerService.GetPeerStoreStatus:output_type -> dieter.v1.PeerStoreStatus
-	2,  // 13: dieter.v1.PeerService.ListPeerRecords:output_type -> dieter.v1.PeerSnapshot
-	9,  // 14: dieter.v1.PeerService.PutPeerRecord:output_type -> dieter.v1.PeerRecord
-	10, // 15: dieter.v1.PeerService.MergePeerRecords:output_type -> google.protobuf.Empty
-	10, // [10:16] is the sub-list for method output_type
-	4,  // [4:10] is the sub-list for method input_type
-	4,  // [4:4] is the sub-list for extension type_name
-	4,  // [4:4] is the sub-list for extension extendee
-	0,  // [0:4] is the sub-list for field type_name
+	9,  // 0: dieter.v1.PeerStoreStatus.peers:type_name -> dieter.v1.PeerSyncDiagnostic
+	1,  // 1: dieter.v1.PeerStoreStatus.held:type_name -> dieter.v1.HeldPeerRecord
+	10, // 2: dieter.v1.PeerSnapshot.records:type_name -> dieter.v1.PeerRecord
+	10, // 3: dieter.v1.MergePeerRecordsRequest.records:type_name -> dieter.v1.PeerRecord
+	10, // 4: dieter.v1.PeerChangesResponse.records:type_name -> dieter.v1.PeerRecord
+	7,  // 5: dieter.v1.PeerService.GetPeerChanges:input_type -> dieter.v1.PeerChangesRequest
+	6,  // 6: dieter.v1.PeerService.GetPeerRecord:input_type -> dieter.v1.PeerRecordRef
+	11, // 7: dieter.v1.PeerService.GetPeerStoreStatus:input_type -> google.protobuf.Empty
+	2,  // 8: dieter.v1.PeerService.ListPeerRecords:input_type -> dieter.v1.PeerSnapshotRequest
+	4,  // 9: dieter.v1.PeerService.PutPeerRecord:input_type -> dieter.v1.PutPeerRecordRequest
+	5,  // 10: dieter.v1.PeerService.MergePeerRecords:input_type -> dieter.v1.MergePeerRecordsRequest
+	8,  // 11: dieter.v1.PeerService.GetPeerChanges:output_type -> dieter.v1.PeerChangesResponse
+	10, // 12: dieter.v1.PeerService.GetPeerRecord:output_type -> dieter.v1.PeerRecord
+	0,  // 13: dieter.v1.PeerService.GetPeerStoreStatus:output_type -> dieter.v1.PeerStoreStatus
+	3,  // 14: dieter.v1.PeerService.ListPeerRecords:output_type -> dieter.v1.PeerSnapshot
+	10, // 15: dieter.v1.PeerService.PutPeerRecord:output_type -> dieter.v1.PeerRecord
+	11, // 16: dieter.v1.PeerService.MergePeerRecords:output_type -> google.protobuf.Empty
+	11, // [11:17] is the sub-list for method output_type
+	5,  // [5:11] is the sub-list for method input_type
+	5,  // [5:5] is the sub-list for extension type_name
+	5,  // [5:5] is the sub-list for extension extendee
+	0,  // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_dieter_v1_peer_proto_init() }
@@ -678,7 +774,7 @@ func file_dieter_v1_peer_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dieter_v1_peer_proto_rawDesc), len(file_dieter_v1_peer_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
