@@ -98,9 +98,16 @@ Completed replies that you have not viewed appear under **Needs you**. Opening
 the latest reply clears that state across clients; questions waiting for your
 answer continue to need attention.
 
-Use the small pin button on an Inbox card to keep it in the **Pinned** section
-at the top on Mac, Android, and iOS. Tap it again to unpin. Pins sync across
-your account through shared KV; offline edits sync when a machine is available.
+On Android, iPhone and iPad the Inbox opens with tiles counting running work,
+replies that need you and cards ready for review; tap one to show only those.
+**Running** comes first, pinned or not, followed by **Pinned**, **Needs you**,
+**Review** and **Recent**. Swipe a card right to mark a reply read, finish a
+reviewed card or pin it, and left to archive it or stop a running agent; an
+archive can be undone. Touch and hold a card for all its actions.
+
+On the Mac, use the small pin button on an Inbox card to keep it in the
+**Pinned** section at the top; tap it again to unpin. Pins sync across your
+account through shared KV; offline edits sync when a machine is available.
 Search and project filters still apply to pinned cards.
 
 Inbox rules decide which conversations the Inbox lists. Open **Inbox rules**

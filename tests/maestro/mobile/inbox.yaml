@@ -1,0 +1,49 @@
+# Inbox: pinning a card gives it the Pinned section, and swiping a card left
+# archives it with an undo.
+appId: ${APP_ID}
+name: Inbox
+tags: [smoke]
+---
+- runFlow: common/launch.yaml
+- extendedWaitUntil:
+    visible:
+      id: inbox-filter-running
+    timeout: 40000
+- scrollUntilVisible:
+    element:
+      text: "Ship the new project picker"
+    direction: DOWN
+    timeout: 30000
+- longPressOn: "Ship the new project picker"
+- tapOn:
+    text: "Pin in Inbox"
+    waitToSettleTimeoutMs: 500
+# The card moves up to the Pinned section, above where the list was scrolled.
+- scrollUntilVisible:
+    element:
+      id: inbox-section-pinned
+    direction: UP
+    timeout: 10000
+- assertVisible: "Ship the new project picker"
+- takeScreenshot: inbox-pinned
+# An injected swipe occasionally does not register as a drag; repeat it until
+# the archive offers Undo.
+- repeat:
+    while:
+      notVisible: "Undo"
+    times: 3
+    commands:
+      - swipe:
+          from:
+            text: "Ship the new project picker"
+          direction: LEFT
+      - waitForAnimationToEnd:
+          timeout: 2000
+# Undo is timed: tap it straight away. tapOn requires it to be visible, and
+# the assertion below verifies the card came back.
+- tapOn:
+    text: "Undo"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Ship the new project picker"
+    timeout: 40000

@@ -31,6 +31,8 @@ import com.getdieter.mobile.board.cardMenuSections
 import com.getdieter.mobile.design.*
 import com.getdieter.mobile.store.*
 import com.getdieter.mobile.workspace.InboxRulesSheet
+import com.getdieter.mobile.workspace.InboxSection
+import com.getdieter.mobile.workspace.inboxSections
 import kotlin.time.Instant
 
 /** A list column's band: sidebar toggle, title and count, then its actions. */
@@ -208,19 +210,15 @@ internal fun DesktopInbox(store: MobileStore) {
                         Modifier.padding(top = 40.dp),
                     )
                 }
-            (listOf<ActivityRow.Section?>(null) + ActivityRow.Section.entries).forEach { section ->
-                val sectionRows = rows.filter {
-                    it.card != null &&
-                        if (section == null) it.pinned else !it.pinned && it.section == section
-                }
-                if (sectionRows.isEmpty()) return@forEach
+            inboxSections(rows).forEach { (section, sectionRows) ->
                 item("header-$section") {
                     DesktopSectionHeader(
                         when (section) {
-                            null -> "Pinned"
-                            ActivityRow.Section.SECTION_ATTENTION -> "Needs attention"
-                            ActivityRow.Section.SECTION_RUNNING -> "Running"
-                            else -> "Recent"
+                            InboxSection.RUNNING -> "Running"
+                            InboxSection.PINNED -> "Pinned"
+                            InboxSection.ATTENTION -> "Needs attention"
+                            InboxSection.REVIEW -> "Ready for review"
+                            InboxSection.RECENT -> "Recent"
                         },
                         Modifier.padding(top = 6.dp),
                     ) {
