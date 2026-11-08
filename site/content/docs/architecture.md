@@ -146,7 +146,11 @@ Retained shared records and replay receipts use paged storage, so history does
 not exhaust a lifetime write quota. Tombstones remain to protect against stale
 offline replicas. `dieter peer status` keeps historical failures; workspace
 warnings hide offline-peer and expired transport failures but keep unresolved
-record rejections visible. `catchup` means bounded page progress; the last
+record rejections visible. A received record whose owner signature this
+machine cannot verify, for example one written by a machine that never joined
+the device roster, is held instead: it is not merged, the rest of the sync
+continues, and `dieter peer status` lists it under `held` until a later round
+verifies it. `catchup` means bounded page progress; the last
 completed exchange advances only when both directions finish.
 
 “Board and settings sync between … is delayed” means recent transport failure

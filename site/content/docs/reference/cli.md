@@ -2781,7 +2781,9 @@ Usage: dieter peer status
 Show the enrolled account, conflicts, and bounded per-peer attempts, successes,
 directions, checkpoints and sanitized record blockers. Catchup means durable page
 progress with more work pending. A successful exchange is not acknowledgement by
-every machine.
+every machine. Held lists received records whose owner provenance this machine
+cannot verify: they are never merged, do not block the rest of the sync, and are
+retried every round.
 ```
 
 ### dieter peer list

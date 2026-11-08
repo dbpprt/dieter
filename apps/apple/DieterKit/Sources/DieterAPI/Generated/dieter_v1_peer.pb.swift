@@ -46,6 +46,31 @@ public nonisolated struct Dieter_V1_PeerStoreStatus: Sendable {
 
   public var peers: [Dieter_V1_PeerSyncDiagnostic] = []
 
+  /// Received records whose owner provenance this machine cannot verify. They
+  /// are never merged, no longer stop the rest of their page, and are retried
+  /// every sync round until they verify or a merged version supersedes them.
+  public var held: [Dieter_V1_HeldPeerRecord] = []
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_HeldPeerRecord: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var kind: String = String()
+
+  public var id: String = String()
+
+  public var field: String = String()
+
+  public var failureCode: String = String()
+
+  public var heldAt: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -174,7 +199,7 @@ fileprivate nonisolated let _protobuf_package = "dieter.v1"
 
 nonisolated extension Dieter_V1_PeerStoreStatus: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".PeerStoreStatus"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}account\0\u{1}actor\0\u{1}records\0\u{1}conflicts\0\u{3}last_sync_at\0\u{3}last_peer_id\0\u{3}last_route\0\u{1}peers\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}account\0\u{1}actor\0\u{1}records\0\u{1}conflicts\0\u{3}last_sync_at\0\u{3}last_peer_id\0\u{3}last_route\0\u{1}peers\0\u{1}held\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -190,6 +215,7 @@ nonisolated extension Dieter_V1_PeerStoreStatus: SwiftProtobuf.Message, SwiftPro
       case 6: try { try decoder.decodeSingularStringField(value: &self.lastPeerID) }()
       case 7: try { try decoder.decodeSingularStringField(value: &self.lastRoute) }()
       case 8: try { try decoder.decodeRepeatedMessageField(value: &self.peers) }()
+      case 9: try { try decoder.decodeRepeatedMessageField(value: &self.held) }()
       default: break
       }
     }
@@ -220,6 +246,9 @@ nonisolated extension Dieter_V1_PeerStoreStatus: SwiftProtobuf.Message, SwiftPro
     if !self.peers.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.peers, fieldNumber: 8)
     }
+    if !self.held.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.held, fieldNumber: 9)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -232,6 +261,57 @@ nonisolated extension Dieter_V1_PeerStoreStatus: SwiftProtobuf.Message, SwiftPro
     if lhs.lastPeerID != rhs.lastPeerID {return false}
     if lhs.lastRoute != rhs.lastRoute {return false}
     if lhs.peers != rhs.peers {return false}
+    if lhs.held != rhs.held {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_HeldPeerRecord: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".HeldPeerRecord"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}kind\0\u{1}id\0\u{1}field\0\u{3}failure_code\0\u{3}held_at\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.kind) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.id) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.field) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.failureCode) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.heldAt) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.kind.isEmpty {
+      try visitor.visitSingularStringField(value: self.kind, fieldNumber: 1)
+    }
+    if !self.id.isEmpty {
+      try visitor.visitSingularStringField(value: self.id, fieldNumber: 2)
+    }
+    if !self.field.isEmpty {
+      try visitor.visitSingularStringField(value: self.field, fieldNumber: 3)
+    }
+    if !self.failureCode.isEmpty {
+      try visitor.visitSingularStringField(value: self.failureCode, fieldNumber: 4)
+    }
+    if !self.heldAt.isEmpty {
+      try visitor.visitSingularStringField(value: self.heldAt, fieldNumber: 5)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_HeldPeerRecord, rhs: Dieter_V1_HeldPeerRecord) -> Bool {
+    if lhs.kind != rhs.kind {return false}
+    if lhs.id != rhs.id {return false}
+    if lhs.field != rhs.field {return false}
+    if lhs.failureCode != rhs.failureCode {return false}
+    if lhs.heldAt != rhs.heldAt {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

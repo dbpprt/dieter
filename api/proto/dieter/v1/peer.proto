@@ -28,6 +28,18 @@ message PeerStoreStatus {
   string last_peer_id = 6;
   string last_route = 7;
   repeated PeerSyncDiagnostic peers = 8;
+  // Received records whose owner provenance this machine cannot verify. They
+  // are never merged, no longer stop the rest of their page, and are retried
+  // every sync round until they verify or a merged version supersedes them.
+  repeated HeldPeerRecord held = 9;
+}
+
+message HeldPeerRecord {
+  string kind = 1;
+  string id = 2;
+  string field = 3;
+  string failure_code = 4;
+  string held_at = 5;
 }
 
 message PeerSnapshotRequest {

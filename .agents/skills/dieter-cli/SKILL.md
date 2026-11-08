@@ -1342,8 +1342,12 @@ Operation IDs provide durable local replay receipts. Retry identical input only
 on the admitting daemon; a changed input needs a new ID and observed revision.
 Success is local durability, not a global quorum. `peer status` includes bounded
 per-peer attempts, successful exchanges, route/direction, checkpoints, and
-sanitized blocking record identity. A successful exchange with one peer does
-not prove account-wide convergence. `peer status` retains historical failures;
+sanitized blocking record identity. Its `held` list names received records whose
+owner provenance this machine cannot verify (e.g. written by a machine that
+never joined the roster): they are never merged, no longer block the rest of the
+sync, and are retried every round. Do not edit or delete them to clear the list.
+A successful exchange with one peer does not prove account-wide convergence.
+`peer status` retains historical failures;
 workspace warnings say “Board and settings sync between …” and refer to shared metadata, not files or transcripts. They exclude offline/removed-peer transport failures, cancellations,
 and transport attempts older than five minutes. Record rejections are not aged
 out or suppressed because a peer is offline. Android names both machines and clears warnings on

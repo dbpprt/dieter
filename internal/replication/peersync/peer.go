@@ -448,6 +448,10 @@ func (p *PeerSync) round(ctx, workerCtx context.Context, workers *sync.WaitGroup
 	if err != nil {
 		return err
 	}
+	// A held record may verify now, e.g. after the last round's roster gossip.
+	if err := p.Store.Replica.RetryHeldPeerRecords(binding); err != nil {
+		p.logger().Warn("held peer records could not be retried", "error", err)
+	}
 	discovery, cancel = context.WithTimeout(ctx, 10*time.Second)
 	directory, err := gateway.ListDaemons(discovery, &emptypb.Empty{})
 	cancel()

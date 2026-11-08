@@ -136,17 +136,22 @@ func (s *Store) signOwnerRecord(account string, data PeerData, r crdt.Record) (c
 	r.Versions = versions
 	return r, nil
 }
+
+// validatePeerDomainMerge reports a record that must not merge as a
+// *PeerRecordError and a local failure (no roster yet, unreadable credential)
+// as a plain error.
 func (s *Store) validatePeerDomainMerge(data PeerData, old, incoming crdt.Record) error {
 	if !schema.DomainKind(incoming.Kind) {
 		return nil
 	}
+	reject := func(err error) error { return peerRecordFailure(incoming, "invalid_provenance", err) }
 	_, field := crdt.SplitField(incoming.ID)
 	// An enrolled owner's immutable routing identity can never be replaced by a
 	// causally newer claim, including when forwarded through a third machine.
 	for _, a := range old.Versions {
 		for _, b := range incoming.Versions {
 			if field == "identity" && !bytes.Equal(a.Value, b.Value) {
-				return fault.New(fault.Invalid, "shared identity is immutable")
+				return reject(fault.New(fault.Invalid, "shared identity is immutable"))
 			}
 			if incoming.Kind == "checkout" || incoming.Kind == "schedule" {
 				var x, y map[string]json.RawMessage
@@ -154,7 +159,7 @@ func (s *Store) validatePeerDomainMerge(data PeerData, old, incoming crdt.Record
 				_ = json.Unmarshal(b.Value, &y)
 				for _, key := range []string{"id", "projectId", "daemonId", "ownerDaemonId", "checkoutId"} {
 					if !bytes.Equal(x[key], y[key]) {
-						return fault.New(fault.Invalid, "shared owner identity is immutable")
+						return reject(fault.New(fault.Invalid, "shared owner identity is immutable"))
 					}
 				}
 			}
@@ -179,16 +184,16 @@ func (s *Store) validatePeerDomainMerge(data PeerData, old, incoming crdt.Record
 	for _, v := range incoming.Versions {
 		owner, e := crdt.VerifyOwnerVersion(identity.Account, incoming, v, roots)
 		if e != nil {
-			return e
+			return reject(e)
 		}
 		if expected := recordOwner(data, incoming, v); expected != "" && expected != owner {
-			return fault.New(fault.Invalid, "owner provenance does not match directory identity")
+			return reject(fault.New(fault.Invalid, "owner provenance does not match directory identity"))
 		}
 		if incoming.Kind == "item" && field == "identity" {
 			for _, summary := range data.Record(crdt.Key("item", entity+".summary")).Versions {
 				proofOwner, err := crdt.VerifyOwnerVersion(identity.Account, data.Record(crdt.Key("item", entity+".summary")), summary, roots)
 				if err != nil || proofOwner != owner {
-					return fault.New(fault.Invalid, "pending summary does not belong to item owner")
+					return reject(fault.New(fault.Invalid, "pending summary does not belong to item owner"))
 				}
 			}
 		}

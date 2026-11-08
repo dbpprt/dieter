@@ -239,7 +239,16 @@ class AccountProjector {
     private var used = HashSet<String>()
     private var previous = AccountSnapshot()
 
-    fun project(records: AccountRecords, replicas: Collection<MachineReplica>): AccountSnapshot {
+    /**
+     * [listed] are the machines the account lists, once known. Unlike the daemon's projection, the
+     * view leaves out checkouts on other machines: nothing can run there, and only their own
+     * machine could detach them.
+     */
+    fun project(
+        records: AccountRecords,
+        replicas: Collection<MachineReplica>,
+        listed: Set<String>? = null,
+    ): AccountSnapshot {
         used = HashSet()
         val machinesByDaemon = HashMap<String, String>()
         for (replica in replicas.sortedBy { it.machineId }) {
@@ -249,7 +258,11 @@ class AccountProjector {
         val owners = HashMap<String, OwnerData>()
         for (replica in replicas.sortedBy { it.machineId }) if (replica.daemonId.isNotEmpty())
             owners.getOrPut(replica.daemonId) { replica.owner }
-        val view = Reuse.directory(Pass(records, owners).run(machinesByDaemon), previous.directory)
+        val view =
+            Reuse.directory(
+                Pass(records, owners).run(machinesByDaemon, listed),
+                previous.directory,
+            )
         decoded.keys.retainAll(used)
         val next =
             AccountSnapshot(
@@ -350,8 +363,11 @@ class AccountProjector {
     ) {
         private val fieldCache = HashMap<String, Fields>()
 
-        fun run(machinesByDaemon: Map<String, String>): DirectoryProjection {
-            val checkouts = checkouts()
+        fun run(machinesByDaemon: Map<String, String>, listed: Set<String>?): DirectoryProjection {
+            val checkouts =
+                checkouts().filter {
+                    listed == null || it.daemon_id in listed || it.daemon_id in machinesByDaemon
+                }
             val references = boardReferences()
             val labels = labels()
             val assignments = assignments()

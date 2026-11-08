@@ -96,6 +96,16 @@ Inspect `dieter project checkouts PROJECT_ID` and `dieter peer status`. A replic
 can show shared project metadata while a conversation's execution owner is offline;
 that does not make its local files or agent executable on another machine.
 
+A machine that has not caught up does not list every project yet, and opening
+an existing repository there creates a second project. Run `dieter --machine
+MACHINE project list` before `project open`. Merge a duplicate into the original
+with `dieter project consolidate SOURCE DESTINATION` once both machines list
+both projects.
+
+The apps list only checkouts on machines your account still has. A checkout on
+a machine you removed stays in `dieter project checkouts`, because only its own
+machine could detach it.
+
 ## A model is unavailable
 
 Run `dieter harness list --format jsonl` on the execution host, or use global

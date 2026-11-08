@@ -7,6 +7,7 @@ import "database/sql"
 const (
 	ViewCacheRecords = peerViewCacheRecords
 	ViewCacheBytes   = peerViewCacheBytes
+	MaxHeldRecords   = maxHeldPeerRecords
 )
 
 // Database is the account's single writer connection (fault injection).

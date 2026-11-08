@@ -197,6 +197,25 @@ class AccountSyncTest {
     }
 
     @Test
+    fun checkoutsOnMachinesTheAccountDoesNotListLeaveTheView() = runTest {
+        val store = WorkspaceStore()
+        val sync = AccountSync(store, backgroundScope, clock, SilentLogger)
+        sync.bind(storage)
+        sync.apply("studio", frame(1))
+        sync.apply("studio", frame(2, *checkout("co-gone", "p", "gone").toTypedArray()))
+        sync.publish()
+        // Until the account's machines are known, every checkout shows.
+        assertEquals(
+            listOf("co", "co-gone"),
+            store.state.value.projects.single().checkouts.map { it.id },
+        )
+
+        sync.retain(setOf("studio"))
+        sync.publish()
+        assertEquals(listOf("co"), store.state.value.projects.single().checkouts.map { it.id })
+    }
+
+    @Test
     fun aCleanSyncReplaysEveryStreamWhileTheViewStays() = runTest {
         val store = WorkspaceStore()
         val sync = AccountSync(store, backgroundScope, clock, SilentLogger)
