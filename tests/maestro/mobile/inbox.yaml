@@ -7,22 +7,22 @@ tags: [smoke]
 - runFlow: common/launch.yaml
 - extendedWaitUntil:
     visible:
-      id: inbox-filter-running
+      id: inbox-filter-review
     timeout: 40000
-- scrollUntilVisible:
-    element:
-      text: "Ship the new project picker"
-    direction: DOWN
-    timeout: 30000
+# Show only cards waiting for review: the card is then on screen without a
+# scroll, which can fling past it on a small emulator.
+- tapOn:
+    id: inbox-filter-review
+- extendedWaitUntil:
+    visible: "Ship the new project picker"
+    timeout: 10000
 - longPressOn: "Ship the new project picker"
 - tapOn:
     text: "Pin in Inbox"
     waitToSettleTimeoutMs: 500
-# The card moves up to the Pinned section, above where the list was scrolled.
-- scrollUntilVisible:
-    element:
+- extendedWaitUntil:
+    visible:
       id: inbox-section-pinned
-    direction: UP
     timeout: 10000
 - assertVisible: "Ship the new project picker"
 - takeScreenshot: inbox-pinned
