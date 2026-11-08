@@ -1,5 +1,5 @@
 # Inbox: pinning a card gives it the Pinned section, and swiping a card left
-# archives it with an undo.
+# archives it and offers an undo.
 appId: ${APP_ID}
 name: Inbox
 tags: [smoke]
@@ -26,10 +26,10 @@ tags: [smoke]
     timeout: 10000
 - assertVisible: "Ship the new project picker"
 - takeScreenshot: inbox-pinned
-# Undo lasts 10 s, which a slow simulator spends on a single visibility check,
-# so tap it straight after the swipe without waiting for the list to settle.
 # An injected swipe occasionally does not register as a drag; then Undo never
-# shows and the pair runs again.
+# shows and the swipe runs again. Tapping Undo is left to the Mail flow: right
+# after a swipe, Maestro's iOS driver re-reads the snackbar and only taps once
+# its 10 s have run out.
 - retry:
     maxRetries: 2
     commands:
@@ -37,10 +37,10 @@ tags: [smoke]
           from:
             text: "Ship the new project picker"
           direction: LEFT
-          waitToSettleTimeoutMs: 500
-      - tapOn:
-          text: "Undo"
-          waitToSettleTimeoutMs: 500
+      - extendedWaitUntil:
+          visible: "Undo"
+          timeout: 5000
 - extendedWaitUntil:
-    visible: "Ship the new project picker"
-    timeout: 40000
+    notVisible: "Ship the new project picker"
+    timeout: 15000
+- takeScreenshot: inbox-archived
