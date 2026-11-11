@@ -5,7 +5,7 @@ go 1.26.11
 require (
 	connectrpc.com/connect v1.21.1
 	github.com/creack/pty v1.1.24
-	github.com/ebitengine/purego v0.11.2
+	github.com/ebitengine/purego v0.11.3
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/pion/ice/v4 v4.4.8
 	github.com/pion/interceptor v0.1.51
@@ -25,7 +25,7 @@ require (
 	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/sqlite v1.61.0
+	modernc.org/sqlite v1.61.1
 )
 
 require (
