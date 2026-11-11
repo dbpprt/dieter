@@ -10,10 +10,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dbpprt/dieter/internal/platform/buildinfo"
 	"github.com/dbpprt/dieter/internal/platform/version"
 )
 
 type Config struct {
+	APNSKeyFile          string
+	APNSKeyBase64        string
+	APNSKeyID            string
+	APNSTeamID           string
+	APNSTopic            string
 	Root                 string
 	Address              string
 	PublicURL            *url.URL
@@ -50,12 +56,22 @@ func ConfigFromEnv(environment map[string]string, root string) (Config, error) {
 		return fallback
 	}
 	config := Config{
-		Root: root, Address: envOr("DIETER_GATEWAY_ADDR", "127.0.0.1:4243"), SessionTTL: 30 * 24 * time.Hour,
+		APNSKeyFile:   strings.TrimSpace(getenv("DIETER_APNS_KEY_FILE")),
+		APNSKeyBase64: strings.TrimSpace(getenv("DIETER_APNS_KEY_BASE64")),
+		APNSKeyID:     strings.TrimSpace(getenv("DIETER_APNS_KEY_ID")),
+		APNSTeamID:    strings.TrimSpace(getenv("DIETER_APNS_TEAM_ID")),
+		APNSTopic:     buildinfo.BundlePrefix + ".ios",
+		Root:          root, Address: envOr("DIETER_GATEWAY_ADDR", "127.0.0.1:4243"), SessionTTL: 30 * 24 * time.Hour,
 		GitHubBaseURL: envOr("DIETER_GITHUB_BASE_URL", "https://github.com"), GitHubAPIURL: envOr("DIETER_GITHUB_API_URL", "https://api.github.com"),
 		TLSCertFile: strings.TrimSpace(getenv("DIETER_GATEWAY_TLS_CERT")), TLSKeyFile: strings.TrimSpace(getenv("DIETER_GATEWAY_TLS_KEY")),
 		DevInsecure: getenv("DIETER_GATEWAY_DEV_INSECURE") == "1", ProxyMode: getenv("DIETER_GATEWAY_PROXY_MODE") == "1", NativeRedirects: map[string]struct{}{}, RTCTTL: 5 * time.Minute,
 		MinimumClientVersion: strings.TrimSpace(getenv("DIETER_MINIMUM_CLIENT_VERSION")),
 		MinimumDaemonVersion: strings.TrimSpace(getenv("DIETER_MINIMUM_DAEMON_VERSION")),
+	}
+	if config.APNSKeyFile != "" || config.APNSKeyBase64 != "" || config.APNSKeyID != "" || config.APNSTeamID != "" {
+		if (config.APNSKeyFile == "" && config.APNSKeyBase64 == "") || (config.APNSKeyFile != "" && config.APNSKeyBase64 != "") || config.APNSKeyID == "" || config.APNSTeamID == "" || len(config.APNSKeyBase64) > 8192 {
+			return config, errors.New("APNs requires exactly one of DIETER_APNS_KEY_FILE or DIETER_APNS_KEY_BASE64, with DIETER_APNS_KEY_ID and DIETER_APNS_TEAM_ID")
+		}
 	}
 	if config.MinimumClientVersion == "" {
 		if !config.DevInsecure {

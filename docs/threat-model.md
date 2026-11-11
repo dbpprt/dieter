@@ -90,8 +90,8 @@ Since 0.6 the gateway relays ciphertext and is not a root of trust
 - See metadata: accounts, device IDs, names, kinds and public keys, pairing
   requests (descriptors and MACs), daemon names and presence, direct candidates
   (IP addresses), remote-desktop readiness, tunnel open and close times and
-  byte counts, client IP addresses, TURN allocations and provider quota
-  snapshots.
+  byte counts, client IP addresses, APNs routing tokens, coarse task-attention
+  counts, TURN allocations and provider quota snapshots.
 - Serve a malicious sign-in page. A session alone reaches no machine without a
   paired device key.
 - Try social engineering: ask a person to type a code that the gateway's own

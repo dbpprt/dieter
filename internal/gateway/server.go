@@ -27,6 +27,7 @@ type Server struct {
 	Auth        *Auth
 	Hub         *Hub
 	Quota       *QuotaManager
+	Push        *PushManager
 	Service     *Service
 	Relay       *RelayService
 	APIGRPC     *grpc.Server
@@ -47,6 +48,15 @@ func NewServer(config Config, store *Store, logger *slog.Logger) (*Server, error
 	quota := NewQuotaManager(store, hub, logger)
 	hub.SetQuotaManager(quota)
 	service.SetQuotaManager(quota)
+	sender, err := newAPNSSender(config)
+	if err != nil {
+		return nil, err
+	}
+	var push *PushManager
+	if sender != nil {
+		push = newPushManager(store, sender, logger)
+		hub.push = push
+	}
 	api := grpc.NewServer(
 		grpc.UnaryInterceptor(auth.UnaryInterceptor), grpc.StreamInterceptor(auth.StreamInterceptor),
 		grpc.MaxRecvMsgSize(maxGatewayMessageBytes), grpc.MaxSendMsgSize(maxGatewayResponseBytes),
@@ -135,7 +145,7 @@ func NewServer(config Config, store *Store, logger *slog.Logger) (*Server, error
 		httpMux.ServeHTTP(w, r)
 	})
 	handler = limitGatewayRequestBodies(handler, 15*time.Second)
-	return &Server{Config: config, Store: store, Keys: keys, Auth: auth, Hub: hub, Quota: quota, Service: service, Relay: relay, APIGRPC: api, HTTPHandler: handler}, nil
+	return &Server{Config: config, Store: store, Keys: keys, Auth: auth, Hub: hub, Quota: quota, Push: push, Service: service, Relay: relay, APIGRPC: api, HTTPHandler: handler}, nil
 }
 
 func gatewayMethodRequiresSession(path string) bool {
@@ -252,6 +262,9 @@ func (s *Server) Serve(listener net.Listener) error {
 	defer cancelQuota()
 	if s.Quota != nil {
 		s.Quota.Start(quotaContext)
+	}
+	if s.Push != nil {
+		s.Push.Start(quotaContext)
 	}
 	httpServer, err := s.httpServer()
 	if err != nil {

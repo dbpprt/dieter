@@ -21,6 +21,19 @@ public enum Dieter_Gateway_V1_GatewayService: Sendable {
     public static let descriptor = GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.gateway.v1.GatewayService")
     /// Namespace for method metadata.
     public enum Method: Sendable {
+        /// Namespace for "SetPushDevice" metadata.
+        public enum SetPushDevice: Sendable {
+            /// Request type for "SetPushDevice".
+            public typealias Input = Dieter_Gateway_V1_SetPushDeviceRequest
+            /// Response type for "SetPushDevice".
+            public typealias Output = Dieter_Gateway_V1_SetPushDeviceResponse
+            /// Descriptor for "SetPushDevice".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.gateway.v1.GatewayService"),
+                method: "SetPushDevice",
+                type: .unary
+            )
+        }
         /// Namespace for "GetCompatibility" metadata.
         public enum GetCompatibility: Sendable {
             /// Request type for "GetCompatibility".
@@ -361,6 +374,7 @@ public enum Dieter_Gateway_V1_GatewayService: Sendable {
         }
         /// Descriptors for all methods in the "dieter.gateway.v1.GatewayService" service.
         public static let descriptors: [GRPCCore.MethodDescriptor] = [
+            SetPushDevice.descriptor,
             GetCompatibility.descriptor,
             GetAccount.descriptor,
             ListDaemons.descriptor,
@@ -415,6 +429,25 @@ extension Dieter_Gateway_V1_GatewayService {
     /// > device roster and short-lived pairing requests: public keys and display
     /// > names that devices verify themselves. The gateway cannot extend the roster.
     public protocol ClientProtocol: Sendable {
+        /// Call the "SetPushDevice" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_Gateway_V1_SetPushDeviceRequest` message.
+        ///   - serializer: A serializer for `Dieter_Gateway_V1_SetPushDeviceRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_Gateway_V1_SetPushDeviceResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func setPushDevice<Result>(
+            request: GRPCCore.ClientRequest<Dieter_Gateway_V1_SetPushDeviceRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_Gateway_V1_SetPushDeviceRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_Gateway_V1_SetPushDeviceResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_SetPushDeviceResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
         /// Call the "GetCompatibility" method.
         ///
         /// > Source IDL Documentation:
@@ -975,6 +1008,36 @@ extension Dieter_Gateway_V1_GatewayService {
         ///   - client: A `GRPCCore.GRPCClient` providing a communication channel to the service.
         public init(wrapping client: GRPCCore.GRPCClient<Transport>) {
             self.client = client
+        }
+
+        /// Call the "SetPushDevice" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_Gateway_V1_SetPushDeviceRequest` message.
+        ///   - serializer: A serializer for `Dieter_Gateway_V1_SetPushDeviceRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_Gateway_V1_SetPushDeviceResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func setPushDevice<Result>(
+            request: GRPCCore.ClientRequest<Dieter_Gateway_V1_SetPushDeviceRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_Gateway_V1_SetPushDeviceRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_Gateway_V1_SetPushDeviceResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_SetPushDeviceResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_Gateway_V1_GatewayService.Method.SetPushDevice.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
         }
 
         /// Call the "GetCompatibility" method.
@@ -1798,6 +1861,31 @@ extension Dieter_Gateway_V1_GatewayService {
 // Helpers providing default arguments to 'ClientProtocol' methods.
 @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
 extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
+    /// Call the "SetPushDevice" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_Gateway_V1_SetPushDeviceRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func setPushDevice<Result>(
+        request: GRPCCore.ClientRequest<Dieter_Gateway_V1_SetPushDeviceRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_SetPushDeviceResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.setPushDevice(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_Gateway_V1_SetPushDeviceRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_Gateway_V1_SetPushDeviceResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "GetCompatibility" method.
     ///
     /// > Source IDL Documentation:
@@ -2488,6 +2576,35 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
 // Helpers providing sugared APIs for 'ClientProtocol' methods.
 @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
 extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
+    /// Call the "SetPushDevice" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func setPushDevice<Result>(
+        _ message: Dieter_Gateway_V1_SetPushDeviceRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_SetPushDeviceResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_Gateway_V1_SetPushDeviceRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.setPushDevice(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "GetCompatibility" method.
     ///
     /// > Source IDL Documentation:

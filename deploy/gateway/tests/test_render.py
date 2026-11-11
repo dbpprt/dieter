@@ -1,4 +1,5 @@
 import copy
+import base64
 import json
 import os
 from pathlib import Path
@@ -12,6 +13,32 @@ from render import render, secrets, settings
 
 
 class RenderTests(unittest.TestCase):
+    def test_apns_credentials_remain_in_protected_environment(self):
+        self.private.update(
+            apnsKeyBase64=base64.b64encode(
+                b"-----BEGIN PRIVATE KEY-----\nexample\n-----END PRIVATE KEY-----\n"
+            ).decode(),
+            apnsKeyID="A123456789",
+            apnsTeamID="B123456789",
+        )
+        self.secret_file.write_text(json.dumps(self.private))
+        out = self.rendered()
+        env = (out / "private/gateway.env").read_text()
+        self.assertIn("DIETER_APNS_KEY_BASE64=" + self.private["apnsKeyBase64"], env)
+        self.assertIn("DIETER_APNS_KEY_ID=A123456789", env)
+        for path in (out / "public").iterdir():
+            self.assertNotIn(self.private["apnsKeyBase64"], path.read_text())
+
+    def test_apns_rejects_partial_credentials_and_invalid_key_encoding(self):
+        self.private["apnsKeyID"] = "A123456789"
+        self.secret_file.write_text(json.dumps(self.private))
+        with self.assertRaises(ValueError):
+            secrets(self.secret_file)
+        self.private.update(apnsKeyBase64="bad", apnsTeamID="B123456789")
+        self.secret_file.write_text(json.dumps(self.private))
+        with self.assertRaisesRegex(ValueError, "APNs"):
+            secrets(self.secret_file)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
