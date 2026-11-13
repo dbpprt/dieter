@@ -107,6 +107,9 @@ func (s *Server) mutateKV(ctx context.Context, ref *dieterv1.KVRef, m kv.Mutatio
 	if schema.ChannelNamespaceKind(ref.GetNamespace()) {
 		return nil, fault.New(fault.PermissionDenied, "agent channel records are written by their daemon; use dieter channel")
 	}
+	if schema.DaemonNamespaceKind(ref.GetNamespace()) {
+		return nil, fault.New(fault.PermissionDenied, "folder membership is written by its daemon; use dieter folder")
+	}
 	m.Namespace, m.Key = ref.GetNamespace(), ref.GetKey()
 	record, err := s.store.KV.Mutate(identity, m)
 	if err != nil {

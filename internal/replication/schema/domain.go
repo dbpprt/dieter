@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/dbpprt/dieter/internal/folders"
 	"github.com/dbpprt/dieter/internal/platform/fault"
 	"github.com/dbpprt/dieter/internal/replication/crdt"
 )
@@ -20,6 +21,9 @@ var DomainFields = map[string]map[string]string{
 	"item":       {"identity": "object", "title": "string", "placement": "object", "archived": "bool", "pinned": "bool", "doneArchiveExempt": "bool", "summary": "object"},
 	"assignment": {"membership": "bool"},
 	"checkout":   {"registration": "object"},
+	// Synced folders: the shared definition only. Member directories stay on
+	// their daemons; membership is in the folder-member KV namespace.
+	"folder": {"identity": "object", "name": "string", "rules": "strings", "trashDays": "string", "deleteGuard": "string", "projectId": "string", "archived": "bool"},
 }
 
 func DomainKind(kind string) bool { _, ok := DomainFields[kind]; return ok }
@@ -50,7 +54,8 @@ func ValidateDomain(r crdt.Record) error {
 		case "string":
 			var value string
 			err = json.Unmarshal(raw, &value)
-			options := map[string][]string{"workflow": {"review", "direct"}, "remotePublishMode": {"manual", "pull_request", "push_base"}, "doneArchivePolicy": {"never", "immediately", "after_1_day", "after_7_days", "after_30_days", "after_90_days"}}
+			options := map[string][]string{"workflow": {"review", "direct"}, "remotePublishMode": {"manual", "pull_request", "push_base"}, "doneArchivePolicy": {"never", "immediately", "after_1_day", "after_7_days", "after_30_days", "after_90_days"},
+				"trashDays": {"off", "7", "30", "90"}, "deleteGuard": {"default", "strict", "off"}}
 			if allowed, exists := options[field]; exists {
 				valid := false
 				for _, option := range allowed {
@@ -68,6 +73,11 @@ func ValidateDomain(r crdt.Record) error {
 			err = json.Unmarshal(raw, &value)
 			if len(value) > 64 {
 				return crdt.ErrCapacity
+			}
+			if err == nil && r.Kind == "folder" && field == "rules" {
+				if _, ruleErr := folders.ParseRules(value); ruleErr != nil {
+					return ruleErr
+				}
 			}
 		case "object":
 			var value map[string]json.RawMessage
@@ -95,6 +105,8 @@ func ValidateDomain(r crdt.Record) error {
 					names = "runtime runtimeUpdatedAt lastActivityAt provider model effort initialPromptSentAt responseSeq responseMessageId seenResponseSeq mergedIntoCardId commentCount"
 				case "checkout/registration":
 					names = "id projectId daemonId name detached"
+				case "folder/identity":
+					names = "id createdAt"
 				}
 				for _, name := range strings.Fields(names) {
 					allowed[name] = true
