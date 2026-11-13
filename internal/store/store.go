@@ -43,6 +43,7 @@ import (
 	"github.com/dbpprt/dieter/internal/store/channels"
 	"github.com/dbpprt/dieter/internal/store/commands"
 	"github.com/dbpprt/dieter/internal/store/conversations"
+	storefolders "github.com/dbpprt/dieter/internal/store/folders"
 	"github.com/dbpprt/dieter/internal/store/home"
 	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/store/kv"
@@ -70,6 +71,7 @@ type Store struct {
 	Commands      *commands.Store
 	Channels      *channels.Store
 	Mail          *mail.Store
+	Folders       *storefolders.Store
 }
 
 // New opens the central store rooted at the absolute DIETER_HOME root. The
@@ -84,7 +86,7 @@ func New(root string) *Store {
 		Conversations: conversations.New(dir, peers, board, turns),
 		Schedules:     schedules.New(dir, peers, board),
 		KV:            kv.New(dir, peers), Settings: settings.New(dir), Commands: commands.New(dir),
-		Channels: channels.New(dir), Mail: mail.New(dir)}
+		Channels: channels.New(dir), Mail: mail.New(dir), Folders: storefolders.New(dir)}
 	s.SetHooks(home.Hooks{
 		BeforeCommit: func() {
 			if err := s.Schedules.FlushOutbox(); err != nil {
@@ -112,6 +114,7 @@ func New(root string) *Store {
 // background work before closing the store.
 func (s *Store) Close() error {
 	s.CloseNotifications()
+	s.Folders.Close()
 	return errors.Join(s.Replica.Close(), s.Schedules.Close())
 }
 
