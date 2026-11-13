@@ -103,10 +103,10 @@ func TestEmbeddedRuntimeContainsLocalModuleClosure(t *testing.T) {
 }
 
 func TestCatalogIncludesEverySupportedHarness(t *testing.T) {
-	if got := len(StaticCatalog(false).Adapters()); got != 5 {
-		t.Fatalf("catalog has %d harnesses, want 5", got)
+	if got := len(StaticCatalog(false).Adapters()); got != 6 {
+		t.Fatalf("catalog has %d harnesses, want 6", got)
 	}
-	for _, id := range []string{"codex", "claude-code", "pi", "omp", "dsh"} {
+	for _, id := range []string{"codex", "claude-code", "pi", "omp", "dsh", "strix"} {
 		adapter, found := StaticCatalog(false).ResolveAdapter(id)
 		if !found || adapter.DefaultModel == "" || len(adapter.Models) == 0 {
 			t.Errorf("harness %q is incomplete: %#v", id, adapter)
@@ -128,6 +128,54 @@ func TestCatalogIncludesDeepSeekHarnessACPWithConfiguredDefaultFallback(t *testi
 	}
 	if adapter.Effort != nil {
 		t.Fatalf("dsh effort=%#v", adapter.Effort)
+	}
+}
+
+func TestCatalogIncludesStrixWithVaultCredentialsAndBoundedScans(t *testing.T) {
+	adapter, valid := StaticCatalog(false).ResolveAdapter("strix")
+	if !valid || adapter.Runtime != "strix" || adapter.DefaultModel != "default" {
+		t.Fatalf("strix catalog=%#v valid=%v", adapter, valid)
+	}
+	if model := adapter.Models[0]; model.ID != "default" || model.RuntimeModel == nil || *model.RuntimeModel != "" {
+		t.Fatalf("strix default model=%#v, want the vault item's STRIX_LLM", model)
+	}
+	options, err := ResolveOptionsForModel(adapter, "default", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"credentials": "strix", "scan_mode": "quick", "scope": "full", "max_budget_usd": "10", "targets": ""}
+	for id, value := range want {
+		if options[id] != value {
+			t.Errorf("default option %s=%q want %q (all %v)", id, options[id], value, options)
+		}
+	}
+	if _, err := ResolveOptionsForModel(adapter, "default", map[string]string{"scan_mode": "everything"}); err == nil {
+		t.Fatal("an unknown scan mode was accepted")
+	}
+	// A follow-up resumes the same Strix run, which keeps its scan mode, scope
+	// and targets; budget and credentials apply to every turn.
+	for _, id := range []string{"scan_mode", "scope", "targets"} {
+		next := map[string]string{}
+		for key, value := range options {
+			next[key] = value
+		}
+		next[id] = "changed"
+		if ValidateOptionUpdate(adapter, options, next) == nil {
+			t.Errorf("%s can change after the first message", id)
+		}
+	}
+	for _, id := range []string{"max_budget_usd", "credentials"} {
+		next := map[string]string{}
+		for key, value := range options {
+			next[key] = value
+		}
+		next[id] = "changed"
+		if err := ValidateOptionUpdate(adapter, options, next); err != nil {
+			t.Errorf("%s is locked after the first message: %v", id, err)
+		}
+	}
+	if !hasCapability(adapter, "subagents") || hasCapability(adapter, "steering") {
+		t.Fatalf("strix capabilities=%#v", adapter.Capabilities)
 	}
 }
 

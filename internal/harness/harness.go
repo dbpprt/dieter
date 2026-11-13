@@ -96,26 +96,29 @@ type Capability struct {
 }
 
 type Request struct {
-	Harness                    string            `json:"harness"`
-	Adapter                    string            `json:"adapter"`
-	Model                      string            `json:"model,omitempty"`
-	ConfiguredModel            string            `json:"-"`
-	ContextWindow              int               `json:"contextWindow,omitempty"`
-	Effort                     string            `json:"effort,omitempty"`
-	Options                    map[string]string `json:"options,omitempty"`
-	Prompt                     string            `json:"prompt"`
-	Attachments                []Attachment      `json:"attachments,omitempty"`
-	Instructions               string            `json:"instructions,omitempty"`
-	SessionID                  string            `json:"sessionId"`
-	ResponseMessageID          string            `json:"responseMessageId"`
-	Session                    json.RawMessage   `json:"session,omitempty"`
-	ProjectPath                string            `json:"projectPath"`
-	RuntimeRoot                string            `json:"runtimeRoot"`
-	WebSearch                  bool              `json:"webSearch,omitempty"`
-	Continue                   bool              `json:"continue,omitempty"`
-	ContentPresentationEnabled bool              `json:"contentPresentationEnabled,omitempty"`
-	BackgroundProcessesEnabled bool              `json:"backgroundProcessesEnabled,omitempty"`
-	BackgroundProcess          ProcessHandler    `json:"-"`
+	Harness           string            `json:"harness"`
+	Adapter           string            `json:"adapter"`
+	Model             string            `json:"model,omitempty"`
+	ConfiguredModel   string            `json:"-"`
+	ContextWindow     int               `json:"contextWindow,omitempty"`
+	Effort            string            `json:"effort,omitempty"`
+	Options           map[string]string `json:"options,omitempty"`
+	Prompt            string            `json:"prompt"`
+	Attachments       []Attachment      `json:"attachments,omitempty"`
+	Instructions      string            `json:"instructions,omitempty"`
+	SessionID         string            `json:"sessionId"`
+	ResponseMessageID string            `json:"responseMessageId"`
+	Session           json.RawMessage   `json:"session,omitempty"`
+	ProjectPath       string            `json:"projectPath"`
+	// DiffBase is the commit a worktree branched from, for harnesses that can
+	// limit their work to the changes since then (Strix's diff scope).
+	DiffBase                   string         `json:"diffBase,omitempty"`
+	RuntimeRoot                string         `json:"runtimeRoot"`
+	WebSearch                  bool           `json:"webSearch,omitempty"`
+	Continue                   bool           `json:"continue,omitempty"`
+	ContentPresentationEnabled bool           `json:"contentPresentationEnabled,omitempty"`
+	BackgroundProcessesEnabled bool           `json:"backgroundProcessesEnabled,omitempty"`
+	BackgroundProcess          ProcessHandler `json:"-"`
 	// PresentCommand and ProcessCommand are the Dieter CLI equivalents of the
 	// presentation and background-process tools for this conversation, named
 	// in their instructions for harnesses that load host tools on demand.
@@ -342,6 +345,13 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 	}
 	dir := reference.Directory
 	var runtimePaths []string
+	var strixExecutable string
+	if request.Adapter == "strix" {
+		strixExecutable, err = ensureManagedStrix(ctx, r.home(), r.env.harnessEnvironment())
+		if err != nil {
+			return fmt.Errorf("prepare Strix: %w", err)
+		}
+	}
 	if request.Adapter == "omp-acp" {
 		bunBin, bunErr := ensureManagedBun(ctx, r.home(), r.env.runtimeArchive())
 		if bunErr != nil {
@@ -360,9 +370,12 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 	// just beyond that window and below Service.CancelCard's timeout.
 	command.WaitDelay = 9 * time.Second
 	command.Dir = dir
-	if request.Adapter == "omp-acp" {
+	switch request.Adapter {
+	case "omp-acp":
 		command.Env = r.env.ompHarnessEnvironment(runtimePaths...)
-	} else {
+	case "strix":
+		command.Env = r.env.strixHarnessEnvironment(strixExecutable)
+	default:
 		command.Env = r.env.harnessEnvironment()
 	}
 	for name, value := range request.Environment {

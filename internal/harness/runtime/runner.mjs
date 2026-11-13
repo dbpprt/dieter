@@ -172,6 +172,29 @@ async function codexContextWindow(model) {
   }
 }
 
+if (adapter === "strix") {
+  // Strix runs as its own process per turn and needs none of the AI SDK
+  // harness modules; see strix-runtime.mjs.
+  const { runStrixTurn } = await import("./strix-runtime.mjs");
+  let exitCode = 1;
+  try {
+    if (!process.env.DIETER_STRIX_BIN) throw new Error("the Strix executable is not installed");
+    exitCode = await runStrixTurn({
+      request,
+      send,
+      collector: capabilityCollector,
+      executable: process.env.DIETER_STRIX_BIN,
+    });
+  } catch (error) {
+    console.error(`strix turn failed: ${error?.stack || error}`);
+    send({ type: "error", error: `Strix failed: ${error?.message || error}` });
+    capabilityCollector.finalize("failed");
+    capabilityCollector.finishTaskPlan("failed");
+  }
+  await sandbox.stopAll().catch(() => {});
+  await exitWorker(exitCode);
+}
+
 if (request.harness === "mock") {
   const responseId = request.responseMessageId || `msg_${Date.now().toString(36)}`;
   const createdAt = new Date().toISOString();

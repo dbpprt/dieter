@@ -502,7 +502,19 @@ export function createSubagentCapabilityCollector({
     }
   }
 
+  // Harnesses that observe their agent graph and todo list out of band (Strix
+  // reads its run directory) report them directly.
+  function upsertSubagent(id, patch) {
+    upsert(String(id), patch);
+  }
+
+  function replaceTasks(tasks, source) {
+    replaceTaskPlan({ tasks, source });
+  }
+
   return {
+    upsertSubagent,
+    replaceTasks,
     consumeUIChunk,
     consumeOMPEnvelope,
     consumeACPToolCall,

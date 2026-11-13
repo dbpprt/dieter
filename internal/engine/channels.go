@@ -277,7 +277,8 @@ func (s *Service) dispatchChannelMessage(message model.ChannelMessage, wake bool
 			continue
 		}
 		// Only the recipient's owner daemon wakes it, within its own budget.
-		if card, err := s.Store.Kanban.ResolveCard(cardID); err == nil && s.ownsCard(card) {
+		// Strix scans start only when a person asks.
+		if card, err := s.Store.Kanban.ResolveCard(cardID); err == nil && s.ownsCard(card) && !s.IsStrixProvider(card.Provider) {
 			s.requestChannelWake(cardID)
 		}
 	}
@@ -460,7 +461,7 @@ func (s *Service) requestChannelWake(cardID string) {
 
 func (s *Service) wakeCard(cardID string) {
 	detail, err := s.Store.Kanban.CardDetail(cardID)
-	if err != nil || detail.Card.Archived || !s.ownsCard(detail.Card) {
+	if err != nil || detail.Card.Archived || !s.ownsCard(detail.Card) || s.IsStrixProvider(detail.Card.Provider) {
 		return
 	}
 	s.mu.Lock()

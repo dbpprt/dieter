@@ -92,6 +92,12 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 	}
 	provider, modelName, effort = selection.Provider, selection.Model, selection.Effort
 	providerOptions := selection.ProviderOptions
+	var strix strixTurn
+	if adapter.Runtime == strixAdapter {
+		if strix, err = s.prepareStrixTurn(detail.Card, configuredModel.RuntimeID(), providerOptions); err != nil {
+			return nil, err
+		}
+	}
 	var providerAccountKey *string
 	if s.ProviderAccountKey != nil {
 		resolved := strings.TrimSpace(s.ProviderAccountKey(provider))
@@ -219,8 +225,14 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 		PresentCommand:             s.CLIWord() + " " + conversationGroup(detail.Card) + " present " + detail.Card.ID,
 		Environment:                s.agentEnvironment(detail.Card.ID, turnID),
 	}
-	request.Prompt = channelPlan.prompt(harnessPrompt)
-	s.commitChannelTurn(detail.Card.ID, channelPlan, &request)
+	if adapter.Runtime == strixAdapter {
+		// Strix gets the person's message as its scan instruction: no channel
+		// digest, steering or coding-agent context.
+		strix.apply(s, detail.Card.ID, workspaceValue, &request)
+	} else {
+		request.Prompt = channelPlan.prompt(harnessPrompt)
+		s.commitChannelTurn(detail.Card.ID, channelPlan, &request)
+	}
 	go s.runTurn(ctx, detail, turnID, request, updates, done)
 	return updates, nil
 }

@@ -18,7 +18,7 @@ are in [invariants.md](invariants.md); the attacker's view is in
 | Android and iOS apps | `apps/kotlin/ui`, `apps/kotlin/android`, `apps/apple/ios` | Phones and tablets                     | Presentation and platform adapters                                                                                                                     |
 | macOS app            | `apps/apple/mac`                                          | macOS 26+                              | Presentation and platform adapters                                                                                                                     |
 | Native helpers       | `native/macos`, `native/linux-capture`                    | Daemon hosts                           | Screen capture, input injection, macOS privacy mode                                                                                                    |
-| Harness runtime      | `internal/harness/runtime` (Node)                         | Daemon hosts                           | Bridges Codex, Claude Code, Pi, Oh My Pi and DeepSeek Harness to the daemon                                                                            |
+| Harness runtime      | `internal/harness/runtime` (Node)                         | Daemon hosts                           | Bridges Codex, Claude Code, Pi, Oh My Pi, DeepSeek Harness and Strix to the daemon                                                                     |
 
 One binary, `dieter`, is both daemon and CLI: `cmd/dieter` sends `serve` and
 `daemon start` to `internal/daemon` and every other command to `internal/cli`,

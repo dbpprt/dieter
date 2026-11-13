@@ -8,7 +8,18 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
-Nothing yet.
+### Added
+
+- **Strix security scans.** The new **Strix** harness runs the open-source
+  [Strix](https://github.com/usestrix/strix) pentesting agent against a card's
+  worktree: its agent team, tool calls, todo list and validated findings appear
+  in the conversation, and a completed scan ends with its report. A follow-up
+  message continues the same scan. It needs Docker on the execution machine and
+  a vault item with the model API key (named `strix` by default); Dieter
+  installs the pinned Strix 1.7.1 on first use. Scans run only in worktrees,
+  stop at a budget (default $10), and only a person can start or message one:
+  agent turns and channel messages cannot. See
+  [Agents & models](https://getdieter.com/docs/harnesses/#strix).
 
 ## 0.6.442
 
