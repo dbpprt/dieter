@@ -227,6 +227,14 @@ func Run(ctx context.Context, cfg Config) error {
 	options := ServiceOptions{Env: *env, Runner: runner, Catalog: catalog, RemoteDesktop: remoteDesktop, ControlRTC: controlRTC, DaemonState: state}
 	if deviceTrust != nil {
 		options.Trust = deviceTrust
+		options.FolderPeers = FolderPeerDialer(identity, deviceTrust)
+		options.FolderTrusted = func(daemonID string) bool {
+			_, err := deviceTrust.DaemonKey(daemonID)
+			return err == nil
+		}
+	}
+	if identity != nil {
+		options.Name = identity.Name
 	}
 	if quotaSource != nil {
 		options.ProviderAccountKey = quotaSource.ActiveAccountKey

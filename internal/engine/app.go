@@ -30,6 +30,9 @@ type Service struct {
 	// shell's PATH (macOS path_helper) from shadowing it. Empty means "dieter"
 	// from PATH and no channel hooks.
 	CLIExecutable string
+	// LinkedFolders lists the synced folders linked to a project that this
+	// daemon keeps, for turn instructions; nil when folders are not running.
+	LinkedFolders func(projectID string) []model.LinkedFolder
 
 	channels channelHub
 

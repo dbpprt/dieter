@@ -279,5 +279,11 @@ func (s *Service) resolveInstructions(detail model.CardDetail, workspaceValue mo
 	if err != nil {
 		return dieterprompt.Resolution{}, err
 	}
+	if s.LinkedFolders != nil && detail.Project.ID != "" {
+		detail.LinkedFolders = s.LinkedFolders(detail.Project.ID)
+	}
 	return dieterprompt.ResolveForWorkspace(settings, detail, detail.Card.LabelIDs, workspaceValue, s.CLIWord())
 }
+
+// LinkedFolder is a synced folder linked to a project.
+type LinkedFolder = model.LinkedFolder

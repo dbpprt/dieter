@@ -765,6 +765,16 @@ type CardDetail struct {
 	Card    Card    `json:"card"`
 	Project Project `json:"project"`
 	Board   Board   `json:"board"`
+	// LinkedFolders are the synced folders linked to the project that this
+	// daemon is a member of; turn instructions name their paths.
+	LinkedFolders []LinkedFolder `json:"-"`
+}
+
+// LinkedFolder is a synced folder linked to a project, as a turn sees it.
+type LinkedFolder struct {
+	Name string
+	Path string
+	Mode string
 }
 
 type State struct {

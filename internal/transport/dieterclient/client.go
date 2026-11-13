@@ -32,6 +32,7 @@ type Client interface {
 	dieterv1.TrustServiceClient
 	dieterv1.ChannelServiceClient
 	dieterv1.MailServiceClient
+	dieterv1.FolderServiceClient
 }
 
 type client struct {
@@ -55,6 +56,7 @@ type client struct {
 	dieterv1.TrustServiceClient
 	dieterv1.ChannelServiceClient
 	dieterv1.MailServiceClient
+	dieterv1.FolderServiceClient
 }
 
 // New returns the gRPC clients of every dieter.v1 service sharing conn.
@@ -80,6 +82,7 @@ func New(conn grpc.ClientConnInterface) Client {
 		TrustServiceClient:        dieterv1.NewTrustServiceClient(conn),
 		ChannelServiceClient:      dieterv1.NewChannelServiceClient(conn),
 		MailServiceClient:         dieterv1.NewMailServiceClient(conn),
+		FolderServiceClient:       dieterv1.NewFolderServiceClient(conn),
 	}
 }
 
@@ -105,6 +108,7 @@ type ConnectClient interface {
 	dieterv1connect.TrustServiceClient
 	dieterv1connect.ChannelServiceClient
 	dieterv1connect.MailServiceClient
+	dieterv1connect.FolderServiceClient
 }
 
 type connectClient struct {
@@ -128,6 +132,7 @@ type connectClient struct {
 	dieterv1connect.TrustServiceClient
 	dieterv1connect.ChannelServiceClient
 	dieterv1connect.MailServiceClient
+	dieterv1connect.FolderServiceClient
 }
 
 // NewConnect returns the Connect clients of every dieter.v1 service at baseURL.
@@ -153,5 +158,6 @@ func NewConnect(httpClient connect.HTTPClient, baseURL string, options ...connec
 		TrustServiceClient:        dieterv1connect.NewTrustServiceClient(httpClient, baseURL, options...),
 		ChannelServiceClient:      dieterv1connect.NewChannelServiceClient(httpClient, baseURL, options...),
 		MailServiceClient:         dieterv1connect.NewMailServiceClient(httpClient, baseURL, options...),
+		FolderServiceClient:       dieterv1connect.NewFolderServiceClient(httpClient, baseURL, options...),
 	}
 }
