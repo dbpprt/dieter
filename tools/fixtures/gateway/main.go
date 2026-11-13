@@ -12,6 +12,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	hostfolders "github.com/dbpprt/dieter/internal/host/folders"
 	"log/slog"
 	"net"
 	"net/http"
@@ -264,6 +265,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute, mailR
 	// (the checkout's internal/harness/runtime in client tests) or a per-user
 	// cache, so concurrent fixtures don't each run npm ci.
 	runtimeHome, runtimeEnvironment := fixtureHarnessRuntime()
+	folders := hostfolders.New(hostfolders.Options{Store: data, Log: logger, Name: primaryName, Walk: 2 * time.Second, PeerPoll: 5 * time.Second})
 	newFixtureServer := func(fixtureData *boardstore.Store) *api.Server {
 		runner := newIsolatedRunner(harness.NewSubprocessRunner(runtimeHome, runtimeEnvironment))
 		// Smoke fixtures exercise client delivery and reconnect behavior with the
@@ -294,6 +296,12 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute, mailR
 				return nil
 			},
 			MachineCapabilities: isolatedMachineCapabilities,
+			Folders: func() *hostfolders.Engine {
+				if fixtureData == data {
+					return folders
+				}
+				return nil
+			}(),
 		})
 		boardServersMu.Lock()
 		boardServers = append(boardServers, value)
@@ -322,6 +330,13 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute, mailR
 	boardHTTP := &http.Server{Handler: boardServer.Handler(), Protocols: api.LoopbackProtocols()}
 	go func() { _ = boardHTTP.Serve(boardListener) }()
 	defer boardHTTP.Close()
+	// Synced folders run on the primary machine as in `dieter serve`.
+	go folders.Run(ctx)
+	if e2eFixture {
+		if err := seedFoldersFixture(ctx, folders, home); err != nil {
+			return err
+		}
+	}
 	secondTarget := ""
 	var secondHandler *replaceableHandler
 	var newSecondServer func() *api.Server
