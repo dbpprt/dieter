@@ -36,9 +36,10 @@ func (v transferRuleFlag) Set(value string) error {
 }
 
 func (c *CLI) rpcFileTransfer(action string, args []string) error {
-	usage := "Usage: dieter file " + action + " (--project PROJECT|--card CARD) [--checkout ID] [OPTIONS] SOURCE DESTINATION\n\nExactly one endpoint must start with remote:; other paths are on this CLI machine.\nRemote paths are relative to the selected workspace. Directories copy their contents.\nOptions: --recursive (cp), --dryrun, --delete (sync only), --checksum, --size-only,\n  --no-clobber, ordered --exclude GLOB / --include GLOB, --concurrency N (1..8),\n  --bandwidth-limit BYTES_PER_SECOND, --no-progress, --format text|jsonl.\nSync compares size and modification time; --checksum compares SHA-256 instead.\nHidden files are included; .git and transfer partials are protected. Symlinks and\nspecial files are unsupported. Empty directories are not copied. Delete runs only\nafter a complete successful scan and copy phase; excluded files are protected.\nRerun an interrupted command to resume. Uploads expire after 24 hours.\n"
+	usage := "Usage: dieter file " + action + " (--project PROJECT|--card CARD|--folder FOLDER) [--checkout ID] [OPTIONS] SOURCE DESTINATION\n\nExactly one endpoint must start with remote:; other paths are on this CLI machine.\nRemote paths are relative to the selected workspace, or with --folder to the\nselected machine's copy of a synced folder (which then syncs the change). Directories copy their contents.\nOptions: --recursive (cp), --dryrun, --delete (sync only), --checksum, --size-only,\n  --no-clobber, ordered --exclude GLOB / --include GLOB, --concurrency N (1..8),\n  --bandwidth-limit BYTES_PER_SECOND, --no-progress, --format text|jsonl.\nSync compares size and modification time; --checksum compares SHA-256 instead.\nHidden files are included; .git and transfer partials are protected. Symlinks and\nspecial files are unsupported. Empty directories are not copied. Delete runs only\nafter a complete successful scan and copy phase; excluded files are protected.\nRerun an interrupted command to resume. Uploads expire after 24 hours.\n"
 	set := flags("file " + action)
 	project, card, checkout := addFileScopeFlags(set)
+	folder := set.String("folder", "", "synced folder ID or name: the selected machine's copy")
 	recursive := set.Bool("recursive", false, "copy directory contents recursively")
 	dry := set.Bool("dryrun", false, "print the plan without changing files")
 	remove := set.Bool("delete", false, "delete destination-only files after successful sync")
@@ -87,8 +88,12 @@ func (c *CLI) rpcFileTransfer(action string, args []string) error {
 	if err != nil {
 		return err
 	}
-	projectID, cardID, err := c.resolveFileScope(ctx, client, rpcCtx, *project, *card)
-	if err != nil {
+	projectID, cardID := "", ""
+	if *folder != "" {
+		if *project != "" || *card != "" || *checkout != "" {
+			return errors.New("--folder replaces --project, --card and --checkout")
+		}
+	} else if projectID, cardID, err = c.resolveFileScope(ctx, client, rpcCtx, *project, *card); err != nil {
 		return err
 	}
 	endpoint := func(arg string, remote bool) (transferEndpoint, error) {
@@ -103,6 +108,7 @@ func (c *CLI) rpcFileTransfer(action string, args []string) error {
 		e.scope.ProjectId = projectID
 		e.scope.CardId = cardID
 		e.scope.CheckoutId = *checkout
+		e.scope.FolderId = *folder
 		return e, nil
 	}
 	source, err := endpoint(srcArg, srcRemote)

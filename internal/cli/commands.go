@@ -149,6 +149,13 @@ func commandTable() []command {
 			subcommands: []string{"send", "list", "show", "mark", "delete"},
 		},
 		{
+			name:        "folder",
+			aliases:     []string{"folders"},
+			summary:     "Synced folders between your machines and phones: members, status, trash",
+			run:         (*CLI).rpcFolder,
+			subcommands: []string{"list", "show", "create", "update", "archive", "attach", "member", "pause", "resume", "detach", "status", "rescan", "deletions", "trash", "trash list", "trash restore", "trash purge", "index", "blocks", "apply", "client", "client register", "client unregister"},
+		},
+		{
 			name:        "vault",
 			summary:     "End-to-end encrypted passwords and TOTP shared by your machines",
 			run:         (*CLI).rpcVault,

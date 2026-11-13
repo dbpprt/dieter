@@ -26,7 +26,7 @@ type transferEndpoint struct {
 }
 
 func (e transferEndpoint) target(p string, checksum bool) *dieterv1.TransferPath {
-	return &dieterv1.TransferPath{ProjectId: e.scope.ProjectId, CheckoutId: e.scope.CheckoutId, CardId: e.scope.CardId, Path: path.Join(e.base, p), Checksum: checksum}
+	return &dieterv1.TransferPath{ProjectId: e.scope.ProjectId, CheckoutId: e.scope.CheckoutId, CardId: e.scope.CardId, FolderId: e.scope.FolderId, Path: path.Join(e.base, p), Checksum: checksum}
 }
 func entryFromProto(e *dieterv1.TransferEntry) files.Entry {
 	return files.Entry{Path: e.Path, Kind: e.Kind, Size: e.Size, Modified: e.ModifiedNanos, Revision: e.Revision, SHA256: e.Sha256, Mode: e.Mode}
