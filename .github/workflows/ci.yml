@@ -156,7 +156,7 @@ jobs:
             jq -r 'select(.Action == "output" and .Test == null and (.Output | test("^coverage: [0-9.]+%"))) | "| `\(.Package)` | \(.Output | capture("coverage: (?<p>[0-9.]+%)").p) |"' tmp/go-test.json | sort -u
             [[ -f tmp/coverage.out ]] && go tool cover -func=tmp/coverage.out | awk '$1 == "total:" { print "| **total** | " $3 " |" }'
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: mikepenz/action-junit-report@6ef3fdcfcd5f0b5d14df3e659ef19b8c6820f93d # v6.6.1
+      - uses: mikepenz/action-junit-report@4a26df3e2ae132254ba12a53f65a388d0961e786 # v6.7.0
         if: always()
         with:
           report_paths: tmp/junit/*.xml
@@ -183,7 +183,7 @@ jobs:
           mkdir -p tmp/junit
           mapfile -t packages < <(grep -rl --include='*_test.go' '^//go:build e2e' cmd internal tools | xargs -n1 dirname | sort -u | sed 's|^|./|')
           gotestsum --format github-actions --junitfile tmp/junit/go-e2e.xml -- -tags e2e -timeout 20m "${packages[@]}"
-      - uses: mikepenz/action-junit-report@6ef3fdcfcd5f0b5d14df3e659ef19b8c6820f93d # v6.6.1
+      - uses: mikepenz/action-junit-report@4a26df3e2ae132254ba12a53f65a388d0961e786 # v6.7.0
         if: always()
         with:
           report_paths: tmp/junit/*.xml
@@ -208,7 +208,7 @@ jobs:
       - name: Test
         working-directory: internal/harness/runtime
         run: node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=../../../tmp-junit-harness.xml ./*.test.mjs
-      - uses: mikepenz/action-junit-report@6ef3fdcfcd5f0b5d14df3e659ef19b8c6820f93d # v6.6.1
+      - uses: mikepenz/action-junit-report@4a26df3e2ae132254ba12a53f65a388d0961e786 # v6.7.0
         if: always()
         with:
           report_paths: tmp-junit-harness.xml
@@ -236,7 +236,7 @@ jobs:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       - name: Unit and fixture end-to-end tests
         run: bundle exec fastlane core_test e2e:true
-      - uses: mikepenz/action-junit-report@6ef3fdcfcd5f0b5d14df3e659ef19b8c6820f93d # v6.6.1
+      - uses: mikepenz/action-junit-report@4a26df3e2ae132254ba12a53f65a388d0961e786 # v6.7.0
         if: always()
         with:
           report_paths: apps/kotlin/**/build/test-results/**/TEST-*.xml
@@ -315,7 +315,7 @@ jobs:
         with:
           key: apple-v2-${{ runner.arch }}-xcode26.5-${{ github.job }}-${{ hashFiles('apps/apple/**/Package.resolved', 'native/macos/Package.swift', 'apps/kotlin/gradle/libs.versions.toml') }}
           path: *apple-cache-paths
-      - uses: mikepenz/action-junit-report@6ef3fdcfcd5f0b5d14df3e659ef19b8c6820f93d # v6.6.1
+      - uses: mikepenz/action-junit-report@4a26df3e2ae132254ba12a53f65a388d0961e786 # v6.7.0
         if: always()
         with:
           report_paths: |
@@ -373,7 +373,7 @@ jobs:
         with:
           key: apple-v2-${{ runner.arch }}-xcode26.5-${{ github.job }}-${{ hashFiles('apps/apple/**/Package.resolved', 'native/macos/Package.swift', 'apps/kotlin/gradle/libs.versions.toml') }}
           path: *apple-cache-paths
-      - uses: mikepenz/action-junit-report@6ef3fdcfcd5f0b5d14df3e659ef19b8c6820f93d # v6.6.1
+      - uses: mikepenz/action-junit-report@4a26df3e2ae132254ba12a53f65a388d0961e786 # v6.7.0
         if: always()
         with:
           report_paths: tmp/pipeline/**/junit.xml
@@ -435,7 +435,7 @@ jobs:
           script: |
             bundle exec fastlane android e2e tags:${{ needs.plan.outputs.full == 'true' && 'full' || 'smoke' }} profile:android-ci
             bundle exec fastlane android e2e desktop:true tags:${{ needs.plan.outputs.full == 'true' && 'full' || 'smoke' }} profile:android-ci
-      - uses: mikepenz/action-junit-report@6ef3fdcfcd5f0b5d14df3e659ef19b8c6820f93d # v6.6.1
+      - uses: mikepenz/action-junit-report@4a26df3e2ae132254ba12a53f65a388d0961e786 # v6.7.0
         if: always()
         with:
           report_paths: |
