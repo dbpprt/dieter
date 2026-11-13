@@ -17,6 +17,7 @@ import (
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	"github.com/dbpprt/dieter/internal/transport/relay"
 	"google.golang.org/grpc"
 )
 
@@ -27,6 +28,7 @@ type Server struct {
 	Auth        *Auth
 	Hub         *Hub
 	Quota       *QuotaManager
+	Push        *PushManager
 	Service     *Service
 	Relay       *RelayService
 	APIGRPC     *grpc.Server
@@ -47,6 +49,15 @@ func NewServer(config Config, store *Store, logger *slog.Logger) (*Server, error
 	quota := NewQuotaManager(store, hub, logger)
 	hub.SetQuotaManager(quota)
 	service.SetQuotaManager(quota)
+	sender, err := newAPNSSender(config)
+	if err != nil {
+		return nil, err
+	}
+	var push *PushManager
+	if sender != nil {
+		push = newPushManager(store, sender, logger)
+		hub.push = push
+	}
 	api := grpc.NewServer(
 		grpc.UnaryInterceptor(auth.UnaryInterceptor), grpc.StreamInterceptor(auth.StreamInterceptor),
 		grpc.MaxRecvMsgSize(maxGatewayMessageBytes), grpc.MaxSendMsgSize(maxGatewayResponseBytes),
@@ -135,7 +146,7 @@ func NewServer(config Config, store *Store, logger *slog.Logger) (*Server, error
 		httpMux.ServeHTTP(w, r)
 	})
 	handler = limitGatewayRequestBodies(handler, 15*time.Second)
-	return &Server{Config: config, Store: store, Keys: keys, Auth: auth, Hub: hub, Quota: quota, Service: service, Relay: relay, APIGRPC: api, HTTPHandler: handler}, nil
+	return &Server{Config: config, Store: store, Keys: keys, Auth: auth, Hub: hub, Quota: quota, Push: push, Service: service, Relay: relay, APIGRPC: api, HTTPHandler: handler}, nil
 }
 
 func gatewayMethodRequiresSession(path string) bool {
@@ -168,11 +179,13 @@ func gatewayResourceExhausted(w http.ResponseWriter) {
 
 // gatewayHTTP2Config bounds HTTP/2 streams and flow-control buffers and
 // health-checks idle connections. Idle connections close after the server's
-// IdleTimeout.
+// IdleTimeout. A relay tunnel, and a daemon lane carrying many tunnels, is one
+// stream: its buffer holds a full tunnel window, or HTTP/2 would cap every
+// relayed transfer below it. The connection buffer bounds memory.
 func gatewayHTTP2Config() *http.HTTP2Config {
 	return &http.HTTP2Config{
 		MaxConcurrentStreams:      128,
-		MaxReceiveBufferPerStream: 64 << 10, MaxReceiveBufferPerConnection: 1 << 20,
+		MaxReceiveBufferPerStream: relay.TunnelWindow * relay.ChunkBytes, MaxReceiveBufferPerConnection: 1 << 20,
 		SendPingTimeout: 30 * time.Second, PingTimeout: 15 * time.Second,
 		WriteByteTimeout: 15 * time.Second,
 	}
@@ -252,6 +265,9 @@ func (s *Server) Serve(listener net.Listener) error {
 	defer cancelQuota()
 	if s.Quota != nil {
 		s.Quota.Start(quotaContext)
+	}
+	if s.Push != nil {
+		s.Push.Start(quotaContext)
 	}
 	httpServer, err := s.httpServer()
 	if err != nil {

@@ -190,6 +190,9 @@ message FileUpload {
   int64 size = 3;
   string state = 4;
   int64 expires_unix = 5;
+  // Chunks a writer may send from offset before earlier ones are acknowledged;
+  // offset stays the contiguous received prefix. Zero means one.
+  int32 window = 6;
 }
 message DeleteTransferFileRequest {
   TransferPath target = 1;

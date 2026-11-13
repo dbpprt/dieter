@@ -80,9 +80,18 @@ func (api *conversationsAPI) WatchConversation(ctx context.Context, request *die
 // SendMessage only uses the RPC context for admission. SubmitCardParts creates
 // a daemon-owned turn context, so a client disconnect after this method returns
 // never cancels an admitted agent turn.
-func (api *conversationsAPI) SendMessage(_ context.Context, request *dieterv1.SendMessageRequest) (*dieterv1.SendMessageResponse, error) {
+func (api *conversationsAPI) SendMessage(ctx context.Context, request *dieterv1.SendMessageRequest) (*dieterv1.SendMessageResponse, error) {
 	parts, err := modelUserMessageParts(request.GetParts())
 	if err != nil {
+		return nil, err
+	}
+	provider := request.GetProvider()
+	if provider == "" {
+		if card, resolveErr := api.server.store.Kanban.ResolveCard(request.GetCardId()); resolveErr == nil {
+			provider = card.Provider
+		}
+	}
+	if err := api.server.requireHumanForStrix(ctx, provider); err != nil {
 		return nil, err
 	}
 	clientID, commandID := strings.TrimSpace(request.GetClientId()), strings.TrimSpace(request.GetCommandId())

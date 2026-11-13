@@ -466,6 +466,7 @@ const (
 	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_TUNNEL_WINDOW DaemonLinkFrameKind = 24
 	// Either side ends the tunnel; status_code/status_message explain why.
 	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_TUNNEL_CLOSE DaemonLinkFrameKind = 25
+	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_ATTENTION    DaemonLinkFrameKind = 26
 )
 
 // Enum value maps for DaemonLinkFrameKind.
@@ -488,6 +489,7 @@ var (
 		23: "DAEMON_LINK_FRAME_KIND_TUNNEL_DATA",
 		24: "DAEMON_LINK_FRAME_KIND_TUNNEL_WINDOW",
 		25: "DAEMON_LINK_FRAME_KIND_TUNNEL_CLOSE",
+		26: "DAEMON_LINK_FRAME_KIND_ATTENTION",
 	}
 	DaemonLinkFrameKind_value = map[string]int32{
 		"DAEMON_LINK_FRAME_KIND_UNSPECIFIED":                    0,
@@ -507,6 +509,7 @@ var (
 		"DAEMON_LINK_FRAME_KIND_TUNNEL_DATA":                    23,
 		"DAEMON_LINK_FRAME_KIND_TUNNEL_WINDOW":                  24,
 		"DAEMON_LINK_FRAME_KIND_TUNNEL_CLOSE":                   25,
+		"DAEMON_LINK_FRAME_KIND_ATTENTION":                      26,
 	}
 )
 
@@ -4455,9 +4458,11 @@ type DaemonLinkFrame struct {
 	Compatibility                 CompatibilityStatus          `protobuf:"varint,27,opt,name=compatibility,proto3,enum=dieter.gateway.v1.CompatibilityStatus" json:"compatibility,omitempty"`
 	Lane                          RelayLane                    `protobuf:"varint,28,opt,name=lane,proto3,enum=dieter.gateway.v1.RelayLane" json:"lane,omitempty"`
 	// All lanes of one daemon process join this unpredictable session identity.
-	SessionId     string `protobuf:"bytes,29,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	SessionId        string             `protobuf:"bytes,29,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	PushDestinations []*PushDestination `protobuf:"bytes,33,rep,name=push_destinations,json=pushDestinations,proto3" json:"push_destinations,omitempty"`
+	Attention        *AttentionPresence `protobuf:"bytes,34,opt,name=attention,proto3" json:"attention,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *DaemonLinkFrame) Reset() {
@@ -4649,6 +4654,20 @@ func (x *DaemonLinkFrame) GetSessionId() string {
 		return x.SessionId
 	}
 	return ""
+}
+
+func (x *DaemonLinkFrame) GetPushDestinations() []*PushDestination {
+	if x != nil {
+		return x.PushDestinations
+	}
+	return nil
+}
+
+func (x *DaemonLinkFrame) GetAttention() *AttentionPresence {
+	if x != nil {
+		return x.Attention
+	}
+	return nil
 }
 
 // TunnelFrame is one frame of a relay tunnel. Each side may have at most
@@ -5393,6 +5412,303 @@ func (x *PairingRequestRef) GetId() string {
 	return ""
 }
 
+// Registers this native session's APNs route. Empty token unregisters it.
+type SetPushDeviceRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Token string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	// X25519, 32 bytes; the private key stays on the phone.
+	PublicKey []byte `protobuf:"bytes,2,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
+	Sandbox   bool   `protobuf:"varint,3,opt,name=sandbox,proto3" json:"sandbox,omitempty"`
+	DeviceId  string `protobuf:"bytes,4,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	// Device-roster signature of the account-bound push key binding.
+	Signature     []byte `protobuf:"bytes,5,opt,name=signature,proto3" json:"signature,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetPushDeviceRequest) Reset() {
+	*x = SetPushDeviceRequest{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[64]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetPushDeviceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetPushDeviceRequest) ProtoMessage() {}
+
+func (x *SetPushDeviceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[64]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetPushDeviceRequest.ProtoReflect.Descriptor instead.
+func (*SetPushDeviceRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{64}
+}
+
+func (x *SetPushDeviceRequest) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *SetPushDeviceRequest) GetPublicKey() []byte {
+	if x != nil {
+		return x.PublicKey
+	}
+	return nil
+}
+
+func (x *SetPushDeviceRequest) GetSandbox() bool {
+	if x != nil {
+		return x.Sandbox
+	}
+	return false
+}
+
+func (x *SetPushDeviceRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *SetPushDeviceRequest) GetSignature() []byte {
+	if x != nil {
+		return x.Signature
+	}
+	return nil
+}
+
+type SetPushDeviceResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Available     bool                   `protobuf:"varint,1,opt,name=available,proto3" json:"available,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetPushDeviceResponse) Reset() {
+	*x = SetPushDeviceResponse{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[65]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetPushDeviceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetPushDeviceResponse) ProtoMessage() {}
+
+func (x *SetPushDeviceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[65]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetPushDeviceResponse.ProtoReflect.Descriptor instead.
+func (*SetPushDeviceResponse) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{65}
+}
+
+func (x *SetPushDeviceResponse) GetAvailable() bool {
+	if x != nil {
+		return x.Available
+	}
+	return false
+}
+
+type PushDestination struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Opaque native-session receipt, never an APNs token.
+	Id            string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	PublicKey     []byte `protobuf:"bytes,2,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
+	DeviceId      string `protobuf:"bytes,3,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	Signature     []byte `protobuf:"bytes,4,opt,name=signature,proto3" json:"signature,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PushDestination) Reset() {
+	*x = PushDestination{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[66]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PushDestination) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PushDestination) ProtoMessage() {}
+
+func (x *PushDestination) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[66]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PushDestination.ProtoReflect.Descriptor instead.
+func (*PushDestination) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{66}
+}
+
+func (x *PushDestination) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *PushDestination) GetPublicKey() []byte {
+	if x != nil {
+		return x.PublicKey
+	}
+	return nil
+}
+
+func (x *PushDestination) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *PushDestination) GetSignature() []byte {
+	if x != nil {
+		return x.Signature
+	}
+	return nil
+}
+
+type SealedAttention struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DestinationId string                 `protobuf:"bytes,1,opt,name=destination_id,json=destinationId,proto3" json:"destination_id,omitempty"`
+	// Ephemeral X25519 public key (32), AES-GCM nonce (12), ciphertext and tag.
+	Sealed        []byte `protobuf:"bytes,2,opt,name=sealed,proto3" json:"sealed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SealedAttention) Reset() {
+	*x = SealedAttention{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[67]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SealedAttention) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SealedAttention) ProtoMessage() {}
+
+func (x *SealedAttention) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[67]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SealedAttention.ProtoReflect.Descriptor instead.
+func (*SealedAttention) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{67}
+}
+
+func (x *SealedAttention) GetDestinationId() string {
+	if x != nil {
+		return x.DestinationId
+	}
+	return ""
+}
+
+func (x *SealedAttention) GetSealed() []byte {
+	if x != nil {
+		return x.Sealed
+	}
+	return nil
+}
+
+type AttentionPresence struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Count         uint32                 `protobuf:"varint,1,opt,name=count,proto3" json:"count,omitempty"`
+	Alerts        []*SealedAttention     `protobuf:"bytes,2,rep,name=alerts,proto3" json:"alerts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AttentionPresence) Reset() {
+	*x = AttentionPresence{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[68]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AttentionPresence) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AttentionPresence) ProtoMessage() {}
+
+func (x *AttentionPresence) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[68]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AttentionPresence.ProtoReflect.Descriptor instead.
+func (*AttentionPresence) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{68}
+}
+
+func (x *AttentionPresence) GetCount() uint32 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+func (x *AttentionPresence) GetAlerts() []*SealedAttention {
+	if x != nil {
+		return x.Alerts
+	}
+	return nil
+}
+
 var File_dieter_gateway_v1_gateway_proto protoreflect.FileDescriptor
 
 const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
@@ -5710,7 +6026,7 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"\fqueued_bytes\x18\x05 \x01(\x04R\vqueuedBytes\x12%\n" +
 	"\x0erejected_calls\x18\x06 \x01(\x04R\rrejectedCalls\x12(\n" +
 	"\x10last_response_at\x18\a \x01(\tR\x0elastResponseAt\x12#\n" +
-	"\rwrite_stalled\x18\b \x01(\bR\fwriteStalled\"\xbd\f\n" +
+	"\rwrite_stalled\x18\b \x01(\bR\fwriteStalled\"\xd2\r\n" +
 	"\x0fDaemonLinkFrame\x12:\n" +
 	"\x04kind\x18\x01 \x01(\x0e2&.dieter.gateway.v1.DaemonLinkFrameKindR\x04kind\x12\x1b\n" +
 	"\tstream_id\x18\x02 \x01(\x04R\bstreamId\x12\x1b\n" +
@@ -5740,7 +6056,9 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"\rcompatibility\x18\x1b \x01(\x0e2&.dieter.gateway.v1.CompatibilityStatusR\rcompatibility\x120\n" +
 	"\x04lane\x18\x1c \x01(\x0e2\x1c.dieter.gateway.v1.RelayLaneR\x04lane\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x1d \x01(\tR\tsessionIdJ\x04\b\x05\x10\x06J\x04\b\a\x10\bJ\x04\b\b\x10\tJ\x04\b\t\x10\n" +
+	"session_id\x18\x1d \x01(\tR\tsessionId\x12O\n" +
+	"\x11push_destinations\x18! \x03(\v2\".dieter.gateway.v1.PushDestinationR\x10pushDestinations\x12B\n" +
+	"\tattention\x18\" \x01(\v2$.dieter.gateway.v1.AttentionPresenceR\tattentionJ\x04\b\x05\x10\x06J\x04\b\a\x10\bJ\x04\b\b\x10\tJ\x04\b\t\x10\n" +
 	"J\x04\b\f\x10\rJ\x04\b\x1e\x10\x1fJ\x04\b\x1f\x10 J\x04\b \x10!J\x04\b\x12\x10\x13R\x06methodR\x0epayload_sha256R\x14delegation_assertionR\x14deadline_unix_millisR\bmetadataR\fpayload_sizeR\x0epayload_offsetR\vapi_version\"\x88\x02\n" +
 	"\vTunnelFrame\x126\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\".dieter.gateway.v1.TunnelFrameKindR\x04kind\x12\x1b\n" +
@@ -5797,7 +6115,28 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"\x1bListPairingRequestsResponse\x12=\n" +
 	"\brequests\x18\x01 \x03(\v2!.dieter.gateway.v1.PairingRequestR\brequests\"#\n" +
 	"\x11PairingRequestRef\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id*\x89\x01\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xa0\x01\n" +
+	"\x14SetPushDeviceRequest\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\x12\x1d\n" +
+	"\n" +
+	"public_key\x18\x02 \x01(\fR\tpublicKey\x12\x18\n" +
+	"\asandbox\x18\x03 \x01(\bR\asandbox\x12\x1b\n" +
+	"\tdevice_id\x18\x04 \x01(\tR\bdeviceId\x12\x1c\n" +
+	"\tsignature\x18\x05 \x01(\fR\tsignature\"5\n" +
+	"\x15SetPushDeviceResponse\x12\x1c\n" +
+	"\tavailable\x18\x01 \x01(\bR\tavailable\"{\n" +
+	"\x0fPushDestination\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\n" +
+	"public_key\x18\x02 \x01(\fR\tpublicKey\x12\x1b\n" +
+	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\x12\x1c\n" +
+	"\tsignature\x18\x04 \x01(\fR\tsignature\"P\n" +
+	"\x0fSealedAttention\x12%\n" +
+	"\x0edestination_id\x18\x01 \x01(\tR\rdestinationId\x12\x16\n" +
+	"\x06sealed\x18\x02 \x01(\fR\x06sealed\"e\n" +
+	"\x11AttentionPresence\x12\x14\n" +
+	"\x05count\x18\x01 \x01(\rR\x05count\x12:\n" +
+	"\x06alerts\x18\x02 \x03(\v2\".dieter.gateway.v1.SealedAttentionR\x06alerts*\x89\x01\n" +
 	"\x16CompatibilityComponent\x12'\n" +
 	"#COMPATIBILITY_COMPONENT_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eCOMPATIBILITY_COMPONENT_CLIENT\x10\x01\x12\"\n" +
@@ -5838,7 +6177,7 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"\x16ProviderQuotaFreshness\x12(\n" +
 	"$PROVIDER_QUOTA_FRESHNESS_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1ePROVIDER_QUOTA_FRESHNESS_FRESH\x10\x01\x12\"\n" +
-	"\x1ePROVIDER_QUOTA_FRESHNESS_STALE\x10\x02*\xf7\x05\n" +
+	"\x1ePROVIDER_QUOTA_FRESHNESS_STALE\x10\x02*\x9d\x06\n" +
 	"\x13DaemonLinkFrameKind\x12&\n" +
 	"\"DAEMON_LINK_FRAME_KIND_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cDAEMON_LINK_FRAME_KIND_HELLO\x10\x01\x12$\n" +
@@ -5856,7 +6195,8 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"$DAEMON_LINK_FRAME_KIND_TUNNEL_OPENED\x10\x16\x12&\n" +
 	"\"DAEMON_LINK_FRAME_KIND_TUNNEL_DATA\x10\x17\x12(\n" +
 	"$DAEMON_LINK_FRAME_KIND_TUNNEL_WINDOW\x10\x18\x12'\n" +
-	"#DAEMON_LINK_FRAME_KIND_TUNNEL_CLOSE\x10\x19\"\x04\b\x05\x10\r*t\n" +
+	"#DAEMON_LINK_FRAME_KIND_TUNNEL_CLOSE\x10\x19\x12$\n" +
+	" DAEMON_LINK_FRAME_KIND_ATTENTION\x10\x1a\"\x04\b\x05\x10\r*t\n" +
 	"\tRelayLane\x12\x16\n" +
 	"\x12RELAY_LANE_CONTROL\x10\x00\x12\x1a\n" +
 	"\x16RELAY_LANE_REPLICATION\x10\x01\x12\x16\n" +
@@ -5883,8 +6223,9 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"#DEVICE_ROSTER_OPERATION_UNSPECIFIED\x10\x00\x12#\n" +
 	"\x1fDEVICE_ROSTER_OPERATION_GENESIS\x10\x01\x12\x1f\n" +
 	"\x1bDEVICE_ROSTER_OPERATION_ADD\x10\x02\x12\"\n" +
-	"\x1eDEVICE_ROSTER_OPERATION_REVOKE\x10\x032\xd2\x14\n" +
-	"\x0eGatewayService\x12e\n" +
+	"\x1eDEVICE_ROSTER_OPERATION_REVOKE\x10\x032\xb6\x15\n" +
+	"\x0eGatewayService\x12b\n" +
+	"\rSetPushDevice\x12'.dieter.gateway.v1.SetPushDeviceRequest\x1a(.dieter.gateway.v1.SetPushDeviceResponse\x12e\n" +
 	"\x10GetCompatibility\x12'.dieter.gateway.v1.CompatibilityRequest\x1a(.dieter.gateway.v1.CompatibilityResponse\x12@\n" +
 	"\n" +
 	"GetAccount\x12\x16.google.protobuf.Empty\x1a\x1a.dieter.gateway.v1.Account\x12M\n" +
@@ -5932,7 +6273,7 @@ func file_dieter_gateway_v1_gateway_proto_rawDescGZIP() []byte {
 }
 
 var file_dieter_gateway_v1_gateway_proto_enumTypes = make([]protoimpl.EnumInfo, 14)
-var file_dieter_gateway_v1_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 64)
+var file_dieter_gateway_v1_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 69)
 var file_dieter_gateway_v1_gateway_proto_goTypes = []any{
 	(CompatibilityComponent)(0),                      // 0: dieter.gateway.v1.CompatibilityComponent
 	(CompatibilityStatus)(0),                         // 1: dieter.gateway.v1.CompatibilityStatus
@@ -6012,7 +6353,12 @@ var file_dieter_gateway_v1_gateway_proto_goTypes = []any{
 	(*ConfirmPairingRequestRequest)(nil),             // 75: dieter.gateway.v1.ConfirmPairingRequestRequest
 	(*ListPairingRequestsResponse)(nil),              // 76: dieter.gateway.v1.ListPairingRequestsResponse
 	(*PairingRequestRef)(nil),                        // 77: dieter.gateway.v1.PairingRequestRef
-	(*emptypb.Empty)(nil),                            // 78: google.protobuf.Empty
+	(*SetPushDeviceRequest)(nil),                     // 78: dieter.gateway.v1.SetPushDeviceRequest
+	(*SetPushDeviceResponse)(nil),                    // 79: dieter.gateway.v1.SetPushDeviceResponse
+	(*PushDestination)(nil),                          // 80: dieter.gateway.v1.PushDestination
+	(*SealedAttention)(nil),                          // 81: dieter.gateway.v1.SealedAttention
+	(*AttentionPresence)(nil),                        // 82: dieter.gateway.v1.AttentionPresence
+	(*emptypb.Empty)(nil),                            // 83: google.protobuf.Empty
 }
 var file_dieter_gateway_v1_gateway_proto_depIdxs = []int32{
 	36,  // 0: dieter.gateway.v1.Daemon.direct_candidates:type_name -> dieter.gateway.v1.DirectCandidate
@@ -6077,78 +6423,83 @@ var file_dieter_gateway_v1_gateway_proto_depIdxs = []int32{
 	20,  // 59: dieter.gateway.v1.DaemonLinkFrame.compatibility_policy:type_name -> dieter.gateway.v1.CompatibilityPolicy
 	1,   // 60: dieter.gateway.v1.DaemonLinkFrame.compatibility:type_name -> dieter.gateway.v1.CompatibilityStatus
 	9,   // 61: dieter.gateway.v1.DaemonLinkFrame.lane:type_name -> dieter.gateway.v1.RelayLane
-	10,  // 62: dieter.gateway.v1.TunnelFrame.kind:type_name -> dieter.gateway.v1.TunnelFrameKind
-	9,   // 63: dieter.gateway.v1.TunnelFrame.lane:type_name -> dieter.gateway.v1.RelayLane
-	11,  // 64: dieter.gateway.v1.DeviceDescriptor.kind:type_name -> dieter.gateway.v1.DeviceKind
-	12,  // 65: dieter.gateway.v1.DeviceDescriptor.algorithm:type_name -> dieter.gateway.v1.DeviceKeyAlgorithm
-	13,  // 66: dieter.gateway.v1.DeviceRosterEntry.operation:type_name -> dieter.gateway.v1.DeviceRosterOperation
-	68,  // 67: dieter.gateway.v1.DeviceRosterEntry.device:type_name -> dieter.gateway.v1.DeviceDescriptor
-	69,  // 68: dieter.gateway.v1.DeviceRoster.entries:type_name -> dieter.gateway.v1.DeviceRosterEntry
-	69,  // 69: dieter.gateway.v1.AppendDeviceRosterRequest.entry:type_name -> dieter.gateway.v1.DeviceRosterEntry
-	68,  // 70: dieter.gateway.v1.PostPairingRequestRequest.device:type_name -> dieter.gateway.v1.DeviceDescriptor
-	68,  // 71: dieter.gateway.v1.PairingRequest.device:type_name -> dieter.gateway.v1.DeviceDescriptor
-	74,  // 72: dieter.gateway.v1.ListPairingRequestsResponse.requests:type_name -> dieter.gateway.v1.PairingRequest
-	21,  // 73: dieter.gateway.v1.GatewayService.GetCompatibility:input_type -> dieter.gateway.v1.CompatibilityRequest
-	78,  // 74: dieter.gateway.v1.GatewayService.GetAccount:input_type -> google.protobuf.Empty
-	78,  // 75: dieter.gateway.v1.GatewayService.ListDaemons:input_type -> google.protobuf.Empty
-	23,  // 76: dieter.gateway.v1.GatewayService.WatchDaemons:input_type -> dieter.gateway.v1.WatchDaemonsRequest
-	25,  // 77: dieter.gateway.v1.GatewayService.BeginDaemonEnrollment:input_type -> dieter.gateway.v1.BeginDaemonEnrollmentRequest
-	27,  // 78: dieter.gateway.v1.GatewayService.CompleteDaemonEnrollment:input_type -> dieter.gateway.v1.CompleteDaemonEnrollmentRequest
-	28,  // 79: dieter.gateway.v1.GatewayService.UnenrollDaemon:input_type -> dieter.gateway.v1.UnenrollDaemonRequest
-	33,  // 80: dieter.gateway.v1.GatewayService.RenameDaemon:input_type -> dieter.gateway.v1.RenameDaemonRequest
-	15,  // 81: dieter.gateway.v1.GatewayService.RevokeDaemon:input_type -> dieter.gateway.v1.DaemonRef
-	29,  // 82: dieter.gateway.v1.GatewayService.InspectDaemonRecovery:input_type -> dieter.gateway.v1.DaemonRecoveryRef
-	31,  // 83: dieter.gateway.v1.GatewayService.RecoverDaemon:input_type -> dieter.gateway.v1.RecoverDaemonRequest
-	34,  // 84: dieter.gateway.v1.GatewayService.ExchangeDaemonToken:input_type -> dieter.gateway.v1.ExchangeDaemonTokenRequest
-	15,  // 85: dieter.gateway.v1.GatewayService.ResolveDaemonRoute:input_type -> dieter.gateway.v1.DaemonRef
-	15,  // 86: dieter.gateway.v1.GatewayService.GetRTCConfiguration:input_type -> dieter.gateway.v1.DaemonRef
-	49,  // 87: dieter.gateway.v1.GatewayService.ListProviderQuotas:input_type -> dieter.gateway.v1.ListProviderQuotasRequest
-	51,  // 88: dieter.gateway.v1.GatewayService.WatchProviderQuotas:input_type -> dieter.gateway.v1.WatchProviderQuotasRequest
-	53,  // 89: dieter.gateway.v1.GatewayService.RefreshProviderQuotas:input_type -> dieter.gateway.v1.RefreshProviderQuotasRequest
-	55,  // 90: dieter.gateway.v1.GatewayService.SetProviderQuotaSummaryInclusion:input_type -> dieter.gateway.v1.SetProviderQuotaSummaryInclusionRequest
-	57,  // 91: dieter.gateway.v1.GatewayService.ConsumeProviderQuotaReset:input_type -> dieter.gateway.v1.ConsumeProviderQuotaResetRequest
-	71,  // 92: dieter.gateway.v1.GatewayService.GetDeviceRoster:input_type -> dieter.gateway.v1.GetDeviceRosterRequest
-	71,  // 93: dieter.gateway.v1.GatewayService.WatchDeviceRoster:input_type -> dieter.gateway.v1.GetDeviceRosterRequest
-	72,  // 94: dieter.gateway.v1.GatewayService.AppendDeviceRoster:input_type -> dieter.gateway.v1.AppendDeviceRosterRequest
-	73,  // 95: dieter.gateway.v1.GatewayService.PostPairingRequest:input_type -> dieter.gateway.v1.PostPairingRequestRequest
-	78,  // 96: dieter.gateway.v1.GatewayService.ListPairingRequests:input_type -> google.protobuf.Empty
-	75,  // 97: dieter.gateway.v1.GatewayService.ConfirmPairingRequest:input_type -> dieter.gateway.v1.ConfirmPairingRequestRequest
-	77,  // 98: dieter.gateway.v1.GatewayService.DeletePairingRequest:input_type -> dieter.gateway.v1.PairingRequestRef
-	67,  // 99: dieter.gateway.v1.RelayService.OpenTunnel:input_type -> dieter.gateway.v1.TunnelFrame
-	66,  // 100: dieter.gateway.v1.DaemonLinkService.Connect:input_type -> dieter.gateway.v1.DaemonLinkFrame
-	22,  // 101: dieter.gateway.v1.GatewayService.GetCompatibility:output_type -> dieter.gateway.v1.CompatibilityResponse
-	14,  // 102: dieter.gateway.v1.GatewayService.GetAccount:output_type -> dieter.gateway.v1.Account
-	18,  // 103: dieter.gateway.v1.GatewayService.ListDaemons:output_type -> dieter.gateway.v1.ListDaemonsResponse
-	24,  // 104: dieter.gateway.v1.GatewayService.WatchDaemons:output_type -> dieter.gateway.v1.DaemonPresenceUpdate
-	26,  // 105: dieter.gateway.v1.GatewayService.BeginDaemonEnrollment:output_type -> dieter.gateway.v1.DaemonEnrollment
-	32,  // 106: dieter.gateway.v1.GatewayService.CompleteDaemonEnrollment:output_type -> dieter.gateway.v1.DaemonCredential
-	78,  // 107: dieter.gateway.v1.GatewayService.UnenrollDaemon:output_type -> google.protobuf.Empty
-	16,  // 108: dieter.gateway.v1.GatewayService.RenameDaemon:output_type -> dieter.gateway.v1.Daemon
-	78,  // 109: dieter.gateway.v1.GatewayService.RevokeDaemon:output_type -> google.protobuf.Empty
-	30,  // 110: dieter.gateway.v1.GatewayService.InspectDaemonRecovery:output_type -> dieter.gateway.v1.DaemonRecoveryState
-	32,  // 111: dieter.gateway.v1.GatewayService.RecoverDaemon:output_type -> dieter.gateway.v1.DaemonCredential
-	35,  // 112: dieter.gateway.v1.GatewayService.ExchangeDaemonToken:output_type -> dieter.gateway.v1.DaemonAccessToken
-	37,  // 113: dieter.gateway.v1.GatewayService.ResolveDaemonRoute:output_type -> dieter.gateway.v1.DaemonRoute
-	39,  // 114: dieter.gateway.v1.GatewayService.GetRTCConfiguration:output_type -> dieter.gateway.v1.RTCConfiguration
-	50,  // 115: dieter.gateway.v1.GatewayService.ListProviderQuotas:output_type -> dieter.gateway.v1.ListProviderQuotasResponse
-	52,  // 116: dieter.gateway.v1.GatewayService.WatchProviderQuotas:output_type -> dieter.gateway.v1.ProviderQuotaUpdate
-	54,  // 117: dieter.gateway.v1.GatewayService.RefreshProviderQuotas:output_type -> dieter.gateway.v1.RefreshProviderQuotasResponse
-	56,  // 118: dieter.gateway.v1.GatewayService.SetProviderQuotaSummaryInclusion:output_type -> dieter.gateway.v1.SetProviderQuotaSummaryInclusionResponse
-	58,  // 119: dieter.gateway.v1.GatewayService.ConsumeProviderQuotaReset:output_type -> dieter.gateway.v1.ConsumeProviderQuotaResetResponse
-	70,  // 120: dieter.gateway.v1.GatewayService.GetDeviceRoster:output_type -> dieter.gateway.v1.DeviceRoster
-	70,  // 121: dieter.gateway.v1.GatewayService.WatchDeviceRoster:output_type -> dieter.gateway.v1.DeviceRoster
-	70,  // 122: dieter.gateway.v1.GatewayService.AppendDeviceRoster:output_type -> dieter.gateway.v1.DeviceRoster
-	74,  // 123: dieter.gateway.v1.GatewayService.PostPairingRequest:output_type -> dieter.gateway.v1.PairingRequest
-	76,  // 124: dieter.gateway.v1.GatewayService.ListPairingRequests:output_type -> dieter.gateway.v1.ListPairingRequestsResponse
-	74,  // 125: dieter.gateway.v1.GatewayService.ConfirmPairingRequest:output_type -> dieter.gateway.v1.PairingRequest
-	78,  // 126: dieter.gateway.v1.GatewayService.DeletePairingRequest:output_type -> google.protobuf.Empty
-	67,  // 127: dieter.gateway.v1.RelayService.OpenTunnel:output_type -> dieter.gateway.v1.TunnelFrame
-	66,  // 128: dieter.gateway.v1.DaemonLinkService.Connect:output_type -> dieter.gateway.v1.DaemonLinkFrame
-	101, // [101:129] is the sub-list for method output_type
-	73,  // [73:101] is the sub-list for method input_type
-	73,  // [73:73] is the sub-list for extension type_name
-	73,  // [73:73] is the sub-list for extension extendee
-	0,   // [0:73] is the sub-list for field type_name
+	80,  // 62: dieter.gateway.v1.DaemonLinkFrame.push_destinations:type_name -> dieter.gateway.v1.PushDestination
+	82,  // 63: dieter.gateway.v1.DaemonLinkFrame.attention:type_name -> dieter.gateway.v1.AttentionPresence
+	10,  // 64: dieter.gateway.v1.TunnelFrame.kind:type_name -> dieter.gateway.v1.TunnelFrameKind
+	9,   // 65: dieter.gateway.v1.TunnelFrame.lane:type_name -> dieter.gateway.v1.RelayLane
+	11,  // 66: dieter.gateway.v1.DeviceDescriptor.kind:type_name -> dieter.gateway.v1.DeviceKind
+	12,  // 67: dieter.gateway.v1.DeviceDescriptor.algorithm:type_name -> dieter.gateway.v1.DeviceKeyAlgorithm
+	13,  // 68: dieter.gateway.v1.DeviceRosterEntry.operation:type_name -> dieter.gateway.v1.DeviceRosterOperation
+	68,  // 69: dieter.gateway.v1.DeviceRosterEntry.device:type_name -> dieter.gateway.v1.DeviceDescriptor
+	69,  // 70: dieter.gateway.v1.DeviceRoster.entries:type_name -> dieter.gateway.v1.DeviceRosterEntry
+	69,  // 71: dieter.gateway.v1.AppendDeviceRosterRequest.entry:type_name -> dieter.gateway.v1.DeviceRosterEntry
+	68,  // 72: dieter.gateway.v1.PostPairingRequestRequest.device:type_name -> dieter.gateway.v1.DeviceDescriptor
+	68,  // 73: dieter.gateway.v1.PairingRequest.device:type_name -> dieter.gateway.v1.DeviceDescriptor
+	74,  // 74: dieter.gateway.v1.ListPairingRequestsResponse.requests:type_name -> dieter.gateway.v1.PairingRequest
+	81,  // 75: dieter.gateway.v1.AttentionPresence.alerts:type_name -> dieter.gateway.v1.SealedAttention
+	78,  // 76: dieter.gateway.v1.GatewayService.SetPushDevice:input_type -> dieter.gateway.v1.SetPushDeviceRequest
+	21,  // 77: dieter.gateway.v1.GatewayService.GetCompatibility:input_type -> dieter.gateway.v1.CompatibilityRequest
+	83,  // 78: dieter.gateway.v1.GatewayService.GetAccount:input_type -> google.protobuf.Empty
+	83,  // 79: dieter.gateway.v1.GatewayService.ListDaemons:input_type -> google.protobuf.Empty
+	23,  // 80: dieter.gateway.v1.GatewayService.WatchDaemons:input_type -> dieter.gateway.v1.WatchDaemonsRequest
+	25,  // 81: dieter.gateway.v1.GatewayService.BeginDaemonEnrollment:input_type -> dieter.gateway.v1.BeginDaemonEnrollmentRequest
+	27,  // 82: dieter.gateway.v1.GatewayService.CompleteDaemonEnrollment:input_type -> dieter.gateway.v1.CompleteDaemonEnrollmentRequest
+	28,  // 83: dieter.gateway.v1.GatewayService.UnenrollDaemon:input_type -> dieter.gateway.v1.UnenrollDaemonRequest
+	33,  // 84: dieter.gateway.v1.GatewayService.RenameDaemon:input_type -> dieter.gateway.v1.RenameDaemonRequest
+	15,  // 85: dieter.gateway.v1.GatewayService.RevokeDaemon:input_type -> dieter.gateway.v1.DaemonRef
+	29,  // 86: dieter.gateway.v1.GatewayService.InspectDaemonRecovery:input_type -> dieter.gateway.v1.DaemonRecoveryRef
+	31,  // 87: dieter.gateway.v1.GatewayService.RecoverDaemon:input_type -> dieter.gateway.v1.RecoverDaemonRequest
+	34,  // 88: dieter.gateway.v1.GatewayService.ExchangeDaemonToken:input_type -> dieter.gateway.v1.ExchangeDaemonTokenRequest
+	15,  // 89: dieter.gateway.v1.GatewayService.ResolveDaemonRoute:input_type -> dieter.gateway.v1.DaemonRef
+	15,  // 90: dieter.gateway.v1.GatewayService.GetRTCConfiguration:input_type -> dieter.gateway.v1.DaemonRef
+	49,  // 91: dieter.gateway.v1.GatewayService.ListProviderQuotas:input_type -> dieter.gateway.v1.ListProviderQuotasRequest
+	51,  // 92: dieter.gateway.v1.GatewayService.WatchProviderQuotas:input_type -> dieter.gateway.v1.WatchProviderQuotasRequest
+	53,  // 93: dieter.gateway.v1.GatewayService.RefreshProviderQuotas:input_type -> dieter.gateway.v1.RefreshProviderQuotasRequest
+	55,  // 94: dieter.gateway.v1.GatewayService.SetProviderQuotaSummaryInclusion:input_type -> dieter.gateway.v1.SetProviderQuotaSummaryInclusionRequest
+	57,  // 95: dieter.gateway.v1.GatewayService.ConsumeProviderQuotaReset:input_type -> dieter.gateway.v1.ConsumeProviderQuotaResetRequest
+	71,  // 96: dieter.gateway.v1.GatewayService.GetDeviceRoster:input_type -> dieter.gateway.v1.GetDeviceRosterRequest
+	71,  // 97: dieter.gateway.v1.GatewayService.WatchDeviceRoster:input_type -> dieter.gateway.v1.GetDeviceRosterRequest
+	72,  // 98: dieter.gateway.v1.GatewayService.AppendDeviceRoster:input_type -> dieter.gateway.v1.AppendDeviceRosterRequest
+	73,  // 99: dieter.gateway.v1.GatewayService.PostPairingRequest:input_type -> dieter.gateway.v1.PostPairingRequestRequest
+	83,  // 100: dieter.gateway.v1.GatewayService.ListPairingRequests:input_type -> google.protobuf.Empty
+	75,  // 101: dieter.gateway.v1.GatewayService.ConfirmPairingRequest:input_type -> dieter.gateway.v1.ConfirmPairingRequestRequest
+	77,  // 102: dieter.gateway.v1.GatewayService.DeletePairingRequest:input_type -> dieter.gateway.v1.PairingRequestRef
+	67,  // 103: dieter.gateway.v1.RelayService.OpenTunnel:input_type -> dieter.gateway.v1.TunnelFrame
+	66,  // 104: dieter.gateway.v1.DaemonLinkService.Connect:input_type -> dieter.gateway.v1.DaemonLinkFrame
+	79,  // 105: dieter.gateway.v1.GatewayService.SetPushDevice:output_type -> dieter.gateway.v1.SetPushDeviceResponse
+	22,  // 106: dieter.gateway.v1.GatewayService.GetCompatibility:output_type -> dieter.gateway.v1.CompatibilityResponse
+	14,  // 107: dieter.gateway.v1.GatewayService.GetAccount:output_type -> dieter.gateway.v1.Account
+	18,  // 108: dieter.gateway.v1.GatewayService.ListDaemons:output_type -> dieter.gateway.v1.ListDaemonsResponse
+	24,  // 109: dieter.gateway.v1.GatewayService.WatchDaemons:output_type -> dieter.gateway.v1.DaemonPresenceUpdate
+	26,  // 110: dieter.gateway.v1.GatewayService.BeginDaemonEnrollment:output_type -> dieter.gateway.v1.DaemonEnrollment
+	32,  // 111: dieter.gateway.v1.GatewayService.CompleteDaemonEnrollment:output_type -> dieter.gateway.v1.DaemonCredential
+	83,  // 112: dieter.gateway.v1.GatewayService.UnenrollDaemon:output_type -> google.protobuf.Empty
+	16,  // 113: dieter.gateway.v1.GatewayService.RenameDaemon:output_type -> dieter.gateway.v1.Daemon
+	83,  // 114: dieter.gateway.v1.GatewayService.RevokeDaemon:output_type -> google.protobuf.Empty
+	30,  // 115: dieter.gateway.v1.GatewayService.InspectDaemonRecovery:output_type -> dieter.gateway.v1.DaemonRecoveryState
+	32,  // 116: dieter.gateway.v1.GatewayService.RecoverDaemon:output_type -> dieter.gateway.v1.DaemonCredential
+	35,  // 117: dieter.gateway.v1.GatewayService.ExchangeDaemonToken:output_type -> dieter.gateway.v1.DaemonAccessToken
+	37,  // 118: dieter.gateway.v1.GatewayService.ResolveDaemonRoute:output_type -> dieter.gateway.v1.DaemonRoute
+	39,  // 119: dieter.gateway.v1.GatewayService.GetRTCConfiguration:output_type -> dieter.gateway.v1.RTCConfiguration
+	50,  // 120: dieter.gateway.v1.GatewayService.ListProviderQuotas:output_type -> dieter.gateway.v1.ListProviderQuotasResponse
+	52,  // 121: dieter.gateway.v1.GatewayService.WatchProviderQuotas:output_type -> dieter.gateway.v1.ProviderQuotaUpdate
+	54,  // 122: dieter.gateway.v1.GatewayService.RefreshProviderQuotas:output_type -> dieter.gateway.v1.RefreshProviderQuotasResponse
+	56,  // 123: dieter.gateway.v1.GatewayService.SetProviderQuotaSummaryInclusion:output_type -> dieter.gateway.v1.SetProviderQuotaSummaryInclusionResponse
+	58,  // 124: dieter.gateway.v1.GatewayService.ConsumeProviderQuotaReset:output_type -> dieter.gateway.v1.ConsumeProviderQuotaResetResponse
+	70,  // 125: dieter.gateway.v1.GatewayService.GetDeviceRoster:output_type -> dieter.gateway.v1.DeviceRoster
+	70,  // 126: dieter.gateway.v1.GatewayService.WatchDeviceRoster:output_type -> dieter.gateway.v1.DeviceRoster
+	70,  // 127: dieter.gateway.v1.GatewayService.AppendDeviceRoster:output_type -> dieter.gateway.v1.DeviceRoster
+	74,  // 128: dieter.gateway.v1.GatewayService.PostPairingRequest:output_type -> dieter.gateway.v1.PairingRequest
+	76,  // 129: dieter.gateway.v1.GatewayService.ListPairingRequests:output_type -> dieter.gateway.v1.ListPairingRequestsResponse
+	74,  // 130: dieter.gateway.v1.GatewayService.ConfirmPairingRequest:output_type -> dieter.gateway.v1.PairingRequest
+	83,  // 131: dieter.gateway.v1.GatewayService.DeletePairingRequest:output_type -> google.protobuf.Empty
+	67,  // 132: dieter.gateway.v1.RelayService.OpenTunnel:output_type -> dieter.gateway.v1.TunnelFrame
+	66,  // 133: dieter.gateway.v1.DaemonLinkService.Connect:output_type -> dieter.gateway.v1.DaemonLinkFrame
+	105, // [105:134] is the sub-list for method output_type
+	76,  // [76:105] is the sub-list for method input_type
+	76,  // [76:76] is the sub-list for extension type_name
+	76,  // [76:76] is the sub-list for extension extendee
+	0,   // [0:76] is the sub-list for field type_name
 }
 
 func init() { file_dieter_gateway_v1_gateway_proto_init() }
@@ -6167,7 +6518,7 @@ func file_dieter_gateway_v1_gateway_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dieter_gateway_v1_gateway_proto_rawDesc), len(file_dieter_gateway_v1_gateway_proto_rawDesc)),
 			NumEnums:      14,
-			NumMessages:   64,
+			NumMessages:   69,
 			NumExtensions: 0,
 			NumServices:   3,
 		},

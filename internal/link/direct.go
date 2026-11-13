@@ -59,7 +59,9 @@ func NewDirectServer(identity *Identity, deviceTrust *Trust, localTarget, localT
 		return nil, err
 	}
 	direct := &DirectServer{identity: identity, trust: deviceTrust, local: local}
-	direct.server = grpc.NewServer(grpc.Creds(credentials.NewTLS(config)), grpc.ConnectionTimeout(10*time.Second), grpc.ForceServerCodec(relay.RawCodec{}), grpc.UnknownServiceHandler(direct.handle), grpc.MaxRecvMsgSize(16<<20), grpc.MaxSendMsgSize(16<<20))
+	// Fixed receive windows, as in DialDaemon, keep bulk requests such as file
+	// chunks flowing over long round trips from the first byte.
+	direct.server = grpc.NewServer(grpc.Creds(credentials.NewTLS(config)), grpc.ConnectionTimeout(10*time.Second), grpc.ForceServerCodec(relay.RawCodec{}), grpc.UnknownServiceHandler(direct.handle), grpc.MaxRecvMsgSize(16<<20), grpc.MaxSendMsgSize(16<<20), grpc.InitialWindowSize(4<<20), grpc.InitialConnWindowSize(16<<20))
 	return direct, nil
 }
 

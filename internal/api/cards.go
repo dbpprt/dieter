@@ -91,13 +91,16 @@ func (api *cardsAPI) GetCard(_ context.Context, request *dieterv1.GetCardRequest
 	return protoCardDetail(value), nil
 }
 
-func (api *cardsAPI) MoveCard(_ context.Context, request *dieterv1.MoveCardRequest) (*dieterv1.Card, error) {
+func (api *cardsAPI) MoveCard(ctx context.Context, request *dieterv1.MoveCardRequest) (*dieterv1.Card, error) {
 	before, err := api.server.store.Kanban.ResolveCard(request.GetCardId())
 	if err != nil {
 		return nil, err
 	}
 	if request.GetLane() == model.LaneRunning && before.InitialPromptSentAt == "" {
 		if err = api.server.store.Kanban.RequireLocalCard(before); err != nil {
+			return nil, err
+		}
+		if err = api.server.requireHumanForStrix(ctx, before.Provider); err != nil {
 			return nil, err
 		}
 	}
@@ -126,7 +129,7 @@ func (api *cardsAPI) MoveCard(_ context.Context, request *dieterv1.MoveCardReque
 	return protoCard(value), nil
 }
 
-func (api *cardsAPI) StartCard(_ context.Context, request *dieterv1.StartCardRequest) (*dieterv1.StartCardResponse, error) {
+func (api *cardsAPI) StartCard(ctx context.Context, request *dieterv1.StartCardRequest) (*dieterv1.StartCardResponse, error) {
 	clientID, commandID := strings.TrimSpace(request.GetClientId()), strings.TrimSpace(request.GetCommandId())
 	if clientID == "" || commandID == "" {
 		return nil, fault.New(fault.Invalid, "client_id and command_id are required")
@@ -152,6 +155,9 @@ func (api *cardsAPI) StartCard(_ context.Context, request *dieterv1.StartCardReq
 	}
 	if card.Scope != model.ConversationScopeBoard {
 		return nil, fault.New(fault.FailedPrecondition, "only board cards can be started")
+	}
+	if err := api.server.requireHumanForStrix(ctx, card.Provider); err != nil {
+		return nil, err
 	}
 	if card.InitialPromptSentAt != "" {
 		if model.RuntimeHoldsTurn(card.Runtime) {

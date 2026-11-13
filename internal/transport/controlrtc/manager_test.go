@@ -179,7 +179,8 @@ func TestControlTLSRPCDirectAndTURN(t *testing.T) {
 				if e != nil {
 					t.Fatal(e)
 				}
-				stream = controlrtc.Stream(dc, func() { peer.Close() })
+				// A peer without window negotiation, like the native clients.
+				stream = controlrtc.Stream(dc, controlrtc.WindowFrames, controlrtc.WindowFrames, func() { peer.Close() })
 				offer, e := peer.CreateOffer(nil)
 				if e != nil {
 					t.Fatal(e)
@@ -223,6 +224,11 @@ func TestControlTLSRPCDirectAndTURN(t *testing.T) {
 			state, err := f.manager.Get(session.SessionId, "github:42")
 			if err != nil {
 				t.Fatal(err)
+			}
+			// Both sides advertise their window; a peer without negotiation (the
+			// TURN case here, like the native clients) keeps the base window.
+			if session.GetReceiveWindowFrames() != controlrtc.MaxWindowFrames {
+				t.Fatalf("daemon advertised %d frames", session.GetReceiveWindowFrames())
 			}
 			expected := "direct"
 			if relay {
@@ -354,7 +360,9 @@ func TestStreamRejectsUnsolicitedCredit(t *testing.T) {
 	}
 	defer right.Close()
 	streams := make(chan net.Conn, 1)
-	right.OnDataChannel(func(dc *webrtc.DataChannel) { streams <- controlrtc.Stream(dc, func() { right.Close() }) })
+	right.OnDataChannel(func(dc *webrtc.DataChannel) {
+		streams <- controlrtc.Stream(dc, controlrtc.WindowFrames, controlrtc.WindowFrames, func() { right.Close() })
+	})
 	dc, err := left.CreateDataChannel(controlrtc.Label, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -406,5 +414,101 @@ func TestStreamRejectsUnsolicitedCredit(t *testing.T) {
 	}
 	if timeout := net.Error(nil); errors.As(err, &timeout) && timeout.Timeout() {
 		t.Fatal("protocol violation did not close stream")
+	}
+}
+
+// pairStreams connects two data-channel streams: left offers with windows
+// (leftReceive, leftSend), right answers with (rightReceive, rightSend).
+func pairStreams(t *testing.T, leftReceive, leftSend, rightReceive, rightSend int) (net.Conn, net.Conn) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	left, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { left.Close() })
+	right, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { right.Close() })
+	streams := make(chan net.Conn, 1)
+	right.OnDataChannel(func(dc *webrtc.DataChannel) {
+		streams <- controlrtc.Stream(dc, rightReceive, rightSend, func() { right.Close() })
+	})
+	dc, err := left.CreateDataChannel(controlrtc.Label, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leftStream := controlrtc.Stream(dc, leftReceive, leftSend, func() { left.Close() })
+	t.Cleanup(func() { leftStream.Close() })
+	exchange := func(from, to *webrtc.PeerConnection, offer bool) {
+		var description webrtc.SessionDescription
+		if offer {
+			description, err = from.CreateOffer(nil)
+		} else {
+			description, err = from.CreateAnswer(nil)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		gather := webrtc.GatheringCompletePromise(from)
+		if err = from.SetLocalDescription(description); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-gather:
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		}
+		if err = to.SetRemoteDescription(*from.LocalDescription()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exchange(left, right, true)
+	exchange(right, left, false)
+	select {
+	case rightStream := <-streams:
+		t.Cleanup(func() { rightStream.Close() })
+		return leftStream, rightStream
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	return nil, nil
+}
+
+// A receiver buffers at most the window it advertised. A sender that honors
+// the peer's window never overruns a stalled reader; one that ignores it is
+// closed as a protocol violation.
+func TestStreamHonorsThePeerWindow(t *testing.T) {
+	t.Parallel()
+	payload := make([]byte, 64*controlrtc.ChunkSize)
+	_, _ = rand.Read(payload)
+	for _, test := range []struct {
+		name string
+		send int
+		ok   bool
+	}{
+		{"negotiated", controlrtc.SendWindow(0), true},
+		{"overrun", controlrtc.MaxWindowFrames, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			// The reader predates negotiation: it accepts only the base window.
+			reader, writer := pairStreams(t, controlrtc.WindowFrames, controlrtc.WindowFrames, controlrtc.MaxWindowFrames, test.send)
+			go func() { _, _ = writer.Write(payload) }()
+			// Stall the reader while the writer has the whole payload queued.
+			time.Sleep(500 * time.Millisecond)
+			_ = reader.SetReadDeadline(time.Now().Add(10 * time.Second))
+			received := make([]byte, len(payload))
+			_, err := io.ReadFull(reader, received)
+			if test.ok && (err != nil || !bytes.Equal(received, payload)) {
+				t.Fatalf("negotiated window: %v", err)
+			}
+			if !test.ok && err == nil {
+				t.Fatal("a sender beyond the advertised window was not closed")
+			}
+		})
 	}
 }

@@ -341,6 +341,15 @@ Astra can select Fast mode with `--provider-option fast_mode=true`; schedules
 accept the same option and apply it to every task they create. GPT-5.3 Codex
 and Spark do not support this option.
 
+The `strix` provider is a security scanner, not a coding agent: it attacks the
+card's worktree and listed targets. Agent turns may create a Strix card only as
+a draft (`--lane todo`, `--workspace worktree`); starting it, moving it to
+Running or sending it a message fails with PermissionDenied, and channel
+messages never wake it. Ask the user to start the scan. Its options are
+`scan_mode` (quick, standard, deep), `scope` (full, changes) and `targets`,
+fixed by the first message, plus `max_budget_usd` and `credentials` (vault
+item, default `strix`), which may change per message.
+
 `card start` admits a draft's first turn. `card send` admits a human follow-up.
 Both return without waiting for the agent to finish. Do not replay either just
 because the client disconnected; inspect the card and conversation first.
@@ -1332,6 +1341,11 @@ manually, and never unenroll/re-enroll as a hostname migration shortcut.
 Production rollout updates/restarts are operator work, never a testing method.
 
 ### Unseen model replies
+
+The iOS app can badge and notify for the same attention state. APNs setup and
+signing are described in [iOS notifications](../../../docs/ios-notifications.md).
+OS token registration is internal to the native session; use the existing
+`card read` / `chat read` operations for response acknowledgement.
 
 Activity on macOS (**Needs attention**) and the Android and iOS Inbox (**Needs
 you**) flag completed model replies that have not been viewed and questions

@@ -372,6 +372,7 @@ func runGatewayLink(ctx context.Context, cancel context.CancelFunc, l gatewayLin
 		return err
 	}
 	client := &link.GatewayClient{
+		Store:    l.data,
 		Identity: l.identity, TunnelTarget: l.tunnelTarget, Version: buildinfo.ReleaseVersion, Routes: l.routes,
 		Log: l.logger, OnStatus: l.statusWriter.Gateway, OnAcknowledged: l.statusWriter.GatewayAcknowledged,
 		OnCompatibilityPolicy: onCompatibilityPolicy, OnUpdateRequired: onUpdateRequired,

@@ -21,6 +21,9 @@ service ControlService {
 message StartControlConnectionRequest {
   dieter.gateway.v1.RTCConfiguration rtc_configuration = 1;
   string offer_sdp = 2;
+  // Data frames the offerer accepts unacknowledged on the control channel.
+  // Zero means the base window of 16 frames.
+  uint32 receive_window_frames = 3;
 }
 
 message ControlConnectionRef { string session_id = 1; }
@@ -34,4 +37,7 @@ message ControlConnection {
   string mode = 5;
   string local_candidate_type = 6;
   string remote_candidate_type = 7;
+  // Data frames the daemon accepts unacknowledged on the control channel.
+  // Zero means the base window of 16 frames.
+  uint32 receive_window_frames = 8;
 }

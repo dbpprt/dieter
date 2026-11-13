@@ -170,27 +170,51 @@ func installArchiveBun(ctx context.Context, path, dieterHome string) (string, er
 // dir, hashing it on the way, and returns the file only when its SHA-256 is
 // the pinned one. The caller removes it.
 func downloadRuntimeArchive(ctx context.Context, archive RuntimeArchive, dir string) (string, error) {
-	want := strings.ToLower(strings.TrimSpace(archive.SHA256))
+	return downloadPinned(ctx, pinnedDownload{
+		Label:   "AI SDK harness runtime archive",
+		Source:  strings.TrimRight(strings.TrimSpace(archive.BaseURL), "/") + "/" + RuntimeArchiveName(runtime.GOOS, runtime.GOARCH),
+		SHA256:  archive.SHA256,
+		Limit:   maxRuntimeArchiveBytes,
+		Timeout: runtimeArchiveTimeout,
+		Client:  archive.Client,
+	}, dir)
+}
+
+// pinnedDownload names one file Dieter fetches and authenticates by the
+// SHA-256 pinned in its source.
+type pinnedDownload struct {
+	Label   string
+	Source  string
+	SHA256  string
+	Limit   int64
+	Timeout time.Duration
+	Client  *http.Client
+}
+
+// downloadPinned streams download.Source into a temporary file in dir and
+// returns its path only when the bytes match the pinned SHA-256.
+func downloadPinned(ctx context.Context, download pinnedDownload, dir string) (string, error) {
+	want := strings.ToLower(strings.TrimSpace(download.SHA256))
 	if decoded, err := hex.DecodeString(want); err != nil || len(decoded) != sha256.Size {
-		return "", fmt.Errorf("pinned AI SDK harness runtime archive SHA-256 %q is invalid", archive.SHA256)
+		return "", fmt.Errorf("pinned %s SHA-256 %q is invalid", download.Label, download.SHA256)
 	}
-	source := strings.TrimRight(strings.TrimSpace(archive.BaseURL), "/") + "/" + RuntimeArchiveName(runtime.GOOS, runtime.GOARCH)
+	source := download.Source
 	if err := checkRuntimeArchiveURL(source); err != nil {
 		return "", err
 	}
-	ctx, cancel := context.WithTimeout(ctx, runtimeArchiveTimeout)
+	ctx, cancel := context.WithTimeout(ctx, download.Timeout)
 	defer cancel()
 	failed := func(err error) error {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return fmt.Errorf("download AI SDK harness runtime archive %s: timed out after %s", source, runtimeArchiveTimeout)
+			return fmt.Errorf("download %s %s: timed out after %s", download.Label, source, download.Timeout)
 		}
-		return fmt.Errorf("download AI SDK harness runtime archive %s: %w", source, err)
+		return fmt.Errorf("download %s %s: %w", download.Label, source, err)
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
 	if err != nil {
 		return "", failed(err)
 	}
-	response, err := runtimeArchiveClient(archive.Client).Do(request)
+	response, err := runtimeArchiveClient(download.Client).Do(request)
 	if err != nil {
 		return "", failed(err)
 	}
@@ -198,8 +222,8 @@ func downloadRuntimeArchive(ctx context.Context, archive RuntimeArchive, dir str
 	if response.StatusCode != http.StatusOK {
 		return "", failed(fmt.Errorf("HTTP %s", response.Status))
 	}
-	if response.ContentLength > maxRuntimeArchiveBytes {
-		return "", failed(fmt.Errorf("archive is %d bytes, the limit is %d", response.ContentLength, maxRuntimeArchiveBytes))
+	if response.ContentLength > download.Limit {
+		return "", failed(fmt.Errorf("archive is %d bytes, the limit is %d", response.ContentLength, download.Limit))
 	}
 	file, err := os.CreateTemp(dir, ".download-*.tar.gz")
 	if err != nil {
@@ -213,12 +237,12 @@ func downloadRuntimeArchive(ctx context.Context, archive RuntimeArchive, dir str
 		}
 	}()
 	hash := sha256.New()
-	written, err := io.Copy(io.MultiWriter(file, hash), io.LimitReader(response.Body, maxRuntimeArchiveBytes+1))
+	written, err := io.Copy(io.MultiWriter(file, hash), io.LimitReader(response.Body, download.Limit+1))
 	if err != nil {
 		return "", failed(err)
 	}
-	if written > maxRuntimeArchiveBytes {
-		return "", failed(fmt.Errorf("archive exceeds %d bytes", maxRuntimeArchiveBytes))
+	if written > download.Limit {
+		return "", failed(fmt.Errorf("archive exceeds %d bytes", download.Limit))
 	}
 	if actual := hex.EncodeToString(hash.Sum(nil)); actual != want {
 		return "", failed(fmt.Errorf("SHA-256 of the %d downloaded bytes is %s, want %s", written, actual, want))
@@ -256,7 +280,7 @@ func runtimeArchiveClient(base *http.Client) *http.Client {
 func checkRuntimeArchiveURL(raw string) error {
 	parsed, err := url.Parse(raw)
 	if err != nil || parsed.Host == "" || parsed.User != nil {
-		return fmt.Errorf("AI SDK harness runtime archive URL %q is invalid", raw)
+		return fmt.Errorf("download URL %q is invalid", raw)
 	}
 	if parsed.Scheme == "https" {
 		return nil
@@ -264,7 +288,7 @@ func checkRuntimeArchiveURL(raw string) error {
 	if ip := net.ParseIP(parsed.Hostname()); parsed.Scheme == "http" && ip != nil && ip.IsLoopback() {
 		return nil
 	}
-	return fmt.Errorf("AI SDK harness runtime archive URL %q must use HTTPS", raw)
+	return fmt.Errorf("download URL %q must use HTTPS", raw)
 }
 
 // extractRuntimeArchive verifies the manifest of a downloaded archive and

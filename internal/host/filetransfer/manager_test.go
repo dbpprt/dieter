@@ -143,3 +143,94 @@ func TestUploadAdmissionRecoversOrphanAndExpiredStaging(t *testing.T) {
 		t.Fatal("expired staging retained")
 	}
 }
+
+func TestUploadAcceptsPipelinedChunksWithinTheWindow(t *testing.T) {
+	t.Parallel()
+	home, root := t.TempDir(), t.TempDir()
+	m := Manager{Home: home}
+	ctx := t.Context()
+	payload := bytes.Repeat([]byte{7, 1, 9, 4}, (Window+3)*files.ChunkSize/4)
+	payload = append(payload, 42)
+	source := files.Entry{Size: int64(len(payload)), SHA256: files.Digest(payload), Modified: 1, Mode: 0o600}
+	u, err := m.Begin(ctx, "pipelined", root, "out.bin", files.Missing, source)
+	if err != nil || u.Offset != 0 {
+		t.Fatalf("begin %+v %v", u, err)
+	}
+	chunk := func(offset int64) []byte { return payload[offset:min(offset+files.ChunkSize, source.Size)] }
+	write := func(offset int64) (Upload, error) {
+		b := chunk(offset)
+		return m.Write(ctx, u.ID, offset, b, files.Digest(b))
+	}
+	if _, err = write(Window * files.ChunkSize); err == nil {
+		t.Fatal("accepted a chunk beyond the window")
+	}
+	// Chunks ahead of the offset are kept; the offset is the contiguous prefix.
+	for _, index := range []int64{2, 1, Window - 1} {
+		if got, err := write(index * files.ChunkSize); err != nil || got.Offset != 0 {
+			t.Fatalf("chunk %d: %+v %v", index, got, err)
+		}
+	}
+	different := bytes.Repeat([]byte{1}, files.ChunkSize)
+	if _, err = m.Write(ctx, u.ID, files.ChunkSize, different, files.Digest(different)); err == nil {
+		t.Fatal("accepted a different replay of a chunk ahead of the offset")
+	}
+	if got, err := write(0); err != nil || got.Offset != 3*files.ChunkSize {
+		t.Fatalf("prefix %+v %v", got, err)
+	}
+	// A restarted daemon derives the same offset from the published chunks.
+	m = Manager{Home: home}
+	if got, err := m.Begin(ctx, "pipelined", root, "out.bin", files.Missing, source); err != nil || got.Offset != 3*files.ChunkSize {
+		t.Fatalf("resume %+v %v", got, err)
+	}
+	if _, err = m.Commit(ctx, u.ID); err == nil {
+		t.Fatal("committed an upload with a gap")
+	}
+	for offset := int64(3 * files.ChunkSize); offset < source.Size; offset += files.ChunkSize {
+		if _, err = write(offset); err != nil {
+			t.Fatalf("chunk at %d: %v", offset, err)
+		}
+	}
+	// A staged chunk left by a crashed write is removed with the chunks.
+	if err = os.WriteFile(filepath.Join(m.directory(u.ID), ".dieter-write-crashed"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if u, err = m.Commit(ctx, u.ID); err != nil || u.State != "committed" || u.Offset != source.Size {
+		t.Fatalf("commit %+v %v", u, err)
+	}
+	entries, err := os.ReadDir(m.directory(u.ID))
+	if err != nil || len(entries) != 1 || entries[0].Name() != "session.json" {
+		t.Fatalf("staging not cleaned: %v %v", entries, err)
+	}
+	got, err := files.Stat(ctx, root, "out.bin", true)
+	if err != nil || got.SHA256 != source.SHA256 {
+		t.Fatalf("%+v %v", got, err)
+	}
+}
+
+// Writes record the offset every checkpoint, so finding it never rescans
+// every chunk of a large upload.
+func TestUploadRecordsTheOffsetAtCheckpoints(t *testing.T) {
+	t.Parallel()
+	m := Manager{Home: t.TempDir()}
+	ctx := t.Context()
+	chunk := bytes.Repeat([]byte{5}, files.ChunkSize)
+	const chunks = checkpoint/files.ChunkSize + 2
+	whole := bytes.Repeat(chunk, chunks)
+	source := files.Entry{Size: int64(len(whole)), SHA256: files.Digest(whole), Modified: 1, Mode: 0o600}
+	u, err := m.Begin(ctx, "checkpoint", t.TempDir(), "large.bin", files.Missing, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range int64(chunks - 1) {
+		if _, err = m.Write(ctx, u.ID, i*files.ChunkSize, chunk, files.Digest(chunk)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	recorded, err := m.read(u.ID)
+	if err != nil || recorded.Offset != checkpoint {
+		t.Fatalf("recorded offset %d, want %d: %v", recorded.Offset, checkpoint, err)
+	}
+	if current, err := m.Get(ctx, u.ID); err != nil || current.Offset != (chunks-1)*files.ChunkSize {
+		t.Fatalf("current offset %+v: %v", current, err)
+	}
+}

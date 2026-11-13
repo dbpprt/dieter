@@ -1088,4 +1088,4 @@ What the pull request does differently from §3 and §4, and why:
   "Override folder" and download-only "Keep" actions, folder items in the
   Inbox, and an iOS `NSFilePresenter` are follow-ups.
 - **Daemon floor**: `deploy/gateway/compatibility-policy.json` requires
-  0.6.443; adjust it to the release that ships this change.
+  0.6.445; adjust it to the release that ships this change.

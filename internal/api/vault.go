@@ -210,6 +210,22 @@ func (s *Server) capabilityCaller(ctx context.Context) (capabilityCaller, error)
 	return capabilityCaller{agent: agent, card: card}, err
 }
 
+// requireHumanForStrix refuses an agent turn that would start or continue a
+// Strix scan: Strix attacks its targets, so only a person sets one going.
+func (s *Server) requireHumanForStrix(ctx context.Context, provider string) error {
+	if !s.app.IsStrixProvider(provider) {
+		return nil
+	}
+	_, _, agent, err := s.turnCaller(ctx)
+	if err != nil {
+		return err
+	}
+	if agent {
+		return fault.New(fault.PermissionDenied, "agent turns cannot start or continue Strix scans; ask the user to send the message")
+	}
+	return nil
+}
+
 // grantMail refuses an agent turn that would turn mail access on for a
 // conversation or schedule while its own conversation lacks it.
 func (c capabilityCaller) grantMail(granted bool) error {

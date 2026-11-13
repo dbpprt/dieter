@@ -31,11 +31,6 @@ func Publish(ctx context.Context, root, p, expected string, source Entry, r io.R
 // the file can never carry the published content's revision. The rename may
 // change the file's ctime, which only makes the next scan hash it again.
 func PublishWith(ctx context.Context, root, p, expected string, source Entry, r io.Reader, options PublishOptions) (Entry, error) {
-	published, err := publish(ctx, root, p, expected, source, r, options)
-	return published, err
-}
-
-func publish(ctx context.Context, root, p, expected string, source Entry, r io.Reader, options PublishOptions) (published Entry, err error) {
 	if expected == "" || !ValidDigest(source.SHA256) || source.Size < 0 {
 		return Entry{}, fault.Invalidf("destination revision, size and SHA-256 required")
 	}
@@ -56,12 +51,31 @@ func publish(ctx context.Context, root, p, expected string, source Entry, r io.R
 	if err == nil && (n != source.Size || hex.EncodeToString(h.Sum(nil)) != source.SHA256) {
 		err = fault.New(fault.DataLoss, "transfer size or SHA-256 mismatch")
 	}
-	if err == nil {
-		err = f.Chmod(os.FileMode(source.Mode & 0o777))
-	}
 	if err == nil && options.Quarantine {
 		err = quarantine(fd)
 	}
+	var published Entry
+	if err == nil {
+		published, err = publishVerified(ctx, dir, f, tmp, name, p, expected, source)
+	}
+	return published, errors.Join(err, f.Close())
+}
+
+// PublishVerified atomically replaces the observed destination name in dir
+// with the sibling temporary file f (named tmp), whose content the caller has
+// already verified against source. It applies the source mode and
+// modification time and fsyncs before the rename. A create-only publish links
+// the file, so the caller still removes tmp; a replacement renames it away.
+func PublishVerified(ctx context.Context, dir, f *os.File, tmp, name, p, expected string, source Entry) error {
+	_, err := publishVerified(ctx, dir, f, tmp, name, p, expected, source)
+	return err
+}
+
+func publishVerified(ctx context.Context, dir, f *os.File, tmp, name, p, expected string, source Entry) (Entry, error) {
+	if expected == "" || !ValidDigest(source.SHA256) || source.Size < 0 {
+		return Entry{}, fault.Invalidf("destination revision, size and SHA-256 required")
+	}
+	err := f.Chmod(os.FileMode(source.Mode & 0o777))
 	if err == nil {
 		times := []unix.Timespec{unix.NsecToTimespec(source.Modified), unix.NsecToTimespec(source.Modified)}
 		err = unix.UtimesNanoAt(int(dir.Fd()), tmp, times, unix.AT_SYMLINK_NOFOLLOW)
@@ -69,11 +83,11 @@ func publish(ctx context.Context, root, p, expected string, source Entry, r io.R
 	if err == nil {
 		err = f.Sync()
 	}
+	var published Entry
 	if err == nil {
 		published, err = Describe(ctx, f, p, false)
 		published.SHA256 = source.SHA256
 	}
-	err = errors.Join(err, f.Close())
 	if err != nil {
 		return Entry{}, err
 	}

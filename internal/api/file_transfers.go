@@ -74,7 +74,7 @@ func uploadResult(u transfers.Upload, err error) (*dieterv1.FileUpload, error) {
 	if err != nil {
 		return nil, transferError(err)
 	}
-	return &dieterv1.FileUpload{Id: u.ID, Offset: u.Offset, Size: u.Source.Size, State: u.State, ExpiresUnix: u.Expires}, nil
+	return &dieterv1.FileUpload{Id: u.ID, Offset: u.Offset, Size: u.Source.Size, State: u.State, ExpiresUnix: u.Expires, Window: transfers.Window}, nil
 }
 func (api *filesAPI) uploads() transfers.Manager {
 	return transfers.Manager{Home: api.server.store.Root, Folders: api.server.folders}

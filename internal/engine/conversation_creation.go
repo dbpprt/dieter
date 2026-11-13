@@ -133,6 +133,11 @@ func (s *Service) createConversation(ctx context.Context, input CardInput, scope
 	if err != nil {
 		return model.Card{}, err
 	}
+	if adapter.Runtime == strixAdapter {
+		if err := requireStrixWorktree(input.WorkspaceMode); err != nil {
+			return model.Card{}, err
+		}
+	}
 	if len(input.Attachments) > 0 {
 		input.Attachments, err = normalizeAttachmentParts(input.Attachments)
 		if err != nil {

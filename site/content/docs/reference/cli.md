@@ -1344,8 +1344,10 @@ lands in the machine's copy as a local change.
   abort UPLOAD_ID
 
 Chunks are at most 1 MiB; offsets must be aligned except at the end of a file.
-Replay uses identical input and operation ID. Commit is idempotent. Sessions
-expire after 24 hours. Use cp/sync for automatic chunking, checksums and resume.
+offset is the contiguous received prefix; chunks may arrive in any order up to
+window chunks past it. Replay uses identical input and operation ID. Commit is
+idempotent. Sessions expire after 24 hours. Use cp/sync for automatic
+chunking, pipelining, checksums and resume.
 ```
 
 ### dieter file scan
@@ -1373,8 +1375,10 @@ lands in the machine's copy as a local change.
   abort UPLOAD_ID
 
 Chunks are at most 1 MiB; offsets must be aligned except at the end of a file.
-Replay uses identical input and operation ID. Commit is idempotent. Sessions
-expire after 24 hours. Use cp/sync for automatic chunking, checksums and resume.
+offset is the contiguous received prefix; chunks may arrive in any order up to
+window chunks past it. Replay uses identical input and operation ID. Commit is
+idempotent. Sessions expire after 24 hours. Use cp/sync for automatic
+chunking, pipelining, checksums and resume.
 ```
 
 ### dieter file upload
@@ -1402,8 +1406,10 @@ lands in the machine's copy as a local change.
   abort UPLOAD_ID
 
 Chunks are at most 1 MiB; offsets must be aligned except at the end of a file.
-Replay uses identical input and operation ID. Commit is idempotent. Sessions
-expire after 24 hours. Use cp/sync for automatic chunking, checksums and resume.
+offset is the contiguous received prefix; chunks may arrive in any order up to
+window chunks past it. Replay uses identical input and operation ID. Commit is
+idempotent. Sessions expire after 24 hours. Use cp/sync for automatic
+chunking, pipelining, checksums and resume.
 ```
 
 ## dieter terminal (alias: terminals)

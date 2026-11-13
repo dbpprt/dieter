@@ -14,15 +14,43 @@ import (
 // missing), fsyncs it, renames it over path and fsyncs the directory. Readers
 // observe either the previous or the new content, also after a crash.
 func WriteFile(path string, data []byte, mode os.FileMode) error {
-	temporary, err := writeTemporary(path, data, mode)
+	staged, err := Stage(path, data, mode)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(temporary)
-	if err := os.Rename(temporary, path); err != nil {
+	defer staged.Discard()
+	return staged.Publish()
+}
+
+// Staged is a written and fsynced temporary file beside its destination.
+// Staging is invisible to readers, so the slow write and fsync can run before
+// taking the central lock; only Publish, the rename, is a mutation.
+type Staged struct{ temporary, path string }
+
+// Stage writes data to a temporary file in path's directory and fsyncs it.
+func Stage(path string, data []byte, mode os.FileMode) (*Staged, error) {
+	temporary, err := writeTemporary(path, data, mode)
+	if err != nil {
+		return nil, err
+	}
+	return &Staged{temporary: temporary, path: path}, nil
+}
+
+// Publish atomically replaces the destination and fsyncs its directory.
+func (s *Staged) Publish() error {
+	if err := os.Rename(s.temporary, s.path); err != nil {
 		return err
 	}
-	return SyncDir(filepath.Dir(path))
+	s.temporary = ""
+	return SyncDir(filepath.Dir(s.path))
+}
+
+// Discard removes an unpublished staged file; it is a no-op after Publish.
+func (s *Staged) Discard() {
+	if s.temporary != "" {
+		_ = os.Remove(s.temporary)
+		s.temporary = ""
+	}
 }
 
 // CreateFile atomically publishes data at path only when path does not exist

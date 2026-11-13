@@ -20,6 +20,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	GatewayService_SetPushDevice_FullMethodName                    = "/dieter.gateway.v1.GatewayService/SetPushDevice"
 	GatewayService_GetCompatibility_FullMethodName                 = "/dieter.gateway.v1.GatewayService/GetCompatibility"
 	GatewayService_GetAccount_FullMethodName                       = "/dieter.gateway.v1.GatewayService/GetAccount"
 	GatewayService_ListDaemons_FullMethodName                      = "/dieter.gateway.v1.GatewayService/ListDaemons"
@@ -59,6 +60,7 @@ const (
 // device roster and short-lived pairing requests: public keys and display
 // names that devices verify themselves. The gateway cannot extend the roster.
 type GatewayServiceClient interface {
+	SetPushDevice(ctx context.Context, in *SetPushDeviceRequest, opts ...grpc.CallOption) (*SetPushDeviceResponse, error)
 	// GetCompatibility is the stable, unauthenticated bootstrap used before
 	// sign-in. It contains no account or machine data.
 	GetCompatibility(ctx context.Context, in *CompatibilityRequest, opts ...grpc.CallOption) (*CompatibilityResponse, error)
@@ -114,6 +116,16 @@ type gatewayServiceClient struct {
 
 func NewGatewayServiceClient(cc grpc.ClientConnInterface) GatewayServiceClient {
 	return &gatewayServiceClient{cc}
+}
+
+func (c *gatewayServiceClient) SetPushDevice(ctx context.Context, in *SetPushDeviceRequest, opts ...grpc.CallOption) (*SetPushDeviceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetPushDeviceResponse)
+	err := c.cc.Invoke(ctx, GatewayService_SetPushDevice_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *gatewayServiceClient) GetCompatibility(ctx context.Context, in *CompatibilityRequest, opts ...grpc.CallOption) (*CompatibilityResponse, error) {
@@ -414,6 +426,7 @@ func (c *gatewayServiceClient) DeletePairingRequest(ctx context.Context, in *Pai
 // device roster and short-lived pairing requests: public keys and display
 // names that devices verify themselves. The gateway cannot extend the roster.
 type GatewayServiceServer interface {
+	SetPushDevice(context.Context, *SetPushDeviceRequest) (*SetPushDeviceResponse, error)
 	// GetCompatibility is the stable, unauthenticated bootstrap used before
 	// sign-in. It contains no account or machine data.
 	GetCompatibility(context.Context, *CompatibilityRequest) (*CompatibilityResponse, error)
@@ -471,6 +484,9 @@ type GatewayServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedGatewayServiceServer struct{}
 
+func (UnimplementedGatewayServiceServer) SetPushDevice(context.Context, *SetPushDeviceRequest) (*SetPushDeviceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetPushDevice not implemented")
+}
 func (UnimplementedGatewayServiceServer) GetCompatibility(context.Context, *CompatibilityRequest) (*CompatibilityResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetCompatibility not implemented")
 }
@@ -568,6 +584,24 @@ func RegisterGatewayServiceServer(s grpc.ServiceRegistrar, srv GatewayServiceSer
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&GatewayService_ServiceDesc, srv)
+}
+
+func _GatewayService_SetPushDevice_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetPushDeviceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).SetPushDevice(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_SetPushDevice_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).SetPushDevice(ctx, req.(*SetPushDeviceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _GatewayService_GetCompatibility_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -1024,6 +1058,10 @@ var GatewayService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "dieter.gateway.v1.GatewayService",
 	HandlerType: (*GatewayServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "SetPushDevice",
+			Handler:    _GatewayService_SetPushDevice_Handler,
+		},
 		{
 			MethodName: "GetCompatibility",
 			Handler:    _GatewayService_GetCompatibility_Handler,

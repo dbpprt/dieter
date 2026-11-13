@@ -46,8 +46,9 @@ var errAuthCapacity = errors.New("authentication capacity reached")
 type principalKey struct{}
 
 type Principal struct {
-	GitHubID int64
-	Login    string
+	GitHubID    int64
+	Login       string
+	SessionHash string // Native sessions only; machine proofs cannot register a phone.
 }
 
 type Auth struct {
@@ -398,7 +399,7 @@ func (a *Auth) AuthenticateBearer(raw string) (Principal, bool) {
 	now := time.Now().UTC()
 	for _, session := range state.Sessions {
 		if session.ExpiresAt.After(now) && a.config.AllowsGitHubUser(session.GitHubID) && hmac.Equal([]byte(session.TokenHash), []byte(digest)) {
-			return Principal{GitHubID: session.GitHubID, Login: session.Login}, true
+			return Principal{GitHubID: session.GitHubID, Login: session.Login, SessionHash: session.TokenHash}, true
 		}
 	}
 	return Principal{}, false

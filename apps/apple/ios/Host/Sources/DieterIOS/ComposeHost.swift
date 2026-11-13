@@ -12,8 +12,11 @@ public final class ComposeHost {
     private let mobile: MobileHost
     public let rootController: ShellController
     private var observation: MobileObservation?
+    private let notifications: IOSAttentionNotifications
 
     public init(version: String) {
+        let notifications = IOSAttentionNotifications()
+        self.notifications = notifications
         let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appending(path: "Dieter/core", directoryHint: .isDirectory)
         let media = CoreScreenMedia {
@@ -42,20 +45,32 @@ public final class ComposeHost {
                 settings: CoreDefaultsSettings(defaults: .standard), http: CoreURLSessionHttp(),
                 signatures: CoreCryptoKitSignatures(),
                 logger: CoreOSLogger(subsystem: DistributionIdentity.iosBundleID), notifications: nil,
+                attentionNotifications: notifications,
                 controlChannels: CoreControlChannels(),
                 screenMedia: media, clipboard: CoreUIPasteboardClipboard(), screenFixture: nil, folders: folders))
         FolderBackgroundTasks.shared.connect(shared)
         mobile = MobileHost(shared: shared, nativeViews: ComposeNativeViews(media: media))
         rootController = ShellController(host: mobile)
+        notifications.openCard = { [weak mobile] cardId in mobile?.openNotification(cardId: cardId) }
+        notifications.refreshRegistration = { [weak shared] in shared?.refreshPushRegistration() }
         observation = mobile.observeNavigation(
-            observer: NavigationObserver { [weak rootController] navigation in rootController?.apply(navigation) })
+            observer: NavigationObserver { [weak rootController, weak notifications] navigation in
+                rootController?.apply(navigation)
+                if navigation.canNotify { notifications?.requestPermission() }
+            })
         shared.start()
     }
     public func completeSignIn(url: String) { mobile.completeSignIn(url: url) }
     public func reconnect() { mobile.reconnect() }
+    public func setPushToken(_ token: Data) { notifications.setPushToken(token) }
     public func setForeground(_ active: Bool) {
         mobile.setForeground(active: active)
-        if active { receiveShare() } else { FolderBackgroundTasks.shared.enteredBackground() }
+        if active {
+            receiveShare()
+            if mobile.navigation().canNotify { notifications.requestPermission(force: true) }
+        } else {
+            FolderBackgroundTasks.shared.enteredBackground()
+        }
     }
     /// Registers the folder sync background tasks; call once, before the app finishes launching.
     public static func registerBackgroundTasks() { FolderBackgroundTasks.shared.register() }

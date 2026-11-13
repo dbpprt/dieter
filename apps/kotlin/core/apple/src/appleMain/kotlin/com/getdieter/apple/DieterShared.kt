@@ -26,8 +26,10 @@ import com.getdieter.core.client.ScreenHost
 import com.getdieter.core.conversation.ConversationConfig
 import com.getdieter.core.conversation.TranscriptRetention
 import com.getdieter.core.folders.FolderTrigger
+import com.getdieter.core.notifications.AttentionNotificationSink
 import com.getdieter.core.notifications.NotificationContent
 import com.getdieter.core.notifications.NotificationSink
+import com.getdieter.core.notifications.PushDevice
 import com.getdieter.core.platform.AuthHttp
 import com.getdieter.core.platform.ControlChannel
 import com.getdieter.core.platform.ControlChannelFactory
@@ -181,6 +183,23 @@ interface NativeLogger {
  * names (e.g. `MARK_DONE`, `OPEN`). [session] marks a running chat's turn, so dismissing it hides
  * only that turn.
  */
+/** iOS badge and attention alerts, already classified by the shared core. */
+interface NativeAttentionNotifications {
+    fun post(cardId: String, title: String, text: String)
+
+    fun reconcile(cardIds: List<String>, badge: Int)
+
+    fun reset()
+
+    fun visible(cardId: String?)
+
+    fun device(accountKey: String): NativePushDevice?
+
+    fun registered(available: Boolean)
+}
+
+class NativePushDevice(val token: String, val publicKey: NSData, val sandbox: Boolean)
+
 interface NativeNotifications {
     fun post(
         key: String,
@@ -399,6 +418,7 @@ class SharedExtensions(
     val signatures: NativeSignatures,
     val logger: NativeLogger?,
     val notifications: NativeNotifications?,
+    val attentionNotifications: NativeAttentionNotifications? = null,
     /** Absent: the core never tries the WebRTC route. */
     val controlChannels: NativeControlChannels? = null,
     /** Absent: screen sharing is unavailable. */
@@ -463,6 +483,32 @@ class DieterShared(configuration: SharedConfiguration, extensions: SharedExtensi
                             override fun cancel(key: String) = native.cancel(key)
                         }
                     },
+                attentionNotifications =
+                    extensions.attentionNotifications?.let { native ->
+                        object : AttentionNotificationSink {
+                            override fun post(cardId: String, title: String, text: String) =
+                                native.post(cardId, title, text)
+
+                            override fun reconcile(cardIds: List<String>, badge: Int) =
+                                native.reconcile(cardIds, badge)
+
+                            override fun reset() = native.reset()
+
+                            override fun visible(cardId: String?) = native.visible(cardId)
+
+                            override fun device(accountKey: String) =
+                                native.device(accountKey)?.let {
+                                    PushDevice(
+                                        it.token,
+                                        it.publicKey.toByteArray().toByteString(),
+                                        it.sandbox,
+                                    )
+                                }
+
+                            override fun registered(available: Boolean) =
+                                native.registered(available)
+                        }
+                    },
                 controlChannels = extensions.controlChannels?.let(::NativeControlChannelFactory),
                 logger =
                     extensions.logger?.let { native ->
@@ -517,6 +563,8 @@ class DieterShared(configuration: SharedConfiguration, extensions: SharedExtensi
 
     /** Starts supervision; cached state is observable before this. */
     fun start() = runtime.start()
+
+    fun refreshPushRegistration() = runtime.refreshPushRegistration()
 
     /**
      * Runs an encoded `Command` and returns an encoded `Reply`. Failures are part of the reply, so

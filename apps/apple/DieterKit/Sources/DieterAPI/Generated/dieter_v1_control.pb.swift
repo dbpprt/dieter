@@ -36,6 +36,10 @@ public nonisolated struct Dieter_V1_StartControlConnectionRequest: Sendable {
 
   public var offerSdp: String = String()
 
+  /// Data frames the offerer accepts unacknowledged on the control channel.
+  /// Zero means the base window of 16 frames.
+  public var receiveWindowFrames: UInt32 = 0
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -75,6 +79,10 @@ public nonisolated struct Dieter_V1_ControlConnection: Sendable {
 
   public var remoteCandidateType: String = String()
 
+  /// Data frames the daemon accepts unacknowledged on the control channel.
+  /// Zero means the base window of 16 frames.
+  public var receiveWindowFrames: UInt32 = 0
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -86,7 +94,7 @@ fileprivate nonisolated let _protobuf_package = "dieter.v1"
 
 nonisolated extension Dieter_V1_StartControlConnectionRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".StartControlConnectionRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}rtc_configuration\0\u{3}offer_sdp\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}rtc_configuration\0\u{3}offer_sdp\0\u{3}receive_window_frames\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -96,6 +104,7 @@ nonisolated extension Dieter_V1_StartControlConnectionRequest: SwiftProtobuf.Mes
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularMessageField(value: &self._rtcConfiguration) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self.offerSdp) }()
+      case 3: try { try decoder.decodeSingularUInt32Field(value: &self.receiveWindowFrames) }()
       default: break
       }
     }
@@ -112,12 +121,16 @@ nonisolated extension Dieter_V1_StartControlConnectionRequest: SwiftProtobuf.Mes
     if !self.offerSdp.isEmpty {
       try visitor.visitSingularStringField(value: self.offerSdp, fieldNumber: 2)
     }
+    if self.receiveWindowFrames != 0 {
+      try visitor.visitSingularUInt32Field(value: self.receiveWindowFrames, fieldNumber: 3)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Dieter_V1_StartControlConnectionRequest, rhs: Dieter_V1_StartControlConnectionRequest) -> Bool {
     if lhs._rtcConfiguration != rhs._rtcConfiguration {return false}
     if lhs.offerSdp != rhs.offerSdp {return false}
+    if lhs.receiveWindowFrames != rhs.receiveWindowFrames {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -155,7 +168,7 @@ nonisolated extension Dieter_V1_ControlConnectionRef: SwiftProtobuf.Message, Swi
 
 nonisolated extension Dieter_V1_ControlConnection: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ControlConnection"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}session_id\0\u{3}answer_sdp\0\u{3}expires_at\0\u{1}state\0\u{1}mode\0\u{3}local_candidate_type\0\u{3}remote_candidate_type\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}session_id\0\u{3}answer_sdp\0\u{3}expires_at\0\u{1}state\0\u{1}mode\0\u{3}local_candidate_type\0\u{3}remote_candidate_type\0\u{3}receive_window_frames\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -170,6 +183,7 @@ nonisolated extension Dieter_V1_ControlConnection: SwiftProtobuf.Message, SwiftP
       case 5: try { try decoder.decodeSingularStringField(value: &self.mode) }()
       case 6: try { try decoder.decodeSingularStringField(value: &self.localCandidateType) }()
       case 7: try { try decoder.decodeSingularStringField(value: &self.remoteCandidateType) }()
+      case 8: try { try decoder.decodeSingularUInt32Field(value: &self.receiveWindowFrames) }()
       default: break
       }
     }
@@ -197,6 +211,9 @@ nonisolated extension Dieter_V1_ControlConnection: SwiftProtobuf.Message, SwiftP
     if !self.remoteCandidateType.isEmpty {
       try visitor.visitSingularStringField(value: self.remoteCandidateType, fieldNumber: 7)
     }
+    if self.receiveWindowFrames != 0 {
+      try visitor.visitSingularUInt32Field(value: self.receiveWindowFrames, fieldNumber: 8)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -208,6 +225,7 @@ nonisolated extension Dieter_V1_ControlConnection: SwiftProtobuf.Message, SwiftP
     if lhs.mode != rhs.mode {return false}
     if lhs.localCandidateType != rhs.localCandidateType {return false}
     if lhs.remoteCandidateType != rhs.remoteCandidateType {return false}
+    if lhs.receiveWindowFrames != rhs.receiveWindowFrames {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

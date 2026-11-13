@@ -35,11 +35,14 @@ class MobileStore(
     val routes = MutableStateFlow(MobileNavigation())
     val theme: ThemeModel = ThemeModel(preferences)
     val layout: LayoutModel = LayoutModel(preferences)
-    val session: SessionModel = SessionModel(context)
+    val session: SessionModel = SessionModel(context, ::deliverNotification)
     val workspace: WorkspaceModel =
         WorkspaceModel(
             context,
-            changed = { sharing.deliver() },
+            changed = {
+                sharing.deliver()
+                deliverNotification()
+            },
             resolved = { conversation.follow(it) },
         )
     val boards: BoardsModel = BoardsModel(context)
@@ -65,6 +68,7 @@ class MobileStore(
     val channels: ChannelsModel = ChannelsModel(context)
     val mail: MailModel = MailModel(context)
 
+    private var pendingNotification: String? = null
     private var activeTop = ""
 
     init {
@@ -171,6 +175,31 @@ class MobileStore(
         val base = current.stack.dropLastWhile { it.isDetail }
         routes.value = current.with(current.tab, base + MobileRoute.Conversation(id))
         syncNavigation()
+    }
+
+    /** Retain a system-notification tap through sign-in and initial workspace catch-up. */
+    fun openNotification(cardId: String) {
+        if (cardId.isBlank()) return
+        pendingNotification = cardId
+        deliverNotification()
+    }
+
+    private fun deliverNotification() {
+        val id = pendingNotification ?: return
+        val session = session.slice.value
+        if (
+            session.phase == SessionSlice.Phase.PHASE_AUTH_REQUIRED ||
+                session.pairing ||
+                !workspace.slice.value.loaded
+        )
+            return
+        val card = workspace.slice.value.cards.firstOrNull { it.id == id && !it.archived }
+        if (card == null && !session.synced) return
+        pendingNotification = null
+        dismiss()
+        selectTab(MobileTab.INBOX)
+        if (card != null) openConversation(id)
+        else action { error.value = "This task is no longer available." }
     }
 
     fun pop() {

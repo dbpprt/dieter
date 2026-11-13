@@ -142,7 +142,7 @@ package final class CoreHost: Sendable {
                 http: CoreURLSessionHttp(),
                 signatures: CoreCryptoKitSignatures(),
                 logger: CoreOSLogger(subsystem: configuration.logSubsystem),
-                notifications: platform.notifications,
+                notifications: platform.notifications, attentionNotifications: nil,
                 controlChannels: CoreControlChannels(),
                 screenMedia: screens?.media,
                 clipboard: platform.clipboard,

@@ -3,6 +3,7 @@ package com.getdieter.core.platform
 import com.getdieter.api.gateway.v1.DaemonAccessToken
 import com.getdieter.api.gateway.v1.RelayLane
 import com.getdieter.core.folders.FolderPlatform
+import com.getdieter.core.notifications.AttentionNotificationSink
 import com.getdieter.core.notifications.NotificationSink
 import com.getdieter.core.runtime.CoreLogger
 import com.getdieter.core.runtime.SilentLogger
@@ -33,6 +34,7 @@ class Platform(
     val controlChannels: ControlChannelFactory? = null,
     /** Posts local notifications; absent on platforms without them. */
     val notifications: NotificationSink? = null,
+    val attentionNotifications: AttentionNotificationSink? = null,
     val logger: CoreLogger = SilentLogger,
     val clock: Clock = Clock.System,
     /**

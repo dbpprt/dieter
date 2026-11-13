@@ -51,7 +51,7 @@ hostnames, unpinned images and incompatible versions fail closed. Both native
 redirects remain enabled. Existing gateway state uses the external named volume
 and fixed UID/GID `100:101`; activation refuses a missing database or identity.
 
-The protected JSON input must have mode 0600 and exactly these fields:
+The protected JSON input must have mode 0600 and these required fields:
 
 ```json
 {
@@ -61,6 +61,12 @@ The protected JSON input must have mode 0600 and exactly these fields:
   "turnSharedSecret": "existing printable TURN secret, at least 32 bytes"
 }
 ```
+
+For iOS background notifications, optionally add `apnsKeyBase64`, `apnsKeyID`
+and `apnsTeamID` together. The first is the complete APNs `.p8` PEM encoded as
+base64; the IDs are Apple's ten-character Key ID and Team ID. They are rendered
+only into the private gateway environment. See
+[iOS notification setup](../../docs/ios-notifications.md).
 
 `turnSharedSecret` is canonical text. Coturn receives its UTF-8 bytes verbatim;
 Dieter receives their hexadecimal encoding. Newlines, NUL and formats coturn

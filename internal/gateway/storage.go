@@ -27,11 +27,16 @@ type Store struct {
 }
 
 type Session struct {
-	TokenHash string    `json:"tokenHash"`
-	GitHubID  int64     `json:"githubId"`
-	Login     string    `json:"login"`
-	CreatedAt time.Time `json:"createdAt"`
-	ExpiresAt time.Time `json:"expiresAt"`
+	TokenHash     string    `json:"tokenHash"`
+	GitHubID      int64     `json:"githubId"`
+	Login         string    `json:"login"`
+	CreatedAt     time.Time `json:"createdAt"`
+	ExpiresAt     time.Time `json:"expiresAt"`
+	PushToken     string    `json:"pushToken,omitempty"`
+	PushPublicKey []byte    `json:"pushPublicKey,omitempty"`
+	PushDeviceID  string    `json:"pushDeviceId,omitempty"`
+	PushSignature []byte    `json:"pushSignature,omitempty"`
+	PushSandbox   bool      `json:"pushSandbox,omitempty"`
 }
 
 type NativeCode struct {
