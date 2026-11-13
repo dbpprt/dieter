@@ -435,6 +435,10 @@ public nonisolated struct Dieter_V1_FileUpload: Sendable {
 
   public var expiresUnix: Int64 = 0
 
+  /// Chunks a writer may send from offset before earlier ones are acknowledged;
+  /// offset stays the contiguous received prefix. Zero means one.
+  public var window: Int32 = 0
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -1396,7 +1400,7 @@ nonisolated extension Dieter_V1_WriteFileChunkRequest: SwiftProtobuf.Message, Sw
 
 nonisolated extension Dieter_V1_FileUpload: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".FileUpload"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}offset\0\u{1}size\0\u{1}state\0\u{3}expires_unix\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}offset\0\u{1}size\0\u{1}state\0\u{3}expires_unix\0\u{1}window\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1409,6 +1413,7 @@ nonisolated extension Dieter_V1_FileUpload: SwiftProtobuf.Message, SwiftProtobuf
       case 3: try { try decoder.decodeSingularInt64Field(value: &self.size) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.state) }()
       case 5: try { try decoder.decodeSingularInt64Field(value: &self.expiresUnix) }()
+      case 6: try { try decoder.decodeSingularInt32Field(value: &self.window) }()
       default: break
       }
     }
@@ -1430,6 +1435,9 @@ nonisolated extension Dieter_V1_FileUpload: SwiftProtobuf.Message, SwiftProtobuf
     if self.expiresUnix != 0 {
       try visitor.visitSingularInt64Field(value: self.expiresUnix, fieldNumber: 5)
     }
+    if self.window != 0 {
+      try visitor.visitSingularInt32Field(value: self.window, fieldNumber: 6)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1439,6 +1447,7 @@ nonisolated extension Dieter_V1_FileUpload: SwiftProtobuf.Message, SwiftProtobuf
     if lhs.size != rhs.size {return false}
     if lhs.state != rhs.state {return false}
     if lhs.expiresUnix != rhs.expiresUnix {return false}
+    if lhs.window != rhs.window {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

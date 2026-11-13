@@ -3,6 +3,7 @@ package link
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -44,7 +45,8 @@ var errTunnelWindow = errors.New("tunnel peer exceeded its credit window")
 
 // tunnel pumps bytes between a local stream and a framed carrier.
 type tunnel struct {
-	local net.Conn
+	local   net.Conn
+	pending *coalescer
 	// send delivers frames in order and may block for backpressure.
 	send func(tunnelFrame) error
 	// reset ends the tunnel at the carrier without blocking.
@@ -60,7 +62,7 @@ type tunnel struct {
 
 func newTunnel(local net.Conn, send func(tunnelFrame) error, reset func(codes.Code, string), onDone func()) *tunnel {
 	t := &tunnel{
-		local: local, send: send, reset: reset, onDone: onDone,
+		local: local, pending: newCoalescer(), send: send, reset: reset, onDone: onDone,
 		inbound: make(chan []byte, relay.TunnelWindow), credits: make(chan struct{}, relay.TunnelWindow), done: make(chan struct{}),
 	}
 	for range relay.TunnelWindow {
@@ -70,6 +72,7 @@ func newTunnel(local net.Conn, send func(tunnelFrame) error, reset func(codes.Co
 }
 
 func (t *tunnel) start() {
+	go t.pending.fill(t.local)
 	go t.readLocal()
 	go t.writeLocal()
 }
@@ -110,32 +113,96 @@ func (t *tunnel) grant(credit uint32) {
 	}
 }
 
+// readLocal sends what the local side wrote. Credits count frames, not bytes,
+// so each frame carries everything written while it waited for a credit.
 func (t *tunnel) readLocal() {
-	buffer := make([]byte, relay.ChunkBytes)
-	for {
-		n, err := t.local.Read(buffer)
-		if n > 0 {
-			select {
-			case <-t.done:
-				return
-			case <-t.credits:
-			}
-			if sendErr := t.send(tunnelFrame{kind: tunnelData, data: append([]byte(nil), buffer[:n]...)}); sendErr != nil {
-				t.abort(codes.Unavailable, "tunnel carrier failed")
-				return
-			}
+	for t.pending.wait() {
+		select {
+		case <-t.done:
+			return
+		case <-t.credits:
 		}
-		if err != nil {
-			select {
-			case <-t.done:
-			default:
-				// Every DATA frame queued before the close reaches the peer first.
-				_ = t.send(tunnelFrame{kind: tunnelClose, code: codes.OK})
-				t.finish()
-			}
+		if err := t.send(tunnelFrame{kind: tunnelData, data: t.pending.take()}); err != nil {
+			t.abort(codes.Unavailable, "tunnel carrier failed")
 			return
 		}
 	}
+	select {
+	case <-t.done:
+	default:
+		// Every DATA frame queued before the close reaches the peer first.
+		_ = t.send(tunnelFrame{kind: tunnelClose, code: codes.OK})
+		t.finish()
+	}
+}
+
+// coalescer drains a local stream into a buffer of at most two frames, so a
+// frame can carry every byte written since the previous one. Without it a
+// client's net.Pipe yielded one TLS record per read: a frame, and a credit of
+// the window, for at most 16 KiB and often for a few bytes of HTTP/2 control.
+type coalescer struct {
+	mu     sync.Mutex
+	ready  *sync.Cond
+	buffer []byte
+	err    error
+	closed bool
+}
+
+func newCoalescer() *coalescer {
+	c := &coalescer{}
+	c.ready = sync.NewCond(&c.mu)
+	return c
+}
+
+// fill reads local until it fails or the tunnel ends.
+func (c *coalescer) fill(local io.Reader) {
+	chunk := make([]byte, relay.ChunkBytes)
+	for {
+		n, err := local.Read(chunk)
+		c.mu.Lock()
+		for n > 0 && len(c.buffer)+n > 2*relay.ChunkBytes && !c.closed {
+			c.ready.Wait()
+		}
+		c.buffer = append(c.buffer, chunk[:n]...)
+		if err != nil && c.err == nil {
+			c.err = err
+		}
+		stop := c.err != nil || c.closed
+		c.ready.Broadcast()
+		c.mu.Unlock()
+		if stop {
+			return
+		}
+	}
+}
+
+// wait blocks until bytes are buffered and reports false once the local side
+// failed and every byte it wrote was taken.
+func (c *coalescer) wait() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for len(c.buffer) == 0 && c.err == nil && !c.closed {
+		c.ready.Wait()
+	}
+	return len(c.buffer) > 0 && !c.closed
+}
+
+// take removes up to one frame of buffered bytes.
+func (c *coalescer) take() []byte {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	n := min(len(c.buffer), relay.ChunkBytes)
+	data := append([]byte(nil), c.buffer[:n]...)
+	c.buffer = append(c.buffer[:0], c.buffer[n:]...)
+	c.ready.Broadcast()
+	return data
+}
+
+func (c *coalescer) close() {
+	c.mu.Lock()
+	c.closed = true
+	c.ready.Broadcast()
+	c.mu.Unlock()
 }
 
 func (t *tunnel) writeLocal() {
@@ -165,6 +232,7 @@ func (t *tunnel) finish() {
 	t.once.Do(func() {
 		close(t.done)
 		_ = t.local.Close()
+		t.pending.close()
 		if t.onDone != nil {
 			t.onDone()
 		}

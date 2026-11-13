@@ -54,14 +54,18 @@ so the CLI never links the daemon's storage or engine.
   sides to keys in the account's device roster; WebRTC signaling itself runs
   over a relay tunnel. Native clients hedge a still-connecting WebRTC attempt
   with a relay connection after one second and keep whichever becomes healthy
-  first. A request is sent once.
+  first. A request is sent once. The data channel credits 16 KiB frames; each
+  side advertises its receive window in `StartControlConnection` (Go peers 512
+  frames, 8 MiB), and a peer that advertises none gets the base 16.
 - **Relay.** The daemon keeps four authenticated link connections to the
   gateway (control, replication, command, subscription), each proving
   possession of the enrolled key. A client opens a tunnel with
   `RelayService.OpenTunnel`, naming the daemon and a lane; the gateway asks the
   daemon on that lane's link, the daemon dials its own loopback TLS listener,
   and the gateway splices frames of at most 64 KiB with end-to-end credits (8
-  frames per direction). It never parses them. Per daemon and lane at most
+  frames per direction). A frame carries everything written while it waited
+  for a credit, and the gateway's HTTP/2 stream buffer holds a full window. It
+  never parses them. Per daemon and lane at most
   `relay.TunnelLimit` tunnels are open (control 4, replication 8, command 32,
   subscription 32), inside per-lane byte budgets; lanes change scheduling,
   never authorization. Apps and the CLI use the command lane, peer sync the

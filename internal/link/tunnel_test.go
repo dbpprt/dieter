@@ -466,3 +466,56 @@ func TestDialTunnelReportsARefusal(t *testing.T) {
 		t.Fatal("tunnel without a target")
 	}
 }
+
+// Credits count frames, so a frame carries everything written while it waited
+// for one, up to relay.ChunkBytes, and every byte still precedes CLOSE.
+func TestTunnelCoalescesWritesWhileWaitingForCredit(t *testing.T) {
+	t.Parallel()
+	user, local := net.Pipe()
+	frames := make(chan tunnelFrame, 64)
+	tun := newTunnel(local, func(f tunnelFrame) error { frames <- f; return nil }, func(codes.Code, string) {}, nil)
+	for range relay.TunnelWindow {
+		<-tun.credits
+	}
+	tun.start()
+	defer tun.Close()
+	next := func() tunnelFrame {
+		t.Helper()
+		select {
+		case f := <-frames:
+			return f
+		case <-time.After(testkit.Budget(5 * time.Second)):
+			t.Fatal("no frame")
+		}
+		return tunnelFrame{}
+	}
+	// Each write is one TLS record's worth; net.Pipe returns one per read.
+	for i := range 32 {
+		if _, err := user.Write(bytes.Repeat([]byte{byte(i)}, 1000)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	select {
+	case f := <-frames:
+		t.Fatalf("sent %d bytes without credit", len(f.data))
+	case <-time.After(50 * time.Millisecond):
+	}
+	tun.grant(1)
+	if f := next(); f.kind != tunnelData || len(f.data) != 32000 || f.data[0] != 0 || f.data[31999] != 31 {
+		t.Fatalf("coalesced frame kind %v, %d bytes", f.kind, len(f.data))
+	}
+	go func() {
+		_, _ = user.Write(make([]byte, relay.ChunkBytes+10))
+		_ = user.Close()
+	}()
+	tun.grant(3)
+	if f := next(); f.kind != tunnelData || len(f.data) != relay.ChunkBytes {
+		t.Fatalf("first frame kind %v, %d bytes", f.kind, len(f.data))
+	}
+	if f := next(); f.kind != tunnelData || len(f.data) != 10 {
+		t.Fatalf("second frame kind %v, %d bytes", f.kind, len(f.data))
+	}
+	if f := next(); f.kind != tunnelClose {
+		t.Fatalf("frame after the data %v, want CLOSE", f.kind)
+	}
+}
