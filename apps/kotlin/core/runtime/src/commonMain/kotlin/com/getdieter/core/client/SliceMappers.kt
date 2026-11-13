@@ -120,15 +120,19 @@ private val REVIEW_KINDS =
         GitOperationKinds.ABORT_CONFLICT,
     )
 
+/** A project or conversation target, or a synced folder member's directory (folder ID). */
 internal fun filesTarget(target: ClientFilesTarget): FilesTarget? =
-    if (target.daemon_id.isEmpty() || target.project_id.isEmpty()) null
+    if (target.daemon_id.isEmpty() || (target.project_id.isEmpty() && target.folder_id.isEmpty()))
+        null
+    else if (target.folder_id.isNotEmpty())
+        FilesTarget(target.daemon_id, projectId = "", folderId = target.folder_id)
     else FilesTarget(target.daemon_id, target.project_id, target.checkout_id, target.card_id)
 
 internal fun filesSlice(view: FilesView, documentUnchanged: Boolean) =
     FilesSlice(
         target =
             view.target?.let {
-                ClientFilesTarget(it.daemonId, it.projectId, it.checkoutId, it.cardId)
+                ClientFilesTarget(it.daemonId, it.projectId, it.checkoutId, it.cardId, it.folderId)
             },
         directory = view.directory,
         entries = view.entries,

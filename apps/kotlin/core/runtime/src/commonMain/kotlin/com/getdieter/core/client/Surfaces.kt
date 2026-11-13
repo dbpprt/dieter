@@ -133,6 +133,9 @@ internal class ViewSurfaces(runtime: CoreRuntime, screenHost: ScreenHost?) {
 
     val mail = Surfaces(MailSurface::stop) { MailSurface(runtime.mailbox, runtime::mailProjection) }
 
+    /** One per observed folder; the scope is the folder ID. */
+    val folders = Surfaces { scope -> FolderSurface(scope) }
+
     /**
      * Observation lifetimes do not end transcript watches: the runtime keeps its bounded LRU of
      * recent conversations warm, including while another card or destination is shown.
@@ -148,5 +151,6 @@ internal class ViewSurfaces(runtime: CoreRuntime, screenHost: ScreenHost?) {
         chats.all.forEach(ChatsSurface::reset)
         channels.all.forEach(Channels::stop)
         mail.all.forEach(MailSurface::reset)
+        folders.all.forEach { it.trash.value = null }
     }
 }

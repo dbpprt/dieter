@@ -5,6 +5,7 @@ import com.getdieter.api.v1.ChangesCursor
 import com.getdieter.api.v1.ChangesFrame
 import com.getdieter.api.v1.Checkout
 import com.getdieter.api.v1.Conversation
+import com.getdieter.api.v1.FolderHead
 import com.getdieter.api.v1.MachinePrivacy
 import com.getdieter.api.v1.MailHeader
 import com.getdieter.api.v1.PeerRecord
@@ -26,6 +27,8 @@ data class OwnerData(
     val privacy: MachinePrivacy? = null,
     /** Message ID → its header. */
     val mail: Map<String, MailHeader> = emptyMap(),
+    /** Folder ID → the head of a synced folder this machine is a member of. */
+    val folderHeads: Map<String, FolderHead> = emptyMap(),
 )
 
 /**
@@ -77,6 +80,7 @@ class MachineReplica(val machineId: String, restored: ChangesFrame? = null) {
                 peerSyncIssues = it.peer_sync?.issues.orEmpty(),
                 privacy = it.privacy,
                 mail = it.mail.associateBy(MailHeader::id),
+                folderHeads = it.folder_heads.associateBy(FolderHead::folder_id),
             )
         } ?: OwnerData()
         private set
@@ -150,7 +154,9 @@ class MachineReplica(val machineId: String, restored: ChangesFrame? = null) {
                 frame.peer_sync != null ||
                 frame.privacy != null ||
                 frame.mail.isNotEmpty() ||
-                frame.removed_mail_ids.isNotEmpty()
+                frame.removed_mail_ids.isNotEmpty() ||
+                frame.folder_heads.isNotEmpty() ||
+                frame.removed_folder_ids.isNotEmpty()
         var ownerChanged = false
         if (local) {
             val staged = stagedOwner
@@ -203,6 +209,7 @@ class MachineReplica(val machineId: String, restored: ChangesFrame? = null) {
             peer_sync = PeerSyncStatus(issues = owner.peerSyncIssues),
             privacy = owner.privacy,
             mail = owner.mail.values.sortedBy(MailHeader::id),
+            folder_heads = owner.folderHeads.values.sortedBy(FolderHead::folder_id),
         )
 
     private fun OwnerData.applying(frame: ChangesFrame): OwnerData =
@@ -223,6 +230,12 @@ class MachineReplica(val machineId: String, restored: ChangesFrame? = null) {
             peerSyncIssues = frame.peer_sync?.issues ?: peerSyncIssues,
             privacy = frame.privacy ?: privacy,
             mail = mail.updated(frame.mail, frame.removed_mail_ids, MailHeader::id),
+            folderHeads =
+                folderHeads.updated(
+                    frame.folder_heads,
+                    frame.removed_folder_ids,
+                    FolderHead::folder_id,
+                ),
         )
 
     private fun <T> Map<String, T>.updated(

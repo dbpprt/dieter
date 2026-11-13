@@ -26,20 +26,34 @@ import kotlinx.coroutines.flow.update
 import okio.ByteString
 import okio.ByteString.Companion.encodeUtf8
 
-/** Where files live: a project checkout, or a conversation's workspace when [cardId] is set. */
+/**
+ * Where files live: a project checkout, a conversation's workspace when [cardId] is set, or a
+ * synced folder member's directory on [daemonId] when [folderId] is set (then without a project).
+ */
 data class FilesTarget(
     val daemonId: String,
     val projectId: String,
     val checkoutId: String = "",
     val cardId: String = "",
+    val folderId: String = "",
 ) {
     /**
      * Identifies a native editor buffer; components are length-prefixed so no two targets collide.
      */
     fun documentKey(path: String): String =
-        listOf(daemonId, projectId, checkoutId, cardId, path).joinToString("") {
-            "${it.encodeUtf8().size}:$it"
-        }
+        listOf(daemonId, projectId, checkoutId, cardId, path)
+            .plus(if (folderId.isEmpty()) emptyList() else listOf("folder", folderId))
+            .joinToString("") { "${it.encodeUtf8().size}:$it" }
+
+    /** A request names exactly one root: the folder member, the conversation or the checkout. */
+    internal val requestProjectId: String
+        get() = if (folderId.isEmpty()) projectId else ""
+
+    internal val requestCheckoutId: String
+        get() = if (folderId.isEmpty() && cardId.isEmpty()) checkoutId else ""
+
+    internal val requestCardId: String
+        get() = if (folderId.isEmpty()) cardId else ""
 }
 
 /** A save conflict: the file changed on disk after it was read. */
@@ -366,9 +380,10 @@ class Files(private val sessions: MachineSessions) {
                 it.ListFiles()
                     .execute(
                         ListFilesRequest(
-                            project_id = target.projectId,
-                            checkout_id = if (target.cardId.isEmpty()) target.checkoutId else "",
-                            card_id = target.cardId,
+                            project_id = target.requestProjectId,
+                            checkout_id = target.requestCheckoutId,
+                            card_id = target.requestCardId,
+                            folder_id = target.folderId,
                             path = cleaned,
                             show_hidden = view.value.showHidden,
                         )
@@ -452,9 +467,10 @@ class Files(private val sessions: MachineSessions) {
                 it.ReadFile()
                     .execute(
                         ReadFileRequest(
-                            project_id = target.projectId,
-                            checkout_id = if (target.cardId.isEmpty()) target.checkoutId else "",
-                            card_id = target.cardId,
+                            project_id = target.requestProjectId,
+                            checkout_id = target.requestCheckoutId,
+                            card_id = target.requestCardId,
+                            folder_id = target.folderId,
                             path = resolved,
                         )
                     )
@@ -535,9 +551,10 @@ class Files(private val sessions: MachineSessions) {
                 it.SaveFile()
                     .execute(
                         SaveFileRequest(
-                            project_id = target.projectId,
-                            checkout_id = if (target.cardId.isEmpty()) target.checkoutId else "",
-                            card_id = target.cardId,
+                            project_id = target.requestProjectId,
+                            checkout_id = target.requestCheckoutId,
+                            card_id = target.requestCardId,
+                            folder_id = target.folderId,
                             path = document.path,
                             content = text,
                             revision = baseRevision,
@@ -570,9 +587,10 @@ class Files(private val sessions: MachineSessions) {
         it.ReadFile()
             .execute(
                 ReadFileRequest(
-                    project_id = target.projectId,
-                    checkout_id = if (target.cardId.isEmpty()) target.checkoutId else "",
-                    card_id = target.cardId,
+                    project_id = target.requestProjectId,
+                    checkout_id = target.requestCheckoutId,
+                    card_id = target.requestCardId,
+                    folder_id = target.folderId,
                     path = path,
                 )
             )
@@ -637,9 +655,10 @@ class Files(private val sessions: MachineSessions) {
                 it.CreateFile()
                     .execute(
                         CreateFileRequest(
-                            project_id = target.projectId,
-                            checkout_id = if (target.cardId.isEmpty()) target.checkoutId else "",
-                            card_id = target.cardId,
+                            project_id = target.requestProjectId,
+                            checkout_id = target.requestCheckoutId,
+                            card_id = target.requestCardId,
+                            folder_id = target.folderId,
                             path = path,
                             kind = if (directory) "directory" else "file",
                         )
@@ -660,9 +679,10 @@ class Files(private val sessions: MachineSessions) {
                 it.MoveFile()
                     .execute(
                         MoveFileRequest(
-                            project_id = target.projectId,
-                            checkout_id = if (target.cardId.isEmpty()) target.checkoutId else "",
-                            card_id = target.cardId,
+                            project_id = target.requestProjectId,
+                            checkout_id = target.requestCheckoutId,
+                            card_id = target.requestCardId,
+                            folder_id = target.folderId,
                             source = source,
                             destination = to,
                         )
@@ -679,9 +699,10 @@ class Files(private val sessions: MachineSessions) {
                 it.DeleteFile()
                     .execute(
                         DeleteFileRequest(
-                            project_id = target.projectId,
-                            checkout_id = if (target.cardId.isEmpty()) target.checkoutId else "",
-                            card_id = target.cardId,
+                            project_id = target.requestProjectId,
+                            checkout_id = target.requestCheckoutId,
+                            card_id = target.requestCardId,
+                            folder_id = target.folderId,
                             path = path,
                             recursive = recursive,
                         )
@@ -782,8 +803,9 @@ class FileTree(private val sessions: MachineSessions) {
                     it.ListFiles()
                         .execute(
                             ListFilesRequest(
-                                project_id = target.projectId,
-                                card_id = target.cardId,
+                                project_id = target.requestProjectId,
+                                card_id = target.requestCardId,
+                                folder_id = target.folderId,
                                 path = path,
                                 show_hidden = view.value.showHidden,
                             )

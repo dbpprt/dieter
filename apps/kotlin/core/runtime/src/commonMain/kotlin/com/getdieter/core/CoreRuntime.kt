@@ -35,6 +35,16 @@ import com.getdieter.core.conversation.ConversationSession
 import com.getdieter.core.conversation.Conversations
 import com.getdieter.core.files.FileTree
 import com.getdieter.core.files.Files
+import com.getdieter.core.folders.DaemonFolderRemote
+import com.getdieter.core.folders.FolderDefinition
+import com.getdieter.core.folders.FolderHost
+import com.getdieter.core.folders.FolderMe
+import com.getdieter.core.folders.FolderMembers
+import com.getdieter.core.folders.FolderRemote
+import com.getdieter.core.folders.FolderRules
+import com.getdieter.core.folders.FolderTrigger
+import com.getdieter.core.folders.FolderWindowResult
+import com.getdieter.core.folders.Folders
 import com.getdieter.core.identity.AccountStore
 import com.getdieter.core.identity.ClientIdentity
 import com.getdieter.core.identity.Credentials
@@ -59,12 +69,15 @@ import com.getdieter.core.outbox.OutboxView
 import com.getdieter.core.platform.Platform
 import com.getdieter.core.presentation.LiveActivities
 import com.getdieter.core.quotas.ProviderQuotas
+import com.getdieter.core.routing.RouteKind
 import com.getdieter.core.routing.RouteSelector
 import com.getdieter.core.routing.RoutingPolicy
 import com.getdieter.core.routing.WebRtcCooldown
 import com.getdieter.core.runtime.CoreException
+import com.getdieter.core.runtime.Deadlines
 import com.getdieter.core.runtime.FailureKind
 import com.getdieter.core.runtime.Failures
+import com.getdieter.core.runtime.Timestamps
 import com.getdieter.core.schedules.Schedules
 import com.getdieter.core.screens.LocalClipboard
 import com.getdieter.core.screens.ScreenConfig
@@ -89,6 +102,8 @@ import com.getdieter.core.workspace.ProjectWorkspaces
 import com.getdieter.core.workspace.WorkspaceReview
 import kotlin.concurrent.Volatile
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -209,6 +224,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
                 telemetry.reset()
                 projectWorkspaces.reset()
                 quotas.reset()
+                folders.bind(prepared)
                 gatewayListeners.forEach { it() }
             },
         )
@@ -420,6 +436,16 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
             }
         }
         scope.launch { quotas.run(connection.session.map { it?.client }.distinctUntilChanged()) }
+        // A home daemon's folder head moved while Dieter is open: keep in sync live.
+        scope.launch {
+            accountSync.snapshot
+                .map { it.folderHeads }
+                .distinctUntilChanged()
+                .collect { heads ->
+                    for ((machine, byFolder) in heads) for ((folderId, head) in byFolder) folders
+                        .headMoved(folderId, machine, head.index_id, head.sequence)
+                }
+        }
         scope.launch {
             var known = emptyMap<String, String>()
             outbox.view
@@ -450,7 +476,10 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
             .distinctUntilChanged()
 
     /** Foreground, or a background window the platform allows (e.g. Android's sync service). */
-    fun setActive(active: Boolean) = connection.setRunning(active)
+    fun setActive(active: Boolean) {
+        connection.setRunning(active)
+        folders.setForeground(active)
+    }
 
     /** Runs [block] on the core's confined dispatcher. */
     suspend fun <T> onCore(block: suspend CoroutineScope.() -> T): T =
@@ -513,6 +542,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
         navigationKv.bind(null)
         drafts.bind(null)
         captures.bind(null)
+        folders.bind(null)
         gatewayStorage = null
         terminalPumps.cancelAll()
         // The restart prepares the gateway afresh, rebinding everything to the empty namespace.
@@ -953,6 +983,126 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
         sessions.call(daemonId, block)
     }
 
+    /** Synced folders on this device, and the commands that change their copies here. */
+    val folders: Folders =
+        Folders(
+            platform.folders,
+            object : FolderHost {
+                override fun me(): FolderMe? {
+                    val view = trust.view.value
+                    if (view.state != TrustState.TRUSTED || view.deviceId.isEmpty()) return null
+                    return FolderMe(view.deviceId, platform.deviceKeys.deviceName.take(64))
+                }
+
+                override fun definitions(): Map<String, FolderDefinition> =
+                    accountSync.snapshot.value.folders.mapValues { (id, folder) ->
+                        FolderDefinition(
+                            id = id,
+                            name = folder.name,
+                            // Invalid rules exclude nothing; protected names stay protected.
+                            rules = FolderRules.parseOrNull(folder.rules).orEmpty(),
+                            guard = folder.delete_guard,
+                            archived = folder.archived,
+                        )
+                    }
+
+                override fun homes(folderId: String, preferred: String): List<String> =
+                    folderHomes(folderId, preferred)
+
+                override fun remote(machineId: String): FolderRemote =
+                    DaemonFolderRemote(machineId) { block ->
+                        onCore { sessions.call(machineId, Deadlines.READ) { block(it) } }
+                    }
+            },
+            scope,
+            platform.clock,
+            platform.logger,
+        )
+
+    /**
+     * The machines a folder may sync this device with, in order: only [preferred] when set, else
+     * reachable daemon members with a direct route first, then the most recently seen.
+     */
+    fun folderHomes(folderId: String, preferred: String): List<String> {
+        val snapshot = accountSync.snapshot.value
+        val directory = connection.machines.value
+        val online = directory.online.filter { it.compatible }.associateBy { it.id }
+        val routes = sessions.routes.value
+        val members =
+            FolderMembers.of(snapshot.kv[FolderMembers.NAMESPACE].orEmpty(), folderId)
+                .filter { !it.paused }
+                .map { snapshot.directory.machine(it.daemonId) }
+                .filter { it in online }
+                .distinct()
+        if (preferred.isNotEmpty()) {
+            val machine = snapshot.directory.machine(preferred)
+            return listOfNotNull(machine.takeIf { it in members })
+        }
+        return members.sortedWith(
+            compareBy<String>(
+                    {
+                        routes[it]?.kind.let { kind ->
+                            kind != RouteKind.LOCAL && kind != RouteKind.DIRECT
+                        }
+                    },
+                    { -(Timestamps.parse(online[it]?.lastSeenAt)?.toEpochMilliseconds() ?: 0L) },
+                )
+                .thenBy { online[it]?.name?.lowercase().orEmpty() }
+        )
+    }
+
+    /**
+     * One folder sync window, modeled on [ConnectionSupervisor.refreshForWidget]: keeps the
+     * connection up, waits briefly for the gateway, this device's trust and a machine to reach,
+     * then syncs [folderId] (every folder on this device when null) until [deadline] has passed.
+     * Every durable step is persisted, so a window that ends early resumes in the next one;
+     * [FolderWindowResult.workRemains] says whether work is left, and the platform was then asked
+     * for a longer run.
+     */
+    suspend fun folderSyncWindow(
+        deadline: Duration,
+        folderId: String? = null,
+        trigger: FolderTrigger = FolderTrigger.BACKGROUND,
+    ): FolderWindowResult {
+        val until = platform.clock.now() + deadline
+        if (platform.folders == null || folders.settings().folders.isEmpty())
+            return FolderWindowResult(false)
+        return connection.withLease {
+            val wait = (deadline / 3).coerceAtMost(FOLDER_CONNECT_WAIT)
+            withTimeoutOrNull(wait) {
+                combine(
+                        connection.state,
+                        trust.view,
+                        accountSync.loaded,
+                        connection.machines,
+                    ) { state, trusted, loaded, machines ->
+                        state.phase == ConnectionPhase.AUTH_REQUIRED ||
+                            state.phase == ConnectionPhase.UPDATE_REQUIRED ||
+                            state.phase == ConnectionPhase.CONNECTED &&
+                                trusted.state == TrustState.TRUSTED &&
+                                loaded &&
+                                machines.online.isNotEmpty()
+                    }
+                    .first { it }
+            }
+            folders.window(until, folderId, trigger)
+        }
+    }
+
+    /**
+     * Runs a FolderService call on [daemonId], or on any reachable machine for shared definitions
+     * (null).
+     */
+    suspend fun <T> onFolderDaemon(daemonId: String?, block: suspend (DaemonApi) -> T): T = onCore {
+        val target =
+            daemonId
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { accountSync.snapshot.value.directory.machine(it) }
+                ?: choice.any()
+                ?: throw CoreException(FailureKind.TRANSIENT, "No machine is reachable.")
+        sessions.call(target, Deadlines.CALL, block)
+    }
+
     /** Stops all work, persisting every machine's view, and closes every connection. */
     suspend fun shutdown() {
         scope.coroutineContext.job.cancelAndJoin()
@@ -969,5 +1119,8 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
 
         /** Device trust's directory, outside every account's namespace. */
         const val TRUST_NAMESPACE = "trust"
+
+        /** How long a folder window waits for a connection before it gives up. */
+        val FOLDER_CONNECT_WAIT = 20.seconds
     }
 }

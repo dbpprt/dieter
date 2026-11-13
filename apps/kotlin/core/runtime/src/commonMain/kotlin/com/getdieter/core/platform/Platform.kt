@@ -2,6 +2,7 @@ package com.getdieter.core.platform
 
 import com.getdieter.api.gateway.v1.DaemonAccessToken
 import com.getdieter.api.gateway.v1.RelayLane
+import com.getdieter.core.folders.FolderPlatform
 import com.getdieter.core.notifications.NotificationSink
 import com.getdieter.core.runtime.CoreLogger
 import com.getdieter.core.runtime.SilentLogger
@@ -34,6 +35,11 @@ class Platform(
     val notifications: NotificationSink? = null,
     val logger: CoreLogger = SilentLogger,
     val clock: Clock = Clock.System,
+    /**
+     * Synced folders on this device: the folder file system, network and power conditions, and the
+     * background scheduler. Phones supply it; without it the device keeps no folders.
+     */
+    val folders: FolderPlatform? = null,
 )
 
 /**
