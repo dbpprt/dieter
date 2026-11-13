@@ -1,6 +1,6 @@
 # Opens ${PLACE} from More: on Android the More button's sheet, on iOS the More
 # tab's page (tapping More again returns to it). PLACE is a More entry's ID
-# suffix: channels, terminals, usage, devices, settings or machine-<id>.
+# suffix: channels, folders, terminals, usage, devices, settings or machine-<id>.
 appId: ${APP_ID}
 ---
 - tapOn:

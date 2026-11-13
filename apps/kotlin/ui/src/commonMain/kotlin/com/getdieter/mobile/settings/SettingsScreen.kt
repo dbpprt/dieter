@@ -117,6 +117,21 @@ internal fun SettingsScreen(store: MobileStore) {
                     },
                 )
             }
+            item("folder-sync") {
+                SectionHeader("Synced folders")
+                ListRow(
+                    "Folder sync",
+                    Modifier.testTag("settings-folder-sync"),
+                    position = Position.SINGLE,
+                    subtitle = "When and how this device syncs its folders",
+                    glyph = Glyph.SYNC,
+                    tile = Color(0xFF64D2FF),
+                    accessory = Accessory.CHEVRON,
+                    onClick = {
+                        store.push(com.getdieter.mobile.navigation.MobileRoute.FolderSync)
+                    },
+                )
+            }
             item("connection") {
                 SectionHeader("Connection")
                 val disconnected = session.phase == SessionSlice.Phase.PHASE_DISCONNECTED

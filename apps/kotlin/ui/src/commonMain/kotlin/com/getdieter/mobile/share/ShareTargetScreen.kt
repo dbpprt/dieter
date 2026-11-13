@@ -75,3 +75,71 @@ internal fun ShareTargetScreen(store: MobileStore, chat: Boolean) {
         }
     }
 }
+
+/**
+ * "Save to folder…": picks the synced folder on this device that another app's files are saved
+ * into. Folders that are download only here are not offered.
+ */
+@Composable
+internal fun SaveToFolderScreen(store: MobileStore) {
+    val list by store.folders.list.collectAsState()
+    val shared by store.sharing.target.collectAsState()
+    val busy by store.busy.collectAsState()
+    val folders = list.folders.filter { it.accepts_files }
+    val files = shared?.files.orEmpty()
+    val chrome =
+        ScreenChrome(
+            "Save to Folder",
+            subtitle =
+                when (files.size) {
+                    0 -> ""
+                    1 -> files.single().name
+                    else -> "${files.size} files"
+                },
+            cancel = ChromeAction("cancel-share", "Cancel", Glyph.CLOSE) { store.sharing.cancel() },
+        )
+    Screen(chrome) {
+        LazyColumn(
+            Modifier.fillMaxSize().testTag("share-folders"),
+            state = listState,
+            contentPadding = padding,
+        ) {
+            if (files.isEmpty())
+                item("nothing") {
+                    EmptyState(
+                        Glyph.FILE,
+                        "Nothing to save",
+                        "Only files can be saved to a folder. Share files from the other app.",
+                    )
+                }
+            else if (folders.isEmpty())
+                item("empty") {
+                    EmptyState(
+                        Glyph.FOLDER,
+                        if (list.loading) "Loading folders" else "No folder takes files here",
+                        "Keep a folder on this device, two-way or upload only, then share again.",
+                    )
+                }
+            else
+                item("header") {
+                    SectionHeader("Folders on this device")
+                }
+            if (files.isNotEmpty())
+                itemsIndexed(folders, key = { _, row -> row.id }) { index, row ->
+                    ListRow(
+                        row.name,
+                        Modifier.testTag("share-folder-${row.id}"),
+                        position = Position.of(index, folders.size),
+                        subtitle =
+                            listOf(row.direction, row.status)
+                                .filter { it.isNotBlank() }
+                                .joinToString(" · "),
+                        glyph = Glyph.FOLDER,
+                        enabled = !busy,
+                        accessory = Accessory.CHEVRON,
+                        onClick = { store.sharing.saveInto(row.id) },
+                    )
+                }
+        }
+    }
+}

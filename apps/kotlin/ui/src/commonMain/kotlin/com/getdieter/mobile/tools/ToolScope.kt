@@ -3,6 +3,7 @@ package com.getdieter.mobile.tools
 import androidx.compose.runtime.*
 import com.getdieter.mobile.app.*
 import com.getdieter.mobile.design.*
+import com.getdieter.mobile.folders.FoldersScreen
 import com.getdieter.mobile.navigation.*
 import com.getdieter.mobile.settings.DevicesScreen
 import com.getdieter.mobile.settings.SettingsScreen
@@ -12,6 +13,7 @@ import com.getdieter.mobile.store.*
 internal fun ToolScreen(store: MobileStore, route: MobileRoute.Tool) {
     when (route.page) {
         ToolPage.TERMINALS -> TerminalsScreen(store)
+        ToolPage.FOLDERS -> FoldersScreen(store)
         ToolPage.FILES -> FilesScreen(store, tool = route)
         ToolPage.CHANGES -> ProjectChangesScreen(store, route)
         ToolPage.SCHEDULES -> SchedulesScreen(store, route.projectId)

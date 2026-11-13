@@ -63,6 +63,10 @@ internal constructor(
             )
         )
 
+    /** Binds Files to a synced folder's copy on [daemonId], whose daemon serves it as the root. */
+    internal fun bindFolder(daemonId: String, folderId: String) =
+        bind(FilesTarget(daemon_id = daemonId, folder_id = folderId))
+
     /** Binds Files to an open conversation's workspace. */
     internal fun bindCard(daemonId: String, projectId: String, cardId: String) =
         bind(

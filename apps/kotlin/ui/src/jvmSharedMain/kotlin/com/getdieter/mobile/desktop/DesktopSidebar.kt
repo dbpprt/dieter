@@ -204,6 +204,7 @@ internal val DesktopSection.glyph: Glyph
             DesktopSection.CHANNELS -> Glyph.TAG
             DesktopSection.CHATS -> Glyph.CHATS
             DesktopSection.TERMINALS -> Glyph.TERMINAL
+            DesktopSection.FOLDERS -> Glyph.FOLDER
             DesktopSection.PROJECTS,
             DesktopSection.PROJECT -> Glyph.PROJECTS
             DesktopSection.MACHINE -> Glyph.MACHINE

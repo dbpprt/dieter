@@ -42,7 +42,7 @@ internal class MoreEntry(
     val value: String = "",
 )
 
-/** More's places (channels, terminals, usage) and account pages (devices, settings). */
+/** More's places (channels, folders, terminals, usage) and account pages (devices, settings). */
 @Composable
 internal fun rememberMoreEntries(store: MobileStore): Pair<List<MoreEntry>, List<MoreEntry>> {
     val channels by store.channels.slice.collectAsState()
@@ -68,6 +68,7 @@ internal fun rememberMoreEntries(store: MobileStore): Pair<List<MoreEntry>, List
             MobileRoute.Channels,
             badge = channels.unread_label,
         ),
+        tool(ToolPage.FOLDERS),
         tool(
             ToolPage.TERMINALS,
             terminals.entries.size.takeIf { it > 0 }?.let { "$it open" }.orEmpty(),

@@ -14,6 +14,8 @@ enum class DesktopSection(val title: String) {
     CHANNELS("Channels"),
     CHATS("Chats"),
     TERMINALS("Terminals"),
+    /** Synced folders: the list beside the open folder. */
+    FOLDERS("Folders"),
     /** Every project, before one is chosen. */
     PROJECTS("Projects"),
     /** A project's board, files, changes or schedules. */
@@ -117,6 +119,7 @@ fun MobileNavigation.desktopPlace(): DesktopPlace {
                 is MobileRoute.Tool ->
                     when (first.page) {
                         ToolPage.TERMINALS -> DesktopPlace(DesktopSection.TERMINALS, 2)
+                        ToolPage.FOLDERS -> DesktopPlace(DesktopSection.FOLDERS, 2)
                         ToolPage.USAGE -> DesktopPlace(DesktopSection.USAGE, 2)
                         ToolPage.DEVICES -> DesktopPlace(DesktopSection.DEVICES, 2)
                         ToolPage.SETTINGS -> DesktopPlace(DesktopSection.SETTINGS, 2)
@@ -155,6 +158,8 @@ fun MobileStore.openSection(section: DesktopSection) {
         DesktopSection.CHANNELS -> show(MobileTab.MORE, moreStack(MobileRoute.Channels))
         DesktopSection.TERMINALS ->
             show(MobileTab.MORE, moreStack(MobileRoute.Tool(ToolPage.TERMINALS)))
+        DesktopSection.FOLDERS ->
+            show(MobileTab.MORE, moreStack(MobileRoute.Tool(ToolPage.FOLDERS)))
         DesktopSection.USAGE -> show(MobileTab.MORE, moreStack(MobileRoute.Tool(ToolPage.USAGE)))
         DesktopSection.DEVICES ->
             show(MobileTab.MORE, moreStack(MobileRoute.Tool(ToolPage.DEVICES)))

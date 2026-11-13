@@ -22,6 +22,8 @@ import androidx.lifecycle.lifecycleScope
 import com.getdieter.android.update.AppUpdateDialog
 import com.getdieter.mobile.app.*
 import com.getdieter.mobile.desktop.DesktopKeys
+import com.getdieter.mobile.navigation.MobileRoute
+import com.getdieter.mobile.navigation.ToolPage
 import com.getdieter.mobile.share.*
 import com.getdieter.mobile.store.InterfaceMode
 import kotlinx.coroutines.launch
@@ -56,8 +58,11 @@ class MainActivity : ComponentActivity() {
             }
         }
         intent.data?.let { store.session.completeSignIn(it.toString()) }
-        // After recreation the store already holds this share.
-        if (savedInstanceState == null) receiveShare(intent)
+        // After recreation the store already holds this share and shows its folder.
+        if (savedInstanceState == null) {
+            receiveShare(intent)
+            openFolder(intent)
+        }
         setContent {
             // Debuggable builds (debug and e2e) expose the shared Compose testTags as
             // Android resource ids, which Maestro flows select.
@@ -115,14 +120,38 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         intent.data?.let { store.session.completeSignIn(it.toString()) }
         receiveShare(intent)
+        openFolder(intent)
     }
 
-    /** Text and files shared from another app open as a new task. */
+    /**
+     * Text and files shared from another app open as a new task; through "Save to folder…" (the
+     * share sheet's second Dieter entry) the files go into a synced folder.
+     */
     private fun receiveShare(intent: Intent) {
         if (!AndroidShare.isShare(intent)) return
+        val folder = intent.component?.className == SAVE_TO_FOLDER
         lifecycleScope.launch {
-            store.sharing.receive(AndroidShare.read(applicationContext, intent))
+            store.sharing.receive(
+                if (folder) AndroidShare.readForFolder(applicationContext, intent)
+                else AndroidShare.read(applicationContext, intent)
+            )
         }
+    }
+
+    /** A folder notification opens its folder. */
+    private fun openFolder(intent: Intent) {
+        val folderId =
+            intent.getStringExtra(com.getdieter.android.folders.FolderNotifications.EXTRA_FOLDER)
+                ?: return
+        intent.removeExtra(com.getdieter.android.folders.FolderNotifications.EXTRA_FOLDER)
+        val list = MobileRoute.Tool(ToolPage.FOLDERS)
+        store.openMore(list)
+        store.showFrom(list, MobileRoute.Folder(folderId))
+    }
+
+    private companion object {
+        /** The share sheet's "Save to folder…" entry (an alias of this activity). */
+        const val SAVE_TO_FOLDER = "com.getdieter.android.SaveToFolder"
     }
 
     override fun onStart() {

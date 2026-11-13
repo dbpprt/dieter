@@ -1,0 +1,76 @@
+# Synced folders: More → Folders lists the folder the fixture seeds ("Inbox",
+# kept by its machine, which holds welcome.txt). Keeping it on this device lists
+# the machine's file; Settings › Folder sync switches between any network and
+# Wi-Fi only.
+appId: ${APP_ID}
+name: Folders
+tags: [smoke]
+---
+- runFlow: common/launch.yaml
+- runFlow:
+    file: common/more.yaml
+    env:
+      PLACE: folders
+# The seeded folder is the account's only one.
+- extendedWaitUntil:
+    visible:
+      id: "folder-row-.+"
+    timeout: 30000
+- tapOn:
+    id: "folder-row-.+"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible:
+      id: folder-status
+    timeout: 20000
+# Keep it on this device: private storage, two-way, then Add.
+- runFlow:
+    when:
+      visible:
+        id: folder-hero-keep
+    commands:
+      - tapOn:
+          id: folder-hero-keep
+          waitToSettleTimeoutMs: 500
+      - extendedWaitUntil:
+          visible:
+            id: add-folder-location
+          timeout: 10000
+      - tapOn:
+          id: chrome-add-folder-next
+          waitToSettleTimeoutMs: 500
+      - tapOn:
+          id: chrome-add-folder-next
+          waitToSettleTimeoutMs: 500
+      - tapOn:
+          id: chrome-add-folder-next
+          waitToSettleTimeoutMs: 500
+# The machine's file arrives with the first sync.
+- extendedWaitUntil:
+    visible: "welcome.txt"
+    timeout: 60000
+- takeScreenshot: folders-inbox
+- runFlow:
+    file: common/more.yaml
+    env:
+      PLACE: settings
+- scrollUntilVisible:
+    element:
+      id: settings-folder-sync
+- tapOn:
+    id: settings-folder-sync
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible:
+      id: folder-sync-network-0
+    timeout: 10000
+- tapOn:
+    id: folder-sync-network-1
+    waitToSettleTimeoutMs: 500
+- assertVisible: "Any network"
+- tapOn:
+    id: folder-sync-network-0
+    waitToSettleTimeoutMs: 500
+- assertVisible: "Wi-Fi and unmetered only"
+- takeScreenshot: folder-sync
+- runFlow: common/back.yaml

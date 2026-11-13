@@ -89,6 +89,9 @@ internal fun paletteCommands(store: MobileStore): List<PaletteEntry> =
         PaletteEntry("open-projects", "Browse projects", "", Glyph.PROJECTS) {
             store.openSection(DesktopSection.PROJECTS)
         },
+        PaletteEntry("open-folders", "Synced folders", "", Glyph.FOLDER) {
+            store.openSection(DesktopSection.FOLDERS)
+        },
         PaletteEntry("open-usage", "Provider usage", "", Glyph.USAGE) {
             store.openSection(DesktopSection.USAGE)
         },
