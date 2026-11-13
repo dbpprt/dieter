@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	hostfolders "github.com/dbpprt/dieter/internal/host/folders"
 	"log/slog"
 	"net/http"
 	"path/filepath"
@@ -72,6 +73,7 @@ type Server struct {
 	machineOperations       map[string]acceptedMachineOperation
 	machineOperationOrder   []string
 	pendingMachineOperation string
+	folders                 *hostfolders.Engine
 }
 
 // Options provides explicit seams for the daemon composition root and native
@@ -106,6 +108,9 @@ type Options struct {
 	Terminals   *terminal.Manager
 	Executions  *remoteexec.Manager
 	Machine     *machine.Collector
+	// Folders runs synced folders; nil selects an engine that is never run
+	// (requests work, nothing syncs in the background).
+	Folders *hostfolders.Engine
 }
 
 func New(data *store.Store, logger *slog.Logger) *Server {
@@ -140,6 +145,10 @@ func NewWithOptions(data *store.Store, logger *slog.Logger, options Options) *Se
 	}
 	if s.daemonState == nil {
 		s.daemonState = daemonstate.New(data)
+	}
+	s.folders = options.Folders
+	if s.folders == nil {
+		s.folders = hostfolders.New(hostfolders.Options{Store: data, Log: logger})
 	}
 	if s.schedules == nil {
 		s.schedules = scheduler.New(data, service)

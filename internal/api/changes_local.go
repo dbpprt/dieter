@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	hostfolders "github.com/dbpprt/dieter/internal/host/folders"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store/home"
 	"google.golang.org/protobuf/proto"
@@ -63,6 +64,10 @@ type localChanges struct {
 	mailScanned  bool
 	mailRevision uint64
 	diagnosed    time.Time
+
+	folders         []*dieterv1.FolderHead
+	foldersScanned  bool
+	foldersRevision uint64
 }
 
 type localEntry struct {
@@ -76,6 +81,7 @@ type localEntry struct {
 	peerSync *dieterv1.PeerSyncStatus
 	privacy  *dieterv1.MachinePrivacy
 	mail     *dieterv1.MailHeader
+	folder   *dieterv1.FolderHead
 }
 
 type localChange struct {
@@ -195,6 +201,16 @@ func (l *localChanges) refresh(ctx context.Context) error {
 	for _, header := range l.mail {
 		next["mail/"+header.GetId()] = header
 	}
+	// Folder heads are rebuilt only when the folder engine moved.
+	if revision := l.server.folders.Revision(); !l.foldersScanned || revision != l.foldersRevision {
+		l.folders, l.foldersRevision, l.foldersScanned = nil, revision, true
+		for _, head := range l.server.folders.Heads() {
+			l.folders = append(l.folders, protoFolderHead(head))
+		}
+	}
+	for _, head := range l.folders {
+		next["folder/"+head.GetFolderId()] = head
+	}
 	if err := l.apply(next); err != nil {
 		return err
 	}
@@ -239,6 +255,8 @@ func (l *localChanges) apply(next map[string]proto.Message) error {
 			entry.privacy = value
 		case *dieterv1.MailHeader:
 			entry.mail = value
+		case *dieterv1.FolderHead:
+			entry.folder = value
 		}
 		l.entries[key] = entry
 		changed = true
@@ -409,4 +427,11 @@ func (s *Server) peerSyncStatus() (*dieterv1.PeerSyncStatus, error) {
 		}
 	}
 	return status, nil
+}
+
+func protoFolderHead(head hostfolders.Head) *dieterv1.FolderHead {
+	return &dieterv1.FolderHead{
+		FolderId: head.FolderID, IndexId: head.IndexID, Sequence: head.Sequence, State: protoFolderState(head.State), StateDetail: head.Detail,
+		NeedFiles: head.NeedFiles, NeedBytes: head.NeedBytes, Conflicts: int32(head.Conflicts), LastSyncAt: folderTime(head.LastSyncAt),
+	}
 }

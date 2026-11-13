@@ -9,6 +9,7 @@ import (
 	files "github.com/dbpprt/dieter/internal/filetransfer"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	transfers "github.com/dbpprt/dieter/internal/host/filetransfer"
+	hostfolders "github.com/dbpprt/dieter/internal/host/folders"
 	"github.com/dbpprt/dieter/internal/platform/fault"
 	"github.com/dbpprt/dieter/internal/platform/fsx"
 	"github.com/dbpprt/dieter/internal/store/kanban"
@@ -19,8 +20,22 @@ func (api *filesAPI) transferRoot(ctx context.Context, p *dieterv1.TransferPath)
 	if p == nil {
 		return "", fault.Invalidf("transfer target required")
 	}
-	if (p.ProjectId == "") == (p.CardId == "") {
-		return "", fault.Invalidf("exactly one project or conversation required")
+	targets := 0
+	for _, id := range []string{p.ProjectId, p.CardId, p.FolderId} {
+		if id != "" {
+			targets++
+		}
+	}
+	if targets != 1 {
+		return "", fault.Invalidf("exactly one project, conversation or folder required")
+	}
+	if p.FolderId != "" {
+		definition, err := api.server.folders.Resolve(p.FolderId)
+		if err != nil {
+			return "", err
+		}
+		p.FolderId = definition.ID
+		return api.server.folders.Root(definition.ID)
 	}
 	project, err := api.server.scopedProject(kanban.WithCheckout(ctx, p.CheckoutId), p.ProjectId, p.CardId)
 	if err != nil {
@@ -62,7 +77,7 @@ func uploadResult(u transfers.Upload, err error) (*dieterv1.FileUpload, error) {
 	return &dieterv1.FileUpload{Id: u.ID, Offset: u.Offset, Size: u.Source.Size, State: u.State, ExpiresUnix: u.Expires}, nil
 }
 func (api *filesAPI) uploads() transfers.Manager {
-	return transfers.Manager{Home: api.server.store.Root}
+	return transfers.Manager{Home: api.server.store.Root, Folders: api.server.folders}
 }
 
 func (api *filesAPI) StatTransferFile(ctx context.Context, r *dieterv1.TransferPath) (*dieterv1.TransferEntry, error) {
@@ -97,7 +112,15 @@ func (api *filesAPI) ReadFileChunk(ctx context.Context, r *dieterv1.ReadFileChun
 	if err != nil {
 		return nil, err
 	}
-	b, err := files.Read(ctx, root, r.Target.Path, r.Revision, r.Offset, int(r.Length))
+	revision := r.Revision
+	if r.Target.FolderId != "" {
+		// Members read a folder version by its content hash; the CLI passes
+		// the observed revision from StatTransferFile.
+		if _, observed, err := api.server.folders.ReadTarget(r.Target.FolderId, r.Target.Path, r.Revision); err == nil {
+			revision = observed
+		}
+	}
+	b, err := files.Read(ctx, root, r.Target.Path, revision, r.Offset, int(r.Length))
 	if err != nil {
 		return nil, transferError(err)
 	}
@@ -108,7 +131,12 @@ func (api *filesAPI) BeginFileUpload(ctx context.Context, r *dieterv1.BeginFileU
 	if err != nil {
 		return nil, err
 	}
-	return uploadResult(api.uploads().Begin(ctx, r.OperationId, root, r.Target.Path, r.ExpectedRevision, files.Entry{Size: r.Size, SHA256: r.Sha256, Modified: r.ModifiedNanos, Mode: r.Mode}))
+	source := files.Entry{Size: r.Size, SHA256: r.Sha256, Modified: r.ModifiedNanos, Mode: r.Mode}
+	if r.Target.FolderId != "" && r.FolderEntry != nil {
+		folder := transfers.FolderUpload{FolderID: r.Target.FolderId, Entry: hostfolders.EntryFromProto(r.FolderEntry)}
+		return uploadResult(api.uploads().BeginFolder(ctx, r.OperationId, root, r.Target.Path, source, folder))
+	}
+	return uploadResult(api.uploads().Begin(ctx, r.OperationId, root, r.Target.Path, r.ExpectedRevision, source))
 }
 func (api *filesAPI) WriteFileChunk(ctx context.Context, r *dieterv1.WriteFileChunkRequest) (*dieterv1.FileUpload, error) {
 	return uploadResult(api.uploads().Write(ctx, r.Id, r.Offset, r.Data, r.Sha256))

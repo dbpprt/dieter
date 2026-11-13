@@ -57,6 +57,7 @@ type service struct {
 	*trustAPI
 	*channelsAPI
 	*mailAPI
+	*foldersAPI
 }
 
 var (
@@ -80,6 +81,7 @@ var (
 	_ dieterv1connect.TrustServiceHandler        = (*trustAPI)(nil)
 	_ dieterv1connect.ChannelServiceHandler      = (*channelsAPI)(nil)
 	_ dieterv1connect.MailServiceHandler         = (*mailAPI)(nil)
+	_ dieterv1connect.FolderServiceHandler       = (*foldersAPI)(nil)
 )
 
 func newService(s *Server) *service {
@@ -90,7 +92,7 @@ func newService(s *Server) *service {
 		terminalsAPI: &terminalsAPI{s}, executionsAPI: &executionsAPI{s}, screensAPI: &screensAPI{s},
 		controlAPI: &controlAPI{s}, schedulesAPI: &schedulesAPI{s}, vaultAPI: &vaultAPI{s},
 		kvAPI: &kvAPI{s}, peerAPI: &peerAPI{s}, trustAPI: &trustAPI{s}, channelsAPI: &channelsAPI{s},
-		mailAPI: &mailAPI{s},
+		mailAPI: &mailAPI{s}, foldersAPI: &foldersAPI{s},
 	}
 }
 
@@ -118,6 +120,7 @@ func (svc *service) handlers(options ...connect.HandlerOption) map[string]http.H
 	add(dieterv1connect.NewTrustServiceHandler(svc.trustAPI, options...))
 	add(dieterv1connect.NewChannelServiceHandler(svc.channelsAPI, options...))
 	add(dieterv1connect.NewMailServiceHandler(svc.mailAPI, options...))
+	add(dieterv1connect.NewFolderServiceHandler(svc.foldersAPI, options...))
 	return result
 }
 
