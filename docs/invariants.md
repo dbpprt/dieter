@@ -54,7 +54,8 @@ invariant, it is named; keep it passing rather than weakening it.
   replicated within the account by the leaderless peer store
   (`internal/replication`). No machine owns a project.
 - Conversations and schedules retain one execution owner and checkout.
-  Replication never moves a running agent or copies a working tree.
+  Replication never moves a running agent or copies a working tree, and
+  [synced folders](#synced-folders) never attach a registered checkout.
 - Every card has a Dieter-generated ID and exactly one durable conversation.
 - Peer records keep their hard limits (`internal/replication/crdt`: records,
   actors, versions, value, state and page sizes) and their owner provenance
@@ -151,6 +152,60 @@ terminals.
 - A watch disconnect never stops an execution.
 - Keep process count, input frames, output frames and bytes, retained sessions,
   timeouts and relay streams bounded.
+
+## Synced folders
+
+Synced folders ([ADR 0005](adr/0005-synced-folders.md)) keep a named directory
+the same on several of the account's daemons and phones.
+
+- A folder's definition replicates as the shared `folder` record kind
+  (`internal/replication/schema/domain.go`) and never carries a local path.
+  Each daemon describes its own membership, and the phones homed on it, in the
+  `folder-member` KV namespace, which only that daemon writes and the public KV
+  API refuses (`internal/replication/schema/folder.go`). The directory a daemon
+  binds stays in its own store.
+- Every folder has at least one daemon member. Daemons sync with each other;
+  a phone syncs only with a daemon member, its home daemon; a Mac takes part
+  only through a daemon running on it. Clients never accept connections.
+- Content moves only between folder members, with the `FileService` transfer
+  calls inside the roster-authenticated mutual TLS carriers (direct, WebRTC,
+  relay tunnel), and never through gateway storage.
+- A daemon keeps a folder's member binding, index, checkpoints, client
+  registry, trash and status under `DIETER_HOME/folders`
+  (`internal/store/folders`), written atomically under the central lock. It
+  writes nothing into the synced directory but synced files and
+  `.dieter-transfer-` partials; a recorded root identity replaces marker files.
+- A folder never attaches `/`, the home directory itself, system directories,
+  `DIETER_HOME` or a path that contains it or lies inside it, a path that
+  overlaps another member on the same daemon, or a registered checkout or any
+  path inside one. `.git` is never synced.
+- No wall clock decides which edit wins: entries carry version vectors,
+  concurrent edits keep both versions, and an edit beats a concurrent delete.
+  Every download is a compare-and-swap against the observed local revision. A
+  missing or replaced root pauses the member and never becomes deletions; the
+  deletion guard holds mass deletions for a person; daemon members keep deleted
+  and overwritten files in the trash. These rules live once in Go
+  (`internal/folders`) and once in the Kotlin core's `folders` package, and
+  both pass `tests/fixtures/folders/vectors.json`.
+- Agent turns never change folders, membership, held deletions or the trash.
+  `CreateFolder`, `UpdateFolder`, `ArchiveFolder`, `AttachFolder`,
+  `UpdateFolderMember`, `DetachFolder`, `Register/UnregisterFolderClient`,
+  `ResolveFolderDeletions` and `PurgeFolderTrash` refuse a turn token
+  (`internal/api/folders.go`), and the CLI refuses them inside a turn before it
+  contacts any daemon, also with `--machine`. Turns may read, rescan, restore
+  from the trash and transfer files.
+- Start the folder engine (watchers, scanners, peer loops, the trash sweeper)
+  only with `dieter serve` (`internal/host/folders`, composed in
+  `internal/daemon`); constructing a handler in a test starts nothing. Phones
+  sync only inside bounded run windows their platform background host grants.
+- The bounds are binding: 64 folders per account; 16 members per folder; 16
+  phones homed on one daemon per folder; 64 counters per version; 100,000
+  entries per folder on a daemon and 25,000 on a phone; 64 GiB per file; 64
+  rules; index pages of 512 entries and 2 MiB; 4 transfers per folder and 8 per
+  daemon, 2 per phone; 2 folder tunnels per peer; 5 conflict copies per file;
+  100 retained errors per member; trash of at most 10% of the volume or 20 GiB
+  per folder; one `folder-member` write per minute per daemon and folder; a
+  turn-instruction block of 8 folders and 1 KiB.
 
 ## Tests and operators
 
