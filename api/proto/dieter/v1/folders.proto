@@ -1,0 +1,408 @@
+syntax = "proto3";
+
+package dieter.v1;
+
+option go_package = "github.com/dbpprt/dieter/internal/gen/dieter/v1;dieterv1";
+option java_multiple_files = true;
+option java_package = "com.getdieter.api.v1";
+
+import "google/protobuf/empty.proto";
+
+// Synced folders: named directories that Dieter keeps the same on several of
+// the account's devices. A folder's definition replicates as shared records
+// without local paths. Every daemon member binds a directory on its own host
+// and syncs with the other daemon members; phones sync with one daemon member,
+// their home daemon. Content moves with the FileService transfer calls whose
+// TransferPath names the folder. Agent turns may read status and transfer
+// files but never change folders, membership, deletions or the trash.
+service FolderService {
+  // Creates a shared folder definition. It has no members yet.
+  rpc CreateFolder(CreateFolderRequest) returns (Folder);
+  // Changes the shared definition: name, rules, trash, deletion guard, link.
+  rpc UpdateFolder(UpdateFolderRequest) returns (Folder);
+  // Stops every member; files stay where they are.
+  rpc ArchiveFolder(FolderRef) returns (Folder);
+  // The account's folders with every member's coarse state.
+  rpc ListFolders(ListFoldersRequest) returns (FolderList);
+
+  // Binds a directory on this daemon's host to a folder.
+  rpc AttachFolder(AttachFolderRequest) returns (AttachFolderResult);
+  // Changes this daemon's membership: mode, pause and limits.
+  rpc UpdateFolderMember(UpdateFolderMemberRequest) returns (FolderMember);
+  // Stops syncing on this daemon. Files stay on disk.
+  rpc DetachFolder(FolderRef) returns (google.protobuf.Empty);
+
+  // Makes this daemon the home of a client member (a phone).
+  rpc RegisterFolderClient(RegisterFolderClientRequest) returns (FolderMember);
+  rpc UnregisterFolderClient(FolderClientRef) returns (google.protobuf.Empty);
+
+  // A page of this daemon's index after a sequence: how peers and clients
+  // learn what changed.
+  rpc GetFolderIndex(GetFolderIndexRequest) returns (FolderIndexPage);
+  // Creates a directory or deletes an entry on behalf of a client or peer.
+  rpc ApplyFolderEntry(ApplyFolderEntryRequest) returns (FolderEntry);
+  // The 1 MiB block hashes of one version of a large file.
+  rpc GetFolderBlocks(GetFolderBlocksRequest) returns (FolderBlockPage);
+
+  // This daemon's view of one folder: its membership, progress and problems.
+  rpc GetFolderStatus(FolderRef) returns (FolderStatus);
+  // Scans this daemon's copy now.
+  rpc RescanFolder(FolderRef) returns (FolderStatus);
+  // Applies or undoes deletions the deletion guard is holding.
+  rpc ResolveFolderDeletions(ResolveFolderDeletionsRequest) returns (FolderStatus);
+  // Old versions this daemon kept: deleted or replaced files.
+  rpc ListFolderTrash(ListFolderTrashRequest) returns (FolderTrashPage);
+  rpc RestoreFolderTrash(RestoreFolderTrashRequest) returns (FolderEntry);
+  rpc PurgeFolderTrash(PurgeFolderTrashRequest) returns (google.protobuf.Empty);
+}
+
+enum FolderMode {
+  FOLDER_MODE_UNSPECIFIED = 0;
+  FOLDER_MODE_TWO_WAY = 1;
+  // Upload only: local changes are sent, remote changes are not applied.
+  FOLDER_MODE_SEND_ONLY = 2;
+  // Download only: remote changes are applied, local changes are not sent.
+  FOLDER_MODE_RECEIVE_ONLY = 3;
+}
+
+enum FolderEntryKind {
+  FOLDER_ENTRY_KIND_UNSPECIFIED = 0;
+  FOLDER_ENTRY_KIND_FILE = 1;
+  FOLDER_ENTRY_KIND_DIRECTORY = 2;
+  // A tombstone: the entry was deleted at this version.
+  FOLDER_ENTRY_KIND_DELETED = 3;
+}
+
+enum FolderMemberKind {
+  FOLDER_MEMBER_KIND_UNSPECIFIED = 0;
+  FOLDER_MEMBER_KIND_DAEMON = 1;
+  FOLDER_MEMBER_KIND_CLIENT = 2;
+}
+
+enum FolderState {
+  FOLDER_STATE_UNSPECIFIED = 0;
+  // Up to date with every reachable member.
+  FOLDER_STATE_IDLE = 1;
+  FOLDER_STATE_SCANNING = 2;
+  FOLDER_STATE_SYNCING = 3;
+  FOLDER_STATE_PAUSED = 4;
+  // Waits for a person: the deletion guard holds deletions, or the folder's
+  // location is unavailable.
+  FOLDER_STATE_ATTENTION = 5;
+  // Retrying after errors.
+  FOLDER_STATE_ERROR = 6;
+}
+
+enum FolderDeleteGuard {
+  FOLDER_DELETE_GUARD_UNSPECIFIED = 0;
+  // More than 100 files or 30% of the folder (at least 10) in one batch.
+  FOLDER_DELETE_GUARD_DEFAULT = 1;
+  // More than 10 files or 10% of the folder (at least 3).
+  FOLDER_DELETE_GUARD_STRICT = 2;
+  FOLDER_DELETE_GUARD_OFF = 3;
+}
+
+enum FolderJoin {
+  FOLDER_JOIN_UNSPECIFIED = 0;
+  // Keep both versions where the location and the folder differ.
+  FOLDER_JOIN_MERGE = 1;
+  // The folder wins: differing local files go to the trash first.
+  FOLDER_JOIN_ADOPT = 2;
+}
+
+message FolderRef { string folder_id = 1; }
+
+// One counter of a version vector. Actors are the first 8 bytes of the
+// SHA-256 of a member ID, as 16 lowercase hex characters.
+message FolderCounter {
+  string actor = 1;
+  uint64 value = 2;
+}
+
+// One entry of a member's index.
+message FolderEntry {
+  // Relative, '/'-separated, NFC. At most 4096 bytes, components at most 255.
+  string path = 1;
+  FolderEntryKind kind = 2;
+  int64 size = 3;
+  int64 modified_nanos = 4;
+  bool executable = 5;
+  string sha256 = 6;
+  // Sorted by actor, at most 64 counters.
+  repeated FolderCounter version = 7;
+  // The serving member's sequence of this entry.
+  uint64 sequence = 8;
+  // The member that made the change and its name, as it names itself.
+  string author_id = 9;
+  string author_name = 10;
+}
+
+message Folder {
+  string id = 1;
+  string name = 2;
+  // Rules: "-PATTERN" excludes, "+PATTERN" includes; the last match wins.
+  repeated string rules = 3;
+  // Days the trash keeps old versions; 0 turns the trash off.
+  int32 trash_days = 4;
+  FolderDeleteGuard delete_guard = 5;
+  // Turns of this project on member daemons learn the folder's path.
+  string project_id = 6;
+  bool archived = 7;
+  string created_at = 8;
+  repeated FolderMember members = 9;
+  // Shared fields with concurrent edits.
+  repeated string conflict_fields = 10;
+}
+
+message FolderMember {
+  string folder_id = 1;
+  // The daemon ID of a daemon member, the device ID of a client member.
+  string member_id = 2;
+  FolderMemberKind kind = 3;
+  string name = 4;
+  FolderMode mode = 5;
+  bool paused = 6;
+  FolderState state = 7;
+  // A client's home daemon; a daemon's own ID.
+  string home_daemon_id = 8;
+  uint64 sequence = 9;
+  string last_sync_at = 10;
+  string state_detail = 11;
+  int64 need_files = 12;
+  int64 need_bytes = 13;
+  int32 conflicts = 14;
+  // Known only to the member daemon itself.
+  string path = 15;
+  int32 rescan_seconds = 16;
+  int64 bandwidth_limit = 17;
+  int32 concurrency = 18;
+  bool quarantine = 19;
+  bool watch = 20;
+}
+
+message CreateFolderRequest {
+  string name = 1;
+  repeated string rules = 2;
+  // Zero selects 30 days; negative turns the trash off.
+  int32 trash_days = 3;
+  FolderDeleteGuard delete_guard = 4;
+  string project_id = 5;
+  // Without default rules (.DS_Store, Thumbs.db, editor swap files, …).
+  bool no_default_rules = 6;
+}
+
+message UpdateFolderRequest {
+  string folder_id = 1;
+  optional string name = 2;
+  // Replaces the rules when set_rules is true.
+  bool set_rules = 3;
+  repeated string rules = 4;
+  // Negative turns the trash off.
+  optional int32 trash_days = 5;
+  optional FolderDeleteGuard delete_guard = 6;
+  // Empty unlinks the project.
+  optional string project_id = 7;
+}
+
+message ListFoldersRequest { bool include_archived = 1; }
+
+message FolderList { repeated Folder folders = 1; }
+
+message AttachFolderRequest {
+  string folder_id = 1;
+  // An absolute directory on this daemon's host.
+  string path = 2;
+  FolderMode mode = 3;
+  FolderJoin join = 4;
+  // Plans the join without changing anything.
+  bool dry_run = 5;
+}
+
+message FolderPlanEntry {
+  string path = 1;
+  // "adopt", "new", "conflict", "trash" or "download".
+  string action = 2;
+}
+
+message AttachFolderResult {
+  FolderMember member = 1;
+  bool dry_run = 2;
+  // At most 512 planned paths; the counts cover all of them.
+  repeated FolderPlanEntry plan = 3;
+  int64 adopt = 4;
+  int64 new_files = 5;
+  int64 conflicts = 6;
+  int64 trash = 7;
+}
+
+message UpdateFolderMemberRequest {
+  string folder_id = 1;
+  optional FolderMode mode = 2;
+  optional bool paused = 3;
+  optional int32 rescan_seconds = 4;
+  // Bytes per second; zero is unlimited.
+  optional int64 bandwidth_limit = 5;
+  optional int32 concurrency = 6;
+  optional bool quarantine = 7;
+  optional bool watch = 8;
+}
+
+message RegisterFolderClientRequest {
+  string folder_id = 1;
+  // A remote device registers itself; the local route may name any device.
+  string device_id = 2;
+  string name = 3;
+  FolderMode mode = 4;
+}
+
+message FolderClientRef {
+  string folder_id = 1;
+  string device_id = 2;
+}
+
+message GetFolderIndexRequest {
+  string folder_id = 1;
+  // The index ID the caller's checkpoint belongs to; a different one restarts
+  // from the beginning.
+  string index_id = 2;
+  uint64 after_sequence = 3;
+  // 1..512; zero selects 512.
+  int32 page_size = 4;
+  // The caller's member ID and the sequence of its own index it serves, so
+  // the daemon knows how far its client got.
+  string member_id = 5;
+  uint64 acknowledged_sequence = 6;
+}
+
+message FolderIndexPage {
+  string index_id = 1;
+  // The caller's index_id did not match: drop the checkpoint, apply from zero.
+  bool reset = 2;
+  repeated FolderEntry entries = 3;
+  // The sequence of the last entry in this page, or after_sequence.
+  uint64 sequence = 4;
+  uint64 head_sequence = 5;
+  bool more = 6;
+}
+
+message ApplyFolderEntryRequest {
+  string folder_id = 1;
+  // A directory or a tombstone whose version dominates the daemon's entry.
+  FolderEntry entry = 2;
+}
+
+message GetFolderBlocksRequest {
+  string folder_id = 1;
+  string path = 2;
+  string sha256 = 3;
+  int32 after = 4;
+  // 1..4096; zero selects 4096.
+  int32 page_size = 5;
+}
+
+message FolderBlockPage {
+  string sha256 = 1;
+  int32 block_size = 2;
+  int32 total = 3;
+  // Block hashes from index after+1.
+  repeated string blocks = 4;
+  int32 next = 5;
+}
+
+message FolderProblem {
+  string path = 1;
+  string message = 2;
+  string at = 3;
+}
+
+message FolderPendingDeletions {
+  int64 count = 1;
+  // At most 32 paths.
+  repeated string sample = 2;
+  // "local" (a scan found them missing) or "remote" (a member deleted them).
+  string source = 3;
+}
+
+message FolderPeerStatus {
+  string member_id = 1;
+  string name = 2;
+  FolderMemberKind kind = 3;
+  string last_sync_at = 4;
+  string error = 5;
+}
+
+message FolderStatus {
+  FolderMember member = 1;
+  string index_id = 2;
+  uint64 sequence = 3;
+  int64 entries = 4;
+  int64 files = 5;
+  int64 bytes = 6;
+  string last_scan_at = 7;
+  // Paths of conflict copies.
+  repeated string conflicts = 8;
+  // At most 100 recent errors.
+  repeated FolderProblem errors = 9;
+  // Paths this member cannot store (case collisions, names, types).
+  repeated FolderProblem unsyncable = 10;
+  FolderPendingDeletions pending_deletions = 11;
+  // Receive-only: local changes that are not sent.
+  repeated string local_changes = 12;
+  // Send-only: remote changes that are not applied.
+  repeated string out_of_sync = 13;
+  repeated FolderPeerStatus peers = 14;
+}
+
+message ResolveFolderDeletionsRequest {
+  string folder_id = 1;
+  // True applies the deletions; false restores the files.
+  bool apply = 2;
+}
+
+message FolderTrashItem {
+  string id = 1;
+  string path = 2;
+  int64 size = 3;
+  string sha256 = 4;
+  string deleted_at = 5;
+  // The member whose change removed or replaced it.
+  string deleted_by = 6;
+  // "deleted", "replaced" or "adopted".
+  string reason = 7;
+}
+
+message ListFolderTrashRequest {
+  string folder_id = 1;
+  string after = 2;
+  int32 page_size = 3;
+}
+
+message FolderTrashPage {
+  repeated FolderTrashItem items = 1;
+  string next = 2;
+  int64 total_bytes = 3;
+}
+
+message RestoreFolderTrashRequest {
+  string folder_id = 1;
+  string id = 2;
+}
+
+message PurgeFolderTrashRequest {
+  string folder_id = 1;
+  // Empty purges everything.
+  repeated string ids = 2;
+}
+
+// A folder's head on one daemon, in its change stream.
+message FolderHead {
+  string folder_id = 1;
+  string index_id = 2;
+  uint64 sequence = 3;
+  FolderState state = 4;
+  int64 need_files = 5;
+  int64 need_bytes = 6;
+  int32 conflicts = 7;
+  string last_sync_at = 8;
+  string state_detail = 9;
+}

@@ -7,6 +7,7 @@ option java_multiple_files = true;
 option java_package = "com.getdieter.api.v1";
 
 import "google/protobuf/empty.proto";
+import "dieter/v1/folders.proto";
 
 // Project files.
 service FileService {
@@ -33,6 +34,8 @@ message ListFilesRequest {
   string path = 2;
   bool show_hidden = 3;
   string card_id = 4;
+  // A synced folder member on this machine instead of a project or card.
+  string folder_id = 51;
 }
 
 message FileEntry {
@@ -55,6 +58,8 @@ message ReadFileRequest {
   string project_id = 1;
   string path = 2;
   string card_id = 3;
+  // A synced folder member on this machine instead of a project or card.
+  string folder_id = 51;
 }
 
 message FileDocument {
@@ -76,6 +81,8 @@ message SaveFileRequest {
   string content = 3;
   string revision = 4;
   string card_id = 5;
+  // A synced folder member on this machine instead of a project or card.
+  string folder_id = 51;
 }
 
 message CreateFileRequest {
@@ -85,6 +92,8 @@ message CreateFileRequest {
   string kind = 3;
   string content = 4;
   string card_id = 5;
+  // A synced folder member on this machine instead of a project or card.
+  string folder_id = 51;
 }
 
 message MoveFileRequest {
@@ -93,6 +102,8 @@ message MoveFileRequest {
   string source = 2;
   string destination = 3;
   string card_id = 4;
+  // A synced folder member on this machine instead of a project or card.
+  string folder_id = 51;
 }
 
 message MoveFileResponse {
@@ -106,15 +117,19 @@ message DeleteFileRequest {
   string path = 2;
   bool recursive = 3;
   string card_id = 4;
+  // A synced folder member on this machine instead of a project or card.
+  string folder_id = 51;
 }
 
-// Transfer paths are relative to one immutable owner checkout or conversation.
+// Transfer paths are relative to one immutable owner checkout, conversation or
+// synced folder member: exactly one of project_id, card_id and folder_id.
 message TransferPath {
   string project_id = 1;
   string checkout_id = 2;
   string card_id = 3;
   string path = 4;
   bool checksum = 5;
+  string folder_id = 6;
 }
 message TransferEntry {
   string path = 1;
@@ -155,6 +170,10 @@ message BeginFileUploadRequest {
   string sha256 = 5;
   int64 modified_nanos = 6;
   uint32 mode = 7;
+  // Required for a folder target: the uploaded version, its author and
+  // executable bit. The daemon commits only if the version dominates its own
+  // entry, and derives the expected revision from its index.
+  FolderEntry folder_entry = 8;
 }
 message FileUploadRequest {
   string id = 1;

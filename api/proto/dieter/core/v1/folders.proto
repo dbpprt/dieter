@@ -1,0 +1,228 @@
+syntax = "proto3";
+
+package dieter.core.v1;
+
+option java_package = "com.getdieter.core.v1";
+
+import "dieter/v1/folders.proto";
+
+// Synced folders on this device, a client member: the local index, the
+// durable transfer journal, the checkpoint with the home daemon and the
+// device's folder sync settings. Never sent to a daemon and never replicated.
+
+// One path of this device's index: the entry members exchange, plus what only
+// this device keeps.
+message LocalFolderEntry {
+  dieter.v1.FolderEntry entry = 1;
+  // What the last scan observed, for cheap change detection: size,
+  // modification time and the platform's identity token (inode, document ID).
+  int64 observed_size = 2;
+  int64 observed_modified_nanos = 3;
+  string observed_token = 4;
+  // A file this device did not download because of the auto-download limit.
+  // Never a deletion.
+  bool absent_by_policy = 5;
+  // A file freed to save space; it stays listed and downloads on tap. Never a
+  // deletion.
+  bool evicted = 6;
+  // The home daemon holds this version or a newer one: it came from there or
+  // its upload committed. False marks a local change still to be sent.
+  bool synced = 7;
+  // Receive-only: the content here changed and is not sent.
+  bool local_change = 8;
+  // The path as the platform stores it when it is not the entry's NFC path.
+  string disk_path = 9;
+}
+
+// One of a folder's 256 index shards, chosen by the first byte of the SHA-256
+// of the path. Each is written atomically on its own.
+message FolderIndexShard {
+  repeated LocalFolderEntry entries = 1;
+}
+
+enum FolderTransferKind {
+  FOLDER_TRANSFER_KIND_UNSPECIFIED = 0;
+  // Makes the local copy match a remote entry: download, mkdir or delete.
+  FOLDER_TRANSFER_KIND_APPLY = 1;
+  // Fetches a remote file whose concurrent version lost to the local one into
+  // its conflict copy.
+  FOLDER_TRANSFER_KIND_CONFLICT_COPY = 2;
+  // Sends a local file to the home daemon.
+  FOLDER_TRANSFER_KIND_UPLOAD = 3;
+}
+
+// One durable step a run started or planned; the next run resumes it.
+message FolderTransfer {
+  FolderTransferKind kind = 1;
+  string path = 2;
+  // APPLY and CONFLICT_COPY: the remote entry.
+  dieter.v1.FolderEntry remote = 3;
+  // APPLY that lost a conflict: where the local content moves first.
+  // CONFLICT_COPY: where the remote content goes.
+  string conflict_copy = 4;
+  // Downloads: the staging file beside the destination.
+  string staging = 5;
+  // Bytes the staging file holds, or the bytes the daemon's upload session
+  // acknowledged.
+  int64 offset = 6;
+  // Uploads: the deterministic operation ID and the daemon's session.
+  string operation_id = 7;
+  string upload_id = 8;
+  // Uploads: the content and version being sent.
+  string sha256 = 9;
+  repeated dieter.v1.FolderCounter version = 10;
+  // The last failure, kept for the status.
+  string error = 11;
+  int32 attempts = 12;
+  // A download the person asked for: it ignores the auto-download and storage
+  // limits, never the free space the device keeps.
+  bool on_demand = 13;
+}
+
+message FolderTransferJournal {
+  repeated FolderTransfer transfers = 1;
+}
+
+message FolderProblemRecord {
+  string path = 1;
+  string message = 2;
+  int64 at_millis = 3;
+}
+
+// Deletions the deletion guard holds until the person applies or restores
+// them.
+message HeldFolderDeletions {
+  // "local": a scan found the files missing; "remote": a member deleted them.
+  string source = 1;
+  // Remote: the tombstones. Local: the entries found missing.
+  repeated dieter.v1.FolderEntry entries = 2;
+  int64 total = 3;
+}
+
+// One folder's sync state on this device.
+message FolderSyncState {
+  string folder_id = 1;
+  // The checkpoint: the home daemon, its index ID and the sequence applied.
+  string home_daemon_id = 2;
+  string index_id = 3;
+  uint64 sequence = 4;
+  // Daemons this device registered with as a client member.
+  repeated string registered_daemon_ids = 5;
+  // The folder location's identity at attach; another one pauses the folder.
+  string root_identity = 6;
+  int64 last_sync_millis = 7;
+  int64 last_attempt_millis = 8;
+  HeldFolderDeletions held_deletions = 9;
+  // At most 100 recent errors and 100 unsyncable paths.
+  repeated FolderProblemRecord errors = 10;
+  repeated FolderProblemRecord unsyncable = 11;
+  // Send-only: remote paths not applied here.
+  repeated string out_of_sync = 12;
+  // What waits for the person: "Folder location unavailable", "Confirm
+  // deletion of 412 files", "Too many files for this phone".
+  string attention = 13;
+  // Local deletions the person applied: the next scan records them even when
+  // the guard would trip.
+  bool deletions_confirmed = 14;
+  // Why the last run stopped short, e.g. "Waiting for Wi-Fi".
+  string reason = 15;
+  // The last run left work for the next one.
+  bool work_remains = 16;
+}
+
+// How often a phone syncs in the background.
+enum FolderBackgroundSync {
+  FOLDER_BACKGROUND_SYNC_UNSPECIFIED = 0;
+  // Every interval_minutes (Android) or about that often (iOS).
+  FOLDER_BACKGROUND_SYNC_INTERVAL = 1;
+  FOLDER_BACKGROUND_SYNC_WHILE_OPEN = 2;
+  FOLDER_BACKGROUND_SYNC_MANUAL = 3;
+}
+
+enum FolderNetworkPolicy {
+  // Per folder: the device setting.
+  FOLDER_NETWORK_POLICY_UNSPECIFIED = 0;
+  // Wi-Fi and unmetered networks only.
+  FOLDER_NETWORK_POLICY_UNMETERED = 1;
+  FOLDER_NETWORK_POLICY_ANY = 2;
+  // Any network; files above the large file threshold wait for Wi-Fi.
+  FOLDER_NETWORK_POLICY_ANY_LARGE_ON_UNMETERED = 3;
+}
+
+// A folder's direction on this device.
+enum FolderDirection {
+  FOLDER_DIRECTION_UNSPECIFIED = 0;
+  FOLDER_DIRECTION_TWO_WAY = 1;
+  FOLDER_DIRECTION_DOWNLOAD_ONLY = 2;
+  FOLDER_DIRECTION_UPLOAD_ONLY = 3;
+  FOLDER_DIRECTION_PAUSED = 4;
+}
+
+// Settings › Folder sync: the device defaults. The client contract's
+// FolderDeviceSettings has the same fields and numbers.
+message FolderDeviceSettings {
+  // The master switch.
+  bool enabled = 1;
+  FolderBackgroundSync background = 2;
+  int32 interval_minutes = 3;
+  // While Dieter is open.
+  bool sync_when_opened = 4;
+  bool upload_right_away = 5;
+  bool live_sync = 6;
+  FolderNetworkPolicy network = 7;
+  int64 large_file_bytes = 8;
+  // Android Data Saver; iOS Low Data Mode.
+  bool respect_data_saver = 9;
+  // Android only.
+  bool never_roaming = 10;
+  bool only_while_charging = 11;
+  // Battery Saver or Low Power Mode.
+  bool pause_in_power_saver = 12;
+  // Zero never pauses for the battery level.
+  int32 pause_below_percent = 13;
+  // Files up to this size download automatically: zero downloads nothing
+  // (on demand only), negative downloads every file.
+  int64 auto_download_bytes = 14;
+  // Zero is no limit.
+  int64 storage_limit_bytes = 15;
+  // Zero keeps no space free.
+  int64 keep_free_bytes = 16;
+  bool notify_conflicts = 17;
+  bool notify_attention = 18;
+  bool notify_finished = 19;
+}
+
+// A folder on this device, with overrides of the device defaults. The client
+// contract's FolderLocalSettings has the same fields and numbers.
+message FolderLocalSettings {
+  string folder_id = 1;
+  FolderDirection direction = 2;
+  // Upload only: evict each file once its upload committed (inbox style).
+  bool remove_after_upload = 3;
+  // Where the folder lives, as the platform names it: an Android tree URI, or
+  // the platform's own location (private app storage, the iOS Documents
+  // container).
+  string location = 4;
+  // "Documents/Dieter/Inbox", "On My iPhone › Dieter › Inbox".
+  string location_label = 5;
+  // Zero uses the device's interval.
+  int32 interval_minutes = 6;
+  // UNSPECIFIED uses the device's network policy.
+  FolderNetworkPolicy network = 7;
+  bool auto_download_override = 8;
+  int64 auto_download_bytes = 9;
+  // Empty chooses automatically: a daemon with a direct route, then the most
+  // recently reachable one.
+  string home_daemon_id = 10;
+}
+
+message FolderSyncSettings {
+  FolderDeviceSettings device = 1;
+  // The folders on this device.
+  repeated FolderLocalSettings folders = 2;
+  // The settings were saved at least once; until then the defaults apply.
+  bool saved = 3;
+  // Cellular data folder sync used in cellular_month ("2026-11", UTC).
+  string cellular_month = 4;
+  int64 cellular_bytes = 5;
+}

@@ -224,6 +224,17 @@ public nonisolated struct Dieter_V1_ChangesFrame: @unchecked Sendable {
     set {_uniqueStorage()._removedMailIds = newValue}
   }
 
+  /// Heads of the synced folders this machine is a member of.
+  public var folderHeads: [Dieter_V1_FolderHead] {
+    get {_storage._folderHeads}
+    set {_uniqueStorage()._folderHeads = newValue}
+  }
+
+  public var removedFolderIds: [String] {
+    get {_storage._removedFolderIds}
+    set {_uniqueStorage()._removedFolderIds = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -398,7 +409,7 @@ nonisolated extension Dieter_V1_ChangesRequest: SwiftProtobuf.Message, SwiftProt
 
 nonisolated extension Dieter_V1_ChangesFrame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ChangesFrame"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0\u{1}cursor\0\u{3}reset_records\0\u{3}reset_local\0\u{3}caught_up\0\u{1}heartbeat\0\u{1}records\0\u{3}owned_cards\0\u{3}removed_owned_card_ids\0\u{1}activities\0\u{3}removed_activity_ids\0\u{3}peer_sync\0\u{1}account\0\u{3}owned_checkouts\0\u{3}removed_owned_checkout_ids\0\u{1}privacy\0\u{1}mail\0\u{3}removed_mail_ids\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0\u{1}cursor\0\u{3}reset_records\0\u{3}reset_local\0\u{3}caught_up\0\u{1}heartbeat\0\u{1}records\0\u{3}owned_cards\0\u{3}removed_owned_card_ids\0\u{1}activities\0\u{3}removed_activity_ids\0\u{3}peer_sync\0\u{1}account\0\u{3}owned_checkouts\0\u{3}removed_owned_checkout_ids\0\u{1}privacy\0\u{1}mail\0\u{3}removed_mail_ids\0\u{3}folder_heads\0\u{3}removed_folder_ids\0")
 
   fileprivate class _StorageClass {
     var _daemonID: String = String()
@@ -419,6 +430,8 @@ nonisolated extension Dieter_V1_ChangesFrame: SwiftProtobuf.Message, SwiftProtob
     var _privacy: Dieter_V1_MachinePrivacy? = nil
     var _mail: [Dieter_V1_MailHeader] = []
     var _removedMailIds: [String] = []
+    var _folderHeads: [Dieter_V1_FolderHead] = []
+    var _removedFolderIds: [String] = []
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -447,6 +460,8 @@ nonisolated extension Dieter_V1_ChangesFrame: SwiftProtobuf.Message, SwiftProtob
       _privacy = source._privacy
       _mail = source._mail
       _removedMailIds = source._removedMailIds
+      _folderHeads = source._folderHeads
+      _removedFolderIds = source._removedFolderIds
     }
   }
 
@@ -483,6 +498,8 @@ nonisolated extension Dieter_V1_ChangesFrame: SwiftProtobuf.Message, SwiftProtob
         case 16: try { try decoder.decodeSingularMessageField(value: &_storage._privacy) }()
         case 17: try { try decoder.decodeRepeatedMessageField(value: &_storage._mail) }()
         case 18: try { try decoder.decodeRepeatedStringField(value: &_storage._removedMailIds) }()
+        case 19: try { try decoder.decodeRepeatedMessageField(value: &_storage._folderHeads) }()
+        case 20: try { try decoder.decodeRepeatedStringField(value: &_storage._removedFolderIds) }()
         default: break
         }
       }
@@ -549,6 +566,12 @@ nonisolated extension Dieter_V1_ChangesFrame: SwiftProtobuf.Message, SwiftProtob
       if !_storage._removedMailIds.isEmpty {
         try visitor.visitRepeatedStringField(value: _storage._removedMailIds, fieldNumber: 18)
       }
+      if !_storage._folderHeads.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._folderHeads, fieldNumber: 19)
+      }
+      if !_storage._removedFolderIds.isEmpty {
+        try visitor.visitRepeatedStringField(value: _storage._removedFolderIds, fieldNumber: 20)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -576,6 +599,8 @@ nonisolated extension Dieter_V1_ChangesFrame: SwiftProtobuf.Message, SwiftProtob
         if _storage._privacy != rhs_storage._privacy {return false}
         if _storage._mail != rhs_storage._mail {return false}
         if _storage._removedMailIds != rhs_storage._removedMailIds {return false}
+        if _storage._folderHeads != rhs_storage._folderHeads {return false}
+        if _storage._removedFolderIds != rhs_storage._removedFolderIds {return false}
         return true
       }
       if !storagesAreEqual {return false}

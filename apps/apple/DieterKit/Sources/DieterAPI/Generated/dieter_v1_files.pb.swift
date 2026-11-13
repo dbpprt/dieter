@@ -40,6 +40,9 @@ public nonisolated struct Dieter_V1_ListFilesRequest: Sendable {
 
   public var cardID: String = String()
 
+  /// A synced folder member on this machine instead of a project or card.
+  public var folderID: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -96,6 +99,9 @@ public nonisolated struct Dieter_V1_ReadFileRequest: Sendable {
 
   public var cardID: String = String()
 
+  /// A synced folder member on this machine instead of a project or card.
+  public var folderID: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -146,6 +152,9 @@ public nonisolated struct Dieter_V1_SaveFileRequest: Sendable {
 
   public var cardID: String = String()
 
+  /// A synced folder member on this machine instead of a project or card.
+  public var folderID: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -168,6 +177,9 @@ public nonisolated struct Dieter_V1_CreateFileRequest: Sendable {
 
   public var cardID: String = String()
 
+  /// A synced folder member on this machine instead of a project or card.
+  public var folderID: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -187,6 +199,9 @@ public nonisolated struct Dieter_V1_MoveFileRequest: Sendable {
   public var destination: String = String()
 
   public var cardID: String = String()
+
+  /// A synced folder member on this machine instead of a project or card.
+  public var folderID: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -222,12 +237,16 @@ public nonisolated struct Dieter_V1_DeleteFileRequest: Sendable {
 
   public var cardID: String = String()
 
+  /// A synced folder member on this machine instead of a project or card.
+  public var folderID: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 }
 
-/// Transfer paths are relative to one immutable owner checkout or conversation.
+/// Transfer paths are relative to one immutable owner checkout, conversation or
+/// synced folder member: exactly one of project_id, card_id and folder_id.
 public nonisolated struct Dieter_V1_TransferPath: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -242,6 +261,8 @@ public nonisolated struct Dieter_V1_TransferPath: Sendable {
   public var path: String = String()
 
   public var checksum: Bool = false
+
+  public var folderID: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -356,38 +377,68 @@ public nonisolated struct Dieter_V1_FileChunk: Sendable {
   public init() {}
 }
 
-public nonisolated struct Dieter_V1_BeginFileUploadRequest: Sendable {
+public nonisolated struct Dieter_V1_BeginFileUploadRequest: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
   public var target: Dieter_V1_TransferPath {
-    get {_target ?? Dieter_V1_TransferPath()}
-    set {_target = newValue}
+    get {_storage._target ?? Dieter_V1_TransferPath()}
+    set {_uniqueStorage()._target = newValue}
   }
   /// Returns true if `target` has been explicitly set.
-  public var hasTarget: Bool {self._target != nil}
+  public var hasTarget: Bool {_storage._target != nil}
   /// Clears the value of `target`. Subsequent reads from it will return its default value.
-  public mutating func clearTarget() {self._target = nil}
+  public mutating func clearTarget() {_uniqueStorage()._target = nil}
 
-  public var operationID: String = String()
+  public var operationID: String {
+    get {_storage._operationID}
+    set {_uniqueStorage()._operationID = newValue}
+  }
 
   /// "missing" means create-only; otherwise an observed destination revision.
-  public var expectedRevision: String = String()
+  public var expectedRevision: String {
+    get {_storage._expectedRevision}
+    set {_uniqueStorage()._expectedRevision = newValue}
+  }
 
-  public var size: Int64 = 0
+  public var size: Int64 {
+    get {_storage._size}
+    set {_uniqueStorage()._size = newValue}
+  }
 
-  public var sha256: String = String()
+  public var sha256: String {
+    get {_storage._sha256}
+    set {_uniqueStorage()._sha256 = newValue}
+  }
 
-  public var modifiedNanos: Int64 = 0
+  public var modifiedNanos: Int64 {
+    get {_storage._modifiedNanos}
+    set {_uniqueStorage()._modifiedNanos = newValue}
+  }
 
-  public var mode: UInt32 = 0
+  public var mode: UInt32 {
+    get {_storage._mode}
+    set {_uniqueStorage()._mode = newValue}
+  }
+
+  /// Required for a folder target: the uploaded version, its author and
+  /// executable bit. The daemon commits only if the version dominates its own
+  /// entry, and derives the expected revision from its index.
+  public var folderEntry: Dieter_V1_FolderEntry {
+    get {_storage._folderEntry ?? Dieter_V1_FolderEntry()}
+    set {_uniqueStorage()._folderEntry = newValue}
+  }
+  /// Returns true if `folderEntry` has been explicitly set.
+  public var hasFolderEntry: Bool {_storage._folderEntry != nil}
+  /// Clears the value of `folderEntry`. Subsequent reads from it will return its default value.
+  public mutating func clearFolderEntry() {_uniqueStorage()._folderEntry = nil}
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
-  fileprivate var _target: Dieter_V1_TransferPath? = nil
+  fileprivate var _storage = _StorageClass.defaultInstance
 }
 
 public nonisolated struct Dieter_V1_FileUploadRequest: Sendable {
@@ -469,7 +520,7 @@ fileprivate nonisolated let _protobuf_package = "dieter.v1"
 
 nonisolated extension Dieter_V1_ListFilesRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ListFilesRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}path\0\u{3}show_hidden\0\u{3}card_id\0\u{4}.checkout_id\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}path\0\u{3}show_hidden\0\u{3}card_id\0\u{4}.checkout_id\0\u{3}folder_id\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -482,6 +533,7 @@ nonisolated extension Dieter_V1_ListFilesRequest: SwiftProtobuf.Message, SwiftPr
       case 3: try { try decoder.decodeSingularBoolField(value: &self.showHidden) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.cardID) }()
       case 50: try { try decoder.decodeSingularStringField(value: &self.checkoutID) }()
+      case 51: try { try decoder.decodeSingularStringField(value: &self.folderID) }()
       default: break
       }
     }
@@ -503,6 +555,9 @@ nonisolated extension Dieter_V1_ListFilesRequest: SwiftProtobuf.Message, SwiftPr
     if !self.checkoutID.isEmpty {
       try visitor.visitSingularStringField(value: self.checkoutID, fieldNumber: 50)
     }
+    if !self.folderID.isEmpty {
+      try visitor.visitSingularStringField(value: self.folderID, fieldNumber: 51)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -512,6 +567,7 @@ nonisolated extension Dieter_V1_ListFilesRequest: SwiftProtobuf.Message, SwiftPr
     if lhs.path != rhs.path {return false}
     if lhs.showHidden != rhs.showHidden {return false}
     if lhs.cardID != rhs.cardID {return false}
+    if lhs.folderID != rhs.folderID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -614,7 +670,7 @@ nonisolated extension Dieter_V1_FileList: SwiftProtobuf.Message, SwiftProtobuf._
 
 nonisolated extension Dieter_V1_ReadFileRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ReadFileRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}path\0\u{3}card_id\0\u{4}/checkout_id\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}path\0\u{3}card_id\0\u{4}/checkout_id\0\u{3}folder_id\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -626,6 +682,7 @@ nonisolated extension Dieter_V1_ReadFileRequest: SwiftProtobuf.Message, SwiftPro
       case 2: try { try decoder.decodeSingularStringField(value: &self.path) }()
       case 3: try { try decoder.decodeSingularStringField(value: &self.cardID) }()
       case 50: try { try decoder.decodeSingularStringField(value: &self.checkoutID) }()
+      case 51: try { try decoder.decodeSingularStringField(value: &self.folderID) }()
       default: break
       }
     }
@@ -644,6 +701,9 @@ nonisolated extension Dieter_V1_ReadFileRequest: SwiftProtobuf.Message, SwiftPro
     if !self.checkoutID.isEmpty {
       try visitor.visitSingularStringField(value: self.checkoutID, fieldNumber: 50)
     }
+    if !self.folderID.isEmpty {
+      try visitor.visitSingularStringField(value: self.folderID, fieldNumber: 51)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -652,6 +712,7 @@ nonisolated extension Dieter_V1_ReadFileRequest: SwiftProtobuf.Message, SwiftPro
     if lhs.projectID != rhs.projectID {return false}
     if lhs.path != rhs.path {return false}
     if lhs.cardID != rhs.cardID {return false}
+    if lhs.folderID != rhs.folderID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -729,7 +790,7 @@ nonisolated extension Dieter_V1_FileDocument: SwiftProtobuf.Message, SwiftProtob
 
 nonisolated extension Dieter_V1_SaveFileRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SaveFileRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}path\0\u{1}content\0\u{1}revision\0\u{3}card_id\0\u{4}-checkout_id\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}path\0\u{1}content\0\u{1}revision\0\u{3}card_id\0\u{4}-checkout_id\0\u{3}folder_id\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -743,6 +804,7 @@ nonisolated extension Dieter_V1_SaveFileRequest: SwiftProtobuf.Message, SwiftPro
       case 4: try { try decoder.decodeSingularStringField(value: &self.revision) }()
       case 5: try { try decoder.decodeSingularStringField(value: &self.cardID) }()
       case 50: try { try decoder.decodeSingularStringField(value: &self.checkoutID) }()
+      case 51: try { try decoder.decodeSingularStringField(value: &self.folderID) }()
       default: break
       }
     }
@@ -767,6 +829,9 @@ nonisolated extension Dieter_V1_SaveFileRequest: SwiftProtobuf.Message, SwiftPro
     if !self.checkoutID.isEmpty {
       try visitor.visitSingularStringField(value: self.checkoutID, fieldNumber: 50)
     }
+    if !self.folderID.isEmpty {
+      try visitor.visitSingularStringField(value: self.folderID, fieldNumber: 51)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -777,6 +842,7 @@ nonisolated extension Dieter_V1_SaveFileRequest: SwiftProtobuf.Message, SwiftPro
     if lhs.content != rhs.content {return false}
     if lhs.revision != rhs.revision {return false}
     if lhs.cardID != rhs.cardID {return false}
+    if lhs.folderID != rhs.folderID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -784,7 +850,7 @@ nonisolated extension Dieter_V1_SaveFileRequest: SwiftProtobuf.Message, SwiftPro
 
 nonisolated extension Dieter_V1_CreateFileRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".CreateFileRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}path\0\u{1}kind\0\u{1}content\0\u{3}card_id\0\u{4}-checkout_id\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}path\0\u{1}kind\0\u{1}content\0\u{3}card_id\0\u{4}-checkout_id\0\u{3}folder_id\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -798,6 +864,7 @@ nonisolated extension Dieter_V1_CreateFileRequest: SwiftProtobuf.Message, SwiftP
       case 4: try { try decoder.decodeSingularStringField(value: &self.content) }()
       case 5: try { try decoder.decodeSingularStringField(value: &self.cardID) }()
       case 50: try { try decoder.decodeSingularStringField(value: &self.checkoutID) }()
+      case 51: try { try decoder.decodeSingularStringField(value: &self.folderID) }()
       default: break
       }
     }
@@ -822,6 +889,9 @@ nonisolated extension Dieter_V1_CreateFileRequest: SwiftProtobuf.Message, SwiftP
     if !self.checkoutID.isEmpty {
       try visitor.visitSingularStringField(value: self.checkoutID, fieldNumber: 50)
     }
+    if !self.folderID.isEmpty {
+      try visitor.visitSingularStringField(value: self.folderID, fieldNumber: 51)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -832,6 +902,7 @@ nonisolated extension Dieter_V1_CreateFileRequest: SwiftProtobuf.Message, SwiftP
     if lhs.kind != rhs.kind {return false}
     if lhs.content != rhs.content {return false}
     if lhs.cardID != rhs.cardID {return false}
+    if lhs.folderID != rhs.folderID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -839,7 +910,7 @@ nonisolated extension Dieter_V1_CreateFileRequest: SwiftProtobuf.Message, SwiftP
 
 nonisolated extension Dieter_V1_MoveFileRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".MoveFileRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}source\0\u{1}destination\0\u{3}card_id\0\u{4}.checkout_id\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}source\0\u{1}destination\0\u{3}card_id\0\u{4}.checkout_id\0\u{3}folder_id\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -852,6 +923,7 @@ nonisolated extension Dieter_V1_MoveFileRequest: SwiftProtobuf.Message, SwiftPro
       case 3: try { try decoder.decodeSingularStringField(value: &self.destination) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.cardID) }()
       case 50: try { try decoder.decodeSingularStringField(value: &self.checkoutID) }()
+      case 51: try { try decoder.decodeSingularStringField(value: &self.folderID) }()
       default: break
       }
     }
@@ -873,6 +945,9 @@ nonisolated extension Dieter_V1_MoveFileRequest: SwiftProtobuf.Message, SwiftPro
     if !self.checkoutID.isEmpty {
       try visitor.visitSingularStringField(value: self.checkoutID, fieldNumber: 50)
     }
+    if !self.folderID.isEmpty {
+      try visitor.visitSingularStringField(value: self.folderID, fieldNumber: 51)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -882,6 +957,7 @@ nonisolated extension Dieter_V1_MoveFileRequest: SwiftProtobuf.Message, SwiftPro
     if lhs.source != rhs.source {return false}
     if lhs.destination != rhs.destination {return false}
     if lhs.cardID != rhs.cardID {return false}
+    if lhs.folderID != rhs.folderID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -924,7 +1000,7 @@ nonisolated extension Dieter_V1_MoveFileResponse: SwiftProtobuf.Message, SwiftPr
 
 nonisolated extension Dieter_V1_DeleteFileRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DeleteFileRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}path\0\u{1}recursive\0\u{3}card_id\0\u{4}.checkout_id\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}path\0\u{1}recursive\0\u{3}card_id\0\u{4}.checkout_id\0\u{3}folder_id\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -937,6 +1013,7 @@ nonisolated extension Dieter_V1_DeleteFileRequest: SwiftProtobuf.Message, SwiftP
       case 3: try { try decoder.decodeSingularBoolField(value: &self.recursive) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.cardID) }()
       case 50: try { try decoder.decodeSingularStringField(value: &self.checkoutID) }()
+      case 51: try { try decoder.decodeSingularStringField(value: &self.folderID) }()
       default: break
       }
     }
@@ -958,6 +1035,9 @@ nonisolated extension Dieter_V1_DeleteFileRequest: SwiftProtobuf.Message, SwiftP
     if !self.checkoutID.isEmpty {
       try visitor.visitSingularStringField(value: self.checkoutID, fieldNumber: 50)
     }
+    if !self.folderID.isEmpty {
+      try visitor.visitSingularStringField(value: self.folderID, fieldNumber: 51)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -967,6 +1047,7 @@ nonisolated extension Dieter_V1_DeleteFileRequest: SwiftProtobuf.Message, SwiftP
     if lhs.path != rhs.path {return false}
     if lhs.recursive != rhs.recursive {return false}
     if lhs.cardID != rhs.cardID {return false}
+    if lhs.folderID != rhs.folderID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -974,7 +1055,7 @@ nonisolated extension Dieter_V1_DeleteFileRequest: SwiftProtobuf.Message, SwiftP
 
 nonisolated extension Dieter_V1_TransferPath: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".TransferPath"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}checkout_id\0\u{3}card_id\0\u{1}path\0\u{1}checksum\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}checkout_id\0\u{3}card_id\0\u{1}path\0\u{1}checksum\0\u{3}folder_id\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -987,6 +1068,7 @@ nonisolated extension Dieter_V1_TransferPath: SwiftProtobuf.Message, SwiftProtob
       case 3: try { try decoder.decodeSingularStringField(value: &self.cardID) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.path) }()
       case 5: try { try decoder.decodeSingularBoolField(value: &self.checksum) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.folderID) }()
       default: break
       }
     }
@@ -1008,6 +1090,9 @@ nonisolated extension Dieter_V1_TransferPath: SwiftProtobuf.Message, SwiftProtob
     if self.checksum != false {
       try visitor.visitSingularBoolField(value: self.checksum, fieldNumber: 5)
     }
+    if !self.folderID.isEmpty {
+      try visitor.visitSingularStringField(value: self.folderID, fieldNumber: 6)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1017,6 +1102,7 @@ nonisolated extension Dieter_V1_TransferPath: SwiftProtobuf.Message, SwiftProtob
     if lhs.cardID != rhs.cardID {return false}
     if lhs.path != rhs.path {return false}
     if lhs.checksum != rhs.checksum {return false}
+    if lhs.folderID != rhs.folderID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1257,63 +1343,118 @@ nonisolated extension Dieter_V1_FileChunk: SwiftProtobuf.Message, SwiftProtobuf.
 
 nonisolated extension Dieter_V1_BeginFileUploadRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".BeginFileUploadRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}target\0\u{3}operation_id\0\u{3}expected_revision\0\u{1}size\0\u{1}sha256\0\u{3}modified_nanos\0\u{1}mode\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}target\0\u{3}operation_id\0\u{3}expected_revision\0\u{1}size\0\u{1}sha256\0\u{3}modified_nanos\0\u{1}mode\0\u{3}folder_entry\0")
+
+  fileprivate class _StorageClass {
+    var _target: Dieter_V1_TransferPath? = nil
+    var _operationID: String = String()
+    var _expectedRevision: String = String()
+    var _size: Int64 = 0
+    var _sha256: String = String()
+    var _modifiedNanos: Int64 = 0
+    var _mode: UInt32 = 0
+    var _folderEntry: Dieter_V1_FolderEntry? = nil
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _target = source._target
+      _operationID = source._operationID
+      _expectedRevision = source._expectedRevision
+      _size = source._size
+      _sha256 = source._sha256
+      _modifiedNanos = source._modifiedNanos
+      _mode = source._mode
+      _folderEntry = source._folderEntry
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularMessageField(value: &self._target) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.operationID) }()
-      case 3: try { try decoder.decodeSingularStringField(value: &self.expectedRevision) }()
-      case 4: try { try decoder.decodeSingularInt64Field(value: &self.size) }()
-      case 5: try { try decoder.decodeSingularStringField(value: &self.sha256) }()
-      case 6: try { try decoder.decodeSingularInt64Field(value: &self.modifiedNanos) }()
-      case 7: try { try decoder.decodeSingularUInt32Field(value: &self.mode) }()
-      default: break
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularMessageField(value: &_storage._target) }()
+        case 2: try { try decoder.decodeSingularStringField(value: &_storage._operationID) }()
+        case 3: try { try decoder.decodeSingularStringField(value: &_storage._expectedRevision) }()
+        case 4: try { try decoder.decodeSingularInt64Field(value: &_storage._size) }()
+        case 5: try { try decoder.decodeSingularStringField(value: &_storage._sha256) }()
+        case 6: try { try decoder.decodeSingularInt64Field(value: &_storage._modifiedNanos) }()
+        case 7: try { try decoder.decodeSingularUInt32Field(value: &_storage._mode) }()
+        case 8: try { try decoder.decodeSingularMessageField(value: &_storage._folderEntry) }()
+        default: break
+        }
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    // The use of inline closures is to circumvent an issue where the compiler
-    // allocates stack space for every if/case branch local when no optimizations
-    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
-    // https://github.com/apple/swift-protobuf/issues/1182
-    try { if let v = self._target {
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
-    } }()
-    if !self.operationID.isEmpty {
-      try visitor.visitSingularStringField(value: self.operationID, fieldNumber: 2)
-    }
-    if !self.expectedRevision.isEmpty {
-      try visitor.visitSingularStringField(value: self.expectedRevision, fieldNumber: 3)
-    }
-    if self.size != 0 {
-      try visitor.visitSingularInt64Field(value: self.size, fieldNumber: 4)
-    }
-    if !self.sha256.isEmpty {
-      try visitor.visitSingularStringField(value: self.sha256, fieldNumber: 5)
-    }
-    if self.modifiedNanos != 0 {
-      try visitor.visitSingularInt64Field(value: self.modifiedNanos, fieldNumber: 6)
-    }
-    if self.mode != 0 {
-      try visitor.visitSingularUInt32Field(value: self.mode, fieldNumber: 7)
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      try { if let v = _storage._target {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+      } }()
+      if !_storage._operationID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._operationID, fieldNumber: 2)
+      }
+      if !_storage._expectedRevision.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._expectedRevision, fieldNumber: 3)
+      }
+      if _storage._size != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._size, fieldNumber: 4)
+      }
+      if !_storage._sha256.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._sha256, fieldNumber: 5)
+      }
+      if _storage._modifiedNanos != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._modifiedNanos, fieldNumber: 6)
+      }
+      if _storage._mode != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._mode, fieldNumber: 7)
+      }
+      try { if let v = _storage._folderEntry {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 8)
+      } }()
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Dieter_V1_BeginFileUploadRequest, rhs: Dieter_V1_BeginFileUploadRequest) -> Bool {
-    if lhs._target != rhs._target {return false}
-    if lhs.operationID != rhs.operationID {return false}
-    if lhs.expectedRevision != rhs.expectedRevision {return false}
-    if lhs.size != rhs.size {return false}
-    if lhs.sha256 != rhs.sha256 {return false}
-    if lhs.modifiedNanos != rhs.modifiedNanos {return false}
-    if lhs.mode != rhs.mode {return false}
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._target != rhs_storage._target {return false}
+        if _storage._operationID != rhs_storage._operationID {return false}
+        if _storage._expectedRevision != rhs_storage._expectedRevision {return false}
+        if _storage._size != rhs_storage._size {return false}
+        if _storage._sha256 != rhs_storage._sha256 {return false}
+        if _storage._modifiedNanos != rhs_storage._modifiedNanos {return false}
+        if _storage._mode != rhs_storage._mode {return false}
+        if _storage._folderEntry != rhs_storage._folderEntry {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

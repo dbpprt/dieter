@@ -291,8 +291,11 @@ type ChangesFrame struct {
 	// folder.
 	Mail           []*MailHeader `protobuf:"bytes,17,rep,name=mail,proto3" json:"mail,omitempty"`
 	RemovedMailIds []string      `protobuf:"bytes,18,rep,name=removed_mail_ids,json=removedMailIds,proto3" json:"removed_mail_ids,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Heads of the synced folders this machine is a member of.
+	FolderHeads      []*FolderHead `protobuf:"bytes,19,rep,name=folder_heads,json=folderHeads,proto3" json:"folder_heads,omitempty"`
+	RemovedFolderIds []string      `protobuf:"bytes,20,rep,name=removed_folder_ids,json=removedFolderIds,proto3" json:"removed_folder_ids,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *ChangesFrame) Reset() {
@@ -451,6 +454,20 @@ func (x *ChangesFrame) GetRemovedMailIds() []string {
 	return nil
 }
 
+func (x *ChangesFrame) GetFolderHeads() []*FolderHead {
+	if x != nil {
+		return x.FolderHeads
+	}
+	return nil
+}
+
+func (x *ChangesFrame) GetRemovedFolderIds() []string {
+	if x != nil {
+		return x.RemovedFolderIds
+	}
+	return nil
+}
+
 type PeerSyncStatus struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Issues        []*PeerSyncDiagnostic  `protobuf:"bytes,1,rep,name=issues,proto3" json:"issues,omitempty"`
@@ -499,7 +516,7 @@ var File_dieter_v1_state_proto protoreflect.FileDescriptor
 
 const file_dieter_v1_state_proto_rawDesc = "" +
 	"\n" +
-	"\x15dieter/v1/state.proto\x12\tdieter.v1\x1a\x16dieter/v1/common.proto\x1a\x14dieter/v1/mail.proto\"\xe3\x01\n" +
+	"\x15dieter/v1/state.proto\x12\tdieter.v1\x1a\x16dieter/v1/common.proto\x1a\x17dieter/v1/folders.proto\x1a\x14dieter/v1/mail.proto\"\xe3\x01\n" +
 	"\x0fGetStateRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x19\n" +
@@ -518,7 +535,7 @@ const file_dieter_v1_state_proto_rawDesc = "" +
 	"\x0elocal_sequence\x18\x04 \x01(\x04R\rlocalSequence\"c\n" +
 	"\x0eChangesRequest\x12.\n" +
 	"\x05after\x18\x01 \x01(\v2\x18.dieter.v1.ChangesCursorR\x05after\x12!\n" +
-	"\fheartbeat_ms\x18\x02 \x01(\x05R\vheartbeatMs\"\xb8\x06\n" +
+	"\fheartbeat_ms\x18\x02 \x01(\x05R\vheartbeatMs\"\xa0\a\n" +
 	"\fChangesFrame\x12\x1b\n" +
 	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12\x18\n" +
 	"\aaccount\x18\r \x01(\tR\aaccount\x120\n" +
@@ -542,7 +559,9 @@ const file_dieter_v1_state_proto_rawDesc = "" +
 	"\tpeer_sync\x18\f \x01(\v2\x19.dieter.v1.PeerSyncStatusR\bpeerSync\x123\n" +
 	"\aprivacy\x18\x10 \x01(\v2\x19.dieter.v1.MachinePrivacyR\aprivacy\x12)\n" +
 	"\x04mail\x18\x11 \x03(\v2\x15.dieter.v1.MailHeaderR\x04mail\x12(\n" +
-	"\x10removed_mail_ids\x18\x12 \x03(\tR\x0eremovedMailIds\"G\n" +
+	"\x10removed_mail_ids\x18\x12 \x03(\tR\x0eremovedMailIds\x128\n" +
+	"\ffolder_heads\x18\x13 \x03(\v2\x15.dieter.v1.FolderHeadR\vfolderHeads\x12,\n" +
+	"\x12removed_folder_ids\x18\x14 \x03(\tR\x10removedFolderIds\"G\n" +
 	"\x0ePeerSyncStatus\x125\n" +
 	"\x06issues\x18\x01 \x03(\v2\x1d.dieter.v1.PeerSyncDiagnosticR\x06issues2\x8e\x01\n" +
 	"\fStateService\x128\n" +
@@ -575,8 +594,9 @@ var file_dieter_v1_state_proto_goTypes = []any{
 	(*Conversation)(nil),       // 8: dieter.v1.Conversation
 	(*MachinePrivacy)(nil),     // 9: dieter.v1.MachinePrivacy
 	(*MailHeader)(nil),         // 10: dieter.v1.MailHeader
-	(*PeerSyncDiagnostic)(nil), // 11: dieter.v1.PeerSyncDiagnostic
-	(*State)(nil),              // 12: dieter.v1.State
+	(*FolderHead)(nil),         // 11: dieter.v1.FolderHead
+	(*PeerSyncDiagnostic)(nil), // 12: dieter.v1.PeerSyncDiagnostic
+	(*State)(nil),              // 13: dieter.v1.State
 }
 var file_dieter_v1_state_proto_depIdxs = []int32{
 	1,  // 0: dieter.v1.ChangesRequest.after:type_name -> dieter.v1.ChangesCursor
@@ -588,16 +608,17 @@ var file_dieter_v1_state_proto_depIdxs = []int32{
 	4,  // 6: dieter.v1.ChangesFrame.peer_sync:type_name -> dieter.v1.PeerSyncStatus
 	9,  // 7: dieter.v1.ChangesFrame.privacy:type_name -> dieter.v1.MachinePrivacy
 	10, // 8: dieter.v1.ChangesFrame.mail:type_name -> dieter.v1.MailHeader
-	11, // 9: dieter.v1.PeerSyncStatus.issues:type_name -> dieter.v1.PeerSyncDiagnostic
-	0,  // 10: dieter.v1.StateService.GetState:input_type -> dieter.v1.GetStateRequest
-	2,  // 11: dieter.v1.StateService.WatchChanges:input_type -> dieter.v1.ChangesRequest
-	12, // 12: dieter.v1.StateService.GetState:output_type -> dieter.v1.State
-	3,  // 13: dieter.v1.StateService.WatchChanges:output_type -> dieter.v1.ChangesFrame
-	12, // [12:14] is the sub-list for method output_type
-	10, // [10:12] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	11, // 9: dieter.v1.ChangesFrame.folder_heads:type_name -> dieter.v1.FolderHead
+	12, // 10: dieter.v1.PeerSyncStatus.issues:type_name -> dieter.v1.PeerSyncDiagnostic
+	0,  // 11: dieter.v1.StateService.GetState:input_type -> dieter.v1.GetStateRequest
+	2,  // 12: dieter.v1.StateService.WatchChanges:input_type -> dieter.v1.ChangesRequest
+	13, // 13: dieter.v1.StateService.GetState:output_type -> dieter.v1.State
+	3,  // 14: dieter.v1.StateService.WatchChanges:output_type -> dieter.v1.ChangesFrame
+	13, // [13:15] is the sub-list for method output_type
+	11, // [11:13] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_dieter_v1_state_proto_init() }
@@ -606,6 +627,7 @@ func file_dieter_v1_state_proto_init() {
 		return
 	}
 	file_dieter_v1_common_proto_init()
+	file_dieter_v1_folders_proto_init()
 	file_dieter_v1_mail_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{

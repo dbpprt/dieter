@@ -7,6 +7,7 @@ option java_multiple_files = true;
 option java_package = "com.getdieter.api.v1";
 
 import "dieter/v1/common.proto";
+import "dieter/v1/folders.proto";
 import "dieter/v1/mail.proto";
 
 // Workspace state snapshots and the change stream.
@@ -92,6 +93,9 @@ message ChangesFrame {
   // folder.
   repeated MailHeader mail = 17;
   repeated string removed_mail_ids = 18;
+  // Heads of the synced folders this machine is a member of.
+  repeated FolderHead folder_heads = 19;
+  repeated string removed_folder_ids = 20;
 }
 
 message PeerSyncStatus { repeated PeerSyncDiagnostic issues = 1; }

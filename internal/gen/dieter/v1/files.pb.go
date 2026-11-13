@@ -23,12 +23,14 @@ const (
 )
 
 type ListFilesRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CheckoutId    string                 `protobuf:"bytes,50,opt,name=checkout_id,json=checkoutId,proto3" json:"checkout_id,omitempty"`
-	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
-	ShowHidden    bool                   `protobuf:"varint,3,opt,name=show_hidden,json=showHidden,proto3" json:"show_hidden,omitempty"`
-	CardId        string                 `protobuf:"bytes,4,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	CheckoutId string                 `protobuf:"bytes,50,opt,name=checkout_id,json=checkoutId,proto3" json:"checkout_id,omitempty"`
+	ProjectId  string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Path       string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	ShowHidden bool                   `protobuf:"varint,3,opt,name=show_hidden,json=showHidden,proto3" json:"show_hidden,omitempty"`
+	CardId     string                 `protobuf:"bytes,4,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	// A synced folder member on this machine instead of a project or card.
+	FolderId      string `protobuf:"bytes,51,opt,name=folder_id,json=folderId,proto3" json:"folder_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -94,6 +96,13 @@ func (x *ListFilesRequest) GetShowHidden() bool {
 func (x *ListFilesRequest) GetCardId() string {
 	if x != nil {
 		return x.CardId
+	}
+	return ""
+}
+
+func (x *ListFilesRequest) GetFolderId() string {
+	if x != nil {
+		return x.FolderId
 	}
 	return ""
 }
@@ -243,11 +252,13 @@ func (x *FileList) GetEntries() []*FileEntry {
 }
 
 type ReadFileRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CheckoutId    string                 `protobuf:"bytes,50,opt,name=checkout_id,json=checkoutId,proto3" json:"checkout_id,omitempty"`
-	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
-	CardId        string                 `protobuf:"bytes,3,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	CheckoutId string                 `protobuf:"bytes,50,opt,name=checkout_id,json=checkoutId,proto3" json:"checkout_id,omitempty"`
+	ProjectId  string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Path       string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	CardId     string                 `protobuf:"bytes,3,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	// A synced folder member on this machine instead of a project or card.
+	FolderId      string `protobuf:"bytes,51,opt,name=folder_id,json=folderId,proto3" json:"folder_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -306,6 +317,13 @@ func (x *ReadFileRequest) GetPath() string {
 func (x *ReadFileRequest) GetCardId() string {
 	if x != nil {
 		return x.CardId
+	}
+	return ""
+}
+
+func (x *ReadFileRequest) GetFolderId() string {
+	if x != nil {
+		return x.FolderId
 	}
 	return ""
 }
@@ -419,13 +437,15 @@ func (x *FileDocument) GetData() []byte {
 }
 
 type SaveFileRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CheckoutId    string                 `protobuf:"bytes,50,opt,name=checkout_id,json=checkoutId,proto3" json:"checkout_id,omitempty"`
-	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
-	Content       string                 `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
-	Revision      string                 `protobuf:"bytes,4,opt,name=revision,proto3" json:"revision,omitempty"`
-	CardId        string                 `protobuf:"bytes,5,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	CheckoutId string                 `protobuf:"bytes,50,opt,name=checkout_id,json=checkoutId,proto3" json:"checkout_id,omitempty"`
+	ProjectId  string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Path       string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	Content    string                 `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
+	Revision   string                 `protobuf:"bytes,4,opt,name=revision,proto3" json:"revision,omitempty"`
+	CardId     string                 `protobuf:"bytes,5,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	// A synced folder member on this machine instead of a project or card.
+	FolderId      string `protobuf:"bytes,51,opt,name=folder_id,json=folderId,proto3" json:"folder_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -502,14 +522,23 @@ func (x *SaveFileRequest) GetCardId() string {
 	return ""
 }
 
+func (x *SaveFileRequest) GetFolderId() string {
+	if x != nil {
+		return x.FolderId
+	}
+	return ""
+}
+
 type CreateFileRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CheckoutId    string                 `protobuf:"bytes,50,opt,name=checkout_id,json=checkoutId,proto3" json:"checkout_id,omitempty"`
-	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
-	Kind          string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
-	Content       string                 `protobuf:"bytes,4,opt,name=content,proto3" json:"content,omitempty"`
-	CardId        string                 `protobuf:"bytes,5,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	CheckoutId string                 `protobuf:"bytes,50,opt,name=checkout_id,json=checkoutId,proto3" json:"checkout_id,omitempty"`
+	ProjectId  string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Path       string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	Kind       string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
+	Content    string                 `protobuf:"bytes,4,opt,name=content,proto3" json:"content,omitempty"`
+	CardId     string                 `protobuf:"bytes,5,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	// A synced folder member on this machine instead of a project or card.
+	FolderId      string `protobuf:"bytes,51,opt,name=folder_id,json=folderId,proto3" json:"folder_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -586,13 +615,22 @@ func (x *CreateFileRequest) GetCardId() string {
 	return ""
 }
 
+func (x *CreateFileRequest) GetFolderId() string {
+	if x != nil {
+		return x.FolderId
+	}
+	return ""
+}
+
 type MoveFileRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CheckoutId    string                 `protobuf:"bytes,50,opt,name=checkout_id,json=checkoutId,proto3" json:"checkout_id,omitempty"`
-	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Source        string                 `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
-	Destination   string                 `protobuf:"bytes,3,opt,name=destination,proto3" json:"destination,omitempty"`
-	CardId        string                 `protobuf:"bytes,4,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	CheckoutId  string                 `protobuf:"bytes,50,opt,name=checkout_id,json=checkoutId,proto3" json:"checkout_id,omitempty"`
+	ProjectId   string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Source      string                 `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
+	Destination string                 `protobuf:"bytes,3,opt,name=destination,proto3" json:"destination,omitempty"`
+	CardId      string                 `protobuf:"bytes,4,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	// A synced folder member on this machine instead of a project or card.
+	FolderId      string `protobuf:"bytes,51,opt,name=folder_id,json=folderId,proto3" json:"folder_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -662,6 +700,13 @@ func (x *MoveFileRequest) GetCardId() string {
 	return ""
 }
 
+func (x *MoveFileRequest) GetFolderId() string {
+	if x != nil {
+		return x.FolderId
+	}
+	return ""
+}
+
 type MoveFileResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Source        string                 `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
@@ -715,12 +760,14 @@ func (x *MoveFileResponse) GetDestination() string {
 }
 
 type DeleteFileRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CheckoutId    string                 `protobuf:"bytes,50,opt,name=checkout_id,json=checkoutId,proto3" json:"checkout_id,omitempty"`
-	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
-	Recursive     bool                   `protobuf:"varint,3,opt,name=recursive,proto3" json:"recursive,omitempty"`
-	CardId        string                 `protobuf:"bytes,4,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	CheckoutId string                 `protobuf:"bytes,50,opt,name=checkout_id,json=checkoutId,proto3" json:"checkout_id,omitempty"`
+	ProjectId  string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Path       string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	Recursive  bool                   `protobuf:"varint,3,opt,name=recursive,proto3" json:"recursive,omitempty"`
+	CardId     string                 `protobuf:"bytes,4,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	// A synced folder member on this machine instead of a project or card.
+	FolderId      string `protobuf:"bytes,51,opt,name=folder_id,json=folderId,proto3" json:"folder_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -790,7 +837,15 @@ func (x *DeleteFileRequest) GetCardId() string {
 	return ""
 }
 
-// Transfer paths are relative to one immutable owner checkout or conversation.
+func (x *DeleteFileRequest) GetFolderId() string {
+	if x != nil {
+		return x.FolderId
+	}
+	return ""
+}
+
+// Transfer paths are relative to one immutable owner checkout, conversation or
+// synced folder member: exactly one of project_id, card_id and folder_id.
 type TransferPath struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
@@ -798,6 +853,7 @@ type TransferPath struct {
 	CardId        string                 `protobuf:"bytes,3,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
 	Path          string                 `protobuf:"bytes,4,opt,name=path,proto3" json:"path,omitempty"`
 	Checksum      bool                   `protobuf:"varint,5,opt,name=checksum,proto3" json:"checksum,omitempty"`
+	FolderId      string                 `protobuf:"bytes,6,opt,name=folder_id,json=folderId,proto3" json:"folder_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -865,6 +921,13 @@ func (x *TransferPath) GetChecksum() bool {
 		return x.Checksum
 	}
 	return false
+}
+
+func (x *TransferPath) GetFolderId() string {
+	if x != nil {
+		return x.FolderId
+	}
+	return ""
 }
 
 type TransferEntry struct {
@@ -1217,8 +1280,12 @@ type BeginFileUploadRequest struct {
 	Sha256           string `protobuf:"bytes,5,opt,name=sha256,proto3" json:"sha256,omitempty"`
 	ModifiedNanos    int64  `protobuf:"varint,6,opt,name=modified_nanos,json=modifiedNanos,proto3" json:"modified_nanos,omitempty"`
 	Mode             uint32 `protobuf:"varint,7,opt,name=mode,proto3" json:"mode,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Required for a folder target: the uploaded version, its author and
+	// executable bit. The daemon commits only if the version dominates its own
+	// entry, and derives the expected revision from its index.
+	FolderEntry   *FolderEntry `protobuf:"bytes,8,opt,name=folder_entry,json=folderEntry,proto3" json:"folder_entry,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *BeginFileUploadRequest) Reset() {
@@ -1298,6 +1365,13 @@ func (x *BeginFileUploadRequest) GetMode() uint32 {
 		return x.Mode
 	}
 	return 0
+}
+
+func (x *BeginFileUploadRequest) GetFolderEntry() *FolderEntry {
+	if x != nil {
+		return x.FolderEntry
+	}
+	return nil
 }
 
 type FileUploadRequest struct {
@@ -1544,7 +1618,7 @@ var File_dieter_v1_files_proto protoreflect.FileDescriptor
 
 const file_dieter_v1_files_proto_rawDesc = "" +
 	"\n" +
-	"\x15dieter/v1/files.proto\x12\tdieter.v1\x1a\x1bgoogle/protobuf/empty.proto\"\xa0\x01\n" +
+	"\x15dieter/v1/files.proto\x12\tdieter.v1\x1a\x1bgoogle/protobuf/empty.proto\x1a\x17dieter/v1/folders.proto\"\xbd\x01\n" +
 	"\x10ListFilesRequest\x12\x1f\n" +
 	"\vcheckout_id\x182 \x01(\tR\n" +
 	"checkoutId\x12\x1d\n" +
@@ -1553,7 +1627,8 @@ const file_dieter_v1_files_proto_rawDesc = "" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x1f\n" +
 	"\vshow_hidden\x18\x03 \x01(\bR\n" +
 	"showHidden\x12\x17\n" +
-	"\acard_id\x18\x04 \x01(\tR\x06cardId\"\xae\x01\n" +
+	"\acard_id\x18\x04 \x01(\tR\x06cardId\x12\x1b\n" +
+	"\tfolder_id\x183 \x01(\tR\bfolderId\"\xae\x01\n" +
 	"\tFileEntry\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x12\n" +
@@ -1565,14 +1640,15 @@ const file_dieter_v1_files_proto_rawDesc = "" +
 	"\asymlink\x18\a \x01(\bR\asymlink\"N\n" +
 	"\bFileList\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12.\n" +
-	"\aentries\x18\x02 \x03(\v2\x14.dieter.v1.FileEntryR\aentries\"~\n" +
+	"\aentries\x18\x02 \x03(\v2\x14.dieter.v1.FileEntryR\aentries\"\x9b\x01\n" +
 	"\x0fReadFileRequest\x12\x1f\n" +
 	"\vcheckout_id\x182 \x01(\tR\n" +
 	"checkoutId\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x17\n" +
-	"\acard_id\x18\x03 \x01(\tR\x06cardId\"\xea\x01\n" +
+	"\acard_id\x18\x03 \x01(\tR\x06cardId\x12\x1b\n" +
+	"\tfolder_id\x183 \x01(\tR\bfolderId\"\xea\x01\n" +
 	"\fFileDocument\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
@@ -1583,7 +1659,7 @@ const file_dieter_v1_files_proto_rawDesc = "" +
 	"\brevision\x18\x06 \x01(\tR\brevision\x12\x1b\n" +
 	"\tmime_type\x18\a \x01(\tR\bmimeType\x12\x18\n" +
 	"\acontent\x18\b \x01(\tR\acontent\x12\x12\n" +
-	"\x04data\x18\t \x01(\fR\x04data\"\xb4\x01\n" +
+	"\x04data\x18\t \x01(\fR\x04data\"\xd1\x01\n" +
 	"\x0fSaveFileRequest\x12\x1f\n" +
 	"\vcheckout_id\x182 \x01(\tR\n" +
 	"checkoutId\x12\x1d\n" +
@@ -1592,7 +1668,8 @@ const file_dieter_v1_files_proto_rawDesc = "" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x18\n" +
 	"\acontent\x18\x03 \x01(\tR\acontent\x12\x1a\n" +
 	"\brevision\x18\x04 \x01(\tR\brevision\x12\x17\n" +
-	"\acard_id\x18\x05 \x01(\tR\x06cardId\"\xae\x01\n" +
+	"\acard_id\x18\x05 \x01(\tR\x06cardId\x12\x1b\n" +
+	"\tfolder_id\x183 \x01(\tR\bfolderId\"\xcb\x01\n" +
 	"\x11CreateFileRequest\x12\x1f\n" +
 	"\vcheckout_id\x182 \x01(\tR\n" +
 	"checkoutId\x12\x1d\n" +
@@ -1601,7 +1678,8 @@ const file_dieter_v1_files_proto_rawDesc = "" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x12\n" +
 	"\x04kind\x18\x03 \x01(\tR\x04kind\x12\x18\n" +
 	"\acontent\x18\x04 \x01(\tR\acontent\x12\x17\n" +
-	"\acard_id\x18\x05 \x01(\tR\x06cardId\"\xa4\x01\n" +
+	"\acard_id\x18\x05 \x01(\tR\x06cardId\x12\x1b\n" +
+	"\tfolder_id\x183 \x01(\tR\bfolderId\"\xc1\x01\n" +
 	"\x0fMoveFileRequest\x12\x1f\n" +
 	"\vcheckout_id\x182 \x01(\tR\n" +
 	"checkoutId\x12\x1d\n" +
@@ -1609,10 +1687,11 @@ const file_dieter_v1_files_proto_rawDesc = "" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x16\n" +
 	"\x06source\x18\x02 \x01(\tR\x06source\x12 \n" +
 	"\vdestination\x18\x03 \x01(\tR\vdestination\x12\x17\n" +
-	"\acard_id\x18\x04 \x01(\tR\x06cardId\"L\n" +
+	"\acard_id\x18\x04 \x01(\tR\x06cardId\x12\x1b\n" +
+	"\tfolder_id\x183 \x01(\tR\bfolderId\"L\n" +
 	"\x10MoveFileResponse\x12\x16\n" +
 	"\x06source\x18\x01 \x01(\tR\x06source\x12 \n" +
-	"\vdestination\x18\x02 \x01(\tR\vdestination\"\x9e\x01\n" +
+	"\vdestination\x18\x02 \x01(\tR\vdestination\"\xbb\x01\n" +
 	"\x11DeleteFileRequest\x12\x1f\n" +
 	"\vcheckout_id\x182 \x01(\tR\n" +
 	"checkoutId\x12\x1d\n" +
@@ -1620,7 +1699,8 @@ const file_dieter_v1_files_proto_rawDesc = "" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x1c\n" +
 	"\trecursive\x18\x03 \x01(\bR\trecursive\x12\x17\n" +
-	"\acard_id\x18\x04 \x01(\tR\x06cardId\"\x97\x01\n" +
+	"\acard_id\x18\x04 \x01(\tR\x06cardId\x12\x1b\n" +
+	"\tfolder_id\x183 \x01(\tR\bfolderId\"\xb4\x01\n" +
 	"\fTransferPath\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x1f\n" +
@@ -1628,7 +1708,8 @@ const file_dieter_v1_files_proto_rawDesc = "" +
 	"checkoutId\x12\x17\n" +
 	"\acard_id\x18\x03 \x01(\tR\x06cardId\x12\x12\n" +
 	"\x04path\x18\x04 \x01(\tR\x04path\x12\x1a\n" +
-	"\bchecksum\x18\x05 \x01(\bR\bchecksum\"\xba\x01\n" +
+	"\bchecksum\x18\x05 \x01(\bR\bchecksum\x12\x1b\n" +
+	"\tfolder_id\x18\x06 \x01(\tR\bfolderId\"\xba\x01\n" +
 	"\rTransferEntry\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x12\n" +
@@ -1653,7 +1734,7 @@ const file_dieter_v1_files_proto_rawDesc = "" +
 	"\x06length\x18\x04 \x01(\x05R\x06length\"7\n" +
 	"\tFileChunk\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\x12\x16\n" +
-	"\x06sha256\x18\x02 \x01(\tR\x06sha256\"\x80\x02\n" +
+	"\x06sha256\x18\x02 \x01(\tR\x06sha256\"\xbb\x02\n" +
 	"\x16BeginFileUploadRequest\x12/\n" +
 	"\x06target\x18\x01 \x01(\v2\x17.dieter.v1.TransferPathR\x06target\x12!\n" +
 	"\foperation_id\x18\x02 \x01(\tR\voperationId\x12+\n" +
@@ -1661,7 +1742,8 @@ const file_dieter_v1_files_proto_rawDesc = "" +
 	"\x04size\x18\x04 \x01(\x03R\x04size\x12\x16\n" +
 	"\x06sha256\x18\x05 \x01(\tR\x06sha256\x12%\n" +
 	"\x0emodified_nanos\x18\x06 \x01(\x03R\rmodifiedNanos\x12\x12\n" +
-	"\x04mode\x18\a \x01(\rR\x04mode\"#\n" +
+	"\x04mode\x18\a \x01(\rR\x04mode\x129\n" +
+	"\ffolder_entry\x18\b \x01(\v2\x16.dieter.v1.FolderEntryR\vfolderEntry\"#\n" +
 	"\x11FileUploadRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"k\n" +
 	"\x15WriteFileChunkRequest\x12\x0e\n" +
@@ -1734,7 +1816,8 @@ var file_dieter_v1_files_proto_goTypes = []any{
 	(*WriteFileChunkRequest)(nil),     // 18: dieter.v1.WriteFileChunkRequest
 	(*FileUpload)(nil),                // 19: dieter.v1.FileUpload
 	(*DeleteTransferFileRequest)(nil), // 20: dieter.v1.DeleteTransferFileRequest
-	(*emptypb.Empty)(nil),             // 21: google.protobuf.Empty
+	(*FolderEntry)(nil),               // 21: dieter.v1.FolderEntry
+	(*emptypb.Empty)(nil),             // 22: google.protobuf.Empty
 }
 var file_dieter_v1_files_proto_depIdxs = []int32{
 	1,  // 0: dieter.v1.FileList.entries:type_name -> dieter.v1.FileEntry
@@ -1742,42 +1825,43 @@ var file_dieter_v1_files_proto_depIdxs = []int32{
 	11, // 2: dieter.v1.TransferPage.entries:type_name -> dieter.v1.TransferEntry
 	10, // 3: dieter.v1.ReadFileChunkRequest.target:type_name -> dieter.v1.TransferPath
 	10, // 4: dieter.v1.BeginFileUploadRequest.target:type_name -> dieter.v1.TransferPath
-	10, // 5: dieter.v1.DeleteTransferFileRequest.target:type_name -> dieter.v1.TransferPath
-	10, // 6: dieter.v1.FileService.StatTransferFile:input_type -> dieter.v1.TransferPath
-	12, // 7: dieter.v1.FileService.ListTransferFiles:input_type -> dieter.v1.ListTransferFilesRequest
-	14, // 8: dieter.v1.FileService.ReadFileChunk:input_type -> dieter.v1.ReadFileChunkRequest
-	16, // 9: dieter.v1.FileService.BeginFileUpload:input_type -> dieter.v1.BeginFileUploadRequest
-	18, // 10: dieter.v1.FileService.WriteFileChunk:input_type -> dieter.v1.WriteFileChunkRequest
-	17, // 11: dieter.v1.FileService.GetFileUpload:input_type -> dieter.v1.FileUploadRequest
-	17, // 12: dieter.v1.FileService.CommitFileUpload:input_type -> dieter.v1.FileUploadRequest
-	17, // 13: dieter.v1.FileService.AbortFileUpload:input_type -> dieter.v1.FileUploadRequest
-	20, // 14: dieter.v1.FileService.DeleteTransferFile:input_type -> dieter.v1.DeleteTransferFileRequest
-	0,  // 15: dieter.v1.FileService.ListFiles:input_type -> dieter.v1.ListFilesRequest
-	3,  // 16: dieter.v1.FileService.ReadFile:input_type -> dieter.v1.ReadFileRequest
-	5,  // 17: dieter.v1.FileService.SaveFile:input_type -> dieter.v1.SaveFileRequest
-	6,  // 18: dieter.v1.FileService.CreateFile:input_type -> dieter.v1.CreateFileRequest
-	7,  // 19: dieter.v1.FileService.MoveFile:input_type -> dieter.v1.MoveFileRequest
-	9,  // 20: dieter.v1.FileService.DeleteFile:input_type -> dieter.v1.DeleteFileRequest
-	11, // 21: dieter.v1.FileService.StatTransferFile:output_type -> dieter.v1.TransferEntry
-	13, // 22: dieter.v1.FileService.ListTransferFiles:output_type -> dieter.v1.TransferPage
-	15, // 23: dieter.v1.FileService.ReadFileChunk:output_type -> dieter.v1.FileChunk
-	19, // 24: dieter.v1.FileService.BeginFileUpload:output_type -> dieter.v1.FileUpload
-	19, // 25: dieter.v1.FileService.WriteFileChunk:output_type -> dieter.v1.FileUpload
-	19, // 26: dieter.v1.FileService.GetFileUpload:output_type -> dieter.v1.FileUpload
-	19, // 27: dieter.v1.FileService.CommitFileUpload:output_type -> dieter.v1.FileUpload
-	19, // 28: dieter.v1.FileService.AbortFileUpload:output_type -> dieter.v1.FileUpload
-	21, // 29: dieter.v1.FileService.DeleteTransferFile:output_type -> google.protobuf.Empty
-	2,  // 30: dieter.v1.FileService.ListFiles:output_type -> dieter.v1.FileList
-	4,  // 31: dieter.v1.FileService.ReadFile:output_type -> dieter.v1.FileDocument
-	4,  // 32: dieter.v1.FileService.SaveFile:output_type -> dieter.v1.FileDocument
-	1,  // 33: dieter.v1.FileService.CreateFile:output_type -> dieter.v1.FileEntry
-	8,  // 34: dieter.v1.FileService.MoveFile:output_type -> dieter.v1.MoveFileResponse
-	21, // 35: dieter.v1.FileService.DeleteFile:output_type -> google.protobuf.Empty
-	21, // [21:36] is the sub-list for method output_type
-	6,  // [6:21] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	21, // 5: dieter.v1.BeginFileUploadRequest.folder_entry:type_name -> dieter.v1.FolderEntry
+	10, // 6: dieter.v1.DeleteTransferFileRequest.target:type_name -> dieter.v1.TransferPath
+	10, // 7: dieter.v1.FileService.StatTransferFile:input_type -> dieter.v1.TransferPath
+	12, // 8: dieter.v1.FileService.ListTransferFiles:input_type -> dieter.v1.ListTransferFilesRequest
+	14, // 9: dieter.v1.FileService.ReadFileChunk:input_type -> dieter.v1.ReadFileChunkRequest
+	16, // 10: dieter.v1.FileService.BeginFileUpload:input_type -> dieter.v1.BeginFileUploadRequest
+	18, // 11: dieter.v1.FileService.WriteFileChunk:input_type -> dieter.v1.WriteFileChunkRequest
+	17, // 12: dieter.v1.FileService.GetFileUpload:input_type -> dieter.v1.FileUploadRequest
+	17, // 13: dieter.v1.FileService.CommitFileUpload:input_type -> dieter.v1.FileUploadRequest
+	17, // 14: dieter.v1.FileService.AbortFileUpload:input_type -> dieter.v1.FileUploadRequest
+	20, // 15: dieter.v1.FileService.DeleteTransferFile:input_type -> dieter.v1.DeleteTransferFileRequest
+	0,  // 16: dieter.v1.FileService.ListFiles:input_type -> dieter.v1.ListFilesRequest
+	3,  // 17: dieter.v1.FileService.ReadFile:input_type -> dieter.v1.ReadFileRequest
+	5,  // 18: dieter.v1.FileService.SaveFile:input_type -> dieter.v1.SaveFileRequest
+	6,  // 19: dieter.v1.FileService.CreateFile:input_type -> dieter.v1.CreateFileRequest
+	7,  // 20: dieter.v1.FileService.MoveFile:input_type -> dieter.v1.MoveFileRequest
+	9,  // 21: dieter.v1.FileService.DeleteFile:input_type -> dieter.v1.DeleteFileRequest
+	11, // 22: dieter.v1.FileService.StatTransferFile:output_type -> dieter.v1.TransferEntry
+	13, // 23: dieter.v1.FileService.ListTransferFiles:output_type -> dieter.v1.TransferPage
+	15, // 24: dieter.v1.FileService.ReadFileChunk:output_type -> dieter.v1.FileChunk
+	19, // 25: dieter.v1.FileService.BeginFileUpload:output_type -> dieter.v1.FileUpload
+	19, // 26: dieter.v1.FileService.WriteFileChunk:output_type -> dieter.v1.FileUpload
+	19, // 27: dieter.v1.FileService.GetFileUpload:output_type -> dieter.v1.FileUpload
+	19, // 28: dieter.v1.FileService.CommitFileUpload:output_type -> dieter.v1.FileUpload
+	19, // 29: dieter.v1.FileService.AbortFileUpload:output_type -> dieter.v1.FileUpload
+	22, // 30: dieter.v1.FileService.DeleteTransferFile:output_type -> google.protobuf.Empty
+	2,  // 31: dieter.v1.FileService.ListFiles:output_type -> dieter.v1.FileList
+	4,  // 32: dieter.v1.FileService.ReadFile:output_type -> dieter.v1.FileDocument
+	4,  // 33: dieter.v1.FileService.SaveFile:output_type -> dieter.v1.FileDocument
+	1,  // 34: dieter.v1.FileService.CreateFile:output_type -> dieter.v1.FileEntry
+	8,  // 35: dieter.v1.FileService.MoveFile:output_type -> dieter.v1.MoveFileResponse
+	22, // 36: dieter.v1.FileService.DeleteFile:output_type -> google.protobuf.Empty
+	22, // [22:37] is the sub-list for method output_type
+	7,  // [7:22] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_dieter_v1_files_proto_init() }
@@ -1785,6 +1869,7 @@ func file_dieter_v1_files_proto_init() {
 	if File_dieter_v1_files_proto != nil {
 		return
 	}
+	file_dieter_v1_folders_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

@@ -11,6 +11,7 @@ import "dieter/v1/common.proto";
 import "dieter/v1/conversations.proto";
 import "dieter/v1/executions.proto";
 import "dieter/v1/files.proto";
+import "dieter/v1/folders.proto";
 import "dieter/v1/git.proto";
 import "dieter/v1/machine.proto";
 import "dieter/v1/mail.proto";
@@ -110,6 +111,8 @@ message Command {
     MailCommand mail = 84;
     // A tap on, or an action of, a notification the core posted.
     NotificationResponse notification_response = 85;
+    // Synced folders; see FoldersCommand.
+    FoldersCommand folders = 86;
   }
 }
 
@@ -734,13 +737,15 @@ message FilesCommand {
   }
 }
 
-// Whose files: a project checkout, or a conversation's workspace, on the
-// machine that holds it.
+// Whose files: a project checkout, a conversation's workspace, or a synced
+// folder member's directory (folder_id, without project_id), on the machine
+// that holds it.
 message FilesTarget {
   string daemon_id = 1;
   string project_id = 2;
   string checkout_id = 3;
   string card_id = 4;
+  string folder_id = 5;
 }
 
 message FilesPath { string path = 1; }
@@ -1255,6 +1260,15 @@ message Result {
     MailSlice mail = 47;
     // Where a notification response leads (NotificationResponse).
     NotificationTarget notification_target = 48;
+    // Synced folders: the list, a folder or the folder sync settings after a
+    // folders command, and what folder operations return.
+    FoldersSlice folders = 49;
+    FolderSlice folder = 50;
+    FolderSyncSettingsSlice folder_sync_settings = 51;
+    dieter.v1.Folder synced_folder = 52;
+    dieter.v1.FolderMember folder_member = 53;
+    dieter.v1.AttachFolderResult folder_attach = 54;
+    FolderSaveResult folder_saved = 55;
   }
 }
 
@@ -1330,6 +1344,12 @@ enum Slice {
   SLICE_CHANNELS = 26;
   // Agent mail across machines. Scoped by the view's surface key.
   SLICE_MAIL = 28;
+  // Synced folders with their status lines.
+  SLICE_FOLDERS = 29;
+  // One synced folder. Scoped by its folder ID.
+  SLICE_FOLDER = 30;
+  // This device's folder sync settings and status.
+  SLICE_FOLDER_SYNC_SETTINGS = 31;
 }
 
 message Update {
@@ -1367,6 +1387,9 @@ message Update {
     DevicesSlice devices = 36;
     ChannelsSlice channels = 37;
     MailSlice mail = 39;
+    FoldersSlice folders = 40;
+    FolderSlice folder = 41;
+    FolderSyncSettingsSlice folder_sync_settings = 42;
     // The view's surface could not open, e.g. screen sharing on a device
     // without it. Sent once; nothing follows.
     Failure failure = 9;
@@ -4499,4 +4522,564 @@ message NotificationTarget {
     // The action ran in place; nothing opens.
     Step none = 4;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Synced folders
+
+// A folder command. Shared definitions and daemon members go to a reachable
+// daemon; this device's membership, settings and files stay on this device.
+// browse and list_trash act on the observed FOLDER surface whose scope is the
+// folder ID (empty: the folder the command names).
+message FoldersCommand {
+  string scope = 1;
+  oneof action {
+    // Creates a shared folder; the result is the folder (synced_folder).
+    SyncedFolderCreate create = 2;
+    // Changes the shared definition; the result is the folder.
+    SyncedFolderUpdate update = 3;
+    // Stops every member; files stay where they are.
+    SyncedFolderRef archive = 4;
+    // Keeps a copy of the folder on this device.
+    FolderAttachDevice attach_device = 5;
+    // Binds a directory on a daemon to the folder; the result is the plan or
+    // the member (folder_attach).
+    FolderAttachDaemon attach_daemon = 6;
+    // Changes a daemon member's mode, pause and limits (folder_member).
+    FolderUpdateDaemon update_daemon = 7;
+    // Stops syncing on a daemon; its files stay.
+    FolderDaemonRef detach_daemon = 8;
+    // This device's direction; PAUSED pauses it.
+    FolderSetDirection set_direction = 9;
+    // Syncs now, as the person asked: an empty folder ID syncs every folder
+    // on this device.
+    SyncedFolderRef sync_now = 10;
+    // Applies or undoes deletions the deletion guard holds, on this device
+    // (empty daemon ID) or on a daemon member.
+    FolderResolveDeletions resolve_deletions = 11;
+    // Reads a page of a daemon's trash into the FOLDER surface.
+    FolderTrashQuery list_trash = 12;
+    FolderTrashItems restore_trash = 13;
+    // Empty IDs purge the whole trash of that daemon.
+    FolderTrashItems purge_trash = 14;
+    // Downloads a file that is listed but not on this device.
+    FolderPath download = 15;
+    // Frees a downloaded file a daemon holds; an empty path frees the whole
+    // folder. It stays listed and downloads on tap.
+    FolderPath evict = 16;
+    // Frees every downloaded file a daemon holds, in every folder.
+    Step free_up_space = 17;
+    // Stops keeping the folder on this device.
+    FolderRemoveDevice remove_device = 18;
+    FolderDeviceSettings set_device_settings = 19;
+    FolderLocalSettings set_folder_settings = 20;
+    // Scans a daemon member's copy now.
+    FolderDaemonRef rescan_daemon = 21;
+    // Shows a directory of this device's copy; empty is the folder's root.
+    FolderPath browse = 22;
+    // Keeps one side of a conflict: the conflict copy replaces the original,
+    // or the conflict copy goes.
+    FolderResolveConflict resolve_conflict = 23;
+    // Saves files another app shared into this device's copy ("Save to
+    // folder…"); the result is folder_saved.
+    FolderSaveFiles save_files = 24;
+  }
+}
+
+message SyncedFolderRef { string folder_id = 1; }
+
+message SyncedFolderCreate {
+  string name = 1;
+  // "-PATTERN" excludes, "+PATTERN" includes; the last match wins. The
+  // default rules come first unless no_default_rules is set.
+  repeated string rules = 2;
+  bool no_default_rules = 3;
+  // 0 keeps 30 days; negative turns the trash off.
+  int32 trash_days = 4;
+  dieter.v1.FolderDeleteGuard delete_guard = 5;
+  string project_id = 6;
+  // The daemon that records it; empty uses any reachable daemon.
+  string daemon_id = 7;
+}
+
+// Unset fields stay unchanged.
+message SyncedFolderUpdate {
+  string folder_id = 1;
+  optional string name = 2;
+  bool set_rules = 3;
+  repeated string rules = 4;
+  optional int32 trash_days = 5;
+  optional dieter.v1.FolderDeleteGuard delete_guard = 6;
+  // Empty unlinks the project.
+  optional string project_id = 7;
+}
+
+message FolderAttachDevice {
+  string folder_id = 1;
+  // As the platform names it (an Android tree URI); empty uses the
+  // platform's own location (private app storage, the iOS container).
+  string location = 2;
+  string location_label = 3;
+  // UNSPECIFIED is two-way.
+  FolderDirection direction = 4;
+  bool remove_after_upload = 5;
+  // Empty chooses automatically.
+  string home_daemon_id = 6;
+}
+
+message FolderAttachDaemon {
+  string folder_id = 1;
+  string daemon_id = 2;
+  // An absolute directory on that daemon's host (ListDirectories).
+  string path = 3;
+  dieter.v1.FolderMode mode = 4;
+  dieter.v1.FolderJoin join = 5;
+  // Plans the join without changing anything.
+  bool dry_run = 6;
+}
+
+// Unset fields stay unchanged.
+message FolderUpdateDaemon {
+  string folder_id = 1;
+  string daemon_id = 2;
+  optional dieter.v1.FolderMode mode = 3;
+  optional bool paused = 4;
+  optional int32 rescan_seconds = 5;
+  optional int64 bandwidth_limit = 6;
+  optional int32 concurrency = 7;
+  optional bool quarantine = 8;
+  optional bool watch = 9;
+}
+
+message FolderDaemonRef {
+  string folder_id = 1;
+  string daemon_id = 2;
+}
+
+message FolderSetDirection {
+  string folder_id = 1;
+  FolderDirection direction = 2;
+}
+
+message FolderResolveDeletions {
+  string folder_id = 1;
+  // Empty resolves this device's held deletions.
+  string daemon_id = 2;
+  // True applies the deletions; false restores the files.
+  bool apply = 3;
+}
+
+message FolderTrashQuery {
+  string folder_id = 1;
+  // Empty uses the folder's first reachable daemon member.
+  string daemon_id = 2;
+  // Empty reads the first page.
+  string after = 3;
+}
+
+message FolderTrashItems {
+  string folder_id = 1;
+  string daemon_id = 2;
+  repeated string ids = 3;
+}
+
+message FolderPath {
+  string folder_id = 1;
+  string path = 2;
+}
+
+message FolderRemoveDevice {
+  string folder_id = 1;
+  // Also deletes this device's copy (an eviction, never a folder deletion);
+  // otherwise the files stay where they are.
+  bool delete_local_copy = 2;
+}
+
+message FolderResolveConflict {
+  string folder_id = 1;
+  // The conflict copy's path.
+  string path = 2;
+  // True: the conflict copy replaces the original. False: it goes.
+  bool keep_copy = 3;
+}
+
+message FolderSaveFiles {
+  string folder_id = 1;
+  // A directory of the copy; empty is the folder's root.
+  string directory = 2;
+  repeated FolderSaveSource sources = 3;
+}
+
+message FolderSaveSource {
+  // As the platform reads it: an Android content URI, an iOS file URL.
+  string source = 1;
+  // The name it should get; a free variant ("Report (2).pdf") when taken.
+  string name = 2;
+}
+
+message FolderSaveResult {
+  // The paths the saved files got in the copy.
+  repeated string paths = 1;
+  // "Saved 2 files to Inbox."; empty when nothing was saved.
+  string message = 2;
+  // Why some files were not saved; the others were.
+  string problem = 3;
+}
+
+// How often a phone syncs in the background.
+enum FolderBackgroundSync {
+  FOLDER_BACKGROUND_SYNC_UNSPECIFIED = 0;
+  FOLDER_BACKGROUND_SYNC_INTERVAL = 1;
+  FOLDER_BACKGROUND_SYNC_WHILE_OPEN = 2;
+  FOLDER_BACKGROUND_SYNC_MANUAL = 3;
+}
+
+enum FolderNetworkPolicy {
+  // Per folder: the device setting.
+  FOLDER_NETWORK_POLICY_UNSPECIFIED = 0;
+  FOLDER_NETWORK_POLICY_UNMETERED = 1;
+  FOLDER_NETWORK_POLICY_ANY = 2;
+  FOLDER_NETWORK_POLICY_ANY_LARGE_ON_UNMETERED = 3;
+}
+
+enum FolderDirection {
+  FOLDER_DIRECTION_UNSPECIFIED = 0;
+  FOLDER_DIRECTION_TWO_WAY = 1;
+  FOLDER_DIRECTION_DOWNLOAD_ONLY = 2;
+  FOLDER_DIRECTION_UPLOAD_ONLY = 3;
+  FOLDER_DIRECTION_PAUSED = 4;
+}
+
+// Settings › Folder sync, the device defaults (§3.15 of the proposal). Same
+// fields and numbers as the core's on-device record.
+message FolderDeviceSettings {
+  bool enabled = 1;
+  FolderBackgroundSync background = 2;
+  int32 interval_minutes = 3;
+  bool sync_when_opened = 4;
+  bool upload_right_away = 5;
+  bool live_sync = 6;
+  FolderNetworkPolicy network = 7;
+  int64 large_file_bytes = 8;
+  bool respect_data_saver = 9;
+  bool never_roaming = 10;
+  bool only_while_charging = 11;
+  bool pause_in_power_saver = 12;
+  // Zero never pauses for the battery level.
+  int32 pause_below_percent = 13;
+  // Zero downloads nothing automatically; negative downloads every file.
+  int64 auto_download_bytes = 14;
+  // Zero is no limit.
+  int64 storage_limit_bytes = 15;
+  int64 keep_free_bytes = 16;
+  bool notify_conflicts = 17;
+  bool notify_attention = 18;
+  bool notify_finished = 19;
+}
+
+// A folder on this device with its overrides; zero and UNSPECIFIED use the
+// device setting. Same fields and numbers as the core's on-device record.
+message FolderLocalSettings {
+  string folder_id = 1;
+  FolderDirection direction = 2;
+  bool remove_after_upload = 3;
+  // Another location attaches the folder there afresh; "default" is the
+  // platform's own location (private storage on Android).
+  string location = 4;
+  string location_label = 5;
+  int32 interval_minutes = 6;
+  FolderNetworkPolicy network = 7;
+  bool auto_download_override = 8;
+  int64 auto_download_bytes = 9;
+  // Empty chooses automatically.
+  string home_daemon_id = 10;
+}
+
+// SLICE_FOLDERS: every folder that is not archived, by name.
+message FoldersSlice {
+  repeated FolderRow folders = 1;
+  // The daemons a folder can be created on or attached to, by name.
+  repeated FolderDaemonOption daemons = 2;
+  // Above the list, e.g. "Folder sync is off on this device."; empty for
+  // none.
+  string notice = 3;
+  // Machines are being read and nothing is listed yet.
+  bool loading = 4;
+  string empty_title = 5;
+  string empty_detail = 6;
+  // Why the last command failed.
+  string action_error = 7;
+  // This device can keep folders: the platform supplies a folder file
+  // system.
+  bool device_capable = 8;
+}
+
+message FolderRow {
+  string id = 1;
+  string name = 2;
+  // "Up to date · 3 min ago", "Syncing · 12 files left", "Waiting for
+  // Wi-Fi", "2 conflicts", "Paused", "Confirm deletion of 412 files", "Not
+  // on this device".
+  string status = 3;
+  Tone tone = 4;
+  bool on_device = 5;
+  // "Two-way", "Download only", "Upload only", "Paused"; empty when the
+  // folder is not on this device.
+  string direction = 6;
+  // "Mac mini, box · 2 phones".
+  string members = 7;
+  string project_name = 8;
+  // Waits for the person: conflicts, a held deletion, a lost location.
+  bool attention = 9;
+  bool syncing = 10;
+  int32 conflicts = 11;
+  // When this device last finished a sync of it; 0 never.
+  int64 last_sync_millis = 12;
+  // Kept here and not download only: "Save to folder…" offers it.
+  bool accepts_files = 13;
+}
+
+message FolderDaemonOption {
+  string daemon_id = 1;
+  string name = 2;
+  bool online = 3;
+  // "Auto (Mac mini)" for the automatic choice (empty ID).
+  string label = 4;
+  bool selected = 5;
+}
+
+// SLICE_FOLDER: one folder, scoped by its ID.
+message FolderSlice {
+  string id = 1;
+  // False while the folder is unknown (not yet synced, or gone).
+  bool found = 2;
+  string name = 3;
+  string status = 4;
+  Tone tone = 5;
+  repeated string rules = 6;
+  int32 trash_days = 7;
+  // "30 days", "Off".
+  string trash_label = 8;
+  dieter.v1.FolderDeleteGuard delete_guard = 9;
+  // "More than 100 files or 30%", "Strict", "Off".
+  string delete_guard_label = 10;
+  string project_id = 11;
+  string project_name = 12;
+  bool archived = 13;
+  // Shared fields with concurrent edits.
+  repeated string conflict_fields = 14;
+  // Daemon members first, then phones, this device first among them.
+  repeated FolderMemberRow members = 15;
+  FolderDeviceState device = 16;
+  // The shown directory of this device's copy; empty is the root.
+  string directory = 17;
+  repeated FolderCrumb breadcrumbs = 18;
+  // Directories first, then files, by name; at most 500.
+  repeated FolderFileRow files = 19;
+  bool files_truncated = 20;
+  repeated FolderConflictRow conflicts = 21;
+  // This device's deletions the guard holds; absent when none.
+  FolderDeletionsRow pending_deletions = 22;
+  FolderTrashState trash = 23;
+  repeated FolderProblemRow errors = 24;
+  // Paths this device cannot store: case collisions, names, types.
+  repeated FolderProblemRow unsyncable = 25;
+  // Download only: paths changed here that are not sent.
+  repeated string local_changes = 26;
+  // Upload only: remote changes not applied here.
+  repeated string out_of_sync = 27;
+  string action_error = 28;
+  // The daemons that are not members yet, for "Add a machine".
+  repeated FolderDaemonOption addable_daemons = 29;
+}
+
+message FolderMemberRow {
+  // A daemon ID or a device ID.
+  string member_id = 1;
+  string name = 2;
+  bool daemon = 3;
+  bool this_device = 4;
+  dieter.v1.FolderMode mode = 5;
+  // "Two-way", "Upload only", "Download only".
+  string mode_label = 6;
+  bool paused = 7;
+  dieter.v1.FolderState state = 8;
+  // "Up to date", "Syncing · 3 files", "Paused", "Confirm deletion of 412
+  // files", "Folder location unavailable".
+  string status = 9;
+  Tone tone = 10;
+  int64 last_sync_millis = 11;
+  // "3 min ago", "Never".
+  string last_sync = 12;
+  bool online = 13;
+  // A phone's home daemon, by name.
+  string home = 14;
+  // This device syncs through this daemon.
+  bool home_of_this_device = 15;
+}
+
+message FolderDeviceState {
+  bool attached = 1;
+  FolderLocalSettings settings = 2;
+  FolderDirection direction = 3;
+  // "Two-way", "Download only", "Upload only", "Paused".
+  string direction_label = 4;
+  string location_label = 5;
+  // The daemon this device syncs with now; empty before the first sync.
+  string home_daemon_id = 6;
+  // "Auto (Mac mini)", "Mac mini".
+  string home_label = 7;
+  repeated FolderDaemonOption home_options = 8;
+  string status = 9;
+  Tone tone = 10;
+  // Why it does not sync now, e.g. "Waiting for Wi-Fi"; empty when it may.
+  string reason = 11;
+  int64 last_sync_millis = 12;
+  string last_sync = 13;
+  bool syncing = 14;
+  int32 pending_uploads = 15;
+  int64 pending_upload_bytes = 16;
+  int32 pending_downloads = 17;
+  int64 pending_download_bytes = 18;
+  // "↑ 3 files (2 MB) · ↓ 1 file (12 MB)"; empty with nothing pending.
+  string pending_label = 19;
+  int32 files = 20;
+  int64 bytes = 21;
+  // Bytes downloaded to this device.
+  int64 local_bytes = 22;
+  // "120 files · 340 MB on this device of 1.2 GB".
+  string usage_label = 23;
+  // This platform can keep the folder here.
+  bool can_attach = 24;
+}
+
+message FolderCrumb {
+  string path = 1;
+  string title = 2;
+}
+
+message FolderFileRow {
+  string path = 1;
+  string name = 2;
+  bool directory = 3;
+  int64 size = 4;
+  // "2.4 MB"; empty for directories.
+  string size_label = 5;
+  int64 modified_millis = 6;
+  // On this device; false shows a cloud badge and a tap downloads it.
+  bool downloaded = 7;
+  // "Waiting to upload", "Waiting to download", "Conflict copy", "Local
+  // change", "Not downloaded"; empty for none.
+  string badge = 8;
+  bool conflict = 9;
+  // The path as this device stores it, for opening and sharing the file.
+  string disk_path = 10;
+}
+
+message FolderConflictRow {
+  // The conflict copy.
+  string path = 1;
+  // The file it conflicts with.
+  string original = 2;
+  // "Pixel 9 · 2026-11-13 14.12".
+  string detail = 3;
+  bool downloaded = 4;
+}
+
+message FolderDeletionsRow {
+  int64 count = 1;
+  // At most 32 paths.
+  repeated string sample = 2;
+  // "local" or "remote".
+  string source = 3;
+  // "Confirm deletion of 412 files".
+  string title = 4;
+  // "These files are missing on this device." / "Another device deleted
+  // these files."
+  string detail = 5;
+}
+
+message FolderTrashState {
+  // The daemon whose trash is shown.
+  string daemon_id = 1;
+  string daemon_name = 2;
+  repeated FolderTrashRow rows = 3;
+  // Reads the next page with list_trash; empty after the last.
+  string next = 4;
+  int64 total_bytes = 5;
+  bool loading = 6;
+  string error = 7;
+}
+
+message FolderTrashRow {
+  string id = 1;
+  string path = 2;
+  string name = 3;
+  string size_label = 4;
+  int64 deleted_millis = 5;
+  // "Deleted by Pixel 9", "Replaced by Mac mini".
+  string detail = 6;
+}
+
+message FolderProblemRow {
+  string path = 1;
+  string message = 2;
+  int64 at_millis = 3;
+}
+
+// SLICE_FOLDER_SYNC_SETTINGS: Settings › Folder sync.
+message FolderSyncSettingsSlice {
+  FolderDeviceSettings settings = 1;
+  repeated FolderIntervalOption interval_options = 2;
+  repeated FolderSizeOption large_file_options = 3;
+  repeated FolderSizeOption battery_options = 4;
+  repeated FolderSizeOption auto_download_options = 5;
+  repeated FolderSizeOption storage_options = 6;
+  repeated FolderSizeOption keep_free_options = 7;
+  // iOS: "iOS decides the exact time based on battery, network and how often
+  // you use Dieter."; empty elsewhere.
+  string background_caption = 8;
+  // Android offers "Never while roaming".
+  bool roaming_available = 9;
+  // "Respect Data Saver" or "Respect Low Data Mode".
+  string data_saver_label = 10;
+  // "Pause in Battery Saver" or "Pause in Low Power Mode".
+  string power_saver_label = 11;
+  int64 last_sync_millis = 12;
+  string last_sync = 13;
+  // An estimate; 0 when nothing is scheduled.
+  int64 next_sync_millis = 14;
+  string next_sync = 15;
+  int32 pending_uploads = 16;
+  int64 pending_upload_bytes = 17;
+  int32 pending_downloads = 18;
+  int64 pending_download_bytes = 19;
+  string pending_label = 20;
+  int64 used_bytes = 21;
+  // "1.2 GB of 2 GB".
+  string used_label = 22;
+  // Why sync would not run now, e.g. "Waiting for Wi-Fi"; empty when it may.
+  string reason = 23;
+  int32 folders_on_device = 24;
+  bool device_capable = 25;
+  // Cellular data folder sync used this month.
+  int64 cellular_bytes = 26;
+  // "Cellular this month: 12 MB".
+  string cellular_label = 27;
+}
+
+message FolderIntervalOption {
+  FolderBackgroundSync background = 1;
+  int32 minutes = 2;
+  // "Every 15 min", "About hourly", "Only while Dieter is open".
+  string label = 3;
+  bool selected = 4;
+}
+
+// A size, percentage or count choice; amount is the setting's number.
+message FolderSizeOption {
+  int64 amount = 1;
+  // "25 MB", "All files", "Nothing (on demand only)", "No limit", "20%".
+  string label = 2;
+  bool selected = 3;
 }
