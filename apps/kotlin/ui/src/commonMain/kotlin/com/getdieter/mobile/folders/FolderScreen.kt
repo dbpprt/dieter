@@ -51,7 +51,7 @@ internal fun FolderScreen(store: MobileStore, folderId: String) {
                     },
                     ChromeAction(
                         "folder-menu",
-                        "More",
+                        "Folder actions",
                         Glyph.MORE,
                         menu =
                             listOf(
@@ -195,7 +195,7 @@ internal fun FolderScreen(store: MobileStore, folderId: String) {
                 }
             problems(slice)
             item("pages") {
-                SectionHeader("More")
+                SectionHeader("Manage")
                 val pages =
                     listOfNotNull(
                         FolderSection.DEVICE.takeIf { slice.device?.attached == true },

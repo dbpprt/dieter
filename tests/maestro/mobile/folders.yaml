@@ -60,9 +60,10 @@ tags: [smoke]
 - tapOn:
     id: settings-folder-sync
     waitToSettleTimeoutMs: 500
-- extendedWaitUntil:
-    visible:
-      id: folder-sync-network-0
+# The network choice is below the fold on small screens.
+- scrollUntilVisible:
+    element:
+      id: folder-sync-network-1
     timeout: 10000
 - tapOn:
     id: folder-sync-network-1
