@@ -159,6 +159,19 @@ placement, labels, navigation, and portable settings. A record rejection remains
 visible until resolved; a recovered transport clears its warning. Repository
 files and owner transcripts are outside this replication contract.
 
+### Synced folders
+
+[Synced folders](/docs/synced-folders/) use a separate contract. A folder's
+definition (name, rules, trash, deletion guard, linked project) and each
+daemon's membership replicate as shared records, without paths. Content moves
+only between members: each daemon pulls what it needs from the other daemon
+members over the same mutual TLS carriers as peer sync, and phones upload to
+and download from one daemon, their home. Every entry carries a version vector,
+so no clock decides which edit wins. Index pages carry an index ID and a
+sequence; a member's checkpoint advances only after the page's changes are on
+disk and recorded. Change streams carry each daemon's folder heads, so clients
+that are connected sync as soon as a head moves.
+
 ## Screens and terminals
 
 Screen signaling uses the same end-to-end encrypted connection as every other

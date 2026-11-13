@@ -9,16 +9,16 @@ are in [invariants.md](invariants.md); the attacker's view is in
 
 ## Components
 
-| Component            | Code                                                      | Runs on                                | Owns                                                                                                                                                   |
-| -------------------- | --------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `dieter` daemon      | `cmd/dieter` → `internal/daemon`                          | Apple Silicon macOS, Linux amd64/arm64 | Checkouts, conversations, harness workers, files, terminals, processes, schedules, agent mail, the vault replica; a replica of shared account metadata |
-| `dieter` CLI         | `cmd/dieter` → `internal/cli`                             | Same binary                            | Nothing: a client of a daemon's API                                                                                                                    |
-| `dieter-gateway`     | `cmd/dieter-gateway` → `internal/gateway`                 | Linux (container image)                | Account sessions, enrolled daemon identities, presence, route metadata, the signed device roster, pairing requests, quota snapshots                    |
-| Kotlin core          | `apps/kotlin/core`                                        | Every client                           | Session, device trust, routing, sync, outbox, every client rule                                                                                        |
-| Android and iOS apps | `apps/kotlin/ui`, `apps/kotlin/android`, `apps/apple/ios` | Phones and tablets                     | Presentation and platform adapters                                                                                                                     |
-| macOS app            | `apps/apple/mac`                                          | macOS 26+                              | Presentation and platform adapters                                                                                                                     |
-| Native helpers       | `native/macos`, `native/linux-capture`                    | Daemon hosts                           | Screen capture, input injection, macOS privacy mode                                                                                                    |
-| Harness runtime      | `internal/harness/runtime` (Node)                         | Daemon hosts                           | Bridges Codex, Claude Code, Pi, Oh My Pi and DeepSeek Harness to the daemon                                                                            |
+| Component            | Code                                                      | Runs on                                | Owns                                                                                                                                                                          |
+| -------------------- | --------------------------------------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dieter` daemon      | `cmd/dieter` → `internal/daemon`                          | Apple Silicon macOS, Linux amd64/arm64 | Checkouts, conversations, harness workers, files, terminals, processes, schedules, agent mail, synced folder members, the vault replica; a replica of shared account metadata |
+| `dieter` CLI         | `cmd/dieter` → `internal/cli`                             | Same binary                            | Nothing: a client of a daemon's API                                                                                                                                           |
+| `dieter-gateway`     | `cmd/dieter-gateway` → `internal/gateway`                 | Linux (container image)                | Account sessions, enrolled daemon identities, presence, route metadata, the signed device roster, pairing requests, quota snapshots                                           |
+| Kotlin core          | `apps/kotlin/core`                                        | Every client                           | Session, device trust, routing, sync, outbox, the phones' synced folder engine, every client rule                                                                             |
+| Android and iOS apps | `apps/kotlin/ui`, `apps/kotlin/android`, `apps/apple/ios` | Phones and tablets                     | Presentation and platform adapters                                                                                                                                            |
+| macOS app            | `apps/apple/mac`                                          | macOS 26+                              | Presentation and platform adapters                                                                                                                                            |
+| Native helpers       | `native/macos`, `native/linux-capture`                    | Daemon hosts                           | Screen capture, input injection, macOS privacy mode                                                                                                                           |
+| Harness runtime      | `internal/harness/runtime` (Node)                         | Daemon hosts                           | Bridges Codex, Claude Code, Pi, Oh My Pi and DeepSeek Harness to the daemon                                                                                                   |
 
 One binary, `dieter`, is both daemon and CLI: `cmd/dieter` sends `serve` and
 `daemon start` to `internal/daemon` and every other command to `internal/cli`,
@@ -37,7 +37,7 @@ so the CLI never links the daemon's storage or engine.
                                                                      internal/api (dieter.v1 services)
                                                                        ├─ internal/engine ── harness workers
                                                                        ├─ internal/store (DIETER_HOME)
-                                                                       ├─ internal/host (terminals, exec, machine)
+                                                                       ├─ internal/host (terminals, exec, machine, folders)
                                                                        └─ internal/remotedesktop ── native helpers
  daemon ◀══ peer records (internal/replication), same carriers ══▶ other daemons of the account
 ```
@@ -97,9 +97,9 @@ so the CLI never links the daemon's storage or engine.
 
 ## Shared metadata and peer replication
 
-Projects, boards, labels, card placement and portable settings are shared by
-every daemon of an account. Conversations, schedules, files and execution stay
-with their owner machine.
+Projects, boards, labels, card placement, portable settings and synced folder
+definitions are shared by every daemon of an account. Conversations,
+schedules, files and execution stay with their owner machine.
 
 - `internal/replication/crdt` implements bounded, leaderless multi-value
   registers with causal clocks. No wall clock decides an edit; concurrent edits
@@ -121,6 +121,16 @@ with their owner machine.
 - Vault items replicate through the same records as AES-256-GCM ciphertext;
   keys are sealed to each member's hybrid ML-KEM-768/X25519 key
   (`internal/security/vault`, `internal/store/vaults`).
+- Synced folders ([ADR 0005](adr/0005-synced-folders.md)) replicate only their
+  definitions: the `folder` record kind (name, rules, trash policy, deletion
+  guard, linked project) and one single-writer `folder-member` KV record per
+  daemon member, neither with a local path. Content moves between members, not
+  through replication: each daemon member exchanges index pages with the
+  others and pulls files with the `FileService` transfer calls over the same
+  carriers (at most 2 of the replication lane's tunnels per peer), and a phone
+  does the same with its home daemon on the command lane. Folder heads ride the
+  owner-only part of `WatchChanges`, so connected members start a run when a
+  head moves instead of polling.
 
 ## Go packages
 
@@ -130,12 +140,13 @@ cmd/dieter-gateway       gateway server
 
 internal/
   daemon/                composition root: Config, Run, Services (engine, scheduler,
-                         terminals, remote exec, remote desktop, machine, API), service log
+                         terminals, remote exec, remote desktop, machine, folder sync,
+                         API), service log
   api/                   dieter.v1 services: one handler type per service (machine, state,
                          settings, projects, boards, cards, conversations, git, files,
                          terminals, executions, screens, control, schedules, vault, kv,
-                         peer, trust, channels, mail), composed in service.go; errors.go
-                         is the one status mapper
+                         peer, trust, channels, mail, folders), composed in service.go;
+                         errors.go is the one status mapper
   engine/                turn engine: admission, leases, harness turns, queues
   engine/scheduler/      schedules and occurrence history
   harness/               harness adapters, discovery, runner; catalog/ (embedded
@@ -143,9 +154,10 @@ internal/
   store/                 central storage: a composition root (Store, New, Ensure, Recover,
                          Close) over aggregates: home/ (DIETER_HOME, writer lock, schema,
                          change counter), replica/ (peer replica), leases/, kv/, settings/,
-                         commands/, channels/, mail/ (agent mail), kanban/ (projects,
-                         checkouts, boards, cards, chats), workspaces/, conversations/,
-                         schedules/; vaults/, daemonstate/
+                         commands/, channels/, mail/ (agent mail), folders/ (synced folder
+                         members: binding, index, checkpoints, trash, status), kanban/
+                         (projects, checkouts, boards, cards, chats), workspaces/,
+                         conversations/, schedules/; vaults/, daemonstate/
   replication/           crdt/ (bounded registers, provenance), schema/ (record kinds),
                          peersync/ (daemon-to-daemon exchange)
   link/                  gateway link client, enrollment identity and device trust
@@ -161,8 +173,16 @@ internal/
                          key proofs), localauth/ (loopback API token), vault/ (vault
                          cryptography)
   git/                   exec, status, SCM; changeset/, operations/, workspace/
-  filetransfer/          bounded rooted file I/O, checksums and the pure one-way sync planner
+  filetransfer/          bounded rooted file I/O, checksums and the pure one-way sync planner;
+                         the pinned-descriptor walk, directories, trash moves, root identity
+                         and 1 MiB block hashes that synced folders use
+  folders/               synced folder rules, pure and without I/O: version vectors, entry
+                         validation, reconciliation, conflict copy names, the deletion
+                         guard, rules, work order (golden vectors in tests/fixtures/folders)
   host/filetransfer/     durable chunked upload sessions, quotas and commit receipts
+  host/folders/          synced folder engine, started only by dieter serve: watchers,
+                         scanner, peer loops and pulls, client registry, folder-member
+                         records, trash sweeper, status and change-stream heads
   host/                  machine/ (telemetry, power, updates), terminal/, remoteexec/,
                          serviceruntime/ (signed executables at stable paths)
   remotedesktop/         screen sessions, WebRTC media, native helper IPC
@@ -180,8 +200,8 @@ internal/
 `.golangci.yml` enforces the main boundaries with depguard: the CLI does not
 import the store, API, engine, daemon, harness, git or host packages; the store
 does not import the API, engine, daemon or CLI, and its aggregates import only
-the layers below them (home; then replica, leases, settings, commands, channels
-and mail; then kv and kanban; then workspaces, conversations and schedules,
+the layers below them (home; then replica, leases, settings, commands, channels,
+mail and folders; then kv and kanban; then workspaces, conversations and schedules,
 which never import each other); the gateway imports no daemon-side package. `forbidigo` keeps `os.Getenv` inside
 `internal/platform/config`. See [adr/0001](adr/0001-foundation-refactor.md) for
 the parts of the target layout that are deferred.
@@ -213,19 +233,31 @@ api/proto ─▶ :core:model (Wire) ─▶ :core:runtime (all client logic, OkHt
   the device roster (the Go rules, checked against the same golden vectors),
   pairs the device, and keeps it trusted, pending, removed or in conflict;
   `routing` reaches a machine only while the device is trusted, with TLS pinned
-  to the machine's roster key. `:core:apple` exports it to Swift as the
-  `DieterCore` framework.
+  to the machine's roster key. Its `folders` package is the phones' synced
+  folder engine: the reconcile rules (checked against the Go golden vectors),
+  an index sharded into 256 Wire files in `CoreStorage`, a journaled transfer
+  runner, `FolderSyncPolicy` (device settings and current conditions to one
+  decision per run) and `CoreRuntime.folderSyncWindow`, a bounded run against
+  the home daemon. The apps inject `FolderFileSystem`, `DeviceConditions` and
+  `FolderScheduler`. `:core:apple` exports it to Swift as the `DieterCore`
+  framework.
 - **Shared mobile UI** (`apps/kotlin/ui`). One Compose Multiplatform UI for
   Android and iOS. It sends `client.proto` commands and observes slices; it adds
   no rules.
 - **Shells.** Android (`apps/kotlin/android`) and iOS (`apps/apple/ios`) supply
   credentials, the device key (Android Keystore, Secure Enclave), transport
-  (pinned TLS and relay tunnels), attachments, terminals (Termux, SwiftTerm) and
-  screen media (WebRTC, GPU/Metal renderers).
+  (pinned TLS and relay tunnels), attachments, terminals (Termux, SwiftTerm),
+  screen media (WebRTC, GPU/Metal renderers) and the synced folder adapters:
+  folder file systems (Android SAF trees and private app storage, the iOS
+  Documents container under `NSFileCoordinator`), network and power conditions,
+  and background hosts that open the core's run window (WorkManager and
+  user-initiated data transfer jobs on Android, `BGTaskScheduler` on iOS).
 - **macOS** (`apps/apple/mac`). SwiftUI presentation over the same core through
   `DieterKit` (`apps/apple/DieterKit`): generated Swift API types, the native
   transport and the platform side of the core. Native rendering (editor,
-  transcript scrolling, Markdown, screens) stays in Swift.
+  transcript scrolling, Markdown, screens) stays in Swift. The Mac has no
+  synced folder engine: a Mac keeps a folder copy only through a daemon running
+  on it, and the app attaches a directory to that local daemon.
 
 Per-component details: [apps/kotlin](../apps/kotlin/README.md),
 [apps/apple](../apps/apple/README.md), [tests/maestro](../tests/maestro/README.md),

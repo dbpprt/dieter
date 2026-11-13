@@ -21,6 +21,7 @@ today, with pointers into the code. It complements the user-facing
 | Roster recovery key                                                       | Printed once by `dieter device init`; kept offline by the operator                   |
 | Local API token                                                           | `DIETER_HOME/runtime/local-api-token`, user-only                                     |
 | Vault items and member key                                                | Ciphertext replicated to every daemon; member key in `DIETER_HOME/vault/member.json` |
+| Synced folder copies (every member, phones included)                      | Folder directories on daemons and phones; trash in `DIETER_HOME/folders`             |
 | Client sessions                                                           | macOS user-only file, Android Keystore-encrypted store, iOS device-only Keychain     |
 | Gateway signing key, internal daemon CA, OAuth app secret, session secret | Gateway state directory and environment                                              |
 | Ability to execute code on a daemon host                                  | Any authenticated operator path (API, CLI, agent turn)                               |
@@ -156,12 +157,18 @@ Since 0.6 the gateway relays ciphertext and is not a root of trust
   as a notice on the apps' Devices screen.
 - Anyone who holds the recovery key can sign a device into the roster.
 
+Synced folders give the gateway nothing new to read. File content, folder
+names, rules and membership travel only inside tunnels, as transfer calls and
+peer records. Tunnel volume and timing, which the gateway already sees, now
+also reveal sync activity: when a phone or daemon syncs and roughly how much.
+
 ### Malicious or compromised peer daemon (same account)
 
 **Can:** act as an operator of every other machine in the account (its roster
 key and enrollment authenticate `dieter --machine` calls), add or remove
 devices (roster membership is flat), write shared records (projects, boards,
-labels, placement, portable settings), decrypt vault items while it is a
+labels, placement, portable settings, synced folder definitions), change the
+files of synced folders it is a member of, decrypt vault items while it is a
 member, and send oversized or malformed peer traffic.
 
 **Mitigations:**
@@ -178,6 +185,16 @@ member, and send oversized or malformed peer traffic.
   sync round verifies it again, and `dieter peer status` lists it. The held set
   is bounded (`internal/store/replica/held.go`); when it is full, such a record
   fails its page as before.
+- A peer that is a member of a synced folder can forge dominating versions or
+  deletions, and with them overwrite or delete files on the other members.
+  Every received entry is validated before it touches a file system
+  (`filetransfer.Clean`, NFC, path and name lengths, protected names such as
+  `.git`; `internal/folders`) and written only through the pinned-parent
+  `O_NOFOLLOW` walk, so symlinks are never followed or created. The deletion
+  guard holds a batch of more than 100 files or 30% of the folder for a person,
+  every daemon member moves what a remote change deletes or overwrites into its
+  own trash, and the bounds cap entries, versions, pages and transfers
+  (`internal/host/folders`).
 - `dieter device revoke DEVICE_ID` from any trusted device removes the machine
   from the roster; every daemon refuses it as soon as it sees the signed
   revocation, on established connections too. `dieter machine revoke` (gateway
@@ -187,7 +204,9 @@ member, and send oversized or malformed peer traffic.
   by Studio") and by `dieter device roster`, with the device that signed it.
 
 **Residual risk:** machines of one account trust each other with operator
-access. Keep untrusted hosts out of the account.
+access. Keep untrusted hosts out of the account. A malicious folder member
+can still replace files with hostile content that wins as the newer version;
+the trash keeps the previous version for its retention period.
 
 ### Other accounts on the same gateway
 
@@ -216,6 +235,13 @@ size-limited before allocation (`internal/gateway/ingress.go`).
   `dieter device revoke DEVICE_ID`); machines refuse it from the next call
   after they see the revocation. Until then, treat a lost unlocked device as a
   compromised one.
+- **Synced folder copies.** A lost phone or host exposes its copy of every
+  synced folder it is a member of. Removing it from the roster stops further
+  sync but doesn't erase what is already on it. On Android, a folder in shared
+  storage is readable by other apps with broad storage access; the _Private to
+  Dieter_ location keeps it in app storage instead. iOS keeps folders in the
+  app's Documents container with the default data protection, readable after
+  the first unlock.
 - **Daemon host.** A stolen host exposes everything in `DIETER_HOME`, including
   the identity key that is its roster key, the checkouts and the provider
   credentials. Remove it from the roster (`dieter device revoke`), revoke it at
@@ -269,6 +295,17 @@ data to its model provider or any network destination.
   refuse a turn token, also with `--machine`, and the daemon refuses
   `TrustService` mutations that carry one (`internal/cli/rpc_device.go`,
   `internal/api/trust.go`). An agent that uses the identity key directly
+  bypasses this.
+- Agent turns cannot change synced folders. Creating, changing or archiving a
+  folder, attaching, detaching or pausing a member, registering a phone,
+  applying or restoring held deletions and purging the trash refuse a turn
+  token (`internal/api/folders.go`), so an injected agent can neither mirror
+  `~/.ssh` to a phone nor attach a two-way member at `~` that wipes another
+  machine. Turns may still read status, rescan, restore from the trash and
+  transfer files, and an agent can write hostile files into any folder it can
+  reach; they sync to the user's phones and Macs. On macOS members, received
+  files get `com.apple.quarantine`, so Gatekeeper checks an executable before
+  it runs. As with the vault, an agent that writes `DIETER_HOME` directly
   bypasses this.
 - Harness workers start with an allowlisted environment (basic user variables,
   provider keys and proxy settings), plus only the names listed in
