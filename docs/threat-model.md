@@ -14,7 +14,7 @@ today, with pointers into the code. It complements the user-facing
 | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | Source code, working trees and build outputs                              | Daemon hosts (Git checkouts)                                                         |
 | Transcripts, prompts, attachments, queues, schedules                      | Daemon `DIETER_HOME` (central store)                                                 |
-| Harness and provider credentials (Codex, Claude, Pi, OMP, DSH profiles)   | Daemon hosts, in each tool's normal configuration                                    |
+| Harness and provider credentials (Codex, Claude, Pi, OMP, DSH profiles)   | Daemon hosts, in each tool's normal configuration; Strix's in a vault item           |
 | Daemon identity key (`identity-key.pem`): enrollment and roster key       | Daemon `DIETER_HOME`                                                                 |
 | App device keys                                                           | Secure Enclave (macOS, iOS) or Android Keystore; a software key where neither exists |
 | Pinned device roster                                                      | Daemon `DIETER_HOME/daemon/roster.pb`; each app's core state                         |
@@ -285,6 +285,45 @@ it.
 
 **Non-goal:** Dieter does not sandbox agents or police their tool calls.
 
+### Strix security scans
+
+The Strix harness (`internal/harness/runtime/strix-runtime.mjs`) runs an
+autonomous pentesting agent with offensive tooling against the card's worktree
+and any targets a person listed. Its model output decides what it attacks.
+
+**Can:** Strix's agents run tools inside its Docker sandbox, which has
+`NET_ADMIN`/`NET_RAW` and reaches the daemon host through `host.docker.internal`.
+On macOS that includes services bound to the host's loopback interface, such as
+the daemon's raw API: in the 2026-11-13 spike the sandbox reached
+`127.0.0.1:4242`, which answered 403 without the local API token. The worktree is
+mounted writable, so Strix can edit it. A prompt-injected or misbehaving Strix
+can also attack hosts outside the configured targets.
+
+**Mitigations (guardrails, not isolation):**
+
+- Only a person starts or continues a scan. Agent turns cannot create a running
+  Strix conversation, move one to Running, start it or message it
+  (`requireHumanForStrix`, `internal/api/vault.go`); agent channel messages
+  never steer or wake it (`internal/engine/channels.go`).
+- Strix conversations require a worktree workspace (`internal/engine/strix.go`).
+- The Strix process gets an allowlisted environment: Docker client settings, the
+  model credentials, optional web search and Postman keys from the same vault
+  item, and proxy settings; never the turn token, `DIETER_HOME` or other
+  provider keys (`strixEnvironment`). Its `HOME` is private to the
+  conversation. Strix writes its model settings, API key included, into a config
+  file; Dieter passes a 0600 file that exists only for the turn. MCP servers
+  the operator configured for Strix (`~/.strix/mcp-servers.json`) are passed
+  through, so their tools are available to the scan.
+- The model credentials come from a vault item read by the daemon at turn start,
+  audited as a `strix` access and redacted from the transcript.
+- The daemon's raw API still requires the user-only local API token, which lives
+  under `DIETER_HOME`; the sandbox mounts only the worktree.
+- Telemetry and update checks are off; the executable is pinned by SHA-256.
+
+**Recommendations:** run scans on a machine where loopback services and the
+local network are acceptable targets, or in a VM; give Strix a dedicated model
+key with a spending limit; list only targets you are authorized to test.
+
 ### Local attackers on a daemon host
 
 - Other local users, containers sharing the host network, and request-forgery
@@ -343,7 +382,10 @@ it.
 - **Dependencies.** Go modules are checksum-verified (`go.sum`); the harness
   runtime installs from `package-lock.json` with integrity hashes, including the
   Claude Code, Codex and OMP CLIs that agent bridges link instead of installing,
-  and pinned DSH/Bun versions; vendored Swift packages live in `third_party/`
+  and pinned DSH/Bun versions; the Strix executable (a GitHub release asset
+  without published checksums) is pinned by the SHA-256 of each platform's
+  archive in `internal/harness/strix.go`, and its sandbox image by digest;
+  vendored Swift packages live in `third_party/`
   with their patches documented; GitHub Actions are pinned by commit SHA.
 
 **Residual risk:** npm and other registries remain upstream trust roots for the

@@ -283,6 +283,12 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 	if err != nil {
 		return err
 	}
+	var strix strixTurn
+	if adapter.Runtime == strixAdapter {
+		if strix, err = s.prepareStrixTurn(detail.Card, configuredModel.RuntimeID(), providerOptions); err != nil {
+			return err
+		}
+	}
 	pinnedDigest := ""
 	if conversation.ActiveTurn != nil {
 		pinnedDigest = conversation.ActiveTurn.HarnessRuntimeDigest
@@ -368,6 +374,9 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 		ProjectPath: workspaceValue.Path, RuntimeRoot: filepath.Join(s.Store.RuntimeDir(), "sessions", detail.Project.ID), Continue: true,
 		ContentPresentationEnabled: true, RuntimeDigest: runtimeReference.Digest,
 		Environment: s.agentEnvironment(detail.Card.ID, turnID),
+	}
+	if adapter.Runtime == strixAdapter {
+		strix.apply(s, detail.Card.ID, workspaceValue, &request)
 	}
 	// The card is the active/last-admitted selection shown by clients. Restore
 	// every field from the same snapshot used by the recovered request.

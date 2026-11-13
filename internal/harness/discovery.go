@@ -88,7 +88,7 @@ func (c *Catalog) refreshLocked(ctx context.Context) {
 	var wait sync.WaitGroup
 	for _, adapter := range base {
 		adapter := adapter
-		if adapter.ID == "mock" {
+		if !discoverable(adapter) {
 			continue
 		}
 		wait.Add(1)
@@ -108,6 +108,9 @@ func (c *Catalog) refreshLocked(ctx context.Context) {
 	// slower failure from the full refresh.
 	previous := catalogByID(c.discoveredSnapshot())
 	for index := range base {
+		if !discoverable(base[index]) {
+			continue
+		}
 		result := byID[base[index].ID]
 		if result.err == nil && len(result.models) > 0 {
 			base[index] = mergeDiscoveredAdapter(base[index], result.models)
@@ -221,6 +224,13 @@ func (c *Catalog) discoveredSnapshot() []Adapter {
 		result[index] = cloneAdapter(adapter)
 	}
 	return result
+}
+
+// discoverable reports whether an adapter has a model discovery integration.
+// The mock harness and Strix (which takes LiteLLM model ids as configured)
+// use their catalog models as they are.
+func discoverable(adapter Adapter) bool {
+	return adapter.ID != "mock" && adapter.Runtime != "mock" && adapter.Runtime != "strix"
 }
 
 func catalogByID(values []Adapter) map[string]Adapter {

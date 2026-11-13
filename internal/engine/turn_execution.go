@@ -330,7 +330,11 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 	if streamFailed {
 		finalRuntime = "failed"
 	}
+	reviewScan := request.Adapter == strixAdapter && finalRuntime == "idle" && !s.hasQueuedMessages(detail.Card.ID)
 	_ = finish(true, kanban.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: finalRuntime})
+	if reviewScan {
+		s.moveFinishedScanToReview(detail.Card.ID)
+	}
 	select {
 	case updates <- TurnUpdate{Done: true}:
 	case <-ctx.Done():

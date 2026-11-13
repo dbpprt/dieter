@@ -31,7 +31,7 @@ Dieter is open source under the MIT license. The name is pronounced **DEE-ter**.
 
 **Agents run on daemon hosts.** Install `dieter` on Apple Silicon macOS or Linux
 amd64/arm64. It starts agents beside your Git checkout using their normal local
-configuration. Codex, Claude Code, Pi, Oh My Pi, and DeepSeek Harness are supported.
+configuration. Codex, Claude Code, Pi, Oh My Pi, and DeepSeek Harness are supported, plus the Strix security scanner.
 
 **Native apps are your workspace.** macOS, Android, and iOS provide boards,
 chats, files, terminals, schedules, and machine tools; Android and iOS share one
