@@ -21,6 +21,12 @@ Local alerts and badges work while the app receives workspace updates. APNs is
 required for alerts while iOS suspends or terminates Dieter; the app does not
 keep a background connection alive.
 
+Background delivery is currently off: the app's entitlements
+(`apps/apple/ios/App/Dieter.entitlements`) omit `aps-environment` until the
+release pipeline's App Store profile includes Push Notifications. Without the
+entitlement, iOS refuses the APNs registration and the app keeps its local
+alerts. Restore the entitlement together with step 1 below.
+
 A stable Dieter release or production promotion is not required. This feature
 can run in a development build or a TestFlight **dev** prerelease. Apple's APNs
 environment is determined by the app's signing profile:
