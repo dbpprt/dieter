@@ -22,6 +22,15 @@ const maxStaging int64 = 256 << 30
 const maxSessions = 4096
 const retention = 24 * time.Hour
 
+// Window is how many chunks a writer may send from the contiguous offset
+// before earlier ones arrive. Pipelined writers hide a round trip per chunk;
+// the window keeps every accepted chunk within a bounded range.
+const Window = 16
+
+// checkpoint is how far the offset may advance past the recorded one before a
+// write records it, so finding the offset scans a bounded number of chunks.
+const checkpoint = 64 * files.ChunkSize
+
 type Manager struct{ Home string }
 type Upload struct {
 	ID          string      `json:"id"`
@@ -60,6 +69,42 @@ func (m Manager) read(id string) (Upload, error) {
 	}
 	return u, nil
 }
+func (m Manager) chunk(id string, offset int64) string {
+	return filepath.Join(m.directory(id), fmt.Sprintf("%016x.chunk", offset))
+}
+
+// advance extends the recorded offset over chunks published since. Each chunk
+// file is fsynced before its atomic rename, so a present chunk is complete; a
+// rename lost in a crash only lowers the offset and the writer resends it.
+func (m Manager) advance(u *Upload) error {
+	if u.State != "uploading" {
+		return nil
+	}
+	for u.Offset < u.Source.Size {
+		info, err := os.Stat(m.chunk(u.ID, u.Offset))
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		size := min(int64(files.ChunkSize), u.Source.Size-u.Offset)
+		if info.Size() != size {
+			return fault.New(fault.DataLoss, "upload chunk has the wrong size")
+		}
+		u.Offset += size
+	}
+	return nil
+}
+
+// load reads a session with its current contiguous offset.
+func (m Manager) load(id string) (Upload, error) {
+	u, err := m.read(id)
+	if err != nil {
+		return u, err
+	}
+	return u, m.advance(&u)
+}
 func (m Manager) lock(ctx context.Context) (*fsx.Lock, error) { return fsx.LockHome(ctx, m.Home) }
 func (m Manager) Begin(ctx context.Context, operation, root, p, expected string, source files.Entry) (Upload, error) {
 	if operation == "" || len(operation) > 256 || (expected != files.Missing && !files.ValidDigest(expected)) || !files.ValidDigest(source.SHA256) || source.Size < 0 || source.Size > MaxFileSize || source.Mode&^0o777 != 0 {
@@ -84,7 +129,7 @@ func (m Manager) Begin(ctx context.Context, operation, root, p, expected string,
 	if err = m.collect(); err != nil {
 		return u, err
 	}
-	old, err := m.read(id)
+	old, err := m.load(id)
 	if err == nil {
 		if old.Fingerprint != u.Fingerprint {
 			return u, fault.New(fault.Conflict, "operation ID already used with different input")
@@ -168,7 +213,7 @@ func (m Manager) Get(ctx context.Context, id string) (Upload, error) {
 		return Upload{}, err
 	}
 	defer lock.Close()
-	u, err := m.read(id)
+	u, err := m.load(id)
 	if err == nil && u.Expires <= time.Now().Unix() {
 		return u, fault.NotFoundf("upload expired")
 	}
@@ -178,11 +223,8 @@ func (m Manager) Write(ctx context.Context, id string, offset int64, data []byte
 	if offset < 0 || offset%files.ChunkSize != 0 || len(data) == 0 || len(data) > files.ChunkSize || files.Digest(data) != digest {
 		return Upload{}, fault.Invalidf("invalid chunk offset, size or checksum")
 	}
-	lock, err := m.lock(ctx)
-	if err != nil {
-		return Upload{}, err
-	}
-	defer lock.Close()
+	// Write and fsync outside the central lock: a staged file is invisible, and
+	// pipelined chunks of one upload then reach the disk in parallel.
 	u, err := m.read(id)
 	if err != nil {
 		return u, err
@@ -190,25 +232,55 @@ func (m Manager) Write(ctx context.Context, id string, offset int64, data []byte
 	if u.Expires <= time.Now().Unix() || u.State != "uploading" {
 		return u, fault.New(fault.FailedPrecondition, "upload is not writable")
 	}
-	if offset+int64(len(data)) > u.Source.Size || offset > u.Offset || len(data) != files.ChunkSize && offset+int64(len(data)) != u.Source.Size {
-		return u, fault.Invalidf("chunk is outside the next upload range")
+	if offset+int64(len(data)) > u.Source.Size || len(data) != files.ChunkSize && offset+int64(len(data)) != u.Source.Size {
+		return u, fault.Invalidf("chunk is outside the upload")
 	}
-	chunk := filepath.Join(m.directory(id), fmt.Sprintf("%016x.chunk", offset))
-	if offset < u.Offset {
-		old, e := os.ReadFile(chunk)
-		if e != nil {
-			return u, e
-		}
+	staged, err := fsx.Stage(m.chunk(id, offset), data, 0o600)
+	if err != nil {
+		return u, err
+	}
+	defer staged.Discard()
+	lock, err := m.lock(ctx)
+	if err != nil {
+		return Upload{}, err
+	}
+	defer lock.Close()
+	if u, err = m.read(id); err != nil {
+		return u, err
+	}
+	recorded := u.Offset
+	if err = m.advance(&u); err != nil {
+		return u, err
+	}
+	if u.Expires <= time.Now().Unix() || u.State != "uploading" {
+		return u, fault.New(fault.FailedPrecondition, "upload is not writable")
+	}
+	if offset >= u.Offset+Window*files.ChunkSize {
+		return u, fault.Invalidf("chunk is outside the upload window")
+	}
+	old, err := os.ReadFile(m.chunk(id, offset))
+	if err == nil {
+		// A replay, also of a chunk received ahead of the offset, must match.
 		if files.Digest(old) != digest {
 			return u, fault.New(fault.Conflict, "chunk replay differs")
 		}
 		return u, nil
 	}
-	if err = fsx.WriteFile(chunk, data, 0o600); err != nil {
+	if !errors.Is(err, os.ErrNotExist) {
 		return u, err
 	}
-	u.Offset += int64(len(data))
-	return u, m.save(u)
+	if err = staged.Publish(); err != nil {
+		return u, err
+	}
+	if err = m.advance(&u); err != nil {
+		return u, err
+	}
+	if u.Offset-recorded >= checkpoint {
+		// Every chunk below the offset is published durably: the rename is
+		// fsynced before this record can cover it.
+		return u, m.save(u)
+	}
+	return u, nil
 }
 func (m Manager) Abort(ctx context.Context, id string) (Upload, error) {
 	lock, err := m.lock(ctx)
@@ -216,7 +288,7 @@ func (m Manager) Abort(ctx context.Context, id string) (Upload, error) {
 		return Upload{}, err
 	}
 	defer lock.Close()
-	u, err := m.read(id)
+	u, err := m.load(id)
 	if err != nil {
 		return u, err
 	}
@@ -246,8 +318,9 @@ func (m Manager) removeChunks(u Upload) error {
 		return err
 	}
 	for _, e := range entries {
-		if strings.HasSuffix(e.Name(), ".chunk") {
-			if err = os.Remove(filepath.Join(m.directory(u.ID), e.Name())); err != nil {
+		// Staged chunks of writes that lost the race to commit or abort go too.
+		if strings.HasSuffix(e.Name(), ".chunk") || strings.HasPrefix(e.Name(), ".dieter-write-") {
+			if err = os.Remove(filepath.Join(m.directory(u.ID), e.Name())); err != nil && !errors.Is(err, os.ErrNotExist) {
 				return err
 			}
 		}
@@ -260,7 +333,7 @@ func (m Manager) Commit(ctx context.Context, id string) (Upload, error) {
 		return Upload{}, err
 	}
 	defer lock.Close()
-	u, err := m.read(id)
+	u, err := m.load(id)
 	if err != nil {
 		return u, err
 	}

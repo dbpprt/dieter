@@ -17,6 +17,7 @@ import (
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	"github.com/dbpprt/dieter/internal/transport/relay"
 	"google.golang.org/grpc"
 )
 
@@ -178,11 +179,13 @@ func gatewayResourceExhausted(w http.ResponseWriter) {
 
 // gatewayHTTP2Config bounds HTTP/2 streams and flow-control buffers and
 // health-checks idle connections. Idle connections close after the server's
-// IdleTimeout.
+// IdleTimeout. A relay tunnel, and a daemon lane carrying many tunnels, is one
+// stream: its buffer holds a full tunnel window, or HTTP/2 would cap every
+// relayed transfer below it. The connection buffer bounds memory.
 func gatewayHTTP2Config() *http.HTTP2Config {
 	return &http.HTTP2Config{
 		MaxConcurrentStreams:      128,
-		MaxReceiveBufferPerStream: 64 << 10, MaxReceiveBufferPerConnection: 1 << 20,
+		MaxReceiveBufferPerStream: relay.TunnelWindow * relay.ChunkBytes, MaxReceiveBufferPerConnection: 1 << 20,
 		SendPingTimeout: 30 * time.Second, PingTimeout: 15 * time.Second,
 		WriteByteTimeout: 15 * time.Second,
 	}

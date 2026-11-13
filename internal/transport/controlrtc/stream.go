@@ -14,16 +14,44 @@ import (
 
 const Label = "dieter-control-tls-v1"
 const ChunkSize = 16383
+
+// WindowFrames is the protocol's base credit window. Every peer accepts this
+// many unacknowledged data frames, also one that predates window negotiation
+// (the native clients) and so advertises no window.
 const WindowFrames = 16
 
-// Stream uses a small credit window in addition to SCTP congestion control.
+// MaxWindowFrames is the window this implementation advertises and buffers:
+// 8 MiB in flight. The base window allows only 256 KiB per round trip, about
+// 2.5 MiB/s over a 100 ms TURN path; this window fills most WAN links.
+const MaxWindowFrames = 512
+
+// SendWindow is the credit window toward a peer that advertised advertised
+// receive frames; zero means a peer without window negotiation.
+func SendWindow(advertised uint32) int {
+	return int(min(max(advertised, WindowFrames), MaxWindowFrames))
+}
+
+// sctpReceiveBuffer caps SCTP's advertised receive window. It must exceed a
+// full credit window, or SCTP flow control throttles below it. The stream
+// drains SCTP into its bounded queue at once, so the cap is rarely occupied.
+const sctpReceiveBuffer = 2 * MaxWindowFrames * (ChunkSize + 1)
+
+// api creates the data-only peer connections of both endpoints.
+var api = func() *webrtc.API {
+	var settings webrtc.SettingEngine
+	settings.SetSCTPMaxReceiveBufferSize(sctpReceiveBuffer)
+	return webrtc.NewAPI(webrtc.WithSettingEngine(settings))
+}()
+
+// Stream uses a credit window in addition to SCTP congestion control.
 // Native data-channel APIs cannot pause receive callbacks; ACK only after the
 // consumer accepts a frame prevents unbounded buffering at that boundary.
-func Stream(dc *webrtc.DataChannel, closePeer func()) net.Conn {
+// receive is the window this side advertised, send the peer's (SendWindow).
+func Stream(dc *webrtc.DataChannel, receive, send int, closePeer func()) net.Conn {
 	client, pipe := net.Pipe()
-	received := make(chan []byte, WindowFrames)
-	credit := make(chan struct{}, WindowFrames)
-	for i := 0; i < WindowFrames; i++ {
+	received := make(chan []byte, receive)
+	credit := make(chan struct{}, send)
+	for i := 0; i < send; i++ {
 		credit <- struct{}{}
 	}
 	done := make(chan struct{})

@@ -1413,12 +1413,15 @@ func (x *WriteFileChunkRequest) GetSha256() string {
 }
 
 type FileUpload struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Offset        int64                  `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
-	Size          int64                  `protobuf:"varint,3,opt,name=size,proto3" json:"size,omitempty"`
-	State         string                 `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"`
-	ExpiresUnix   int64                  `protobuf:"varint,5,opt,name=expires_unix,json=expiresUnix,proto3" json:"expires_unix,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Offset      int64                  `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
+	Size        int64                  `protobuf:"varint,3,opt,name=size,proto3" json:"size,omitempty"`
+	State       string                 `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"`
+	ExpiresUnix int64                  `protobuf:"varint,5,opt,name=expires_unix,json=expiresUnix,proto3" json:"expires_unix,omitempty"`
+	// Chunks a writer may send from offset before earlier ones are acknowledged;
+	// offset stays the contiguous received prefix. Zero means one.
+	Window        int32 `protobuf:"varint,6,opt,name=window,proto3" json:"window,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1484,6 +1487,13 @@ func (x *FileUpload) GetState() string {
 func (x *FileUpload) GetExpiresUnix() int64 {
 	if x != nil {
 		return x.ExpiresUnix
+	}
+	return 0
+}
+
+func (x *FileUpload) GetWindow() int32 {
+	if x != nil {
+		return x.Window
 	}
 	return 0
 }
@@ -1668,14 +1678,15 @@ const file_dieter_v1_files_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
 	"\x06offset\x18\x02 \x01(\x03R\x06offset\x12\x12\n" +
 	"\x04data\x18\x03 \x01(\fR\x04data\x12\x16\n" +
-	"\x06sha256\x18\x04 \x01(\tR\x06sha256\"\x81\x01\n" +
+	"\x06sha256\x18\x04 \x01(\tR\x06sha256\"\x99\x01\n" +
 	"\n" +
 	"FileUpload\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
 	"\x06offset\x18\x02 \x01(\x03R\x06offset\x12\x12\n" +
 	"\x04size\x18\x03 \x01(\x03R\x04size\x12\x14\n" +
 	"\x05state\x18\x04 \x01(\tR\x05state\x12!\n" +
-	"\fexpires_unix\x18\x05 \x01(\x03R\vexpiresUnix\"h\n" +
+	"\fexpires_unix\x18\x05 \x01(\x03R\vexpiresUnix\x12\x16\n" +
+	"\x06window\x18\x06 \x01(\x05R\x06window\"h\n" +
 	"\x19DeleteTransferFileRequest\x12/\n" +
 	"\x06target\x18\x01 \x01(\v2\x17.dieter.v1.TransferPathR\x06target\x12\x1a\n" +
 	"\brevision\x18\x02 \x01(\tR\brevision2\xbe\b\n" +

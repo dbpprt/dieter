@@ -36,6 +36,9 @@ func DialDaemon(certificate tls.Certificate, daemonKey []byte, bearer credential
 	options = append(options,
 		grpc.WithTransportCredentials(credentials.NewTLS(config)), grpc.WithContextDialer(dial), grpc.WithPerRPCCredentials(bearer),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(16<<20), grpc.MaxCallSendMsgSize(16<<20)),
+		// Fixed windows above a WAN bandwidth-delay product: bulk responses such
+		// as file chunks do not wait for gRPC's window estimate to ramp up.
+		grpc.WithInitialWindowSize(4<<20), grpc.WithInitialConnWindowSize(16<<20),
 	)
 	return grpc.NewClient("passthrough:///dieter-daemon", options...)
 }

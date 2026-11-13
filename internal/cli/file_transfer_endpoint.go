@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,10 +11,12 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sync"
 	"time"
 
 	files "github.com/dbpprt/dieter/internal/filetransfer"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/platform/fault"
 	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -166,6 +170,11 @@ func retryTransfer[T any](ctx context.Context, fn func() (T, error)) (T, error) 
 	return value, err
 }
 
+// transferWindow is how many chunks of one file are in flight. Each chunk is
+// one request and response, so a window hides the round trip per chunk and
+// keeps the route's byte stream full; files run concurrently on top.
+const transferWindow = 8
+
 func copyTransfer(ctx context.Context, source, destination transferEndpoint, p string, s, d files.Entry, limit int64, progress func(int64)) error {
 	current, err := source.stat(ctx, p, true)
 	if err != nil {
@@ -177,7 +186,7 @@ func copyTransfer(ctx context.Context, source, destination transferEndpoint, p s
 	s = current
 	if !destination.remote {
 		// Payload-only partials are kept beside the destination for restart/resume.
-		// The hash binds them to this source content; final publication rehashes all bytes.
+		// The hash binds them to this source content.
 		return downloadTransfer(ctx, source, destination, p, s, d, limit, progress)
 	}
 	request := &dieterv1.BeginFileUploadRequest{Target: destination.target(p, false), ExpectedRevision: d.Revision, Size: s.Size, Sha256: s.SHA256, ModifiedNanos: s.Modified, Mode: s.Mode}
@@ -193,49 +202,104 @@ func copyTransfer(ctx context.Context, source, destination transferEndpoint, p s
 	if u.State == "aborted" {
 		return fmt.Errorf("upload %s was aborted; change the source or use file upload begin with a new operation ID", u.Id)
 	}
+	id := u.Id
 	progress(u.Offset)
-	for offset := u.Offset; offset < s.Size; {
-		started := time.Now()
+	// The daemon acknowledges the contiguous prefix; chunks complete in order,
+	// so every acknowledgement is at least the end of the chunk delivered.
+	err = pipelineChunks(ctx, u.Offset, s.Size, min(transferWindow, max(1, int(u.Window))), limit, func(ctx context.Context, offset int64) (int64, error) {
 		b, err := source.read(ctx, p, s, offset)
 		if err != nil {
-			return err
+			return 0, err
 		}
-		if len(b) == 0 {
-			return io.ErrUnexpectedEOF
-		}
-		write := &dieterv1.WriteFileChunkRequest{Id: u.Id, Offset: offset, Data: b, Sha256: files.Digest(b)}
-		u, err = retryTransfer(ctx, func() (*dieterv1.FileUpload, error) { return destination.client.WriteFileChunk(ctx, write) })
+		write := &dieterv1.WriteFileChunkRequest{Id: id, Offset: offset, Data: b, Sha256: files.Digest(b)}
+		r, err := retryTransfer(ctx, func() (*dieterv1.FileUpload, error) { return destination.client.WriteFileChunk(ctx, write) })
 		if err != nil {
-			return fmt.Errorf("upload %s can be resumed by rerunning this command: %w", write.Id, err)
+			return 0, fmt.Errorf("upload %s can be resumed by rerunning this command: %w", id, err)
 		}
-		offset = u.Offset
-		progress(offset)
-		if err = paceTransfer(ctx, started, len(b), limit); err != nil {
-			return err
-		}
+		return r.Offset, nil
+	}, func(offset, acknowledged int64) error {
+		progress(max(acknowledged, min(offset+files.ChunkSize, s.Size)))
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 	// Commit is idempotent, including recovery after a lost rename response.
 	_, err = retryTransfer(ctx, func() (*dieterv1.FileUpload, error) {
-		return destination.client.CommitFileUpload(ctx, &dieterv1.FileUploadRequest{Id: u.Id})
+		return destination.client.CommitFileUpload(ctx, &dieterv1.FileUploadRequest{Id: id})
 	})
 	return err
 }
-func paceTransfer(ctx context.Context, start time.Time, n int, limit int64) error {
-	if limit <= 0 {
-		return nil
+
+// pipelineChunks runs fetch for every chunk offset in [offset, size) with up
+// to window calls in flight and hands the results to deliver strictly in
+// offset order. A positive limit paces chunk starts to limit bytes per second.
+// The first error cancels the remaining calls; deliver is never called after,
+// and no call outlives the return.
+func pipelineChunks[T any](ctx context.Context, offset, size int64, window int, limit int64, fetch func(context.Context, int64) (T, error), deliver func(int64, T) error) error {
+	ctx, cancel := context.WithCancel(ctx)
+	var running sync.WaitGroup
+	defer running.Wait()
+	defer cancel()
+	type result struct {
+		value T
+		err   error
 	}
-	delay := time.Duration(float64(n)/float64(limit)*float64(time.Second)) - time.Since(start)
-	if delay <= 0 {
-		return nil
+	type call struct {
+		offset int64
+		done   chan result
 	}
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
+	calls := make(chan call, window)
+	slots := make(chan struct{}, window)
+	running.Go(func() {
+		defer close(calls)
+		next := time.Now()
+		for at := offset; at < size; at += files.ChunkSize {
+			select {
+			case slots <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+			if limit > 0 {
+				if wait := time.Until(next); wait > 0 {
+					timer := time.NewTimer(wait)
+					select {
+					case <-timer.C:
+					case <-ctx.Done():
+						timer.Stop()
+						return
+					}
+				}
+				if now := time.Now(); next.Before(now) {
+					next = now
+				}
+				n := min(int64(files.ChunkSize), size-at)
+				next = next.Add(time.Duration(float64(n) / float64(limit) * float64(time.Second)))
+			}
+			c := call{offset: at, done: make(chan result, 1)}
+			running.Go(func() {
+				v, err := fetch(ctx, c.offset)
+				c.done <- result{v, err}
+			})
+			calls <- c
+		}
+	})
+	for c := range calls {
+		var r result
+		select {
+		case r = <-c.done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		if r.err != nil {
+			return r.err
+		}
+		if err := deliver(c.offset, r.value); err != nil {
+			return err
+		}
+		<-slots
 	}
+	return ctx.Err()
 }
 
 func localTransferEndpoint(p string) (transferEndpoint, error) {
@@ -259,6 +323,8 @@ func localTransferEndpoint(p string) (transferEndpoint, error) {
 
 // Keep the partial file descriptor open throughout; never follow a replacement
 // symlink when resuming or publishing. The destination parent is pinned too.
+// Chunks are written in order, so the partial is always a verified prefix of
+// the source; it is fsynced once, when it is published in place.
 func downloadTransfer(ctx context.Context, source, destination transferEndpoint, p string, s, d files.Entry, limit int64, progress func(int64)) (resultErr error) {
 	dir, name, err := files.Parent(destination.root, path.Join(destination.base, p), true)
 	if err != nil {
@@ -282,36 +348,40 @@ func downloadTransfer(ctx context.Context, source, destination transferEndpoint,
 			return err
 		}
 	}
-	if _, err = f.Seek(offset, io.SeekStart); err != nil {
+	// Hash the retained prefix once; new chunks extend the digest in order.
+	digest := sha256.New()
+	if _, err = io.CopyBuffer(digest, io.NewSectionReader(f, 0, offset), make([]byte, files.ChunkSize)); err != nil {
 		return err
 	}
 	progress(offset)
-	for offset < s.Size {
-		started := time.Now()
+	err = pipelineChunks(ctx, offset, s.Size, transferWindow, limit, func(ctx context.Context, offset int64) ([]byte, error) {
 		b, err := source.read(ctx, p, s, offset)
-		if err != nil {
+		if err == nil && len(b) == 0 {
+			err = io.ErrUnexpectedEOF
+		}
+		return b, err
+	}, func(offset int64, b []byte) error {
+		if _, err := f.WriteAt(b, offset); err != nil {
 			return err
 		}
-		if len(b) == 0 {
-			return io.ErrUnexpectedEOF
-		}
-		if _, err = f.Write(b); err != nil {
-			return err
-		}
-		if err = f.Sync(); err != nil {
-			return err
-		}
-		offset += int64(len(b))
-		progress(offset)
-		if err = paceTransfer(ctx, started, len(b), limit); err != nil {
-			return err
-		}
-	}
-	if _, err = f.Seek(0, io.SeekStart); err != nil {
+		digest.Write(b)
+		progress(offset + int64(len(b)))
+		return nil
+	})
+	if err != nil {
 		return err
 	}
-	if err = files.Publish(ctx, destination.root, path.Join(destination.base, p), d.Revision, s, f); err != nil {
-		return fmt.Errorf("download partial retained; remove %s to restart if corrupted: %w", filepath.Join(destination.root, filepath.FromSlash(path.Dir(path.Join(destination.base, p))), temp), err)
+	if hex.EncodeToString(digest.Sum(nil)) != s.SHA256 {
+		// A partial damaged outside this process cannot be resumed: restart it.
+		return errors.Join(fault.New(fault.DataLoss, "download does not match the source SHA-256; rerun to restart it"), f.Truncate(0))
+	}
+	if err = files.PublishVerified(ctx, dir, f, temp, name, path.Join(destination.base, p), d.Revision, s); err != nil {
+		// Publishing applied the source mode; keep the partial writable to resume.
+		return errors.Join(fmt.Errorf("download partial retained; rerun to resume: %w", err), f.Chmod(0o600))
+	}
+	if d.Revision != files.Missing {
+		// Publishing renamed the partial over the destination.
+		return nil
 	}
 	return removeTransferPartial(dir, temp)
 }

@@ -101,11 +101,12 @@ func (m *Manager) Start(ctx context.Context, r *dieterv1.StartControlConnectionR
 		m.mu.Unlock()
 		return nil, status.Error(codes.ResourceExhausted, "control session capacity exhausted")
 	}
-	pc, err := webrtc.NewPeerConnection(Configuration(r.GetRtcConfiguration()))
+	pc, err := api.NewPeerConnection(Configuration(r.GetRtcConfiguration()))
 	if err != nil {
 		m.mu.Unlock()
 		return nil, err
 	}
+	send := SendWindow(r.GetReceiveWindowFrames())
 	nonce := make([]byte, 24)
 	_, _ = rand.Read(nonce)
 	id := hex.EncodeToString(nonce)
@@ -154,7 +155,7 @@ func (m *Manager) Start(ctx context.Context, r *dieterv1.StartControlConnectionR
 			go s.close()
 			return
 		}
-		stream := Stream(dc, s.close)
+		stream := Stream(dc, MaxWindowFrames, send, s.close)
 		s.stream = stream
 		m.mu.Unlock()
 		go func() {
@@ -228,7 +229,7 @@ func (m *Manager) Get(id, owner string) (*dieterv1.ControlConnection, error) {
 		return nil, status.Error(codes.NotFound, "control connection not found")
 	}
 	connectionState := s.pc.ConnectionState()
-	result := &dieterv1.ControlConnection{SessionId: id, AnswerSdp: s.answer, ExpiresAt: s.expires.UTC().Format(time.RFC3339Nano), State: connectionState.String(), Mode: "unknown"}
+	result := &dieterv1.ControlConnection{SessionId: id, AnswerSdp: s.answer, ExpiresAt: s.expires.UTC().Format(time.RFC3339Nano), State: connectionState.String(), Mode: "unknown", ReceiveWindowFrames: MaxWindowFrames}
 	// Pion starts its ICE transport asynchronously from SetRemoteDescription.
 	// Reading the selected pair before the peer reaches connected can race with
 	// that initialization; the pair is meaningful only after connection anyway.
@@ -323,7 +324,7 @@ func DialWithPolicy(ctx context.Context, configuration *gatewayv1.RTCConfigurati
 	if relayOnly {
 		config.ICETransportPolicy = webrtc.ICETransportPolicyRelay
 	}
-	pc, err := webrtc.NewPeerConnection(config)
+	pc, err := api.NewPeerConnection(config)
 	if err != nil {
 		return nil, nil, dialError("configuration", err)
 	}
@@ -332,18 +333,18 @@ func DialWithPolicy(ctx context.Context, configuration *gatewayv1.RTCConfigurati
 		pc.Close()
 		return nil, nil, dialError("configuration", err)
 	}
-	stream := Stream(dc, func() { _ = pc.Close() })
+	var stream net.Conn
 	good := false
 	defer func() {
-		if !good {
+		if good {
+			return
+		}
+		if stream != nil {
 			stream.Close()
+		} else {
+			_ = pc.Close()
 		}
 	}()
-	pc.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
-		if s == webrtc.PeerConnectionStateFailed || s == webrtc.PeerConnectionStateClosed {
-			go stream.Close()
-		}
-	})
 	offer, err := pc.CreateOffer(nil)
 	if err != nil {
 		return nil, nil, dialError("ice-gathering", err)
@@ -360,13 +361,21 @@ func DialWithPolicy(ctx context.Context, configuration *gatewayv1.RTCConfigurati
 	case <-complete:
 	case <-timer.C:
 	}
-	result, err := start(ctx, &dieterv1.StartControlConnectionRequest{RtcConfiguration: configuration, OfferSdp: pc.LocalDescription().SDP})
+	result, err := start(ctx, &dieterv1.StartControlConnectionRequest{RtcConfiguration: configuration, OfferSdp: pc.LocalDescription().SDP, ReceiveWindowFrames: MaxWindowFrames})
 	if err != nil {
 		return nil, nil, dialError("signaling", err)
 	}
 	if result.GetSessionId() == "" || len(result.GetAnswerSdp()) > 64<<10 {
 		return nil, nil, dialError("signaling", errors.New("invalid control answer"))
 	}
+	// The answer carries the daemon's window; the channel opens only after the
+	// remote description, so the stream exists before any frame can arrive.
+	stream = Stream(dc, MaxWindowFrames, SendWindow(result.GetReceiveWindowFrames()), func() { _ = pc.Close() })
+	pc.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
+		if s == webrtc.PeerConnectionStateFailed || s == webrtc.PeerConnectionStateClosed {
+			go stream.Close()
+		}
+	})
 	if err = pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: result.GetAnswerSdp()}); err != nil {
 		return nil, nil, dialError("signaling", err)
 	}

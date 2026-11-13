@@ -94,9 +94,10 @@ or on the gateway.
 Downloads retain a payload-only partial file beside the destination. Its name
 starts with `.dieter-transfer-` and is tied to the destination name and expected
 content hash. Rerunning resumes at the saved chunk boundary and verifies the
-whole file before atomic publication. A corrupted partial fails verification;
-remove the partial named in the error to restart. An interruption can leave
-partials that must be removed manually when no longer needed.
+whole file before atomic publication. A partial that no longer matches the
+source fails verification and is emptied, so the next run starts over. An
+interruption can leave partials that must be removed manually when no longer
+needed.
 
 Uploads expire after 24 hours; expired staging is collected when a new upload
 is admitted. At most 4,096 upload sessions (including retained receipts) and
@@ -105,9 +106,11 @@ explicitly. Aborting releases staged payload but retains its replay receipt
 until expiry. If publication is uncertain, `file upload commit` recovers the receipt before
 an abort can be considered.
 
-Transfers use 1 MiB chunks and default to four concurrent files. Set
-`--concurrency 1` through `8`; `--bandwidth-limit BYTES_PER_SECOND` divides an
-aggregate payload budget between workers. Each file is published atomically.
+Transfers use 1 MiB chunks and default to four concurrent files. Each file
+keeps up to eight chunks in flight, so a long round trip to a remote machine
+does not stall every chunk. Set `--concurrency 1` through `8`;
+`--bandwidth-limit BYTES_PER_SECOND` divides an aggregate payload budget
+between workers. Each file is published atomically.
 An interrupted directory sync can contain a mixture of completed and unchanged
 files; rerunning reconciles the remainder.
 

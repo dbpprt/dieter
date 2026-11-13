@@ -27,8 +27,11 @@ type StartControlConnectionRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	RtcConfiguration *v1.RTCConfiguration   `protobuf:"bytes,1,opt,name=rtc_configuration,json=rtcConfiguration,proto3" json:"rtc_configuration,omitempty"`
 	OfferSdp         string                 `protobuf:"bytes,2,opt,name=offer_sdp,json=offerSdp,proto3" json:"offer_sdp,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Data frames the offerer accepts unacknowledged on the control channel.
+	// Zero means the base window of 16 frames.
+	ReceiveWindowFrames uint32 `protobuf:"varint,3,opt,name=receive_window_frames,json=receiveWindowFrames,proto3" json:"receive_window_frames,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *StartControlConnectionRequest) Reset() {
@@ -73,6 +76,13 @@ func (x *StartControlConnectionRequest) GetOfferSdp() string {
 		return x.OfferSdp
 	}
 	return ""
+}
+
+func (x *StartControlConnectionRequest) GetReceiveWindowFrames() uint32 {
+	if x != nil {
+		return x.ReceiveWindowFrames
+	}
+	return 0
 }
 
 type ControlConnectionRef struct {
@@ -129,6 +139,9 @@ type ControlConnection struct {
 	Mode                string `protobuf:"bytes,5,opt,name=mode,proto3" json:"mode,omitempty"`
 	LocalCandidateType  string `protobuf:"bytes,6,opt,name=local_candidate_type,json=localCandidateType,proto3" json:"local_candidate_type,omitempty"`
 	RemoteCandidateType string `protobuf:"bytes,7,opt,name=remote_candidate_type,json=remoteCandidateType,proto3" json:"remote_candidate_type,omitempty"`
+	// Data frames the daemon accepts unacknowledged on the control channel.
+	// Zero means the base window of 16 frames.
+	ReceiveWindowFrames uint32 `protobuf:"varint,8,opt,name=receive_window_frames,json=receiveWindowFrames,proto3" json:"receive_window_frames,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -212,17 +225,25 @@ func (x *ControlConnection) GetRemoteCandidateType() string {
 	return ""
 }
 
+func (x *ControlConnection) GetReceiveWindowFrames() uint32 {
+	if x != nil {
+		return x.ReceiveWindowFrames
+	}
+	return 0
+}
+
 var File_dieter_v1_control_proto protoreflect.FileDescriptor
 
 const file_dieter_v1_control_proto_rawDesc = "" +
 	"\n" +
-	"\x17dieter/v1/control.proto\x12\tdieter.v1\x1a\x1fdieter/gateway/v1/gateway.proto\x1a\x1bgoogle/protobuf/empty.proto\"\x8e\x01\n" +
+	"\x17dieter/v1/control.proto\x12\tdieter.v1\x1a\x1fdieter/gateway/v1/gateway.proto\x1a\x1bgoogle/protobuf/empty.proto\"\xc2\x01\n" +
 	"\x1dStartControlConnectionRequest\x12P\n" +
 	"\x11rtc_configuration\x18\x01 \x01(\v2#.dieter.gateway.v1.RTCConfigurationR\x10rtcConfiguration\x12\x1b\n" +
-	"\toffer_sdp\x18\x02 \x01(\tR\bofferSdp\"5\n" +
+	"\toffer_sdp\x18\x02 \x01(\tR\bofferSdp\x122\n" +
+	"\x15receive_window_frames\x18\x03 \x01(\rR\x13receiveWindowFrames\"5\n" +
 	"\x14ControlConnectionRef\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x01 \x01(\tR\tsessionId\"\x80\x02\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"\xb4\x02\n" +
 	"\x11ControlConnection\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1d\n" +
@@ -233,7 +254,8 @@ const file_dieter_v1_control_proto_rawDesc = "" +
 	"\x05state\x18\x04 \x01(\tR\x05state\x12\x12\n" +
 	"\x04mode\x18\x05 \x01(\tR\x04mode\x120\n" +
 	"\x14local_candidate_type\x18\x06 \x01(\tR\x12localCandidateType\x122\n" +
-	"\x15remote_candidate_type\x18\a \x01(\tR\x13remoteCandidateType2\x9c\x02\n" +
+	"\x15remote_candidate_type\x18\a \x01(\tR\x13remoteCandidateType\x122\n" +
+	"\x15receive_window_frames\x18\b \x01(\rR\x13receiveWindowFrames2\x9c\x02\n" +
 	"\x0eControlService\x12`\n" +
 	"\x16StartControlConnection\x12(.dieter.v1.StartControlConnectionRequest\x1a\x1c.dieter.v1.ControlConnection\x12U\n" +
 	"\x14GetControlConnection\x12\x1f.dieter.v1.ControlConnectionRef\x1a\x1c.dieter.v1.ControlConnection\x12Q\n" +
