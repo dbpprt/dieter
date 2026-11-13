@@ -146,7 +146,9 @@ package final class CoreHost: Sendable {
                 controlChannels: CoreControlChannels(),
                 screenMedia: screens?.media,
                 clipboard: platform.clipboard,
-                screenFixture: screens?.fixture))
+                screenFixture: screens?.fixture,
+                // The Mac keeps synced folders only through the daemon running on it.
+                folders: nil))
         self.shared = shared
         client = LiveCoreClient(shared: shared)
     }

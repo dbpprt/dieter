@@ -1,0 +1,31 @@
+# Maestro syntax, run in-app: Maestro has no macOS driver.
+# Synced folders: the fixture seeds the folder "Inbox", kept by its machine
+# (which holds welcome.txt). Folders lists it; opening it shows that machine
+# as a member.
+appId: com.getdieter.mac
+name: Mac synced folders
+tags: [smoke]
+---
+- launchApp
+- tapOn:
+    id: sidebar.folders
+- assertVisible:
+    id: destination.Folders
+- extendedWaitUntil:
+    visible:
+      id: 'folders\.row\..+'
+      text: "Inbox"
+    timeout: 60000
+- tapOn:
+    id: 'folders\.row\..+'
+    text: "Inbox"
+- extendedWaitUntil:
+    visible:
+      id: folders.detail
+      text: "Inbox"
+    timeout: 30000
+- extendedWaitUntil:
+    visible:
+      id: 'folders\.member\..+'
+    timeout: 30000
+- takeScreenshot: mac-folders

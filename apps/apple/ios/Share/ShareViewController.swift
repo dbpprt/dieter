@@ -10,15 +10,18 @@ final class ShareViewController: UIViewController {
     private let newTaskButton = UIButton(type: .system)
     private let taskButton = UIButton(type: .system)
     private let chatButton = UIButton(type: .system)
+    private let folderButton = UIButton(type: .system)
     private let closeButton = UIButton(type: .system)
     private var started = false
     private var readyToComplete = false
     private var stagedID: String?
+    /// Why the staged files cannot be attached to a task or chat; nil when they can.
+    private var attachmentProblem: String?
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        statusLabel.text = "Preparing attachments…"
+        statusLabel.text = "Preparing files…"
         statusLabel.font = .preferredFont(forTextStyle: .headline)
         statusLabel.textAlignment = .center
         statusLabel.numberOfLines = 0
@@ -34,11 +37,14 @@ final class ShareViewController: UIViewController {
         configure(
             chatButton, title: "Use in Chat", subtitle: "Choose an existing chat",
             image: "bubble.left.and.bubble.right", identifier: "ios.share.chat", action: #selector(openChat))
+        configure(
+            folderButton, title: "Save to Folder…", subtitle: "Keep the files in a synced folder",
+            image: "folder", identifier: "ios.share.folder", action: #selector(openFolder))
         destinationStack.axis = .vertical
         destinationStack.alignment = .fill
         destinationStack.spacing = 10
         destinationStack.isHidden = true
-        [newTaskButton, taskButton, chatButton].forEach(destinationStack.addArrangedSubview)
+        [newTaskButton, taskButton, chatButton, folderButton].forEach(destinationStack.addArrangedSubview)
 
         closeButton.setTitle("Cancel", for: .normal)
         closeButton.accessibilityIdentifier = "ios.share.cancel"
@@ -90,10 +96,18 @@ final class ShareViewController: UIViewController {
                 extensionContext?.inputItems
                 .compactMap { $0 as? NSExtensionItem }
                 .flatMap { $0.attachments ?? [] } ?? []
-            let id = try await SharePayloadWriter.stage(providers: providers)
-            stagedID = id
+            let staged = try await SharePayloadWriter.stage(providers: providers)
+            stagedID = staged.id
             spinner.stopAnimating()
             statusLabel.text = "Where should this go?"
+            if let problem = staged.attachmentProblem {
+                // Too many or too large for a task or chat; a folder takes them.
+                attachmentProblem = problem
+                for button in [newTaskButton, taskButton, chatButton] {
+                    button.configuration?.subtitle = problem
+                }
+            }
+            setDestinationButtonsEnabled(true)
             destinationStack.isHidden = false
         } catch {
             spinner.stopAnimating()
@@ -108,6 +122,8 @@ final class ShareViewController: UIViewController {
     @objc private func openTask() { prepareHandoff(destination: "task") }
 
     @objc private func openChat() { prepareHandoff(destination: "chat") }
+
+    @objc private func openFolder() { prepareHandoff(destination: "folder") }
 
     private func prepareHandoff(destination: String) {
         guard let stagedID else {
@@ -129,9 +145,10 @@ final class ShareViewController: UIViewController {
     }
 
     private func setDestinationButtonsEnabled(_ enabled: Bool) {
-        newTaskButton.isEnabled = enabled
-        taskButton.isEnabled = enabled
-        chatButton.isEnabled = enabled
+        newTaskButton.isEnabled = enabled && attachmentProblem == nil
+        taskButton.isEnabled = enabled && attachmentProblem == nil
+        chatButton.isEnabled = enabled && attachmentProblem == nil
+        folderButton.isEnabled = enabled
     }
 
     @objc private func close() {
@@ -151,6 +168,7 @@ final class ShareViewController: UIViewController {
 private enum SharePayloadError: LocalizedError {
     case noItems
     case tooMany
+    case tooManyFiles
     case fileTooLarge(String)
     case totalTooLarge
     case unavailable
@@ -159,6 +177,7 @@ private enum SharePayloadError: LocalizedError {
         switch self {
         case .noItems: "Choose a screenshot or file to share with Dieter."
         case .tooMany: "Dieter accepts up to 4 attachments."
+        case .tooManyFiles: "Dieter accepts up to 100 files at once."
         case .fileTooLarge(let name): "\(name) must be at most 5 MB."
         case .totalTooLarge: "Attachments must total at most 6 MB."
         case .unavailable: "The shared item could not be read."
@@ -166,8 +185,9 @@ private enum SharePayloadError: LocalizedError {
     }
 }
 
-private struct SharedFileRepresentation: Sendable {
-    let data: Data
+/// A shared file copied into the request's directory, never read into memory.
+private struct StagedFile: Sendable {
+    let size: Int64
     let filename: String?
     let mediaType: String?
 }
@@ -179,15 +199,10 @@ private enum SharePayloadWriter {
             let storedName: String
             let filename: String
             let mediaType: String
+            let size: Int64
         }
 
         let items: [Item]
-    }
-
-    private struct Payload: Sendable {
-        let data: Data
-        let filename: String
-        let mediaType: String
     }
 
     private struct PendingRequest: Encodable {
@@ -195,21 +210,23 @@ private enum SharePayloadWriter {
         let destination: String
     }
 
-    private static let maximumCount = 4
-    private static let maximumBytes = 5 * 1_024 * 1_024
-    private static let maximumTotalBytes = 6 * 1_024 * 1_024
+    struct Staged {
+        let id: String
+        /// Why the files cannot be attached to a task or chat; a folder still takes them.
+        let attachmentProblem: String?
+    }
 
-    static func stage(providers: [NSItemProvider]) async throws -> String {
+    private static let maximumCount = 4
+    private static let maximumFolderCount = 100
+    private static let maximumBytes: Int64 = 5 * 1_024 * 1_024
+    private static let maximumTotalBytes: Int64 = 6 * 1_024 * 1_024
+    private static let destinations = ["new-task", "task", "chat", "folder"]
+
+    /// Copies every shared item into a new request directory of the App Group's ShareInbox.
+    /// Attachments have size limits; a synced folder takes up to 100 files of any size.
+    static func stage(providers: [NSItemProvider]) async throws -> Staged {
         guard !providers.isEmpty else { throw SharePayloadError.noItems }
-        guard providers.count <= maximumCount else { throw SharePayloadError.tooMany }
-        var payloads: [Payload] = []
-        payloads.reserveCapacity(providers.count)
-        for (index, provider) in providers.enumerated() {
-            payloads.append(try await payload(provider, index: index))
-        }
-        guard payloads.reduce(0, { $0 + $1.data.count }) <= maximumTotalBytes else {
-            throw SharePayloadError.totalTooLarge
-        }
+        guard providers.count <= maximumFolderCount else { throw SharePayloadError.tooManyFiles }
         let container = try sharedContainer()
         let inbox = container.appendingPathComponent("ShareInbox", isDirectory: true)
         try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
@@ -219,27 +236,32 @@ private enum SharePayloadWriter {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
         do {
             var items: [Manifest.Item] = []
-            for (index, payload) in payloads.enumerated() {
-                let suffix = URL(fileURLWithPath: payload.filename).pathExtension
-                let storedName = suffix.isEmpty ? "attachment-\(index)" : "attachment-\(index).\(suffix)"
-                try payload.data.write(
-                    to: directory.appendingPathComponent(storedName),
-                    options: [.atomic, .completeFileProtection])
-                items.append(
-                    .init(storedName: storedName, filename: payload.filename, mediaType: payload.mediaType))
+            for (index, provider) in providers.enumerated() {
+                items.append(try await stage(provider, index: index, into: directory))
             }
             try JSONEncoder().encode(Manifest(items: items)).write(
                 to: directory.appendingPathComponent("manifest.json"),
                 options: [.atomic, .completeFileProtection])
-            return id
+            return Staged(id: id, attachmentProblem: attachmentProblem(items))
         } catch {
             try? FileManager.default.removeItem(at: directory)
             throw error
         }
     }
 
+    private static func attachmentProblem(_ items: [Manifest.Item]) -> String? {
+        if items.count > maximumCount { return SharePayloadError.tooMany.localizedDescription }
+        if let large = items.first(where: { $0.size > maximumBytes }) {
+            return SharePayloadError.fileTooLarge(large.filename).localizedDescription
+        }
+        if items.reduce(0, { $0 + $1.size }) > maximumTotalBytes {
+            return SharePayloadError.totalTooLarge.localizedDescription
+        }
+        return nil
+    }
+
     static func prepareHandoff(id: String, destination: String) throws {
-        guard let uuid = UUID(uuidString: id), ["new-task", "task", "chat"].contains(destination) else {
+        guard let uuid = UUID(uuidString: id), destinations.contains(destination) else {
             throw SharePayloadError.unavailable
         }
         let inbox = try sharedContainer().appendingPathComponent("ShareInbox", isDirectory: true)
@@ -262,61 +284,55 @@ private enum SharePayloadWriter {
         return container
     }
 
-    private static func payload(_ provider: NSItemProvider, index: Int) async throws -> Payload {
+    private static func stage(_ provider: NSItemProvider, index: Int, into directory: URL) async throws
+        -> Manifest.Item
+    {
+        let staging = directory.appendingPathComponent("incoming-\(index)")
+        let file: StagedFile
+        let type: UTType?
+        let fallback: String
         // Files can offer image bytes without a suggested name alongside its
         // file URL. Read the file representation first to retain its metadata.
         if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-            let file = try await provider.loadSharedFileRepresentation()
-            return try validatedPayload(
-                data: file.data, suggestedName: file.filename,
-                type: file.mediaType.flatMap { UTType(mimeType: $0) }, fallback: "Attachment \(index + 1)")
+            file = try await provider.copySharedFile(to: staging)
+            type = file.mediaType.flatMap { UTType(mimeType: $0) }
+            fallback = "Attachment \(index + 1)"
+        } else {
+            let preferredImages: [UTType] = [.png, .jpeg, .heic, .gif]
+            let identifier: String
+            if let image = preferredImages.first(where: { provider.hasItemConformingToTypeIdentifier($0.identifier) }) {
+                identifier = image.identifier
+                fallback = "Screenshot \(index + 1)"
+            } else if let image = provider.registeredTypeIdentifiers.first(where: {
+                UTType($0)?.conforms(to: .image) == true
+            }) {
+                identifier = image
+                fallback = "Screenshot \(index + 1)"
+            } else if let content = preferredContentTypeIdentifier(for: provider) {
+                identifier = content
+                fallback = "Attachment \(index + 1)"
+            } else {
+                throw SharePayloadError.unavailable
+            }
+            file = try await provider.copyFileRepresentation(forTypeIdentifier: identifier, to: staging)
+            type = UTType(identifier)
         }
-        let preferredImages: [UTType] = [.png, .jpeg, .heic, .gif]
-        if let type = preferredImages.first(where: {
-            provider.hasItemConformingToTypeIdentifier($0.identifier)
-        }) {
-            let data = try await provider.loadDataRepresentation(forTypeIdentifier: type.identifier)
-            return try validatedPayload(
-                data: data, suggestedName: provider.suggestedName,
-                type: type, fallback: "Screenshot \(index + 1)")
-        }
-        if let identifier = provider.registeredTypeIdentifiers.first(where: {
-            UTType($0)?.conforms(to: .image) == true
-        }) {
-            let data = try await provider.loadDataRepresentation(forTypeIdentifier: identifier)
-            return try validatedPayload(
-                data: data, suggestedName: provider.suggestedName,
-                type: UTType(identifier), fallback: "Screenshot \(index + 1)")
-        }
-        guard let identifier = preferredContentTypeIdentifier(for: provider) else {
-            throw SharePayloadError.unavailable
-        }
-        let data = try await provider.loadDataRepresentation(forTypeIdentifier: identifier)
-        let type = UTType(identifier)
-        return try validatedPayload(
-            data: data, suggestedName: provider.suggestedName,
-            type: type, fallback: "Attachment \(index + 1)")
-    }
-
-    private static func validatedPayload(
-        data: Data, suggestedName: String?, type: UTType?, fallback: String
-    ) throws -> Payload {
-        let suggested = suggestedName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard file.size > 0 else { throw SharePayloadError.unavailable }
+        let suggested = (file.filename ?? provider.suggestedName)?.trimmingCharacters(in: .whitespacesAndNewlines)
         var filename = suggested.flatMap { $0.isEmpty ? nil : $0 } ?? fallback
-        if URL(fileURLWithPath: filename).pathExtension.isEmpty,
-            let suffix = type?.preferredFilenameExtension
-        {
+        if URL(fileURLWithPath: filename).pathExtension.isEmpty, let suffix = type?.preferredFilenameExtension {
             filename += ".\(suffix)"
         }
         let safeName = URL(fileURLWithPath: filename).lastPathComponent
-        guard !data.isEmpty else { throw SharePayloadError.unavailable }
-        guard data.count <= maximumBytes else { throw SharePayloadError.fileTooLarge(safeName) }
-        return Payload(
-            data: data, filename: safeName,
+        let suffix = URL(fileURLWithPath: safeName).pathExtension
+        let storedName = suffix.isEmpty ? "attachment-\(index)" : "attachment-\(index).\(suffix)"
+        try FileManager.default.moveItem(at: staging, to: directory.appendingPathComponent(storedName))
+        return Manifest.Item(
+            storedName: storedName, filename: safeName,
             mediaType: type?.preferredMIMEType
-                ?? UTType(filenameExtension: URL(fileURLWithPath: safeName).pathExtension)?
-                .preferredMIMEType
-                ?? "application/octet-stream")
+                ?? UTType(filenameExtension: suffix)?.preferredMIMEType
+                ?? "application/octet-stream",
+            size: file.size)
     }
 
     private static func preferredContentTypeIdentifier(for provider: NSItemProvider) -> String? {
@@ -350,24 +366,30 @@ private enum SharePayloadWriter {
 
 @MainActor
 extension NSItemProvider {
-    fileprivate func loadDataRepresentation(forTypeIdentifier identifier: String) async throws -> Data {
-        try await withCheckedThrowingContinuation { continuation in
-            loadDataRepresentation(forTypeIdentifier: identifier) { data, error in
-                if let error {
+    /// Copies the item's `identifier` representation to `destination`; the provider's file is
+    /// valid only inside its callback.
+    fileprivate func copyFileRepresentation(forTypeIdentifier identifier: String, to destination: URL)
+        async throws -> StagedFile
+    {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<StagedFile, Error>) in
+            _ = loadFileRepresentation(forTypeIdentifier: identifier) { url, error in
+                do {
+                    if let error { throw error }
+                    guard let url else { throw SharePayloadError.unavailable }
+                    try FileManager.default.copyItem(at: url, to: destination)
+                    let size = try destination.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                    continuation.resume(returning: StagedFile(size: Int64(size), filename: nil, mediaType: nil))
+                } catch {
                     continuation.resume(throwing: error)
-                } else if let data {
-                    continuation.resume(returning: data)
-                } else {
-                    continuation.resume(throwing: SharePayloadError.unavailable)
                 }
             }
         }
     }
 
-    fileprivate func loadSharedFileRepresentation() async throws -> SharedFileRepresentation {
+    /// Copies a shared file URL (security scoped when it comes from another app) to `destination`.
+    fileprivate func copySharedFile(to destination: URL) async throws -> StagedFile {
         let suggestedName = suggestedName
-        return try await withCheckedThrowingContinuation {
-            (continuation: CheckedContinuation<SharedFileRepresentation, Error>) in
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<StagedFile, Error>) in
             loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, error in
                 do {
                     if let error { throw error }
@@ -384,17 +406,13 @@ extension NSItemProvider {
                     guard let url else { throw SharePayloadError.unavailable }
                     let accessed = url.startAccessingSecurityScopedResource()
                     defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-                    let values = try url.resourceValues(
-                        forKeys: [.contentTypeKey, .fileSizeKey, .isRegularFileKey])
+                    let values = try url.resourceValues(forKeys: [.contentTypeKey, .fileSizeKey, .isRegularFileKey])
                     guard values.isRegularFile != false else { throw SharePayloadError.unavailable }
-                    let filename = suggestedName ?? url.lastPathComponent
-                    if let size = values.fileSize, size > 5 * 1_024 * 1_024 {
-                        throw SharePayloadError.fileTooLarge(filename)
-                    }
+                    try FileManager.default.copyItem(at: url, to: destination)
+                    let size = try destination.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? values.fileSize ?? 0
                     continuation.resume(
-                        returning: SharedFileRepresentation(
-                            data: try Data(contentsOf: url, options: [.mappedIfSafe]),
-                            filename: filename,
+                        returning: StagedFile(
+                            size: Int64(size), filename: suggestedName ?? url.lastPathComponent,
                             mediaType: values.contentType?.preferredMIMEType))
                 } catch {
                     continuation.resume(throwing: error)

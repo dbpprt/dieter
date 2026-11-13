@@ -47,6 +47,7 @@ extension DieterStore {
         section = destination
         selectedProjectID = projectID
         fileScopeCardID = nil
+        fileScopeFolder = nil
         terminalScopeCardID = nil
         if selectedBoardID.isEmpty
             || boards(for: projectID).contains(where: { $0.id == selectedBoardID }) == false
@@ -94,6 +95,33 @@ extension DieterStore {
         section = .channels
     }
 
+    /// Shows a synced folder's copy on `daemonID`'s machine in Files; that
+    /// daemon serves the member's directory as the root.
+    func openFolderFiles(folderID: String, folderName: String, daemonID: String, machineName: String, path: String)
+        async
+    {
+        let endpoint = endpointID(forDaemon: daemonID)
+        if let machine = endpoints.first(where: { $0.id == endpoint }), let reason = unavailableReason(machine) {
+            show(NSError(domain: "DieterMachine", code: 2, userInfo: [NSLocalizedDescriptionKey: reason]))
+            return
+        }
+        stopTerminalWatch()
+        closeConversation()
+        fileScopeCardID = nil
+        fileScopeFolder = FolderFilesScope(
+            folderID: folderID, folderName: folderName, endpointID: endpoint, machineName: machineName, path: path)
+        resetFileSurface()
+        section = .files
+        await loadFiles()
+    }
+
+    func openFolders() {
+        guard section != .folders else { return }
+        stopTerminalWatch()
+        closeConversation()
+        section = .folders
+    }
+
     /// Opens `projectID`'s channel, e.g. from a peer notice in a transcript.
     func openChannel(projectID: String) {
         openChannels()
@@ -125,6 +153,7 @@ extension DieterStore {
         guard conversationMachineIsAvailable(card) else { return }
         selectedProjectID = card.projectID
         fileScopeCardID = card.id
+        fileScopeFolder = nil
         resetFileSurface()
         closeConversation()
         section = .files

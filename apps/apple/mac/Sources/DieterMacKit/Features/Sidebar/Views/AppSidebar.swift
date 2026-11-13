@@ -96,7 +96,7 @@ struct AppSidebar: View {
     }
 }
 
-/// Inbox, Mail, Channels, Chats, Terminals, and Screens. Each count observes
+/// Inbox, Mail, Channels, Folders, Chats, Terminals, and Screens. Each count observes
 /// its own source.
 private struct SidebarPrimaryDestinations: View {
     @Environment(DieterStore.self) private var store
@@ -124,6 +124,16 @@ private struct SidebarPrimaryDestinations: View {
                 store.openChannels()
             }
             .accessibilityIdentifier("sidebar.channels").e2eTarget("sidebar.channels")
+
+            DieterNavRow(
+                title: "Folders", symbol: "folder",
+                selected: section == .folders || (section == .files && store.fileScopeFolder != nil)
+            ) {
+                SidebarFoldersCount()
+            } action: {
+                store.openFolders()
+            }
+            .accessibilityIdentifier("sidebar.folders").e2eTarget("sidebar.folders")
 
             DieterNavRow(title: "Chats", symbol: "bubble.left.and.bubble.right", selected: section == .chats) {
                 SidebarChatsCount()
@@ -171,6 +181,19 @@ private struct SidebarChannelsCount: View {
         if unread > 0 {
             DieterCountBadge(count: unread, tint: DieterTheme.coral)
                 .accessibilityLabel("\(store.channelsModel.slice.unreadLabel) unread")
+        }
+    }
+}
+
+/// Synced folders that wait for the person: conflicts, held deletions, a lost location.
+private struct SidebarFoldersCount: View {
+    @Environment(DieterStore.self) private var store
+
+    var body: some View {
+        let attention = store.foldersModel.attention
+        if attention > 0 {
+            DieterCountBadge(count: attention, tint: DieterTheme.amber)
+                .accessibilityLabel("\(attention) need attention")
         }
     }
 }
@@ -234,7 +257,9 @@ private struct SidebarProjectsSection: View {
         let unfiledProjects = layout.unfiled.compactMap { projectsByID[$0] }
         let expanded = Set(layout.expanded), pinned = Set(layout.pinned)
         let activity = SidebarProjectActivity.group(store.inboxEntries)
-        let showsProject = [AppSection.board, .files, .changes, .schedules].contains(store.section)
+        let showsProject =
+            [AppSection.board, .files, .changes, .schedules].contains(store.section)
+            && !(store.section == .files && store.fileScopeFolder != nil)
         let selectedProjectID: String? = showsProject ? store.selectedProjectID : nil
         func row(_ project: Dieter_V1_Project, groupIDs: [String]) -> SidebarProjectNavigationRow {
             SidebarProjectNavigationRow(

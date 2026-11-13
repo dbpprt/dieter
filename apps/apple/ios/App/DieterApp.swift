@@ -6,6 +6,10 @@ struct DieterApp: App {
     @State private var host = ComposeHost(
         version: Bundle.main.object(forInfoDictionaryKey: "DieterReleaseVersion") as? String ?? "0.0.0-dev.0")
     @Environment(\.scenePhase) private var scenePhase
+    init() {
+        // BGTaskScheduler takes launch handlers only until the app finishes launching.
+        ComposeHost.registerBackgroundTasks()
+    }
     var body: some Scene {
         WindowGroup {
             ShellView(host: host)

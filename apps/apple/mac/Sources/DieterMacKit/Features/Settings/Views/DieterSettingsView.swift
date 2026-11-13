@@ -6,6 +6,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
     case browser = "Browser"
     case connection = "Connection"
     case devices = "Devices"
+    case folders = "Folders"
     case usage = "Usage"
     case prompts = "Prompts"
     case notifications = "Notifications"
@@ -21,6 +22,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .browser: "globe"
         case .connection: "network"
         case .devices: "lock.laptopcomputer"
+        case .folders: "folder"
         case .usage: "chart.bar.xaxis"
         case .prompts: "text.quote"
         case .notifications: "bell"
@@ -36,6 +38,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .browser: "Choose which websites leave the workspace browser"
         case .connection: "Machines, gateways, and authentication"
         case .devices: "Trusted devices and end-to-end encryption"
+        case .folders: "This Mac's copies of your synced folders"
         case .usage: "Provider accounts, limits, and reset windows"
         case .prompts: "Global and scoped agent instructions"
         case .notifications: "macOS alerts for agent activity"
@@ -100,6 +103,7 @@ struct DieterSettingsView: View {
                         case .browser: BrowserSettings()
                         case .connection: ConnectionSettings()
                         case .devices: DevicesSettings()
+                        case .folders: FolderSettingsPage()
                         case .usage: UsageSettings()
                         case .prompts: PromptSettingsEditor()
                         case .notifications: NotificationSettings()

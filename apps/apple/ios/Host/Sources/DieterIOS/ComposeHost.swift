@@ -22,6 +22,13 @@ public final class ComposeHost {
         // This install's roster key: in the Secure Enclave where the device has
         // one (never on a simulator), kept in a device-only Keychain item.
         let deviceKeys = CoreDeviceKeys(store: DeviceKeyKeychain(), platform: "ios", deviceName: UIDevice.current.name)
+        // Synced folders live in Documents, which Files shows as On My iPhone › Dieter.
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let folders = NativeFolders(
+            fileSystem: ContainerFolderFileSystem(
+                documents: documents,
+                deviceLabel: UIDevice.current.userInterfaceIdiom == .pad ? "On My iPad" : "On My iPhone"),
+            conditions: IOSDeviceConditions.start(), scheduler: FolderBackgroundTasks.shared)
         shared = DieterShared(
             configuration: SharedConfiguration(
                 stateDirectory: directory.path, clientVersion: version,
@@ -36,7 +43,8 @@ public final class ComposeHost {
                 signatures: CoreCryptoKitSignatures(),
                 logger: CoreOSLogger(subsystem: DistributionIdentity.iosBundleID), notifications: nil,
                 controlChannels: CoreControlChannels(),
-                screenMedia: media, clipboard: CoreUIPasteboardClipboard(), screenFixture: nil))
+                screenMedia: media, clipboard: CoreUIPasteboardClipboard(), screenFixture: nil, folders: folders))
+        FolderBackgroundTasks.shared.connect(shared)
         mobile = MobileHost(shared: shared, nativeViews: ComposeNativeViews(media: media))
         rootController = ShellController(host: mobile)
         observation = mobile.observeNavigation(
@@ -47,12 +55,19 @@ public final class ComposeHost {
     public func reconnect() { mobile.reconnect() }
     public func setForeground(_ active: Bool) {
         mobile.setForeground(active: active)
-        if active { receiveShare() }
+        if active { receiveShare() } else { FolderBackgroundTasks.shared.enteredBackground() }
     }
+    /// Registers the folder sync background tasks; call once, before the app finishes launching.
+    public static func registerBackgroundTasks() { FolderBackgroundTasks.shared.register() }
     /// Items the share extension staged reach the shared UI when the app becomes active.
     private func receiveShare() {
         guard let container = ShareInbox.container(), let request = ShareInbox.pendingRequest(in: container)
         else { return }
+        if request.destination == "folder" {
+            let staged = ShareInbox.consumeForFolder(request, in: container)
+            mobile.shareToFolder(sources: staged.sources, names: staged.names, problem: staged.problem)
+            return
+        }
         let staged = ShareInbox.consume(request, in: container)
         mobile.share(message: staged.message, destination: request.destination, problem: staged.problem)
     }

@@ -141,6 +141,8 @@ final class AppSession {
     let channelsModel = ChannelsModel()
     /// Agent mail across machines: the mailbox, its badge and preferences.
     let mailModel = MailModel()
+    /// Synced folders; this Mac keeps a copy only through the daemon running on it.
+    let foldersModel = FoldersModel()
     /// Routes taps on the core's notifications; the notification center
     /// holds its delegate weakly, so the session keeps it while the app runs.
     @ObservationIgnored var notificationResponder: CoreNotificationResponder?
