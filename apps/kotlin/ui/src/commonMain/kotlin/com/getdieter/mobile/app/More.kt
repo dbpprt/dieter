@@ -98,12 +98,20 @@ internal fun MoreScreen(store: MobileStore) {
             large = true,
             actions =
                 listOf(
-                    ChromeAction(
-                        "reconnect",
-                        "Reconnect",
-                        Glyph.REFRESH,
-                        onClick = store.session::retry,
-                    )
+                    if (session.needsSignIn)
+                        ChromeAction(
+                            "sign-in",
+                            "Sign in",
+                            Glyph.PERSON,
+                            onClick = store.session::signInAgain,
+                        )
+                    else
+                        ChromeAction(
+                            "reconnect",
+                            "Reconnect",
+                            Glyph.REFRESH,
+                            onClick = store.session::retry,
+                        )
                 ),
         )
     ) {

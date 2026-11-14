@@ -259,7 +259,7 @@ class MobileHost(private val shared: DieterShared, private val nativeViews: Mobi
 
     fun openNotification(cardId: String) = store.openNotification(cardId)
 
-    fun reconnect() = store.session.retry()
+    fun reconnect() = store.session.reconnect()
 
     fun completeSignIn(url: String) = store.session.completeSignIn(url)
 

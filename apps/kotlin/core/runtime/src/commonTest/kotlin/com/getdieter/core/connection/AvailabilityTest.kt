@@ -266,14 +266,22 @@ class AvailabilityTest {
         assertEquals("Working from cached data", offline.title)
         assertTrue(offline.offline)
         assertFalse(offline.working)
-        assertEquals(
-            "Sign in required",
+        // An expired session keeps the cached workspace but says only a new sign-in reconnects.
+        val signIn =
             Availability.workspaceNotice(
-                    ConnectionPhase.AUTH_REQUIRED,
-                    hasCache = true,
-                    reachable = false,
-                )!!
-                .title,
+                ConnectionPhase.AUTH_REQUIRED,
+                hasCache = true,
+                reachable = false,
+            )!!
+        assertEquals("Sign in required", signIn.title)
+        assertEquals(
+            "Sign in again to reconnect. Cached conversations stay available; messages and new conversations queue until then.",
+            signIn.detail,
+        )
+        assertTrue(signIn.offline)
+        assertEquals(
+            "Sign in again to reconnect. Cached data stays read-only until then.",
+            Availability.notice(ConnectionPhase.AUTH_REQUIRED, cached = true).detail,
         )
         assertEquals(
             "Update required",
