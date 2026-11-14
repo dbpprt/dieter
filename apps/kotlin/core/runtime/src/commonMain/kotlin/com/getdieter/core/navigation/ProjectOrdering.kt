@@ -2,6 +2,7 @@ package com.getdieter.core.navigation
 
 import com.getdieter.api.v1.Card
 import com.getdieter.api.v1.Project
+import com.getdieter.core.board.Runtimes
 import com.getdieter.core.runtime.Timestamps
 import com.getdieter.core.v1.KvDelete
 import com.getdieter.core.v1.KvIntent
@@ -12,9 +13,10 @@ import kotlin.uuid.Uuid
 object ProjectOrdering {
     private const val ORDER_PREFIX = "projects-order"
 
-    /** Latest live conversation/card activity first, with stable fallbacks. */
+    /** Working projects first, then latest conversation/card activity, with stable fallbacks. */
     fun byActivity(projects: List<Project>, cards: List<Card>): List<String> {
         val latestByProject = HashMap<String, Instant>()
+        val activeAtByProject = HashMap<String, Instant>()
         for (card in cards) {
             if (card.archived || card.project_id.isBlank()) continue
             val activity =
@@ -22,15 +24,32 @@ object ProjectOrdering {
                         Timestamps.parse(card.last_activity_at),
                         Timestamps.parse(card.runtime_updated_at),
                     )
-                    .maxOrNull() ?: Timestamps.parse(card.updated_at) ?: continue
+                    .maxOrNull() ?: Timestamps.parse(card.updated_at)
             val previous = latestByProject[card.project_id]
-            if (previous == null || activity > previous) latestByProject[card.project_id] = activity
+            if (activity != null && (previous == null || activity > previous)) {
+                latestByProject[card.project_id] = activity
+            }
+            if (Runtimes.isBoardActive(card)) {
+                // Live transcript activity changes throughout a turn. Rank active projects by the
+                // much less frequent runtime transition so several busy projects do not continually
+                // trade places as their agents stream output.
+                val activeAt =
+                    Timestamps.parse(card.runtime_updated_at)
+                        ?: Timestamps.parse(card.initial_prompt_sent_at)
+                        ?: Instant.DISTANT_PAST
+                val previousActive = activeAtByProject[card.project_id]
+                if (previousActive == null || activeAt > previousActive) {
+                    activeAtByProject[card.project_id] = activeAt
+                }
+            }
         }
         return projects
             .filterNot { it.archived }
             .sortedWith(
-                compareByDescending<Project> {
-                        latestByProject[it.id]
+                compareByDescending<Project> { it.id in activeAtByProject }
+                    .thenByDescending {
+                        activeAtByProject[it.id]
+                            ?: latestByProject[it.id]
                             ?: Timestamps.parse(it.updated_at)
                             ?: Instant.DISTANT_PAST
                     }

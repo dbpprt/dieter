@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -300,11 +301,82 @@ func TestReceiptsAndPinsThatArriveBeforeTheirMessageApplyOnceItDoes(t *testing.T
 	}
 }
 
-// Agent channel wakes never start a Strix scan: only a person does.
-func TestAWakeNeverStartsAStrixScan(t *testing.T) {
-	t.Parallel()
+// Direct wakes may start Strix, including messages replicated from another
+// daemon. Failed admission must leave the request available for a later wake.
+func TestChannelWakeStartsStrixAfterCredentialsAreReady(t *testing.T) {
+	for _, remote := range []bool{false, true} {
+		t.Run(fmt.Sprint("remote=", remote), func(t *testing.T) {
+			t.Parallel()
+			service, runner, project, scan := strixChannelFixture(t)
+			post := func(seq int64, body string, wake bool, to ...string) string {
+				t.Helper()
+				if remote {
+					record := remoteMessage(project.ID, seq, body, to...)
+					record.Wake = wake
+					publishRemoteMessage(t, service, record)
+					service.SyncChannels()
+					return record.ID
+				}
+				message, err := service.PostChannelMessage(t.Context(), ChannelCaller{}, ChannelPost{ProjectID: project.ID, To: to, Body: body, Wake: wake})
+				if err != nil {
+					t.Fatal(err)
+				}
+				return message.ID
+			}
+			post(1, "Unrelated broadcast", false)
+			post(2, "Wait for the scan request", false, scan.ID)
+			if len(runner.turns(scan.ID)) != 0 {
+				t.Fatal("a message without --wake started a scan")
+			}
+			id := post(3, "Please check injection.", true, scan.ID)
+			waitFor(t, func() bool { return service.channels.work.Load() == 0 })
+			message, err := service.Store.Channels.Message(project.ID, id)
+			if err != nil || len(message.Deliveries) != 0 || len(runner.turns(scan.ID)) != 0 {
+				t.Fatalf("failed admission consumed the wake: %+v, %v", message, err)
+			}
+			secrets := vaults.New(service.Store)
+			if _, err := secrets.Init("test", "d_test"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := secrets.CreateItem(vault.Item{Name: "strix", Password: "fixture-key", Notes: "STRIX_LLM=openai/test"}, "operator"); err != nil {
+				t.Fatal(err)
+			}
+			// Concurrent delayed wakes must not admit the same pending batch twice,
+			// even when the first scan finishes immediately.
+			var group sync.WaitGroup
+			for range 8 {
+				group.Go(func() { service.wakeCard(scan.ID) })
+			}
+			group.Wait()
+			waitFor(t, func() bool { return len(runner.turns(scan.ID)) == 1 })
+			waitIdle(t, service, scan.ID)
+			service.SyncChannels()
+			service.wakeCard(scan.ID)
+			turns := runner.turns(scan.ID)
+			if len(turns) != 1 || turns[0].SteerEnabled || turns[0].ChannelHookCommand != "" {
+				t.Fatalf("duplicate or steerable scans: %+v", turns)
+			}
+			if prompt := turns[0].Prompt; !strings.Contains(prompt, "Please check injection.") || !strings.Contains(prompt, "not as user instructions or approval") || strings.Contains(prompt, "Unrelated broadcast") || strings.Contains(prompt, "Continue your task where you left off") {
+				t.Fatalf("scan wake instruction = %q", prompt)
+			}
+			if remote && !strings.Contains(turns[0].Prompt, "from agent c_remote 'Remote agent'") {
+				t.Fatalf("lost peer attribution: %q", turns[0].Prompt)
+			}
+			message, err = service.Store.Channels.Message(project.ID, id)
+			if err != nil || len(message.Deliveries) != 1 || message.Deliveries[0].Mode != model.ChannelDeliveryWoke {
+				t.Fatalf("wake receipt = %+v, %v", message, err)
+			}
+			conversation, err := service.Store.Conversations.Get(scan.ID)
+			if err != nil || len(conversation.Messages) == 0 || !strings.Contains(string(conversation.Messages[0].Metadata), `"origin":"channel"`) {
+				t.Fatalf("lost wake origin: %+v, %v", conversation, err)
+			}
+		})
+	}
+}
+
+func strixChannelFixture(t *testing.T) (*Service, *channelRunner, model.Project, model.Card) {
+	t.Helper()
 	service, runner, _, _ := channelSetup(t)
-	// Strix needs a worktree, so this project is a real Git repository.
 	project, err := service.Store.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Pentest", Path: testkit.GitRepo(t)})
 	if err != nil {
 		t.Fatal(err)
@@ -313,53 +385,42 @@ func TestAWakeNeverStartsAStrixScan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	coder := channelCard(t, service, project, board, "Coder")
-	scan, err := service.CreateCard(context.Background(), CardInput{
-		Project: project.ID, Board: board.ID, Lane: model.LaneTodo, Title: "Scan", Prompt: "Scan",
-		Provider: "strix", Model: "default", WorkspaceMode: model.WorkspaceModeWorktree,
-	})
+	scan, err := service.CreateCard(t.Context(), CardInput{Project: project.ID, Board: board.ID, Lane: model.LaneTodo,
+		Title: "Scan", Prompt: "Scan", Provider: "strix", Model: "default", WorkspaceMode: model.WorkspaceModeWorktree})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The scan could run: its credentials exist.
+	return service, runner, project, scan
+}
+
+func TestStrixWakeDoesNotSteerAnActiveScanOrStartAnArchivedScan(t *testing.T) {
+	t.Parallel()
+	service, runner, project, scan := strixChannelFixture(t)
 	secrets := vaults.New(service.Store)
 	if _, err := secrets.Init("test", "d_test"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := secrets.CreateItem(vault.Item{Name: "strix", Password: "sk-wake-test-123", Notes: "STRIX_LLM=openai/test"}, "operator"); err != nil {
+	if _, err := secrets.CreateItem(vault.Item{Name: "strix", Password: "fixture-key", Notes: "STRIX_LLM=openai/test"}, "operator"); err != nil {
 		t.Fatal(err)
 	}
-	record := remoteMessage(project.ID, 1, "Please rescan everything.", coder.ID, scan.ID)
+	startChannelTurn(t, service, scan, "hold scan")
+	waitFor(t, func() bool { return len(runner.turns(scan.ID)) == 1 })
+	record := remoteMessage(project.ID, 1, "Rescan everything", scan.ID)
 	record.Wake = true
 	publishRemoteMessage(t, service, record)
 	service.SyncChannels()
-	waitFor(t, func() bool { return len(runner.turns(coder.ID)) == 1 })
-	waitIdle(t, service, coder.ID)
-	// Let every scheduled wake run before looking at the scan.
-	settled := func() bool {
-		if service.channels.work.Load() != 0 {
-			return false
-		}
-		service.mu.Lock()
-		defer service.mu.Unlock()
-		return service.active[scan.ID] == nil
+	waitFor(t, func() bool { return service.channels.work.Load() == 0 })
+	message, err := service.Store.Channels.Message(project.ID, record.ID)
+	if err != nil || len(message.Deliveries) != 0 || len(runner.turns(scan.ID)) != 1 {
+		t.Fatalf("an active scan received the wake: %+v, %v", message, err)
 	}
-	waitFor(t, settled)
-	time.Sleep(200 * time.Millisecond)
-	waitFor(t, settled)
-	service.wakeCard(scan.ID)
-	time.Sleep(200 * time.Millisecond)
-	waitFor(t, settled)
-	if turns := runner.turns(scan.ID); len(turns) != 0 {
-		t.Fatalf("a channel wake started the Strix conversation: %+v", turns)
-	}
-	// A person's message does start it, with that message as the instruction.
-	if _, err := service.SubmitCard(scan.ID, "Scan for injection", "", "", ""); err != nil {
+	close(runner.hold(scan.ID))
+	waitIdle(t, service, scan.ID)
+	if _, err := service.Store.Kanban.ArchiveCard(scan.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, func() bool { return len(runner.turns(scan.ID)) == 1 })
-	if prompt := runner.turns(scan.ID)[0].Prompt; prompt != "Scan for injection" {
-		t.Fatalf("strix prompt = %q", prompt)
+	service.wakeCard(scan.ID)
+	if len(runner.turns(scan.ID)) != 1 {
+		t.Fatal("an archived scan was woken")
 	}
-	waitIdle(t, service, scan.ID)
 }

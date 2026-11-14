@@ -341,16 +341,25 @@ Astra can select Fast mode with `--provider-option fast_mode=true`; schedules
 accept the same option and apply it to every task they create. GPT-5.3 Codex
 and Spark do not support this option.
 
-The `strix` provider is a security scanner, not a coding agent: it attacks the
-card's worktree and listed targets. Agent turns may create a Strix card only as
-a draft (`--lane todo`, `--workspace worktree`); starting it, moving it to
-Running or sending it a message fails with PermissionDenied, and channel
-messages never wake it. Ask the user to start the scan. Its options are
-`scan_mode` (quick, standard, deep), `scope` (full, changes) and `targets`,
-fixed by the first message, plus `max_budget_usd` and `credentials` (vault
-item, default `strix`), which may change per message.
+The `strix` provider runs a security scan against the card's worktree and listed
+targets. Agent turns may create a running Strix card (`--lane running`,
+`--workspace worktree`), start a draft, move it to Running or send follow-ups.
+The execution host needs Docker and the credentials vault item; general vault
+access on the initiating or scan conversation is not required for these model
+credentials. A direct `channel post --to CARD --wake` may start an idle scan
+within the normal wake budget. It retains peer attribution; a failed admission
+leaves the messages pending. Headless Strix has no live steering: messages to a
+running scan stay pending until another explicit wake or inbox read.
+Its options are `scan_mode` (quick, standard, deep), `scope` (full, changes) and
+`targets`, fixed by the first message, plus `max_budget_usd` and `credentials`
+(vault item, default `strix`), which may change per message.
 
-`card start` admits a draft's first turn. `card send` admits a human follow-up.
+To review committed changes on a coding card, create the scan with
+`--base-branch CODING_BRANCH`; the default new worktree does not inherit another
+card's branch or dirty files. Use full scope for that seeded worktree, whose
+recorded diff base may already be the branch tip.
+
+`card start` admits a draft's first turn. `card send` admits a follow-up.
 Both return without waiting for the agent to finish. Do not replay either just
 because the client disconnected; inspect the card and conversation first.
 Messages sent during an active turn are queued in order. Remove one that has

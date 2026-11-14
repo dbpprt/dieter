@@ -13,11 +13,70 @@ import (
 	"github.com/dbpprt/dieter/internal/engine"
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/security/vault"
 	"github.com/dbpprt/dieter/internal/store"
 	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/store/schedules"
+	"github.com/dbpprt/dieter/internal/store/vaults"
 	"github.com/dbpprt/dieter/internal/testkit"
 )
+
+func TestStrixScheduleDispatchesOneScanAcrossRecovery(t *testing.T) {
+	t.Parallel()
+	data := testkit.Store(t)
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Scans", Path: testkit.GitRepo(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	board, err := data.Kanban.CreateBoard(kanban.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secrets := vaults.New(data)
+	if _, err := secrets.Init("test", "d_test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := secrets.CreateItem(vault.Item{Name: "strix", Password: "fixture-model-key", Notes: "STRIX_LLM=openai/test"}, "operator"); err != nil {
+		t.Fatal(err)
+	}
+	runner := &testkit.FakeRunner{Release: make(chan struct{})}
+	service := engine.NewWithOptions(data, engine.Options{Runner: runner, Catalog: testkit.MockCatalog()})
+	manager := New(data, service)
+	settled := settledRuns(manager)
+	schedule, err := manager.Create(schedules.Input{Project: project.ID, Board: board.ID, Name: "Security review",
+		Cron: "0 9 * * *", Timezone: "UTC", Action: model.ScheduleActionRun, TitleTemplate: "Scan", PromptTemplate: "Scan for injection",
+		Provider: "strix", Model: "default", WorkspaceMode: model.WorkspaceModeWorktree})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := manager.RunNow(schedule.ID)
+	if err != nil {
+		close(runner.Release)
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		close(runner.Release)
+		_ = waitSettled(t, settled, run.ID)
+	})
+	testkit.Eventually(t, 30*time.Second, func() bool { return runner.Count() == 1 }, "scheduled Strix turn")
+	request := runner.Request(0)
+	if request.Adapter != "strix" || request.Prompt != "Scan for injection" || request.Environment["LLM_API_KEY"] != "fixture-model-key" || request.SteerEnabled {
+		t.Fatalf("scheduled request = %+v", request)
+	}
+	// An occurrence already dispatched before recovery must never launch again.
+	if err := data.Schedules.RecoverRuns(); err != nil {
+		t.Fatal(err)
+	}
+	recovered := New(data, service)
+	recovered.Tick()
+	if runner.Count() != 1 {
+		t.Fatal("recovery replayed the scan")
+	}
+	stored, err := data.Schedules.ResolveRun(run.ID)
+	if err != nil || stored.CardID != run.CardID || stored.Status != model.ScheduleRunFailed {
+		t.Fatalf("recovered occurrence = %+v, %v", stored, err)
+	}
+}
 
 type testRunner struct{}
 

@@ -156,9 +156,20 @@ that message as its instruction, for example to dig into a finding. Stopping
 the turn interrupts Strix, which removes its sandbox; the next message resumes
 the run. A budget stop is not a failure: send a message to continue past it.
 
-**Safety rules.** Agents cannot start or message a Strix conversation, and agent
-channel messages never wake or steer one: only a person starts a scan. Strix
-runs with telemetry and update checks off. Its sandbox can reach services on the
+**Automation.** Coding agents can create a running Strix card or chat, start a
+draft, move it to Running, and send follow-ups through the same CLI operations.
+A direct `dieter channel post --to CARD --wake "Review the changes"` may start
+an idle scan within the usual wake budget. A failed admission leaves the
+messages pending. Headless Strix has no live steering: messages arriving during
+a scan remain pending until another explicit wake or inbox read. Scheduled
+scans use the same worktree and credential requirements. Model credentials do
+not require general vault access on the coding or scan conversation.
+
+To scan committed work from another card, add `--base-branch CODING_BRANCH` to
+creation and use full scope. A new worktree does not inherit another card's
+dirty files, and its recorded diff base may already be the coding branch tip.
+
+**Safety rules.** Strix runs only in worktrees, with telemetry and update checks off. Its sandbox can reach services on the
 execution machine through `host.docker.internal`, including ones bound to
 localhost, so run it on a machine where that is acceptable. Dieter installs the
 pinned Strix executable on first use, verified against the SHA-256 built into
