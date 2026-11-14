@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.dbpprt.dieter.client.v1.SessionSlice
 
 /** A toolbar or menu command. iOS renders it as a bar button or UIMenu element. */
 @Immutable
@@ -495,13 +496,14 @@ internal fun MaterialMenu(sections: List<MenuSection>, expanded: Boolean, onDism
 internal fun ConnectionNotice(store: MobileStore, modifier: Modifier = Modifier) {
     val session by store.session.collectAsState()
     session.notice?.let { notice ->
+        val authenticationRequired = session.phase == SessionSlice.Phase.PHASE_AUTH_REQUIRED
         Banner(
             notice.title,
             notice.detail,
             modifier.padding(horizontal = ScreenMargin, vertical = 6.dp),
             tone = Tone.WARNING,
             glyph = Glyph.OFFLINE,
-            actionLabel = "Retry",
+            actionLabel = if (authenticationRequired) "Sign in" else "Retry",
             onAction = store::retry,
         )
     }

@@ -199,6 +199,48 @@ class MobileJourneyTest : EndToEnd() {
     }
 
     @Test
+    fun retryStartsSignInWhenAuthenticationExpiredAndReconnectsOtherFailures() = runBlocking {
+        val sent = mutableListOf<Command>()
+        val authorizeUrl = "https://gateway.example/auth/github/start"
+        val fake =
+            object : MobileCore {
+                override suspend fun dispatch(command: Command): Result {
+                    sent += command
+                    return if (command.begin_sign_in != null) {
+                        Result(sign_in_started = SignInStarted(authorizeUrl))
+                    } else {
+                        Result(done = Done())
+                    }
+                }
+
+                override fun observe(slice: Slice, scope: String, receive: (Update) -> Unit) =
+                    com.dbpprt.dieter.core.client.ClientSubscription {}
+            }
+        val store = MobileStore(fake, Dispatchers.Unconfined)
+        try {
+            store.session.value =
+                SessionSlice(
+                    phase = SessionSlice.Phase.PHASE_AUTH_REQUIRED,
+                    gateway_origin = "https://gateway.example",
+                )
+            store.retry()
+            yield()
+            assertEquals(
+                "https://gateway.example",
+                sent.single { it.begin_sign_in != null }.begin_sign_in?.gateway_url,
+            )
+            assertEquals(authorizeUrl, store.signInUrl.value)
+
+            store.session.value = SessionSlice(phase = SessionSlice.Phase.PHASE_RECONNECTING)
+            store.retry()
+            yield()
+            assertEquals(1, sent.count { it.reconnect != null })
+        } finally {
+            store.close()
+        }
+    }
+
+    @Test
     fun queuedActionsKeepTheTaskSelectedWhenTheyWereRequested() = runBlocking {
         val sent = mutableListOf<Command>()
         val fake =

@@ -1030,7 +1030,17 @@ class MobileStore(
         core.dispatch(Command(complete_sign_in = CompleteSignIn(url)))
     }
 
-    fun retry() = action { core.dispatch(Command(reconnect = Reconnect())) }
+    fun retry() {
+        val current = session.value
+        if (
+            current.phase == SessionSlice.Phase.PHASE_AUTH_REQUIRED &&
+                current.gateway_origin.isNotBlank()
+        ) {
+            signIn(current.gateway_origin)
+        } else {
+            action { core.dispatch(Command(reconnect = Reconnect())) }
+        }
+    }
 
     /** Replays the account while keeping the visible lists, filters and drafts. */
     fun refresh() {
