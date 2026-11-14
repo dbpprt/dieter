@@ -745,7 +745,12 @@ message PairingRequestRef {
 }
 
 
-// Registers this native session's APNs route. Empty token unregisters it.
+enum PushProvider {
+  APNS = 0;
+  FCM = 1;
+}
+
+// Registers this native session's OS push route. Empty token unregisters it.
 message SetPushDeviceRequest {
   string token = 1;
   // X25519, 32 bytes; the private key stays on the phone.
@@ -754,12 +759,13 @@ message SetPushDeviceRequest {
   string device_id = 4;
   // Device-roster signature of the account-bound push key binding.
   bytes signature = 5;
+  PushProvider provider = 6;
 }
 message SetPushDeviceResponse {
   bool available = 1;
 }
 message PushDestination {
-  // Opaque native-session receipt, never an APNs token.
+  // Opaque native-session receipt, never an OS push token.
   string id = 1;
   bytes public_key = 2;
   string device_id = 3;

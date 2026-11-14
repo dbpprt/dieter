@@ -19,6 +19,7 @@ class DieterSession(application: Application) : AndroidViewModel(application) {
         private set
 
     val updates = AppUpdateManager(application)
+    val notifications: com.getdieter.android.notifications.AndroidNotifications
 
     init {
         val applicationContext = application
@@ -27,6 +28,7 @@ class DieterSession(application: Application) : AndroidViewModel(application) {
         screenMedia = com.getdieter.android.screens.AndroidScreenMedia(applicationContext)
         // Shared with background folder windows, which can run without this session.
         runtime = DieterRuntime.acquire(applicationContext)
+        notifications = DieterRuntime.notifications(runtime)
         store =
             MobileStore(
                 RuntimeMobileCore(
@@ -57,6 +59,8 @@ class DieterSession(application: Application) : AndroidViewModel(application) {
             )
         }
         com.getdieter.android.folders.FolderNotifications.channels(applicationContext)
+        notifications.openCard = store::openNotification
+        notifications.refreshToken()
     }
 
     /** Maestro flows: the isolated fixture's session and the code its machine approves. */
@@ -80,6 +84,7 @@ class DieterSession(application: Application) : AndroidViewModel(application) {
             try {
                 store.conversation.flushDrafts()
             } finally {
+                notifications.openCard = null
                 store.close()
                 DieterRuntime.release()
                 screenMedia.close()

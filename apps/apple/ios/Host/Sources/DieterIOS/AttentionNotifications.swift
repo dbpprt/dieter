@@ -1,5 +1,4 @@
 import DieterCore
-import CryptoKit
 import Foundation
 import DieterIdentity
 import OSLog
@@ -12,6 +11,7 @@ import UserNotifications
 final class IOSAttentionNotifications: NSObject, NativeAttentionNotifications, UNUserNotificationCenterDelegate {
     private nonisolated static let prefix = "dieter.attention."
     private nonisolated static let cardKey = "dieter.cardId"
+    private nonisolated static let accountKey = "dieter.account"
     private nonisolated let keys = IOSPushKeys()
     private let center = UNUserNotificationCenter.current()
     private let logger = Logger(subsystem: DistributionIdentity.iosBundleID, category: "notifications")
@@ -19,10 +19,16 @@ final class IOSAttentionNotifications: NSObject, NativeAttentionNotifications, U
     private var delivery: Task<Void, Never>?
     private var operations: [String: @MainActor () async -> Void] = [:]
     private var order: [String] = []
-    private var accountKey: Curve25519.KeyAgreement.PrivateKey?
-    private var pendingPush: Data?
-    private var pushAvailable = false
-    private var visibleCardId: String?
+    private lazy var push = NativePushDelivery(decoder: PushDecoder(keys: keys))
+
+    private final class PushDecoder: NSObject, NativePushDecoder {
+        let keys: IOSPushKeys
+        init(keys: IOSPushKeys) { self.keys = keys; super.init() }
+        func cardId(accountKey: String, sealed: Data) -> String? {
+            guard let (_, key) = keys.device(accountKey: accountKey) else { return nil }
+            return IOSPushKeys.cardId(sealed: sealed, key: key)
+        }
+    }
     var refreshRegistration: (() -> Void)?
     var openCard: ((String) -> Void)?
 
@@ -75,13 +81,13 @@ final class IOSAttentionNotifications: NSObject, NativeAttentionNotifications, U
     nonisolated func post(cardId: String, title: String, text: String) {
         DispatchQueue.main.async { [self] in
             enqueue(key: "post:" + cardId) { [self] in
-                if pushAvailable { return }
+                guard !push.available, let account = push.accountKey else { return }
                 let content = UNMutableNotificationContent()
                 content.title = title
                 content.body = text
                 content.sound = .default
                 content.threadIdentifier = "dieter.attention"
-                content.userInfo = [Self.cardKey: cardId]
+                content.userInfo = [Self.cardKey: cardId, Self.accountKey: account]
                 do {
                     try await center.add(
                         UNNotificationRequest(
@@ -104,8 +110,8 @@ final class IOSAttentionNotifications: NSObject, NativeAttentionNotifications, U
                 center.removeDeliveredNotifications(withIdentifiers: Array(stale))
                 center.removePendingNotificationRequests(withIdentifiers: Array(stale))
                 let stalePush = notifications.filter { notification in
-                    guard let sealed = Self.sealed(notification.request.content.userInfo), let accountKey,
-                        let id = IOSPushKeys.cardId(sealed: sealed, key: accountKey)
+                    guard let sealed = Self.sealed(notification.request.content.userInfo),
+                        let id = push.cardId(sealed: sealed)
                     else { return false }
                     return !cardIds.contains(id)
                 }.map { $0.request.identifier }
@@ -119,9 +125,7 @@ final class IOSAttentionNotifications: NSObject, NativeAttentionNotifications, U
 
     nonisolated func reset() {
         DispatchQueue.main.async { [self] in
-            accountKey = nil
-            visibleCardId = nil
-            pushAvailable = false
+            push.reset()
             for key in order where key.hasPrefix("post:") { operations.removeValue(forKey: key) }
             order.removeAll { $0.hasPrefix("post:") }
             enqueue(key: "reset") { [self] in
@@ -137,32 +141,23 @@ final class IOSAttentionNotifications: NSObject, NativeAttentionNotifications, U
     func setPushToken(_ token: Data) { keys.setToken(token); refreshRegistration?() }
 
     nonisolated func device(accountKey: String) -> NativePushDevice? {
-        guard let (device, privateKey) = keys.device(accountKey: accountKey) else { return nil }
+        guard let (device, _) = keys.device(accountKey: accountKey) else { return nil }
         DispatchQueue.main.async { [self] in
-            self.accountKey = privateKey
-            openPendingPush()
+            if let id = push.bind(accountKey: accountKey) { openCard?(id) }
         }
         return device
     }
 
     nonisolated func registered(available: Bool) {
-        DispatchQueue.main.async { [self] in pushAvailable = available }
+        DispatchQueue.main.async { [self] in push.registered(available: available) }
     }
 
     nonisolated func visible(cardId: String?) {
-        DispatchQueue.main.async { [self] in visibleCardId = cardId }
+        DispatchQueue.main.async { [self] in push.visible(cardId: cardId) }
     }
 
     private nonisolated static func sealed(_ info: [AnyHashable: Any]) -> Data? {
         (info["dieter_sealed"] as? String).flatMap { Data(base64Encoded: $0) }
-    }
-
-    private func openPendingPush() {
-        guard let pendingPush, let accountKey, let id = IOSPushKeys.cardId(sealed: pendingPush, key: accountKey) else {
-            return
-        }
-        self.pendingPush = nil
-        openCard?(id)
     }
 
     nonisolated func userNotificationCenter(
@@ -172,12 +167,9 @@ final class IOSAttentionNotifications: NSObject, NativeAttentionNotifications, U
             return notification.request.identifier.hasPrefix(Self.prefix) ? [.banner, .list, .sound] : [.badge]
         }
         // APNs can arrive before the live workspace, or while its transport is
-        // reconnecting. Suppress only the card the core says is on screen.
+        // reconnecting. The shared core checks account, visibility and duplicates.
         return await MainActor.run { [self] in
-            if let accountKey, let id = IOSPushKeys.cardId(sealed: sealed, key: accountKey), id == visibleCardId {
-                return [.badge]
-            }
-            return [.banner, .list, .sound, .badge]
+            return push.present(sealed: sealed) ? [.banner, .list, .sound, .badge] : [.badge]
         }
     }
 
@@ -186,15 +178,17 @@ final class IOSAttentionNotifications: NSObject, NativeAttentionNotifications, U
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         if response.actionIdentifier == UNNotificationDefaultActionIdentifier,
-            let cardId = response.notification.request.content.userInfo[Self.cardKey] as? String
+            let cardId = response.notification.request.content.userInfo[Self.cardKey] as? String,
+            let account = response.notification.request.content.userInfo[Self.accountKey] as? String
         {
-            DispatchQueue.main.async { [weak self] in self?.openCard?(cardId) }
+            DispatchQueue.main.async { [weak self] in
+                if let id = self?.push.tapLocal(accountKey: account, cardId: cardId) { self?.openCard?(id) }
+            }
         } else if response.actionIdentifier == UNNotificationDefaultActionIdentifier,
             let sealed = Self.sealed(response.notification.request.content.userInfo)
         {
             DispatchQueue.main.async { [weak self] in
-                self?.pendingPush = sealed
-                self?.openPendingPush()
+                if let id = self?.push.tap(sealed: sealed) { self?.openCard?(id) }
             }
         }
         completionHandler()

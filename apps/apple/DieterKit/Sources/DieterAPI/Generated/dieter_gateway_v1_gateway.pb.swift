@@ -711,6 +711,40 @@ public nonisolated enum Dieter_Gateway_V1_DeviceRosterOperation: SwiftProtobuf.E
 
 }
 
+public nonisolated enum Dieter_Gateway_V1_PushProvider: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case apns // = 0
+  case fcm // = 1
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .apns
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .apns
+    case 1: self = .fcm
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .apns: return 0
+    case .fcm: return 1
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Dieter_Gateway_V1_PushProvider] = [
+    .apns,
+    .fcm,
+  ]
+
+}
+
 public nonisolated struct Dieter_Gateway_V1_Account: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -2323,7 +2357,7 @@ public nonisolated struct Dieter_Gateway_V1_PairingRequestRef: Sendable {
   public init() {}
 }
 
-/// Registers this native session's APNs route. Empty token unregisters it.
+/// Registers this native session's OS push route. Empty token unregisters it.
 public nonisolated struct Dieter_Gateway_V1_SetPushDeviceRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -2340,6 +2374,8 @@ public nonisolated struct Dieter_Gateway_V1_SetPushDeviceRequest: Sendable {
 
   /// Device-roster signature of the account-bound push key binding.
   public var signature: Data = Data()
+
+  public var provider: Dieter_Gateway_V1_PushProvider = .apns
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -2363,7 +2399,7 @@ public nonisolated struct Dieter_Gateway_V1_PushDestination: Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  /// Opaque native-session receipt, never an APNs token.
+  /// Opaque native-session receipt, never an OS push token.
   public var id: String = String()
 
   public var publicKey: Data = Data()
@@ -2464,6 +2500,10 @@ nonisolated extension Dieter_Gateway_V1_DeviceKeyAlgorithm: SwiftProtobuf._Proto
 
 nonisolated extension Dieter_Gateway_V1_DeviceRosterOperation: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DEVICE_ROSTER_OPERATION_UNSPECIFIED\0\u{1}DEVICE_ROSTER_OPERATION_GENESIS\0\u{1}DEVICE_ROSTER_OPERATION_ADD\0\u{1}DEVICE_ROSTER_OPERATION_REVOKE\0")
+}
+
+nonisolated extension Dieter_Gateway_V1_PushProvider: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0APNS\0\u{1}FCM\0")
 }
 
 nonisolated extension Dieter_Gateway_V1_Account: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
@@ -5711,7 +5751,7 @@ nonisolated extension Dieter_Gateway_V1_PairingRequestRef: SwiftProtobuf.Message
 
 nonisolated extension Dieter_Gateway_V1_SetPushDeviceRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SetPushDeviceRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}token\0\u{3}public_key\0\u{1}sandbox\0\u{3}device_id\0\u{1}signature\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}token\0\u{3}public_key\0\u{1}sandbox\0\u{3}device_id\0\u{1}signature\0\u{1}provider\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -5724,6 +5764,7 @@ nonisolated extension Dieter_Gateway_V1_SetPushDeviceRequest: SwiftProtobuf.Mess
       case 3: try { try decoder.decodeSingularBoolField(value: &self.sandbox) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.deviceID) }()
       case 5: try { try decoder.decodeSingularBytesField(value: &self.signature) }()
+      case 6: try { try decoder.decodeSingularEnumField(value: &self.provider) }()
       default: break
       }
     }
@@ -5745,6 +5786,9 @@ nonisolated extension Dieter_Gateway_V1_SetPushDeviceRequest: SwiftProtobuf.Mess
     if !self.signature.isEmpty {
       try visitor.visitSingularBytesField(value: self.signature, fieldNumber: 5)
     }
+    if self.provider != .apns {
+      try visitor.visitSingularEnumField(value: self.provider, fieldNumber: 6)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -5754,6 +5798,7 @@ nonisolated extension Dieter_Gateway_V1_SetPushDeviceRequest: SwiftProtobuf.Mess
     if lhs.sandbox != rhs.sandbox {return false}
     if lhs.deviceID != rhs.deviceID {return false}
     if lhs.signature != rhs.signature {return false}
+    if lhs.provider != rhs.provider {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

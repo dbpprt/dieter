@@ -1351,8 +1351,8 @@ Production rollout updates/restarts are operator work, never a testing method.
 
 ### Unseen model replies
 
-The iOS app can badge and notify for the same attention state. APNs setup and
-signing are described in [iOS notifications](../../../docs/ios-notifications.md).
+Android and iOS share attention notifications and encrypted push destinations.
+APNs/FCM setup and signing are described in [mobile notifications](../../../docs/ios-notifications.md).
 OS token registration is internal to the native session; use the existing
 `card read` / `chat read` operations for response acknowledgement.
 

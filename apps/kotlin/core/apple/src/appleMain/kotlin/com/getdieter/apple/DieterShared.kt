@@ -183,7 +183,7 @@ interface NativeLogger {
  * names (e.g. `MARK_DONE`, `OPEN`). [session] marks a running chat's turn, so dismissing it hides
  * only that turn.
  */
-/** iOS badge and attention alerts, already classified by the shared core. */
+/** Apple OS adapter for attention alerts classified by the shared core. */
 interface NativeAttentionNotifications {
     fun post(cardId: String, title: String, text: String)
 
@@ -199,6 +199,40 @@ interface NativeAttentionNotifications {
 }
 
 class NativePushDevice(val token: String, val publicKey: NSData, val sandbox: Boolean)
+
+/** CryptoKit adapter for the shared push delivery state machine. Call on the UI thread. */
+interface NativePushDecoder {
+    fun cardId(accountKey: String, sealed: NSData): String?
+}
+
+class NativePushDelivery(decoder: NativePushDecoder) {
+    private val delivery =
+        com.getdieter.core.notifications.PushDelivery { account, sealed ->
+            decoder.cardId(account, sealed.toByteArray().toNSData())
+        }
+    val available: Boolean
+        get() = delivery.available
+
+    val accountKey: String?
+        get() = delivery.accountKey
+
+    fun tapLocal(accountKey: String, cardId: String): String? =
+        delivery.tapLocal(accountKey, cardId)
+
+    fun registered(available: Boolean) = delivery.registered(available)
+
+    fun visible(cardId: String?) = delivery.visible(cardId)
+
+    fun reset() = delivery.reset()
+
+    fun bind(accountKey: String): String? = delivery.bind(accountKey)
+
+    fun tap(sealed: NSData): String? = delivery.tap(sealed.toByteArray().toByteString())
+
+    fun cardId(sealed: NSData): String? = delivery.cardId(sealed.toByteArray().toByteString())
+
+    fun present(sealed: NSData): Boolean = delivery.present(sealed.toByteArray().toByteString())
+}
 
 interface NativeNotifications {
     fun post(

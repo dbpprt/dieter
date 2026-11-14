@@ -56,12 +56,8 @@ func (s *Service) SetPushDevice(ctx context.Context, request *gatewayv1.SetPushD
 		if len(request.GetDeviceId()) < 4 || len(request.GetDeviceId()) > 128 || len(request.GetSignature()) < 32 || len(request.GetSignature()) > 256 {
 			return nil, status.Error(codes.InvalidArgument, "invalid push device binding")
 		}
-		if len(request.GetToken()) < 32 || len(request.GetToken()) > 512 {
-			return nil, status.Error(codes.InvalidArgument, "invalid APNs device token")
-		}
-		token, err := hex.DecodeString(request.GetToken())
-		if err != nil || len(token) < 16 || len(token) > 256 {
-			return nil, status.Error(codes.InvalidArgument, "invalid APNs device token")
+		if !validPushToken(request.GetProvider(), request.GetToken(), request.GetSandbox()) {
+			return nil, status.Error(codes.InvalidArgument, "invalid push provider or device token")
 		}
 		key, err := ecdh.X25519().NewPublicKey(request.GetPublicKey())
 		if err != nil {
@@ -81,14 +77,17 @@ func (s *Service) SetPushDevice(ctx context.Context, request *gatewayv1.SetPushD
 			return nil, status.Error(codes.PermissionDenied, "push key requires a trusted device signature")
 		}
 	}
-	token := strings.ToLower(request.GetToken())
-	available := s.hub.push != nil
+	token := request.GetToken()
+	if request.GetProvider() == gatewayv1.PushProvider_APNS {
+		token = strings.ToLower(token)
+	}
+	available := s.hub.push != nil && s.hub.push.available(request.GetProvider())
 	owners := map[int64]bool{principal.GitHubID: true}
 	err := s.store.UpdateAuthState(func(state *AuthState) error {
 		devices := 0
 		found := false
 		for _, item := range state.Sessions {
-			if item.GitHubID == principal.GitHubID && item.PushToken != "" && item.PushToken != token && item.ExpiresAt.After(time.Now()) && item.TokenHash != principal.SessionHash {
+			if item.GitHubID == principal.GitHubID && item.PushToken != "" && (item.PushToken != token || item.PushProvider != int32(request.GetProvider())) && item.ExpiresAt.After(time.Now()) && item.TokenHash != principal.SessionHash {
 				devices++
 			}
 		}
@@ -97,8 +96,8 @@ func (s *Service) SetPushDevice(ctx context.Context, request *gatewayv1.SetPushD
 		}
 		for i := range state.Sessions {
 			item := &state.Sessions[i]
-			// An APNs route has one active account/session, including a later sign-in.
-			if item.PushToken == token && item.TokenHash != principal.SessionHash {
+			// A provider route has one active account/session, including a later sign-in.
+			if item.PushToken == token && item.PushProvider == int32(request.GetProvider()) && item.TokenHash != principal.SessionHash {
 				if item.PushToken != "" {
 					owners[item.GitHubID] = true
 				}
@@ -108,6 +107,7 @@ func (s *Service) SetPushDevice(ctx context.Context, request *gatewayv1.SetPushD
 			if item.TokenHash == principal.SessionHash && item.GitHubID == principal.GitHubID && item.ExpiresAt.After(time.Now()) {
 				found = true
 				item.PushToken = token
+				item.PushProvider = int32(request.GetProvider())
 				item.PushPublicKey = nil
 				item.PushSandbox = false
 				item.PushDeviceID = ""
@@ -194,7 +194,7 @@ func (p *PushManager) Start(ctx context.Context) {
 				case <-ctx.Done():
 					return
 				case job := <-p.queue:
-					// Re-check revocation/expiry immediately before APNs delivery.
+					// Re-check revocation/expiry immediately before provider delivery.
 					sessions, err := p.store.pushSessions(job.account)
 					if err != nil {
 						p.log.Warn("push session lookup failed")
@@ -208,13 +208,13 @@ func (p *PushManager) Start(ctx context.Context) {
 						invalid, sendErr := p.sender.Send(sendCtx, session, job.badge, job.sealed)
 						cancel()
 						if sendErr != nil {
-							p.log.Warn("APNs delivery failed")
+							p.log.Warn("push delivery failed")
 						}
 						if invalid {
 							_ = p.store.UpdateAuthState(func(state *AuthState) error {
 								for i := range state.Sessions {
 									item := &state.Sessions[i]
-									if item.TokenHash == session.TokenHash && item.PushToken == session.PushToken {
+									if item.TokenHash == session.TokenHash && item.PushToken == session.PushToken && item.PushProvider == session.PushProvider {
 										item.PushToken = ""
 										item.PushPublicKey = nil
 									}
@@ -236,6 +236,9 @@ func (p *PushManager) destinations(account int64) []*gatewayv1.PushDestination {
 	}
 	result := make([]*gatewayv1.PushDestination, 0, len(sessions))
 	for _, session := range sessions {
+		if !p.available(gatewayv1.PushProvider(session.PushProvider)) {
+			continue
+		}
 		result = append(result, &gatewayv1.PushDestination{Id: session.TokenHash, PublicKey: session.PushPublicKey, DeviceId: session.PushDeviceID, Signature: session.PushSignature})
 	}
 	return result
@@ -307,4 +310,45 @@ func (p *PushManager) handle(record DaemonRecord, presence *gatewayv1.AttentionP
 		}
 	}
 	return nil
+}
+
+// APNs tokens are hexadecimal; FCM registration tokens are opaque and case-sensitive.
+func validPushToken(provider gatewayv1.PushProvider, token string, sandbox bool) bool {
+	switch provider {
+	case gatewayv1.PushProvider_APNS:
+		if len(token) < 32 || len(token) > 512 {
+			return false
+		}
+		_, err := hex.DecodeString(token)
+		return err == nil
+	case gatewayv1.PushProvider_FCM:
+		if sandbox || len(token) < 32 || len(token) > 4096 {
+			return false
+		}
+		for _, c := range token {
+			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == ':' || c == '_' || c == '-') {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+type pushProviders map[gatewayv1.PushProvider]pushSender
+
+func (s pushProviders) Send(ctx context.Context, session Session, badge int, sealed []byte) (bool, error) {
+	sender := s[gatewayv1.PushProvider(session.PushProvider)]
+	if sender == nil {
+		return false, errors.New("push provider unavailable")
+	}
+	return sender.Send(ctx, session, badge, sealed)
+}
+
+func (p *PushManager) available(provider gatewayv1.PushProvider) bool {
+	if senders, ok := p.sender.(pushProviders); ok {
+		return senders[provider] != nil
+	}
+	return p.sender != nil
 }
