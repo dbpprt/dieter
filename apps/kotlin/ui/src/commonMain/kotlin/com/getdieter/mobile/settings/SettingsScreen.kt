@@ -151,13 +151,18 @@ internal fun SettingsScreen(store: MobileStore) {
                             )
                         1 ->
                             ListRow(
-                                if (disconnected) "Connect" else "Reconnect",
+                                when {
+                                    disconnected -> "Connect"
+                                    session.needsSignIn -> "Sign in with GitHub"
+                                    else -> "Reconnect"
+                                },
+                                Modifier.testTag("connection-action"),
                                 position = position,
-                                glyph = Glyph.SYNC,
+                                glyph = if (session.needsSignIn) Glyph.PERSON else Glyph.SYNC,
                                 onClick = {
                                     if (disconnected)
                                         store.command(Command(set_connected = SetConnected(true)))
-                                    else store.session.retry()
+                                    else store.session.reconnect()
                                 },
                             )
                         else ->

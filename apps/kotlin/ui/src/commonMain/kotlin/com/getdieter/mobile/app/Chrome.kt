@@ -586,8 +586,8 @@ internal fun ConnectionNotice(store: MobileStore, modifier: Modifier = Modifier)
             modifier.padding(horizontal = ScreenMargin, vertical = 6.dp),
             tone = Tone.WARNING,
             glyph = Glyph.OFFLINE,
-            actionLabel = "Retry",
-            onAction = store.session::retry,
+            actionLabel = if (session.needsSignIn) "Sign in" else "Retry",
+            onAction = store.session::reconnect,
         )
     }
 }

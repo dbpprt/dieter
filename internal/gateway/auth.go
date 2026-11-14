@@ -399,10 +399,51 @@ func (a *Auth) AuthenticateBearer(raw string) (Principal, bool) {
 	now := time.Now().UTC()
 	for _, session := range state.Sessions {
 		if session.ExpiresAt.After(now) && a.config.AllowsGitHubUser(session.GitHubID) && hmac.Equal([]byte(session.TokenHash), []byte(digest)) {
+			if a.sessionRenewalDue(session, now) {
+				a.renewSession(digest, now)
+			}
 			return Principal{GitHubID: session.GitHubID, Login: session.Login, SessionHash: session.TokenHash}, true
 		}
 	}
 	return Principal{}, false
+}
+
+// errSessionUnchanged ends a renewal that has nothing to write.
+var errSessionUnchanged = errors.New("session unchanged")
+
+// sessionRenewalDue reports whether session was last extended at least a
+// thirtieth of the session lifetime ago (at most a day), so a device in
+// constant use writes its session about once a day rather than on every call.
+func (a *Auth) sessionRenewalDue(session Session, now time.Time) bool {
+	step := min(a.config.SessionTTL/30, 24*time.Hour)
+	return session.ExpiresAt.After(now) && session.ExpiresAt.Before(now.Add(a.config.SessionTTL-step))
+}
+
+// renewSession extends the session with token hash digest to the full session
+// lifetime from now. DIETER_NATIVE_SESSION_TTL thus bounds how long a session
+// may go unused, not how long a device in use stays signed in. Sign-out, an
+// account removed from the allowlist, or an expired session still end it: an
+// expired session is never revived. A failed write keeps the old expiry and the
+// next call tries again.
+func (a *Auth) renewSession(digest string, now time.Time) {
+	err := a.store.UpdateAuthState(func(state *AuthState) error {
+		for index := range state.Sessions {
+			session := &state.Sessions[index]
+			if !hmac.Equal([]byte(session.TokenHash), []byte(digest)) {
+				continue
+			}
+			// A concurrent call may have renewed it already.
+			if !a.sessionRenewalDue(*session, now) {
+				return errSessionUnchanged
+			}
+			session.ExpiresAt = now.Add(a.config.SessionTTL)
+			return nil
+		}
+		return errSessionUnchanged
+	})
+	if err != nil && !errors.Is(err, errSessionUnchanged) {
+		a.log.Warn("gateway session renewal failed", "error", err)
+	}
 }
 
 func (a *Auth) grpcPrincipal(ctx context.Context) (Principal, error) {

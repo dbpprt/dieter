@@ -222,7 +222,10 @@ size-limited before allocation (`internal/gateway/ingress.go`).
 ### Stolen device or session
 
 - **Client device.** Reaching a machine takes both the app's device key and a
-  current gateway session (`DIETER_NATIVE_SESSION_TTL`). Device keys are
+  current gateway session. A session expires after `DIETER_NATIVE_SESSION_TTL`
+  without use; each use extends it (at most once a day), so a stolen session
+  token stays valid while it is used, until sign-out or the account leaves the
+  allowlist. Alone it reaches no machine. Device keys are
   non-exportable where the hardware allows: a Secure Enclave key on macOS
   (stored as an opaque blob in the app's user-only Application Support file,
   never in the Keychain) and iOS (device-only Keychain), and an Android Keystore

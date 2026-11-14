@@ -289,6 +289,58 @@ class MobileStoreTest {
     }
 
     @Test
+    fun reconnectSignsInAgainOnceTheGatewayTurnedDownTheSession() = runTest {
+        val origin = "https://gateway.example:443"
+        val core = FakeMobileCore { command ->
+            if (command.begin_sign_in != null)
+                Result(sign_in_started = SignInStarted("$origin/auth/github/start"))
+            else Result(done = Done())
+        }
+        val store = store(core)
+        try {
+            runCurrent()
+            core.publish(
+                Slice.SLICE_SESSION,
+                update =
+                    Update(
+                        session =
+                            SessionSlice(
+                                phase = SessionSlice.Phase.PHASE_RECONNECTING,
+                                gateway_origin = origin,
+                            )
+                    ),
+            )
+            runCurrent()
+            store.session.reconnect()
+            runCurrent()
+            assertEquals(1, core.sentOf { it.reconnect }.size)
+            assertTrue(core.sentOf { it.begin_sign_in }.isEmpty())
+
+            // An expired or revoked session fails every retry the same way; only sign-in helps.
+            core.publish(
+                Slice.SLICE_SESSION,
+                update =
+                    Update(
+                        session =
+                            SessionSlice(
+                                phase = SessionSlice.Phase.PHASE_AUTH_REQUIRED,
+                                gateway_origin = origin,
+                            )
+                    ),
+            )
+            runCurrent()
+            assertTrue(store.session.slice.value.needsSignIn)
+            store.session.reconnect()
+            runCurrent()
+            assertEquals(1, core.sentOf { it.reconnect }.size)
+            assertEquals(listOf(origin), core.sentOf { it.begin_sign_in }.map { it.gateway_url })
+            assertEquals("$origin/auth/github/start", store.session.signInUrl.value)
+        } finally {
+            store.close()
+        }
+    }
+
+    @Test
     fun aClosedStoreIgnoresLateUpdatesAndCommands() = runTest {
         val core = FakeMobileCore()
         val store = store(core)

@@ -101,6 +101,11 @@ object Availability {
     ): ConnectionNotice {
         val cachedDetail =
             when {
+                // Retrying cannot help: the gateway no longer accepts this device's session.
+                phase == ConnectionPhase.AUTH_REQUIRED && offlineOutbox ->
+                    "Sign in again to reconnect. Cached conversations stay available; messages and new conversations queue until then."
+                phase == ConnectionPhase.AUTH_REQUIRED ->
+                    "Sign in again to reconnect. Cached data stays read-only until then."
                 offlineOutbox && phase in interrupted ->
                     "Cached conversations stay available; messages and new conversations queue until Dieter reconnects."
                 phase == ConnectionPhase.CONNECTING ->

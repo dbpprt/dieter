@@ -52,7 +52,7 @@ Every variable is listed in the [environment reference](/docs/environment/).
 | `DIETER_GITHUB_CLIENT_ID`, `DIETER_GITHUB_CLIENT_SECRET` | GitHub OAuth App credentials                                                                                                              |
 | `DIETER_GITHUB_ALLOWED_USER_IDS`                         | Comma-separated immutable numeric GitHub IDs                                                                                              |
 | `DIETER_AUTH_SECRET`                                     | Gateway authentication secret                                                                                                             |
-| `DIETER_NATIVE_SESSION_TTL`                              | Native session lifetime                                                                                                                   |
+| `DIETER_NATIVE_SESSION_TTL`                              | How long a native app session lasts unused; each use extends it                                                                           |
 | `DIETER_NATIVE_REDIRECT_URIS`                            | Exact allowlisted native OAuth callbacks                                                                                                  |
 | `DIETER_RTC_STUN_URLS`, `DIETER_RTC_TURN_URLS`           | ICE services for Screens and data-only WebRTC API routes                                                                                  |
 | `DIETER_RTC_TURN_SECRET`                                 | Hex-encoded coturn REST secret, at least 32 bytes                                                                                         |

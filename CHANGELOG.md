@@ -10,16 +10,6 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ### Added
 
-- **Strix security scans.** The new **Strix** harness runs the open-source
-  [Strix](https://github.com/usestrix/strix) pentesting agent against a card's
-  worktree: its agent team, tool calls, todo list and validated findings appear
-  in the conversation, and a completed scan ends with its report. A follow-up
-  message continues the same scan. It needs Docker on the execution machine and
-  a vault item with the model API key (named `strix` by default); Dieter
-  installs the pinned Strix 1.7.1 on first use. Scans run only in worktrees,
-  stop at a budget (default $10), and only a person can start or message one:
-  agent turns and channel messages cannot. See
-  [Agents & models](https://getdieter.com/docs/harnesses/#strix).
 - **Synced folders**: named directories that Dieter keeps the same on your
   machines and phones. Daemons sync with each other through the gateway's
   encrypted carriers; Android phones and iPhones sync with one daemon, in the
@@ -34,7 +24,40 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ### Changed
 
-- Daemons below 0.6.445 are refused: they cannot read synced folder records.
+- Daemons below 0.6.446 are refused: they cannot read synced folder records.
+
+## 0.6.445
+
+### Added
+
+- **Strix security scans.** The new **Strix** harness runs the open-source
+  [Strix](https://github.com/usestrix/strix) pentesting agent against a card's
+  worktree: its agent team, tool calls, todo list and validated findings appear
+  in the conversation, and a completed scan ends with its report. A follow-up
+  message continues the same scan. It needs Docker on the execution machine and
+  a vault item with the model API key (named `strix` by default); Dieter
+  installs the pinned Strix 1.7.1 on first use. Scans run only in worktrees,
+  stop at a budget (default $10), and only a person can start or message one:
+  agent turns and channel messages cannot. See
+  [Agents & models](https://getdieter.com/docs/harnesses/#strix).
+
+### Changed
+
+- File transfers between machines are much faster. `dieter file cp` and
+  `dieter file sync` keep eight chunks of each file in flight instead of one,
+  the WebRTC route negotiates an 8 MiB window instead of 256 KiB, and relayed
+  transfers send full 64 KiB frames. Over a TURN path with a 54 ms round
+  trip, a 64 MiB copy went from about 2 MiB/s to 33 MiB/s up and 44 MiB/s
+  down. Both machines need this release; relayed transfers also need the
+  updated gateway. The native apps keep their current WebRTC window.
+
+### Fixed
+
+- Downloads no longer sync every chunk to disk or copy the finished file
+  again, and a damaged partial download now restarts on the next run instead
+  of asking you to delete it.
+- Go 1.26.11 (the gateway image builds with Go 1.27.4) fixes GO-2026-6859, an
+  HTTP server crash.
 
 ## 0.6.442
 
