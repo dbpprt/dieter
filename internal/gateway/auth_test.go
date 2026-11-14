@@ -117,6 +117,89 @@ func TestAuthenticationRejectsSessionForRemovedGitHubUser(t *testing.T) {
 	}
 }
 
+// A session in use keeps extending, so the configured lifetime bounds only how
+// long it may go unused; renewal writes about once a day, and never revives an
+// expired session or one whose account lost access.
+func TestSessionsInUseRenewWithoutRevivingExpiredOnes(t *testing.T) {
+	t.Parallel()
+	store, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	const ttl = 30 * 24 * time.Hour
+	auth := NewAuth(Config{AllowedUserIDs: map[int64]struct{}{42: {}}, AuthSecret: []byte("test-auth-secret"), SessionTTL: ttl}, store, nil)
+	token, issued, err := auth.createSession(42, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := auth.digest(token)
+	expiry := func() time.Time {
+		t.Helper()
+		state, err := store.AuthState()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, session := range state.Sessions {
+			if session.TokenHash == digest {
+				return session.ExpiresAt
+			}
+		}
+		t.Fatal("session is gone")
+		return time.Time{}
+	}
+	setExpiry := func(at time.Time) {
+		t.Helper()
+		if err := store.UpdateAuthState(func(state *AuthState) error {
+			for index := range state.Sessions {
+				if state.Sessions[index].TokenHash == digest {
+					state.Sessions[index].ExpiresAt = at
+				}
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	authenticate := func() bool {
+		_, ok := auth.AuthenticateBearer("Bearer " + token)
+		return ok
+	}
+
+	// Used again within a day of the last extension: nothing to write.
+	if !authenticate() || !expiry().Equal(issued) {
+		t.Fatalf("fresh session changed: issued %v, now %v", issued, expiry())
+	}
+
+	// Used a day before it would expire: the full lifetime starts over.
+	setExpiry(time.Now().UTC().Add(24 * time.Hour))
+	before := time.Now().UTC()
+	if !authenticate() {
+		t.Fatal("aging session was rejected")
+	}
+	renewed := expiry()
+	if renewed.Before(before.Add(ttl)) || renewed.After(time.Now().UTC().Add(ttl)) {
+		t.Fatalf("renewed expiry %v, want about %v", renewed, before.Add(ttl))
+	}
+
+	// An expired session stays expired.
+	setExpiry(time.Now().UTC().Add(-time.Minute))
+	if authenticate() {
+		t.Fatal("expired session was accepted")
+	}
+	if expiry().After(time.Now().UTC()) {
+		t.Fatal("expired session was revived")
+	}
+
+	// An account removed from the allowlist neither authenticates nor renews.
+	aging := time.Now().UTC().Add(24 * time.Hour).Truncate(time.Second)
+	setExpiry(aging)
+	auth.config.AllowedUserIDs = map[int64]struct{}{99: {}}
+	if authenticate() || !expiry().Equal(aging) {
+		t.Fatalf("removed account kept or renewed its session: expiry %v", expiry())
+	}
+}
+
 func newSecurityTestAuth(t *testing.T) *Auth {
 	t.Helper()
 	store, err := OpenStore(t.TempDir())

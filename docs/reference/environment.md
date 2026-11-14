@@ -67,7 +67,7 @@ elsewhere. Child processes still inherit the environment where documented.
 | `DIETER_GITHUB_ALLOWED_USER_IDS`                                 | Comma-separated immutable numeric GitHub user IDs allowed to sign in.                             |
 | `DIETER_GITHUB_BASE_URL`, `DIETER_GITHUB_API_URL`                | GitHub endpoints (defaults `https://github.com`, `https://api.github.com`).                       |
 | `DIETER_AUTH_SECRET`                                             | Hex session-signing secret.                                                                       |
-| `DIETER_NATIVE_SESSION_TTL`                                      | Native client session lifetime.                                                                   |
+| `DIETER_NATIVE_SESSION_TTL`                                      | How long a native client session lasts unused; each use extends it.                               |
 | `DIETER_NATIVE_REDIRECT_URIS`                                    | Comma-separated allowed native OAuth redirect URIs.                                               |
 | `DIETER_GATEWAY_TLS_CERT`, `DIETER_GATEWAY_TLS_KEY`              | TLS certificate and key when the gateway terminates TLS.                                          |
 | `DIETER_GATEWAY_PROXY_MODE`                                      | `1` behind a same-host TLS-terminating proxy (loopback listener, HTTPS public URL).               |

@@ -58,7 +58,7 @@ turn (the token gates [vault](/docs/vault/) access).
 | `DIETER_GITHUB_ALLOWED_USER_IDS`                                 | Comma-separated immutable numeric GitHub user IDs allowed to sign in.                                                        |
 | `DIETER_GITHUB_BASE_URL`, `DIETER_GITHUB_API_URL`                | GitHub endpoints, for GitHub Enterprise (defaults `https://github.com`, `https://api.github.com`).                           |
 | `DIETER_AUTH_SECRET`                                             | Hex session-signing secret (`openssl rand -hex 32`).                                                                         |
-| `DIETER_NATIVE_SESSION_TTL`                                      | Native app session lifetime, for example `720h`.                                                                             |
+| `DIETER_NATIVE_SESSION_TTL`                                      | How long a native app session lasts unused, for example `720h`; each use extends it.                                         |
 | `DIETER_NATIVE_REDIRECT_URIS`                                    | Exact allowed app callbacks, comma-separated.                                                                                |
 | `DIETER_MINIMUM_CLIENT_VERSION`, `DIETER_MINIMUM_DAEMON_VERSION` | Oldest client and daemon releases the gateway admits.                                                                        |
 | `DIETER_RTC_STUN_URLS`, `DIETER_RTC_TURN_URLS`                   | Comma-separated ICE servers for Screens and WebRTC API routes.                                                               |
