@@ -241,7 +241,7 @@ internal fun CoreRuntime.navigationSlices(): Flow<NavigationSlice> =
     combine(
         navigationKv.values,
         navigationKv.status,
-        // Without a saved manual order, the sidebar follows recent activity.
+        // Without a saved manual order, working projects lead recent activity.
         workspace.state
             .map { view -> ProjectOrdering.byActivity(view.projects, view.allItems) }
             .distinctUntilChanged(),

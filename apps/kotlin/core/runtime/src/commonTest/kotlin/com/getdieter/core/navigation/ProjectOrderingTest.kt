@@ -12,6 +12,61 @@ import okio.fakefilesystem.FakeFileSystem
 
 class ProjectOrderingTest {
     @Test
+    fun runningProjectsDoNotTradePlacesAsTheyStreamActivity() {
+        val projects =
+            listOf(
+                Project(id = "alpha", name = "Alpha"),
+                Project(id = "beta", name = "Beta"),
+                Project(id = "gamma", name = "Gamma"),
+            )
+        val alpha =
+            Card(
+                id = "alpha-run",
+                project_id = "alpha",
+                runtime = "running",
+                runtime_updated_at = "2026-06-03T10:00:00Z",
+                last_activity_at = "2026-06-03T10:09:00Z",
+            )
+        val beta =
+            Card(
+                id = "beta-run",
+                project_id = "beta",
+                runtime = "streaming",
+                runtime_updated_at = "2026-06-03T10:05:00Z",
+                last_activity_at = "2026-06-03T10:08:00Z",
+            )
+        val gamma =
+            Card(
+                id = "gamma-idle",
+                project_id = "gamma",
+                runtime = "idle",
+                last_activity_at = "2026-06-03T10:10:00Z",
+            )
+
+        assertEquals(
+            listOf("beta", "alpha", "gamma"),
+            ProjectOrdering.byActivity(projects, listOf(alpha, beta, gamma)),
+            "working projects lead, ordered by their latest runtime transition",
+        )
+        assertEquals(
+            listOf("beta", "alpha", "gamma"),
+            ProjectOrdering.byActivity(
+                projects,
+                listOf(alpha.copy(last_activity_at = "2026-06-03T10:11:00Z"), beta, gamma),
+            ),
+            "streamed activity alone does not reshuffle working projects",
+        )
+        assertEquals(
+            listOf("alpha", "beta", "gamma"),
+            ProjectOrdering.byActivity(
+                projects,
+                listOf(alpha.copy(runtime_updated_at = "2026-06-03T10:12:00Z"), beta, gamma),
+            ),
+            "a runtime transition can still promote newly started work",
+        )
+    }
+
+    @Test
     fun activityLeadsUntilSavedPositionsOverrideIt() {
         val projects =
             listOf(
