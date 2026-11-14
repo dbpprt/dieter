@@ -6,10 +6,7 @@ package main
 
 import (
 	"context"
-	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -18,7 +15,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -28,23 +24,31 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/buildinfo"
-	"github.com/dbpprt/dieter/internal/controlrtc"
-	"github.com/dbpprt/dieter/internal/daemon"
-	"github.com/dbpprt/dieter/internal/fixtureturn"
+	"github.com/dbpprt/dieter/internal/api"
 	"github.com/dbpprt/dieter/internal/gateway"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/harness"
-	"github.com/dbpprt/dieter/internal/localauth"
-	"github.com/dbpprt/dieter/internal/machine"
+	"github.com/dbpprt/dieter/internal/host/machine"
+	"github.com/dbpprt/dieter/internal/link"
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/peerstore"
-	"github.com/dbpprt/dieter/internal/server"
+	"github.com/dbpprt/dieter/internal/platform/buildinfo"
+	"github.com/dbpprt/dieter/internal/platform/fault"
+	"github.com/dbpprt/dieter/internal/replication/crdt"
+	"github.com/dbpprt/dieter/internal/security/localauth"
+	"github.com/dbpprt/dieter/internal/security/roster"
 	boardstore "github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/store/kanban"
+	"github.com/dbpprt/dieter/internal/store/mail"
+	"github.com/dbpprt/dieter/internal/testkit/topology"
+	"github.com/dbpprt/dieter/internal/transport/controlrtc"
+	"github.com/dbpprt/dieter/tools/fixtures/fixtureturn"
 )
 
 const enrollmentRPCTimeout = 30 * time.Second
+
+// isolatedAccount is the GitHub user that owns every fixture machine.
+const isolatedAccount int64 = 1
 
 func enrollmentRPC[T any](ctx context.Context, logger *slog.Logger, role, operation string, call func(context.Context) (T, error)) (T, error) {
 	started := time.Now()
@@ -66,32 +70,24 @@ func main() {
 	offlineTrigger := flag.String("offline-trigger", "", "optional file whose creation disconnects the enrolled daemon while leaving the gateway online")
 	daemonRestartTrigger := flag.String("daemon-restart-trigger", "", "optional file whose creation restarts the isolated daemon API and gateway tunnel")
 	inboxFixture := flag.Bool("inbox-fixture", false, "seed deterministic Inbox activity and real conversations")
+	mailReport := flag.String("mail-report", "", "optional Markdown file to seed as a revised report in the isolated E2E mailbox")
 	e2eFixture := flag.Bool("e2e-fixture", false, "seed the small persisted workspace that every Maestro flow uses")
 	usageFixture := flag.Bool("usage-fixture", false, "publish deterministic provider usage without provider credentials")
+	showcaseFixture := flag.Bool("showcase-fixture", false, "seed the multi-machine workspace with live agent turns used for documentation screenshots")
+	channelsFixture := flag.Bool("channels-fixture", false, "seed the project channel and its agents' conversations with a two-agent coordination")
 	directRoute := flag.String("direct-route", "", `advertise a loopback direct TLS route for the primary daemon: "live" serves it, "dead" advertises a closed port`)
 	flag.Parse()
 	if *directRoute != "" && *directRoute != "live" && *directRoute != "dead" {
 		fmt.Fprintln(os.Stderr, `error: -direct-route must be "live" or "dead"`)
 		os.Exit(2)
 	}
-	if err := run(*address, *home, *offlineTrigger, *daemonRestartTrigger, *directRoute, *inboxFixture, *usageFixture, *e2eFixture); err != nil {
+	if err := run(*address, *home, *offlineTrigger, *daemonRestartTrigger, *directRoute, *mailReport, *inboxFixture, *usageFixture, *e2eFixture, *showcaseFixture, *channelsFixture); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
-func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string, inboxFixture, usageFixture, e2eFixture bool) error {
-	// The mock harness answers every prompt deterministically, so end-to-end
-	// turns complete without real provider credentials.
-	if err := os.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1"); err != nil {
-		return err
-	}
-	// Smoke fixtures exercise client delivery and reconnect behavior with the
-	// bounded mock harness. Do not let the host's production agent
-	// disk reserve turn that transport assertion into a machine-capacity test.
-	if err := os.Setenv("DIETER_MIN_FREE_BYTES", "0"); err != nil {
-		return err
-	}
+func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute, mailReport string, inboxFixture, usageFixture, e2eFixture, showcaseFixture, channelsFixture bool) error {
 	if home == "" {
 		var err error
 		home, err = os.MkdirTemp("", "dieter-isolated-*")
@@ -108,64 +104,42 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	gatewayListener, err := net.Listen("tcp", address)
-	if err != nil {
-		return err
-	}
-	publicURL, err := url.Parse("http://" + gatewayListener.Addr().String())
-	if err != nil {
-		return err
-	}
 	authSecret := make([]byte, 32)
-	if _, err = rand.Read(authSecret); err != nil {
+	if _, err := rand.Read(authSecret); err != nil {
 		return err
-	}
-	config := gateway.Config{
-		Root: filepath.Join(home, "gateway"), Address: gatewayListener.Addr().String(), PublicURL: publicURL,
-		GitHubClientID: "isolated", GitHubSecret: "isolated", AllowedUserIDs: map[int64]struct{}{1: {}}, AuthSecret: authSecret, SessionTTL: 12 * time.Hour, RTCTTL: 5 * time.Minute,
-		NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid",
-		DevInsecure: true,
 	}
 	turn, err := fixtureturn.Load()
 	if err != nil {
 		return err
 	}
-	if turn != nil {
-		config.RTCTURNURLs = turn.URLs
-		config.RTCTURNSecret = []byte(turn.SharedSecret)
-	}
-	gatewayStore, err := gateway.OpenStore(config.Root)
+	isolated, err := topology.NewGateway(topology.GatewayOptions{
+		Root: filepath.Join(home, "gateway"), Address: address, Accounts: []int64{isolatedAccount}, Login: "isolated",
+		AuthSecret: authSecret, SessionTTL: 12 * time.Hour, Logger: logger,
+		Configure: func(config *gateway.Config) {
+			config.GitHubClientID, config.GitHubSecret = "isolated", "isolated"
+			if turn != nil {
+				config.RTCTURNURLs = turn.URLs
+				config.RTCTURNSecret = []byte(turn.SharedSecret)
+			}
+		},
+	})
 	if err != nil {
 		return err
 	}
-	defer gatewayStore.Close()
-	gatewayServer, err := gateway.NewServer(config, gatewayStore, logger)
-	if err != nil {
-		return err
+	defer isolated.Close()
+	gatewayServer := isolated.Server
+	enroll := func(role, root, name string) (*link.Identity, error) {
+		return enrollmentRPC(ctx, logger, role, "enrollment", func(requestContext context.Context) (*link.Identity, error) {
+			return isolated.Enroll(requestContext, root, name, isolatedAccount)
+		})
 	}
-	go func() { _ = gatewayServer.Serve(gatewayListener) }()
-	defer gatewayListener.Close()
 
-	identity, err := daemon.LoadOrCreateEnrollmentIdentity(filepath.Join(home, "dieter"), "Isolated E2E machine", publicURL.String())
+	primaryName := "Isolated E2E machine"
+	if showcaseFixture {
+		primaryName = showcaseOffice
+	}
+	identity, err := enroll("primary", filepath.Join(home, "dieter"), primaryName)
 	if err != nil {
-		return err
-	}
-	enrollment, err := enrollmentRPC(ctx, logger, "primary", "begin", func(requestContext context.Context) (*gatewayv1.DaemonEnrollment, error) {
-		return daemon.BeginEnrollment(requestContext, identity)
-	})
-	if err != nil {
-		return err
-	}
-	if err = gatewayStore.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), int64(1), "isolated"); err != nil {
-		return err
-	}
-	credential, err := enrollmentRPC(ctx, logger, "primary", "complete", func(requestContext context.Context) (*gatewayv1.DaemonCredential, error) {
-		return daemon.CompleteEnrollment(requestContext, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
-	})
-	if err != nil {
-		return err
-	}
-	if err = identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetDaemonCaPem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
 		return err
 	}
 
@@ -173,48 +147,57 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 	if err = data.Ensure(); err != nil {
 		return err
 	}
-	subject := fmt.Sprintf("github:%d", int64(1))
-	account := peerstore.Revision([]string{identity.GatewayURL, subject})
-	if _, err = data.BindPeerAccount(account, subject, identity.ID, identity.GatewayURL); err != nil {
+	subject := fmt.Sprintf("github:%d", isolatedAccount)
+	account := crdt.Revision([]string{identity.GatewayURL, subject})
+	if _, err = data.Replica.BindPeerAccount(account, subject, identity.ID, identity.GatewayURL); err != nil {
 		return err
 	}
-	repository := filepath.Join(home, "repo")
-	for _, command := range [][]string{
-		{"git", "init", "-b", "main", repository},
-		{"git", "-C", repository, "config", "user.name", "Dieter Isolated E2E"},
-		{"git", "-C", repository, "config", "user.email", "dieter@localhost"},
-	} {
-		process := exec.CommandContext(ctx, command[0], command[1:]...)
-		process.Env = isolatedGitEnvironment(os.Environ())
-		if output, commandErr := process.CombinedOutput(); commandErr != nil {
-			return fmt.Errorf("%s: %s: %w", strings.Join(command, " "), output, commandErr)
+	var project model.Project
+	var board model.Board
+	var showcased *showcase
+	if showcaseFixture {
+		if showcased, project, board, err = seedShowcaseOffice(ctx, home, data); err != nil {
+			return err
 		}
-	}
-	if err = os.WriteFile(filepath.Join(repository, "README.md"), []byte("# Isolated E2E\n"), 0o644); err != nil {
-		return err
-	}
-	linkedWorktree := filepath.Join(home, "linked-worktree")
-	for _, command := range [][]string{
-		{"git", "-C", repository, "add", "README.md"},
-		// Disposable fixture commits must not invoke the operator's signing agent.
-		{"git", "-C", repository, "-c", "commit.gpgsign=false", "commit", "-m", "initial"},
-		{"git", "-C", repository, "worktree", "add", "-b", "linked-worktree", linkedWorktree},
-	} {
-		process := exec.CommandContext(ctx, command[0], command[1:]...)
-		process.Env = isolatedGitEnvironment(os.Environ())
-		if output, commandErr := process.CombinedOutput(); commandErr != nil {
-			return fmt.Errorf("%s: %s: %w", strings.Join(command, " "), output, commandErr)
+	} else {
+		repository := filepath.Join(home, "repo")
+		for _, command := range [][]string{
+			{"git", "init", "-b", "main", repository},
+			{"git", "-C", repository, "config", "user.name", "Dieter Isolated E2E"},
+			{"git", "-C", repository, "config", "user.email", "dieter@localhost"},
+		} {
+			process := exec.CommandContext(ctx, command[0], command[1:]...)
+			process.Env = isolatedGitEnvironment(os.Environ())
+			if output, commandErr := process.CombinedOutput(); commandErr != nil {
+				return fmt.Errorf("%s: %s: %w", strings.Join(command, " "), output, commandErr)
+			}
 		}
-	}
-	project, err := data.CreateProject(boardstore.CreateProjectInput{
-		Name: "Isolated E2E", Path: repository, BaseBranch: "main",
-	})
-	if err != nil {
-		return err
-	}
-	board, err := data.CreateBoard(boardstore.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
-	if err != nil {
-		return err
+		if err = os.WriteFile(filepath.Join(repository, "README.md"), []byte("# Isolated E2E\n"), 0o644); err != nil {
+			return err
+		}
+		linkedWorktree := filepath.Join(home, "linked-worktree")
+		for _, command := range [][]string{
+			{"git", "-C", repository, "add", "README.md"},
+			// Disposable fixture commits must not invoke the operator's signing agent.
+			{"git", "-C", repository, "-c", "commit.gpgsign=false", "commit", "-m", "initial"},
+			{"git", "-C", repository, "worktree", "add", "-b", "linked-worktree", linkedWorktree},
+		} {
+			process := exec.CommandContext(ctx, command[0], command[1:]...)
+			process.Env = isolatedGitEnvironment(os.Environ())
+			if output, commandErr := process.CombinedOutput(); commandErr != nil {
+				return fmt.Errorf("%s: %s: %w", strings.Join(command, " "), output, commandErr)
+			}
+		}
+		project, err = data.Kanban.CreateProject(kanban.CreateProjectInput{
+			Name: "Isolated E2E", Path: repository, BaseBranch: "main",
+		})
+		if err != nil {
+			return err
+		}
+		board, err = data.Kanban.CreateBoard(kanban.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
+		if err != nil {
+			return err
+		}
 	}
 	if inboxFixture {
 		if err := seedInboxFixture(ctx, data, project, board); err != nil {
@@ -223,6 +206,23 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 	}
 	if e2eFixture {
 		if err := seedE2EFixture(data, project, board); err != nil {
+			return err
+		}
+	}
+	if mailReport != "" {
+		if !e2eFixture {
+			return fmt.Errorf("-mail-report requires -e2e-fixture")
+		}
+		body, err := os.ReadFile(mailReport)
+		if err != nil {
+			return err
+		}
+		if _, _, err := data.Mail.Send(mail.Draft{Sender: model.MailSender{Kind: model.MailSenderOperator, Label: "Revised report fixture"}, Subject: "upday revised transparency report", Body: string(body)}); err != nil {
+			return err
+		}
+	}
+	if channelsFixture {
+		if err := seedChannelsFixture(data, project, board); err != nil {
 			return err
 		}
 	}
@@ -240,43 +240,55 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 	if err != nil {
 		return err
 	}
+	// Device trust and the unadvertised TLS endpoint that relay tunnels and
+	// WebRTC control channels reach, exactly as `dieter serve` wires them.
+	primaryTrust, err := fixtureTrust(ctx, identity, logger)
+	if err != nil {
+		return err
+	}
+	endpoint, err := fixtureEndpoint(identity, primaryTrust, boardListener.Addr().String(), localToken)
+	if err != nil {
+		return err
+	}
+	defer endpoint.Server.Stop()
 	var control *controlrtc.Manager
 	if os.Getenv("DIETER_TEST_CONTROL_WEBRTC") == "1" {
-		tlsListener, listenErr := net.Listen("tcp", "127.0.0.1:0")
-		if listenErr != nil {
-			return listenErr
-		}
-		direct, directErr := daemon.NewDirectServer(identity, boardListener.Addr().String(), localToken)
-		if directErr != nil {
-			tlsListener.Close()
-			return directErr
-		}
-		go func() { _ = direct.Serve(tlsListener) }()
-		defer direct.Stop()
-		control = controlrtc.New(controlrtc.Identity{DaemonID: identity.ID, GatewayURL: identity.GatewayURL, Generation: identity.Generation, GatewaySigningPublicKey: identity.GatewaySigningPublicKey}, tlsListener.Addr().String())
+		control = controlrtc.New(controlrtc.Identity{DaemonID: identity.ID, GatewayURL: identity.GatewayURL, Generation: identity.Generation, GatewaySigningPublicKey: identity.GatewaySigningPublicKey}, endpoint.Listener.Addr().String())
 		defer control.Close()
 	}
+	trusts := map[*boardstore.Store]*link.Trust{data: primaryTrust}
 	var boardServersMu sync.Mutex
-	var boardServers []*server.Server
+	var boardServers []*api.Server
 	var boardRunners []*isolatedRunner
-	newFixtureServer := func(fixtureData *boardstore.Store) *server.Server {
-		runner := newIsolatedRunner(harness.NewSubprocessRunner(fixtureData.Root))
+	// Every fixture shares one installed harness runtime: DIETER_HARNESS_RUNTIME_DIR
+	// (the checkout's internal/harness/runtime in client tests) or a per-user
+	// cache, so concurrent fixtures don't each run npm ci.
+	runtimeHome, runtimeEnvironment := fixtureHarnessRuntime()
+	newFixtureServer := func(fixtureData *boardstore.Store) *api.Server {
+		runner := newIsolatedRunner(harness.NewSubprocessRunner(runtimeHome, runtimeEnvironment))
+		// Smoke fixtures exercise client delivery and reconnect behavior with the
+		// bounded mock harness. Do not let the host's production agent disk
+		// reserve turn that transport assertion into a machine-capacity test.
+		noDiskReserve := uint64(0)
 		runner.logger = logger
-		value := server.NewWithOptions(fixtureData, logger, server.Options{
+		runner.showcase = showcaseFixture
+		value := api.NewWithOptions(fixtureData, logger, api.Options{
 			Runner:        runner,
 			PrivacyDriver: &isolatedPrivacy{},
 			PrivacyBootID: func(context.Context) (string, error) { return "isolated-boot", nil },
 			// Keep the real release choices without triggering provider CLI/network
-			// discovery or runtime installation in each disposable fixture home.
-			HarnessCatalog: func(_ context.Context, includeMock bool) []harness.Adapter {
-				return harness.Catalog(includeMock)
-			},
+			// discovery or runtime installation in each disposable fixture home. The
+			// mock harness answers every prompt deterministically, so end-to-end
+			// turns complete without real provider credentials.
+			Catalog:          harness.StaticCatalog(true),
+			MinimumFreeBytes: &noDiskReserve,
 			ControlRTC: func() *controlrtc.Manager {
 				if fixtureData == data {
 					return control
 				}
 				return nil
 			}(),
+			Trust: trusts[fixtureData],
 			MachineAction: func(_ context.Context, operation machine.Operation) error {
 				logger.Info("isolated machine operation accepted", "operation", operation)
 				return nil
@@ -296,7 +308,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 		cleanupContext, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		boardServersMu.Lock()
-		values := append([]*server.Server(nil), boardServers...)
+		values := append([]*api.Server(nil), boardServers...)
 		runners := append([]*isolatedRunner(nil), boardRunners...)
 		boardServersMu.Unlock()
 		for index := len(values) - 1; index >= 0; index-- {
@@ -307,39 +319,51 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 		}
 	}()
 	boardServer := newFixtureServer(data)
-	boardHTTP := &http.Server{Handler: boardServer.Handler()}
+	boardHTTP := &http.Server{Handler: boardServer.Handler(), Protocols: api.LoopbackProtocols()}
 	go func() { _ = boardHTTP.Serve(boardListener) }()
 	defer boardHTTP.Close()
 	secondTarget := ""
 	var secondHandler *replaceableHandler
-	var newSecondServer func() *server.Server
-	var secondServer *server.Server
+	var newSecondServer func() *api.Server
+	var secondServer *api.Server
 	var secondData *boardstore.Store
+	var secondIdentity *link.Identity
 	if daemonRestartTrigger != "" {
 		secondData = boardstore.New(filepath.Join(home, "second-dieter"))
 		if err = secondData.Ensure(); err != nil {
 			return err
 		}
+		if secondIdentity, err = enroll("second", filepath.Join(home, "second-dieter"), "Projectless E2E machine"); err != nil {
+			return err
+		}
+		secondTrust, trustErr := fixtureTrust(ctx, secondIdentity, logger)
+		if trustErr != nil {
+			return trustErr
+		}
+		trusts[secondData] = secondTrust
 		secondListener, listenErr := net.Listen("tcp", "127.0.0.1:0")
 		if listenErr != nil {
 			return listenErr
 		}
-		newSecondServer = func() *server.Server { return newFixtureServer(secondData) }
+		newSecondServer = func() *api.Server { return newFixtureServer(secondData) }
 		secondServer = newSecondServer()
 		secondHandler = &replaceableHandler{handler: secondServer.Handler()}
-		secondHTTP := &http.Server{Handler: secondHandler}
+		secondHTTP := &http.Server{Handler: secondHandler, Protocols: api.LoopbackProtocols()}
 		go func() { _ = secondHTTP.Serve(secondListener) }()
 		defer secondHTTP.Close()
 		secondTarget = secondListener.Addr().String()
 	}
 
-	routes, err := fixtureDirectRoute(directRoute, identity, boardListener.Addr().String(), localToken)
+	routes, err := fixtureDirectRoute(directRoute, identity, primaryTrust, boardListener.Addr().String(), localToken)
 	if err != nil {
 		return err
 	}
-	tunnel := &daemon.GatewayClient{ControlWebRTC: control != nil, Identity: identity, LocalTarget: boardListener.Addr().String(), LocalToken: localToken, Version: buildinfo.ReleaseVersion, Routes: routes.candidates, Log: logger}
+	tunnel := &link.GatewayClient{ControlWebRTC: control != nil, Identity: identity, TunnelTarget: endpoint.Listener.Addr().String(), Version: buildinfo.ReleaseVersion, Routes: routes.candidates, Log: logger}
 	if usageFixture {
 		tunnel.ProviderQuotas = isolatedUsageQuotas{}
+	}
+	if showcaseFixture {
+		tunnel.ProviderQuotas = showcaseUsageQuotas{}
 	}
 	defer routes.close()
 	if offlineTrigger == "" {
@@ -390,64 +414,21 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 	// Keep an enrolled incompatible machine in discovery. The gateway rejects
 	// its obsolete contract, so it must remain offline rather than opening a
 	// fake incompatible tunnel against the current data plane.
-	incompatibleIdentity, err := daemon.LoadOrCreateEnrollmentIdentity(filepath.Join(home, "incompatible-daemon"), "Incompatible API machine", publicURL.String())
-	if err != nil {
-		return err
-	}
-	incompatibleEnrollment, err := enrollmentRPC(ctx, logger, "incompatible", "begin", func(requestContext context.Context) (*gatewayv1.DaemonEnrollment, error) {
-		return daemon.BeginEnrollment(requestContext, incompatibleIdentity)
-	})
-	if err != nil {
-		return err
-	}
-	if err = gatewayStore.ApproveEnrollment(incompatibleEnrollment.GetEnrollmentId(), incompatibleEnrollment.GetUserCode(), int64(1), "isolated"); err != nil {
-		return err
-	}
-	incompatibleCredential, err := enrollmentRPC(ctx, logger, "incompatible", "complete", func(requestContext context.Context) (*gatewayv1.DaemonCredential, error) {
-		return daemon.CompleteEnrollment(requestContext, incompatibleIdentity, incompatibleEnrollment.GetEnrollmentId(), incompatibleEnrollment.GetEnrollmentSecret())
-	})
-	if err != nil {
-		return err
-	}
-	if err = incompatibleIdentity.SaveCredential(incompatibleCredential.GetDaemonId(), incompatibleCredential.GetDaemonName(), incompatibleCredential.GetCertificatePem(), incompatibleCredential.GetDaemonCaPem(), incompatibleCredential.GetGatewaySigningPublicKey(), incompatibleCredential.GetExpiresAt(), incompatibleCredential.GetGeneration()); err != nil {
-		return err
-	}
-	if err = gatewayStore.MarkDaemonSeen(incompatibleIdentity.ID, "incompatible-e2e", []byte("[]"), []byte("{}")); err != nil {
-		return err
+	incompatibleID := ""
+	if !showcaseFixture {
+		incompatibleIdentity, enrollErr := enroll("incompatible", filepath.Join(home, "incompatible-daemon"), "Incompatible API machine")
+		if enrollErr != nil {
+			return enrollErr
+		}
+		if err = isolated.Store.MarkDaemonSeen(incompatibleIdentity.ID, "incompatible-e2e", []byte("[]"), []byte("{}")); err != nil {
+			return err
+		}
+		incompatibleID = incompatibleIdentity.ID
 	}
 
 	secondDaemonID := ""
 	if daemonRestartTrigger != "" {
-		secondIdentity, identityErr := daemon.LoadOrCreateEnrollmentIdentity(
-			filepath.Join(home, "second-dieter"), "Projectless E2E machine", publicURL.String())
-		if identityErr != nil {
-			return identityErr
-		}
-		secondEnrollment, enrollmentErr := enrollmentRPC(ctx, logger, "second", "begin", func(requestContext context.Context) (*gatewayv1.DaemonEnrollment, error) {
-			return daemon.BeginEnrollment(requestContext, secondIdentity)
-		})
-		if enrollmentErr != nil {
-			return enrollmentErr
-		}
-		if err = gatewayStore.ApproveEnrollment(
-			secondEnrollment.GetEnrollmentId(), secondEnrollment.GetUserCode(), int64(1), "isolated",
-		); err != nil {
-			return err
-		}
-		secondCredential, credentialErr := enrollmentRPC(ctx, logger, "second", "complete", func(requestContext context.Context) (*gatewayv1.DaemonCredential, error) {
-			return daemon.CompleteEnrollment(requestContext, secondIdentity, secondEnrollment.GetEnrollmentId(), secondEnrollment.GetEnrollmentSecret())
-		})
-		if credentialErr != nil {
-			return credentialErr
-		}
-		if err = secondIdentity.SaveCredential(
-			secondCredential.GetDaemonId(), secondCredential.GetDaemonName(), secondCredential.GetCertificatePem(),
-			secondCredential.GetDaemonCaPem(), secondCredential.GetGatewaySigningPublicKey(),
-			secondCredential.GetExpiresAt(), secondCredential.GetGeneration(),
-		); err != nil {
-			return err
-		}
-		if _, err = secondData.BindPeerAccount(account, subject, secondIdentity.ID, secondIdentity.GatewayURL); err != nil {
+		if _, err = secondData.Replica.BindPeerAccount(account, subject, secondIdentity.ID, secondIdentity.GatewayURL); err != nil {
 			return err
 		}
 		secondDaemonID = secondIdentity.ID
@@ -455,8 +436,13 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 		if tokenErr != nil {
 			return tokenErr
 		}
-		secondTunnel := &daemon.GatewayClient{
-			Identity: secondIdentity, LocalTarget: secondTarget, LocalToken: secondToken, Version: buildinfo.ReleaseVersion,
+		secondEndpoint, endpointErr := fixtureEndpoint(secondIdentity, trusts[secondData], secondTarget, secondToken)
+		if endpointErr != nil {
+			return endpointErr
+		}
+		defer secondEndpoint.Server.Stop()
+		secondTunnel := &link.GatewayClient{
+			Identity: secondIdentity, TunnelTarget: secondEndpoint.Listener.Addr().String(), Version: buildinfo.ReleaseVersion,
 			Log: logger,
 		}
 		acknowledged := make(chan struct{}, 1)
@@ -533,19 +519,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 		return err
 	}
 	token := "isolated_" + hex.EncodeToString(tokenBytes)
-	mac := hmac.New(sha256.New, config.AuthSecret)
-	if _, err = mac.Write([]byte(token)); err != nil {
-		return err
-	}
-	digest := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	now := time.Now().UTC()
-	if err = gatewayStore.UpdateAuthState(func(state *gateway.AuthState) error {
-		state.Sessions = append(state.Sessions, gateway.Session{
-			TokenHash: digest, GitHubID: int64(1), Login: "isolated",
-			CreatedAt: now, ExpiresAt: now.Add(config.SessionTTL),
-		})
-		return nil
-	}); err != nil {
+	if err = isolated.AddSession(token, isolatedAccount, "isolated"); err != nil {
 		return err
 	}
 
@@ -558,11 +532,45 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 		(secondDaemonID != "" && !gatewayServer.Hub.Online(secondDaemonID)) {
 		return fmt.Errorf("compatible daemon tunnels did not come online")
 	}
+	// The primary machine starts the account's device roster and pairs the
+	// second one through the production pairing path.
+	if _, _, err = primaryTrust.Initialize(ctx, false); err != nil {
+		return fmt.Errorf("start the isolated device roster: %w", err)
+	}
+	if secondDaemonID != "" {
+		if err = topology.Pair(ctx, primaryTrust, trusts[secondData]); err != nil {
+			return fmt.Errorf("pair the isolated second machine: %w", err)
+		}
+	}
+	// Clients pair with one shared code; the primary machine approves every
+	// request that proves it, exactly as `dieter device approve CODE` does.
+	_, pairingCode, err := roster.NewPairingSecret()
+	if err != nil {
+		return err
+	}
+	go approvePairingCode(ctx, primaryTrust, pairingCode, logger)
+	if streams := os.Getenv("DIETER_PERFORMANCE_STREAMS"); streams != "" {
+		if err = startPerformanceStreams(ctx, localConnectClient(boardListener.Addr().String(), localToken), data, project, streams); err != nil {
+			return err
+		}
+	}
+	if showcased != nil {
+		if err = showcased.connect(ctx, showcaseEnvironment{
+			logger: logger, gateway: isolated, enroll: enroll, newServer: newFixtureServer, account: account, subject: subject,
+			office: identity, officeAddress: boardListener.Addr().String(), officeToken: localToken,
+			primaryTrust: primaryTrust, trusts: trusts,
+		}); err != nil {
+			return err
+		}
+	}
 
-	fmt.Printf("DIETER_ISOLATED_ADDR=%s\n", gatewayListener.Addr().String())
+	fmt.Printf("DIETER_ISOLATED_ADDR=%s\n", isolated.Address)
 	fmt.Printf("DIETER_ISOLATED_TOKEN=%s\n", token)
+	fmt.Printf("DIETER_ISOLATED_PAIRING_CODE=%s\n", pairingCode)
 	fmt.Printf("DIETER_ISOLATED_DAEMON=%s\n", identity.ID)
-	fmt.Printf("DIETER_ISOLATED_INCOMPATIBLE_DAEMON=%s\n", incompatibleIdentity.ID)
+	if incompatibleID != "" {
+		fmt.Printf("DIETER_ISOLATED_INCOMPATIBLE_DAEMON=%s\n", incompatibleID)
+	}
 	if secondDaemonID != "" {
 		fmt.Printf("DIETER_ISOLATED_SECOND_DAEMON=%s\n", secondDaemonID)
 	}
@@ -579,10 +587,54 @@ type directRoutes struct {
 	close      func()
 }
 
+// fixtureTrust opens a fixture machine's device trust and follows its roster
+// until ctx ends.
+func fixtureTrust(ctx context.Context, identity *link.Identity, logger *slog.Logger) (*link.Trust, error) {
+	deviceTrust, err := link.OpenTrust(identity, logger)
+	if err != nil {
+		return nil, err
+	}
+	deviceTrust.PairingPoll = 200 * time.Millisecond
+	go deviceTrust.Run(ctx)
+	return deviceTrust, nil
+}
+
+// fixtureEndpoint serves a machine's unadvertised loopback TLS endpoint.
+func fixtureEndpoint(identity *link.Identity, deviceTrust *link.Trust, localTarget, localToken string) (*link.DirectRoute, error) {
+	route, err := link.NewDirectRoute(identity, deviceTrust, localTarget, localToken, "endpoint", "127.0.0.1:0", "127.0.0.1", "loopback", 0)
+	if err != nil {
+		return nil, err
+	}
+	go func() { _ = route.Server.Serve(route.Listener) }()
+	return route, nil
+}
+
+// approvePairingCode keeps approving devices that post a pairing request
+// proving code, until ctx ends. Each device still verifies the confirmation.
+func approvePairingCode(ctx context.Context, approver *link.Trust, code string, logger *slog.Logger) {
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		before := approver.Status().GetHeadSequence()
+		if _, err := approver.Approve(ctx, code); err == nil {
+			if after := approver.Status().GetHeadSequence(); after != before {
+				logger.Info("isolated fixture approved a device", "head", after)
+			}
+		} else if kind, _ := fault.KindOf(err); kind != fault.NotFound {
+			logger.Warn("isolated fixture approval failed", "error", err)
+		}
+	}
+}
+
 // fixtureDirectRoute mirrors the daemon's automatic loopback route, so clients
 // exercise pinned direct TLS against the disposable daemon. A "dead" route
 // advertises a port that refuses connections to cover relay fallback.
-func fixtureDirectRoute(mode string, identity *daemon.Identity, localTarget, localToken string) (directRoutes, error) {
+func fixtureDirectRoute(mode string, identity *link.Identity, deviceTrust *link.Trust, localTarget, localToken string) (directRoutes, error) {
 	if mode == "" {
 		return directRoutes{close: func() {}}, nil
 	}
@@ -598,7 +650,7 @@ func fixtureDirectRoute(mode string, identity *daemon.Identity, localTarget, loc
 		}
 		return directRoutes{candidates: []*gatewayv1.DirectCandidate{candidate}, close: func() {}}, nil
 	}
-	server, err := daemon.NewDirectServer(identity, localTarget, localToken)
+	server, err := link.NewDirectServer(identity, deviceTrust, localTarget, localToken)
 	if err != nil {
 		_ = listener.Close()
 		return directRoutes{}, err
@@ -646,6 +698,7 @@ type isolatedRunner struct {
 	active   map[*isolatedRun]struct{}
 	logger   *slog.Logger // Optional; set before admitting any fixture turns.
 	sequence uint64
+	showcase bool // Plays the scripted showcase turns; set before admitting any turns.
 }
 
 func newIsolatedRunner(runner isolatedHarness) *isolatedRunner {
@@ -725,6 +778,14 @@ func (runner *isolatedRunner) Run(ctx context.Context, request harness.Request, 
 }
 
 func (runner *isolatedRunner) run(ctx context.Context, request harness.Request, emit func(harness.Output) error) error {
+	if request.Prompt == performanceStreamPrompt {
+		return runPerformanceStream(ctx, request, emit)
+	}
+	if runner.showcase {
+		if script := showcaseScript(request); script != nil {
+			return runShowcaseTurn(ctx, request, emit, script)
+		}
+	}
 	// Activity receipt tests exercise the real daemon event pipeline without
 	// waiting for an unrelated SDK runtime installation in each disposable home.
 	if request.Harness == "mock" && request.Prompt == "mock-activity-reply" {
@@ -756,6 +817,13 @@ func (runner *isolatedRunner) run(ctx context.Context, request harness.Request, 
 		defer timer.Stop()
 		select {
 		case <-ctx.Done():
+			if strings.Contains(request.Prompt, "mock-queue-slow-stop") {
+				// Model a provider finishing cleanup after acknowledging cancellation.
+				// Only this disposable fixture opts into the bounded delay.
+				cleanup := time.NewTimer(10 * time.Second)
+				defer cleanup.Stop()
+				<-cleanup.C
+			}
 			return ctx.Err()
 		case <-timer.C:
 		}
@@ -785,7 +853,7 @@ func isolatedMachineCapabilities(context.Context) []machine.OperationCapability 
 // tool-heavy histories. All writes use the disposable fixture store.
 func seedChatPerformanceFixture(data *boardstore.Store, project model.Project) error {
 	for i := range 40 {
-		card, err := data.CreateChat(boardstore.CreateCardInput{
+		card, err := data.Kanban.CreateChat(kanban.CreateCardInput{
 			Project: project.ID, Title: fmt.Sprintf("Performance chat %02d", i),
 			Provider: "mock", Model: "mock", WorkspaceMode: model.WorkspaceModeProject,
 		})
@@ -795,7 +863,7 @@ func seedChatPerformanceFixture(data *boardstore.Store, project model.Project) e
 		if i >= 2 {
 			continue
 		}
-		if _, err := data.PinChat(card.ID, true); err != nil {
+		if _, err := data.Kanban.PinChat(card.ID, true); err != nil {
 			return err
 		}
 		messages := make([]model.UIMessage, 300)
@@ -817,7 +885,7 @@ func seedChatPerformanceFixture(data *boardstore.Store, project model.Project) e
 			}
 			messages[len(messages)-1].Parts = parts
 		}
-		if _, err := data.InitializeForkConversation(card.ID, messages); err != nil {
+		if _, err := data.Conversations.InitializeFork(card.ID, messages); err != nil {
 			return err
 		}
 	}
@@ -853,4 +921,15 @@ func (f *isolatedPrivacy) Snapshot(context.Context) (*dieterv1.MachinePrivacy, e
 func (f *isolatedPrivacy) Set(ctx context.Context, enabled bool) (*dieterv1.MachinePrivacy, error) {
 	f.enabled = enabled
 	return f.Snapshot(ctx)
+}
+
+// fixtureHarnessRuntime returns the runner root and environment shared by all
+// fixture servers in this process.
+func fixtureHarnessRuntime() (string, harness.Environment) {
+	environment := harness.Environment{RuntimeDir: os.Getenv("DIETER_HARNESS_RUNTIME_DIR")}
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		cache = os.TempDir()
+	}
+	return filepath.Join(cache, "dieter-fixtures"), environment
 }

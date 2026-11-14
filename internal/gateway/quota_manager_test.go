@@ -9,6 +9,7 @@ import (
 )
 
 func TestClaudeQuotaPresenceAndRefreshRespectFiveAndTenMinuteWindows(t *testing.T) {
+	t.Parallel()
 	store, err := OpenStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -84,7 +85,7 @@ func TestClaudeQuotaPresenceAndRefreshRespectFiveAndTenMinuteWindows(t *testing.
 	}
 	now = start.Add(15*time.Minute - time.Second)
 	presence()
-	manager.Refresh(owner, provider, account.GetAccountKey())
+	_, _ = manager.Refresh(owner, provider, account.GetAccountKey())
 	noRequest()
 	now = start.Add(15 * time.Minute)
 	presence()
@@ -92,6 +93,7 @@ func TestClaudeQuotaPresenceAndRefreshRespectFiveAndTenMinuteWindows(t *testing.
 }
 
 func TestSummarizeProviderQuotasUsesLowestDistinctAccountWindow(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
 	firstReset := now.Add(90 * time.Minute).Format(time.RFC3339)
 	secondReset := now.Add(3 * time.Hour).Format(time.RFC3339)
@@ -131,6 +133,7 @@ func TestSummarizeProviderQuotasUsesLowestDistinctAccountWindow(t *testing.T) {
 }
 
 func TestSummarizeProviderQuotasExcludesOptedOutAccounts(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
 	accounts := []*gatewayv1.ProviderQuotaSnapshot{
 		{AccountKey: "account_key_aaaaaaaaaaaaaaaaaaaa", Availability: gatewayv1.ProviderQuotaAvailability_PROVIDER_QUOTA_AVAILABILITY_AVAILABLE,
@@ -150,6 +153,7 @@ func TestSummarizeProviderQuotasExcludesOptedOutAccounts(t *testing.T) {
 }
 
 func TestSummarizeProviderQuotasReportsUnavailableAccountsAndStaleSelection(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
 	accounts := []*gatewayv1.ProviderQuotaSnapshot{
 		{
@@ -178,6 +182,7 @@ func TestSummarizeProviderQuotasReportsUnavailableAccountsAndStaleSelection(t *t
 }
 
 func TestValidateProviderQuotaSnapshotRejectsInconsistentPercentages(t *testing.T) {
+	t.Parallel()
 	snapshot := &gatewayv1.ProviderQuotaSnapshot{
 		Provider:     gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX,
 		AccountKey:   "account_key_aaaaaaaaaaaaaaaaaaaa",
@@ -192,6 +197,7 @@ func TestValidateProviderQuotaSnapshotRejectsInconsistentPercentages(t *testing.
 }
 
 func TestValidateProviderQuotaSnapshotRejectsDaemonSuppliedMachines(t *testing.T) {
+	t.Parallel()
 	snapshot := &gatewayv1.ProviderQuotaSnapshot{
 		Provider:     gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX,
 		AccountKey:   "account_key_aaaaaaaaaaaaaaaaaaaa",
@@ -204,6 +210,7 @@ func TestValidateProviderQuotaSnapshotRejectsDaemonSuppliedMachines(t *testing.T
 }
 
 func TestStartResetRoutesExactAccountAndIdempotencyKey(t *testing.T) {
+	t.Parallel()
 	store, err := OpenStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)

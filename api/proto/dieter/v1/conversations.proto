@@ -1,0 +1,150 @@
+syntax = "proto3";
+
+package dieter.v1;
+
+option go_package = "github.com/dbpprt/dieter/internal/gen/dieter/v1;dieterv1";
+option java_multiple_files = true;
+option java_package = "com.getdieter.api.v1";
+
+import "dieter/v1/common.proto";
+
+// Conversation transcripts, messages and turns.
+service ConversationService {
+  rpc GetConversation(GetConversationRequest) returns (ConversationSnapshot);
+  rpc PollConversation(PollConversationRequest) returns (ConversationUpdate);
+  rpc WatchConversation(WatchConversationRequest) returns (stream ConversationUpdate);
+  rpc GetToolOutput(GetToolOutputRequest) returns (ToolOutput);
+  // Requests presentation in this conversation's native workspace pane.
+  // The daemon validates and persists the request; clients choose when to display it.
+  rpc PresentConversationContent(PresentConversationContentRequest) returns (ContentPresentation);
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+  // RemoveQueuedMessage dequeues content that has not started yet and returns
+  // the full message so clients can either discard it or restore it to an
+  // editor without losing attachments.
+  rpc RemoveQueuedMessage(RemoveQueuedMessageRequest) returns (QueuedMessage);
+  rpc MarkConversationRead(MarkConversationReadRequest) returns (Card);
+  // Cards and standalone chats share this conversation workspace surface.
+  rpc UpdateConversationWorkspace(UpdateConversationWorkspaceRequest) returns (Card);
+}
+
+message PresentConversationContentRequest {
+  string card_id = 1;
+  string path = 2;
+  string url = 3;
+  int32 line = 4;
+  string title = 5;
+}
+
+message ConversationPage {
+  int32 start = 1;
+  int32 end = 2;
+  int32 total = 3;
+  bool has_more = 4;
+}
+
+message ConversationSnapshot {
+  CardDetail detail = 1;
+  Conversation conversation = 2;
+  ConversationPage page = 3;
+}
+
+message GetConversationRequest {
+  string card_id = 1;
+  int32 limit = 2;
+  optional int32 before = 3;
+}
+
+message WatchConversationRequest {
+  string card_id = 1;
+  int32 limit = 2;
+  int32 interval_ms = 3;
+  int64 after_seq = 4;
+}
+
+// Browser clients use bounded unary polling instead of holding a server stream
+// open. This avoids exhausting the HTTP/1.1 connection pool while preserving
+// the same sequence and ConversationUpdate semantics as WatchConversation.
+message PollConversationRequest {
+  string card_id = 1;
+  int32 limit = 2;
+  optional int64 after_seq = 3;
+}
+
+// A fresh or stale cursor receives a bounded snapshot. A matching after_seq
+// waits for the next delta, so reconnecting clients do not receive the same
+// initial tail twice.
+message ConversationUpdate {
+  ConversationSnapshot snapshot = 1;
+  repeated UiMessage changed_messages = 2;
+  repeated string removed_message_ids = 3;
+  string status = 4;
+  repeated PendingTool pending_tools = 5;
+  repeated QueuedMessage queue = 6;
+  int64 last_seq = 7;
+  string updated_at = 8;
+  CardDetail detail = 9;
+  ConversationPage page = 10;
+  repeated Subagent subagents = 11;
+  repeated TaskPlan task_plans = 12;
+  repeated MessagePart draft_attachments = 13;
+  ContentPresentation presented_content = 14;
+  ProviderStatus provider_status = 15;
+}
+
+message GetToolOutputRequest {
+  string card_id = 1;
+  string message_id = 2;
+  string tool_call_id = 3;
+  string revision = 4;
+}
+
+// Full tool payloads are intentionally separate from conversation tails and
+// are fetched only when a user expands one tool call.
+message ToolOutput {
+  string card_id = 1;
+  string message_id = 2;
+  string tool_call_id = 3;
+  string tool_name = 4;
+  string state = 5;
+  bytes input_json = 6;
+  bytes output_json = 7;
+  string error_text = 8;
+  string revision = 9;
+}
+
+message SendMessageRequest {
+  string card_id = 1;
+  repeated MessagePart parts = 2;
+  string provider = 3;
+  string model = 4;
+  string effort = 5;
+  map<string, string> provider_options = 6;
+  string client_id = 7;
+  string command_id = 8;
+  string message_id = 9;
+}
+
+message SendMessageResponse {
+  bool sent = 1;
+  bool queued = 2;
+  string message_id = 3;
+}
+
+message UpdateConversationWorkspaceRequest {
+  string card_id = 1;
+  string mode = 2;
+  string branch = 3;
+  string base_branch = 4;
+  string base_remote = 5;
+  string remote_publish_mode = 6;
+}
+
+message RemoveQueuedMessageRequest {
+  string card_id = 1;
+  string message_id = 2;
+}
+
+message MarkConversationReadRequest {
+  string card_id = 1;
+  int64 response_seq = 2;
+}

@@ -3,7 +3,6 @@ package remotedesktop
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 	"time"
 
@@ -147,7 +146,7 @@ func (m *Manager) UpdateSession(ctx context.Context, r *dieterv1.UpdateRemoteDes
 	return m.SessionState(s.id)
 }
 
-func newMediaAPI(settings webrtc.SettingEngine, source FrameSource, instrumentation ...interceptor.Factory) (*webrtc.API, *packetPacer, *cc.BandwidthEstimator, error) {
+func newMediaAPI(settings webrtc.SettingEngine, source FrameSource, fec bool, instrumentation ...interceptor.Factory) (*webrtc.API, *packetPacer, *cc.BandwidthEstimator, error) {
 	engine := &webrtc.MediaEngine{}
 	capability := codecCapability(source.Codec())
 	if native, ok := source.(interface{ CodecParameters() string }); ok {
@@ -169,7 +168,7 @@ func newMediaAPI(settings webrtc.SettingEngine, source FrameSource, instrumentat
 		registry.Add(factory)
 	}
 	pacer := newPacketPacer(4_000_000)
-	if os.Getenv("DIETER_SCREEN_FEC") != "0" {
+	if fec {
 		if err := registerFEC(engine); err != nil {
 			pacer.Close()
 			return nil, nil, nil, err
@@ -273,7 +272,7 @@ func (s *Session) adapt() {
 	fastTimer := time.NewTimer(time.Hour)
 	fastTimer.Stop()
 	defer fastTimer.Stop()
-	fastEnabled := os.Getenv("DIETER_SCREEN_FAST_BITRATE") != "0"
+	fastEnabled := !s.manager.options.Tuning.DisableFastBitrate
 	var fast fastBitrateController
 	var repair fecController
 	var lastFast time.Time
@@ -330,6 +329,7 @@ func (s *Session) adapt() {
 				fast = fastBitrateController{observed: now}
 			}
 			controller = newQualityController(now)
+			controller.contentEnabled = s.manager.options.Tuning.ContentAdaptation
 			revision, evaluated, previousDrops = currentRevision, now, state.FramesDropped
 			s.mu.Lock()
 			s.measurements = frameMeasurements{}

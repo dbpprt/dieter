@@ -59,8 +59,8 @@ input.on('line', line => {
 	if err := os.WriteFile(filepath.Join(dir, "runner.mjs"), []byte(script), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("DIETER_HARNESS_RUNTIME_DIR", dir)
-	runner := NewSubprocessRunner(t.TempDir())
+	env := Environment{RuntimeDir: dir}
+	runner := NewSubprocessRunner(t.TempDir(), env)
 	var result json.RawMessage
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

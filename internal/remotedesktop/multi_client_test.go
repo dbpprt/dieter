@@ -180,19 +180,23 @@ func TestSharedEncoderIsolatesSlowViewerAndSplitsSettings(t *testing.T) {
 	entered := make(chan struct{})
 	fast := make(chan uint64, 100)
 	defer close(blocked)
-	go a.Stream(ctx, func(sample media.Sample) error { fast <- sample.Metadata.(FrameMetadata).ID; return nil })
-	go b.Stream(ctx, func(sample media.Sample) error {
-		select {
-		case <-entered:
-		default:
-			close(entered)
-		}
-		select {
-		case <-blocked:
-		case <-ctx.Done():
-		}
-		return nil
-	})
+	go func() {
+		_ = a.Stream(ctx, func(sample media.Sample) error { fast <- sample.Metadata.(FrameMetadata).ID; return nil })
+	}()
+	go func() {
+		_ = b.Stream(ctx, func(sample media.Sample) error {
+			select {
+			case <-entered:
+			default:
+				close(entered)
+			}
+			select {
+			case <-blocked:
+			case <-ctx.Done():
+			}
+			return nil
+		})
+	}()
 	waitMulti(t, func() bool {
 		pool.mu.Lock()
 		defer pool.mu.Unlock()

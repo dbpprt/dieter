@@ -1,0 +1,211 @@
+{
+  "detail": {
+    "card": {
+      "stateFields": [
+        {
+          "name": "placement",
+          "revision": "d7cd97ed76d3d09a6e17ba428ee69497178d869d7f79f16101bb4bba5e090eb8",
+          "versions": [
+            {
+              "clock": {
+                "actor_ad88afaf34de": "2"
+              },
+              "rank": "477f44d7fbd695cc2e7cd38aaf96fbb97676682119b2ccad94dedcb0e5515012",
+              "value": {
+                "orderKey": "010000000001a00a8184cf3ch",
+                "boardId": "b_fb8654bbb78b257fec6fe755",
+                "lane": "running",
+                "phaseChangedAt": "2026-10-24T13:40:41.885926Z"
+              }
+            }
+          ]
+        },
+        {
+          "name": "summary",
+          "revision": "2e2a7f17d54688480d17493cd0f2ce391c59f02bf93773e06c6a2658df26d3b4",
+          "versions": [
+            {
+              "clock": {
+                "actor_ad88afaf34de": "35"
+              },
+              "rank": "d01d653deea213385c03e71ab3fe3117e4175d89f446733e75cf5053c8d9c188",
+              "value": {
+                "initialPromptSentAt": "2026-10-24T13:40:41.795447Z",
+                "provider": "codex",
+                "model": "gpt-6-astra",
+                "effort": "low",
+                "runtime": "idle",
+                "runtimeUpdatedAt": "2026-10-24T13:41:49.645394Z",
+                "lastActivityAt": "2026-10-24T13:41:49.129823Z",
+                "responseSeq": "102",
+                "responseMessageId": "msg_9ebbff7d228a04dea9"
+              }
+            }
+          ]
+        }
+      ],
+      "ownerDaemonId": "local_6e43e7a721df",
+      "checkoutId": "co_a33642484364",
+      "orderKey": "010000000001a00a8184cf3ch",
+      "placementRevision": "d7cd97ed76d3d09a6e17ba428ee69497178d869d7f79f16101bb4bba5e090eb8",
+      "id": "c_7df880004f7c9474e477ed24",
+      "scope": "board",
+      "projectId": "p_07d24b56dab9",
+      "boardId": "b_fb8654bbb78b257fec6fe755",
+      "lane": "running",
+      "position": "2048",
+      "title": "Probe module2",
+      "initialPrompt": "Hook probe: do not run any shell commands. Use only your apply_patch tool to add the line '// probe' at the end of src/module2.js. Then reply with one line saying what happened.",
+      "initialPromptSentAt": "2026-10-24T13:40:41.795447Z",
+      "phaseChangedAt": "2026-10-24T13:40:41.885926Z",
+      "provider": "codex",
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "runtime": "idle",
+      "runtimeUpdatedAt": "2026-10-24T13:41:49.645394Z",
+      "lastActivityAt": "2026-10-24T13:41:49.129823Z",
+      "createdAt": "2026-10-24T13:40:21.924093Z",
+      "updatedAt": "2026-10-24T13:41:49.645394Z",
+      "responseSeq": "102",
+      "responseMessageId": "msg_9ebbff7d228a04dea9",
+      "providerOptions": {
+        "fast_mode": "false"
+      },
+      "workspaceMode": "project",
+      "workspace": {
+        "mode": "project",
+        "state": "ready",
+        "branch": "main",
+        "baseBranch": "main",
+        "headSha": "39b6c2d009ec3671eced0be5474c5940a509d0d8",
+        "baseSha": "39b6c2d009ec3671eced0be5474c5940a509d0d8",
+        "revision": "b7e58b56613bbd311513a62693c975ae"
+      },
+      "remotePublishMode": "manual",
+      "tokenUsage": {
+        "inputTokens": "55712",
+        "outputTokens": "207",
+        "totalTokens": "55919",
+        "reportedMessages": "2"
+      }
+    },
+    "project": {
+      "checkouts": [
+        {
+          "id": "co_a33642484364",
+          "projectId": "p_07d24b56dab9",
+          "daemonId": "local_6e43e7a721df",
+          "name": "project",
+          "path": "/private/tmp/dieter-live-channels-qT0O/deny/project"
+        }
+      ],
+      "id": "p_07d24b56dab9",
+      "name": "deny-probe",
+      "path": "/private/tmp/dieter-live-channels-qT0O/deny/project",
+      "createdAt": "2026-10-24T13:40:20.087176Z",
+      "updatedAt": "2026-10-24T13:40:20.087176Z"
+    },
+    "board": {
+      "id": "b_fb8654bbb78b257fec6fe755",
+      "projectId": "p_07d24b56dab9",
+      "name": "Deny",
+      "workflow": "direct",
+      "doneArchivePolicy": "never",
+      "createdAt": "2026-10-24T13:40:20.087176Z",
+      "updatedAt": "2026-10-24T13:40:20.087176Z",
+      "lanes": [
+        {
+          "id": "todo",
+          "name": "Todo"
+        },
+        {
+          "id": "running",
+          "name": "Running"
+        },
+        {
+          "id": "done",
+          "name": "Done"
+        }
+      ],
+      "remotePublishMode": "manual",
+      "retirementRevision": "absent"
+    }
+  },
+  "conversation": {
+    "projectionVersion": 6,
+    "cardId": "c_7df880004f7c9474e477ed24",
+    "status": "idle",
+    "messages": [
+      {
+        "id": "msg_f7b76a009d396bb603",
+        "role": "user",
+        "metadataJson": "eyJjcmVhdGVkQXQiOiIyMDI2LTEwLTI0VDEzOjQwOjQxLjYxMTk3MVoifQ==",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Hook probe: do not run any shell commands. Use only your apply_patch tool to add the line '// probe' at the end of src/module2.js. Then reply with one line saying what happened."
+          }
+        ]
+      },
+      {
+        "id": "msg_80d030ef2746340988",
+        "role": "assistant",
+        "metadataJson": "eyJjcmVhdGVkQXQiOiIyMDI2LTEwLTI0VDEzOjQwOjU5LjgzNFoiLCJ1c2FnZSI6eyJpbnB1dFRva2VucyI6MCwiaW5wdXRUb2tlbkRldGFpbHMiOnsibm9DYWNoZVRva2VucyI6MCwiY2FjaGVSZWFkVG9rZW5zIjowLCJjYWNoZVdyaXRlVG9rZW5zIjowfSwib3V0cHV0VG9rZW5zIjowLCJvdXRwdXRUb2tlbkRldGFpbHMiOnsidGV4dFRva2VucyI6MH0sInRvdGFsVG9rZW5zIjowfSwiY29udGV4dFdpbmRvd1Rva2VucyI6MjU4NDAwLCJ0b3RhbFVzYWdlIjp7ImlucHV0VG9rZW5zIjoyNzUwMSwiaW5wdXRUb2tlbkRldGFpbHMiOnsibm9DYWNoZVRva2VucyI6MTM5MzMsImNhY2hlUmVhZFRva2VucyI6MTM1NjgsImNhY2hlV3JpdGVUb2tlbnMiOjB9LCJvdXRwdXRUb2tlbnMiOjEwNCwib3V0cHV0VG9rZW5EZXRhaWxzIjp7InRleHRUb2tlbnMiOjEwNH0sInRvdGFsVG9rZW5zIjoyNzYwNX19",
+        "parts": [
+          {
+            "type": "text",
+            "text": "I’ll append `// probe` to `src/module2.js` using only `apply_patch`.\nThe patch was blocked because another agent holds `src/module2.js`; no changes were made.",
+            "state": "done"
+          }
+        ]
+      },
+      {
+        "id": "msg_channel_d10a6ff22cd3196d4c",
+        "role": "user",
+        "metadataJson": "eyJjcmVhdGVkQXQiOiIyMDI2LTEwLTI0VDEzOjQxOjMxLjg2NjY3NloiLCJvcmlnaW4iOiJjaGFubmVsIn0=",
+        "parts": [
+          {
+            "type": "text",
+            "text": "<dieter-channel-digest channel=\"#deny-probe\" unread=\"1\">\nm_d4e977976e53 from dieter (release): src/module2.js is free now: agent c_3134412087e4019b3328cd2c ('Hold module2') finished: Appended `// hold` to `src/module2.js` and the sleep finished, so `held` printed. Another agent (`c_7df880004f7c9474e477ed24`) is waiting on that file; …\n</dieter-channel-digest>\n\nThese agent channel messages woke you. Continue your task where you left off; if nothing needs doing, reply briefly."
+          }
+        ]
+      },
+      {
+        "id": "msg_9ebbff7d228a04dea9",
+        "role": "assistant",
+        "metadataJson": "eyJjcmVhdGVkQXQiOiIyMDI2LTEwLTI0VDEzOjQxOjM4LjgyN1oiLCJ1c2FnZSI6eyJpbnB1dFRva2VucyI6MCwiaW5wdXRUb2tlbkRldGFpbHMiOnsibm9DYWNoZVRva2VucyI6MCwiY2FjaGVSZWFkVG9rZW5zIjowLCJjYWNoZVdyaXRlVG9rZW5zIjowfSwib3V0cHV0VG9rZW5zIjowLCJvdXRwdXRUb2tlbkRldGFpbHMiOnsidGV4dFRva2VucyI6MH0sInRvdGFsVG9rZW5zIjowfSwiY29udGV4dFdpbmRvd1Rva2VucyI6MjU4NDAwLCJ0b3RhbFVzYWdlIjp7ImlucHV0VG9rZW5zIjoyODIxMSwiaW5wdXRUb2tlbkRldGFpbHMiOnsibm9DYWNoZVRva2VucyI6NTYzLCJjYWNoZVJlYWRUb2tlbnMiOjI3NjQ4LCJjYWNoZVdyaXRlVG9rZW5zIjowfSwib3V0cHV0VG9rZW5zIjoxMDMsIm91dHB1dFRva2VuRGV0YWlscyI6eyJ0ZXh0VG9rZW5zIjoxMDN9LCJ0b3RhbFRva2VucyI6MjgzMTR9fQ==",
+        "parts": [
+          {
+            "type": "text",
+            "text": "The file is free now; I’ll append the probe line using `apply_patch`.\n",
+            "state": "done"
+          },
+          {
+            "type": "dynamic-tool",
+            "state": "output-available",
+            "toolCallId": "harness-file-change-jNbUQHbOPSqMqOaq",
+            "toolName": "fileChange",
+            "hasInput": true,
+            "hasOutput": true,
+            "inputSize": "94",
+            "outputSize": "94",
+            "inputPreview": "/private/tmp/dieter-live-channels-qT0O/deny/project/src/module2.js",
+            "outputPreview": "/private/tmp/dieter-live-channels-qT0O/deny/project/src/module2.js",
+            "payloadRevision": "0073931d1a8702f9ee2c107a"
+          },
+          {
+            "type": "text",
+            "text": "Appended `// probe` to `src/module2.js` using `apply_patch`.",
+            "state": "done"
+          }
+        ]
+      }
+    ],
+    "lastSeq": "103",
+    "updatedAt": "2026-10-24T13:41:49.129823Z"
+  },
+  "page": {
+    "end": 4,
+    "total": 4
+  }
+}

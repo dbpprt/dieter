@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/dbpprt/dieter/internal/buildinfo"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	"github.com/dbpprt/dieter/internal/platform/buildinfo"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -13,6 +13,7 @@ import (
 )
 
 func TestCompatibilityBootstrapEvaluatesClientAndDaemonFloors(t *testing.T) {
+	// Not parallel: it replaces the process-wide release version.
 	previous := buildinfo.ReleaseVersion
 	buildinfo.ReleaseVersion = "0.4.310"
 	t.Cleanup(func() { buildinfo.ReleaseVersion = previous })
@@ -46,6 +47,7 @@ func TestCompatibilityBootstrapEvaluatesClientAndDaemonFloors(t *testing.T) {
 }
 
 func TestGatewayRejectsClientBelowPublishedFloor(t *testing.T) {
+	t.Parallel()
 	auth := NewAuth(Config{MinimumClientVersion: "0.4.309", MinimumDaemonVersion: "0.4.308"}, nil, nil)
 	compatible := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-dieter-client-version", "0.4.309"))
 	if err := auth.requireCompatibleClient(compatible); err != nil {

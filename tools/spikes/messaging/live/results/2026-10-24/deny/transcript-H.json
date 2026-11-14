@@ -1,0 +1,190 @@
+{
+  "detail": {
+    "card": {
+      "stateFields": [
+        {
+          "name": "placement",
+          "revision": "924d02fda6f0470c6d560001e331c67693ea7aa3038cabb537dca49055b566dd",
+          "versions": [
+            {
+              "clock": {
+                "actor_ad88afaf34de": "2"
+              },
+              "rank": "6721c2b348236ddd03c91036e1949b8120a6f9de7f6355131ec99116171921c4",
+              "value": {
+                "orderKey": "0100000000000ae61327b003h",
+                "boardId": "b_fb8654bbb78b257fec6fe755",
+                "lane": "running",
+                "phaseChangedAt": "2026-10-24T13:40:23.088756Z"
+              }
+            }
+          ]
+        },
+        {
+          "name": "summary",
+          "revision": "aa49dad64889907ac4eca103161d011c809df1effd3df2e75b61341d30fe9650",
+          "versions": [
+            {
+              "clock": {
+                "actor_ad88afaf34de": "23"
+              },
+              "rank": "b58bb3ab006c6752e4a950119490ad5438456112c5a15f4eb5218f80d741d0a0",
+              "value": {
+                "initialPromptSentAt": "2026-10-24T13:40:23.029597Z",
+                "provider": "claude-code",
+                "model": "haiku",
+                "effort": "low",
+                "runtime": "idle",
+                "runtimeUpdatedAt": "2026-10-24T13:41:31.302292Z",
+                "lastActivityAt": "2026-10-24T13:41:30.790356Z",
+                "responseSeq": "69",
+                "responseMessageId": "msg_41e72e3d1009281176"
+              }
+            }
+          ]
+        }
+      ],
+      "ownerDaemonId": "local_6e43e7a721df",
+      "checkoutId": "co_a33642484364",
+      "orderKey": "0100000000000ae61327b003h",
+      "placementRevision": "924d02fda6f0470c6d560001e331c67693ea7aa3038cabb537dca49055b566dd",
+      "id": "c_3134412087e4019b3328cd2c",
+      "scope": "board",
+      "projectId": "p_07d24b56dab9",
+      "boardId": "b_fb8654bbb78b257fec6fe755",
+      "lane": "running",
+      "position": "1024",
+      "title": "Hold module2",
+      "initialPrompt": "Run exactly this one shell command and nothing else: echo '// hold' >> src/module2.js && sleep 45 && echo held. Then reply with one line.",
+      "initialPromptSentAt": "2026-10-24T13:40:23.029597Z",
+      "phaseChangedAt": "2026-10-24T13:40:23.088756Z",
+      "provider": "claude-code",
+      "model": "haiku",
+      "effort": "low",
+      "runtime": "idle",
+      "runtimeUpdatedAt": "2026-10-24T13:41:31.302292Z",
+      "lastActivityAt": "2026-10-24T13:41:30.790356Z",
+      "createdAt": "2026-10-24T13:40:21.325555Z",
+      "updatedAt": "2026-10-24T13:41:31.302292Z",
+      "responseSeq": "69",
+      "responseMessageId": "msg_41e72e3d1009281176",
+      "workspaceMode": "project",
+      "workspace": {
+        "mode": "project",
+        "state": "ready",
+        "branch": "main",
+        "baseBranch": "main",
+        "headSha": "39b6c2d009ec3671eced0be5474c5940a509d0d8",
+        "baseSha": "39b6c2d009ec3671eced0be5474c5940a509d0d8",
+        "revision": "6e81ab25ede0f59bae6e4f9527727d60"
+      },
+      "remotePublishMode": "manual",
+      "tokenUsage": {
+        "inputTokens": "41247",
+        "outputTokens": "341",
+        "totalTokens": "41588",
+        "reportedMessages": "1"
+      }
+    },
+    "project": {
+      "checkouts": [
+        {
+          "id": "co_a33642484364",
+          "projectId": "p_07d24b56dab9",
+          "daemonId": "local_6e43e7a721df",
+          "name": "project",
+          "path": "/private/tmp/dieter-live-channels-qT0O/deny/project"
+        }
+      ],
+      "id": "p_07d24b56dab9",
+      "name": "deny-probe",
+      "path": "/private/tmp/dieter-live-channels-qT0O/deny/project",
+      "createdAt": "2026-10-24T13:40:20.087176Z",
+      "updatedAt": "2026-10-24T13:40:20.087176Z"
+    },
+    "board": {
+      "id": "b_fb8654bbb78b257fec6fe755",
+      "projectId": "p_07d24b56dab9",
+      "name": "Deny",
+      "workflow": "direct",
+      "doneArchivePolicy": "never",
+      "createdAt": "2026-10-24T13:40:20.087176Z",
+      "updatedAt": "2026-10-24T13:40:20.087176Z",
+      "lanes": [
+        {
+          "id": "todo",
+          "name": "Todo"
+        },
+        {
+          "id": "running",
+          "name": "Running"
+        },
+        {
+          "id": "done",
+          "name": "Done"
+        }
+      ],
+      "remotePublishMode": "manual",
+      "retirementRevision": "absent"
+    }
+  },
+  "conversation": {
+    "projectionVersion": 6,
+    "cardId": "c_3134412087e4019b3328cd2c",
+    "status": "idle",
+    "messages": [
+      {
+        "id": "msg_640f99c214be6106ee",
+        "role": "user",
+        "metadataJson": "eyJjcmVhdGVkQXQiOiIyMDI2LTEwLTI0VDEzOjQwOjIyLjg3Nzc0OFoifQ==",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Run exactly this one shell command and nothing else: echo '// hold' >> src/module2.js && sleep 45 && echo held. Then reply with one line."
+          }
+        ]
+      },
+      {
+        "id": "msg_41e72e3d1009281176",
+        "role": "assistant",
+        "metadataJson": "eyJjcmVhdGVkQXQiOiIyMDI2LTEwLTI0VDEzOjQwOjMyLjA1N1oiLCJ1c2FnZSI6eyJpbnB1dFRva2VucyI6MjA4MDQsImlucHV0VG9rZW5EZXRhaWxzIjp7Im5vQ2FjaGVUb2tlbnMiOjIsImNhY2hlUmVhZFRva2VucyI6MjA0NDEsImNhY2hlV3JpdGVUb2tlbnMiOjM2MX0sIm91dHB1dFRva2VucyI6MjI5LCJvdXRwdXRUb2tlbkRldGFpbHMiOnsidGV4dFRva2VucyI6MjI5fSwidG90YWxUb2tlbnMiOjIxMDMzfSwidG90YWxVc2FnZSI6eyJpbnB1dFRva2VucyI6NDEyNDcsImlucHV0VG9rZW5EZXRhaWxzIjp7Im5vQ2FjaGVUb2tlbnMiOjQsImNhY2hlUmVhZFRva2VucyI6MzI3MzAsImNhY2hlV3JpdGVUb2tlbnMiOjg1MTN9LCJvdXRwdXRUb2tlbnMiOjM0MSwib3V0cHV0VG9rZW5EZXRhaWxzIjp7InRleHRUb2tlbnMiOjM0MX0sInRvdGFsVG9rZW5zIjo0MTU4OH19",
+        "parts": [
+          {
+            "type": "dynamic-tool",
+            "state": "output-available",
+            "toolCallId": "toolu_01Ck1yng5pXiEpcAyEoamRxM",
+            "toolName": "bash",
+            "hasInput": true,
+            "hasOutput": true,
+            "inputSize": "169",
+            "outputSize": "90",
+            "inputPreview": "echo '// hold' >> src/module2.js && sleep 45 && echo held",
+            "outputPreview": "{\"interrupted\":false,\"isImage\":false,\"noOutputExpected\":false,\"stderr\":\"\",\"stdout\":\"held\"}",
+            "payloadRevision": "1e02b0cdfd9621d97c0ceb7c"
+          },
+          {
+            "type": "data-peer-notice",
+            "text": "Agent c_7df880004f7c9474e477ed24 ('Probe module2') wants to change src/module2.js, which you are changing. Finish your work on it; Dieter releases it to them when your turn ends.",
+            "dataJson": "eyJtZXNzYWdlSWQiOiJtXzliMzk3YjhlY2VlOSIsInByb2plY3RJZCI6InBfMDdkMjRiNTZkYWI5IiwiY2hhbm5lbCI6ImRlbnktcHJvYmUiLCJraW5kIjoicmVxdWVzdCIsImF1dGhvciI6eyJraW5kIjoiZGlldGVyIn0sImRpcmVjdCI6dHJ1ZSwiZmlsZXMiOlsic3JjL21vZHVsZTIuanMiXSwiY3JlYXRlZEF0IjoiMjAyNi0xMC0yNFQxMzo0MToxMS44NzY2NDNaIn0="
+          },
+          {
+            "type": "reasoning",
+            "text": "That system notice from dieter about the file lock is just informational, not something I need to act on since I'm already done with the file. I'll keep my reply to one line, maybe briefly acknowledging it.\n\n",
+            "state": "done"
+          },
+          {
+            "type": "text",
+            "text": "Appended `// hold` to `src/module2.js` and the sleep finished, so `held` printed. Another agent (`c_7df880004f7c9474e477ed24`) is waiting on that file; my edit is complete, so Dieter can release it when this turn ends.",
+            "state": "done"
+          }
+        ]
+      }
+    ],
+    "lastSeq": "70",
+    "updatedAt": "2026-10-24T13:41:30.790356Z"
+  },
+  "page": {
+    "end": 2,
+    "total": 2
+  }
+}

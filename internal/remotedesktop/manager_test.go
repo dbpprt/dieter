@@ -11,12 +11,13 @@ import (
 	"errors"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/trust"
+	"github.com/dbpprt/dieter/internal/security/trust"
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
 	"google.golang.org/protobuf/proto"
@@ -624,6 +625,9 @@ func testControlViewer(t *testing.T, request *dieterv1.StartRemoteDesktopRequest
 
 func TestInputHeartbeatDoesNotExpireWhilePeerIsNegotiating(t *testing.T) {
 	manager, request, _ := testManagerAndRequest(t, "github:7")
+	clock := &manualClock{now: time.Now()}
+	manager.options.Now = clock.Now
+	manager.options.MonitorInterval = time.Hour // The test drives the watchdog.
 	request.Control = true
 	viewer, _ := testControlViewer(t, request)
 	defer viewer.Close()
@@ -633,12 +637,49 @@ func TestInputHeartbeatDoesNotExpireWhilePeerIsNegotiating(t *testing.T) {
 	}
 	defer subscription.Close()
 	defer manager.CloseActive("test complete")
+	session := manager.sessionFor(subscription.SessionID)
 	// Withhold the answer/candidates from the viewer longer than the active
 	// input heartbeat deadline. Signaling/ICE has its own bounded lifecycle.
-	time.Sleep(3500 * time.Millisecond)
+	clock.Advance(3500 * time.Millisecond)
+	if session.checkLiveness() {
+		t.Fatal("watchdog closed a negotiating session")
+	}
 	if _, err := manager.SessionState(subscription.SessionID); err != nil {
 		t.Fatalf("input watchdog expired before negotiation completed: %v", err)
 	}
+	// The same clock does expire an established receiver that stops sending
+	// heartbeats: input pauses while the session stays open.
+	session.mu.Lock()
+	session.lastFeedback = clock.Now()
+	session.mu.Unlock()
+	clock.Advance(3500 * time.Millisecond)
+	if session.checkLiveness() {
+		t.Fatal("missed input heartbeat closed the session")
+	}
+	session.mu.Lock()
+	paused := session.receiverInputExpired
+	session.mu.Unlock()
+	if !paused {
+		t.Fatal("missed input heartbeat did not pause input")
+	}
+}
+
+// manualClock is a Manager clock that only moves when a test advances it.
+type manualClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func (c *manualClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *manualClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	c.now = c.now.Add(d)
+	c.mu.Unlock()
 }
 
 func TestScreenReadinessRecoversAfterPermissionProbeWithoutSettings(t *testing.T) {
@@ -697,4 +738,65 @@ func TestResubscribeReplaysNegotiationWithOnlyCurrentState(t *testing.T) {
 	if s.status.Width != 1280 {
 		t.Fatal("subscriber owns live state")
 	}
+}
+
+// A renegotiated answer gets its own binding, so a viewer checks the DTLS
+// fingerprint of every answer against the daemon's roster key.
+func TestRenegotiatedAnswerCarriesAFreshBinding(t *testing.T) {
+	manager, request, daemonPublic := testManagerAndRequest(t, "github:7")
+	client := testViewer(t, request)
+	defer client.Close()
+	subscription, err := manager.Start(request, "github:7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer subscription.Close()
+	defer manager.CloseActive("test complete")
+	verify := func(binding *dieterv1.RemoteDesktopSessionBinding, offer string) {
+		t.Helper()
+		offerHash := sha256.Sum256([]byte(offer))
+		message := SessionBindingMessage(subscription.SessionID, binding.GetClientNonce(), binding.GetHelperDtlsFingerprint(), binding.GetExpiresAt(), offerHash[:], binding.GetControlGranted(), binding.GetDisplayId(), binding.GetInputProtocolVersion(), binding.GetInputEpoch())
+		if binding.GetHelperDtlsFingerprint() == "" || string(binding.GetOfferSha256()) != string(offerHash[:]) || !ed25519.Verify(daemonPublic, message, binding.GetDaemonSignature()) {
+			t.Fatalf("binding does not sign this answer: %#v", binding)
+		}
+	}
+	// next returns the binding and then the answer that follows it.
+	next := func() (*dieterv1.RemoteDesktopSessionBinding, string) {
+		t.Helper()
+		var binding *dieterv1.RemoteDesktopSessionBinding
+		deadline := time.After(30 * time.Second)
+		for {
+			select {
+			case <-deadline:
+				t.Fatal("timed out waiting for a signed answer")
+			case signal := <-subscription.Signals:
+				switch payload := signal.GetPayload().(type) {
+				case *dieterv1.RemoteDesktopSignal_Binding:
+					binding = payload.Binding
+				case *dieterv1.RemoteDesktopSignal_Description:
+					if binding == nil {
+						t.Fatal("an answer arrived without a binding")
+					}
+					return binding, payload.Description.GetSdp()
+				}
+			}
+		}
+	}
+	binding, answer := next()
+	verify(binding, request.GetOffer().GetSdp())
+	if err := client.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: answer}); err != nil {
+		t.Fatal(err)
+	}
+	offer, err := client.CreateOffer(&webrtc.OfferOptions{ICERestart: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.SetLocalDescription(offer); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Signal(&dieterv1.RemoteDesktopSignal{SessionId: subscription.SessionID, Payload: &dieterv1.RemoteDesktopSignal_Description{Description: &dieterv1.RemoteDesktopSessionDescription{Type: "offer", Sdp: offer.SDP}}}); err != nil {
+		t.Fatal(err)
+	}
+	renegotiated, _ := next()
+	verify(renegotiated, offer.SDP)
 }

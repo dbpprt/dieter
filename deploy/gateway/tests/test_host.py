@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from common import atomic, canonical, digest, pointer, read_json, validate_gateway_health
 from host import Host
@@ -18,12 +19,24 @@ class HostTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
         self.policy = self.root / "policy.json"
-        self.policy.write_text(json.dumps({"installRoot": str(self.root / "opt"), "configRoot": str(self.root / "etc"),
-            "stateRoot": str(self.root / "state"), "runtimeRoot": str(self.root / "run"), "project": "fixture",
-            "backupCommand": ["/fixture/backup"], "readinessTimeoutSeconds": 20}))
+        self.policy.write_text(
+            json.dumps(
+                {
+                    "installRoot": str(self.root / "opt"),
+                    "configRoot": str(self.root / "etc"),
+                    "stateRoot": str(self.root / "state"),
+                    "runtimeRoot": str(self.root / "run"),
+                    "project": "fixture",
+                    "backupCommand": ["/fixture/backup"],
+                    "readinessTimeoutSeconds": 20,
+                }
+            )
+        )
         self.host = Host(self.policy)
         self.host.initialize()
-        space = patch("host.shutil.disk_usage", return_value=shutil._ntuple_diskusage(8 << 30, 0, 8 << 30))
+        space = patch(
+            "host.shutil.disk_usage", return_value=shutil._ntuple_diskusage(8 << 30, 0, 8 << 30)
+        )
         space.start()
         self.addCleanup(space.stop)
         self.incoming = self.root / "incoming"
@@ -64,7 +77,10 @@ class HostTests(unittest.TestCase):
             self.assertIn("dieter-deploy@one.service", start.call_args.args[0])
 
     def test_admission_rejects_low_disk_before_creating_an_operation(self):
-        with patch("host.shutil.disk_usage", return_value=shutil._ntuple_diskusage(8 << 30, 7 << 30, 1 << 30)):
+        with patch(
+            "host.shutil.disk_usage",
+            return_value=shutil._ntuple_diskusage(8 << 30, 7 << 30, 1 << 30),
+        ):
             with self.assertRaisesRegex(ValueError, "insufficient deployment staging space"):
                 self.admit()
         self.assertFalse(self.host.operation("first").exists())
@@ -81,12 +97,20 @@ class HostTests(unittest.TestCase):
         self.assertEqual(self.host.status("old")["state"], "committed")
 
     def test_deployment_key_cannot_change_host_mounts_identity_or_routes(self):
-        selection = json.loads((Path(__file__).resolve().parents[1] / "profiles/example.settings.json").read_text())
+        selection = json.loads(
+            (Path(__file__).resolve().parents[1] / "profiles/example.settings.json").read_text()
+        )
         self.host.config.update(selection)
         self.host.validate_selection(selection, self.incoming)
-        for field, bad in (("caddyData", "/etc"), ("caddyConfig", "/root"), ("stateVolume", "unrelated-volume"),
-                           ("publicIPv4", "192.0.2.99"), ("turnHost", "other.example.com"), ("allowedUserIDs", [99]),
-                           ("legacyHosts", ["unreviewed.example.com"])):
+        for field, bad in (
+            ("caddyData", "/etc"),
+            ("caddyConfig", "/root"),
+            ("stateVolume", "unrelated-volume"),
+            ("publicIPv4", "192.0.2.99"),
+            ("turnHost", "other.example.com"),
+            ("allowedUserIDs", [99]),
+            ("legacyHosts", ["unreviewed.example.com"]),
+        ):
             with self.assertRaises(ValueError, msg=field):
                 self.host.validate_selection(dict(selection, **{field: bad}), self.incoming)
         selection["legacyHosts"] = ["legacy.example.com"]
@@ -117,7 +141,9 @@ class HostTests(unittest.TestCase):
     def test_failed_rollback_is_explicit(self):
         self.admit()
         self.host.transition("first", "activating", previousRelease=str(self.root / "previous"))
-        with patch.object(self.host, "activate", side_effect=RuntimeError("do not expose private output")):
+        with patch.object(
+            self.host, "activate", side_effect=RuntimeError("do not expose private output")
+        ):
             result = self.host.execute("first")
         self.assertEqual(result["state"], "failed")
         self.assertTrue(result["rollbackFailed"])
@@ -125,7 +151,10 @@ class HostTests(unittest.TestCase):
 
     def test_backup_recovers_active_routes_during_root_reviewed_hostname_change(self):
         from recover import inspect_snapshot
-        selection = read_json(Path(__file__).resolve().parents[1] / "profiles/example.settings.json")
+
+        selection = read_json(
+            Path(__file__).resolve().parents[1] / "profiles/example.settings.json"
+        )
         for key in ("installRoot", "configRoot", "runtimeRoot"):
             selection[key] = self.host.config[key]
         for key in ("caddyData", "caddyConfig"):
@@ -142,7 +171,10 @@ class HostTests(unittest.TestCase):
         (release / "public").mkdir(parents=True)
         atomic(release / "public/settings.json", canonical(selection))
         image = "registry/gateway@sha256:" + "a" * 64
-        atomic(release / "public/compose.json", canonical({"services": {"dieter-gateway": {"image": image}}}))
+        atomic(
+            release / "public/compose.json",
+            canonical({"services": {"dieter-gateway": {"image": image}}}),
+        )
         pointer(self.host.install / "current", release)
         source = self.root / "volume"
         (source / "signing").mkdir(parents=True)
@@ -170,7 +202,10 @@ class HostTests(unittest.TestCase):
             archived.append(policy)
             return canonical({"snapshotID": "fixture", "offHost": True})
 
-        with patch.object(self.host, "volume", return_value=source), patch("host.run", side_effect=external):
+        with (
+            patch.object(self.host, "volume", return_value=source),
+            patch("host.run", side_effect=external),
+        ):
             result = self.host.backup(dict(selection, turnHost="next-turn.example.com"), "rename")
         self.assertTrue(result["offHost"])
         self.assertEqual(len(archived), 1)
@@ -178,7 +213,12 @@ class HostTests(unittest.TestCase):
         self.assertEqual(self.host.config["turnHost"], "next-turn.example.com")
 
     def test_rollback_waits_for_recreated_processes_to_become_ready(self):
-        with patch.object(self.host, "health", side_effect=[ConnectionError("starting"), None]) as health, patch("host.time.sleep"):
+        with (
+            patch.object(
+                self.host, "health", side_effect=[ConnectionError("starting"), None]
+            ) as health,
+            patch("host.time.sleep"),
+        ):
             self.host.wait_health({})
             self.assertEqual(health.call_count, 2)
         with patch.object(self.host, "health", side_effect=ConnectionError("unavailable")):
@@ -188,16 +228,31 @@ class HostTests(unittest.TestCase):
     def test_readiness_binds_to_operation_and_requires_authentication_and_payload(self):
         self.admit()
         policy = {"minimumClientVersion": "0.4.20", "minimumDaemonVersion": "0.4.19"}
-        self.host.transition("first", "checking", sourceRevision="a"*40, compatibilityPolicy=policy)
+        self.host.transition(
+            "first", "checking", sourceRevision="a" * 40, compatibilityPolicy=policy
+        )
         report = self.root / "report.json"
-        evidence = {"requestSHA256": self.host.status("first")["requestSHA256"], "sourceRevision": "a"*40,
-                    "gatewayAuthenticated": True, "daemonAuthenticated": True, "unauthenticatedRejected": True,
-                    "turnPayloadTransports": ["udp", "tcp", "tls"], "compatibilityPolicy": policy}
-        for field, bad in (("sourceRevision", "b"*40), ("gatewayAuthenticated", False),
-                           ("daemonAuthenticated", False), ("turnPayloadTransports", ["udp", "tcp"]),
-                           ("unauthenticatedRejected", False),
-                           ("compatibilityPolicy", {"minimumClientVersion": "0.4.18", "minimumDaemonVersion": "0.4.19"}),
-                           ("compatibilityPolicy", None)):
+        evidence = {
+            "requestSHA256": self.host.status("first")["requestSHA256"],
+            "sourceRevision": "a" * 40,
+            "gatewayAuthenticated": True,
+            "daemonAuthenticated": True,
+            "unauthenticatedRejected": True,
+            "turnPayloadTransports": ["udp", "tcp", "tls"],
+            "compatibilityPolicy": policy,
+        }
+        for field, bad in (
+            ("sourceRevision", "b" * 40),
+            ("gatewayAuthenticated", False),
+            ("daemonAuthenticated", False),
+            ("turnPayloadTransports", ["udp", "tcp"]),
+            ("unauthenticatedRejected", False),
+            (
+                "compatibilityPolicy",
+                {"minimumClientVersion": "0.4.18", "minimumDaemonVersion": "0.4.19"},
+            ),
+            ("compatibilityPolicy", None),
+        ):
             atomic(report, canonical(dict(evidence, **{field: bad})))
             with self.assertRaises(ValueError):
                 self.host.accept("first", report)
@@ -207,20 +262,30 @@ class HostTests(unittest.TestCase):
 
     def test_health_uses_selected_release_and_policy_including_rollback(self):
         for version in ("0.4.20", "0.5.0-dev.4+abc"):
-            policy = {'minimumClientVersion': '0.4.18', 'minimumDaemonVersion': '0.4.19'}
-            manifest = {'sourceRevision': 'a'*40, 'releaseVersion': version, 'compatibilityPolicy': policy}
-            health = {'service': 'dieter-gateway', 'status': 'ok', 'version': version, 'revision': 'a'*40, **policy}
+            policy = {"minimumClientVersion": "0.4.18", "minimumDaemonVersion": "0.4.19"}
+            manifest = {
+                "sourceRevision": "a" * 40,
+                "releaseVersion": version,
+                "compatibilityPolicy": policy,
+            }
+            health = {
+                "service": "dieter-gateway",
+                "status": "ok",
+                "version": version,
+                "revision": "a" * 40,
+                **policy,
+            }
             validate_gateway_health(health, manifest)
-            with self.assertRaisesRegex(ValueError, 'release differs'):
-                validate_gateway_health(dict(health, version='0.6.0'), manifest)
-            with self.assertRaisesRegex(ValueError, 'compatibility policy differs'):
-                validate_gateway_health(dict(health, minimumClientVersion='0.4.17'), manifest)
-            with self.assertRaisesRegex(ValueError, 'source revision'):
-                validate_gateway_health(dict(health, revision='b'*40), manifest)
-            with self.assertRaisesRegex(ValueError, 'not healthy'):
-                validate_gateway_health(dict(health, status='failed'), manifest)
-            with self.assertRaisesRegex(ValueError, 'missing or invalid'):
-                validate_gateway_health(dict(health, version=''), manifest)
+            with self.assertRaisesRegex(ValueError, "release differs"):
+                validate_gateway_health(dict(health, version="0.6.0"), manifest)
+            with self.assertRaisesRegex(ValueError, "compatibility policy differs"):
+                validate_gateway_health(dict(health, minimumClientVersion="0.4.17"), manifest)
+            with self.assertRaisesRegex(ValueError, "source revision"):
+                validate_gateway_health(dict(health, revision="b" * 40), manifest)
+            with self.assertRaisesRegex(ValueError, "not healthy"):
+                validate_gateway_health(dict(health, status="failed"), manifest)
+            with self.assertRaisesRegex(ValueError, "missing or invalid"):
+                validate_gateway_health(dict(health, version=""), manifest)
 
 
 if __name__ == "__main__":

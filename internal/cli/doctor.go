@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dbpprt/dieter/internal/platform/buildinfo"
 )
 
 type doctorCheck struct {
@@ -39,22 +41,22 @@ durability dependencies. Doctor is read-only and does not initialize storage.
 	checks := []doctorCheck{
 		commandDoctorCheck("git", true, "--version", nil),
 		commandDoctorCheck("node", true, "--version", nodeVersionSupported),
-		commandDoctorCheck("npm", true, "--version", nil),
+		npmDoctorCheck(strings.TrimSpace(buildinfo.HarnessRuntimeSHA256) == ""),
 		commandDoctorCheck("tmux", false, "-V", nil),
 		commandDoctorCheck("xdg-open", false, "--help", nil),
 	}
 	if runtime.GOOS == "darwin" {
 		checks[4] = commandDoctorCheck("open", false, "--help", nil)
 	}
-	rootInfo, statErr := os.Stat(c.Store.Root)
-	storage := doctorCheck{Name: "storage", Required: true, Status: "ok", Detail: c.Store.Root + " is private"}
+	rootInfo, statErr := os.Stat(c.Root)
+	storage := doctorCheck{Name: "storage", Required: true, Status: "ok", Detail: c.Root + " is private"}
 	if statErr != nil {
 		storage.Status, storage.Detail = "failed", statErr.Error()
 	} else if rootInfo.Mode().Perm() != 0o700 {
 		storage.Status, storage.Detail = "failed", fmt.Sprintf("mode is %04o; expected 0700", rootInfo.Mode().Perm())
 	}
 	checks = append(checks, storage)
-	shell := strings.TrimSpace(os.Getenv("SHELL"))
+	shell := c.env.Shell
 	if shell != "" {
 		if resolved, lookErr := exec.LookPath(shell); lookErr == nil {
 			shell = resolved
@@ -75,7 +77,7 @@ durability dependencies. Doctor is read-only and does not initialize storage.
 		shellCheck.Status, shellCheck.Detail = "failed", "no supported zsh, bash, or sh executable found"
 	}
 	checks = append(checks, shellCheck)
-	checks = append(checks, platformDoctorChecks()...)
+	checks = append(checks, platformDoctorChecks(c.env)...)
 	executable, executableErr := os.Executable()
 	pathCheck := doctorCheck{Name: "service-path", Required: true, Status: "ok"}
 	if executableErr != nil {
@@ -112,6 +114,17 @@ durability dependencies. Doctor is read-only and does not initialize storage.
 		return errors.New("required local prerequisites are unavailable")
 	}
 	return nil
+}
+
+// npmDoctorCheck requires npm only of a source build, which installs its
+// harness runtime with npm. A release binary installs its pinned prebuilt
+// runtime, whose agents link their CLIs from it; only DSH still uses npm.
+func npmDoctorCheck(sourceBuild bool) doctorCheck {
+	check := commandDoctorCheck("npm", sourceBuild, "--version", nil)
+	if check.Status == "warning" {
+		check.Detail += "; only the DSH harness needs npm"
+	}
+	return check
 }
 
 func commandDoctorCheck(name string, required bool, argument string, validate func(string) error) doctorCheck {

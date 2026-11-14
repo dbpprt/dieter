@@ -1,3 +1,5 @@
+//go:build e2e
+
 package cli
 
 import (
@@ -10,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dbpprt/dieter/internal/testkit"
 )
 
 func runVaultCLIWithInput(t *testing.T, client *CLI, output *bytes.Buffer, input string, args ...string) string {
@@ -20,7 +24,6 @@ func runVaultCLIWithInput(t *testing.T, client *CLI, output *bytes.Buffer, input
 }
 
 func TestVaultCLIManagesItemsAndConversationAccess(t *testing.T) {
-	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
 	t.Setenv("DIETER_TURN_TOKEN", "")
 	client, output, _ := daemonCLIForTest(t)
 
@@ -108,7 +111,7 @@ func TestVaultCLIManagesItemsAndConversationAccess(t *testing.T) {
 	}
 
 	// A stale or foreign turn token is rejected rather than treated as the operator.
-	t.Setenv("DIETER_TURN_TOKEN", "dtt1:c_missing:turn_missing:forged")
+	client.env.TurnToken = "dtt1:c_missing:turn_missing:forged"
 	client.Close()
 	output.Reset()
 	if err := client.Run([]string{"vault", "list"}); err == nil || !strings.Contains(err.Error(), "turn token") {
@@ -121,7 +124,7 @@ func TestVaultCLIManagesItemsAndConversationAccess(t *testing.T) {
 }
 
 func TestVaultCLIGrantsAccessAtCreation(t *testing.T) {
-	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
+	t.Parallel()
 	client, output, data := daemonCLIForTest(t)
 	repository := initTestRepository(t, "vault")
 	var created struct {
@@ -152,15 +155,15 @@ func TestVaultCLIGrantsAccessAtCreation(t *testing.T) {
 		t.Fatalf("card without --vault = %q", plain)
 	}
 	chat := runDaemonCLI(t, client, output, "chat", "create", "--project", created.Project.ID, "--title", "Vault chat", "--workspace", "project", "--provider", "mock", "--model", "mock", "--vault", "--format", "id")
-	stored, err := data.ResolveCard(strings.TrimSpace(chat))
+	stored, err := data.Kanban.ResolveCard(strings.TrimSpace(chat))
 	if err != nil || !stored.VaultAccess {
 		t.Fatalf("chat = %q %+v %v", chat, stored, err)
 	}
 	// Chats start immediately; let the mock turn finish before cleanup.
-	for deadline := time.Now().Add(10 * time.Second); stored.Runtime != "idle" && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-		stored, _ = data.ResolveCard(stored.ID)
+	for deadline := time.Now().Add(testkit.Budget(30 * time.Second)); stored.Runtime != "idle" && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		stored, _ = data.Kanban.ResolveCard(stored.ID)
 	}
-	if _, err := data.GlobalStateContext(t.Context()); err != nil {
+	if _, err := data.Kanban.GlobalStateContext(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	schedule := runDaemonCLI(t, client, output, "schedule", "create", "--project", created.Project.ID, "--board", created.Board.ID, "--name", "Nightly login", "--cron", "0 3 * * *", "--title", "Login", "--prompt", "Check login", "--provider", "mock", "--model", "mock", "--vault")
@@ -189,15 +192,14 @@ func assertVaultDirectCLI(t *testing.T, client *CLI, output *bytes.Buffer) {
 	}
 }
 
-// assertVaultRelayRefusedCLI runs on the gateway relay route, where the
-// gateway sees payloads: status works, decrypted content is refused.
-func assertVaultRelayRefusedCLI(t *testing.T, client *CLI, output *bytes.Buffer) {
+// assertVaultRelayCLI runs on the gateway relay route. The relay carries an
+// opaque tunnel with TLS end to end, so vault contents work as on any route.
+func assertVaultRelayCLI(t *testing.T, client *CLI, output *bytes.Buffer) {
 	t.Helper()
-	if status := runDaemonCLI(t, client, output, "vault", "status"); !strings.Contains(status, "unlocked") || !strings.Contains(status, "via relay") {
+	if status := runDaemonCLI(t, client, output, "vault", "status"); !strings.Contains(status, "unlocked") || !strings.Contains(status, "via remote") {
 		t.Fatalf("relay vault status = %q", status)
 	}
-	output.Reset()
-	if err := client.Run([]string{"vault", "get", "Remote", "--reveal"}); err == nil || !strings.Contains(err.Error(), "gateway relay") {
-		t.Fatalf("relay vault get = %v %q", err, output.String())
+	if value := runDaemonCLI(t, client, output, "vault", "get", "Remote", "--reveal"); value != "remote-secret\n" {
+		t.Fatalf("relay vault get = %q", value)
 	}
 }

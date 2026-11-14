@@ -1,0 +1,15 @@
+# Go bindings for the network API (dieter.v1, dieter.gateway.v1), written to
+# internal/gen. Run from the repository root: buf generate api --template api/buf.gen.go.yaml
+version: v2
+inputs:
+  - directory: api/proto
+    paths:
+      - api/proto/dieter/v1
+      - api/proto/dieter/gateway/v1
+plugins:
+  - local: protoc-gen-go
+    out: .
+    opt: module=github.com/dbpprt/dieter
+  - local: protoc-gen-go-grpc
+    out: .
+    opt: module=github.com/dbpprt/dieter

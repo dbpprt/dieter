@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Root-owned, durable gateway operations. SSH observes; systemd owns execution."""
+
 import argparse
 import contextlib
 import datetime
@@ -16,7 +17,20 @@ import tempfile
 import time
 import urllib.request
 import urllib.error
-from common import NAME, atomic, canonical, digest, pointer, read_json, require, run, sync_dir, set_operation_log, protected_log, validate_gateway_health
+from common import (
+    NAME,
+    atomic,
+    canonical,
+    digest,
+    pointer,
+    read_json,
+    require,
+    run,
+    sync_dir,
+    set_operation_log,
+    protected_log,
+    validate_gateway_health,
+)
 from bundle import ARCHIVE, MANIFEST, SIGNATURE, extract, verify
 from render import render, secrets, settings
 
@@ -40,7 +54,15 @@ class Host:
         self.ops = self.state / "operations"
 
     def initialize(self):
-        for path in (self.install, self.etc, self.state, self.runtime, self.ops, self.install / "releases", self.etc / "releases"):
+        for path in (
+            self.install,
+            self.etc,
+            self.state,
+            self.runtime,
+            self.ops,
+            self.install / "releases",
+            self.etc / "releases",
+        ):
             path.mkdir(mode=0o700, parents=True, exist_ok=True)
 
     @contextlib.contextmanager
@@ -78,26 +100,46 @@ class Host:
         if (incoming / "legacy.caddy").exists():
             filenames.append("legacy.caddy")
         for name in filenames:
-            require((incoming / name).is_file() and not (incoming / name).is_symlink(), "missing incoming file")
+            require(
+                (incoming / name).is_file() and not (incoming / name).is_symlink(),
+                "missing incoming file",
+            )
             require((incoming / name).stat().st_size <= 32 * 1024 * 1024, "incoming file too large")
         request = {name: digest(incoming / name) for name in filenames}
         request_hash = hashlib.sha256(canonical(request)).hexdigest()
         with self.lock("admission.lock"):
             dest = self.operation(operation)
             if dest.exists():
-                require(self.status(operation)["requestSHA256"] == request_hash, "operation ID already has different inputs")
+                require(
+                    self.status(operation)["requestSHA256"] == request_hash,
+                    "operation ID already has different inputs",
+                )
                 if self.status(operation)["state"] not in TERMINAL:
                     # Admission may have reached disk just before the observer
                     # or systemctl client died. Starting an already active unit
                     # is idempotent and never restarts its worker.
-                    run(["systemctl", "start", "--no-block", "dieter-deploy@" + operation + ".service"])
+                    run(
+                        [
+                            "systemctl",
+                            "start",
+                            "--no-block",
+                            "dieter-deploy@" + operation + ".service",
+                        ]
+                    )
                 return self.status(operation)
             for abandoned in self.ops.glob(".admitting-*"):
                 shutil.rmtree(abandoned)
-            pending = sum(1 for op in self.ops.iterdir() if (op / "status.json").is_file()
-                          and read_json(op / "status.json")["state"] not in TERMINAL)
+            pending = sum(
+                1
+                for op in self.ops.iterdir()
+                if (op / "status.json").is_file()
+                and read_json(op / "status.json")["state"] not in TERMINAL
+            )
             require(pending < 8, "deployment admission queue is full")
-            require(shutil.disk_usage(self.state).free > 3*1024*1024*1024, "insufficient deployment staging space")
+            require(
+                shutil.disk_usage(self.state).free > 3 * 1024 * 1024 * 1024,
+                "insufficient deployment staging space",
+            )
             staging = self.ops / (".admitting-" + operation)
             if staging.exists():
                 shutil.rmtree(staging)
@@ -105,8 +147,17 @@ class Host:
             (staging / "input").mkdir(mode=0o700)
             for name in filenames:
                 atomic(staging / "input" / name, (incoming / name).read_bytes())
-            atomic(staging / "status.json", canonical({"id": operation, "state": "admitted", "createdAt": now(),
-                                                       "requestSHA256": request_hash}))
+            atomic(
+                staging / "status.json",
+                canonical(
+                    {
+                        "id": operation,
+                        "state": "admitted",
+                        "createdAt": now(),
+                        "requestSHA256": request_hash,
+                    }
+                ),
+            )
             os.rename(staging, dest)
             sync_dir(self.ops)
         run(["systemctl", "start", "--no-block", "dieter-deploy@" + operation + ".service"])
@@ -115,8 +166,14 @@ class Host:
     def volume(self, s):
         result = json.loads(run(["docker", "volume", "inspect", s["stateVolume"]]))
         path = Path(result[0]["Mountpoint"])
-        require((path / "gateway.db").is_file(), "existing gateway database missing; refusing fresh identity")
-        require(path.stat().st_uid == 100 and path.stat().st_gid == 101, "unexpected gateway storage owner")
+        require(
+            (path / "gateway.db").is_file(),
+            "existing gateway database missing; refusing fresh identity",
+        )
+        require(
+            path.stat().st_uid == 100 and path.stat().st_gid == 101,
+            "unexpected gateway storage owner",
+        )
         for name in ("gateway-ed25519.pem", "daemon-ca-ed25519.pem", "daemon-ca.pem"):
             require((path / "signing" / name).is_file(), "gateway identity material is incomplete")
         return path
@@ -124,24 +181,55 @@ class Host:
     def rollback(self, operation, release):
         """Readmit an accepted signed release while retaining current live data."""
         target = self.operation(release)
-        require(self.status(release)["state"] == "committed", "rollback target must be an accepted signed release")
+        require(
+            self.status(release)["state"] == "committed",
+            "rollback target must be an accepted signed release",
+        )
         require((target / "input" / MANIFEST).is_file(), "rollback target distribution is missing")
         # Reuse the same verification, backup, activation and external readiness
         # path. A rollback is itself a new durable deployment, never a DB restore.
         return self.admit(operation, target / "input")
 
     def validate_selection(self, selection, incoming):
-        for name in ("installRoot", "configRoot", "runtimeRoot", "project", "gatewayHost", "allowedUserIDs",
-                     "stateVolume", "caddyData", "caddyConfig", "publicIPv4", "turnIPv4", "turnHost"):
-            require(selection[name] == self.config[name], "settings do not match installed host policy")
-        require(selection.get("gatewayIdentityHost", selection["gatewayHost"]) == self.config.get("gatewayIdentityHost", self.config["gatewayHost"]), "gateway identity namespace differs from host policy")
-        require(selection.get("gatewayAliases", []) == self.config.get("gatewayAliases", []), "gateway aliases differ from host policy")
-        require(selection["legacyHosts"] in (self.config.get("legacyHosts", []), []), "unexpected legacy hostname selection")
+        for name in (
+            "installRoot",
+            "configRoot",
+            "runtimeRoot",
+            "project",
+            "gatewayHost",
+            "allowedUserIDs",
+            "stateVolume",
+            "caddyData",
+            "caddyConfig",
+            "publicIPv4",
+            "turnIPv4",
+            "turnHost",
+        ):
+            require(
+                selection[name] == self.config[name], "settings do not match installed host policy"
+            )
+        require(
+            selection.get("gatewayIdentityHost", selection["gatewayHost"])
+            == self.config.get("gatewayIdentityHost", self.config["gatewayHost"]),
+            "gateway identity namespace differs from host policy",
+        )
+        require(
+            selection.get("gatewayAliases", []) == self.config.get("gatewayAliases", []),
+            "gateway aliases differ from host policy",
+        )
+        require(
+            selection["legacyHosts"] in (self.config.get("legacyHosts", []), []),
+            "unexpected legacy hostname selection",
+        )
         if self.config.get("legacyHosts") and not selection["legacyHosts"]:
             from qualification import require_retirement_ready
+
             require_retirement_ready(self, Path(incoming))
         if selection["legacyHosts"]:
-            require(digest(Path(incoming) / "legacy.caddy") == self.config["legacyFragmentSHA256"], "legacy route fragment differs from reviewed host policy")
+            require(
+                digest(Path(incoming) / "legacy.caddy") == self.config["legacyFragmentSHA256"],
+                "legacy route fragment differs from reviewed host policy",
+            )
 
     def backup(self, s, operation):
         """Online SQLite backup plus the corresponding stable identity/config."""
@@ -152,11 +240,19 @@ class Host:
             stage = Path(temporary)
             gateway = stage / "gateway"
             gateway.mkdir(mode=0o700)
-            with sqlite3.connect("file:" + str(source / "gateway.db") + "?mode=ro", uri=True, timeout=30) as src:
+            with sqlite3.connect(
+                "file:" + str(source / "gateway.db") + "?mode=ro", uri=True, timeout=30
+            ) as src:
                 with sqlite3.connect(gateway / "gateway.db") as dst:
                     src.backup(dst, pages=256, sleep=0.05)
-                    require(dst.execute("PRAGMA integrity_check").fetchone()[0] == "ok", "backup database is corrupt")
-                    require(dst.execute("PRAGMA user_version").fetchone()[0] == 1, "unsupported backup schema")
+                    require(
+                        dst.execute("PRAGMA integrity_check").fetchone()[0] == "ok",
+                        "backup database is corrupt",
+                    )
+                    require(
+                        dst.execute("PRAGMA user_version").fetchone()[0] == 1,
+                        "unsupported backup schema",
+                    )
             os.chmod(gateway / "gateway.db", 0o600)
             shutil.copytree(source / "signing", gateway / "signing")
             shutil.copytree(self.etc, stage / "configuration", symlinks=True)
@@ -175,7 +271,9 @@ class Host:
                 active = read_json(current / "public/settings.json")
                 for name in ("gatewayHost", "turnHost", "legacyHosts"):
                     recovery_policy[name] = active[name]
-                recovery_policy["gatewayIdentityHost"] = active.get("gatewayIdentityHost", active["gatewayHost"])
+                recovery_policy["gatewayIdentityHost"] = active.get(
+                    "gatewayIdentityHost", active["gatewayHost"]
+                )
                 recovery_policy["gatewayAliases"] = active.get("gatewayAliases", [])
             atomic(stage / "host-policy.json", canonical(recovery_policy))
             # Save runnable image bytes as well as manifests: a digest alone is
@@ -184,28 +282,68 @@ class Host:
                 compose = read_json(current / "public/compose.json")
                 images = sorted({service["image"] for service in compose["services"].values()})
                 sizes = json.loads(run(["docker", "image", "inspect", *images]))
-                atomic(stage / "images.json", canonical([{ "reference": reference, "imageID": image["Id"]}
-                                                         for reference, image in zip(images, sizes)]))
+                atomic(
+                    stage / "images.json",
+                    canonical(
+                        [
+                            {"reference": reference, "imageID": image["Id"]}
+                            for reference, image in zip(images, sizes)
+                        ]
+                    ),
+                )
                 required = sum(image["Size"] for image in sizes)
-                require(required <= 2*1024*1024*1024 and shutil.disk_usage(root).free > required + 1024*1024*1024,
-                        "insufficient bounded backup staging capacity")
-                run(["docker", "image", "save", "--output", stage / "images.tar", *images], timeout=300)
-            atomic(stage / "metadata.json", canonical({"createdAt": now(), "operation": operation, "schema": 1,
-                "gatewayCAFingerprint": digest(source / "signing" / "daemon-ca.pem")}))
+                require(
+                    required <= 2 * 1024 * 1024 * 1024
+                    and shutil.disk_usage(root).free > required + 1024 * 1024 * 1024,
+                    "insufficient bounded backup staging capacity",
+                )
+                run(
+                    ["docker", "image", "save", "--output", stage / "images.tar", *images],
+                    timeout=300,
+                )
+            atomic(
+                stage / "metadata.json",
+                canonical(
+                    {
+                        "createdAt": now(),
+                        "operation": operation,
+                        "schema": 1,
+                        "gatewayCAFingerprint": digest(source / "signing" / "daemon-ca.pem"),
+                    }
+                ),
+            )
             # A root-owned transport performs encrypted off-host storage. No
             # local-only backup can satisfy pre-activation safety.
             backup_command = self.config["backupCommand"]
-            require(isinstance(backup_command, list) and backup_command and Path(backup_command[0]).is_absolute(), "encrypted off-host backup is not configured")
+            require(
+                isinstance(backup_command, list)
+                and backup_command
+                and Path(backup_command[0]).is_absolute(),
+                "encrypted off-host backup is not configured",
+            )
             receipt = json.loads(run([*backup_command, str(stage)], timeout=900))
-        result = {"completedAt": now(), "gatewayCAFingerprint": digest(source / "signing" / "daemon-ca.pem")}
+        result = {
+            "completedAt": now(),
+            "gatewayCAFingerprint": digest(source / "signing" / "daemon-ca.pem"),
+        }
         for key in ("snapshotID", "offHost"):
             if key in receipt:
                 result[key] = receipt[key]
         return result
 
     def compose(self, release, *args):
-        return run(["docker", "compose", "--project-name", self.config["project"],
-                    "--file", Path(release) / "public" / "compose.json", *args], timeout=240)
+        return run(
+            [
+                "docker",
+                "compose",
+                "--project-name",
+                self.config["project"],
+                "--file",
+                Path(release) / "public" / "compose.json",
+                *args,
+            ],
+            timeout=240,
+        )
 
     def activate(self, release):
         """The named services share the existing volume; never remove orphans."""
@@ -213,8 +351,21 @@ class Host:
         # Introduce HAProxy only after Caddy has released public 443. Removing a
         # previous HAProxy is similarly explicit on rollback to the old topology.
         if "haproxy" not in services:
-            result = run(["docker", "ps", "-aq", "--filter", "label=com.docker.compose.project=" + self.config["project"],
-                          "--filter", "label=com.docker.compose.service=haproxy"]).decode().split()
+            result = (
+                run(
+                    [
+                        "docker",
+                        "ps",
+                        "-aq",
+                        "--filter",
+                        "label=com.docker.compose.project=" + self.config["project"],
+                        "--filter",
+                        "label=com.docker.compose.service=haproxy",
+                    ]
+                )
+                .decode()
+                .split()
+            )
             if result:
                 run(["docker", "stop", "--time", "30", *result], timeout=60)
         for service in ("dieter-gateway", "coturn", "caddy", "haproxy"):
@@ -250,15 +401,29 @@ class Host:
         status = self.status(operation)
         require(status["state"] == "checking", "operation is not awaiting readiness")
         value = read_json(report)
-        require(value.get("requestSHA256") == status["requestSHA256"] and value.get("sourceRevision") == status["sourceRevision"], "readiness evidence belongs to different inputs")
-        require(value.get("compatibilityPolicy") == status.get("compatibilityPolicy"),
-                "readiness compatibility policy differs from signed release")
-        require(value.get("gatewayAuthenticated") is True and value.get("daemonAuthenticated") is True,
-                "authenticated gateway and daemon checks are required")
+        require(
+            value.get("requestSHA256") == status["requestSHA256"]
+            and value.get("sourceRevision") == status["sourceRevision"],
+            "readiness evidence belongs to different inputs",
+        )
+        require(
+            value.get("compatibilityPolicy") == status.get("compatibilityPolicy"),
+            "readiness compatibility policy differs from signed release",
+        )
+        require(
+            value.get("gatewayAuthenticated") is True and value.get("daemonAuthenticated") is True,
+            "authenticated gateway and daemon checks are required",
+        )
         s = read_json(self.operation(operation) / "input" / "settings.json")
         required = {"udp", "tcp", "tls"} if s["tls"] == "managed" else {"udp", "tcp"}
-        require(required <= set(value.get("turnPayloadTransports", [])), "TURN payload evidence is incomplete")
-        require(value.get("unauthenticatedRejected") is True, "unauthenticated rejection evidence is required")
+        require(
+            required <= set(value.get("turnPayloadTransports", [])),
+            "TURN payload evidence is incomplete",
+        )
+        require(
+            value.get("unauthenticatedRejected") is True,
+            "unauthenticated rejection evidence is required",
+        )
         atomic(self.operation(operation) / "readiness.json", canonical(value))
         return {"id": operation, "readinessReceived": True}
 
@@ -284,27 +449,49 @@ class Host:
                 s = settings(read_json(incoming / "settings.json"))
                 self.validate_selection(s, incoming)
                 current = self.install / "current"
-                require(current.is_symlink(), "import and verify the existing deployment before activation")
+                require(
+                    current.is_symlink(),
+                    "import and verify the existing deployment before activation",
+                )
                 previous = current.resolve()
                 require(previous.is_dir(), "previous release is missing")
                 source = self.volume(s)
                 secret_path = self.etc / "secrets.json"
                 private = secrets(secret_path)
-                self.transition(operation, "verified", sourceRevision=m["sourceRevision"], compatibilityPolicy=m["compatibilityPolicy"], previousRelease=str(previous),
-                                secretSHA256=digest(secret_path), gatewayCAFingerprint=digest(source / "signing" / "daemon-ca.pem"),
-                                previousController=str(Path(self.config["controllerLink"]).resolve()) if self.config.get("controllerLink") else None)
+                self.transition(
+                    operation,
+                    "verified",
+                    sourceRevision=m["sourceRevision"],
+                    compatibilityPolicy=m["compatibilityPolicy"],
+                    previousRelease=str(previous),
+                    secretSHA256=digest(secret_path),
+                    gatewayCAFingerprint=digest(source / "signing" / "daemon-ca.pem"),
+                    previousController=str(Path(self.config["controllerLink"]).resolve())
+                    if self.config.get("controllerLink")
+                    else None,
+                )
                 release = self.install / "releases" / operation
                 if release.exists():
                     shutil.rmtree(release)  # only this never-activated, uncommitted operation
                 extract(incoming / ARCHIVE, release)
-                require(read_json(release / "dependencies.lock.json") == m["dependencies"], "bundle dependency manifest mismatch")
+                require(
+                    read_json(release / "dependencies.lock.json") == m["dependencies"],
+                    "bundle dependency manifest mismatch",
+                )
                 for name in (ARCHIVE, MANIFEST, SIGNATURE):
                     shutil.copyfile(incoming / name, release / name)
                 rendered = op / "rendered"
                 if rendered.exists():
                     shutil.rmtree(rendered)
-                render(s, private, m["image"], operation, rendered, m["compatibilityPolicy"],
-                       incoming / "legacy.caddy" if s["legacyHosts"] else None)
+                render(
+                    s,
+                    private,
+                    m["image"],
+                    operation,
+                    rendered,
+                    m["compatibilityPolicy"],
+                    incoming / "legacy.caddy" if s["legacyHosts"] else None,
+                )
                 shutil.copytree(rendered / "public", release / "public")
                 target_private = self.etc / "releases" / operation
                 if target_private.exists():
@@ -320,59 +507,122 @@ class Host:
                 self.compose(release, "pull")
                 # Validate with the exact deployed binaries before touching any listener.
                 deps = m["dependencies"]
-                run(["docker", "run", "--rm", "--network", "none", "-v", str(release / "public/Caddyfile") + ":/etc/caddy/Caddyfile:ro",
-                     "-v", str(self.etc / "certificates") + ":/certificates:ro", deps["caddy"], "caddy", "validate", "--config", "/etc/caddy/Caddyfile"])
+                run(
+                    [
+                        "docker",
+                        "run",
+                        "--rm",
+                        "--network",
+                        "none",
+                        "-v",
+                        str(release / "public/Caddyfile") + ":/etc/caddy/Caddyfile:ro",
+                        "-v",
+                        str(self.etc / "certificates") + ":/certificates:ro",
+                        deps["caddy"],
+                        "caddy",
+                        "validate",
+                        "--config",
+                        "/etc/caddy/Caddyfile",
+                    ]
+                )
                 if s["tls"] == "managed" and s["topology"] == "single-ip":
-                    run(["docker", "run", "--rm", "--network", "none", "-v", str(release / "public/haproxy.cfg") + ":/config:ro",
-                         deps["haproxy"], "haproxy", "-c", "-f", "/config"])
+                    run(
+                        [
+                            "docker",
+                            "run",
+                            "--rm",
+                            "--network",
+                            "none",
+                            "-v",
+                            str(release / "public/haproxy.cfg") + ":/config:ro",
+                            deps["haproxy"],
+                            "haproxy",
+                            "-c",
+                            "-f",
+                            "/config",
+                        ]
+                    )
                 self.transition(operation, "staged")
                 backup = self.backup(s, operation)
                 self.transition(operation, "backed_up", backup=backup)
-                require(digest(secret_path) == self.status(operation)["secretSHA256"], "secrets changed during staging")
+                require(
+                    digest(secret_path) == self.status(operation)["secretSHA256"],
+                    "secrets changed during staging",
+                )
                 self.transition(operation, "activating")
                 activation_started = True
                 self.activate(release)
-                self.transition(operation, "checking", turnTransports=["udp", "tcp", "tls"] if s["tls"] == "managed" else ["udp", "tcp"],
-                                readinessDeadlineAt=(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=self.config["readinessTimeoutSeconds"])).isoformat())
+                self.transition(
+                    operation,
+                    "checking",
+                    turnTransports=["udp", "tcp", "tls"]
+                    if s["tls"] == "managed"
+                    else ["udp", "tcp"],
+                    readinessDeadlineAt=(
+                        datetime.datetime.now(datetime.timezone.utc)
+                        + datetime.timedelta(seconds=self.config["readinessTimeoutSeconds"])
+                    ).isoformat(),
+                )
                 deadline = time.monotonic() + self.config["readinessTimeoutSeconds"]
                 while time.monotonic() < deadline:
                     if (op / "readiness.json").is_file():
                         self.wait_health(s, m)
-                        require(digest(source / "signing" / "daemon-ca.pem") == backup["gatewayCAFingerprint"], "gateway CA changed")
+                        require(
+                            digest(source / "signing" / "daemon-ca.pem")
+                            == backup["gatewayCAFingerprint"],
+                            "gateway CA changed",
+                        )
                         pointer(self.install / "previous", previous)
                         pointer(current, release)
                         if self.config.get("controllerLink"):
                             pointer(self.config["controllerLink"], release)
-                        result = self.transition(operation, "committed", release=str(release), acceptedAt=now())
+                        result = self.transition(
+                            operation, "committed", release=str(release), acceptedAt=now()
+                        )
                         try:
                             run(["systemctl", "start", "--no-block", "dieter-backup.service"])
                         except Exception:
-                            result = self.transition(operation, "committed", postActivationBackupQueueFailed=True)
+                            result = self.transition(
+                                operation, "committed", postActivationBackupQueueFailed=True
+                            )
                         return result
                     time.sleep(2)
                 raise ValueError("external readiness deadline expired")
             except Exception as error:
                 import traceback
+
                 protected_log(traceback.format_exc().encode())
                 # No raw external-tool output or secret-bearing exception details
                 # are written to public status.
                 code = type(error).__name__
                 failed_stage = self.status(operation)["state"]
                 if activation_started and previous:
-                    self.transition(operation, "rolling_back", failureClass=code, failureStage=failed_stage)
+                    self.transition(
+                        operation, "rolling_back", failureClass=code, failureStage=failed_stage
+                    )
                     try:
                         self.activate(previous)
                         old_settings = read_json(previous / "public" / "settings.json")
                         old_manifest = previous / MANIFEST
-                        self.wait_health(old_settings, read_json(old_manifest) if old_manifest.is_file() else None)
+                        self.wait_health(
+                            old_settings,
+                            read_json(old_manifest) if old_manifest.is_file() else None,
+                        )
                         pointer(self.install / "current", previous)
-                        if self.config.get("controllerLink") and self.status(operation).get("previousController"):
-                            pointer(self.config["controllerLink"], self.status(operation)["previousController"])
+                        if self.config.get("controllerLink") and self.status(operation).get(
+                            "previousController"
+                        ):
+                            pointer(
+                                self.config["controllerLink"],
+                                self.status(operation)["previousController"],
+                            )
                         return self.transition(operation, "rolled_back")
                     except Exception:
                         protected_log(traceback.format_exc().encode())
                         return self.transition(operation, "failed", rollbackFailed=True)
-                return self.transition(operation, "failed", failureClass=code, failureStage=failed_stage)
+                return self.transition(
+                    operation, "failed", failureClass=code, failureStage=failed_stage
+                )
 
     def resume(self):
         self.initialize()
@@ -409,11 +659,18 @@ def main():
         result = getattr(host, a.command)(a.operation)
     elif a.command == "backup":
         with host.lock():
-            result = host.backup(read_json(host.install / "current/public/settings.json"), "scheduled-" + str(int(time.time())))
+            result = host.backup(
+                read_json(host.install / "current/public/settings.json"),
+                "scheduled-" + str(int(time.time())),
+            )
     else:
         result = host.resume()
     print(json.dumps(result or {"ok": True}))
-    if isinstance(result, dict) and result.get("state") in {"failed", "rolled_back"} and a.command == "execute":
+    if (
+        isinstance(result, dict)
+        and result.get("state") in {"failed", "rolled_back"}
+        and a.command == "execute"
+    ):
         sys.exit(1)
 
 

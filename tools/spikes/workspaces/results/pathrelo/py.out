@@ -1,0 +1,36 @@
+P1 pip venv+install: 19.87s
+--- P1 python -m venv + pip -e (view /Volumes/External/dieter-spike/pathrelo/py/view-pip)
+  pytest shebang: #!/Volumes/External/dieter-spike/pathrelo/py/src-pip/.venv/bin/python3.12|# -*- coding: utf-8 -*-|
+  activate VIRTUAL_ENV: VIRTUAL_ENV=$(cygpath /Volumes/External/dieter-spike/pathrelo/py/src-pip/.venv)
+  pth relo.pth: /Volumes/External/dieter-spike/pathrelo/py/src-pip/src
+  view .venv/bin/relo prints: source /Volumes/External/dieter-spike/pathrelo/py/src-pip/src/relo/__init__.py
+  view .venv/bin/python -c import relo: source /Volumes/External/dieter-spike/pathrelo/py/view-pip/.venv
+  view .venv/bin/pytest sys.prefix: /Volumes/External/dieter-spike/pathrelo/py/src-pip/.venv
+  activated python: /Volumes/External/dieter-spike/pathrelo/py/src-pip/.venv
+  view/.venv/bin/pip install six: source site-packages entries       33 ->       35; six in view: 0
+P2 uv sync cold cache: 2.39s
+--- P2 uv sync (default venv) (view /Volumes/External/dieter-spike/pathrelo/py/view-uv)
+  pytest shebang: #!/Volumes/External/dieter-spike/pathrelo/py/src-uv/.venv/bin/python|# -*- coding: utf-8 -*-|
+  activate VIRTUAL_ENV: VIRTUAL_ENV='/Volumes/External/dieter-spike/pathrelo/py/src-uv/.venv'
+  pth _virtualenv.pth: import _virtualenv
+  pth relo.pth: /Volumes/External/dieter-spike/pathrelo/py/src-uv/src
+  view .venv/bin/relo prints: source /Volumes/External/dieter-spike/pathrelo/py/src-uv/src/relo/__init__.py
+  view .venv/bin/python -c import relo: source /Volumes/External/dieter-spike/pathrelo/py/view-uv/.venv
+  view .venv/bin/pytest sys.prefix: /Volumes/External/dieter-spike/pathrelo/py/src-uv/.venv
+  activated python: /Volumes/External/dieter-spike/pathrelo/py/src-uv/.venv
+  activate + uv pip install six: source site-packages entries       33 ->       35; six in view: 0
+P3 uv sync into relocatable venv (warm cache): 0.32s
+relocatable = true
+--- P3 uv venv --relocatable + uv sync (view /Volumes/External/dieter-spike/pathrelo/py/view-uvrel)
+  pytest shebang: #!/bin/sh|'''exec' "$(dirname -- "$(realpath -- "$0")")"/'python3' "$0" "$@"|
+  activate VIRTUAL_ENV: VIRTUAL_ENV=''"$(dirname -- "$(dirname -- "$(realpath -- "$SCRIPT_PATH")")")"''
+  pth _virtualenv.pth: import _virtualenv
+  pth relo.pth: /Volumes/External/dieter-spike/pathrelo/py/src-uvrel/src
+  view .venv/bin/relo prints: source /Volumes/External/dieter-spike/pathrelo/py/src-uvrel/src/relo/__init__.py
+  view .venv/bin/python -c import relo: source /Volumes/External/dieter-spike/pathrelo/py/view-uvrel/.venv
+  view .venv/bin/pytest sys.prefix: /Volumes/External/dieter-spike/pathrelo/py/view-uvrel/.venv
+  activated python: /Volumes/External/dieter-spike/pathrelo/py/view-uvrel/.venv
+  activate + uv pip install six: source site-packages entries       32 ->       32; six in view: 2
+P4 fresh uv sync --offline into new view (warm cache, clone link-mode): 0.21s,      862 files
+P4b same with link-mode=copy: 0.71s
+P4c clonefile of the whole .venv: 0.66s

@@ -26,17 +26,16 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/fixtureturn"
+	"github.com/dbpprt/dieter/internal/api"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/localauth"
+	"github.com/dbpprt/dieter/internal/platform/buildinfo"
 	"github.com/dbpprt/dieter/internal/remotedesktop"
-	"github.com/dbpprt/dieter/internal/server"
+	"github.com/dbpprt/dieter/internal/security/localauth"
+	"github.com/dbpprt/dieter/internal/security/trust"
 	"github.com/dbpprt/dieter/internal/store"
-	"github.com/dbpprt/dieter/internal/trust"
+	"github.com/dbpprt/dieter/tools/fixtures/fixtureturn"
 	"github.com/pion/interceptor"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -130,7 +129,7 @@ func run(helper, kind, ready string, authenticate bool) error {
 			return err
 		}
 	}
-	source := remotedesktop.SourceOptions{StateRoot: root, Logger: slog.Default(), ClipboardDirectory: filepath.Join(root, "clipboard"), Kind: kind, HelperPath: helper, ClipboardName: "com.dbpprt.dieter.fixture." + fmt.Sprint(os.Getpid())}
+	source := remotedesktop.SourceOptions{StateRoot: root, Logger: slog.Default(), ClipboardDirectory: filepath.Join(root, "clipboard"), Kind: kind, HelperPath: helper, ClipboardName: buildinfo.BundlePrefix + ".fixture." + fmt.Sprint(os.Getpid())}
 	// Prove the exact native helper once before publishing fixture readiness.
 	// Production capability calls intentionally have a short latency budget,
 	// but a cold helper launch can exceed it on a loaded simulator runner. The
@@ -154,7 +153,7 @@ func run(helper, kind, ready string, authenticate bool) error {
 		},
 	})
 	defer manager.Shutdown(context.Background())
-	api := server.NewWithOptions(data, slog.Default(), server.Options{RemoteDesktop: manager})
+	application := api.NewWithOptions(data, slog.Default(), api.Options{RemoteDesktop: manager})
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		return err
@@ -165,7 +164,7 @@ func run(helper, kind, ready string, authenticate bool) error {
 		return err
 	}
 	token := base64.RawURLEncoding.EncodeToString(tokenBytes)
-	handler := api.Handler()
+	handler := application.Handler()
 	// The fixture fronts the raw API with its own bearer, as the daemon's
 	// direct route does, and forwards with the local API token.
 	localToken, err := localauth.Read(data.Root)
@@ -176,7 +175,7 @@ func run(helper, kind, ready string, authenticate bool) error {
 	var rejectedSignals atomic.Int64
 	var signalingMu sync.Mutex
 	signalingStreams := make(map[*http.Request]context.CancelFunc)
-	httpServer := &http.Server{Handler: h2c.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	httpServer := &http.Server{Protocols: api.LoopbackProtocols(), Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if authenticate && r.Header.Get("Authorization") != "Bearer "+token {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
@@ -200,7 +199,7 @@ func run(helper, kind, ready string, authenticate bool) error {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		if authenticate && r.URL.Path == "/dieter.v1.DieterService/StartRemoteDesktop" {
+		if authenticate && r.URL.Path == "/dieter.v1.ScreenService/StartRemoteDesktop" {
 			ctx, cancel := context.WithCancel(r.Context())
 			signalingMu.Lock()
 			signalingStreams[r] = cancel
@@ -228,7 +227,7 @@ func run(helper, kind, ready string, authenticate bool) error {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		if rejectLeaseRPC.Load() && r.URL.Path == "/dieter.v1.DieterService/SendRemoteDesktopSignal" {
+		if rejectLeaseRPC.Load() && r.URL.Path == "/dieter.v1.ScreenService/SendRemoteDesktopSignal" {
 			rejectedSignals.Add(1)
 			http.Error(w, "injected signaling outage", http.StatusServiceUnavailable)
 			return
@@ -245,11 +244,11 @@ func run(helper, kind, ready string, authenticate bool) error {
 		r.Header.Set("x-dieter-operator-subject", "github:1")
 		r.Header.Set(localauth.Header, localToken)
 		handler.ServeHTTP(w, r)
-	}), &http2.Server{})}
+	})}
 	defer httpServer.Close()
 	go func() { _ = httpServer.Serve(listener) }()
 	configRaw, _ := proto.Marshal(config)
-	output, _ := json.Marshal(map[string]any{"clipboardName": "com.dbpprt.dieter.fixture." + fmt.Sprint(os.Getpid()), "url": "http://" + listener.Addr().String(), "certificate": pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), "rtc": configRaw, "token": token})
+	output, _ := json.Marshal(map[string]any{"clipboardName": buildinfo.BundlePrefix + ".fixture." + fmt.Sprint(os.Getpid()), "url": "http://" + listener.Addr().String(), "certificate": pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), "rtc": configRaw, "token": token})
 	if err = os.WriteFile(ready, output, 0600); err != nil {
 		return err
 	}

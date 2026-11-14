@@ -1,0 +1,46 @@
+# Inbox: pinning a card gives it the Pinned section, and swiping a card left
+# archives it and offers an undo.
+appId: ${APP_ID}
+name: Inbox
+tags: [smoke]
+---
+- runFlow: common/launch.yaml
+- extendedWaitUntil:
+    visible:
+      id: inbox-filter-review
+    timeout: 40000
+# Show only cards waiting for review: the card is then on screen without a
+# scroll, which can fling past it on a small emulator.
+- tapOn:
+    id: inbox-filter-review
+- extendedWaitUntil:
+    visible: "Ship the new project picker"
+    timeout: 10000
+- longPressOn: "Ship the new project picker"
+- tapOn:
+    text: "Pin in Inbox"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible:
+      id: inbox-section-pinned
+    timeout: 10000
+- assertVisible: "Ship the new project picker"
+- takeScreenshot: inbox-pinned
+# An injected swipe occasionally does not register as a drag; then Undo never
+# shows and the swipe runs again. Tapping Undo is left to the Mail flow: right
+# after a swipe, Maestro's iOS driver re-reads the snackbar and only taps once
+# its 10 s have run out.
+- retry:
+    maxRetries: 2
+    commands:
+      - swipe:
+          from:
+            text: "Ship the new project picker"
+          direction: LEFT
+      - extendedWaitUntil:
+          visible: "Undo"
+          timeout: 5000
+- extendedWaitUntil:
+    notVisible: "Ship the new project picker"
+    timeout: 15000
+- takeScreenshot: inbox-archived

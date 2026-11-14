@@ -2,4 +2,6 @@
 
 package cli
 
-func platformDoctorChecks() []doctorCheck { return nil }
+import "github.com/dbpprt/dieter/internal/platform/config"
+
+func platformDoctorChecks(config.Client) []doctorCheck { return nil }

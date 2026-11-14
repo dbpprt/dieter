@@ -1,0 +1,456 @@
+=== a197fbe live-test B: tier cap and owner
+
+diff --git a/src/module3.js b/src/module3.js
+index 251c8ac..10a1594 100644
+--- a/src/module3.js
++++ b/src/module3.js
+@@ -40,3 +40,4 @@ export function rule3_36(qty, price) { return qty > 36 ? price * 0.964 : price;
+ export function rule3_37(qty, price) { return qty > 37 ? price * 0.963 : price; }
+ export function rule3_38(qty, price) { return qty > 38 ? price * 0.962 : price; }
+ export function rule3_39(qty, price) { return qty > 39 ? price * 0.961 : price; }
++export const MAX_TIER_3 = 39;
+diff --git a/src/module5.js b/src/module5.js
+index 56b9958..dff5b5f 100644
+--- a/src/module5.js
++++ b/src/module5.js
+@@ -1,4 +1,4 @@
+-// module 5: inventory pricing rules
++// module 5: inventory pricing rules (owner: B)
+ export const MODULE_5 = 5;
+ export function rule5_0(qty, price) { return qty > 0 ? price * 1.000 : price; }
+ export function rule5_1(qty, price) { return qty > 1 ? price * 0.999 : price; }
+=== c526c22 live-test A: review headers
+
+diff --git a/src/module3.js b/src/module3.js
+index a3990fa..251c8ac 100644
+--- a/src/module3.js
++++ b/src/module3.js
+@@ -1,4 +1,4 @@
+-// module 3: inventory pricing rules
++// module 3: inventory pricing rules (reviewed)
+ export const MODULE_3 = 3;
+ export function rule3_0(qty, price) { return qty > 0 ? price * 1.000 : price; }
+ export function rule3_1(qty, price) { return qty > 1 ? price * 0.999 : price; }
+diff --git a/src/module4.js b/src/module4.js
+index 2a6dcf9..34c6795 100644
+--- a/src/module4.js
++++ b/src/module4.js
+@@ -1,4 +1,4 @@
+-// module 4: inventory pricing rules
++// module 4: inventory pricing rules (reviewed)
+ export const MODULE_4 = 4;
+ export function rule4_0(qty, price) { return qty > 0 ? price * 1.000 : price; }
+ export function rule4_1(qty, price) { return qty > 1 ? price * 0.999 : price; }
+diff --git a/src/module6.js b/src/module6.js
+index 5a56e5d..f824f5e 100644
+--- a/src/module6.js
++++ b/src/module6.js
+@@ -1,4 +1,4 @@
+-// module 6: inventory pricing rules
++// module 6: inventory pricing rules (reviewed)
+ export const MODULE_6 = 6;
+ export function rule6_0(qty, price) { return qty > 0 ? price * 1.000 : price; }
+ export function rule6_1(qty, price) { return qty > 1 ? price * 0.999 : price; }
+diff --git a/src/module7.js b/src/module7.js
+index d4e9f9a..310bb06 100644
+--- a/src/module7.js
++++ b/src/module7.js
+@@ -1,4 +1,4 @@
+-// module 7: inventory pricing rules
++// module 7: inventory pricing rules (reviewed)
+ export const MODULE_7 = 7;
+ export function rule7_0(qty, price) { return qty > 0 ? price * 1.000 : price; }
+ export function rule7_1(qty, price) { return qty > 1 ? price * 0.999 : price; }
+=== c725485 live-test fixture
+
+diff --git a/README.md b/README.md
+new file mode 100644
+index 0000000..a64c570
+--- /dev/null
++++ b/README.md
+@@ -0,0 +1 @@
++# pricing fixture
+diff --git a/src/module0.js b/src/module0.js
+new file mode 100644
+index 0000000..01ab0e6
+--- /dev/null
++++ b/src/module0.js
+@@ -0,0 +1,42 @@
++// module 0: inventory pricing rules
++export const MODULE_0 = 0;
++export function rule0_0(qty, price) { return qty > 0 ? price * 1.000 : price; }
++export function rule0_1(qty, price) { return qty > 1 ? price * 0.999 : price; }
++export function rule0_2(qty, price) { return qty > 2 ? price * 0.998 : price; }
++export function rule0_3(qty, price) { return qty > 3 ? price * 0.997 : price; }
++export function rule0_4(qty, price) { return qty > 4 ? price * 0.996 : price; }
++export function rule0_5(qty, price) { return qty > 5 ? price * 0.995 : price; }
++export function rule0_6(qty, price) { return qty > 6 ? price * 0.994 : price; }
++export function rule0_7(qty, price) { return qty > 7 ? price * 0.993 : price; }
++export function rule0_8(qty, price) { return qty > 8 ? price * 0.992 : price; }
++export function rule0_9(qty, price) { return qty > 9 ? price * 0.991 : price; }
++export function rule0_10(qty, price) { return qty > 10 ? price * 0.990 : price; }
++export function rule0_11(qty, price) { return qty > 11 ? price * 0.989 : price; }
++export function rule0_12(qty, price) { return qty > 12 ? price * 0.988 : price; }
++export function rule0_13(qty, price) { return qty > 13 ? price * 0.987 : price; }
++export function rule0_14(qty, price) { return qty > 14 ? price * 0.986 : price; }
++export function rule0_15(qty, price) { return qty > 15 ? price * 0.985 : price; }
++export function rule0_16(qty, price) { return qty > 16 ? price * 0.984 : price; }
++export function rule0_17(qty, price) { return qty > 17 ? price * 0.983 : price; }
++export function rule0_18(qty, price) { return qty > 18 ? price * 0.982 : price; }
++export function rule0_19(qty, price) { return qty > 19 ? price * 0.981 : price; }
++export function rule0_20(qty, price) { return qty > 20 ? price * 0.980 : price; }
++export function rule0_21(qty, price) { return qty > 21 ? price * 0.979 : price; }
++export function rule0_22(qty, price) { return qty > 22 ? price * 0.978 : price; }
++export function rule0_23(qty, price) { return qty > 23 ? price * 0.977 : price; }
++export function rule0_24(qty, price) { return qty > 24 ? price * 0.976 : price; }
++export function rule0_25(qty, price) { return qty > 25 ? price * 0.975 : price; }
++export function rule0_26(qty, price) { return qty > 26 ? price * 0.974 : price; }
++export function rule0_27(qty, price) { return qty > 27 ? price * 0.973 : price; }
++export function rule0_28(qty, price) { return qty > 28 ? price * 0.972 : price; }
++export function rule0_29(qty, price) { return qty > 29 ? price * 0.971 : price; }
++export function rule0_30(qty, price) { return qty > 30 ? price * 0.970 : price; }
++export function rule0_31(qty, price) { return qty > 31 ? price * 0.969 : price; }
++export function rule0_32(qty, price) { return qty > 32 ? price * 0.968 : price; }
++export function rule0_33(qty, price) { return qty > 33 ? price * 0.967 : price; }
++export function rule0_34(qty, price) { return qty > 34 ? price * 0.966 : price; }
++export function rule0_35(qty, price) { return qty > 35 ? price * 0.965 : price; }
++export function rule0_36(qty, price) { return qty > 36 ? price * 0.964 : price; }
++export function rule0_37(qty, price) { return qty > 37 ? price * 0.963 : price; }
++export function rule0_38(qty, price) { return qty > 38 ? price * 0.962 : price; }
++export function rule0_39(qty, price) { return qty > 39 ? price * 0.961 : price; }
+diff --git a/src/module1.js b/src/module1.js
+new file mode 100644
+index 0000000..b9d0038
+--- /dev/null
++++ b/src/module1.js
+@@ -0,0 +1,42 @@
++// module 1: inventory pricing rules
++export const MODULE_1 = 1;
++export function rule1_0(qty, price) { return qty > 0 ? price * 1.000 : price; }
++export function rule1_1(qty, price) { return qty > 1 ? price * 0.999 : price; }
++export function rule1_2(qty, price) { return qty > 2 ? price * 0.998 : price; }
++export function rule1_3(qty, price) { return qty > 3 ? price * 0.997 : price; }
++export function rule1_4(qty, price) { return qty > 4 ? price * 0.996 : price; }
++export function rule1_5(qty, price) { return qty > 5 ? price * 0.995 : price; }
++export function rule1_6(qty, price) { return qty > 6 ? price * 0.994 : price; }
++export function rule1_7(qty, price) { return qty > 7 ? price * 0.993 : price; }
++export function rule1_8(qty, price) { return qty > 8 ? price * 0.992 : price; }
++export function rule1_9(qty, price) { return qty > 9 ? price * 0.991 : price; }
++export function rule1_10(qty, price) { return qty > 10 ? price * 0.990 : price; }
++export function rule1_11(qty, price) { return qty > 11 ? price * 0.989 : price; }
++export function rule1_12(qty, price) { return qty > 12 ? price * 0.988 : price; }
++export function rule1_13(qty, price) { return qty > 13 ? price * 0.987 : price; }
++export function rule1_14(qty, price) { return qty > 14 ? price * 0.986 : price; }
++export function rule1_15(qty, price) { return qty > 15 ? price * 0.985 : price; }
++export function rule1_16(qty, price) { return qty > 16 ? price * 0.984 : price; }
++export function rule1_17(qty, price) { return qty > 17 ? price * 0.983 : price; }
++export function rule1_18(qty, price) { return qty > 18 ? price * 0.982 : price; }
++export function rule1_19(qty, price) { return qty > 19 ? price * 0.981 : price; }
++export function rule1_20(qty, price) { return qty > 20 ? price * 0.980 : price; }
++export function rule1_21(qty, price) { return qty > 21 ? price * 0.979 : price; }
++export function rule1_22(qty, price) { return qty > 22 ? price * 0.978 : price; }
++export function rule1_23(qty, price) { return qty > 23 ? price * 0.977 : price; }
++export function rule1_24(qty, price) { return qty > 24 ? price * 0.976 : price; }
++export function rule1_25(qty, price) { return qty > 25 ? price * 0.975 : price; }
++export function rule1_26(qty, price) { return qty > 26 ? price * 0.974 : price; }
++export function rule1_27(qty, price) { return qty > 27 ? price * 0.973 : price; }
++export function rule1_28(qty, price) { return qty > 28 ? price * 0.972 : price; }
++export function rule1_29(qty, price) { return qty > 29 ? price * 0.971 : price; }
++export function rule1_30(qty, price) { return qty > 30 ? price * 0.970 : price; }
++export function rule1_31(qty, price) { return qty > 31 ? price * 0.969 : price; }
++export function rule1_32(qty, price) { return qty > 32 ? price * 0.968 : price; }
++export function rule1_33(qty, price) { return qty > 33 ? price * 0.967 : price; }
++export function rule1_34(qty, price) { return qty > 34 ? price * 0.966 : price; }
++export function rule1_35(qty, price) { return qty > 35 ? price * 0.965 : price; }
++export function rule1_36(qty, price) { return qty > 36 ? price * 0.964 : price; }
++export function rule1_37(qty, price) { return qty > 37 ? price * 0.963 : price; }
++export function rule1_38(qty, price) { return qty > 38 ? price * 0.962 : price; }
++export function rule1_39(qty, price) { return qty > 39 ? price * 0.961 : price; }
+diff --git a/src/module2.js b/src/module2.js
+new file mode 100644
+index 0000000..4b22d1e
+--- /dev/null
++++ b/src/module2.js
+@@ -0,0 +1,42 @@
++// module 2: inventory pricing rules
++export const MODULE_2 = 2;
++export function rule2_0(qty, price) { return qty > 0 ? price * 1.000 : price; }
++export function rule2_1(qty, price) { return qty > 1 ? price * 0.999 : price; }
++export function rule2_2(qty, price) { return qty > 2 ? price * 0.998 : price; }
++export function rule2_3(qty, price) { return qty > 3 ? price * 0.997 : price; }
++export function rule2_4(qty, price) { return qty > 4 ? price * 0.996 : price; }
++export function rule2_5(qty, price) { return qty > 5 ? price * 0.995 : price; }
++export function rule2_6(qty, price) { return qty > 6 ? price * 0.994 : price; }
++export function rule2_7(qty, price) { return qty > 7 ? price * 0.993 : price; }
++export function rule2_8(qty, price) { return qty > 8 ? price * 0.992 : price; }
++export function rule2_9(qty, price) { return qty > 9 ? price * 0.991 : price; }
++export function rule2_10(qty, price) { return qty > 10 ? price * 0.990 : price; }
++export function rule2_11(qty, price) { return qty > 11 ? price * 0.989 : price; }
++export function rule2_12(qty, price) { return qty > 12 ? price * 0.988 : price; }
++export function rule2_13(qty, price) { return qty > 13 ? price * 0.987 : price; }
++export function rule2_14(qty, price) { return qty > 14 ? price * 0.986 : price; }
++export function rule2_15(qty, price) { return qty > 15 ? price * 0.985 : price; }
++export function rule2_16(qty, price) { return qty > 16 ? price * 0.984 : price; }
++export function rule2_17(qty, price) { return qty > 17 ? price * 0.983 : price; }
++export function rule2_18(qty, price) { return qty > 18 ? price * 0.982 : price; }
++export function rule2_19(qty, price) { return qty > 19 ? price * 0.981 : price; }
++export function rule2_20(qty, price) { return qty > 20 ? price * 0.980 : price; }
++export function rule2_21(qty, price) { return qty > 21 ? price * 0.979 : price; }
++export function rule2_22(qty, price) { return qty > 22 ? price * 0.978 : price; }
++export function rule2_23(qty, price) { return qty > 23 ? price * 0.977 : price; }
++export function rule2_24(qty, price) { return qty > 24 ? price * 0.976 : price; }
++export function rule2_25(qty, price) { return qty > 25 ? price * 0.975 : price; }
++export function rule2_26(qty, price) { return qty > 26 ? price * 0.974 : price; }
++export function rule2_27(qty, price) { return qty > 27 ? price * 0.973 : price; }
++export function rule2_28(qty, price) { return qty > 28 ? price * 0.972 : price; }
++export function rule2_29(qty, price) { return qty > 29 ? price * 0.971 : price; }
++export function rule2_30(qty, price) { return qty > 30 ? price * 0.970 : price; }
++export function rule2_31(qty, price) { return qty > 31 ? price * 0.969 : price; }
++export function rule2_32(qty, price) { return qty > 32 ? price * 0.968 : price; }
++export function rule2_33(qty, price) { return qty > 33 ? price * 0.967 : price; }
++export function rule2_34(qty, price) { return qty > 34 ? price * 0.966 : price; }
++export function rule2_35(qty, price) { return qty > 35 ? price * 0.965 : price; }
++export function rule2_36(qty, price) { return qty > 36 ? price * 0.964 : price; }
++export function rule2_37(qty, price) { return qty > 37 ? price * 0.963 : price; }
++export function rule2_38(qty, price) { return qty > 38 ? price * 0.962 : price; }
++export function rule2_39(qty, price) { return qty > 39 ? price * 0.961 : price; }
+diff --git a/src/module3.js b/src/module3.js
+new file mode 100644
+index 0000000..a3990fa
+--- /dev/null
++++ b/src/module3.js
+@@ -0,0 +1,42 @@
++// module 3: inventory pricing rules
++export const MODULE_3 = 3;
++export function rule3_0(qty, price) { return qty > 0 ? price * 1.000 : price; }
++export function rule3_1(qty, price) { return qty > 1 ? price * 0.999 : price; }
++export function rule3_2(qty, price) { return qty > 2 ? price * 0.998 : price; }
++export function rule3_3(qty, price) { return qty > 3 ? price * 0.997 : price; }
++export function rule3_4(qty, price) { return qty > 4 ? price * 0.996 : price; }
++export function rule3_5(qty, price) { return qty > 5 ? price * 0.995 : price; }
++export function rule3_6(qty, price) { return qty > 6 ? price * 0.994 : price; }
++export function rule3_7(qty, price) { return qty > 7 ? price * 0.993 : price; }
++export function rule3_8(qty, price) { return qty > 8 ? price * 0.992 : price; }
++export function rule3_9(qty, price) { return qty > 9 ? price * 0.991 : price; }
++export function rule3_10(qty, price) { return qty > 10 ? price * 0.990 : price; }
++export function rule3_11(qty, price) { return qty > 11 ? price * 0.989 : price; }
++export function rule3_12(qty, price) { return qty > 12 ? price * 0.988 : price; }
++export function rule3_13(qty, price) { return qty > 13 ? price * 0.987 : price; }
++export function rule3_14(qty, price) { return qty > 14 ? price * 0.986 : price; }
++export function rule3_15(qty, price) { return qty > 15 ? price * 0.985 : price; }
++export function rule3_16(qty, price) { return qty > 16 ? price * 0.984 : price; }
++export function rule3_17(qty, price) { return qty > 17 ? price * 0.983 : price; }
++export function rule3_18(qty, price) { return qty > 18 ? price * 0.982 : price; }
++export function rule3_19(qty, price) { return qty > 19 ? price * 0.981 : price; }
++export function rule3_20(qty, price) { return qty > 20 ? price * 0.980 : price; }
++export function rule3_21(qty, price) { return qty > 21 ? price * 0.979 : price; }
++export function rule3_22(qty, price) { return qty > 22 ? price * 0.978 : price; }
++export function rule3_23(qty, price) { return qty > 23 ? price * 0.977 : price; }
++export function rule3_24(qty, price) { return qty > 24 ? price * 0.976 : price; }
++export function rule3_25(qty, price) { return qty > 25 ? price * 0.975 : price; }
++export function rule3_26(qty, price) { return qty > 26 ? price * 0.974 : price; }
++export function rule3_27(qty, price) { return qty > 27 ? price * 0.973 : price; }
++export function rule3_28(qty, price) { return qty > 28 ? price * 0.972 : price; }
++export function rule3_29(qty, price) { return qty > 29 ? price * 0.971 : price; }
++export function rule3_30(qty, price) { return qty > 30 ? price * 0.970 : price; }
++export function rule3_31(qty, price) { return qty > 31 ? price * 0.969 : price; }
++export function rule3_32(qty, price) { return qty > 32 ? price * 0.968 : price; }
++export function rule3_33(qty, price) { return qty > 33 ? price * 0.967 : price; }
++export function rule3_34(qty, price) { return qty > 34 ? price * 0.966 : price; }
++export function rule3_35(qty, price) { return qty > 35 ? price * 0.965 : price; }
++export function rule3_36(qty, price) { return qty > 36 ? price * 0.964 : price; }
++export function rule3_37(qty, price) { return qty > 37 ? price * 0.963 : price; }
++export function rule3_38(qty, price) { return qty > 38 ? price * 0.962 : price; }
++export function rule3_39(qty, price) { return qty > 39 ? price * 0.961 : price; }
+diff --git a/src/module4.js b/src/module4.js
+new file mode 100644
+index 0000000..2a6dcf9
+--- /dev/null
++++ b/src/module4.js
+@@ -0,0 +1,42 @@
++// module 4: inventory pricing rules
++export const MODULE_4 = 4;
++export function rule4_0(qty, price) { return qty > 0 ? price * 1.000 : price; }
++export function rule4_1(qty, price) { return qty > 1 ? price * 0.999 : price; }
++export function rule4_2(qty, price) { return qty > 2 ? price * 0.998 : price; }
++export function rule4_3(qty, price) { return qty > 3 ? price * 0.997 : price; }
++export function rule4_4(qty, price) { return qty > 4 ? price * 0.996 : price; }
++export function rule4_5(qty, price) { return qty > 5 ? price * 0.995 : price; }
++export function rule4_6(qty, price) { return qty > 6 ? price * 0.994 : price; }
++export function rule4_7(qty, price) { return qty > 7 ? price * 0.993 : price; }
++export function rule4_8(qty, price) { return qty > 8 ? price * 0.992 : price; }
++export function rule4_9(qty, price) { return qty > 9 ? price * 0.991 : price; }
++export function rule4_10(qty, price) { return qty > 10 ? price * 0.990 : price; }
++export function rule4_11(qty, price) { return qty > 11 ? price * 0.989 : price; }
++export function rule4_12(qty, price) { return qty > 12 ? price * 0.988 : price; }
++export function rule4_13(qty, price) { return qty > 13 ? price * 0.987 : price; }
++export function rule4_14(qty, price) { return qty > 14 ? price * 0.986 : price; }
++export function rule4_15(qty, price) { return qty > 15 ? price * 0.985 : price; }
++export function rule4_16(qty, price) { return qty > 16 ? price * 0.984 : price; }
++export function rule4_17(qty, price) { return qty > 17 ? price * 0.983 : price; }
++export function rule4_18(qty, price) { return qty > 18 ? price * 0.982 : price; }
++export function rule4_19(qty, price) { return qty > 19 ? price * 0.981 : price; }
++export function rule4_20(qty, price) { return qty > 20 ? price * 0.980 : price; }
++export function rule4_21(qty, price) { return qty > 21 ? price * 0.979 : price; }
++export function rule4_22(qty, price) { return qty > 22 ? price * 0.978 : price; }
++export function rule4_23(qty, price) { return qty > 23 ? price * 0.977 : price; }
++export function rule4_24(qty, price) { return qty > 24 ? price * 0.976 : price; }
++export function rule4_25(qty, price) { return qty > 25 ? price * 0.975 : price; }
++export function rule4_26(qty, price) { return qty > 26 ? price * 0.974 : price; }
++export function rule4_27(qty, price) { return qty > 27 ? price * 0.973 : price; }
++export function rule4_28(qty, price) { return qty > 28 ? price * 0.972 : price; }
++export function rule4_29(qty, price) { return qty > 29 ? price * 0.971 : price; }
++export function rule4_30(qty, price) { return qty > 30 ? price * 0.970 : price; }
++export function rule4_31(qty, price) { return qty > 31 ? price * 0.969 : price; }
++export function rule4_32(qty, price) { return qty > 32 ? price * 0.968 : price; }
++export function rule4_33(qty, price) { return qty > 33 ? price * 0.967 : price; }
++export function rule4_34(qty, price) { return qty > 34 ? price * 0.966 : price; }
++export function rule4_35(qty, price) { return qty > 35 ? price * 0.965 : price; }
++export function rule4_36(qty, price) { return qty > 36 ? price * 0.964 : price; }
++export function rule4_37(qty, price) { return qty > 37 ? price * 0.963 : price; }
++export function rule4_38(qty, price) { return qty > 38 ? price * 0.962 : price; }
++export function rule4_39(qty, price) { return qty > 39 ? price * 0.961 : price; }
+diff --git a/src/module5.js b/src/module5.js
+new file mode 100644
+index 0000000..56b9958
+--- /dev/null
++++ b/src/module5.js
+@@ -0,0 +1,42 @@
++// module 5: inventory pricing rules
++export const MODULE_5 = 5;
++export function rule5_0(qty, price) { return qty > 0 ? price * 1.000 : price; }
++export function rule5_1(qty, price) { return qty > 1 ? price * 0.999 : price; }
++export function rule5_2(qty, price) { return qty > 2 ? price * 0.998 : price; }
++export function rule5_3(qty, price) { return qty > 3 ? price * 0.997 : price; }
++export function rule5_4(qty, price) { return qty > 4 ? price * 0.996 : price; }
++export function rule5_5(qty, price) { return qty > 5 ? price * 0.995 : price; }
++export function rule5_6(qty, price) { return qty > 6 ? price * 0.994 : price; }
++export function rule5_7(qty, price) { return qty > 7 ? price * 0.993 : price; }
++export function rule5_8(qty, price) { return qty > 8 ? price * 0.992 : price; }
++export function rule5_9(qty, price) { return qty > 9 ? price * 0.991 : price; }
++export function rule5_10(qty, price) { return qty > 10 ? price * 0.990 : price; }
++export function rule5_11(qty, price) { return qty > 11 ? price * 0.989 : price; }
++export function rule5_12(qty, price) { return qty > 12 ? price * 0.988 : price; }
++export function rule5_13(qty, price) { return qty > 13 ? price * 0.987 : price; }
++export function rule5_14(qty, price) { return qty > 14 ? price * 0.986 : price; }
++export function rule5_15(qty, price) { return qty > 15 ? price * 0.985 : price; }
++export function rule5_16(qty, price) { return qty > 16 ? price * 0.984 : price; }
++export function rule5_17(qty, price) { return qty > 17 ? price * 0.983 : price; }
++export function rule5_18(qty, price) { return qty > 18 ? price * 0.982 : price; }
++export function rule5_19(qty, price) { return qty > 19 ? price * 0.981 : price; }
++export function rule5_20(qty, price) { return qty > 20 ? price * 0.980 : price; }
++export function rule5_21(qty, price) { return qty > 21 ? price * 0.979 : price; }
++export function rule5_22(qty, price) { return qty > 22 ? price * 0.978 : price; }
++export function rule5_23(qty, price) { return qty > 23 ? price * 0.977 : price; }
++export function rule5_24(qty, price) { return qty > 24 ? price * 0.976 : price; }
++export function rule5_25(qty, price) { return qty > 25 ? price * 0.975 : price; }
++export function rule5_26(qty, price) { return qty > 26 ? price * 0.974 : price; }
++export function rule5_27(qty, price) { return qty > 27 ? price * 0.973 : price; }
++export function rule5_28(qty, price) { return qty > 28 ? price * 0.972 : price; }
++export function rule5_29(qty, price) { return qty > 29 ? price * 0.971 : price; }
++export function rule5_30(qty, price) { return qty > 30 ? price * 0.970 : price; }
++export function rule5_31(qty, price) { return qty > 31 ? price * 0.969 : price; }
++export function rule5_32(qty, price) { return qty > 32 ? price * 0.968 : price; }
++export function rule5_33(qty, price) { return qty > 33 ? price * 0.967 : price; }
++export function rule5_34(qty, price) { return qty > 34 ? price * 0.966 : price; }
++export function rule5_35(qty, price) { return qty > 35 ? price * 0.965 : price; }
++export function rule5_36(qty, price) { return qty > 36 ? price * 0.964 : price; }
++export function rule5_37(qty, price) { return qty > 37 ? price * 0.963 : price; }
++export function rule5_38(qty, price) { return qty > 38 ? price * 0.962 : price; }
++export function rule5_39(qty, price) { return qty > 39 ? price * 0.961 : price; }
+diff --git a/src/module6.js b/src/module6.js
+new file mode 100644
+index 0000000..5a56e5d
+--- /dev/null
++++ b/src/module6.js
+@@ -0,0 +1,42 @@
++// module 6: inventory pricing rules
++export const MODULE_6 = 6;
++export function rule6_0(qty, price) { return qty > 0 ? price * 1.000 : price; }
++export function rule6_1(qty, price) { return qty > 1 ? price * 0.999 : price; }
++export function rule6_2(qty, price) { return qty > 2 ? price * 0.998 : price; }
++export function rule6_3(qty, price) { return qty > 3 ? price * 0.997 : price; }
++export function rule6_4(qty, price) { return qty > 4 ? price * 0.996 : price; }
++export function rule6_5(qty, price) { return qty > 5 ? price * 0.995 : price; }
++export function rule6_6(qty, price) { return qty > 6 ? price * 0.994 : price; }
++export function rule6_7(qty, price) { return qty > 7 ? price * 0.993 : price; }
++export function rule6_8(qty, price) { return qty > 8 ? price * 0.992 : price; }
++export function rule6_9(qty, price) { return qty > 9 ? price * 0.991 : price; }
++export function rule6_10(qty, price) { return qty > 10 ? price * 0.990 : price; }
++export function rule6_11(qty, price) { return qty > 11 ? price * 0.989 : price; }
++export function rule6_12(qty, price) { return qty > 12 ? price * 0.988 : price; }
++export function rule6_13(qty, price) { return qty > 13 ? price * 0.987 : price; }
++export function rule6_14(qty, price) { return qty > 14 ? price * 0.986 : price; }
++export function rule6_15(qty, price) { return qty > 15 ? price * 0.985 : price; }
++export function rule6_16(qty, price) { return qty > 16 ? price * 0.984 : price; }
++export function rule6_17(qty, price) { return qty > 17 ? price * 0.983 : price; }
++export function rule6_18(qty, price) { return qty > 18 ? price * 0.982 : price; }
++export function rule6_19(qty, price) { return qty > 19 ? price * 0.981 : price; }
++export function rule6_20(qty, price) { return qty > 20 ? price * 0.980 : price; }
++export function rule6_21(qty, price) { return qty > 21 ? price * 0.979 : price; }
++export function rule6_22(qty, price) { return qty > 22 ? price * 0.978 : price; }
++export function rule6_23(qty, price) { return qty > 23 ? price * 0.977 : price; }
++export function rule6_24(qty, price) { return qty > 24 ? price * 0.976 : price; }
++export function rule6_25(qty, price) { return qty > 25 ? price * 0.975 : price; }
++export function rule6_26(qty, price) { return qty > 26 ? price * 0.974 : price; }
++export function rule6_27(qty, price) { return qty > 27 ? price * 0.973 : price; }
++export function rule6_28(qty, price) { return qty > 28 ? price * 0.972 : price; }
++export function rule6_29(qty, price) { return qty > 29 ? price * 0.971 : price; }
++export function rule6_30(qty, price) { return qty > 30 ? price * 0.970 : price; }
++export function rule6_31(qty, price) { return qty > 31 ? price * 0.969 : price; }
++export function rule6_32(qty, price) { return qty > 32 ? price * 0.968 : price; }
++export function rule6_33(qty, price) { return qty > 33 ? price * 0.967 : price; }
++export function rule6_34(qty, price) { return qty > 34 ? price * 0.966 : price; }
++export function rule6_35(qty, price) { return qty > 35 ? price * 0.965 : price; }
++export function rule6_36(qty, price) { return qty > 36 ? price * 0.964 : price; }
++export function rule6_37(qty, price) { return qty > 37 ? price * 0.963 : price; }
++export function rule6_38(qty, price) { return qty > 38 ? price * 0.962 : price; }
++export function rule6_39(qty, price) { return qty > 39 ? price * 0.961 : price; }
+diff --git a/src/module7.js b/src/module7.js
+new file mode 100644
+index 0000000..d4e9f9a
+--- /dev/null
++++ b/src/module7.js
+@@ -0,0 +1,42 @@
++// module 7: inventory pricing rules
++export const MODULE_7 = 7;
++export function rule7_0(qty, price) { return qty > 0 ? price * 1.000 : price; }
++export function rule7_1(qty, price) { return qty > 1 ? price * 0.999 : price; }
++export function rule7_2(qty, price) { return qty > 2 ? price * 0.998 : price; }
++export function rule7_3(qty, price) { return qty > 3 ? price * 0.997 : price; }
++export function rule7_4(qty, price) { return qty > 4 ? price * 0.996 : price; }
++export function rule7_5(qty, price) { return qty > 5 ? price * 0.995 : price; }
++export function rule7_6(qty, price) { return qty > 6 ? price * 0.994 : price; }
++export function rule7_7(qty, price) { return qty > 7 ? price * 0.993 : price; }
++export function rule7_8(qty, price) { return qty > 8 ? price * 0.992 : price; }
++export function rule7_9(qty, price) { return qty > 9 ? price * 0.991 : price; }
++export function rule7_10(qty, price) { return qty > 10 ? price * 0.990 : price; }
++export function rule7_11(qty, price) { return qty > 11 ? price * 0.989 : price; }
++export function rule7_12(qty, price) { return qty > 12 ? price * 0.988 : price; }
++export function rule7_13(qty, price) { return qty > 13 ? price * 0.987 : price; }
++export function rule7_14(qty, price) { return qty > 14 ? price * 0.986 : price; }
++export function rule7_15(qty, price) { return qty > 15 ? price * 0.985 : price; }
++export function rule7_16(qty, price) { return qty > 16 ? price * 0.984 : price; }
++export function rule7_17(qty, price) { return qty > 17 ? price * 0.983 : price; }
++export function rule7_18(qty, price) { return qty > 18 ? price * 0.982 : price; }
++export function rule7_19(qty, price) { return qty > 19 ? price * 0.981 : price; }
++export function rule7_20(qty, price) { return qty > 20 ? price * 0.980 : price; }
++export function rule7_21(qty, price) { return qty > 21 ? price * 0.979 : price; }
++export function rule7_22(qty, price) { return qty > 22 ? price * 0.978 : price; }
++export function rule7_23(qty, price) { return qty > 23 ? price * 0.977 : price; }
++export function rule7_24(qty, price) { return qty > 24 ? price * 0.976 : price; }
++export function rule7_25(qty, price) { return qty > 25 ? price * 0.975 : price; }
++export function rule7_26(qty, price) { return qty > 26 ? price * 0.974 : price; }
++export function rule7_27(qty, price) { return qty > 27 ? price * 0.973 : price; }
++export function rule7_28(qty, price) { return qty > 28 ? price * 0.972 : price; }
++export function rule7_29(qty, price) { return qty > 29 ? price * 0.971 : price; }
++export function rule7_30(qty, price) { return qty > 30 ? price * 0.970 : price; }
++export function rule7_31(qty, price) { return qty > 31 ? price * 0.969 : price; }
++export function rule7_32(qty, price) { return qty > 32 ? price * 0.968 : price; }
++export function rule7_33(qty, price) { return qty > 33 ? price * 0.967 : price; }
++export function rule7_34(qty, price) { return qty > 34 ? price * 0.966 : price; }
++export function rule7_35(qty, price) { return qty > 35 ? price * 0.965 : price; }
++export function rule7_36(qty, price) { return qty > 36 ? price * 0.964 : price; }
++export function rule7_37(qty, price) { return qty > 37 ? price * 0.963 : price; }
++export function rule7_38(qty, price) { return qty > 38 ? price * 0.962 : price; }
++export function rule7_39(qty, price) { return qty > 39 ? price * 0.961 : price; }

@@ -28,6 +28,6 @@ func readHidden(file *os.File) (string, error) {
 	if err = unix.IoctlSetTermios(fd, ioctlSetTermios, &hidden); err != nil {
 		return "", err
 	}
-	defer unix.IoctlSetTermios(fd, ioctlSetTermios, previous)
+	defer func() { _ = unix.IoctlSetTermios(fd, ioctlSetTermios, previous) }()
 	return bufio.NewReader(file).ReadString('\n')
 }

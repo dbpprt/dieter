@@ -105,25 +105,26 @@ type Checkout struct {
 }
 
 type Project struct {
-	Checkouts          []Checkout                 `json:"checkouts" yaml:"-"`
-	ConflictKeys       []string                   `json:"conflictKeys,omitempty" yaml:"-"`
-	SharedBase         map[string]json.RawMessage `json:"-" yaml:"-"`
-	Hostnames          []string                   `json:"hostnames,omitempty" yaml:"hostnames,omitempty"`
-	ID                 string                     `json:"id" yaml:"id"`
-	Name               string                     `json:"name" yaml:"name"`
-	Path               string                     `json:"path" yaml:"path"`
-	Summary            string                     `json:"summary,omitempty" yaml:"summary,omitempty"`
-	Prompt             string                     `json:"prompt" yaml:"-"`
-	PromptTemplate     string                     `json:"promptTemplate,omitempty" yaml:"prompt_template,omitempty"`
-	Archived           bool                       `json:"archived,omitempty" yaml:"archived,omitempty"`
-	CreatedAt          string                     `json:"createdAt" yaml:"created_at"`
-	UpdatedAt          string                     `json:"updatedAt" yaml:"updated_at"`
-	BoardCount         int                        `json:"boardCount,omitempty" yaml:"-"`
-	CardCount          int                        `json:"cardCount,omitempty" yaml:"-"`
-	ChatCount          int                        `json:"chatCount,omitempty" yaml:"-"`
-	BaseRemote         string                     `json:"baseRemote,omitempty" yaml:"base_remote,omitempty"`
-	BaseBranch         string                     `json:"baseBranch,omitempty" yaml:"base_branch,omitempty"`
-	ValidationCommands []ValidationCommand        `json:"validationCommands,omitempty" yaml:"validation_commands,omitempty"`
+	DeleteWorktreesOnArchive bool                       `json:"deleteWorktreesOnArchive,omitempty" yaml:"delete_worktrees_on_archive,omitempty"`
+	Checkouts                []Checkout                 `json:"checkouts" yaml:"-"`
+	ConflictKeys             []string                   `json:"conflictKeys,omitempty" yaml:"-"`
+	SharedBase               map[string]json.RawMessage `json:"-" yaml:"-"`
+	Hostnames                []string                   `json:"hostnames,omitempty" yaml:"hostnames,omitempty"`
+	ID                       string                     `json:"id" yaml:"id"`
+	Name                     string                     `json:"name" yaml:"name"`
+	Path                     string                     `json:"path" yaml:"path"`
+	Summary                  string                     `json:"summary,omitempty" yaml:"summary,omitempty"`
+	Prompt                   string                     `json:"prompt" yaml:"-"`
+	PromptTemplate           string                     `json:"promptTemplate,omitempty" yaml:"prompt_template,omitempty"`
+	Archived                 bool                       `json:"archived,omitempty" yaml:"archived,omitempty"`
+	CreatedAt                string                     `json:"createdAt" yaml:"created_at"`
+	UpdatedAt                string                     `json:"updatedAt" yaml:"updated_at"`
+	BoardCount               int                        `json:"boardCount,omitempty" yaml:"-"`
+	CardCount                int                        `json:"cardCount,omitempty" yaml:"-"`
+	ChatCount                int                        `json:"chatCount,omitempty" yaml:"-"`
+	BaseRemote               string                     `json:"baseRemote,omitempty" yaml:"base_remote,omitempty"`
+	BaseBranch               string                     `json:"baseBranch,omitempty" yaml:"base_branch,omitempty"`
+	ValidationCommands       []ValidationCommand        `json:"validationCommands,omitempty" yaml:"validation_commands,omitempty"`
 }
 
 type ValidationCommand struct {
@@ -246,7 +247,10 @@ type Card struct {
 	RemotePublishMode   string                     `json:"remotePublishMode,omitempty" yaml:"remote_publish_mode,omitempty"`
 	// VaultAccess is owner-local and fixed at creation: agent turns of this
 	// conversation may use the account vault.
-	VaultAccess bool                `json:"vaultAccess,omitempty" yaml:"vault_access,omitempty"`
+	VaultAccess bool `json:"vaultAccess,omitempty" yaml:"vault_access,omitempty"`
+	// MailAccess is owner-local and fixed at creation: agent turns of this
+	// conversation may send the user mail.
+	MailAccess  bool                `json:"mailAccess,omitempty" yaml:"mail_access,omitempty"`
 	Workspace   *WorkspaceSummary   `json:"workspace,omitempty" yaml:"-"`
 	PullRequest *PullRequestSummary `json:"pullRequest,omitempty" yaml:"-"`
 }
@@ -530,6 +534,7 @@ type Schedule struct {
 	ProviderOptions map[string]string `json:"providerOptions,omitempty" yaml:"provider_options,omitempty"`
 	WorkspaceMode   string            `json:"workspaceMode" yaml:"workspace_mode"`
 	VaultAccess     bool              `json:"vaultAccess,omitempty" yaml:"vault_access,omitempty"`
+	MailAccess      bool              `json:"mailAccess,omitempty" yaml:"mail_access,omitempty"`
 	LabelIDs        []string          `json:"labelIds,omitempty" yaml:"labels,omitempty"`
 	OpenCardPolicy  string            `json:"openCardPolicy" yaml:"open_card_policy"`
 	MisfirePolicy   string            `json:"misfirePolicy" yaml:"misfire_policy"`
@@ -729,6 +734,8 @@ type UIMessagePart struct {
 	Input      json.RawMessage `json:"input,omitempty"`
 	Output     json.RawMessage `json:"output,omitempty"`
 	ErrorText  string          `json:"errorText,omitempty"`
+	// Data is the JSON payload of a "data-*" part (data-peer-notice).
+	Data json.RawMessage `json:"data,omitempty"`
 }
 
 type PendingTool struct {

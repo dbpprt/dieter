@@ -1,0 +1,45 @@
+{
+  "messages": [
+    {
+      "id": "m_0248014fe78a",
+      "projectId": "p_4a4120dd385a",
+      "seq": "1",
+      "kind": "request",
+      "author": {
+        "kind": "dieter"
+      },
+      "toCardIds": ["c_d00fd57612cdca88e6136edd"],
+      "body": "Agent c_2af4a801f23dba6587f9b00b ('Add MAX_TIER_3 and module5 owner') wants to change src/module3.js, which you are changing. Finish your work on it; Dieter releases it to them when your turn ends.",
+      "files": ["src/module3.js"],
+      "createdAt": "2026-10-24T15:33:37.115787Z",
+      "deliveries": [
+        {
+          "cardId": "c_d00fd57612cdca88e6136edd",
+          "mode": "steered",
+          "at": "2026-10-24T15:33:38.803869Z"
+        }
+      ]
+    },
+    {
+      "id": "m_d7b50aece013",
+      "projectId": "p_4a4120dd385a",
+      "seq": "2",
+      "kind": "release",
+      "author": {
+        "kind": "dieter"
+      },
+      "toCardIds": ["c_2af4a801f23dba6587f9b00b"],
+      "body": "src/module3.js is free now: agent c_d00fd57612cdca88e6136edd ('Review headers of modules 3, 4, 6, 7') finished its turn.",
+      "files": ["src/module3.js"],
+      "createdAt": "2026-10-24T15:33:54.468956Z",
+      "deliveries": [
+        {
+          "cardId": "c_2af4a801f23dba6587f9b00b",
+          "mode": "woke",
+          "at": "2026-10-24T15:33:54.510526Z"
+        }
+      ]
+    }
+  ],
+  "lastSeq": "2"
+}

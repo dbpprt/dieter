@@ -1,0 +1,146 @@
+syntax = "proto3";
+
+package dieter.v1;
+
+option go_package = "github.com/dbpprt/dieter/internal/gen/dieter/v1;dieterv1";
+option java_multiple_files = true;
+option java_package = "com.getdieter.api.v1";
+
+import "google/protobuf/empty.proto";
+
+// Schedules and their occurrence history.
+service ScheduleService {
+  rpc ListSchedules(ListSchedulesRequest) returns (SchedulesResponse);
+  rpc GetSchedule(ScheduleRef) returns (Schedule);
+  rpc PreviewSchedule(PreviewScheduleRequest) returns (SchedulePreview);
+  rpc CreateSchedule(SaveScheduleRequest) returns (Schedule);
+  rpc UpdateSchedule(SaveScheduleRequest) returns (Schedule);
+  rpc DeleteSchedule(ScheduleRef) returns (google.protobuf.Empty);
+  rpc RunSchedule(ScheduleRef) returns (ScheduleRun);
+  rpc SetScheduleEnabled(SetScheduleEnabledRequest) returns (Schedule);
+  rpc ListScheduleRuns(ListScheduleRunsRequest) returns (ScheduleRunsResponse);
+}
+
+message ListSchedulesRequest {
+  string project_id = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message SchedulesResponse {
+  repeated Schedule schedules = 1;
+  string next_page_token = 2;
+  int32 total_count = 3;
+}
+
+message Schedule {
+ string owner_daemon_id = 40;
+ string checkout_id = 41;
+  string id = 1;
+  string project_id = 2;
+  string board_id = 3;
+  string name = 4;
+  string description = 5;
+  string cron = 6;
+  string timezone = 7;
+  bool enabled = 8;
+  string action = 9;
+  string title_template = 10;
+  string prompt_template = 11;
+  string provider = 12;
+  string model = 13;
+  string effort = 14;
+  repeated string label_ids = 15;
+  string open_card_policy = 16;
+  string misfire_policy = 17;
+  reserved 18;
+  string next_run_at = 19;
+  string last_run_at = 20;
+  string created_at = 21;
+  string updated_at = 22;
+  repeated string next_runs = 23;
+  map<string, string> provider_options = 24;
+  string workspace_mode = 25;
+  // Cards created by this schedule get vault access. Owner-local.
+  bool vault_access = 42;
+  // Cards created by this schedule may send the user mail. Owner-local.
+  bool mail_access = 43;
+}
+
+message ScheduleDraft {
+ string checkout_id = 40;
+  string project_id = 1;
+  string board_id = 2;
+  string name = 3;
+  string description = 4;
+  string cron = 5;
+  string timezone = 6;
+  bool enabled = 7;
+  string action = 8;
+  string title_template = 9;
+  string prompt_template = 10;
+  string provider = 11;
+  string model = 12;
+  string effort = 13;
+  repeated string label_ids = 14;
+  string open_card_policy = 15;
+  string misfire_policy = 16;
+  reserved 17;
+  map<string, string> provider_options = 18;
+  string workspace_mode = 19;
+  bool vault_access = 41;
+  bool mail_access = 42;
+}
+
+message SaveScheduleRequest {
+  string schedule_id = 1;
+  ScheduleDraft schedule = 2;
+}
+
+message PreviewScheduleRequest {
+  string cron = 1;
+  string timezone = 2;
+  int32 count = 3;
+}
+
+message SchedulePreview {
+  repeated string times = 1;
+}
+
+message ScheduleRef {
+  string schedule_id = 1;
+}
+
+message SetScheduleEnabledRequest {
+  string schedule_id = 1;
+  bool enabled = 2;
+}
+
+message ListScheduleRunsRequest {
+  string schedule_id = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ScheduleRun {
+  string id = 1;
+  string schedule_id = 2;
+  string project_id = 3;
+  string board_id = 4;
+  string card_id = 5;
+  string scheduled_for = 6;
+  bool manual = 7;
+  string action = 8;
+  string status = 9;
+  int32 attempt = 10;
+  string message = 11;
+  string created_at = 12;
+  string updated_at = 13;
+  string started_at = 14;
+  string finished_at = 15;
+}
+
+message ScheduleRunsResponse {
+  repeated ScheduleRun runs = 1;
+  string next_page_token = 2;
+}

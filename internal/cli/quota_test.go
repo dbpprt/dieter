@@ -6,11 +6,11 @@ import (
 	"testing"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
-	"github.com/dbpprt/dieter/internal/store"
 	"google.golang.org/protobuf/proto"
 )
 
 func TestQuotaProviderArgumentAliases(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		value string
 		want  gatewayv1.ProviderQuotaProvider
@@ -32,6 +32,7 @@ func TestQuotaProviderArgumentAliases(t *testing.T) {
 }
 
 func TestQuotaResetUUIDIsValid(t *testing.T) {
+	t.Parallel()
 	value, err := quotaResetUUID()
 	if err != nil {
 		t.Fatal(err)
@@ -42,8 +43,9 @@ func TestQuotaResetUUIDIsValid(t *testing.T) {
 }
 
 func TestQuotaTableKeepsAccountsSeparateAndAbbreviatesKeys(t *testing.T) {
+	t.Parallel()
 	var output bytes.Buffer
-	client := New(store.New(t.TempDir()))
+	client := New(t.TempDir())
 	client.Out = &output
 	groups := []*gatewayv1.ProviderQuotaGroup{{
 		Provider: gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX,

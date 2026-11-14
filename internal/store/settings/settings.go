@@ -1,0 +1,112 @@
+package settings
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/platform/fsx"
+	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
+	"github.com/dbpprt/dieter/internal/store/home"
+	"gopkg.in/yaml.v3"
+)
+
+func defaultSettings() model.Settings {
+	return dieterprompt.NormalizeSettings(model.Settings{})
+}
+
+func normalizeSettings(value model.Settings) (model.Settings, error) {
+	value = dieterprompt.NormalizeSettings(value)
+	if err := dieterprompt.ValidateContextTemplate(value.PromptTemplate); err != nil {
+		return model.Settings{}, err
+	}
+	if err := dieterprompt.ValidateSkillTemplate(value.BoardSkillTemplate); err != nil {
+		return model.Settings{}, fmt.Errorf("board skill template: %w", err)
+	}
+	if err := dieterprompt.ValidateSkillTemplate(value.ChatSkillTemplate); err != nil {
+		return model.Settings{}, fmt.Errorf("chat skill template: %w", err)
+	}
+	return value, nil
+}
+
+func (s *Store) readSettings() (model.Settings, error) {
+	data, err := os.ReadFile(s.home.SettingsPath())
+	if errors.Is(err, os.ErrNotExist) {
+		return defaultSettings(), nil
+	}
+	if err != nil {
+		return model.Settings{}, err
+	}
+	value := defaultSettings()
+	if err := yaml.Unmarshal(data, &value); err != nil {
+		return model.Settings{}, err
+	}
+	return normalizeSettings(value)
+}
+
+func (s *Store) Get() (model.Settings, error) {
+	return s.readSettings()
+}
+
+func (s *Store) Update(value model.Settings) (model.Settings, error) {
+	current, err := s.readSettings()
+	if err != nil {
+		return model.Settings{}, err
+	}
+	// Empty templates inherit the current global templates.
+	if strings.TrimSpace(value.PromptTemplate) == "" {
+		value.PromptTemplate = current.PromptTemplate
+	}
+	if strings.TrimSpace(value.BoardSkillTemplate) == "" {
+		value.BoardSkillTemplate = current.BoardSkillTemplate
+	}
+	if strings.TrimSpace(value.ChatSkillTemplate) == "" {
+		value.ChatSkillTemplate = current.ChatSkillTemplate
+	}
+	normalized, err := normalizeSettings(value)
+	if err != nil {
+		return model.Settings{}, err
+	}
+	release, err := s.home.BeginWrite()
+	if err != nil {
+		return model.Settings{}, err
+	}
+	defer release()
+	normalized.UpdatedAt = home.Timestamp()
+	data, err := yaml.Marshal(customizations(normalized))
+	if err != nil {
+		return model.Settings{}, err
+	}
+	if err := fsx.WriteFile(s.home.SettingsPath(), data, 0o600); err != nil {
+		return model.Settings{}, err
+	}
+	return normalized, nil
+}
+
+// customizations is what settings.yaml stores: templates equal to the
+// built-in defaults are left out, so a new release's defaults apply to them.
+func customizations(value model.Settings) model.Settings {
+	if value.PromptTemplate == dieterprompt.DefaultTemplate {
+		value.PromptTemplate = ""
+	}
+	if value.BoardSkillTemplate == dieterprompt.DefaultBoardSkillTemplate {
+		value.BoardSkillTemplate = ""
+	}
+	if value.ChatSkillTemplate == dieterprompt.DefaultChatSkillTemplate {
+		value.ChatSkillTemplate = ""
+	}
+	return value
+}
+
+func (s *Store) UpdatePrompts(promptTemplate, boardSkillTemplate, chatSkillTemplate string) (model.Settings, error) {
+	current, err := s.readSettings()
+	if err != nil {
+		return model.Settings{}, err
+	}
+	current.PromptTemplate = promptTemplate
+	current.BoardSkillTemplate = boardSkillTemplate
+	current.ChatSkillTemplate = chatSkillTemplate
+	return s.Update(current)
+}

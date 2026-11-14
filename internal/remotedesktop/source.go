@@ -78,6 +78,9 @@ type SourceOptions struct {
 	Codec              VideoCodec
 	EmbeddedCursor     bool
 	Control            bool
+	// FrameOverlap lets the native encoder overlap a capture with the previous
+	// send when the helper supports it (DIETER_SCREEN_OVERLAP=1).
+	FrameOverlap bool
 }
 
 var captureProbeTimeout = func() time.Duration {
@@ -159,7 +162,7 @@ func NewFrameSource(options SourceOptions) (FrameSource, error) {
 				bitrateKbps: options.Bitrate, maxWidth: options.MaxWidth,
 				maxHeight: options.MaxHeight, logger: options.Logger,
 				profile: options.Profile, codec: options.Codec, referenceRecovery: options.RecoveryID != "", synthetic: options.Kind == "native-synthetic", portalStatePath: options.PortalStatePath,
-				embeddedCursor: options.EmbeddedCursor, inputAllowed: options.Control,
+				embeddedCursor: options.EmbeddedCursor, inputAllowed: options.Control, frameOverlap: options.FrameOverlap,
 			}, nil
 		}
 		return nil, errors.New("native screen sharing is unavailable on this platform")

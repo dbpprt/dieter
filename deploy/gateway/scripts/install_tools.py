@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Install verified bootstrap tools without upgrading the OS or Docker daemon."""
+
 import argparse
 import bz2
 import hashlib
@@ -34,8 +35,11 @@ def install(name, destination):
         except (urllib.error.URLError, TimeoutError):
             if attempt == 3:
                 raise
-            time.sleep(2 ** attempt)
-    require(len(data) <= 256 * 1024 * 1024 and hashlib.sha256(data).hexdigest() == entry["sha256"], "tool checksum mismatch")
+            time.sleep(2**attempt)
+    require(
+        len(data) <= 256 * 1024 * 1024 and hashlib.sha256(data).hexdigest() == entry["sha256"],
+        "tool checksum mismatch",
+    )
     member = entry.get("archiveMember")
     if member:
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
@@ -46,7 +50,13 @@ def install(name, destination):
         data = bz2.decompress(data)
     atomic(destination, data, 0o755)
     import json
-    atomic(receipt, json.dumps({"artifactSHA256": entry["sha256"], "binarySHA256": hashlib.sha256(data).hexdigest()}))
+
+    atomic(
+        receipt,
+        json.dumps(
+            {"artifactSHA256": entry["sha256"], "binarySHA256": hashlib.sha256(data).hexdigest()}
+        ),
+    )
 
 
 if __name__ == "__main__":

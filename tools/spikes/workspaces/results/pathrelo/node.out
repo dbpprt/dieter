@@ -1,0 +1,12 @@
+npm install rc=0 24.39s;     1080 files
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+tsc -b ok
+vite src deps: _metadata.json chunk-Q4AC2O6Z.js chunk-Q4AC2O6Z.js.map chunk-QCO4KCG4.js chunk-QCO4KCG4.js.map lodash-es.js lodash-es.js.map package.json react-dom_client.js react-dom_client.js.map react.js react.js.map
+clone (cp -c -R): 0.66s
+addon from view: addon-ok
+addon .node rpaths: none-else; deps: /usr/lib/libc++.1.dylib /usr/lib/libSystem.B.dylib
+node_modules symlinks:        7 total, absolute:        0
+files in node_modules naming source path:        0:
+tsc -b in view: is up to date
+vite configHash src="configHash": "717e2d34" view="configHash": "bc88480a"
+  vite view log: 10:34:50 AM [vite] (client) Re-optimizing dependencies because vite config has changed

@@ -1,0 +1,12 @@
+# BuildKit reads this file for deploy/gateway/Dockerfile (build context: the
+# repository root). Send only the Go module the gateway image compiles.
+*
+!go.mod
+!go.sum
+!api/
+!cmd/
+!internal/
+**/node_modules
+**/.build
+**/build
+**/*_test.go

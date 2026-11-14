@@ -10,6 +10,7 @@ import (
 )
 
 func TestConcurrentKeyInitializationPreservesOneTrustRoot(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	start := make(chan struct{})
 	type result struct {
@@ -55,6 +56,7 @@ func TestConcurrentKeyInitializationPreservesOneTrustRoot(t *testing.T) {
 }
 
 func TestLoadKeysRejectsMismatchedCACertificate(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if _, err := LoadOrCreateKeys(root); err != nil {
 		t.Fatal(err)

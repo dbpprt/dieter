@@ -1,0 +1,61 @@
+name: Build server
+
+# Linux daemon and gateway tarballs, built on each target architecture (the
+# capture helper links natively), each daemon's prebuilt harness runtime
+# archive (npm-installed here, so daemons never run npm), plus the gateway
+# TURN probes. No secrets.
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+      build:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  FASTLANE_DISABLE_COLORS: "1"
+  FASTLANE_HIDE_TIMESTAMP: "true"
+  FASTLANE_OPT_OUT_USAGE: "true"
+  FASTLANE_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+  LANG: en_US.UTF-8
+  LC_ALL: en_US.UTF-8
+  DIETER_RELEASE_VERSION: ${{ inputs.version }}
+  DIETER_RELEASE_BUILD: ${{ inputs.build }}
+
+jobs:
+  linux:
+    name: linux-${{ matrix.arch }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          tools: go node ruby gem:bundler
+          bundle: "true"
+      - name: Harness runtime, daemon and gateway tarballs
+        run: bundle exec fastlane server
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-server-${{ matrix.arch }}
+          path: |
+            dist/server/*.tar.gz
+            dist/server/gateway-turn-probe-*
+          retention-days: 30
+          if-no-files-found: error

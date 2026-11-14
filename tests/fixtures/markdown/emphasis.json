@@ -1,0 +1,48 @@
+[
+  {
+    "paragraph": [
+      "Text with ",
+      {"emphasis": ["italic"]},
+      ", ",
+      {"emphasis": ["italic"]},
+      ", ",
+      {"strong": ["bold"]},
+      ", ",
+      {"strong": ["bold"]},
+      " and ",
+      {"emphasis": [{"strong": ["both"]}]},
+      "."
+    ]
+  },
+  {
+    "paragraph": [
+      {"strikethrough": ["Strikethrough"]},
+      " and ",
+      {"strikethrough": ["single tilde"]},
+      " strike; ~~~three tildes~~~ stay text."
+    ]
+  },
+  {
+    "paragraph": [
+      "Nested ",
+      {"strong": ["bold with ", {"emphasis": ["italic"]}, " inside"]},
+      " and ",
+      {"emphasis": ["italic with ", {"strong": ["bold"]}, " inside"]},
+      "."
+    ]
+  },
+  {
+    "paragraph": ["Inline ", {"code": "code *keeps* stars"}, " and ", {"code": "a `tick` inside"}, "."]
+  },
+  {
+    "paragraph": [
+      "snake_case_names stay as written; 2",
+      {"emphasis": ["3"]},
+      "4 and intra",
+      {"emphasis": ["word"]},
+      "stars emphasize."
+    ]
+  },
+  {"paragraph": ["Escapes: *not italic*, `not code`, [not a link], \\ and a lone \\ stay."]},
+  {"paragraph": ["An unmatched ** opener and an unmatched ` backtick stay text."]}
+]

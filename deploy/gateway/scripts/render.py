@@ -2,6 +2,8 @@
 """Render validated settings and protected secrets into an immutable release."""
 
 import argparse
+import base64
+import binascii
 import ipaddress
 import json
 import os
@@ -20,14 +22,13 @@ from common import (
     validate_compatibility_policy,
 )
 
+# Exact app callbacks (generated from config/identity.json); each native login
+# is additionally bound to a PKCE challenge.
+from identity import NATIVE_REDIRECT_URIS
+
 FIELDS = "interfaceVersion project gatewayHost turnHost publicIPv4 turnIPv4 topology tls acmeEmail allowedUserIDs stateVolume installRoot configRoot runtimeRoot caddyData caddyConfig legacyHosts turn limits".split()
 SECRET_FIELDS = "githubClientID githubClientSecret authSecret turnSharedSecret".split()
-# Exact app callbacks; each native login is additionally bound to a PKCE challenge.
-# The Mac and iOS apps share the dieter-mac scheme.
-NATIVE_REDIRECT_URIS = (
-    "dieter-mac://oauth/callback",
-    "dieter-android://oauth/callback",
-)
+APNS_FIELDS = "apnsKeyBase64 apnsKeyID apnsTeamID".split()
 
 
 def hostname(value):
@@ -142,7 +143,8 @@ def secrets(path):
         stat.S_IMODE(Path(path).stat().st_mode) & 0o077 == 0, "secret input must have mode 0600"
     )
     value = read_json(path)
-    keys(value, SECRET_FIELDS, "secrets")
+    push = any(field in value for field in APNS_FIELDS)
+    keys(value, SECRET_FIELDS + (APNS_FIELDS if push else []), "secrets")
     for field, text in value.items():
         require(
             isinstance(text, str)
@@ -163,6 +165,18 @@ def secrets(path):
         and len(value["authSecret"]) % 2 == 0,
         "authSecret must encode at least 32 bytes as hexadecimal",
     )
+    if push:
+        for field in ("apnsKeyID", "apnsTeamID"):
+            require(re.fullmatch(r"[A-Z0-9]{10}", value[field]), f"invalid {field}")
+        try:
+            key = base64.b64decode(value["apnsKeyBase64"], validate=True)
+        except (ValueError, binascii.Error):
+            raise ValueError("invalid APNs signing key encoding") from None
+        require(
+            key.startswith(b"-----BEGIN PRIVATE KEY-----")
+            and key.rstrip().endswith(b"-----END PRIVATE KEY-----"),
+            "APNs signing key must be a PKCS8 PEM encoded as base64",
+        )
     return value
 
 
@@ -211,6 +225,14 @@ def render(config, private, image, release, output, compatibility_policy, legacy
         ),
         "DIETER_RTC_TURN_SECRET": private["turnSharedSecret"].encode().hex(),
     }
+    if "apnsKeyBase64" in private:
+        env.update(
+            {
+                "DIETER_APNS_KEY_BASE64": private["apnsKeyBase64"],
+                "DIETER_APNS_KEY_ID": private["apnsKeyID"],
+                "DIETER_APNS_TEAM_ID": private["apnsTeamID"],
+            }
+        )
     atomic(sec / "gateway.env", "".join(f"{k}={v}\n" for k, v in env.items()))
     t = s["turn"]
     turn = [

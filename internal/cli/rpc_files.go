@@ -11,6 +11,7 @@ import (
 	"text/tabwriter"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/transport/dieterclient"
 )
 
 const fileHelp = `Usage: dieter file <action>
@@ -19,6 +20,11 @@ Every action accepts either --project PROJECT or --card CARD. A card scope uses
 that conversation's selected project directory or isolated worktree.
 
 Actions:
+  cp SOURCE DESTINATION       Copy binary files; remote: selects the daemon scope
+  sync SOURCE DESTINATION     One-way directory sync with optional --delete
+  stat PATH                   Transfer metadata and optional checksum
+  scan PATH                   Bounded transfer directory page
+  upload ACTION               Inspect, resume protocol, or abort an upload
   list [PATH]                 List a directory
   read PATH                   Read text or binary file content
   save PATH                   Revision-checked update of an existing text file
@@ -33,6 +39,10 @@ func (c *CLI) rpcFile(args []string) error {
 		return nil
 	}
 	switch args[0] {
+	case "cp", "sync":
+		return c.rpcFileTransfer(args[0], args[1:])
+	case "stat", "scan", "upload":
+		return c.rpcFileTransferProtocol(args[0], args[1:])
 	case "list", "ls":
 		return c.rpcFileList(args[1:])
 	case "read", "show":
@@ -74,7 +84,7 @@ func addFileScopeFlags(set *flag.FlagSet) (*string, *string, *string) {
 	return set.String("project", "", "project ID or unique name"), set.String("card", "", "card/chat ID; operates in its selected workspace"), set.String("checkout", "", "explicit local checkout ID for project scope")
 }
 
-func (c *CLI) resolveFileScope(ctx context.Context, client dieterv1.DieterServiceClient, rpcCtx context.Context, projectRef, cardID string) (string, string, error) {
+func (c *CLI) resolveFileScope(ctx context.Context, client dieterclient.Client, rpcCtx context.Context, projectRef, cardID string) (string, string, error) {
 	projectRef, cardID = strings.TrimSpace(projectRef), strings.TrimSpace(cardID)
 	if (projectRef == "") == (cardID == "") {
 		return "", "", errors.New("exactly one of --project or --card is required")

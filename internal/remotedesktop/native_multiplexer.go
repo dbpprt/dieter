@@ -3,7 +3,6 @@ package remotedesktop
 import (
 	"context"
 	"errors"
-	"os"
 	"runtime"
 	"sync"
 	"time"
@@ -34,9 +33,12 @@ type nativeRendition struct {
 	started    bool // mux.mu
 	createSent bool // mux.mu
 	createDone chan struct{}
-	removed    bool  // mux.mu
-	closed     bool  // mux.mu
-	failure    error // mux.mu
+	// A display change reported while the helper is still creating this
+	// stream is replayed once creation is acknowledged.
+	displayChanged bool  // mux.mu
+	removed        bool  // mux.mu
+	closed         bool  // mux.mu
+	failure        error // mux.mu
 }
 
 func newNativeMultiplexer() *nativeMultiplexer {
@@ -79,7 +81,7 @@ func (m *nativeMultiplexer) process(ctx context.Context, template *nativeHelperS
 	root := &nativeHelperSource{path: template.path, display: template.display, profile: template.profile, codec: template.codec,
 		fps: template.fps, bitrateKbps: template.bitrateKbps, maxWidth: template.maxWidth, maxHeight: template.maxHeight,
 		synthetic: template.synthetic, inputAllowed: template.inputAllowed, logger: template.logger, multiplex: true,
-		portalStatePath: template.portalStatePath, ready: make(chan struct{}), displayActivity: template.displayActivity}
+		portalStatePath: template.portalStatePath, frameOverlap: template.frameOverlap, ready: make(chan struct{}), displayActivity: template.displayActivity}
 	processCtx, cancel := context.WithCancel(context.Background())
 	m.root, m.cancel = root, cancel
 	finished := make(chan struct{})
@@ -194,6 +196,23 @@ func (s *nativeRendition) command(ctx context.Context, command nativeCommand, wa
 	command.StreamID = s.id
 	return root.send(ctx, command, wait)
 }
+
+// creatingLocked reports a live rendition whose create the helper has not
+// acknowledged. The helper has no such stream yet and rejects commands for it.
+func (s *nativeRendition) creatingLocked() bool { return !s.started && !s.closed }
+
+// streamCommand addresses this rendition's native encoder. Nothing is lost by
+// skipping it during creation: the first frame is a key frame and no input can
+// have been delivered or held through a stream that does not exist yet.
+func (s *nativeRendition) streamCommand(ctx context.Context, command nativeCommand, wait bool) error {
+	s.mux.mu.Lock()
+	creating := s.creatingLocked()
+	s.mux.mu.Unlock()
+	if creating {
+		return nil
+	}
+	return s.command(ctx, command, wait)
+}
 func (s *nativeRendition) Stream(ctx context.Context, emit func(media.Sample) error) error {
 	startup, cancel := context.WithTimeout(ctx, nativeStartupTimeout)
 	defer cancel()
@@ -229,11 +248,16 @@ func (s *nativeRendition) Stream(ctx context.Context, emit func(media.Sample) er
 		return err
 	}
 	s.mux.mu.Lock()
-	latest := s.config
-	s.started = true
+	latest, displayChanged := s.config, s.displayChanged
+	s.started, s.displayChanged = true, false
 	s.mux.mu.Unlock()
 	if latest != config {
 		if err := s.Configure(ctx, latest); err != nil {
+			return err
+		}
+	}
+	if displayChanged {
+		if err := s.DisplayModeChanged(ctx); err != nil {
 			return err
 		}
 	}
@@ -252,7 +276,7 @@ func (s *nativeRendition) Stream(ctx context.Context, emit func(media.Sample) er
 			s.mux.mu.Lock()
 			config, root := s.config, s.mux.root
 			s.mux.mu.Unlock()
-			if root != nil && root.overlapSupported.Load() && os.Getenv("DIETER_SCREEN_OVERLAP") == "1" {
+			if root != nil && root.overlapSupported.Load() && root.frameOverlap {
 				if budget := overlapBudget(sample, config, previousSend); budget > 0 {
 					if err := s.command(ctx, nativeCommand{Kind: "frame_sending", FrameID: metadata.ID, Generation: metadata.NativeGeneration, OverlapBudgetMS: budget}, true); err != nil {
 						return err
@@ -289,7 +313,7 @@ func (s *nativeRendition) Configure(ctx context.Context, config StreamConfigurat
 	return nil
 }
 func (s *nativeRendition) RequestKeyFrame() {
-	_ = s.command(context.Background(), nativeCommand{Kind: "refresh"}, false)
+	_ = s.streamCommand(context.Background(), nativeCommand{Kind: "refresh"}, false)
 }
 func (s *nativeRendition) SetBitrateKbps(value int) {
 	s.mux.mu.Lock()
@@ -303,14 +327,21 @@ func (s *nativeRendition) SendInput(ctx context.Context, input *dieterv1.RemoteD
 	if err != nil {
 		return err
 	}
-	return s.command(ctx, nativeCommand{Kind: "input", Input: payload}, true)
+	return s.streamCommand(ctx, nativeCommand{Kind: "input", Input: payload}, true)
 }
 func (s *nativeRendition) DisplayModeChanged(ctx context.Context) error {
+	s.mux.mu.Lock()
+	if s.creatingLocked() {
+		s.displayChanged = true
+		s.mux.mu.Unlock()
+		return nil
+	}
+	s.mux.mu.Unlock()
 	return s.command(ctx, nativeCommand{Kind: "display_changed"}, true)
 }
 func (s *nativeRendition) ReleaseInput(ctx context.Context) { _ = s.ReleaseInputChecked(ctx) }
 func (s *nativeRendition) ReleaseInputChecked(ctx context.Context) error {
-	return s.command(ctx, nativeCommand{Kind: "input", Input: &nativeInputPayload{Kind: "release_all"}}, true)
+	return s.streamCommand(ctx, nativeCommand{Kind: "input", Input: &nativeInputPayload{Kind: "release_all"}}, true)
 }
 func (s *nativeRendition) Close() {
 	m := s.mux

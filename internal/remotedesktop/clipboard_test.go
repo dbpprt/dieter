@@ -3,13 +3,13 @@ package remotedesktop
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/platform/buildinfo"
 	"github.com/pion/webrtc/v4"
 	"google.golang.org/protobuf/proto"
 )
@@ -158,7 +158,7 @@ func TestNativeClipboardService(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	backend := newNativeClipboard(ctx, SourceOptions{Kind: "native-synthetic", HelperPath: helper, ClipboardDirectory: t.TempDir()}, "com.dbpprt.dieter.fixture."+randomID())
+	backend := newNativeClipboard(ctx, SourceOptions{Kind: "native-synthetic", HelperPath: helper, ClipboardDirectory: t.TempDir()}, buildinfo.BundlePrefix+".fixture."+randomID())
 	defer backend.Close()
 	for i, text := range []string{"", "Native clipboard 🌍\n日本語\n", strings.Repeat("é", ClipboardMaxBytes/2)} {
 		v, err := backend.Exchange(ctx, &dieterv1.RemoteDesktopClipboardRequest{Action: dieterv1.RemoteDesktopClipboardRequest_PASTE, Text: text})
@@ -169,7 +169,7 @@ func TestNativeClipboardService(t *testing.T) {
 		if err != nil || v.Error != "" || v.Text != text {
 			t.Fatalf("native read %d: %v len=%d", i, err, len(v.GetText()))
 		}
-		t.Log(fmt.Sprintf("native clipboard roundtrip %d bytes", len(text)))
+		t.Logf("native clipboard roundtrip %d bytes", len(text))
 	}
 }
 
@@ -252,7 +252,7 @@ func TestNativeClipboardBinaryFiles(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	root := t.TempDir()
-	backend := newNativeClipboard(ctx, SourceOptions{Kind: "native-synthetic", HelperPath: helper, ClipboardDirectory: root}, "com.dbpprt.dieter.fixture."+randomID())
+	backend := newNativeClipboard(ctx, SourceOptions{Kind: "native-synthetic", HelperPath: helper, ClipboardDirectory: root}, buildinfo.BundlePrefix+".fixture."+randomID())
 	defer backend.Close()
 	items := []*dieterv1.RemoteDesktopClipboardItem{{Name: "data.bin", MimeType: "application/octet-stream", Data: bytes.Repeat([]byte{0, 255, 12}, 700000)}, {Name: "empty.txt", MimeType: "text/plain"}}
 	value, err := backend.Exchange(ctx, &dieterv1.RemoteDesktopClipboardRequest{Action: dieterv1.RemoteDesktopClipboardRequest_PASTE, Items: items, AcceptBinary: true})

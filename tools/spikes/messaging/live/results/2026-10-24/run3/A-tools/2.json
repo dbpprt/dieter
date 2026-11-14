@@ -1,0 +1,10 @@
+{
+  "cardId": "c_2aa951e8957bd8f19e35e1f8",
+  "messageId": "msg_2ce6bc4b543c098423",
+  "toolCallId": "toolu_01AmZxaMryFbWAYUBPNoaxmC",
+  "toolName": "bash",
+  "state": "output-available",
+  "inputJson": "eyJjb21tYW5kIjoic2VkIC1pICcnICcxcy8kLyAocmV2aWV3ZWQpLycgc3JjL21vZHVsZTMuanMgXHUwMDI2XHUwMDI2IHNsZWVwIDMgXHUwMDI2XHUwMDI2IGVjaG8gY2hlY2tlZCJ9",
+  "outputJson": "eyJzdGRvdXQiOiJjaGVja2VkIiwic3RkZXJyIjoiIiwiaW50ZXJydXB0ZWQiOmZhbHNlLCJpc0ltYWdlIjpmYWxzZSwibm9PdXRwdXRFeHBlY3RlZCI6ZmFsc2V9",
+  "revision": "e8f3b6ef44d525e3b7abd325"
+}

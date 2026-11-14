@@ -1,0 +1,30 @@
+# Dieter patches
+
+Vendored from grpc/grpc-swift-nio-transport 2.11.0 at tag `2.11.0`.
+Upstream: https://github.com/grpc/grpc-swift-nio-transport/tree/2.11.0
+License: Apache-2.0 (see `LICENSE` and `NOTICES.txt`; keep both when updating
+the snapshot).
+
+Used by `apps/apple/DieterKit` and `apps/apple/mac` as a local package.
+
+## Patches
+
+1. **Nanosecond sleeps (Swift #81771).** The three duration-based `Task.sleep`
+   calls use the nanosecond overload (`GRPCChannel.swift`, twice, and
+   `LoadBalancers/Subchannel.swift`). The generic duration overload can abort
+   in `swift_task_dealloc` in optimized builds made with the current Apple
+   Swift toolchain during connection backoff; see
+   [swiftlang/swift#81771](https://github.com/swiftlang/swift/issues/81771).
+2. **Ed25519 daemon certificates.** The Posix client TLS configuration exposes
+   NIOSSL's verification signature algorithms
+   (`ClientTLSConfig.verifySignatureAlgorithms` in `Config+TLS.swift`, applied in
+   `NIOSSL+GRPC.swift`). Dieter uses it to enable Ed25519 for daemon
+   certificates.
+3. **TLS 1.3 daemon routes.** The Posix client TLS configuration exposes
+   NIOSSL's minimum TLS version (`ClientTLSConfig.minimumTLSVersion` in
+   `Config+TLS.swift`, applied in `NIOSSL+GRPC.swift`; `nil` keeps TLS 1.2).
+   Dieter requires TLS 1.3 on roster-pinned daemon routes.
+
+Remove patch 1 and return to the remote package once the release toolchain
+passes `unreachableEndpointSurvivesConnectionBackoffAndShutdown` (in
+DieterMacTests) without it; patches 2 and 3 then need upstream equivalents.

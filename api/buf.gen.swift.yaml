@@ -1,0 +1,25 @@
+# Swift bindings of the network API for apps/apple/DieterKit (macOS only):
+# messages -> DieterAPI, gRPC clients -> DieterAPIGRPC. The plugins are built
+# from DieterKit's resolved swift-protobuf and grpc-swift-protobuf, so generated
+# code always matches the runtime; `just generate` puts them on PATH.
+version: v2
+inputs:
+  - directory: api/proto
+    paths:
+      - api/proto/dieter/v1
+      - api/proto/dieter/gateway/v1
+plugins:
+  - local: protoc-gen-swift
+    out: apps/apple/DieterKit/Sources/DieterAPI/Generated
+    opt:
+      - Visibility=Public
+      - FileNaming=PathToUnderscores
+      - ProtoPathModuleMappings=api/swift-module-mappings.asciipb
+  - local: protoc-gen-grpc-swift-2
+    out: apps/apple/DieterKit/Sources/DieterAPIGRPC/Generated
+    opt:
+      - Visibility=Public
+      - Server=false
+      - Client=true
+      - FileNaming=PathToUnderscores
+      - ProtoPathModuleMappings=api/swift-module-mappings.asciipb
