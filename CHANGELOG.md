@@ -8,7 +8,13 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
-Nothing yet.
+### Changed
+
+- Coding agents can automatically create, start and continue Strix scans.
+  Direct channel messages with `--wake` can start idle scans within the normal
+  wake budget, and failed admission leaves the request pending. Worktree-only
+  execution, model credential handling and the headless no-steering limit
+  remain in place.
 
 ## 0.6.445
 

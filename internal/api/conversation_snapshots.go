@@ -134,11 +134,8 @@ func scheduleInput(request *dieterv1.SaveScheduleRequest) (schedules.Input, erro
 }
 
 func (s *Server) idempotentConversation(ctx context.Context, request *dieterv1.CreateConversationRequest, scope string) (*dieterv1.Card, error) {
-	starts := !request.GetDeferStart() && (scope == model.ConversationScopeChat || strings.EqualFold(request.GetLane(), model.LaneRunning))
-	if starts {
-		if err := s.requireHumanForStrix(ctx, request.GetProvider()); err != nil {
-			return nil, err
-		}
+	if err := s.validateTurnCaller(ctx); err != nil {
+		return nil, err
 	}
 	if request.GetMailAccess() {
 		caller, err := s.capabilityCaller(ctx)

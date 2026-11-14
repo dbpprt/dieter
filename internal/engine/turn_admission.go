@@ -226,7 +226,7 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 		Environment:                s.agentEnvironment(detail.Card.ID, turnID),
 	}
 	if adapter.Runtime == strixAdapter {
-		// Strix gets the person's message as its scan instruction: no channel
+		// Strix gets the submitted instruction directly: no channel
 		// digest, steering or coding-agent context.
 		strix.apply(s, detail.Card.ID, workspaceValue, &request)
 	} else {

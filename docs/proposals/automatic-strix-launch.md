@@ -1,6 +1,18 @@
 # Plan: remove human-only Strix launch restrictions
 
-Status: inventory and implementation plan; runtime behavior is unchanged.
+Status: implemented. The inventory below records the original gates at the
+source revision; the implementation removes their human-only decisions.
+
+Agent-created cards and chats, draft starts, follow-ups and budgeted direct
+channel wakes are enabled. Supplied local turn tokens are still validated.
+Strix wake delivery is recorded after successful admission or queueing, and
+concurrent wakes for one recipient are serialized. Its wake instruction includes
+only addressed messages and preserves peer attribution. Headless live steering
+remains unsupported. API, engine, scheduler and CLI route regression tests cover
+the behavior. General trust, vault administration and mail rules remain intact.
+
+The sequence below is retained as the design record; Changes 1 and 2 ship in
+the same PR.
 Source revision: `f5eeb246` (`origin/main` when inspected, 2026-11-14).
 
 ## Recommendation
@@ -131,8 +143,7 @@ policy and, for binding rules, an ADR before implementation.
    recovery does not replay an uncertain dispatch. No scheduler feature flag
    or new RPC is needed.
 
-Expected CLI behavior after this change (example only; not executed by this
-planning task):
+CLI usage (substitute the project and board IDs):
 
 ```sh
 dieter card create --project PROJECT --board BOARD \
@@ -203,6 +214,13 @@ model in `tools/spikes/strix`, and a disposable local target. Verify start,
 resume, cancellation and container/config cleanup; record unavailable
 integration prerequisites as a failed gate. Never qualify this by scanning an
 operator service or restarting the operator daemon.
+
+Implementation verification on 2026-11-14 covers the API, channel wakes,
+scheduler recovery and local/direct-TLS/relay CLI paths with isolated homes,
+fixture credentials and fake runners. The real Docker smoke test is
+unavailable on this host: `docker info` cannot connect because
+`/var/run/docker.sock` is absent. No real-container start/resume/cancellation
+or cleanup result is claimed by this change.
 
 ## Acceptance criteria
 
