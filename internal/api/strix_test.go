@@ -16,9 +16,162 @@ import (
 	"github.com/dbpprt/dieter/internal/testkit"
 )
 
+func TestAgentTurnsCanLaunchAndContinueStrix(t *testing.T) {
+	t.Parallel()
+	data := testkit.Store(t)
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Scans", Path: testkit.GitRepo(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	board, err := data.Kanban.CreateBoard(kanban.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Exercise an arbitrary provider ID backed by the Strix adapter too.
+	adapter, ok := testkit.MockCatalog().ResolveAdapter("strix")
+	if !ok {
+		t.Fatal("missing Strix adapter")
+	}
+	adapter.ID = "security-scan"
+	catalog := harness.StaticCatalogOf([]harness.Adapter{adapter}, true)
+	runner := &testkit.FakeRunner{Release: make(chan struct{})}
+	client, _ := newConnectTestClient(t, data, runner, catalog)
+	var ids []string
+	t.Cleanup(func() {
+		close(runner.Release)
+		for _, id := range ids {
+			testkit.Eventually(t, 30*time.Second, func() bool {
+				conversation, err := data.Conversations.Get(id)
+				active, leaseErr := data.Leases.CardActive(id)
+				return err == nil && leaseErr == nil && !active && conversation.ActiveTurn == nil && len(conversation.Queue) == 0
+			}, "scan and follow-up to finish")
+		}
+		if !t.Failed() && runner.Count() != 2*len(ids)-1 {
+			t.Errorf("admitted %d turns, want %d", runner.Count(), 2*len(ids)-1)
+		}
+		waitForQuietStore(t, data.Root)
+	})
+	ctx := t.Context()
+	if _, err := client.InitVault(ctx, &dieterv1.InitVaultRequest{Name: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.CreateVaultItem(ctx, &dieterv1.CreateVaultItemRequest{Name: "strix", Password: "fixture-model-key", Notes: "STRIX_LLM=openai/test"}); err != nil {
+		t.Fatal(err)
+	}
+	parent, err := client.CreateCard(ctx, &dieterv1.CreateConversationRequest{ProjectId: project.ID, BoardId: board.ID,
+		Title: "Coder", Prompt: "Work", Provider: "mock", Model: "mock", WorkspaceMode: model.WorkspaceModeProject, Lane: model.LaneRunning})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids = append(ids, parent.GetId())
+	testkit.Eventually(t, 30*time.Second, func() bool { return runner.Count() == 1 }, "parent turn")
+	agent := withHeaders(ctx, map[string]string{turnTokenMetadata: runner.Request(0).Environment["DIETER_TURN_TOKEN"]})
+	for _, operation := range []string{"create", "chat", "start", "move", "send", "deferred"} {
+		t.Run(operation, func(t *testing.T) {
+			request := &dieterv1.CreateConversationRequest{ProjectId: project.ID, BoardId: board.ID,
+				Title: operation, Prompt: "Scan for injection", Provider: "security-scan", Model: "default", WorkspaceMode: model.WorkspaceModeWorktree,
+				Lane: model.LaneTodo, ClientId: "agent", CommandId: "create-" + operation}
+			if operation == "create" {
+				request.Lane = model.LaneRunning
+			}
+			request.DeferStart = operation == "deferred"
+			if request.DeferStart {
+				request.Lane = model.LaneRunning
+			}
+			before := runner.Count()
+			var scan *dieterv1.Card
+			var err error
+			if operation == "chat" {
+				scan, err = client.CreateChat(agent, request)
+			} else {
+				scan, err = client.CreateCard(agent, request)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			ids = append(ids, scan.GetId())
+			switch operation {
+			case "start", "deferred":
+				start := &dieterv1.StartCardRequest{CardId: scan.GetId(), ClientId: "agent", CommandId: "start-" + operation}
+				if _, err := client.StartCard(agent, start); err != nil {
+					t.Fatal(err)
+				}
+				if replay, err := client.StartCard(agent, start); err != nil || !replay.GetReplayed() {
+					t.Fatalf("start replay = %v, %v", replay, err)
+				}
+			case "move":
+				if _, err := client.MoveCard(agent, &dieterv1.MoveCardRequest{CardId: scan.GetId(), Lane: model.LaneRunning}); err != nil {
+					t.Fatal(err)
+				}
+			case "send":
+				if _, err := client.SendMessage(agent, &dieterv1.SendMessageRequest{CardId: scan.GetId(), Parts: []*dieterv1.MessagePart{{Type: "text", Text: "Scan for injection"}}}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			testkit.Eventually(t, 30*time.Second, func() bool { return runner.Count() == before+1 }, "one scan turn")
+			turn := runner.Request(before)
+			if turn.Adapter != "strix" || turn.Prompt != "Scan for injection" || turn.SteerEnabled || turn.ChannelHookCommand != "" || scan.GetVaultAccess() {
+				t.Fatalf("automated scan: request=%+v card=%v", turn, scan)
+			}
+			followup := &dieterv1.SendMessageRequest{CardId: scan.GetId(), ClientId: "agent", CommandId: "follow-" + operation,
+				Parts: []*dieterv1.MessagePart{{Type: "text", Text: "Validate the finding"}}}
+			for range 2 {
+				if result, err := client.SendMessage(agent, followup); err != nil || !result.GetQueued() {
+					t.Fatalf("follow-up = %v, %v", result, err)
+				}
+			}
+			conversation, err := data.Conversations.Get(scan.GetId())
+			if err != nil || len(conversation.Queue) != 1 || runner.Count() != before+1 {
+				t.Fatalf("follow-up duplicated or started concurrently: %+v, %v", conversation, err)
+			}
+			// A forged token still fails before admitting another message.
+			bad := withHeaders(ctx, map[string]string{turnTokenMetadata: "forged"})
+			_, err = client.SendMessage(bad, &dieterv1.SendMessageRequest{CardId: scan.GetId(), Parts: []*dieterv1.MessagePart{{Type: "text", Text: "Bad"}}})
+			wantCode(t, err, connect.CodePermissionDenied, "forged caller")
+		})
+	}
+}
+
+func TestStrixLaunchOperationsStillRejectForgedTurnTokens(t *testing.T) {
+	t.Parallel()
+	data := testkit.Store(t)
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Scans", Path: testkit.GitRepo(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	board, err := data.Kanban.CreateBoard(kanban.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := &testkit.FakeRunner{}
+	client, _ := newConnectTestClient(t, data, runner, testkit.MockCatalog())
+	request := &dieterv1.CreateConversationRequest{ProjectId: project.ID, BoardId: board.ID, Title: "Scan", Prompt: "Scan",
+		Provider: "strix", WorkspaceMode: model.WorkspaceModeWorktree, Lane: model.LaneTodo}
+	scan, err := client.CreateCard(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad := withHeaders(t.Context(), map[string]string{turnTokenMetadata: "forged"})
+	_, err = client.CreateCard(bad, request)
+	wantCode(t, err, connect.CodePermissionDenied, "agent draft with forged token")
+	_, err = client.CreateChat(bad, request)
+	wantCode(t, err, connect.CodePermissionDenied, "agent chat with forged token")
+	_, err = client.StartCard(bad, &dieterv1.StartCardRequest{CardId: scan.GetId(), ClientId: "bad", CommandId: "start"})
+	wantCode(t, err, connect.CodePermissionDenied, "agent start with forged token")
+	_, err = client.MoveCard(bad, &dieterv1.MoveCardRequest{CardId: scan.GetId(), Lane: model.LaneRunning})
+	wantCode(t, err, connect.CodePermissionDenied, "agent move with forged token")
+	_, err = client.SendMessage(bad, &dieterv1.SendMessageRequest{CardId: scan.GetId(), Parts: []*dieterv1.MessagePart{{Type: "text", Text: "Scan"}}})
+	wantCode(t, err, connect.CodePermissionDenied, "agent message with forged token")
+	stored, err := data.Kanban.ResolveCard(scan.GetId())
+	conversation, conversationErr := data.Conversations.Get(scan.GetId())
+	if err != nil || conversationErr != nil || stored.Lane != model.LaneTodo || len(conversation.Messages) != 0 || runner.Count() != 0 {
+		t.Fatalf("rejected requests mutated the draft: %+v, %+v, %v, %v", stored, conversation, err, conversationErr)
+	}
+}
+
 // Strix turns get their model credentials from a vault item, run only in a
-// worktree, take the person's message as their instruction, and are never
-// started or steered by an agent.
+// worktree, take the submitted message as their instruction, and do not
+// accept live steering.
 func TestStrixTurnsFollowTheirSafetyRules(t *testing.T) {
 	t.Parallel()
 	data := testkit.Store(t)
@@ -71,13 +224,6 @@ func TestStrixTurnsFollowTheirSafetyRules(t *testing.T) {
 		t.Fatalf("refused turn left state: %+v %v", conversation, getErr)
 	}
 
-	// An agent turn cannot start a Strix conversation or message one.
-	mockCard, err := data.Kanban.CreateCard(kanban.CreateCardInput{Project: project.ID, Board: board.ID, Lane: model.LaneTodo, Title: "Coder", Prompt: "Work", Provider: "mock", Model: "mock"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	agentRequest := startVaultTurn(t, client, runner, mockCard.ID)
-	agent := withHeaders(ctx, map[string]string{turnTokenMetadata: agentRequest.Environment["DIETER_TURN_TOKEN"]})
 	scan, err := client.CreateCard(ctx, &dieterv1.CreateConversationRequest{
 		ProjectId: project.ID, BoardId: board.ID, Title: "Scan", Prompt: "Scan for injection", Lane: model.LaneTodo,
 		Provider: "strix", WorkspaceMode: model.WorkspaceModeWorktree,
@@ -85,20 +231,9 @@ func TestStrixTurnsFollowTheirSafetyRules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = client.SendMessage(agent, &dieterv1.SendMessageRequest{CardId: scan.GetId(), Parts: []*dieterv1.MessagePart{{Type: "text", Text: "Scan everything"}}})
-	wantCode(t, err, connect.CodePermissionDenied, "agent message to a strix conversation")
-	_, err = client.CreateCard(agent, &dieterv1.CreateConversationRequest{
-		ProjectId: project.ID, BoardId: board.ID, Title: "Agent scan", Prompt: "Scan", Lane: model.LaneRunning,
-		Provider: "strix", WorkspaceMode: model.WorkspaceModeWorktree,
-	})
-	wantCode(t, err, connect.CodePermissionDenied, "agent-started strix conversation")
-	_, err = client.MoveCard(agent, &dieterv1.MoveCardRequest{CardId: scan.GetId(), Lane: model.LaneRunning})
-	wantCode(t, err, connect.CodePermissionDenied, "agent moving a strix card to running")
-	runner.release <- "done"
-	waitForIdle(t, data, mockCard.ID)
 
-	// The operator starts it: the worker gets the vault item's settings and
-	// the person's message, with no steering.
+	// The worker gets the vault item's settings and the submitted instruction,
+	// with no steering.
 	if _, err := client.SendMessage(ctx, &dieterv1.SendMessageRequest{CardId: scan.GetId(), Parts: []*dieterv1.MessagePart{{Type: "text", Text: "Scan for injection"}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +270,7 @@ func TestStrixTurnsFollowTheirSafetyRules(t *testing.T) {
 		t.Error("strix request has no diff base for a changes-only scan")
 	}
 	if request.Prompt != "Scan for injection" {
-		t.Errorf("strix prompt = %q, want the person's message only", request.Prompt)
+		t.Errorf("strix prompt = %q, want the submitted instruction only", request.Prompt)
 	}
 	if !strings.HasSuffix(request.ProjectPath, scan.GetId()) && !strings.Contains(request.ProjectPath, "worktrees") {
 		t.Errorf("strix project path %q is not the card's worktree", request.ProjectPath)

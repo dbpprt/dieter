@@ -292,7 +292,7 @@ it.
 
 The Strix harness (`internal/harness/runtime/strix-runtime.mjs`) runs an
 autonomous pentesting agent with offensive tooling against the card's worktree
-and any targets a person listed. Its model output decides what it attacks.
+and any configured targets. Its model output decides what it attacks.
 
 **Can:** Strix's agents run tools inside its Docker sandbox, which has
 `NET_ADMIN`/`NET_RAW` and reaches the daemon host through `host.docker.internal`.
@@ -304,10 +304,12 @@ can also attack hosts outside the configured targets.
 
 **Mitigations (guardrails, not isolation):**
 
-- Only a person starts or continues a scan. Agent turns cannot create a running
-  Strix conversation, move one to Running, start it or message it
-  (`requireHumanForStrix`, `internal/api/vault.go`); agent channel messages
-  never steer or wake it (`internal/engine/channels.go`).
+- People, agent turns and schedules may start or continue scans. Explicit direct
+  channel wakes may start idle scans within the normal wake budget; they keep
+  peer attribution and never become user approval. Headless Strix does not
+  support live steering (`internal/engine/channels.go`). Failed wake admission
+  retains the messages. Human-only launch checks are not a security boundary:
+  harness workers already run unsandboxed as the daemon user.
 - Strix conversations require a worktree workspace (`internal/engine/strix.go`).
 - The Strix process gets an allowlisted environment: Docker client settings, the
   model credentials, optional web search and Postman keys from the same vault

@@ -85,13 +85,7 @@ func (api *conversationsAPI) SendMessage(ctx context.Context, request *dieterv1.
 	if err != nil {
 		return nil, err
 	}
-	provider := request.GetProvider()
-	if provider == "" {
-		if card, resolveErr := api.server.store.Kanban.ResolveCard(request.GetCardId()); resolveErr == nil {
-			provider = card.Provider
-		}
-	}
-	if err := api.server.requireHumanForStrix(ctx, provider); err != nil {
+	if err := api.server.validateTurnCaller(ctx); err != nil {
 		return nil, err
 	}
 	clientID, commandID := strings.TrimSpace(request.GetClientId()), strings.TrimSpace(request.GetCommandId())

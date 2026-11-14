@@ -11,13 +11,13 @@ import (
 )
 
 // Strix conversations run an autonomous pentesting agent against their
-// worktree and any targets a person configured. They follow extra rules:
+// worktree and any configured targets. They follow extra rules:
 //   - only a worktree workspace, because Strix's agents can edit the files
 //     they test (the checkout is mounted writable into its sandbox);
 //   - the model credentials come from a vault item and reach only the Strix
 //     process environment;
-//   - agent channel messages neither steer nor wake them, and agent turns
-//     cannot start or continue them (see the API's requireHumanForStrix).
+//   - explicit agent channel wakes can start idle scans, but headless Strix
+//     does not support live steering.
 const strixAdapter = "strix"
 
 // strixNoteSettings are the Strix settings a credentials item's notes may set

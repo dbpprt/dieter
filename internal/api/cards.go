@@ -100,7 +100,7 @@ func (api *cardsAPI) MoveCard(ctx context.Context, request *dieterv1.MoveCardReq
 		if err = api.server.store.Kanban.RequireLocalCard(before); err != nil {
 			return nil, err
 		}
-		if err = api.server.requireHumanForStrix(ctx, before.Provider); err != nil {
+		if err = api.server.validateTurnCaller(ctx); err != nil {
 			return nil, err
 		}
 	}
@@ -156,7 +156,7 @@ func (api *cardsAPI) StartCard(ctx context.Context, request *dieterv1.StartCardR
 	if card.Scope != model.ConversationScopeBoard {
 		return nil, fault.New(fault.FailedPrecondition, "only board cards can be started")
 	}
-	if err := api.server.requireHumanForStrix(ctx, card.Provider); err != nil {
+	if err := api.server.validateTurnCaller(ctx); err != nil {
 		return nil, err
 	}
 	if card.InitialPromptSentAt != "" {
