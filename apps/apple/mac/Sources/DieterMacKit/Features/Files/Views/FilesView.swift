@@ -248,6 +248,7 @@ struct FilesView: View {
 
     private var headerSummary: String {
         let count = SharedRules.shared.count(count: Int32(clamping: model.files.count), noun: "item", plural: "")
+        if let folder = model.fileScopeFolder { return "\(folder.folderName) on \(folder.machineName) · \(count)" }
         return "\(model.fileScopeCardID == nil ? model.projectName : "Conversation workspace") · \(count)"
     }
 
@@ -273,7 +274,7 @@ struct FilesView: View {
                     .accessibilityIdentifier("files.forward")
                 }
                 .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28))
-                if model.fileScopeCardID == nil {
+                if model.fileScopeCardID == nil && model.fileScopeFolder == nil {
                     ProjectCheckoutMenu(projectID: model.target.projectID, size: 28)
                 }
                 breadcrumb
@@ -322,13 +323,16 @@ struct FilesView: View {
     private var breadcrumb: some View {
         let parts = model.filePath.split(separator: "/").map(String.init)
         let root =
-            model.fileScopeCardID == nil
-            ? ((model.projectPath as NSString).lastPathComponent.isEmpty
-                ? model.projectName : (model.projectPath as NSString).lastPathComponent)
-            : "Workspace"
+            model.fileScopeFolder.map(\.folderName)
+            ?? (model.fileScopeCardID == nil
+                ? ((model.projectPath as NSString).lastPathComponent.isEmpty
+                    ? model.projectName : (model.projectPath as NSString).lastPathComponent)
+                : "Workspace")
         return HStack(spacing: 2) {
             breadcrumbSegment(root, path: "", current: parts.isEmpty)
-                .help(model.fileScopeCardID == nil ? model.projectPath : "Conversation workspace root")
+                .help(
+                    model.fileScopeFolder.map { "\($0.folderName) on \($0.machineName)" }
+                        ?? (model.fileScopeCardID == nil ? model.projectPath : "Conversation workspace root"))
             ForEach(Array(parts.enumerated()), id: \.offset) { index, part in
                 Image(systemName: "chevron.compact.right").font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
                 breadcrumbSegment(

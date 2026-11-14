@@ -10,6 +10,7 @@ mapping {
   proto_file_path: "dieter/v1/conversations.proto"
   proto_file_path: "dieter/v1/executions.proto"
   proto_file_path: "dieter/v1/files.proto"
+  proto_file_path: "dieter/v1/folders.proto"
   proto_file_path: "dieter/v1/git.proto"
   proto_file_path: "dieter/v1/kv.proto"
   proto_file_path: "dieter/v1/machine.proto"

@@ -9,8 +9,8 @@ directory synchronization. Files may be binary and larger than the editor's
 5 MiB limit. Uploads support files up to 64 GiB.
 
 One endpoint is a path on the computer running the CLI. Prefix the other with
-`remote:` to select a path relative to the daemon's project checkout or
-conversation workspace. Global `--machine` selects the owning daemon; omit it
+`remote:` to select a path relative to the daemon's project checkout,
+conversation workspace or synced folder. Global `--machine` selects the owning daemon; omit it
 to use your local daemon. Transfers use the same authenticated local, direct
 TLS, WebRTC, and gateway relay routes as other CLI operations.
 
@@ -30,6 +30,15 @@ dieter --machine builder file sync --card CARD remote:results/ ./results/
 Use `--checkout ID` when a project has several checkouts on the selected machine.
 `--card` also accepts a standalone conversation ID. Both endpoints cannot be
 remote. Remote paths cannot escape the selected workspace.
+
+`--folder FOLDER` picks the selected machine's copy of a
+[synced folder](/docs/synced-folders/) instead of a checkout or conversation;
+that machine must be a member of the folder. Files you copy in sync to the
+folder's other members like any other change.
+
+```sh
+dieter --machine builder file cp --folder Reports ./summary.pdf remote:2026-11/summary.pdf
+```
 
 ## Copy and comparison rules
 

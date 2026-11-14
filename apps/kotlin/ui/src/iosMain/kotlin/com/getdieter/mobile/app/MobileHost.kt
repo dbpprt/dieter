@@ -255,6 +255,23 @@ class MobileHost(private val shared: DieterShared, private val nativeViews: Mobi
             )
         )
 
+    /**
+     * "Save to folder…" from the share extension: [sources] are file URLs of the staged files,
+     * [names] their names, in the same order; the person then picks the folder.
+     */
+    fun shareToFolder(sources: List<String>, names: List<String>, problem: String) =
+        store.sharing.receive(
+            SharedItems(
+                "",
+                emptyList(),
+                ShareDestination.FOLDER,
+                problem.ifEmpty {
+                    if (sources.isEmpty()) "Only files can be saved to a folder." else ""
+                },
+                sources.zip(names).map { (source, name) -> SharedFile(source, name) },
+            )
+        )
+
     fun newTask() = store.newConversation(store.routes.value.tab == MobileTab.CHATS)
 
     fun openNotification(cardId: String) = store.openNotification(cardId)

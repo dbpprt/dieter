@@ -93,6 +93,7 @@ dependencies {
     // The shared Compose UI and, through it, all client logic in the core.
     implementation(project(":ui"))
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.work.runtime)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.material3)

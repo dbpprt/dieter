@@ -393,6 +393,23 @@ private fun DesktopWorkspace(
                 RoutePane(store, list, holder, openUrl)
             }
         }
+        DesktopSection.FOLDERS -> {
+            val list =
+                navigation.stack.getOrNull(1)?.takeIf { it is MobileRoute.Tool }
+                    ?: MobileRoute.Tool(ToolPage.FOLDERS)
+            ListDetail(
+                store,
+                DesktopPane.TOOLS,
+                widths,
+                detail,
+                list.emptyDetail(MobileTab.MORE),
+                holder,
+                openUrl,
+                inset,
+            ) {
+                RoutePane(store, list, holder, openUrl)
+            }
+        }
         DesktopSection.PROJECT ->
             if (place.page == ProjectPage.BOARD)
                 DesktopBoard(store, place, detail, widths, holder, openUrl, inset)

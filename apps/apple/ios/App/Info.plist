@@ -10,6 +10,14 @@
 <key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>$(DIETER_IOS_BUNDLE_ID).oauth</string><key>CFBundleURLSchemes</key><array><string>$(DIETER_IOS_URL_SCHEME)</string></array></dict></array>
 <key>NSLocalNetworkUsageDescription</key><string>Connect securely to your enrolled Dieter nodes on the local network.</string>
 <key>NSCameraUsageDescription</key><string>Dieter includes camera-capable WebRTC components for remote screen viewing. Dieter does not capture or transmit camera video.</string>
+<key>UIFileSharingEnabled</key><true/>
+<key>LSSupportsOpeningDocumentsInPlace</key><true/>
+<key>UIBackgroundModes</key><array><string>fetch</string><string>processing</string></array>
+<key>BGTaskSchedulerPermittedIdentifiers</key><array>
+<string>$(DIETER_IOS_BUNDLE_ID).folders.refresh</string>
+<string>$(DIETER_IOS_BUNDLE_ID).folders.transfer</string>
+<string>$(DIETER_IOS_BUNDLE_ID).folders.sync.*</string>
+</array>
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 <key>UISupportedInterfaceOrientations</key><array>
 <string>UIInterfaceOrientationPortrait</string>

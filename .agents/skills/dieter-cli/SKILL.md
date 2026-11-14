@@ -508,6 +508,8 @@ progress; `file upload abort ID` releases an uncommitted upload's payload but
 retains its receipt. `file stat --checksum` and `file scan` provide metadata and
 paged enumeration. See `file upload --help` for explicit begin/chunk/commit
 commands. This is one-way synchronization, not automatic project replication.
+`--folder FOLDER` (instead of `--project`/`--card`) targets the selected
+machine's copy of a synced folder; see [Synced folders](#synced-folders).
 
 ## Run commands on a daemon host
 
@@ -1177,6 +1179,42 @@ conversation in 24 hours. Send one message per finished report, use
 `--important` only for failures that need action, and retry with the same
 `--operation-id` to avoid duplicates. Revealed vault secrets are redacted from
 mail as from transcripts.
+
+### Synced folders
+
+A synced folder is a named directory Dieter keeps the same on the account's
+daemons and phones. Its definition (name, rules, trash, deletion guard, linked
+project) replicates to every daemon; each daemon member binds its own
+directory, and phones sync with a home daemon. `FOLDER` is an ID or name.
+
+```sh
+dieter folder list                                # folders and every member's coarse state
+dieter folder show FOLDER                         # definition and members
+dieter folder status FOLDER [--format json]       # this daemon's copy: state, pending, conflicts, errors
+dieter folder rescan FOLDER                       # scan this daemon's copy now
+dieter folder member FOLDER                       # this daemon's path, mode and limits (read)
+dieter folder trash list FOLDER
+dieter folder trash restore FOLDER ITEM_ID        # bring back a deleted or replaced file
+dieter file cp --folder FOLDER ./report.pdf remote:reports/report.pdf
+dieter file cp --folder FOLDER remote:inbox/scan.pdf ./scan.pdf
+```
+
+When a folder is linked to the card's project and this daemon is a member,
+the turn instructions list it with its absolute path here and its direction.
+Write into that path directly: the daemon picks up new files at once (in-place
+edits on macOS within about a minute; `rescan` hurries it), and they reach the
+user's phones and Macs. Use `file cp --folder` for another machine's copy.
+Without a linked folder, don't go looking for one.
+
+Agent turns cannot `create`, `update`, `archive`, `attach`, `detach`, `pause`
+or `resume` folders, run `folder client register|unregister`, run `folder
+deletions --apply|--restore` or `folder trash purge`: they fail while
+`DIETER_TURN_TOKEN` is set, also with `--machine`. A status of `Confirm
+deletion of N files` or `Folder location unavailable` is for the user; report
+it instead of working around it. Conflict copies (`NAME (conflict, DEVICE,
+DATE TIME).ext`) are ordinary files; don't delete them without asking. Never
+write secrets into a synced folder and never edit `DIETER_HOME/folders`.
+User guide: `site/content/docs/synced-folders.md`.
 
 ### Device trust (pairing machines and apps)
 

@@ -73,6 +73,20 @@ struct FileExternalActions {
         return Self(displayPath: candidate.path, fileURL: canonicalFile, unavailableReason: nil)
     }
 
+    /// A synced folder's directory for Reveal in Finder: only a copy the daemon on this Mac keeps,
+    /// at an absolute path that exists as a directory here.
+    static func localDirectory(verifiedLocal: Bool, path: String) -> URL? {
+        guard verifiedLocal, path.hasPrefix("/"), !path.contains("\0") else { return nil }
+        let url = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL.resolvingSymlinksInPath()
+        guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { return nil }
+        return url
+    }
+
+    @MainActor
+    static func reveal(_ url: URL, workspace: NSWorkspace = .shared) {
+        workspace.activateFileViewerSelecting([url])
+    }
+
     mutating func loadApplications(workspace: NSWorkspace = .shared) {
         guard let fileURL else { return }
         applications = FileOpeningApplication.available(for: fileURL, workspace: workspace)

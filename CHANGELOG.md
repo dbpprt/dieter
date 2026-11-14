@@ -8,8 +8,23 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
+### Added
+
+- **Synced folders**: named directories that Dieter keeps the same on your
+  machines and phones. Daemons sync with each other through the gateway's
+  encrypted carriers; Android phones and iPhones sync with one daemon, in the
+  background on a schedule you choose (interval, Wi-Fi only, power, storage
+  limit, automatic download size). Concurrent edits keep a conflict copy, a
+  replaced or deleted file goes to the folder's trash on every daemon, and a
+  mass deletion waits for confirmation. Macs keep a copy through their daemon;
+  the Mac app manages folders and reveals the copy in Finder. A folder linked to
+  a project tells that project's agents its path. From the CLI:
+  `dieter folder create|attach|status|trash …` and `dieter file cp --folder`.
+  See the [synced folders guide](site/content/docs/synced-folders.md).
+
 ### Changed
 
+- Daemons below 0.6.446 are refused: they cannot read synced folder records.
 - Coding agents can automatically create, start and continue Strix scans.
   Direct channel messages with `--wake` can start idle scans within the normal
   wake budget, and failed admission leaves the request pending. Worktree-only

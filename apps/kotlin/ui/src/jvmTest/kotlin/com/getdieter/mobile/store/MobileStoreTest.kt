@@ -100,6 +100,21 @@ class MobileStoreTest {
     }
 
     @Test
+    fun aFolderNotOnThisDeviceOpensItsMachinesCopyInFiles() = runTest {
+        val core = FakeMobileCore()
+        val store = store(core)
+        try {
+            store.push(MobileRoute.FilePath("", file = false, daemonId = "mini", folderId = "f1"))
+            runCurrent()
+            val files = core.sentOf { it.files }
+            assertEquals(FilesTarget(daemon_id = "mini", folder_id = "f1"), files.first().bind)
+            assertTrue(files.all { it.scope == MobileStore.FILES_SCOPE })
+        } finally {
+            store.close()
+        }
+    }
+
+    @Test
     fun leavingADocumentReturnsTheFilesScopeToItsListing() = runTest {
         val core = FakeMobileCore()
         val store = store(core)

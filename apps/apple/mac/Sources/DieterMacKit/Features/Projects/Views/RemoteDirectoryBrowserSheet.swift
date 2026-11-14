@@ -9,6 +9,8 @@ struct RemoteDirectoryBrowserSheet: View {
     let machineID: String
     let mode: ProjectSetupMode
     @Binding var selection: String
+    /// Any directory will do (a synced folder's location), not only a Git working tree.
+    var anyDirectory = false
     @State private var listing: Dieter_V1_DirectoryListing?
     @State private var pathField = ""
     @State private var loading = false
@@ -35,7 +37,8 @@ struct RemoteDirectoryBrowserSheet: View {
         } == true
     }
     private var canUseSelection: Bool {
-        switch mode {
+        if anyDirectory { return listing != nil }
+        return switch mode {
         case .existing:
             listing?.gitRepository == true
         case .newRepository:
@@ -50,8 +53,12 @@ struct RemoteDirectoryBrowserSheet: View {
                     .font(.system(size: 18, weight: .semibold)).foregroundStyle(DieterTheme.shell)
                     .frame(width: 36, height: 36).dieterTile(radius: 9)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(mode == .existing ? "Choose a Git working tree" : "Choose where to create the project")
-                        .font(.system(size: 17, weight: .bold))
+                    Text(
+                        anyDirectory
+                            ? "Choose the folder's directory"
+                            : mode == .existing ? "Choose a Git working tree" : "Choose where to create the project"
+                    )
+                    .font(.system(size: 17, weight: .bold))
                     Text("Browsing \(machine?.name ?? "remote machine") · rendered locally")
                         .font(.caption).foregroundStyle(DieterTheme.tertiary)
                 }
@@ -159,7 +166,7 @@ struct RemoteDirectoryBrowserSheet: View {
 
             Divider().overlay(DieterTheme.border)
             VStack(alignment: .leading, spacing: 9) {
-                if mode == .newRepository {
+                if mode == .newRepository && !anyDirectory {
                     HStack(spacing: 9) {
                         Text("New folder").font(.caption.weight(.semibold)).foregroundStyle(DieterTheme.subtle)
                         TextField("project", text: $newFolderName)
@@ -181,7 +188,13 @@ struct RemoteDirectoryBrowserSheet: View {
                 }
 
                 HStack {
-                    if mode == .existing {
+                    if anyDirectory {
+                        Text(
+                            listing.map { "Files in \($0.name.isEmpty ? $0.path : $0.name) join the folder." }
+                                ?? "Open the directory that should keep the folder."
+                        )
+                        .font(.caption).foregroundStyle(DieterTheme.tertiary)
+                    } else if mode == .existing {
                         if listing?.gitRepository == true {
                             Label(
                                 "\(listing?.name ?? "Folder") is a Git working tree",
@@ -201,8 +214,10 @@ struct RemoteDirectoryBrowserSheet: View {
                     }
                     Spacer()
                     Button("Cancel") { dismiss() }.buttonStyle(DieterBarButtonStyle(size: 30))
-                    Button(mode == .existing ? "Use this working tree" : "Use this path") {
-                        selection = mode == .existing ? (listing?.path ?? "") : newProjectPath
+                    Button(
+                        anyDirectory ? "Use this folder" : mode == .existing ? "Use this working tree" : "Use this path"
+                    ) {
+                        selection = anyDirectory || mode == .existing ? (listing?.path ?? "") : newProjectPath
                         dismiss()
                     }
                     .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30)).disabled(!canUseSelection)
@@ -217,7 +232,7 @@ struct RemoteDirectoryBrowserSheet: View {
     }
 
     private func prepareInitialLocation() async {
-        guard mode == .newRepository else {
+        guard mode == .newRepository, !anyDirectory else {
             await load(selection)
             return
         }

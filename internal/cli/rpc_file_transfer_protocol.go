@@ -8,20 +8,26 @@ import (
 
 	files "github.com/dbpprt/dieter/internal/filetransfer"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func (c *CLI) rpcFileTransferProtocol(action string, args []string) error {
-	usage := `Usage: dieter file stat (--project PROJECT|--card CARD) [--checkout ID] [--checksum] PATH
-       dieter file scan (--project PROJECT|--card CARD) [--checkout ID] [--after NAME] [--revision REV] [--page-size N] PATH
+	usage := `Usage: dieter file stat (--project PROJECT|--card CARD|--folder FOLDER) [--checkout ID] [--checksum] PATH
+       dieter file scan (--project PROJECT|--card CARD|--folder FOLDER) [--checkout ID] [--after NAME] [--revision REV] [--page-size N] PATH
        dieter file upload <begin|chunk|show|commit|abort> [OPTIONS]
 
 stat and scan emit protobuf JSON. scan returns a bounded directory page; carry
 its revision and next name into the following request. Restart on conflict.
 
 Upload protocol commands (JSON output):
-  begin (--project PROJECT|--card CARD) [--checkout ID] --operation ID
-        --revision REV|missing --size BYTES --sha256 HASH --modified-nanos NS
-        [--mode 420] PATH
+  begin (--project PROJECT|--card CARD|--folder FOLDER) [--checkout ID]
+        --operation ID --revision REV|missing --size BYTES --sha256 HASH
+        --modified-nanos NS [--mode 420] [--folder-entry JSON] PATH
+
+A --folder upload with --folder-entry (a FolderEntry JSON with the new version
+and author, as phones send) commits only if that version dominates the
+machine's entry; the machine derives the revision itself. Without it the file
+lands in the machine's copy as a local change.
   chunk --offset BYTES --file FILE UPLOAD_ID
   show UPLOAD_ID
   commit UPLOAD_ID
@@ -49,6 +55,8 @@ chunking, pipelining, checksums and resume.
 	}
 	set := flags("file " + action)
 	project, card, checkout := addFileScopeFlags(set)
+	folder := set.String("folder", "", "synced folder ID or name")
+	folderEntry := set.String("folder-entry", "", "FolderEntry JSON of a versioned folder upload")
 	checksum := set.Bool("checksum", false, "compute SHA-256")
 	after := set.String("after", "", "directory continuation name")
 	revision := set.String("revision", "", "observed revision or missing for create")
@@ -75,11 +83,15 @@ chunking, pipelining, checksums and resume.
 	}
 	var target *dieterv1.TransferPath
 	if action != "upload" || sub == "begin" {
-		projectID, cardID, err := c.resolveFileScope(ctx, client, rpcCtx, *project, *card)
-		if err != nil {
-			return err
+		if *folder != "" {
+			target = &dieterv1.TransferPath{FolderId: *folder, Path: set.Arg(0), Checksum: *checksum}
+		} else {
+			projectID, cardID, err := c.resolveFileScope(ctx, client, rpcCtx, *project, *card)
+			if err != nil {
+				return err
+			}
+			target = &dieterv1.TransferPath{ProjectId: projectID, CardId: cardID, CheckoutId: *checkout, Path: set.Arg(0), Checksum: *checksum}
 		}
-		target = &dieterv1.TransferPath{ProjectId: projectID, CardId: cardID, CheckoutId: *checkout, Path: set.Arg(0), Checksum: *checksum}
 	}
 	switch action {
 	case "stat":
@@ -104,7 +116,14 @@ chunking, pipelining, checksums and resume.
 		if *mode > 0o777 {
 			return errors.New("mode must contain only permission bits")
 		}
-		r, err = client.BeginFileUpload(rpcCtx, &dieterv1.BeginFileUploadRequest{Target: target, OperationId: *operation, ExpectedRevision: *revision, Size: *size, Sha256: *digest, ModifiedNanos: *modified, Mode: uint32(*mode)})
+		request := &dieterv1.BeginFileUploadRequest{Target: target, OperationId: *operation, ExpectedRevision: *revision, Size: *size, Sha256: *digest, ModifiedNanos: *modified, Mode: uint32(*mode)}
+		if *folderEntry != "" {
+			request.FolderEntry = &dieterv1.FolderEntry{}
+			if e := protojson.Unmarshal([]byte(*folderEntry), request.FolderEntry); e != nil {
+				return fmt.Errorf("invalid --folder-entry: %w", e)
+			}
+		}
+		r, err = client.BeginFileUpload(rpcCtx, request)
 	case "chunk":
 		f, e := os.Open(*input)
 		if e != nil {

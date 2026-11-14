@@ -192,6 +192,19 @@ class ConnectionSupervisor(
     }
 
     /**
+     * Keeps the connection running while [block] runs, without changing [setRunning]: a background
+     * window (folder sync) that needs machines.
+     */
+    suspend fun <T> withLease(block: suspend () -> T): T {
+        leases.update { it + 1 }
+        try {
+            return block()
+        } finally {
+            leases.update { it - 1 }
+        }
+    }
+
+    /**
      * Forgets the prepared gateway and unbinds its machine views, so nothing writes its namespace
      * and the next start prepares it afresh. Call [restart] afterwards.
      */

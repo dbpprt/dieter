@@ -29,9 +29,9 @@
             <key>NSExtensionActivationRule</key>
             <dict>
                 <key>NSExtensionActivationSupportsFileWithMaxCount</key>
-                <integer>4</integer>
+                <integer>100</integer>
                 <key>NSExtensionActivationSupportsImageWithMaxCount</key>
-                <integer>4</integer>
+                <integer>100</integer>
             </dict>
         </dict>
         <key>NSExtensionPointIdentifier</key>

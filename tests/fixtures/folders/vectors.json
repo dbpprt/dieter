@@ -1,0 +1,1872 @@
+{
+  "about": "Golden vectors for synced folders. internal/folders (Go) and the Kotlin core's folders package must both pass every case.",
+  "actors": [
+    {
+      "member": "d_alpha",
+      "actor": "f151820fe8dd4819"
+    },
+    {
+      "member": "d_beta",
+      "actor": "bfa2a379ad0ccd54"
+    },
+    {
+      "member": "dev_8f3a2c",
+      "actor": "672b7bc0874e1a7a"
+    },
+    {
+      "member": "p_phone",
+      "actor": "174b52765398313b"
+    },
+    {
+      "member": "",
+      "actor": "e3b0c44298fc1c14"
+    }
+  ],
+  "compare": [
+    {
+      "a": [],
+      "b": [],
+      "expect": "equal"
+    },
+    {
+      "a": [
+        {
+          "actor": "aaaaaaaaaaaaaaaa",
+          "value": 1
+        }
+      ],
+      "b": [],
+      "expect": "after"
+    },
+    {
+      "a": [],
+      "b": [
+        {
+          "actor": "aaaaaaaaaaaaaaaa",
+          "value": 1
+        }
+      ],
+      "expect": "before"
+    },
+    {
+      "a": [
+        {
+          "actor": "aaaaaaaaaaaaaaaa",
+          "value": 1
+        },
+        {
+          "actor": "bbbbbbbbbbbbbbbb",
+          "value": 2
+        }
+      ],
+      "b": [
+        {
+          "actor": "aaaaaaaaaaaaaaaa",
+          "value": 2
+        },
+        {
+          "actor": "bbbbbbbbbbbbbbbb",
+          "value": 1
+        }
+      ],
+      "expect": "concurrent"
+    },
+    {
+      "a": [
+        {
+          "actor": "aaaaaaaaaaaaaaaa",
+          "value": 1
+        }
+      ],
+      "b": [
+        {
+          "actor": "aaaaaaaaaaaaaaaa",
+          "value": 1
+        },
+        {
+          "actor": "bbbbbbbbbbbbbbbb",
+          "value": 1
+        }
+      ],
+      "expect": "before"
+    },
+    {
+      "a": [
+        {
+          "actor": "aaaaaaaaaaaaaaaa",
+          "value": 2
+        },
+        {
+          "actor": "bbbbbbbbbbbbbbbb",
+          "value": 1
+        }
+      ],
+      "b": [
+        {
+          "actor": "aaaaaaaaaaaaaaaa",
+          "value": 1
+        }
+      ],
+      "expect": "after"
+    },
+    {
+      "a": [
+        {
+          "actor": "aaaaaaaaaaaaaaaa",
+          "value": 1
+        },
+        {
+          "actor": "cccccccccccccccc",
+          "value": 1
+        }
+      ],
+      "b": [
+        {
+          "actor": "bbbbbbbbbbbbbbbb",
+          "value": 1
+        }
+      ],
+      "expect": "concurrent"
+    },
+    {
+      "a": [
+        {
+          "actor": "aaaaaaaaaaaaaaaa",
+          "value": 3
+        },
+        {
+          "actor": "bbbbbbbbbbbbbbbb",
+          "value": 3
+        },
+        {
+          "actor": "cccccccccccccccc",
+          "value": 3
+        }
+      ],
+      "b": [
+        {
+          "actor": "aaaaaaaaaaaaaaaa",
+          "value": 3
+        },
+        {
+          "actor": "bbbbbbbbbbbbbbbb",
+          "value": 3
+        },
+        {
+          "actor": "cccccccccccccccc",
+          "value": 3
+        }
+      ],
+      "expect": "equal"
+    }
+  ],
+  "merge": [
+    {
+      "a": [
+        {
+          "actor": "aaaaaaaaaaaaaaaa",
+          "value": 1
+        },
+        {
+          "actor": "cccccccccccccccc",
+          "value": 3
+        }
+      ],
+      "b": [
+        {
+          "actor": "aaaaaaaaaaaaaaaa",
+          "value": 2
+        },
+        {
+          "actor": "bbbbbbbbbbbbbbbb",
+          "value": 1
+        }
+      ],
+      "expect": [
+        {
+          "actor": "aaaaaaaaaaaaaaaa",
+          "value": 2
+        },
+        {
+          "actor": "bbbbbbbbbbbbbbbb",
+          "value": 1
+        },
+        {
+          "actor": "cccccccccccccccc",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "a": [],
+      "b": [
+        {
+          "actor": "bbbbbbbbbbbbbbbb",
+          "value": 4
+        }
+      ],
+      "expect": [
+        {
+          "actor": "bbbbbbbbbbbbbbbb",
+          "value": 4
+        }
+      ]
+    }
+  ],
+  "bump": [
+    {
+      "version": [
+        {
+          "actor": "aaaaaaaaaaaaaaaa",
+          "value": 1
+        }
+      ],
+      "actor": "bbbbbbbbbbbbbbbb",
+      "expect": [
+        {
+          "actor": "aaaaaaaaaaaaaaaa",
+          "value": 1
+        },
+        {
+          "actor": "bbbbbbbbbbbbbbbb",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "version": [
+        {
+          "actor": "aaaaaaaaaaaaaaaa",
+          "value": 1
+        },
+        {
+          "actor": "cccccccccccccccc",
+          "value": 2
+        }
+      ],
+      "actor": "aaaaaaaaaaaaaaaa",
+      "expect": [
+        {
+          "actor": "aaaaaaaaaaaaaaaa",
+          "value": 2
+        },
+        {
+          "actor": "cccccccccccccccc",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "version": [],
+      "actor": "cccccccccccccccc",
+      "expect": [
+        {
+          "actor": "cccccccccccccccc",
+          "value": 1
+        }
+      ]
+    }
+  ],
+  "decide": [
+    {
+      "name": "unknown path, remote file: apply",
+      "mode": "two-way",
+      "local": null,
+      "remote": {
+        "path": "a.txt",
+        "kind": "file",
+        "size": 10,
+        "modified": 100,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "expect": {
+        "action": "apply",
+        "result": {
+          "path": "a.txt",
+          "kind": "file",
+          "size": 10,
+          "modified": 100,
+          "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+          "version": [
+            {
+              "actor": "aaaaaaaaaaaaaaaa",
+              "value": 1
+            }
+          ],
+          "authorId": "d_alpha",
+          "authorName": "Studio"
+        }
+      }
+    },
+    {
+      "name": "unknown path, remote tombstone: record it",
+      "mode": "two-way",
+      "local": null,
+      "remote": {
+        "path": "a.txt",
+        "kind": "deleted",
+        "modified": 100,
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 2
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "expect": {
+        "action": "apply",
+        "result": {
+          "path": "a.txt",
+          "kind": "deleted",
+          "modified": 100,
+          "version": [
+            {
+              "actor": "aaaaaaaaaaaaaaaa",
+              "value": 2
+            }
+          ],
+          "authorId": "d_alpha",
+          "authorName": "Studio"
+        }
+      }
+    },
+    {
+      "name": "send-only, unknown path, remote file: out of sync",
+      "mode": "send-only",
+      "local": null,
+      "remote": {
+        "path": "a.txt",
+        "kind": "file",
+        "size": 10,
+        "modified": 100,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "expect": {
+        "action": "out-of-sync"
+      }
+    },
+    {
+      "name": "send-only, unknown path, remote tombstone: nothing",
+      "mode": "send-only",
+      "local": null,
+      "remote": {
+        "path": "a.txt",
+        "kind": "deleted",
+        "modified": 100,
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "expect": {
+        "action": "none"
+      }
+    },
+    {
+      "name": "equal versions: nothing",
+      "mode": "two-way",
+      "local": {
+        "path": "a.txt",
+        "kind": "file",
+        "size": 10,
+        "modified": 100,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "bbbbbbbbbbbbbbbb",
+            "value": 2
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "remote": {
+        "path": "a.txt",
+        "kind": "file",
+        "size": 10,
+        "modified": 100,
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "bbbbbbbbbbbbbbbb",
+            "value": 2
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "expect": {
+        "action": "none"
+      }
+    },
+    {
+      "name": "local dominates: nothing",
+      "mode": "two-way",
+      "local": {
+        "path": "a.txt",
+        "kind": "file",
+        "size": 10,
+        "modified": 100,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 2
+          },
+          {
+            "actor": "bbbbbbbbbbbbbbbb",
+            "value": 2
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "remote": {
+        "path": "a.txt",
+        "kind": "file",
+        "size": 10,
+        "modified": 100,
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "bbbbbbbbbbbbbbbb",
+            "value": 2
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "expect": {
+        "action": "none"
+      }
+    },
+    {
+      "name": "remote dominates: apply",
+      "mode": "two-way",
+      "local": {
+        "path": "a.txt",
+        "kind": "file",
+        "size": 10,
+        "modified": 100,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "bbbbbbbbbbbbbbbb",
+            "value": 2
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "remote": {
+        "path": "a.txt",
+        "kind": "file",
+        "size": 10,
+        "modified": 100,
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 2
+          },
+          {
+            "actor": "bbbbbbbbbbbbbbbb",
+            "value": 2
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "expect": {
+        "action": "apply",
+        "result": {
+          "path": "a.txt",
+          "kind": "file",
+          "size": 10,
+          "modified": 100,
+          "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+          "version": [
+            {
+              "actor": "aaaaaaaaaaaaaaaa",
+              "value": 2
+            },
+            {
+              "actor": "bbbbbbbbbbbbbbbb",
+              "value": 2
+            }
+          ],
+          "authorId": "d_alpha",
+          "authorName": "Studio"
+        }
+      }
+    },
+    {
+      "name": "remote dominates, send-only: out of sync",
+      "mode": "send-only",
+      "local": {
+        "path": "a.txt",
+        "kind": "file",
+        "size": 10,
+        "modified": 100,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "bbbbbbbbbbbbbbbb",
+            "value": 2
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "remote": {
+        "path": "a.txt",
+        "kind": "file",
+        "size": 10,
+        "modified": 100,
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 2
+          },
+          {
+            "actor": "bbbbbbbbbbbbbbbb",
+            "value": 2
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "expect": {
+        "action": "out-of-sync"
+      }
+    },
+    {
+      "name": "remote tombstone dominates: apply",
+      "mode": "two-way",
+      "local": {
+        "path": "a.txt",
+        "kind": "file",
+        "size": 10,
+        "modified": 100,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 2
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "remote": {
+        "path": "a.txt",
+        "kind": "deleted",
+        "modified": 100,
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 3
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "expect": {
+        "action": "apply",
+        "result": {
+          "path": "a.txt",
+          "kind": "deleted",
+          "modified": 100,
+          "version": [
+            {
+              "actor": "aaaaaaaaaaaaaaaa",
+              "value": 3
+            }
+          ],
+          "authorId": "d_alpha",
+          "authorName": "Studio"
+        }
+      }
+    },
+    {
+      "name": "concurrent, same content: merge under the winner's metadata",
+      "mode": "two-way",
+      "local": {
+        "path": "a.txt",
+        "kind": "file",
+        "size": 10,
+        "modified": 100,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 2
+          },
+          {
+            "actor": "bbbbbbbbbbbbbbbb",
+            "value": 1
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "remote": {
+        "path": "a.txt",
+        "kind": "file",
+        "size": 10,
+        "modified": 200,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "bbbbbbbbbbbbbbbb",
+            "value": 2
+          }
+        ],
+        "authorId": "d_beta",
+        "authorName": "box"
+      },
+      "expect": {
+        "action": "merge",
+        "result": {
+          "path": "a.txt",
+          "kind": "file",
+          "size": 10,
+          "modified": 200,
+          "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+          "version": [
+            {
+              "actor": "aaaaaaaaaaaaaaaa",
+              "value": 2
+            },
+            {
+              "actor": "bbbbbbbbbbbbbbbb",
+              "value": 2
+            }
+          ],
+          "authorId": "d_beta",
+          "authorName": "box"
+        }
+      }
+    },
+    {
+      "name": "concurrent files, remote is later: keep local as a conflict copy, apply remote",
+      "mode": "two-way",
+      "local": {
+        "path": "docs/report.pdf",
+        "kind": "file",
+        "size": 10,
+        "modified": 1763042400000000000,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "cccccccccccccccc",
+            "value": 1
+          }
+        ],
+        "authorId": "p_phone",
+        "authorName": "Pixel 9"
+      },
+      "remote": {
+        "path": "docs/report.pdf",
+        "kind": "file",
+        "size": 10,
+        "modified": 1763042460000000000,
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "bbbbbbbbbbbbbbbb",
+            "value": 1
+          }
+        ],
+        "authorId": "d_beta",
+        "authorName": "box"
+      },
+      "expect": {
+        "action": "apply",
+        "conflict": true,
+        "conflictCopy": "docs/report (conflict, Pixel 9, 2025-11-13 14.00.00).pdf",
+        "result": {
+          "path": "docs/report.pdf",
+          "kind": "file",
+          "size": 10,
+          "modified": 1763042460000000000,
+          "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+          "version": [
+            {
+              "actor": "aaaaaaaaaaaaaaaa",
+              "value": 1
+            },
+            {
+              "actor": "bbbbbbbbbbbbbbbb",
+              "value": 1
+            },
+            {
+              "actor": "cccccccccccccccc",
+              "value": 1
+            }
+          ],
+          "authorId": "d_beta",
+          "authorName": "box"
+        }
+      }
+    },
+    {
+      "name": "concurrent files, local is later: nothing (the other side keeps the copy)",
+      "mode": "two-way",
+      "local": {
+        "path": "docs/report.pdf",
+        "kind": "file",
+        "size": 10,
+        "modified": 1763042460000000001,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "cccccccccccccccc",
+            "value": 1
+          }
+        ],
+        "authorId": "p_phone",
+        "authorName": "Pixel 9"
+      },
+      "remote": {
+        "path": "docs/report.pdf",
+        "kind": "file",
+        "size": 10,
+        "modified": 1763042460000000000,
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "bbbbbbbbbbbbbbbb",
+            "value": 1
+          }
+        ],
+        "authorId": "d_beta",
+        "authorName": "box"
+      },
+      "expect": {
+        "action": "none",
+        "conflict": true
+      }
+    },
+    {
+      "name": "concurrent files, equal times: the higher author ID wins",
+      "mode": "two-way",
+      "local": {
+        "path": "docs/report.pdf",
+        "kind": "file",
+        "size": 10,
+        "modified": 1763042460000000000,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "cccccccccccccccc",
+            "value": 1
+          }
+        ],
+        "authorId": "d_zeta",
+        "authorName": "Pixel 9"
+      },
+      "remote": {
+        "path": "docs/report.pdf",
+        "kind": "file",
+        "size": 10,
+        "modified": 1763042460000000000,
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "bbbbbbbbbbbbbbbb",
+            "value": 1
+          }
+        ],
+        "authorId": "d_beta",
+        "authorName": "box"
+      },
+      "expect": {
+        "action": "none",
+        "conflict": true
+      }
+    },
+    {
+      "name": "concurrent files, equal times, lower author ID loses",
+      "mode": "two-way",
+      "local": {
+        "path": "docs/report.pdf",
+        "kind": "file",
+        "size": 10,
+        "modified": 1763042460000000000,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "cccccccccccccccc",
+            "value": 1
+          }
+        ],
+        "authorId": "d_aaa",
+        "authorName": "Pixel 9"
+      },
+      "remote": {
+        "path": "docs/report.pdf",
+        "kind": "file",
+        "size": 10,
+        "modified": 1763042460000000000,
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "bbbbbbbbbbbbbbbb",
+            "value": 1
+          }
+        ],
+        "authorId": "d_beta",
+        "authorName": "box"
+      },
+      "expect": {
+        "action": "apply",
+        "conflict": true,
+        "conflictCopy": "docs/report (conflict, Pixel 9, 2025-11-13 14.01.00).pdf",
+        "result": {
+          "path": "docs/report.pdf",
+          "kind": "file",
+          "size": 10,
+          "modified": 1763042460000000000,
+          "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+          "version": [
+            {
+              "actor": "aaaaaaaaaaaaaaaa",
+              "value": 1
+            },
+            {
+              "actor": "bbbbbbbbbbbbbbbb",
+              "value": 1
+            },
+            {
+              "actor": "cccccccccccccccc",
+              "value": 1
+            }
+          ],
+          "authorId": "d_beta",
+          "authorName": "box"
+        }
+      }
+    },
+    {
+      "name": "receive-only resolves conflicts like two-way",
+      "mode": "receive-only",
+      "local": {
+        "path": "docs/report.pdf",
+        "kind": "file",
+        "size": 10,
+        "modified": 1763042400000000000,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "cccccccccccccccc",
+            "value": 1
+          }
+        ],
+        "authorId": "p_phone",
+        "authorName": "Pixel 9"
+      },
+      "remote": {
+        "path": "docs/report.pdf",
+        "kind": "file",
+        "size": 10,
+        "modified": 1763042460000000000,
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "bbbbbbbbbbbbbbbb",
+            "value": 1
+          }
+        ],
+        "authorId": "d_beta",
+        "authorName": "box"
+      },
+      "expect": {
+        "action": "apply",
+        "conflict": true,
+        "conflictCopy": "docs/report (conflict, Pixel 9, 2025-11-13 14.00.00).pdf",
+        "result": {
+          "path": "docs/report.pdf",
+          "kind": "file",
+          "size": 10,
+          "modified": 1763042460000000000,
+          "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+          "version": [
+            {
+              "actor": "aaaaaaaaaaaaaaaa",
+              "value": 1
+            },
+            {
+              "actor": "bbbbbbbbbbbbbbbb",
+              "value": 1
+            },
+            {
+              "actor": "cccccccccccccccc",
+              "value": 1
+            }
+          ],
+          "authorId": "d_beta",
+          "authorName": "box"
+        }
+      }
+    },
+    {
+      "name": "send-only never applies a conflict",
+      "mode": "send-only",
+      "local": {
+        "path": "docs/report.pdf",
+        "kind": "file",
+        "size": 10,
+        "modified": 1763042400000000000,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "cccccccccccccccc",
+            "value": 1
+          }
+        ],
+        "authorId": "p_phone",
+        "authorName": "Pixel 9"
+      },
+      "remote": {
+        "path": "docs/report.pdf",
+        "kind": "file",
+        "size": 10,
+        "modified": 1763042460000000000,
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "bbbbbbbbbbbbbbbb",
+            "value": 1
+          }
+        ],
+        "authorId": "d_beta",
+        "authorName": "box"
+      },
+      "expect": {
+        "action": "out-of-sync",
+        "conflict": true
+      }
+    },
+    {
+      "name": "local tombstone vs concurrent modification: the modification wins",
+      "mode": "two-way",
+      "local": {
+        "path": "a.txt",
+        "kind": "deleted",
+        "modified": 1763042460000000005,
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "cccccccccccccccc",
+            "value": 1
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "remote": {
+        "path": "a.txt",
+        "kind": "file",
+        "size": 10,
+        "modified": 1763042460000000000,
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "bbbbbbbbbbbbbbbb",
+            "value": 1
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "expect": {
+        "action": "apply",
+        "conflict": true,
+        "result": {
+          "path": "a.txt",
+          "kind": "file",
+          "size": 10,
+          "modified": 1763042460000000000,
+          "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+          "version": [
+            {
+              "actor": "aaaaaaaaaaaaaaaa",
+              "value": 1
+            },
+            {
+              "actor": "bbbbbbbbbbbbbbbb",
+              "value": 1
+            },
+            {
+              "actor": "cccccccccccccccc",
+              "value": 1
+            }
+          ],
+          "authorId": "d_alpha",
+          "authorName": "Studio"
+        }
+      }
+    },
+    {
+      "name": "local modification vs concurrent tombstone: nothing",
+      "mode": "two-way",
+      "local": {
+        "path": "a.txt",
+        "kind": "file",
+        "size": 10,
+        "modified": 0,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "cccccccccccccccc",
+            "value": 1
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "remote": {
+        "path": "a.txt",
+        "kind": "deleted",
+        "modified": 1763042460000000000,
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "bbbbbbbbbbbbbbbb",
+            "value": 1
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "expect": {
+        "action": "none",
+        "conflict": true
+      }
+    },
+    {
+      "name": "local directory vs concurrent file: nothing",
+      "mode": "two-way",
+      "local": {
+        "path": "x",
+        "kind": "directory",
+        "modified": 100,
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "cccccccccccccccc",
+            "value": 1
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "remote": {
+        "path": "x",
+        "kind": "file",
+        "size": 10,
+        "modified": 1763042460000000000,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "bbbbbbbbbbbbbbbb",
+            "value": 1
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "expect": {
+        "action": "none",
+        "conflict": true
+      }
+    },
+    {
+      "name": "local file vs concurrent directory: copy the file away, apply the directory",
+      "mode": "two-way",
+      "local": {
+        "path": "x",
+        "kind": "file",
+        "size": 10,
+        "modified": 1763042400000000000,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "cccccccccccccccc",
+            "value": 1
+          }
+        ],
+        "authorId": "p_phone",
+        "authorName": "Pixel 9"
+      },
+      "remote": {
+        "path": "x",
+        "kind": "directory",
+        "modified": 100,
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "bbbbbbbbbbbbbbbb",
+            "value": 1
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "expect": {
+        "action": "apply",
+        "conflict": true,
+        "conflictCopy": "x (conflict, Pixel 9, 2025-11-13 14.00.00)",
+        "result": {
+          "path": "x",
+          "kind": "directory",
+          "modified": 100,
+          "version": [
+            {
+              "actor": "aaaaaaaaaaaaaaaa",
+              "value": 1
+            },
+            {
+              "actor": "bbbbbbbbbbbbbbbb",
+              "value": 1
+            },
+            {
+              "actor": "cccccccccccccccc",
+              "value": 1
+            }
+          ],
+          "authorId": "d_alpha",
+          "authorName": "Studio"
+        }
+      }
+    },
+    {
+      "name": "concurrent tombstones: merge",
+      "mode": "two-way",
+      "local": {
+        "path": "a.txt",
+        "kind": "deleted",
+        "modified": 5,
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 2
+          },
+          {
+            "actor": "bbbbbbbbbbbbbbbb",
+            "value": 1
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "remote": {
+        "path": "a.txt",
+        "kind": "deleted",
+        "modified": 9,
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "bbbbbbbbbbbbbbbb",
+            "value": 2
+          }
+        ],
+        "authorId": "d_beta",
+        "authorName": "Studio"
+      },
+      "expect": {
+        "action": "merge",
+        "result": {
+          "path": "a.txt",
+          "kind": "deleted",
+          "modified": 9,
+          "version": [
+            {
+              "actor": "aaaaaaaaaaaaaaaa",
+              "value": 2
+            },
+            {
+              "actor": "bbbbbbbbbbbbbbbb",
+              "value": 2
+            }
+          ],
+          "authorId": "d_beta",
+          "authorName": "Studio"
+        }
+      }
+    },
+    {
+      "name": "an executable bit change alone is a content change",
+      "mode": "two-way",
+      "local": {
+        "path": "run.sh",
+        "kind": "file",
+        "size": 10,
+        "modified": 1763042400000000000,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "cccccccccccccccc",
+            "value": 1
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "remote": {
+        "path": "run.sh",
+        "kind": "file",
+        "size": 10,
+        "modified": 1763042460000000000,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "version": [
+          {
+            "actor": "aaaaaaaaaaaaaaaa",
+            "value": 1
+          },
+          {
+            "actor": "bbbbbbbbbbbbbbbb",
+            "value": 1
+          }
+        ],
+        "authorId": "d_beta",
+        "authorName": "box",
+        "executable": true
+      },
+      "expect": {
+        "action": "apply",
+        "conflict": true,
+        "conflictCopy": "run (conflict, Studio, 2025-11-13 14.00.00).sh",
+        "result": {
+          "path": "run.sh",
+          "kind": "file",
+          "size": 10,
+          "modified": 1763042460000000000,
+          "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+          "version": [
+            {
+              "actor": "aaaaaaaaaaaaaaaa",
+              "value": 1
+            },
+            {
+              "actor": "bbbbbbbbbbbbbbbb",
+              "value": 1
+            },
+            {
+              "actor": "cccccccccccccccc",
+              "value": 1
+            }
+          ],
+          "authorId": "d_beta",
+          "authorName": "box",
+          "executable": true
+        }
+      }
+    },
+    {
+      "name": "conflict copy of a file without an extension",
+      "mode": "two-way",
+      "local": {
+        "path": "Makefile",
+        "kind": "file",
+        "size": 10,
+        "modified": 1763042400000000000,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "version": [
+          {
+            "actor": "cccccccccccccccc",
+            "value": 1
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "box"
+      },
+      "remote": {
+        "path": "Makefile",
+        "kind": "file",
+        "size": 10,
+        "modified": 1763042460000000000,
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "version": [
+          {
+            "actor": "bbbbbbbbbbbbbbbb",
+            "value": 1
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "expect": {
+        "action": "apply",
+        "conflict": true,
+        "conflictCopy": "Makefile (conflict, box, 2025-11-13 14.00.00)",
+        "result": {
+          "path": "Makefile",
+          "kind": "file",
+          "size": 10,
+          "modified": 1763042460000000000,
+          "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+          "version": [
+            {
+              "actor": "bbbbbbbbbbbbbbbb",
+              "value": 1
+            },
+            {
+              "actor": "cccccccccccccccc",
+              "value": 1
+            }
+          ],
+          "authorId": "d_alpha",
+          "authorName": "Studio"
+        }
+      }
+    },
+    {
+      "name": "conflict copy of a dotfile",
+      "mode": "two-way",
+      "local": {
+        "path": "cfg/.env",
+        "kind": "file",
+        "size": 10,
+        "modified": 1763042400000000000,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "version": [
+          {
+            "actor": "cccccccccccccccc",
+            "value": 1
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "box"
+      },
+      "remote": {
+        "path": "cfg/.env",
+        "kind": "file",
+        "size": 10,
+        "modified": 1763042460000000000,
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "version": [
+          {
+            "actor": "bbbbbbbbbbbbbbbb",
+            "value": 1
+          }
+        ],
+        "authorId": "d_alpha",
+        "authorName": "Studio"
+      },
+      "expect": {
+        "action": "apply",
+        "conflict": true,
+        "conflictCopy": "cfg/.env (conflict, box, 2025-11-13 14.00.00)",
+        "result": {
+          "path": "cfg/.env",
+          "kind": "file",
+          "size": 10,
+          "modified": 1763042460000000000,
+          "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+          "version": [
+            {
+              "actor": "bbbbbbbbbbbbbbbb",
+              "value": 1
+            },
+            {
+              "actor": "cccccccccccccccc",
+              "value": 1
+            }
+          ],
+          "authorId": "d_alpha",
+          "authorName": "Studio"
+        }
+      }
+    }
+  ],
+  "conflictNames": [
+    {
+      "path": "report.pdf",
+      "author": "Pixel 9",
+      "modified": 1763042400000000000,
+      "expect": "report (conflict, Pixel 9, 2025-11-13 14.00.00).pdf"
+    },
+    {
+      "path": "a/b/archive.tar.gz",
+      "author": "box",
+      "modified": 1763042460000000000,
+      "expect": "a/b/archive.tar (conflict, box, 2025-11-13 14.01.00).gz"
+    },
+    {
+      "path": "notes",
+      "author": "Dennis's/Mac:mini",
+      "modified": 0,
+      "expect": "notes (conflict, Dennis's-Mac-mini, 1970-01-01 00.00.00)"
+    },
+    {
+      "path": "x.y",
+      "author": "",
+      "modified": 1763042400000000000,
+      "expect": "x (conflict, unknown, 2025-11-13 14.00.00).y"
+    },
+    {
+      "path": "file.averyveryverylongextension",
+      "author": "box",
+      "modified": 1763042400000000000,
+      "expect": "file.averyveryverylongextension (conflict, box, 2025-11-13 14.00.00)"
+    },
+    {
+      "path": "d/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.txt",
+      "author": "box",
+      "modified": 1763042400000000000,
+      "expect": "d/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn (conflict, box, 2025-11-13 14.00.00).txt"
+    }
+  ],
+  "validatePath": [
+    {
+      "path": "a/b.txt",
+      "valid": true
+    },
+    {
+      "path": "",
+      "valid": false
+    },
+    {
+      "path": ".",
+      "valid": false
+    },
+    {
+      "path": "/abs",
+      "valid": false
+    },
+    {
+      "path": "a/../b",
+      "valid": false
+    },
+    {
+      "path": "a//b",
+      "valid": false
+    },
+    {
+      "path": "a/./b",
+      "valid": false
+    },
+    {
+      "path": "../x",
+      "valid": false
+    },
+    {
+      "path": "a/",
+      "valid": false
+    },
+    {
+      "path": ".git/config",
+      "valid": false
+    },
+    {
+      "path": "x/.git",
+      "valid": false
+    },
+    {
+      "path": ".gitignore",
+      "valid": true
+    },
+    {
+      "path": ".dieter-transfer-abc",
+      "valid": false
+    },
+    {
+      "path": "é.txt",
+      "valid": false
+    },
+    {
+      "path": "é.txt",
+      "valid": true
+    },
+    {
+      "path": "a\\b",
+      "valid": false
+    },
+    {
+      "path": "tab\there",
+      "valid": false
+    },
+    {
+      "path": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "valid": true
+    },
+    {
+      "path": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "valid": false
+    }
+  ],
+  "rules": [
+    {
+      "rules": ["DEFAULT"],
+      "path": ".DS_Store",
+      "included": false
+    },
+    {
+      "rules": ["DEFAULT"],
+      "path": "a/b/.DS_Store",
+      "included": false
+    },
+    {
+      "rules": ["DEFAULT"],
+      "path": "a/.DS_Storex",
+      "included": true
+    },
+    {
+      "rules": ["DEFAULT"],
+      "path": "notes.tmp",
+      "included": false
+    },
+    {
+      "rules": ["DEFAULT"],
+      "path": "a/b/c.swp",
+      "included": false
+    },
+    {
+      "rules": ["DEFAULT"],
+      "path": "a/._foo",
+      "included": false
+    },
+    {
+      "rules": ["DEFAULT"],
+      "path": "~$doc.docx",
+      "included": false
+    },
+    {
+      "rules": ["DEFAULT"],
+      "path": "report.pdf",
+      "included": true
+    },
+    {
+      "rules": ["DEFAULT"],
+      "path": ".git/config",
+      "included": false
+    },
+    {
+      "rules": ["DEFAULT"],
+      "path": "x/.dieter-transfer-1",
+      "included": false
+    },
+    {
+      "rules": ["-node_modules", "-*/node_modules"],
+      "path": "node_modules/x/y.js",
+      "included": false
+    },
+    {
+      "rules": ["-node_modules", "-*/node_modules"],
+      "path": "src/node_modules/a",
+      "included": false
+    },
+    {
+      "rules": ["-node_modules", "-*/node_modules"],
+      "path": "src/node_modules_x/a",
+      "included": true
+    },
+    {
+      "rules": ["-*", "+*.json"],
+      "path": "a.json",
+      "included": true
+    },
+    {
+      "rules": ["-*", "+*.json"],
+      "path": "b.txt",
+      "included": false
+    },
+    {
+      "rules": ["-*", "+*.json"],
+      "path": "dir/a.json",
+      "included": false
+    },
+    {
+      "rules": ["-build", "+build"],
+      "path": "build/x",
+      "included": true
+    },
+    {
+      "rules": ["-[ab]?.log"],
+      "path": "ax.log",
+      "included": false
+    },
+    {
+      "rules": ["-[ab]?.log"],
+      "path": "cx.log",
+      "included": true
+    }
+  ],
+  "invalidRules": [["node_modules"], ["-"], ["-["], ["*x"]],
+  "guard": [
+    {
+      "policy": "default",
+      "deletions": 9,
+      "total": 10,
+      "trips": false
+    },
+    {
+      "policy": "default",
+      "deletions": 10,
+      "total": 30,
+      "trips": true
+    },
+    {
+      "policy": "default",
+      "deletions": 10,
+      "total": 34,
+      "trips": false
+    },
+    {
+      "policy": "default",
+      "deletions": 101,
+      "total": 100000,
+      "trips": true
+    },
+    {
+      "policy": "default",
+      "deletions": 100,
+      "total": 100000,
+      "trips": false
+    },
+    {
+      "policy": "default",
+      "deletions": 50,
+      "total": 100,
+      "trips": true
+    },
+    {
+      "policy": "strict",
+      "deletions": 2,
+      "total": 2,
+      "trips": false
+    },
+    {
+      "policy": "strict",
+      "deletions": 3,
+      "total": 20,
+      "trips": true
+    },
+    {
+      "policy": "strict",
+      "deletions": 3,
+      "total": 31,
+      "trips": false
+    },
+    {
+      "policy": "strict",
+      "deletions": 11,
+      "total": 10000,
+      "trips": true
+    },
+    {
+      "policy": "off",
+      "deletions": 100000,
+      "total": 100000,
+      "trips": false
+    }
+  ],
+  "portable": [
+    {
+      "path": "a/b.txt",
+      "portable": true
+    },
+    {
+      "path": "a:b",
+      "portable": false
+    },
+    {
+      "path": "x/y?",
+      "portable": false
+    },
+    {
+      "path": "trailing.",
+      "portable": false
+    },
+    {
+      "path": "trailing ",
+      "portable": false
+    },
+    {
+      "path": "normal name/ok",
+      "portable": true
+    }
+  ],
+  "foldKeys": [
+    {
+      "path": "Readme.MD",
+      "expect": "readme.md"
+    },
+    {
+      "path": "É/X",
+      "expect": "é/x"
+    }
+  ],
+  "ordered": {
+    "entries": [
+      {
+        "path": "a/b/c",
+        "kind": "deleted"
+      },
+      {
+        "path": "a",
+        "kind": "deleted"
+      },
+      {
+        "path": "x",
+        "kind": "file",
+        "size": 10
+      },
+      {
+        "path": "y",
+        "kind": "file",
+        "size": 5
+      },
+      {
+        "path": "d/e",
+        "kind": "directory"
+      },
+      {
+        "path": "d",
+        "kind": "directory"
+      },
+      {
+        "path": "a/b",
+        "kind": "deleted"
+      },
+      {
+        "path": "w",
+        "kind": "file",
+        "size": 5
+      }
+    ],
+    "expect": ["d", "d/e", "a/b/c", "a/b", "a", "w", "y", "x"]
+  }
+}

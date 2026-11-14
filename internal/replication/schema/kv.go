@@ -55,6 +55,12 @@ func ValidateKV(r crdt.Record) error {
 		if len(v.Value) > crdt.MaxValueBytes || !json.Valid(v.Value) {
 			return fault.New(fault.Invalid, "invalid KV JSON value")
 		}
+		if ns == FolderMemberNamespace {
+			if _, err := DecodeFolderMember(r.ID, v.Value); err != nil {
+				return err
+			}
+			continue
+		}
 		if ChannelNamespaceKind(ns) {
 			if err := validateChannel(ns, r.ID, v.Value); err != nil {
 				return err

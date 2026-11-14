@@ -49,7 +49,8 @@ class MobileStore(
     val conversation: ConversationModel = ConversationModel(context, workspace.outbox)
     val creation: CreationModel =
         CreationModel(context, workspace.slice, boards, ::rebindProjectTool)
-    val sharing: SharingModel = SharingModel(context, workspace.slice, creation, navigator)
+    val folders: FoldersModel = FoldersModel(context)
+    val sharing: SharingModel = SharingModel(context, workspace.slice, creation, navigator, folders)
     val files: FilesModel = FilesModel(context, workspace.slice, creation.defaults, ::available)
     val schedules: SchedulesModel = SchedulesModel(context)
     val review: ReviewModel = ReviewModel(context, workspace.slice, creation.defaults, ::available)
@@ -350,6 +351,7 @@ class MobileStore(
         context.closed = true
         conversation.release()
         devices.release()
+        folders.release()
         context.release()
     }
 
@@ -391,6 +393,14 @@ class MobileStore(
                 ?.let { MailMessageRef(daemon_id = it.daemonId, id = it.id) }
         )
         mail.setActive(state.tab == MobileTab.MAIL)
+        // Folder routes observe the list and this device's settings, and the folder they show.
+        val visible = stack + listOfNotNull(state.modal)
+        folders.showList(visible.any { it.isFolderRoute })
+        when (val shown = visible.lastOrNull { it.folderScope != null }) {
+            is MobileRoute.Folder -> folders.show(shown.folderId, "")
+            is MobileRoute.FolderFiles -> folders.show(shown.folderId, shown.path)
+            else -> folders.show(shown?.folderScope)
+        }
         val top = state.modal ?: state.top
         if (top.key == activeTop) return
         activeTop = top.key
@@ -414,7 +424,8 @@ class MobileStore(
                 if (top.pane == CardPane.FILES && files.slice.value.directory.isNotEmpty())
                     files.command(FilesCommand(navigate = FilesPath("")))
             is MobileRoute.FilePath -> {
-                if (top.checkoutId.isNotEmpty())
+                if (top.folderId.isNotEmpty()) files.bindFolder(top.daemonId, top.folderId)
+                else if (top.checkoutId.isNotEmpty())
                     files.bindCheckout(top.daemonId, top.projectId, top.checkoutId)
                 files.command(
                     if (top.file) FilesCommand(open_ = FilesPath(top.path))
@@ -488,5 +499,25 @@ class MobileStore(
         const val SCREEN_SCOPE = "mobile-screen"
         const val CHANNELS_SCOPE = "mobile-channels"
         const val MAIL_SCOPE = "mobile-mail"
+        const val FOLDERS_SCOPE = "mobile-folders"
     }
 }
+
+/** Routes that show synced folders: they keep the folder list and settings observed. */
+internal val MobileRoute.isFolderRoute: Boolean
+    get() =
+        (this is MobileRoute.Tool && page == ToolPage.FOLDERS) ||
+            folderScope != null ||
+            this is MobileRoute.FolderSync ||
+            this is MobileRoute.AddFolder ||
+            this is MobileRoute.SaveToFolder
+
+/** The folder a route shows; null for others. */
+internal val MobileRoute.folderScope: String?
+    get() =
+        when (this) {
+            is MobileRoute.Folder -> folderId
+            is MobileRoute.FolderFiles -> folderId
+            is MobileRoute.FolderPage -> folderId
+            else -> null
+        }

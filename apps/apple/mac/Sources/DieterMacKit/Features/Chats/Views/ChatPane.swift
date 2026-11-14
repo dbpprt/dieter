@@ -52,6 +52,8 @@ enum ChatPaneLayout {
     case channels
     /// Agent mail: the message list beside the reading pane.
     case mail
+    /// Synced folders: the folder list beside the selected folder.
+    case folders
 
     var identifier: String {
         switch self {
@@ -59,6 +61,7 @@ enum ChatPaneLayout {
         case .inbox: "inbox"
         case .channels: "channels"
         case .mail: "mail"
+        case .folders: "folders"
         }
     }
     var preference: String {
@@ -67,6 +70,7 @@ enum ChatPaneLayout {
         case .inbox: "dieter.inboxPaneWidth"
         case .channels: "dieter.channelsPaneWidth"
         case .mail: "dieter.mailPaneWidth"
+        case .folders: "dieter.foldersPaneWidth"
         }
     }
     var defaultWidth: CGFloat {
@@ -75,6 +79,7 @@ enum ChatPaneLayout {
         case .inbox: 340
         case .channels: 260
         case .mail: 360
+        case .folders: 280
         }
     }
     var minimumWidth: CGFloat {
@@ -83,6 +88,7 @@ enum ChatPaneLayout {
         case .inbox: 300
         case .channels: 220
         case .mail: 320
+        case .folders: 230
         }
     }
     var maximumWidth: CGFloat {
@@ -91,6 +97,7 @@ enum ChatPaneLayout {
         case .inbox: 420
         case .channels: 360
         case .mail: 460
+        case .folders: 380
         }
     }
     var resizeLabel: String {
@@ -99,6 +106,7 @@ enum ChatPaneLayout {
         case .inbox: "Resize inbox"
         case .channels: "Resize channel list"
         case .mail: "Resize message list"
+        case .folders: "Resize folder list"
         }
     }
 

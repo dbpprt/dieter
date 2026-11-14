@@ -11,6 +11,16 @@ extension DieterStore {
     /// workspace, on the machine that holds it. Without a chosen checkout,
     /// the project's machine shows its own checkout.
     func resetFileSurface() {
+        if let folder = fileScopeFolder {
+            // A synced folder's copy: its member daemon serves the directory as the root.
+            filesModel.bind(
+                target: WorkspaceTarget(endpointID: folder.endpointID, projectID: "", folderID: folder.folderID),
+                core: core)
+            filesModel.projectName = folder.folderName
+            filesModel.projectPath = folder.path
+            filesModel.isLive = filesAreLive
+            return
+        }
         let checkout = fileScopeCardID == nil ? checkout(forProjectID: selectedProjectID) : nil
         let machine: String
         if let checkout {

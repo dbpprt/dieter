@@ -52,6 +52,7 @@ Commands:
   kv           Shared portable JSON, ordering, and live account subscriptions
   channel      Agent channels: messages, claims and decisions between agents
   mail         Send Markdown reports to Dieter Mail; read, flag, file and delete them
+  folder       Synced folders between your machines and phones: members, status, trash
   vault        End-to-end encrypted passwords and TOTP shared by your machines
   device       Pair, approve, revoke, and inspect the account's trusted devices
   peer         Inspect and edit account peer settings (leaderless sync)
@@ -1228,8 +1229,9 @@ Usage: dieter workspace cancel OPERATION
 ```text
 Usage: dieter file <action>
 
-Every action accepts either --project PROJECT or --card CARD. A card scope uses
-that conversation's selected project directory or isolated worktree.
+Every action accepts --project PROJECT, --card CARD or --folder FOLDER. A card
+scope uses that conversation's selected project directory or isolated worktree;
+a folder scope uses the selected machine's copy of a synced folder.
 
 Actions:
   cp SOURCE DESTINATION       Copy binary files; remote: selects the daemon scope
@@ -1248,46 +1250,47 @@ Actions:
 ### dieter file list
 
 ```text
-Usage: dieter file list (--project PROJECT|--card CARD) [--checkout ID] [--hidden] [--format table|json|jsonl] [PATH]
+Usage: dieter file list (--project PROJECT|--card CARD|--folder FOLDER) [--checkout ID] [--hidden] [--format table|json|jsonl] [PATH]
 ```
 
 ### dieter file read
 
 ```text
-Usage: dieter file read (--project PROJECT|--card CARD) [--checkout ID] [--output FILE|-] [--format content|json] PATH
+Usage: dieter file read (--project PROJECT|--card CARD|--folder FOLDER) [--checkout ID] [--output FILE|-] [--format content|json] PATH
 ```
 
 ### dieter file save
 
 ```text
-Usage: dieter file save (--project PROJECT|--card CARD) [--checkout ID] (--content TEXT|--file FILE|--file -) [--revision REVISION|--revision auto] PATH
+Usage: dieter file save (--project PROJECT|--card CARD|--folder FOLDER) [--checkout ID] (--content TEXT|--file FILE|--file -) [--revision REVISION|--revision auto] PATH
 ```
 
 ### dieter file create
 
 ```text
-Usage: dieter file create (--project PROJECT|--card CARD) [--checkout ID] [--kind file|directory] [--content TEXT|--file FILE] PATH
+Usage: dieter file create (--project PROJECT|--card CARD|--folder FOLDER) [--checkout ID] [--kind file|directory] [--content TEXT|--file FILE] PATH
 ```
 
 ### dieter file move
 
 ```text
-Usage: dieter file move (--project PROJECT|--card CARD) [--checkout ID] SOURCE DESTINATION
+Usage: dieter file move (--project PROJECT|--card CARD|--folder FOLDER) [--checkout ID] SOURCE DESTINATION
 ```
 
 ### dieter file delete
 
 ```text
-Usage: dieter file delete (--project PROJECT|--card CARD) [--checkout ID] [--recursive] PATH
+Usage: dieter file delete (--project PROJECT|--card CARD|--folder FOLDER) [--checkout ID] [--recursive] PATH
 ```
 
 ### dieter file cp
 
 ```text
-Usage: dieter file cp (--project PROJECT|--card CARD) [--checkout ID] [OPTIONS] SOURCE DESTINATION
+Usage: dieter file cp (--project PROJECT|--card CARD|--folder FOLDER) [--checkout ID] [OPTIONS] SOURCE DESTINATION
 
 Exactly one endpoint must start with remote:; other paths are on this CLI machine.
-Remote paths are relative to the selected workspace. Directories copy their contents.
+Remote paths are relative to the selected workspace, or with --folder to the
+selected machine's copy of a synced folder (which then syncs the change). Directories copy their contents.
 Options: --recursive (cp), --dryrun, --delete (sync only), --checksum, --size-only,
   --no-clobber, ordered --exclude GLOB / --include GLOB, --concurrency N (1..8),
   --bandwidth-limit BYTES_PER_SECOND, --no-progress, --format text|jsonl.
@@ -1301,10 +1304,11 @@ Rerun an interrupted command to resume. Uploads expire after 24 hours.
 ### dieter file sync
 
 ```text
-Usage: dieter file sync (--project PROJECT|--card CARD) [--checkout ID] [OPTIONS] SOURCE DESTINATION
+Usage: dieter file sync (--project PROJECT|--card CARD|--folder FOLDER) [--checkout ID] [OPTIONS] SOURCE DESTINATION
 
 Exactly one endpoint must start with remote:; other paths are on this CLI machine.
-Remote paths are relative to the selected workspace. Directories copy their contents.
+Remote paths are relative to the selected workspace, or with --folder to the
+selected machine's copy of a synced folder (which then syncs the change). Directories copy their contents.
 Options: --recursive (cp), --dryrun, --delete (sync only), --checksum, --size-only,
   --no-clobber, ordered --exclude GLOB / --include GLOB, --concurrency N (1..8),
   --bandwidth-limit BYTES_PER_SECOND, --no-progress, --format text|jsonl.
@@ -1318,17 +1322,22 @@ Rerun an interrupted command to resume. Uploads expire after 24 hours.
 ### dieter file stat
 
 ```text
-Usage: dieter file stat (--project PROJECT|--card CARD) [--checkout ID] [--checksum] PATH
-       dieter file scan (--project PROJECT|--card CARD) [--checkout ID] [--after NAME] [--revision REV] [--page-size N] PATH
+Usage: dieter file stat (--project PROJECT|--card CARD|--folder FOLDER) [--checkout ID] [--checksum] PATH
+       dieter file scan (--project PROJECT|--card CARD|--folder FOLDER) [--checkout ID] [--after NAME] [--revision REV] [--page-size N] PATH
        dieter file upload <begin|chunk|show|commit|abort> [OPTIONS]
 
 stat and scan emit protobuf JSON. scan returns a bounded directory page; carry
 its revision and next name into the following request. Restart on conflict.
 
 Upload protocol commands (JSON output):
-  begin (--project PROJECT|--card CARD) [--checkout ID] --operation ID
-        --revision REV|missing --size BYTES --sha256 HASH --modified-nanos NS
-        [--mode 420] PATH
+  begin (--project PROJECT|--card CARD|--folder FOLDER) [--checkout ID]
+        --operation ID --revision REV|missing --size BYTES --sha256 HASH
+        --modified-nanos NS [--mode 420] [--folder-entry JSON] PATH
+
+A --folder upload with --folder-entry (a FolderEntry JSON with the new version
+and author, as phones send) commits only if that version dominates the
+machine's entry; the machine derives the revision itself. Without it the file
+lands in the machine's copy as a local change.
   chunk --offset BYTES --file FILE UPLOAD_ID
   show UPLOAD_ID
   commit UPLOAD_ID
@@ -1344,17 +1353,22 @@ chunking, pipelining, checksums and resume.
 ### dieter file scan
 
 ```text
-Usage: dieter file stat (--project PROJECT|--card CARD) [--checkout ID] [--checksum] PATH
-       dieter file scan (--project PROJECT|--card CARD) [--checkout ID] [--after NAME] [--revision REV] [--page-size N] PATH
+Usage: dieter file stat (--project PROJECT|--card CARD|--folder FOLDER) [--checkout ID] [--checksum] PATH
+       dieter file scan (--project PROJECT|--card CARD|--folder FOLDER) [--checkout ID] [--after NAME] [--revision REV] [--page-size N] PATH
        dieter file upload <begin|chunk|show|commit|abort> [OPTIONS]
 
 stat and scan emit protobuf JSON. scan returns a bounded directory page; carry
 its revision and next name into the following request. Restart on conflict.
 
 Upload protocol commands (JSON output):
-  begin (--project PROJECT|--card CARD) [--checkout ID] --operation ID
-        --revision REV|missing --size BYTES --sha256 HASH --modified-nanos NS
-        [--mode 420] PATH
+  begin (--project PROJECT|--card CARD|--folder FOLDER) [--checkout ID]
+        --operation ID --revision REV|missing --size BYTES --sha256 HASH
+        --modified-nanos NS [--mode 420] [--folder-entry JSON] PATH
+
+A --folder upload with --folder-entry (a FolderEntry JSON with the new version
+and author, as phones send) commits only if that version dominates the
+machine's entry; the machine derives the revision itself. Without it the file
+lands in the machine's copy as a local change.
   chunk --offset BYTES --file FILE UPLOAD_ID
   show UPLOAD_ID
   commit UPLOAD_ID
@@ -1370,17 +1384,22 @@ chunking, pipelining, checksums and resume.
 ### dieter file upload
 
 ```text
-Usage: dieter file stat (--project PROJECT|--card CARD) [--checkout ID] [--checksum] PATH
-       dieter file scan (--project PROJECT|--card CARD) [--checkout ID] [--after NAME] [--revision REV] [--page-size N] PATH
+Usage: dieter file stat (--project PROJECT|--card CARD|--folder FOLDER) [--checkout ID] [--checksum] PATH
+       dieter file scan (--project PROJECT|--card CARD|--folder FOLDER) [--checkout ID] [--after NAME] [--revision REV] [--page-size N] PATH
        dieter file upload <begin|chunk|show|commit|abort> [OPTIONS]
 
 stat and scan emit protobuf JSON. scan returns a bounded directory page; carry
 its revision and next name into the following request. Restart on conflict.
 
 Upload protocol commands (JSON output):
-  begin (--project PROJECT|--card CARD) [--checkout ID] --operation ID
-        --revision REV|missing --size BYTES --sha256 HASH --modified-nanos NS
-        [--mode 420] PATH
+  begin (--project PROJECT|--card CARD|--folder FOLDER) [--checkout ID]
+        --operation ID --revision REV|missing --size BYTES --sha256 HASH
+        --modified-nanos NS [--mode 420] [--folder-entry JSON] PATH
+
+A --folder upload with --folder-entry (a FolderEntry JSON with the new version
+and author, as phones send) commits only if that version dominates the
+machine's entry; the machine derives the revision itself. Without it the file
+lands in the machine's copy as a local change.
   chunk --offset BYTES --file FILE UPLOAD_ID
   show UPLOAD_ID
   commit UPLOAD_ID
@@ -2426,6 +2445,302 @@ Usage: dieter mail delete (ID... | --empty-trash) [--format text|json]
 Delete up to 500 messages for good, or every message in the Trash. To keep a
 way back, move messages to the Trash instead: dieter mail mark ID --folder
 trash. The Trash empties itself after 30 days.
+```
+
+## dieter folder (alias: folders)
+
+```text
+Usage: dieter folder <action> [options]
+
+Synced folders: named directories that Dieter keeps the same on several of
+your machines and phones. A folder's definition (name, rules, trash, deletion
+guard, linked project) is shared by the account; each machine that keeps a
+copy is a member with a directory of its own. Daemons sync with each other;
+phones sync with one daemon. Use --machine to act on another machine's
+membership.
+
+  list       List the account's folders and their members
+  show       Show one folder with its members
+  create     Create a folder (it has no members yet)
+  update     Change a folder's name, rules, trash, deletion guard or project
+  archive    Stop syncing a folder everywhere; files stay
+  attach     Keep a copy of a folder in a directory of the target machine
+  member     Change the target machine's mode, limits and watching
+  pause      Pause syncing on the target machine
+  resume     Resume syncing on the target machine
+  detach     Stop syncing on the target machine; files stay
+  status     Show the target machine's progress, conflicts and problems
+  rescan     Scan the target machine's copy now
+  deletions  Apply or undo deletions the deletion guard holds
+  trash      List, restore or purge old versions the target machine kept
+  index      Print a page of the target machine's index (protocol)
+  blocks     Print the block hashes of a large file (protocol)
+  apply      Create a directory or record a deletion (protocol)
+  client     Register or unregister a phone member (protocol)
+
+Agent turns can read status, rescan, restore from the trash and transfer
+files, but cannot create, attach, change or detach folders, register
+members, confirm deletions or purge the trash.
+```
+
+### dieter folder list
+
+```text
+Usage: dieter folder list [--archived] [--format text|json]
+
+List the account's synced folders with their members. Daemon members show
+their state; phones show when they last synced.
+```
+
+### dieter folder show
+
+```text
+Usage: dieter folder show FOLDER [--format text|json]
+
+Show a folder's definition and members. FOLDER is an ID or a unique name.
+Only the target machine reports its own directory.
+```
+
+### dieter folder create
+
+```text
+Usage: dieter folder create NAME [options]
+
+Create a synced folder. It has no members until a machine attaches it.
+
+Options:
+  --rule RULE             Add a rule: -PATTERN excludes, +PATTERN includes;
+                          repeatable, the last match wins. '*' also matches '/'.
+                          An excluded directory excludes everything inside it.
+  --no-default-rules      Start without the default rules (.DS_Store,
+                          Thumbs.db, editor swap and temporary files)
+  --project PROJECT_ID    Link a project: its agents learn the folder's path
+  --trash-days 7|30|90|off  How long members keep old versions (default 30)
+  --delete-guard default|strict|off
+                          Hold mass deletions for confirmation (default:
+                          more than 100 files or 30% of the folder)
+  --format text|json|id   Output format (default text)
+```
+
+### dieter folder update
+
+```text
+Usage: dieter folder update FOLDER [options]
+
+Change a folder's shared definition. Every member applies it.
+
+Options:
+  --name NAME             Rename the folder
+  --rule RULE             Replace the rules with these (repeatable); see create
+  --clear-rules           Remove every rule
+  --project PROJECT_ID    Link a project
+  --unlink-project        Remove the project link
+  --trash-days 7|30|90|off
+  --delete-guard default|strict|off
+  --format text|json      Output format (default text)
+```
+
+### dieter folder archive
+
+```text
+Usage: dieter folder archive FOLDER
+
+Stop syncing a folder on every member. Files stay where they are.
+```
+
+### dieter folder attach
+
+```text
+Usage: dieter folder attach FOLDER PATH [options]
+
+Keep a copy of FOLDER in PATH, an absolute directory on the target machine
+(created when missing). Dieter refuses system directories, your home
+directory itself, Dieter's own storage, registered checkouts and the
+directories of other synced folders.
+
+Options:
+  --mode two-way|send-only|receive-only   Direction (default two-way)
+  --join merge|adopt      When PATH already has files that differ from the
+                          folder: merge keeps both versions (conflict copies),
+                          adopt moves the local versions to the trash first
+                          (default merge)
+  --dryrun                Print the join plan without changing anything
+  --format text|json      Output format (default text)
+```
+
+### dieter folder member
+
+```text
+Usage: dieter folder member FOLDER [options]
+
+Show or change the target machine's membership of FOLDER.
+
+Options:
+  --mode two-way|send-only|receive-only
+  --rescan SECONDS        Full walk interval while watching (60..604800)
+  --bandwidth-limit BYTES_PER_SECOND   0 is unlimited
+  --concurrency N         Files transferred at a time (1..8)
+  --quarantine true|false Mark received files as downloaded (macOS)
+  --watch true|false      Watch the directory for changes
+  --format text|json      Output format (default text)
+```
+
+### dieter folder pause
+
+```text
+Usage: dieter folder pause FOLDER
+
+Paused syncing FOLDER on the target machine.
+```
+
+### dieter folder resume
+
+```text
+Usage: dieter folder resume FOLDER
+
+Resumed syncing FOLDER on the target machine.
+```
+
+### dieter folder detach
+
+```text
+Usage: dieter folder detach FOLDER
+
+Stop syncing FOLDER on the target machine. Its files stay on disk; the
+machine's index and trash of the folder are removed.
+```
+
+### dieter folder status
+
+```text
+Usage: dieter folder status FOLDER [--format text|json]
+
+Show the target machine's copy of FOLDER: state, contents, peers, held
+deletions, conflict copies, paths it can't sync and recent errors.
+```
+
+### dieter folder rescan
+
+```text
+Usage: dieter folder rescan FOLDER [--format text|json]
+
+Scan the target machine's copy now and exchange with its peers; waits up to
+a minute for the round, then prints the status.
+```
+
+### dieter folder deletions
+
+```text
+Usage: dieter folder deletions FOLDER (--apply | --restore)
+
+The deletion guard holds batches that would delete many files. --apply
+deletes them; --restore brings the files back (local deletions are
+downloaded again, remote ones are revived on every member).
+```
+
+### dieter folder trash
+
+```text
+Usage: dieter folder trash <list|restore|purge> FOLDER [options]
+
+Old versions the target machine kept: files deleted or replaced by a change
+from another member, for the folder's trash days.
+
+  list FOLDER [--after ID] [--limit N] [--format text|json]
+  restore FOLDER ITEM_ID     Put a version back at its path as a new change
+  purge FOLDER [ITEM_ID...]  Forget versions for good; without IDs, all
+```
+
+### dieter folder trash list
+
+```text
+Usage: dieter folder trash list FOLDER [--after ID] [--limit N] [--format text|json]
+
+List old versions the target machine kept, newest first.
+```
+
+### dieter folder trash restore
+
+```text
+Usage: dieter folder trash restore FOLDER ITEM_ID
+
+Put an old version back at its path. It syncs to every member as a new change.
+```
+
+### dieter folder trash purge
+
+```text
+Usage: dieter folder trash purge FOLDER [ITEM_ID...]
+
+Forget old versions for good. Without IDs the whole trash is emptied.
+```
+
+### dieter folder index
+
+```text
+Usage: dieter folder index FOLDER [--index-id ID] [--after SEQUENCE] [--limit N] [--member ID]
+
+Print one page of the target machine's index of FOLDER as JSON: entries with
+version vectors, the index ID, the last sequence and whether more follow.
+Pass the page's index ID and sequence with --index-id and --after for the
+next page. A different index ID restarts from the beginning (reset).
+--member records how far that member got (peers and phones pass their ID).
+```
+
+### dieter folder blocks
+
+```text
+Usage: dieter folder blocks FOLDER PATH --sha256 SHA256 [--after N] [--limit N]
+
+Print the 1 MiB block hashes of PATH at content SHA256 on the target machine
+as JSON. Members use them to download only the changed blocks of large files.
+```
+
+### dieter folder apply
+
+```text
+Usage: dieter folder apply FOLDER --entry JSON
+
+Create a directory or record a deletion on the target machine, as phones and
+peers do. JSON is a FolderEntry (path, kind FOLDER_ENTRY_KIND_DIRECTORY or
+FOLDER_ENTRY_KIND_DELETED, version, authorId, authorName) whose version must
+dominate the machine's entry; files are uploaded with `dieter file upload` instead.
+```
+
+### dieter folder client
+
+```text
+Usage: dieter folder client <register|unregister> FOLDER --device ID [options]
+
+Make the target machine the home daemon of a phone member, or forget it.
+Phones register themselves; this is for tests and tooling.
+
+  register FOLDER --device ID [--name NAME] [--mode two-way|send-only|receive-only]
+  unregister FOLDER --device ID
+```
+
+### dieter folder client register
+
+```text
+Usage: dieter folder client <register|unregister> FOLDER --device ID [options]
+
+Make the target machine the home daemon of a phone member, or forget it.
+Phones register themselves; this is for tests and tooling.
+
+  register FOLDER --device ID [--name NAME] [--mode two-way|send-only|receive-only]
+  unregister FOLDER --device ID
+```
+
+### dieter folder client unregister
+
+```text
+Usage: dieter folder client <register|unregister> FOLDER --device ID [options]
+
+Make the target machine the home daemon of a phone member, or forget it.
+Phones register themselves; this is for tests and tooling.
+
+  register FOLDER --device ID [--name NAME] [--mode two-way|send-only|receive-only]
+  unregister FOLDER --device ID
 ```
 
 ## dieter vault

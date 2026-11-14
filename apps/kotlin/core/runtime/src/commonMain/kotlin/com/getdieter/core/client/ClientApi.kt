@@ -492,6 +492,9 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
         command.notification_response?.let {
             return runtime.respond(it, surfaces.mail)
         }
+        command.folders?.let {
+            return runtime.executeFolders(it, surfaces.folders)
+        }
         command.devices?.let { devices ->
             devices.refresh?.let { runtime.refreshDevices() }
             devices.approve?.let { approval ->
@@ -830,6 +833,16 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
                 Slice.SLICE_MAIL ->
                     observeSurface(surfaces.mail, scope, ::emit) { surface ->
                         runtime.mailSlices(surface).map { Update(mail = it) }
+                    }
+                Slice.SLICE_FOLDERS ->
+                    collect(runtime.foldersSlices()) { emit(Update(folders = it)) }
+                Slice.SLICE_FOLDER ->
+                    observeSurface(surfaces.folders, scope, ::emit) { surface ->
+                        runtime.folderSlices(surface).map { Update(folder = it) }
+                    }
+                Slice.SLICE_FOLDER_SYNC_SETTINGS ->
+                    collect(runtime.folderSyncSettingsSlices()) {
+                        emit(Update(folder_sync_settings = it))
                     }
                 Slice.SLICE_UNSPECIFIED -> invalid("Choose a slice to observe.")
             }

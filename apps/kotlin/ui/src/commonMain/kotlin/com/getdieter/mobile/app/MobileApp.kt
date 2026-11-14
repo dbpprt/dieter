@@ -347,6 +347,15 @@ internal fun RouteContent(store: MobileStore, route: MobileRoute, openUrl: (Stri
         is MobileRoute.MailMessage -> MailMessageScreen(store, route, openUrl)
         is MobileRoute.Pane -> CardPaneScreen(store, card(route.cardId), route.pane, openUrl)
         is MobileRoute.Tool -> ToolScreen(store, route)
+        is MobileRoute.Folder -> com.getdieter.mobile.folders.FolderScreen(store, route.folderId)
+        is MobileRoute.FolderFiles ->
+            com.getdieter.mobile.folders.FolderFilesScreen(store, route.folderId, route.path)
+        is MobileRoute.FolderPage ->
+            com.getdieter.mobile.folders.FolderPageScreen(store, route.folderId, route.page)
+        is MobileRoute.FolderSync -> com.getdieter.mobile.folders.FolderSyncScreen(store)
+        is MobileRoute.AddFolder ->
+            com.getdieter.mobile.folders.AddFolderScreen(store, route.folderId)
+        is MobileRoute.SaveToFolder -> com.getdieter.mobile.share.SaveToFolderScreen(store)
         is MobileRoute.NewTask -> CreationScreen(store, route.chat)
         is MobileRoute.ShareTarget -> ShareTargetScreen(store, route.chat)
         is MobileRoute.FilePath ->

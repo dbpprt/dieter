@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/platform/fault"
 	"github.com/dbpprt/dieter/internal/store/kanban"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -21,7 +22,7 @@ func (api *filesAPI) ListFiles(ctx context.Context, request *dieterv1.ListFilesR
 	ctx = kanban.WithCheckout(ctx, request.GetCheckoutId())
 	api.server.filesMu.RLock()
 	defer api.server.filesMu.RUnlock()
-	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())
+	project, err := api.fileScope(ctx, request.GetProjectId(), request.GetCardId(), request.GetFolderId())
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +77,7 @@ func (api *filesAPI) ReadFile(ctx context.Context, request *dieterv1.ReadFileReq
 	ctx = kanban.WithCheckout(ctx, request.GetCheckoutId())
 	api.server.filesMu.RLock()
 	defer api.server.filesMu.RUnlock()
-	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())
+	project, err := api.fileScope(ctx, request.GetProjectId(), request.GetCardId(), request.GetFolderId())
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +118,7 @@ func (api *filesAPI) SaveFile(ctx context.Context, request *dieterv1.SaveFileReq
 	ctx = kanban.WithCheckout(ctx, request.GetCheckoutId())
 	api.server.filesMu.Lock()
 	defer api.server.filesMu.Unlock()
-	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())
+	project, err := api.fileScope(ctx, request.GetProjectId(), request.GetCardId(), request.GetFolderId())
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +166,7 @@ func (api *filesAPI) CreateFile(ctx context.Context, request *dieterv1.CreateFil
 	ctx = kanban.WithCheckout(ctx, request.GetCheckoutId())
 	api.server.filesMu.Lock()
 	defer api.server.filesMu.Unlock()
-	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())
+	project, err := api.fileScope(ctx, request.GetProjectId(), request.GetCardId(), request.GetFolderId())
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +202,7 @@ func (api *filesAPI) MoveFile(ctx context.Context, request *dieterv1.MoveFileReq
 	ctx = kanban.WithCheckout(ctx, request.GetCheckoutId())
 	api.server.filesMu.Lock()
 	defer api.server.filesMu.Unlock()
-	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())
+	project, err := api.fileScope(ctx, request.GetProjectId(), request.GetCardId(), request.GetFolderId())
 	if err != nil {
 		return nil, err
 	}
@@ -239,7 +240,7 @@ func (api *filesAPI) DeleteFile(ctx context.Context, request *dieterv1.DeleteFil
 	ctx = kanban.WithCheckout(ctx, request.GetCheckoutId())
 	api.server.filesMu.Lock()
 	defer api.server.filesMu.Unlock()
-	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())
+	project, err := api.fileScope(ctx, request.GetProjectId(), request.GetCardId(), request.GetFolderId())
 	if err != nil {
 		return nil, err
 	}
@@ -268,4 +269,24 @@ func (api *filesAPI) DeleteFile(ctx context.Context, request *dieterv1.DeleteFil
 	}
 	api.server.changesets.InvalidatePath(project.Path)
 	return &emptypb.Empty{}, nil
+}
+
+// fileScope is the project or card a file request names, or a synced folder
+// member on this machine presented as a project rooted at its directory.
+func (api *filesAPI) fileScope(ctx context.Context, projectID, cardID, folderID string) (model.Project, error) {
+	if folderID == "" {
+		return api.server.scopedProject(ctx, projectID, cardID)
+	}
+	if projectID != "" || cardID != "" {
+		return model.Project{}, fault.Invalidf("a folder replaces the project and card")
+	}
+	definition, err := api.server.folders.Resolve(folderID)
+	if err != nil {
+		return model.Project{}, err
+	}
+	root, err := api.server.folders.Root(definition.ID)
+	if err != nil {
+		return model.Project{}, err
+	}
+	return model.Project{ID: definition.ID, Name: definition.Name, Path: root}, nil
 }

@@ -37,6 +37,25 @@ package struct ProjectFileNavigation: Equatable, Sendable {
     }
 }
 
+/// A synced folder's copy on one machine, browsed in Files: the member daemon
+/// serves its directory as the root.
+package struct FolderFilesScope: Equatable, Sendable {
+    package let folderID: String
+    package let folderName: String
+    package let endpointID: String
+    package let machineName: String
+    /// The directory on that machine, when its daemon reported it.
+    package let path: String
+
+    package init(folderID: String, folderName: String, endpointID: String, machineName: String, path: String) {
+        self.folderID = folderID
+        self.folderName = folderName
+        self.endpointID = endpointID
+        self.machineName = machineName
+        self.path = path
+    }
+}
+
 /// One file surface: a folder and the open document of a project checkout or
 /// a conversation's workspace. The shared core lists, reads, and saves on the
 /// machine that holds the files; the editor buffer stays native.
@@ -49,6 +68,8 @@ package final class FilesSurfaceModel<Editor: FileEditorBuffer> {
     /// still shows what it read.
     package var isLive = false
     package var fileScopeCardID: String?
+    /// A synced folder member's directory shown instead of the project.
+    package var fileScopeFolder: FolderFilesScope?
     package var fileEditorSession = Editor()
     package var files: [Dieter_V1_FileEntry] = []
     package var fileDocument: Dieter_V1_FileDocument?
@@ -117,6 +138,7 @@ package final class FilesSurfaceModel<Editor: FileEditorBuffer> {
             $0.projectID = target.projectID
             $0.checkoutID = target.checkoutID
             $0.cardID = target.conversationID
+            $0.folderID = target.folderID
         }
         let bind = bound
         send { $0.bind = bind }
@@ -220,6 +242,7 @@ package final class FilesSurfaceModel<Editor: FileEditorBuffer> {
 
     package func returnToProjectRoot() async {
         fileScopeCardID = nil
+        fileScopeFolder = nil
         var root = target
         root.conversationID = ""
         bind(target: root, core: core)
@@ -228,7 +251,8 @@ package final class FilesSurfaceModel<Editor: FileEditorBuffer> {
 
     @discardableResult
     package func loadFiles(path: String? = nil) async -> Bool {
-        guard !target.projectID.isEmpty else { return false }
+        // A project checkout or conversation, or a synced folder's copy.
+        guard !target.projectID.isEmpty || !target.folderID.isEmpty else { return false }
         guard await run({ command in command.load = .with { $0.path = path ?? "" } }) != nil else { return false }
         return filesError == nil
     }

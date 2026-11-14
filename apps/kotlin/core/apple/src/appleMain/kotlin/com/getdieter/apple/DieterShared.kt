@@ -25,6 +25,7 @@ import com.getdieter.core.client.ClientSubscription
 import com.getdieter.core.client.ScreenHost
 import com.getdieter.core.conversation.ConversationConfig
 import com.getdieter.core.conversation.TranscriptRetention
+import com.getdieter.core.folders.FolderTrigger
 import com.getdieter.core.notifications.AttentionNotificationSink
 import com.getdieter.core.notifications.NotificationContent
 import com.getdieter.core.notifications.NotificationSink
@@ -62,6 +63,7 @@ import com.squareup.wire.GrpcStatus
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okio.ByteString.Companion.toByteString
@@ -424,6 +426,8 @@ class SharedExtensions(
     val clipboard: NativeClipboard? = null,
     /** Test-only; see [NativeScreenFixture]. */
     val screenFixture: NativeScreenFixture? = null,
+    /** Absent: this device keeps no synced folders (the Mac syncs through its daemon). */
+    val folders: NativeFolders? = null,
 )
 
 /**
@@ -523,6 +527,7 @@ class DieterShared(configuration: SharedConfiguration, extensions: SharedExtensi
                                 )
                         }
                     } ?: SilentLogger,
+                folders = extensions.folders?.platform(),
             ),
             RuntimeConfig(
                 clientVersion = configuration.clientVersion,
@@ -617,6 +622,22 @@ class DieterShared(configuration: SharedConfiguration, extensions: SharedExtensi
             }
         return SharedSubscription(subscription)
     }
+
+    /**
+     * One synced-folder window of at most [seconds], for a BGTaskScheduler task or Sync now that
+     * continues in the background. [folderId] empty syncs every folder on this device; [trigger] is
+     * a `FolderTrigger` ordinal (0 background, 1 opened, 2 local change, 3 live, 4 manual). Returns
+     * whether work remains, after the scheduler was asked for a longer run.
+     */
+    @Throws(CancellationException::class)
+    suspend fun folderSyncWindow(seconds: Double, folderId: String, trigger: Int): Boolean =
+        runtime
+            .folderSyncWindow(
+                (seconds * 1000).toLong().milliseconds,
+                folderId.ifEmpty { null },
+                FolderTrigger.entries.getOrElse(trigger) { FolderTrigger.BACKGROUND },
+            )
+            .workRemains
 
     @Throws(CancellationException::class) suspend fun shutdown() = runtime.shutdown()
 }

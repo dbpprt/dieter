@@ -7,6 +7,8 @@ import com.getdieter.api.v1.CardStateField
 import com.getdieter.api.v1.CardStateVersion
 import com.getdieter.api.v1.Checkout
 import com.getdieter.api.v1.Conversation
+import com.getdieter.api.v1.Folder
+import com.getdieter.api.v1.FolderHead
 import com.getdieter.api.v1.KVEntry
 import com.getdieter.api.v1.Label
 import com.getdieter.api.v1.Lane
@@ -17,6 +19,7 @@ import com.getdieter.api.v1.PeerSyncDiagnostic
 import com.getdieter.api.v1.PeerVersion
 import com.getdieter.api.v1.Project
 import com.getdieter.core.board.Cards
+import com.getdieter.core.folders.FolderGuard
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -161,6 +164,10 @@ data class AccountSnapshot(
      * cached view) reports it.
      */
     val mail: Map<String, Map<String, MailHeader>> = emptyMap(),
+    /** Folder ID → its shared synced-folder definition, archived ones included. */
+    val folders: Map<String, Folder> = emptyMap(),
+    /** Machine ID → folder ID → that folder's head on the machine (owner-only, live). */
+    val folderHeads: Map<String, Map<String, FolderHead>> = emptyMap(),
 )
 
 /**
@@ -258,11 +265,9 @@ class AccountProjector {
         val owners = HashMap<String, OwnerData>()
         for (replica in replicas.sortedBy { it.machineId }) if (replica.daemonId.isNotEmpty())
             owners.getOrPut(replica.daemonId) { replica.owner }
-        val view =
-            Reuse.directory(
-                Pass(records, owners).run(machinesByDaemon, listed),
-                previous.directory,
-            )
+        val pass = Pass(records, owners)
+        val view = Reuse.directory(pass.run(machinesByDaemon, listed), previous.directory)
+        val folders = Reuse.map(pass.folders(), previous.folders)
         decoded.keys.retainAll(used)
         val next =
             AccountSnapshot(
@@ -285,6 +290,11 @@ class AccountProjector {
                     replicas
                         .filter { it.owner.mail.isNotEmpty() }
                         .associate { it.machineId to it.owner.mail },
+                folders = folders,
+                folderHeads =
+                    replicas
+                        .filter { it.owner.folderHeads.isNotEmpty() }
+                        .associate { it.machineId to it.owner.folderHeads },
             )
         previous = if (next == previous) previous else next
         return previous
@@ -530,6 +540,34 @@ class AccountProjector {
                         path = local?.path.orEmpty(),
                         validation_commands = local?.validation_commands.orEmpty(),
                         conflict_keys = fields.conflicts,
+                    )
+            }
+            return result
+        }
+
+        /** Synced folders' shared definitions (`schema/domain.go` kind `folder`). */
+        fun folders(): Map<String, Folder> {
+            val result = HashMap<String, Folder>()
+            for (id in entities("folder", "identity")) {
+                val fields = fields("folder", id)
+                if ("name" !in fields) continue
+                val trash = fields.string("trashDays")
+                result[id] =
+                    Folder(
+                        id = fields.string("id").ifEmpty { id },
+                        name = fields.string("name"),
+                        rules = fields.strings("rules"),
+                        trash_days =
+                            when (trash) {
+                                "off" -> 0
+                                "" -> DEFAULT_TRASH_DAYS
+                                else -> trash.toIntOrNull() ?: DEFAULT_TRASH_DAYS
+                            },
+                        delete_guard = FolderGuard.policy(fields.string("deleteGuard")),
+                        project_id = fields.string("projectId"),
+                        archived = fields.bool("archived"),
+                        created_at = fields.string("createdAt"),
+                        conflict_fields = fields.conflicts,
                     )
             }
             return result
@@ -799,6 +837,7 @@ class AccountProjector {
         private const val ARCHIVE_NEVER = "never"
         private const val MAX_REFERENCES = 64
         private const val MAX_RECORDS = 65_536
+        private const val DEFAULT_TRASH_DAYS = 30
         private val FLATTENED = listOf("identity", "placement", "summary")
 
         /** Runtimes in which a turn holds the conversation (`model.RuntimeHoldsTurn`). */
@@ -850,6 +889,16 @@ class AccountProjector {
                     ),
                 "assignment" to listOf("membership"),
                 "checkout" to listOf("registration"),
+                "folder" to
+                    listOf(
+                        "identity",
+                        "name",
+                        "rules",
+                        "trashDays",
+                        "deleteGuard",
+                        "projectId",
+                        "archived",
+                    ),
             )
 
         /** `model.WorkflowLanes`. */

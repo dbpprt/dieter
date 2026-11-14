@@ -12,6 +12,7 @@ import (
 	"github.com/dbpprt/dieter/internal/engine"
 	"github.com/dbpprt/dieter/internal/engine/scheduler"
 	"github.com/dbpprt/dieter/internal/harness"
+	hostfolders "github.com/dbpprt/dieter/internal/host/folders"
 	"github.com/dbpprt/dieter/internal/host/machine"
 	"github.com/dbpprt/dieter/internal/host/remoteexec"
 	"github.com/dbpprt/dieter/internal/host/terminal"
@@ -35,6 +36,12 @@ type ServiceOptions struct {
 	DaemonState        *daemonstate.Store
 	// Trust is the enrolled daemon's device roster; nil when not enrolled.
 	Trust api.DeviceTrust
+	// FolderPeers dials the other daemons of the account for synced folders;
+	// nil when not enrolled. FolderTrusted reports roster membership.
+	FolderPeers   hostfolders.Dialer
+	FolderTrusted func(daemonID string) bool
+	// Name is this machine's enrolled name.
+	Name string
 }
 
 // Services is the wired daemon object graph over one central store.
@@ -45,6 +52,7 @@ type Services struct {
 	Terminals     *terminal.Manager
 	Executions    *remoteexec.Manager
 	RemoteDesktop *remotedesktop.Manager
+	Folders       *hostfolders.Engine
 	API           *api.Server
 	log           *slog.Logger
 }
@@ -73,7 +81,17 @@ func NewServices(data *store.Store, logger *slog.Logger, options ServiceOptions)
 	if remoteDesktop == nil {
 		remoteDesktop = remotedesktop.New(remoteDesktopOptions(data.Root, options.Env.RemoteDesktop, logger))
 	}
+	folders := hostfolders.New(hostfolders.Options{Store: data, Log: logger, Name: options.Name, Dial: options.FolderPeers, Trusted: options.FolderTrusted})
+	// Turns of a project learn the synced folders linked to it.
+	application.LinkedFolders = func(projectID string) []engine.LinkedFolder {
+		var out []engine.LinkedFolder
+		for _, folder := range folders.LinkedFolders(projectID) {
+			out = append(out, engine.LinkedFolder{Name: folder.Name, Path: folder.Path, Mode: string(folder.Mode)})
+		}
+		return out
+	}
 	services := &Services{
+		Folders:   folders,
 		Store:     data,
 		App:       application,
 		Schedules: scheduler.New(data, application),
@@ -89,7 +107,7 @@ func NewServices(data *store.Store, logger *slog.Logger, options ServiceOptions)
 		App: application, Schedules: services.Schedules, Terminals: services.Terminals,
 		Executions: services.Executions, Machine: machine.NewCollector(data.Root),
 		Catalog: catalog, MinimumFreeBytes: options.Env.MinimumFreeBytes, DaemonState: options.DaemonState,
-		Trust: options.Trust,
+		Trust: options.Trust, Folders: folders,
 	})
 	return services
 }
@@ -176,6 +194,12 @@ func (s *Services) Serve(ctx context.Context, listener net.Listener, activating 
 	go s.Store.RecoverEvery(ctx, storageRecoveryInterval, logger)
 	stopSchedules := s.Schedules.Start(ctx)
 	defer stopSchedules()
+	foldersDone := make(chan struct{})
+	go func() {
+		defer close(foldersDone)
+		s.Folders.Run(ctx)
+	}()
+	defer func() { <-foldersDone }()
 	httpServer := &http.Server{Addr: addr, Handler: s.API.Handler(), Protocols: api.LoopbackProtocols(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 1 << 20}
 	logger.Info("Dieter daemon is ready", "url", fmt.Sprintf("http://%s", addr), "store", s.Store.Root)
 	serveErr := make(chan error, 1)

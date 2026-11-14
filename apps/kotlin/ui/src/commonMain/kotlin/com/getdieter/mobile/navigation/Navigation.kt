@@ -61,6 +61,14 @@ internal fun MobileRoute.emptyDetail(tab: MobileTab): EmptyDetail =
                 "No channel selected",
                 "Choose a channel to read what its agents tell each other.",
             )
+        is MobileRoute.Tool ->
+            if (page == ToolPage.FOLDERS)
+                EmptyDetail(
+                    Glyph.FOLDER,
+                    "No folder selected",
+                    "Choose a folder to see its files, devices and settings.",
+                )
+            else tab.emptyDetail
         else -> tab.emptyDetail
     }
 
@@ -79,12 +87,23 @@ enum class CardPane(val title: String, internal val glyph: Glyph) {
  */
 enum class ToolPage(val title: String, internal val glyph: Glyph, internal val tint: Long) {
     TERMINALS("Terminals", Glyph.TERMINAL, 0xFF3A3A3C),
+    FOLDERS("Folders", Glyph.FOLDER, 0xFF64D2FF),
     FILES("Files", Glyph.FOLDER, 0xFF0A9EF5),
     CHANGES("Changes", Glyph.CHANGES, 0xFFFF9F0A),
     SCHEDULES("Schedules", Glyph.SCHEDULES, 0xFFFF453A),
     USAGE("Usage", Glyph.USAGE, 0xFF30B158),
     DEVICES("Devices", Glyph.DEVICES, 0xFF32ADE6),
     SETTINGS("Settings", Glyph.SETTINGS, 0xFF8E8E93),
+}
+
+/** The pages of a synced folder. */
+enum class FolderSection(val title: String) {
+    /** This device's direction, location and overrides. */
+    DEVICE("On this device"),
+    /** The daemons' trash. */
+    TRASH("Recently deleted"),
+    /** The shared definition: name, rules, trash, deletion guard, project. */
+    SETTINGS("Folder settings"),
 }
 
 /** Tools that need a project. */
@@ -151,6 +170,38 @@ sealed class MobileRoute {
     data class Tool(val page: ToolPage, val projectId: String = "", val checkoutId: String = "") :
         MobileRoute() {
         override val key = "tool/${page.name.lowercase()}/$projectId/$checkoutId"
+        // The folder list stays beside the folder it opened, as Channels does.
+        override val list = page == ToolPage.FOLDERS
+    }
+
+    /** A synced folder: its status, files, devices and pages. */
+    data class Folder(val folderId: String) : MobileRoute() {
+        override val key = "folder/$folderId"
+    }
+
+    /** A directory of [folderId]'s copy on this device. */
+    data class FolderFiles(val folderId: String, val path: String) : MobileRoute() {
+        override val key = "folder/$folderId/files/$path"
+    }
+
+    /** A page of a synced folder, e.g. its settings on this device. */
+    data class FolderPage(val folderId: String, val page: FolderSection) : MobileRoute() {
+        override val key = "folder/$folderId/${page.name.lowercase()}"
+    }
+
+    /** Settings › Folder sync: this device's defaults. */
+    data object FolderSync : MobileRoute() {
+        override val key = "folder-sync"
+    }
+
+    /** Creates a folder or joins one, presented modally; [folderId] preselects one to join. */
+    data class AddFolder(val folderId: String = "") : MobileRoute() {
+        override val key = "add-folder/$folderId"
+    }
+
+    /** Picks the synced folder that files shared from another app are saved into. */
+    data object SaveToFolder : MobileRoute() {
+        override val key = "share/folder"
     }
 
     data class NewTask(val chat: Boolean) : MobileRoute() {
@@ -164,7 +215,8 @@ sealed class MobileRoute {
 
     /**
      * A folder or document below a Files root; [cardId] scopes it to a conversation, a [checkoutId]
-     * on [daemonId] (in [projectId]) to that checkout, e.g. a workspace link in mail.
+     * on [daemonId] (in [projectId]) to that checkout, e.g. a workspace link in mail, and a
+     * [folderId] to that synced folder's copy on [daemonId].
      */
     data class FilePath(
         val path: String,
@@ -173,10 +225,12 @@ sealed class MobileRoute {
         val daemonId: String = "",
         val projectId: String = "",
         val checkoutId: String = "",
+        val folderId: String = "",
     ) : MobileRoute() {
         override val key =
             "file/" +
-                (if (checkoutId.isEmpty()) cardId else "$daemonId:$checkoutId") +
+                (if (folderId.isNotEmpty()) "$daemonId:folder:$folderId"
+                else if (checkoutId.isEmpty()) cardId else "$daemonId:$checkoutId") +
                 "/${if (file) "doc" else "dir"}/$path"
         override val immersive = cardId.isNotEmpty() || file
     }

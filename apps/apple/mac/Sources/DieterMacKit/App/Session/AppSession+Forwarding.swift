@@ -132,6 +132,10 @@ extension AppSession {
         get { filesModel.fileScopeCardID }
         set { filesModel.fileScopeCardID = newValue }
     }
+    var fileScopeFolder: FolderFilesScope? {
+        get { filesModel.fileScopeFolder }
+        set { filesModel.fileScopeFolder = newValue }
+    }
     var terminalScopeCardID: String? {
         get { terminalsModel.terminalScopeCardID }
         set { terminalsModel.terminalScopeCardID = newValue; bindTerminals() }

@@ -1,0 +1,607 @@
+<!doctype html>
+<!--
+  Static mockup for docs/proposals/synced-folders.md §3.15 and §3.18 (synced
+  folders on mobile). Tokens follow the other proposal mockups (DieterTheme.swift
+  monochrome dark palette, Sora titles, system body, radii 8/10/18). Content is
+  illustrative.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Dieter · Synced folders mockup</title>
+    <style>
+      :root {
+        --bg: #0b0b0c;
+        --surface: #1c1c1e;
+        --raised: #2c2c2e;
+        --line: rgba(255, 255, 255, 0.08);
+        --text: #f5f5f7;
+        --text2: #8e8e93;
+        --text3: #636366;
+        --running: #30d158;
+        --amber: #e8a33d;
+        --coral: #f26d80;
+        --action: #0a84ff;
+        --r-row: 8px;
+        --r-card: 10px;
+        --r-panel: 18px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #050506;
+        color: var(--text);
+        font:
+          13px/1.45 -apple-system,
+          BlinkMacSystemFont,
+          "SF Pro Text",
+          system-ui,
+          sans-serif;
+        padding: 28px;
+      }
+      h1,
+      .title,
+      .group-title {
+        font-family: "Sora", -apple-system, system-ui, sans-serif;
+      }
+      h1 {
+        font-size: 18px;
+        font-weight: 600;
+        margin: 0 0 4px;
+      }
+      .caption {
+        color: var(--text2);
+        margin: 0 0 22px;
+        max-width: 980px;
+      }
+      .screens {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 28px;
+        align-items: flex-start;
+      }
+      .screen {
+        width: 320px;
+      }
+      .label {
+        color: var(--text2);
+        font-size: 12px;
+        margin: 0 0 8px 4px;
+      }
+      .phone {
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 34px;
+        padding: 14px 14px 22px;
+        min-height: 640px;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+      }
+      .status-bar {
+        display: flex;
+        justify-content: space-between;
+        color: var(--text2);
+        font-size: 11px;
+        padding: 0 8px 10px;
+      }
+      .nav {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 2px 4px 12px;
+      }
+      .nav .back {
+        color: var(--action);
+        font-size: 15px;
+      }
+      .nav .title {
+        font-size: 17px;
+        font-weight: 600;
+        flex: 1;
+      }
+      .nav .action {
+        color: var(--action);
+        font-size: 13px;
+      }
+      .group-title {
+        color: var(--text2);
+        font-size: 11px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        margin: 14px 6px 6px;
+      }
+      .group {
+        background: var(--surface);
+        border-radius: var(--r-card);
+        overflow: hidden;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border-top: 1px solid var(--line);
+      }
+      .row:first-child {
+        border-top: 0;
+      }
+      .row .main {
+        flex: 1;
+        min-width: 0;
+      }
+      .row .name {
+        font-size: 14px;
+      }
+      .row .sub {
+        color: var(--text2);
+        font-size: 12px;
+      }
+      .row .value {
+        color: var(--text2);
+        font-size: 13px;
+        text-align: right;
+      }
+      .chev::after {
+        content: "›";
+        color: var(--text3);
+        font-size: 16px;
+        margin-left: 6px;
+      }
+      .icon {
+        width: 30px;
+        height: 30px;
+        border-radius: 7px;
+        background: var(--raised);
+        display: grid;
+        place-items: center;
+        font-size: 15px;
+        flex: none;
+      }
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 5px;
+        vertical-align: 1px;
+      }
+      .ok {
+        background: var(--running);
+      }
+      .wait {
+        background: var(--amber);
+      }
+      .bad {
+        background: var(--coral);
+      }
+      .off {
+        background: var(--text3);
+      }
+      .toggle {
+        width: 40px;
+        height: 24px;
+        border-radius: 12px;
+        background: var(--running);
+        position: relative;
+        flex: none;
+      }
+      .toggle::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        right: 2px;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: #fff;
+      }
+      .toggle.no {
+        background: var(--raised);
+      }
+      .toggle.no::after {
+        right: auto;
+        left: 2px;
+      }
+      .segmented {
+        display: flex;
+        background: var(--raised);
+        border-radius: var(--r-row);
+        padding: 2px;
+        margin: 10px 12px;
+      }
+      .segmented span {
+        flex: 1;
+        text-align: center;
+        padding: 5px 0;
+        font-size: 12px;
+        color: var(--text2);
+        border-radius: 6px;
+      }
+      .segmented span.on {
+        background: var(--surface);
+        color: var(--text);
+      }
+      .note {
+        color: var(--text3);
+        font-size: 11px;
+        margin: 6px 8px 0;
+      }
+      .banner {
+        background: rgba(232, 163, 61, 0.12);
+        border: 1px solid rgba(232, 163, 61, 0.35);
+        color: var(--amber);
+        border-radius: var(--r-card);
+        padding: 9px 12px;
+        font-size: 12px;
+        margin-bottom: 10px;
+      }
+      .hero {
+        background: var(--surface);
+        border-radius: var(--r-panel);
+        padding: 14px;
+        margin-bottom: 4px;
+      }
+      .hero .big {
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .bar {
+        height: 5px;
+        background: var(--raised);
+        border-radius: 3px;
+        margin: 10px 0 6px;
+        overflow: hidden;
+      }
+      .bar i {
+        display: block;
+        height: 100%;
+        width: 62%;
+        background: var(--action);
+      }
+      .button {
+        display: inline-block;
+        background: var(--action);
+        color: #fff;
+        border-radius: var(--r-row);
+        padding: 6px 12px;
+        font-size: 12px;
+        margin-top: 8px;
+      }
+      .button.ghost {
+        background: var(--raised);
+        color: var(--text);
+        margin-left: 6px;
+      }
+      .cloud {
+        color: var(--text3);
+      }
+      .chips {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        padding: 10px 12px;
+      }
+      .chip {
+        background: var(--raised);
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-size: 12px;
+        color: var(--text2);
+      }
+      .chip.on {
+        background: var(--action);
+        color: #fff;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Synced folders: mobile</h1>
+    <p class="caption">
+      Four screens of the shared Compose UI: the Folders list (More sheet), a folder's detail with
+      its local file browser, the device-wide <em>Settings › Folder sync</em> page, and the folder's
+      <em>On this device</em> overrides. Android wording is shown; on iOS the interval control reads
+      "About hourly" with the caption that iOS decides the exact time.
+    </p>
+
+    <div class="screens">
+      <!-- 1. Folders list -->
+      <div class="screen">
+        <p class="label">1 · Folders</p>
+        <div class="phone">
+          <div class="status-bar"><span>14:12</span><span>Wi-Fi · 82%</span></div>
+          <div class="nav">
+            <span class="back">‹ More</span><span class="title">Folders</span
+            ><span class="action">Sync now</span>
+          </div>
+
+          <div class="group">
+            <div class="row chev">
+              <div class="icon">📥</div>
+              <div class="main">
+                <div class="name">Inbox</div>
+                <div class="sub">
+                  <span class="dot ok"></span>Up to date · 3 min ago · upload only
+                </div>
+              </div>
+            </div>
+            <div class="row chev">
+              <div class="icon">📄</div>
+              <div class="main">
+                <div class="name">Reports</div>
+                <div class="sub"><span class="dot wait"></span>Syncing 8 of 13 · 41 MB left</div>
+              </div>
+            </div>
+            <div class="row chev">
+              <div class="icon">🗂</div>
+              <div class="main">
+                <div class="name">Datasets</div>
+                <div class="sub">
+                  <span class="dot wait"></span>Waiting for Wi-Fi · 2 large files
+                </div>
+              </div>
+            </div>
+            <div class="row chev">
+              <div class="icon">⚠️</div>
+              <div class="main">
+                <div class="name">Specs</div>
+                <div class="sub"><span class="dot bad"></span>2 conflicts</div>
+              </div>
+            </div>
+            <div class="row chev">
+              <div class="icon">📦</div>
+              <div class="main">
+                <div class="name">Archive</div>
+                <div class="sub"><span class="dot off"></span>Not on this device · Studio, box</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="group-title">This device</div>
+          <div class="group">
+            <div class="row">
+              <div class="main">
+                <div class="name">Next background sync</div>
+                <div class="sub">in about 45 min · Wi-Fi only · 1.2 of 2 GB used</div>
+              </div>
+            </div>
+            <div class="row chev">
+              <div class="main"><div class="name">Folder sync settings</div></div>
+            </div>
+          </div>
+
+          <div style="text-align: center; margin-top: 16px">
+            <span class="button">＋ Add folder</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Folder detail -->
+      <div class="screen">
+        <p class="label">2 · Folder detail</p>
+        <div class="phone">
+          <div class="status-bar"><span>14:12</span><span>Wi-Fi · 82%</span></div>
+          <div class="nav">
+            <span class="back">‹ Folders</span><span class="title">Reports</span
+            ><span class="action">•••</span>
+          </div>
+
+          <div class="hero">
+            <div class="big">Syncing 8 of 13 files</div>
+            <div class="bar"><i></i></div>
+            <div class="sub" style="color: var(--text2); font-size: 12px">
+              Home: Studio (direct) · download only · linked to project <b>dieter</b>
+            </div>
+          </div>
+
+          <div class="group-title">Files</div>
+          <div class="group">
+            <div class="row">
+              <div class="icon">📄</div>
+              <div class="main">
+                <div class="name">dependency-audit.md</div>
+                <div class="sub">12 KB · Codex on Studio · 5 min ago</div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="icon">📊</div>
+              <div class="main">
+                <div class="name">latency-report.pdf</div>
+                <div class="sub">3.4 MB · Claude on box · 1 h ago</div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="icon">🎞</div>
+              <div class="main">
+                <div class="name">e2e-recording.mp4</div>
+                <div class="sub">180 MB · not downloaded</div>
+              </div>
+              <span class="cloud">☁︎↓</span>
+            </div>
+          </div>
+
+          <div class="group-title">Devices</div>
+          <div class="group">
+            <div class="row">
+              <div class="main">
+                <div class="name">Studio <span class="sub">daemon</span></div>
+                <div class="sub">~/Dieter/Reports · two-way · now</div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="main">
+                <div class="name">box <span class="sub">daemon</span></div>
+                <div class="sub">/srv/dieter/reports · two-way · 1 min ago</div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="main">
+                <div class="name">Pixel 9 <span class="sub">this device</span></div>
+                <div class="sub">download only · syncing</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="group-title">More</div>
+          <div class="group">
+            <div class="row chev"><div class="main name">On this device</div></div>
+            <div class="row chev">
+              <div class="main name">Recently deleted</div>
+              <span class="value">4</span>
+            </div>
+            <div class="row chev"><div class="main name">Folder settings</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Settings › Folder sync -->
+      <div class="screen">
+        <p class="label">3 · Settings › Folder sync</p>
+        <div class="phone">
+          <div class="status-bar"><span>14:12</span><span>Wi-Fi · 82%</span></div>
+          <div class="nav">
+            <span class="back">‹ Settings</span><span class="title">Folder sync</span>
+          </div>
+
+          <div class="group">
+            <div class="row">
+              <div class="main name">Folder sync</div>
+              <div class="toggle"></div>
+            </div>
+          </div>
+
+          <div class="group-title">Sync in the background</div>
+          <div class="group">
+            <div class="chips">
+              <span class="chip">15 min</span><span class="chip">30 min</span
+              ><span class="chip on">1 h</span><span class="chip">6 h</span
+              ><span class="chip">24 h</span><span class="chip">While open</span
+              ><span class="chip">Manual</span>
+            </div>
+            <div class="row">
+              <div class="main name">Upload my changes right away</div>
+              <div class="toggle"></div>
+            </div>
+            <div class="row">
+              <div class="main name">Keep in sync live while open</div>
+              <div class="toggle"></div>
+            </div>
+          </div>
+
+          <div class="group-title">Network</div>
+          <div class="group">
+            <div class="segmented">
+              <span class="on">Wi-Fi only</span><span>Any</span><span>Large on Wi-Fi</span>
+            </div>
+            <div class="row">
+              <div class="main name">Respect Data Saver</div>
+              <div class="toggle"></div>
+            </div>
+            <div class="row">
+              <div class="main name">Never while roaming</div>
+              <div class="toggle"></div>
+            </div>
+          </div>
+
+          <div class="group-title">Power</div>
+          <div class="group">
+            <div class="row">
+              <div class="main name">Only while charging</div>
+              <div class="toggle no"></div>
+            </div>
+            <div class="row">
+              <div class="main name">Pause in Battery Saver</div>
+              <div class="toggle"></div>
+            </div>
+            <div class="row chev">
+              <div class="main name">Pause below</div>
+              <span class="value">20%</span>
+            </div>
+          </div>
+
+          <div class="group-title">Storage</div>
+          <div class="group">
+            <div class="row chev">
+              <div class="main name">Download automatically</div>
+              <span class="value">Up to 25 MB</span>
+            </div>
+            <div class="row chev">
+              <div class="main">
+                <div class="name">Storage limit</div>
+                <div class="sub">1.2 GB used · keep 1 GB free</div>
+              </div>
+              <span class="value">2 GB</span>
+            </div>
+            <div class="row">
+              <div class="main name" style="color: var(--action)">Free up space…</div>
+            </div>
+          </div>
+          <p class="note">Last sync 14:09 · next in about 45 min · cellular this month: 0 MB</p>
+        </div>
+      </div>
+
+      <!-- 4. On this device -->
+      <div class="screen">
+        <p class="label">4 · Inbox › On this device</p>
+        <div class="phone">
+          <div class="status-bar"><span>14:12</span><span>Wi-Fi · 82%</span></div>
+          <div class="nav">
+            <span class="back">‹ Inbox</span><span class="title">On this device</span>
+          </div>
+
+          <div class="banner">
+            3 photos waiting to upload. They leave this phone once Studio confirms them.
+          </div>
+
+          <div class="group-title">Direction</div>
+          <div class="group">
+            <div class="segmented">
+              <span>Two-way</span><span>Download</span><span class="on">Upload</span
+              ><span>Paused</span>
+            </div>
+            <div class="row chev">
+              <div class="main name">After upload</div>
+              <span class="value">Remove from this device</span>
+            </div>
+          </div>
+
+          <div class="group-title">Location</div>
+          <div class="group">
+            <div class="row chev">
+              <div class="main">
+                <div class="name">Shared folder</div>
+                <div class="sub">Documents/Dieter/Inbox</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="group-title">Overrides</div>
+          <div class="group">
+            <div class="row chev">
+              <div class="main name">Sync interval</div>
+              <span class="value">Every 15 min</span>
+            </div>
+            <div class="row chev">
+              <div class="main name">Network</div>
+              <span class="value">Any network</span>
+            </div>
+            <div class="row chev">
+              <div class="main name">Home machine</div>
+              <span class="value">Auto (Studio)</span>
+            </div>
+          </div>
+
+          <div class="group" style="margin-top: 14px">
+            <div class="row">
+              <div class="main name" style="color: var(--coral)">Remove from this device…</div>
+            </div>
+          </div>
+          <p class="note">
+            Removing never deletes the folder. Choose to keep the files here or delete only this
+            device's copy.
+          </p>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

@@ -216,7 +216,7 @@ func ResolveForWorkspace(settings model.Settings, detail model.CardDetail, label
 	if detail.Card.MailAccess {
 		mail = MailInstructions(cli)
 	}
-	instructions := BindWorkspace(joinSections(context, skill, vault, mail, ChannelInstructions(cli)), detail.Project.Path, workspace)
+	instructions := BindWorkspace(joinSections(context, skill, vault, mail, ChannelInstructions(cli), FolderInstructions(cli, detail.LinkedFolders)), detail.Project.Path, workspace)
 	if len(instructions) > MaxRenderedBytes {
 		return Resolution{}, fault.Invalidf("rendered instructions exceed %d KiB", MaxRenderedBytes>>10)
 	}
@@ -257,6 +257,30 @@ Other agents working on this project can message you, and you can message them w
 - DIETER channel inbox lists your unread messages.
 - If Dieter blocks a change because another agent holds the file, do the other parts of your task first. If nothing else is left, end your turn with a one-line status; you will be woken when the file is free. Never poll, loop or sleep while waiting.
 - The checkout may be shared: commit only your own files with explicit paths (git commit -m "MESSAGE" -- FILE...), so changes other agents staged stay out of your commit.`, "DIETER", cli)
+}
+
+// maxFolderInstructions bounds the synced folder block.
+const maxFolderInstructions = 1 << 10
+
+// FolderInstructions name the synced folders linked to the project that this
+// daemon keeps (at most 8, at most 1 KiB); empty when there are none.
+func FolderInstructions(cli string, folders []model.LinkedFolder) string {
+	if len(folders) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("## Synced folders\nThese folders of this project are kept in sync with the user's other machines and phones:\n")
+	listed := 0
+	for _, folder := range folders {
+		line := fmt.Sprintf("- %s: %s (%s)\n", folder.Name, folder.Path, folder.Mode)
+		if listed == 8 || b.Len()+len(line) > maxFolderInstructions-300 {
+			break
+		}
+		b.WriteString(line)
+		listed++
+	}
+	b.WriteString(strings.ReplaceAll("Files the user adds on their devices appear here; files you write here reach the user's Mac and phones. Deleted and replaced files go to the folder's trash. DIETER folder status FOLDER shows conflicts and errors. You cannot add, remove or reconfigure synced folders; ask the user.", "DIETER", cli))
+	return b.String()
 }
 
 // CLIWord is the shell word for running the dieter binary at path: the path

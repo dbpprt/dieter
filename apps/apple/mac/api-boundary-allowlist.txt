@@ -102,3 +102,12 @@ Sources/DieterMacKit/Features/Screens/Model/ScreenSessionModel.swift holds Clien
 Sources/DieterMacKit/Features/Screens/Rendering/RemoteDesktopController.swift sends ClientScreenCommands with dieter.v1 RemoteDesktop codec, quality, and pointer-button enums
 Sources/DieterMacKit/Features/Screens/Views/RemoteDesktopInputView.swift maps AppKit mouse buttons to dieter.v1 RemoteDesktopPointerButton.Button (ClientScreenButton.button)
 Sources/DieterMacKit/Features/Settings/Views/PromptSettingsEditor.swift edits dieter.v1 PromptSettings and label instructions, previews a dieter.v1 PromptPreview
+
+# Synced folders: the client contract embeds dieter.v1 folder values (the
+# FolderMode and FolderDeleteGuard enums of ClientFolderSlice rows, and the
+# dieter.v1 FolderMember that update_daemon returns with a member's path and
+# limits); FolderMemberRow carries neither path nor limits yet.
+Sources/DieterMacKit/Features/Folders/Model/FoldersModel.swift keeps the dieter.v1 FolderMember (path, limits) returned by update_daemon; needs path and limits on FolderMemberRow
+Sources/DieterMacKit/Features/Folders/Views/FolderSettingsPage.swift edits a daemon member's dieter.v1 FolderMember settings and FolderMode (ClientFolderSlice); needs client member-settings rows
+Sources/DieterMacKit/Features/Folders/Views/FolderSheets.swift picks dieter.v1 FolderMode and FolderDeleteGuard values for create and attach commands; needs client enums
+Sources/DieterMacKit/Features/Folders/Views/FoldersView.swift renders and picks dieter.v1 FolderMode and FolderMember values from ClientFolderSlice rows; needs client enums and member rows
