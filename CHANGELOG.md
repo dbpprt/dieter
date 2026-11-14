@@ -8,6 +8,10 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.6.446
+
 ### Added
 
 - **Synced folders**: named directories that Dieter keeps the same on your
