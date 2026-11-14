@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.getdieter.client.v1.MachineEntry
+import com.getdieter.client.v1.SessionSlice
 import com.getdieter.mobile.design.*
 import com.getdieter.mobile.navigation.*
 import com.getdieter.mobile.platform.exposingTestTags
@@ -92,6 +93,7 @@ internal fun MoreScreen(store: MobileStore) {
     val selected = navigation.moreSelection()
     val root = MobileRoute.Root(MobileTab.MORE)
     val online = session.machines.count { it.online }
+    val authenticationRequired = session.phase == SessionSlice.Phase.PHASE_AUTH_REQUIRED
     Screen(
         ScreenChrome(
             "More",
@@ -100,7 +102,7 @@ internal fun MoreScreen(store: MobileStore) {
                 listOf(
                     ChromeAction(
                         "reconnect",
-                        "Reconnect",
+                        if (authenticationRequired) "Sign in" else "Reconnect",
                         Glyph.REFRESH,
                         onClick = store.session::retry,
                     )

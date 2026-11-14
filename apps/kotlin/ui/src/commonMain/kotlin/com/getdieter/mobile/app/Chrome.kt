@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.getdieter.client.v1.SessionSlice
 import com.getdieter.mobile.design.*
 import com.getdieter.mobile.desktop.DesktopChromeHost
 import com.getdieter.mobile.desktop.DesktopMenu
@@ -580,13 +581,14 @@ internal fun MaterialMenu(sections: List<MenuSection>, expanded: Boolean, onDism
 internal fun ConnectionNotice(store: MobileStore, modifier: Modifier = Modifier) {
     val session by store.session.slice.collectAsState()
     session.notice?.let { notice ->
+        val authenticationRequired = session.phase == SessionSlice.Phase.PHASE_AUTH_REQUIRED
         Banner(
             notice.title,
             notice.detail,
             modifier.padding(horizontal = ScreenMargin, vertical = 6.dp),
             tone = Tone.WARNING,
             glyph = Glyph.OFFLINE,
-            actionLabel = "Retry",
+            actionLabel = if (authenticationRequired) "Sign in" else "Retry",
             onAction = store.session::retry,
         )
     }

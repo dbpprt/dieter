@@ -120,6 +120,7 @@ internal fun SettingsScreen(store: MobileStore) {
             item("connection") {
                 SectionHeader("Connection")
                 val disconnected = session.phase == SessionSlice.Phase.PHASE_DISCONNECTED
+                val authenticationRequired = session.phase == SessionSlice.Phase.PHASE_AUTH_REQUIRED
                 Group(listOfNotNull(0, 1, if (disconnected) null else 2)) { index, position ->
                     when (index) {
                         0 ->
@@ -136,7 +137,13 @@ internal fun SettingsScreen(store: MobileStore) {
                             )
                         1 ->
                             ListRow(
-                                if (disconnected) "Connect" else "Reconnect",
+                                if (authenticationRequired) {
+                                    "Sign in"
+                                } else if (disconnected) {
+                                    "Connect"
+                                } else {
+                                    "Reconnect"
+                                },
                                 position = position,
                                 glyph = Glyph.SYNC,
                                 onClick = {

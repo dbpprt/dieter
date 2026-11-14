@@ -16,6 +16,53 @@ class MobileStoreTest {
         MobileStore(core, StandardTestDispatcher(testScheduler))
 
     @Test
+    fun retryStartsSignInForExpiredAuthenticationAndReconnectsOtherFailures() = runTest {
+        val authorizeUrl = "https://gateway.example/auth/github/start"
+        val core = FakeMobileCore { command ->
+            if (command.begin_sign_in != null) {
+                Result(sign_in_started = SignInStarted(authorize_url = authorizeUrl))
+            } else {
+                Result(done = Done())
+            }
+        }
+        val store = store(core)
+        try {
+            core.publish(
+                Slice.SLICE_SESSION,
+                update =
+                    Update(
+                        session =
+                            SessionSlice(
+                                phase = SessionSlice.Phase.PHASE_AUTH_REQUIRED,
+                                gateway_origin = "https://gateway.example",
+                            )
+                    ),
+            )
+            runCurrent()
+
+            store.session.retry()
+            runCurrent()
+            assertEquals(
+                "https://gateway.example",
+                core.sentOf { it.begin_sign_in }.single().gateway_url,
+            )
+            assertEquals(authorizeUrl, store.session.signInUrl.value)
+
+            core.publish(
+                Slice.SLICE_SESSION,
+                update =
+                    Update(session = SessionSlice(phase = SessionSlice.Phase.PHASE_RECONNECTING)),
+            )
+            runCurrent()
+            store.session.retry()
+            runCurrent()
+            assertEquals(1, core.sentOf { it.reconnect }.size)
+        } finally {
+            store.close()
+        }
+    }
+
+    @Test
     fun backDismissesThenPopsThenReturnsToTheInbox() = runTest {
         val store = store(FakeMobileCore())
         try {

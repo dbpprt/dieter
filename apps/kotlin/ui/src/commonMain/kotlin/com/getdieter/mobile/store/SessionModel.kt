@@ -43,7 +43,17 @@ internal constructor(private val context: StoreContext, private val changed: () 
         context.core.dispatch(Command(complete_sign_in = CompleteSignIn(url)))
     }
 
-    fun retry() = context.action { context.core.dispatch(Command(reconnect = Reconnect())) }
+    fun retry() {
+        val current = slice.value
+        if (
+            current.phase == SessionSlice.Phase.PHASE_AUTH_REQUIRED &&
+                current.gateway_origin.isNotBlank()
+        ) {
+            signIn(current.gateway_origin)
+        } else {
+            context.action { context.core.dispatch(Command(reconnect = Reconnect())) }
+        }
+    }
 
     /** Replays the account while keeping the visible lists, filters and drafts. */
     fun refresh() {
