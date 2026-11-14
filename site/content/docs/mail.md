@@ -82,7 +82,8 @@ show how many Inbox messages are unread. On the Mac, **Settings → Notification
 - **Only important mail** limits notifications to messages marked important.
 - **Show unread mail count on the Dock icon** is off by default.
 
-The phone and tablet apps don't post notifications yet.
+Mobile system notifications currently cover [tasks needing you](/docs/notifications/),
+including unread model replies and questions. Mail notifications remain a Mac feature.
 
 ## Send mail from the CLI
 

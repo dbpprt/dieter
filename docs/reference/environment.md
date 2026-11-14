@@ -55,6 +55,21 @@ elsewhere. Child processes still inherit the environment where documented.
 | `DIETER_CARD_ID`                                                                          | set by the daemon for harness workers                            | Card of the running turn.                                                                                                                                                                   |
 | `DIETER_QUOTA_ACTION`, `DIETER_QUOTA_IDEMPOTENCY_KEY`, `DIETER_QUOTA_EXPECTED_ACCOUNT_ID` | set by the daemon for its quota probes                           | Internal probe protocol.                                                                                                                                                                    |
 
+## Mobile push configuration
+
+Gateway push credentials are optional. Configure APNs with `DIETER_APNS_KEY_ID`,
+`DIETER_APNS_TEAM_ID`, and exactly one of `DIETER_APNS_KEY_FILE` or
+`DIETER_APNS_KEY_BASE64`. Configure FCM with exactly one of
+`DIETER_FCM_SERVICE_ACCOUNT_FILE` or `DIETER_FCM_SERVICE_ACCOUNT_BASE64`.
+These are private gateway inputs; malformed credentials fail startup.
+
+Android builds accept public Firebase app values in `DIETER_FCM_APPLICATION_ID`,
+`DIETER_FCM_API_KEY`, `DIETER_FCM_PROJECT_ID` and `DIETER_FCM_SENDER_ID`.
+Provide all four or none. The release workflow reads the corresponding
+`FCM_*` variables from the `android-signing` GitHub environment.
+See [mobile notifications](../ios-notifications.md) for provider setup and
+physical-phone verification.
+
 ## dieter-gateway
 
 | Variable                                                         | Meaning                                                                                           |

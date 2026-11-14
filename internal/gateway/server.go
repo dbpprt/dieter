@@ -53,9 +53,20 @@ func NewServer(config Config, store *Store, logger *slog.Logger) (*Server, error
 	if err != nil {
 		return nil, err
 	}
-	var push *PushManager
+	fcm, err := newFCMSender(config)
+	if err != nil {
+		return nil, err
+	}
+	providers := pushProviders{}
 	if sender != nil {
-		push = newPushManager(store, sender, logger)
+		providers[gatewayv1.PushProvider_APNS] = sender
+	}
+	if fcm != nil {
+		providers[gatewayv1.PushProvider_FCM] = fcm
+	}
+	var push *PushManager
+	if len(providers) > 0 {
+		push = newPushManager(store, providers, logger)
 		hub.push = push
 	}
 	api := grpc.NewServer(

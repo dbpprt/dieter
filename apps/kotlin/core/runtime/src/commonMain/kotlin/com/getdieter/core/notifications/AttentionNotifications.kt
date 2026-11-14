@@ -4,7 +4,13 @@ import com.getdieter.api.v1.Card
 import com.getdieter.core.activity.Activity
 import com.getdieter.core.activity.ActivityKind
 
-data class PushDevice(val token: String, val publicKey: okio.ByteString, val sandbox: Boolean)
+data class PushDevice(
+    val token: String,
+    val publicKey: okio.ByteString,
+    val sandbox: Boolean,
+    val provider: com.getdieter.api.gateway.v1.PushProvider =
+        com.getdieter.api.gateway.v1.PushProvider.APNS,
+)
 
 /** The phone's system notification surface. Decisions stay in the shared core. */
 interface AttentionNotificationSink {

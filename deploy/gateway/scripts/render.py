@@ -144,12 +144,18 @@ def secrets(path):
     )
     value = read_json(path)
     push = any(field in value for field in APNS_FIELDS)
-    keys(value, SECRET_FIELDS + (APNS_FIELDS if push else []), "secrets")
+    keys(
+        value,
+        SECRET_FIELDS
+        + (APNS_FIELDS if push else [])
+        + (["fcmServiceAccountBase64"] if "fcmServiceAccountBase64" in value else []),
+        "secrets",
+    )
     for field, text in value.items():
         require(
             isinstance(text, str)
             and text
-            and len(text.encode()) <= 8192
+            and len(text.encode()) <= (32768 if field == "fcmServiceAccountBase64" else 8192)
             and not any(ord(c) < 32 or ord(c) == 127 for c in text),
             f"invalid {field}",
         )
@@ -176,6 +182,20 @@ def secrets(path):
             key.startswith(b"-----BEGIN PRIVATE KEY-----")
             and key.rstrip().endswith(b"-----END PRIVATE KEY-----"),
             "APNs signing key must be a PKCS8 PEM encoded as base64",
+        )
+    if "fcmServiceAccountBase64" in value:
+        try:
+            account = json.loads(base64.b64decode(value["fcmServiceAccountBase64"], validate=True))
+        except (ValueError, binascii.Error, UnicodeDecodeError):
+            raise ValueError("invalid FCM service account encoding") from None
+        require(
+            isinstance(account, dict)
+            and account.get("type") == "service_account"
+            and all(
+                isinstance(account.get(k), str) and account[k]
+                for k in ("project_id", "client_email", "private_key")
+            ),
+            "invalid FCM service account",
         )
     return value
 
@@ -233,6 +253,8 @@ def render(config, private, image, release, output, compatibility_policy, legacy
                 "DIETER_APNS_TEAM_ID": private["apnsTeamID"],
             }
         )
+    if "fcmServiceAccountBase64" in private:
+        env["DIETER_FCM_SERVICE_ACCOUNT_BASE64"] = private["fcmServiceAccountBase64"]
     atomic(sec / "gateway.env", "".join(f"{k}={v}\n" for k, v in env.items()))
     t = s["turn"]
     turn = [

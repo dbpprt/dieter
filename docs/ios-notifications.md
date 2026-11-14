@@ -1,123 +1,175 @@
-# iOS attention notifications
+# Mobile attention notifications
 
-Dieter asks for notification permission after signing in, while the app is in
-the foreground. Allow alerts, sounds and badges. Lock Screen visibility is
-controlled in iOS Settings → Notifications → Dieter.
+Android and iOS use one shared notification system. The Kotlin core selects the
+Inbox's **Needs you** items: unread model replies and questions waiting for an
+answer. Active turns and archived cards are excluded; moving an already-read
+card to Review does not notify. Reading the latest reply on any client clears
+its contribution. Initial snapshots never announce a backlog.
 
-The app badge counts the Inbox's **Needs you** items: unread model replies and
-questions waiting for an answer. A card entering Review after a new reply
-notifies you; moving an already-read card to Review alone does not. Active turns
-and archived cards are excluded. Viewing the latest reply sends the existing
-read receipt, so reading on another client also clears its badge contribution.
+The core also owns foreground visibility suppression, duplicate push handling,
+account binding and pending encrypted taps. Native adapters supply OS permission,
+notification presentation, token registration and platform cryptography. Taps
+open the task in Inbox after sign-in and workspace catch-up; unavailable tasks
+fall back to Inbox. A different account cannot decrypt the destination.
 
-Tapping a notification opens its card in Inbox. Cold launches retain the request
-through sign-in and workspace catch-up. An archived or deleted card falls back
-to Inbox. Notifications from another account wait for that account to be signed
-in; they cannot open a different account's conversation.
+## Background delivery
 
-## Enable background delivery
+Local notifications work while the app receives workspace updates. Background
+or closed-app delivery uses **APNs on iOS** and **Firebase Cloud Messaging (FCM)
+on Android**. Neither app keeps a background daemon connection alive.
 
-Local alerts and badges work while the app receives workspace updates. APNs is
-required for alerts while iOS suspends or terminates Dieter; the app does not
-keep a background connection alive.
+A new release supplies the code, but **does not create provider credentials,
+change Apple's signing profile, configure Firebase or grant phone permission**.
+Configure the providers below, install matching gateway/daemon/app builds, and
+perform the physical-phone checks. Stable promotion is unnecessary: signed dev
+builds and TestFlight prereleases can receive push too.
 
-Background delivery is currently off: the app's entitlements
-(`apps/apple/ios/App/Dieter.entitlements`) omit `aps-environment` until the
-release pipeline's App Store profile includes Push Notifications. Without the
-entitlement, iOS refuses the APNs registration and the app keeps its local
-alerts. Restore the entitlement together with step 1 below.
+### iOS / APNs
 
-A stable Dieter release or production promotion is not required. This feature
-can run in a development build or a TestFlight **dev** prerelease. Apple's APNs
-environment is determined by the app's signing profile:
+The main app requests `aps-environment` through `DIETER_APNS_ENVIRONMENT`: development
+builds use sandbox APNs and Release builds use production APNs. Local alerts
+remain available when remote registration fails. A cached token is not reused
+until APNs confirms registration for the running build.
 
-| App installation                                    | APNs environment          |
-| --------------------------------------------------- | ------------------------- |
-| Xcode Debug build signed with a development profile | Sandbox (`development`)   |
-| TestFlight build, including a Dieter dev prerelease | Production (`production`) |
-| App Store distribution                              | Production (`production`) |
+The release lane validates both provisioning profiles before compiling the
+framework. The main profile must allow production push, match the app identity
+and App Group, and be an unexpired App Store profile. It also verifies the
+exported IPA signature, release identity and production push entitlement before
+the IPA can be published. An outdated profile fails with setup instructions;
+removing the push entitlement is not a release workaround.
 
-Here, **production APNs** names Apple's delivery endpoint; it does not mean a
-stable Dieter release. The gateway already selects the sandbox or production
-endpoint for each registered device.
-
-1. Enable **Push Notifications** for the `com.getdieter.ios` App ID in the Apple
-   Developer account. Refresh the main app's signing profile with the push
-   entitlement, preserving the existing App Group. Use a development profile
-   for an Xcode Debug install, or an App Store profile with
-   `aps-environment = production` for TestFlight, including dev prereleases.
-   The Share extension does not need a push entitlement.
-2. Create an Apple Push Notification service signing key for that team. Keep its
-   `.p8` private key, Key ID and Team ID in the protected gateway secret input.
-   Add all three optional fields alongside the existing secrets:
+1. Enable **Push Notifications** on the `com.getdieter.ios` Apple App ID. Refresh
+   the main app's signing profile, preserving its App Group. The Share extension
+   needs no push entitlement. Replace `IOS_PROVISIONING_PROFILE_BASE64` in the
+   protected `apple-signing` GitHub environment with the refreshed profile.
+   The app entitlement and `DieterAPNSEnvironment` are already wired to the same
+   Xcode setting; no source toggle is needed.
+2. Create an APNs signing key. Add these optional fields together to the existing
+   protected gateway secret input (this is a fragment, not the full object):
 
    ```json
    {
-     "apnsKeyBase64": "BASE64_OF_THE_COMPLETE_P8_PEM_FILE",
+     "apnsKeyBase64": "BASE64_OF_THE_COMPLETE_P8_PEM",
      "apnsKeyID": "ABCDEFGHIJ",
      "apnsTeamID": "KLMNOPQRST"
    }
    ```
 
-   These fields augment the existing secret object; the fragment above is not
-   the complete gateway configuration. The deployment renderer places them
-   only in the mode-0600 private gateway environment.
+3. Install the signed app, sign in and allow alerts, sounds and badges in
+   **Settings → Notifications → Dieter**. Lock Screen visibility is controlled
+   by those settings.
 
-3. Run gateway, daemon and iOS builds containing this change. For the shared dev
-   environment, use the normal qualified dev prerelease and TestFlight process;
-   stable promotion and production activation are separate and unnecessary.
-   For local development, use an isolated development gateway/daemon and a
-   signed Xcode Debug app. Existing binaries need an updated build containing
-   the notification code; APNs configuration alone cannot add it.
-4. Install the signed app, sign in and allow notifications. Run a task, leave
-   its conversation, lock the phone, and let it finish. Confirm the generic
-   **Task needs you** alert, badge count and notification tap. Read the reply on
-   another client and verify the badge clears. Also verify a question and a
-   fresh launch from a notification.
+Xcode development profiles use sandbox APNs (`development`). TestFlight,
+including Dieter dev prereleases, and App Store profiles use production APNs
+(`production`). This Apple endpoint choice does not require a stable Dieter
+release. The gateway selects the endpoint per registered phone.
 
-For gateways run outside the deployment renderer, set `DIETER_APNS_KEY_ID`,
-`DIETER_APNS_TEAM_ID`, and exactly one of `DIETER_APNS_KEY_FILE` (a readable `.p8`
-PEM path) or `DIETER_APNS_KEY_BASE64` (the complete PEM encoded as base64).
-Partial configuration and invalid signing keys fail startup. Without APNs
-credentials the gateway remains usable and the iOS client uses local alerts.
+Without the deployment renderer, configure `DIETER_APNS_KEY_ID`,
+`DIETER_APNS_TEAM_ID` and exactly one of `DIETER_APNS_KEY_FILE` or
+`DIETER_APNS_KEY_BASE64`. Invalid or partial credentials fail gateway startup.
+
+### Android / FCM
+
+1. Register the distribution's Android application ID (`com.getdieter.android`)
+   in a Firebase project with Cloud Messaging HTTP v1 enabled. The device needs
+   Google Play services. Register forks under their own application ID.
+2. Supply the public Firebase app configuration when building Android:
+
+   | Build environment variable  | Firebase Android app configuration field |
+   | --------------------------- | ---------------------------------------- |
+   | `DIETER_FCM_APPLICATION_ID` | `mobilesdk_app_id`                       |
+   | `DIETER_FCM_API_KEY`        | `current_key` from `api_key`             |
+   | `DIETER_FCM_PROJECT_ID`     | `project_id`                             |
+   | `DIETER_FCM_SENDER_ID`      | `project_number`                         |
+
+   These values are public app configuration, not server credentials. Set all
+   four or none; partial configuration fails the build. The release job reads
+   `FCM_APPLICATION_ID`, `FCM_API_KEY`, `FCM_PROJECT_ID` and `FCM_SENDER_ID` from
+   the `android-signing` GitHub environment's variables. With no configuration,
+   local notifications still work. The separate `.e2e` app never initializes FCM.
+
+3. Give a dedicated service account permission to send FCM messages for that
+   project (the Firebase Cloud Messaging API Admin role). Put its complete JSON
+   key, base64 encoded, in the protected gateway secret input:
+
+   ```json
+   {
+     "fcmServiceAccountBase64": "BASE64_OF_THE_COMPLETE_SERVICE_ACCOUNT_JSON"
+   }
+   ```
+
+   The renderer writes this only into the mode-0600 private gateway environment.
+   Never put the service-account key in the Android app, build configuration or
+   public deployment bundle. Without the renderer, use exactly one of
+   `DIETER_FCM_SERVICE_ACCOUNT_FILE` or `DIETER_FCM_SERVICE_ACCOUNT_BASE64`.
+
+4. Install the app and allow notifications when asked after sign-in. On Android
+   13+, this requires the runtime Notifications permission. Check the **Tasks
+   needing you** channel in **Settings → Apps → Dieter → Notifications** too.
+
+FCM sends a generic notification plus the encrypted task link. Google Play
+services displays it while Android has stopped the app process; the foreground
+callback uses the shared presentation policy. Launcher badges depend on the
+launcher and Android notification policy; Android does not offer iOS's exact,
+independent numeric app badge. Badge-only updates are best effort. Opening or
+resynchronizing Dieter reconciles stale alerts with the authoritative Inbox.
+Android force-stop disables FCM delivery until the user launches the app again.
+Devices without Google Play services retain local notifications.
 
 ## Routing and privacy
 
-Push tokens and recipient public keys are attached to expiring, revocable native
-sessions. Machine credentials cannot register a phone. A token moves to its
-latest signed-in session. Each push key is signed by the phone’s paired device
-key and bound to the pinned roster’s account identity. The daemon verifies this
-proof against its own roster before encrypting a card destination, preventing
-a gateway from substituting a decryption key. Revoked devices lose delivery
-and cannot register again. Sign-out unregisters the route when the gateway is
-reachable. Expired/revoked sessions and APNs-invalid tokens stop delivery.
+Both providers use the same native-session registration and daemon encryption
+path. Push provider, token, public key and signed device binding belong to an
+expiring, revocable session. Availability is reported per provider, so a gateway
+with only APNs does not disable Android's local fallback. FCM tokens remain
+case-sensitive; token replacement is scoped to its provider.
 
-The daemon uses the same attention rules as the shared core. Its authenticated
-control link sends coarse counts and an X25519/HKDF-SHA256/AES-GCM envelope
-containing the destination card ID. Each recipient's private key stays in its
-device-only Keychain, scoped to the pinned roster's stable account identity.
-Neither card IDs, titles, transcripts nor private keys are stored on the gateway.
-APNs gets a generic alert and the encrypted destination. Counts from enrolled machines are summed
-for the badge, and foreground reconciliation uses the current account view.
+Each recipient key is signed by the phone's paired device key and bound to the
+pinned roster's stable account identity. The daemon verifies that proof against
+its own roster before encrypting a task link. A gateway cannot substitute its
+own decryption key. Revocation, session expiry and explicit provider token
+invalidation stop delivery; sign-out unregisters when reachable.
 
-Initial snapshots establish a baseline without replaying old alerts. Live
-transitions replace a card's previous local alert; viewing, archiving or resuming
-the card removes stale alerts when the app reconciles. APNs owns alerts while
-available, and the local planner is the fallback. Foreground APNs banners for
-the card on screen are suppressed using the live core's visibility state.
-Delivery follows APNs and iOS notification settings. Reconnects, gateway restarts
-and OS delivery policy can delay or drop alerts; Inbox remains authoritative.
+The daemon sends coarse counts and X25519/HKDF-SHA256/AES-GCM encrypted card
+IDs. Per-account private keys stay in device-only Keychain on iOS and
+Keystore-encrypted storage on Android. Neither task IDs, titles, transcripts nor
+private keys are stored on the gateway. APNs/FCM receive generic alert text,
+counts and encrypted links. Provider HTTP requests are bounded, use fixed
+endpoints, reject redirects and do not log tokens or response bodies.
 
 ## Verification
 
-`just pipeline core_test e2e:true` covers attention rules and notification navigation
-through sign-in/sync. Gateway and daemon Go tests cover account binding, token
-validation, badge totals, provider JWTs and encrypted payload integrity. The
-normal protobuf generation includes the internal native-session registration
-RPC; no new user-facing daemon operation is introduced. Existing `card read`
-and `chat read` commands acknowledge displayed replies.
+Release-gate tests reject missing/sandbox push entitlements, wrong app identities,
+lost App Groups, expired/development/ad-hoc profiles and exported apps with an
+incorrect push environment or release identity. These checks use synthetic
+profiles and send no push or Apple Developer mutation.
 
-`just ios build` and `just e2e ios` require Xcode and an
-iOS simulator runtime. The E2E fixture skips the OS permission prompt; real APNs
-delivery requires the signed build, configured gateway and the manual phone
-check above. Simulator/local tests never send a production push.
+Unit tests cover shared attention and presentation rules, pending taps, account
+isolation, provider routing, token case, provider JWTs, encrypted payload
+integrity and private deployment rendering. Protobuf generation includes the
+internal native-session registration RPC; no new daemon operation is added.
+Existing `card read` and `chat read` acknowledge displayed replies.
+
+`just ios build` and `just e2e ios` require Xcode and a simulator runtime.
+`just e2e android profile:android-emulator` uses the isolated E2E app. Fixture
+runs skip permission prompts and external push providers, so they cannot prove
+live delivery.
+
+With each provider configured, verify on a physical phone:
+
+1. Run a task, leave its conversation, background Dieter and lock the phone.
+   Let the task finish; confirm the generic **Task needs you** alert and tap it
+   to open the correct task. Repeat with a question waiting for an answer.
+2. Repeat after the OS has terminated the app process. Verify the tap survives
+   a cold launch, sign-in and synchronization. On Android, do not use force-stop
+   as a substitute for process termination.
+3. Read the reply on another client; confirm iOS's badge clears and both apps
+   remove stale alerts after reconciliation. Check that viewing a conversation
+   suppresses its foreground banner and repeated delivery does not alert again.
+4. Deny/re-enable permission, rotate the OS token, switch accounts and sign out.
+   Verify local fallback when that provider is unconfigured, and ensure an old
+   account's encrypted link never opens a different account's task.
+
+OS settings, network availability and provider delivery policies can delay or
+drop alerts. The Inbox remains authoritative. No production push is sent by
+the automated tests.

@@ -14,11 +14,14 @@ androidx-compose = "1.12.1"
 androidx-compose-material3 = "1.4.0"
 androidx-core = "1.19.1"
 androidx-work = "2.12.0"
+androidx-fragment = "1.8.9"
 compose-material-icons = "1.7.3"
 termux = "v0.118.3"
 bouncycastle = "1.86"
 junit = "4.13.2"
 org-json = "20260814"
+
+firebase-messaging = "24.1.1"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -34,6 +37,7 @@ compose-material-icons-core = { module = "org.jetbrains.compose.material:materia
 termux-terminal-emulator = { module = "com.github.termux.termux-app:terminal-emulator", version.ref = "termux" }
 termux-terminal-view = { module = "com.github.termux.termux-app:terminal-view", version.ref = "termux" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
+androidx-fragment = { module = "androidx.fragment:fragment", version.ref = "androidx-fragment" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidx-core" }
 # Synced folders' background windows on Android (periodic work and long transfers).
 androidx-work-runtime = { module = "androidx.work:work-runtime-ktx", version.ref = "androidx-work" }
@@ -45,6 +49,7 @@ bouncycastle-tls = { module = "org.bouncycastle:bctls-jdk18on", version.ref = "b
 # bundles (unit tests otherwise see only the platform's stubs).
 junit = { module = "junit:junit", version.ref = "junit" }
 kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
+firebase-messaging = { module = "com.google.firebase:firebase-messaging", version.ref = "firebase-messaging" }
 org-json = { module = "org.json:json", version.ref = "org-json" }
 # Plugin artifacts that build-logic puts on every module's classpath.
 kotlin-gradle-plugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }

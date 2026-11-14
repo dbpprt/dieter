@@ -228,9 +228,12 @@ class BoardOperations(
         return restored
     }
 
-    /** Stops the running turn; the card shows "cancelling" until its runtime settles. */
-    suspend fun cancel(cardId: String): Boolean {
-        val card = card(cardId)
+    /**
+     * Stops the running turn; the card shows "cancelling" until its runtime settles. A live
+     * conversation's [snapshot] can arrive before its card appears in the account directory.
+     */
+    suspend fun cancel(cardId: String, snapshot: Card? = null): Boolean {
+        val card = card(cardId, snapshot)
         return mutate(
             cardId,
             CardOperation.CANCELLING,
@@ -364,8 +367,9 @@ class BoardOperations(
     /** Account or gateway changed: the errors belong to the previous one. */
     fun reset() = mutableView.update { it.copy(errors = emptyMap()) }
 
-    private fun card(id: String): Card =
+    private fun card(id: String, snapshot: Card? = null): Card =
         store.shownItem(id)
+            ?: snapshot?.takeIf { it.id == id }
             ?: throw CoreException(FailureKind.PERMANENT, "The card is no longer available.")
 
     /**

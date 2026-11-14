@@ -66,7 +66,12 @@ For iOS background notifications, optionally add `apnsKeyBase64`, `apnsKeyID`
 and `apnsTeamID` together. The first is the complete APNs `.p8` PEM encoded as
 base64; the IDs are Apple's ten-character Key ID and Team ID. They are rendered
 only into the private gateway environment. See
-[iOS notification setup](../../docs/ios-notifications.md).
+[mobile notification setup](../../docs/ios-notifications.md).
+
+For Android background notifications, optionally add `fcmServiceAccountBase64`,
+the complete Firebase service-account JSON encoded as base64. It is rendered
+only into the protected gateway environment. The Android build uses the matching
+public Firebase app configuration; never bundle this service-account secret.
 
 `turnSharedSecret` is canonical text. Coturn receives its UTF-8 bytes verbatim;
 Dieter receives their hexadecimal encoding. Newlines, NUL and formats coturn
