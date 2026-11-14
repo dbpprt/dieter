@@ -122,11 +122,14 @@ type run struct {
 	done     chan struct{}
 
 	// Guarded by Engine.mu.
-	status     Status
-	cycleDone  chan struct{}
-	recorded   schema.FolderMemberRecord
-	recordedAt time.Time
-	resolve    *resolution
+	status    Status
+	cycleDone chan struct{}
+	// Cycles (and scan cycles) started and finished, for WaitCycle.
+	started, ended           uint64
+	scansStarted, scansEnded uint64
+	recorded                 schema.FolderMemberRecord
+	recordedAt               time.Time
+	resolve                  *resolution
 
 	// Only the member's loop touches these.
 	missingSince map[string]time.Time
@@ -311,13 +314,9 @@ func (e *Engine) WaitCycle(ctx context.Context, folderID string, scan bool) erro
 		return nil
 	}
 	var r *run
-	var done chan struct{}
 	for {
 		e.mu.Lock()
 		r = e.runs[folderID]
-		if r != nil {
-			done = r.cycleDone
-		}
 		e.mu.Unlock()
 		if r != nil {
 			break
@@ -333,20 +332,31 @@ func (e *Engine) WaitCycle(ctx context.Context, folderID string, scan bool) erro
 		case <-time.After(20 * time.Millisecond):
 		}
 	}
+	// Wait for the first cycle (with a scan, when asked) that starts after
+	// the wake. The wake stays queued while a cycle runs, so one follows.
+	e.mu.Lock()
+	target := r.started + 1
+	if scan {
+		target = r.scansStarted + 1
+	}
+	e.mu.Unlock()
 	e.Wake(folderID, scan)
-	select {
-	case <-done:
-		// The cycle that was running may have started before the wake.
+	for {
 		e.mu.Lock()
-		done = r.cycleDone
+		reached := r.ended >= target
+		if scan {
+			reached = r.scansEnded >= target
+		}
+		done := r.cycleDone
 		e.mu.Unlock()
+		if reached {
+			return nil
+		}
 		select {
 		case <-done:
 		case <-ctx.Done():
+			return nil
 		}
-		return nil
-	case <-ctx.Done():
-		return nil
 	}
 }
 
@@ -372,6 +382,12 @@ func (e *Engine) loop(ctx context.Context, r *run) {
 			scan = true
 		case <-poll.C:
 		}
+		e.mu.Lock()
+		r.started++
+		if scan {
+			r.scansStarted++
+		}
+		e.mu.Unlock()
 		changed := e.cycle(ctx, r, scan)
 		if changed {
 			lastActive = e.now()
@@ -394,6 +410,10 @@ func (e *Engine) loop(ctx context.Context, r *run) {
 		}
 		poll.Reset(next)
 		e.mu.Lock()
+		r.ended++
+		if scan {
+			r.scansEnded++
+		}
 		close(r.cycleDone)
 		r.cycleDone = make(chan struct{})
 		e.mu.Unlock()

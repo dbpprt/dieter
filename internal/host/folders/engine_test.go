@@ -279,3 +279,38 @@ func TestReceiveOnlyListsLocalChanges(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// WaitCycle returns after the cycle its wake starts, even when no timer
+// would run another one (a watched Linux member walks only hourly).
+func TestWaitCycleReturnsWithoutTimers(t *testing.T) {
+	data := testkit.Store(t)
+	engine := hostfolders.New(hostfolders.Options{Store: data, Name: "Quiet desk", Walk: time.Hour, PeerPoll: time.Hour, Supervise: 50 * time.Millisecond})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		engine.Run(ctx)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+	definition := create(t, engine, "Quiet")
+	dir := t.TempDir()
+	if _, err := engine.Attach(ctx, hostfolders.AttachRequest{FolderID: definition.ID, Path: dir}); err != nil {
+		t.Fatal(err)
+	}
+	for round := range 3 {
+		put(t, dir, fmt.Sprintf("file-%d", round), "x")
+		wait, stop := context.WithTimeout(ctx, 10*time.Second)
+		started := time.Now()
+		err := engine.WaitCycle(wait, definition.ID, true)
+		stop()
+		if err != nil || time.Since(started) > 5*time.Second {
+			t.Fatalf("round %d: WaitCycle took %v: %v", round, time.Since(started), err)
+		}
+		if _, _, ok := entryOf(t, data, definition.ID, fmt.Sprintf("file-%d", round)); !ok {
+			t.Fatalf("round %d: the cycle did not scan", round)
+		}
+	}
+}
