@@ -105,7 +105,13 @@ Platform signing comes on top of that:
   `config/identity.json`.
 - **Android:** the release keystore. The in-app updater also checks the APK's
   SHA-256 against the digest GitHub publishes.
-- **iOS:** App Store Connect distribution, delivered through TestFlight.
+- **iOS:** App Store Connect distribution, delivered through TestFlight. The
+  main App Store profile must include production Push Notifications and its App
+  Group. The iOS release lane rejects an outdated profile before compilation and
+  verifies the exported IPA's signature, identity and `aps-environment=production`.
+  Enable Push Notifications on the Apple App ID and refresh
+  `IOS_PROVISIONING_PROFILE_BASE64` in `apple-signing`; do not remove the app's
+  entitlement to make an outdated profile pass. See [mobile notifications](ios-notifications.md).
 - **Gateway:** cosign-signed image and deployment bundle with build provenance
   and an SBOM; verify with `deploy/gateway/scripts/bundle.py verify`.
 

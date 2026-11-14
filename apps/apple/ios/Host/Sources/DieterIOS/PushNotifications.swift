@@ -9,18 +9,18 @@ import Synchronization
 /// a notification from another account cannot navigate the currently signed-in UI.
 final class IOSPushKeys: Sendable {
     private let secureStore = CoreKeychainSecureStore(service: DistributionIdentity.iosBundleID + ".push")
-    private let lock = Mutex(false)
+    private let lock = Mutex((allowed: false, token: ""))
 
-    func allowPush(_ allowed: Bool) { lock.withLock { $0 = allowed } }
+    func allowPush(_ allowed: Bool) { lock.withLock { $0.allowed = allowed } }
 
     func setToken(_ token: Data) {
-        lock.withLock { _ in
-            secureStore.write(key: "apns-token", value: token.map { String(format: "%02x", $0) }.joined())
+        lock.withLock { state in
+            state.token = token.map { String(format: "%02x", $0) }.joined()
         }
     }
 
     func device(accountKey: String) -> (NativePushDevice, Curve25519.KeyAgreement.PrivateKey)? {
-        lock.withLock { allowed in
+        lock.withLock { state in
             let name =
                 "private-key." + SHA256.hash(data: Data(accountKey.utf8)).map { String(format: "%02x", $0) }.joined()
             let agreement: Curve25519.KeyAgreement.PrivateKey
@@ -35,7 +35,8 @@ final class IOSPushKeys: Sendable {
                 guard secureStore.read(key: name) == encoded else { return nil }
             }
             // Binding the account is also needed before APNs returns a token (cold taps).
-            let token = allowed ? secureStore.read(key: "apns-token") ?? "" : ""
+            // A saved token does not prove that this build registered successfully.
+            let token = state.allowed ? state.token : ""
             let sandbox = Bundle.main.object(forInfoDictionaryKey: "DieterAPNSEnvironment") as? String == "development"
             return (
                 NativePushDevice(

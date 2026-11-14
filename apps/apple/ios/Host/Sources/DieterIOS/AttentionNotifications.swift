@@ -138,7 +138,11 @@ final class IOSAttentionNotifications: NSObject, NativeAttentionNotifications, U
         reconcile(cardIds: [], badge: 0)
     }
 
-    func setPushToken(_ token: Data) { keys.setToken(token); refreshRegistration?() }
+    func setPushToken(_ token: Data) {
+        keys.setToken(token)
+        if token.isEmpty { logger.error("APNs registration failed; background push is unavailable.") }
+        refreshRegistration?()
+    }
 
     nonisolated func device(accountKey: String) -> NativePushDevice? {
         guard let (device, _) = keys.device(accountKey: accountKey) else { return nil }

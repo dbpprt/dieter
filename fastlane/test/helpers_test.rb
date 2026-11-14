@@ -7,8 +7,98 @@ require_relative "../helpers/dieter"
 require_relative "../helpers/changes"
 require_relative "../helpers/e2e"
 require_relative "../helpers/format"
+require_relative "../helpers/ios_push"
 require_relative "../helpers/release"
 require_relative "../helpers/swift"
+
+class IOSPushTest < Minitest::Test
+  def setup
+    @expected = { bundle: "com.example.ios", team: "TEAM", group: "group.com.example.ios" }
+    @entitlements = {
+      "application-identifier" => "TEAM.com.example.ios",
+      "com.apple.developer.team-identifier" => "TEAM",
+      "com.apple.security.application-groups" => ["group.com.example.ios"],
+      "aps-environment" => "production",
+      "get-task-allow" => false
+    }
+    @profile = {
+      "UUID" => "profile-id",
+      "ExpirationDate" => Time.now + 3600,
+      "Entitlements" => @entitlements
+    }
+    @info = {
+      "CFBundleIdentifier" => "com.example.ios",
+      "CFBundleShortVersionString" => "0.6.500",
+      "CFBundleVersion" => "1.4.99",
+      "DieterAPNSEnvironment" => "production"
+    }
+  end
+
+  def profile!
+    Dieter::IOSPush.profile!(
+      @profile,
+      **@expected,
+      environment: "production",
+      source: "IOS_PROVISIONING_PROFILE_BASE64"
+    )
+  end
+
+  def app!
+    Dieter::IOSPush.app!(@info, @entitlements, **@expected, version: "0.6.500", build: "1.4.99")
+  end
+
+  def test_profile_requires_production_push_and_preserves_the_app_group
+    assert_equal "profile-id", profile!
+    @entitlements.delete("aps-environment")
+    error = assert_raises(Dieter::Unavailable) { profile! }
+    assert_includes error.message, "replace IOS_PROVISIONING_PROFILE_BASE64"
+    @entitlements["aps-environment"] = "development"
+    assert_raises(Dieter::Unavailable) { profile! }
+    @entitlements["aps-environment"] = "production"
+    @entitlements["com.apple.security.application-groups"] = []
+    assert_raises(Dieter::Unavailable) { profile! }
+  end
+
+  def test_expired_development_and_ad_hoc_profiles_cannot_ship
+    @profile["ExpirationDate"] = Time.now - 60
+    assert_raises(Dieter::Unavailable) { profile! }
+    @profile["ExpirationDate"] = Time.now + 3600
+    @entitlements["get-task-allow"] = true
+    assert_raises(Dieter::Unavailable) { profile! }
+    @entitlements["get-task-allow"] = false
+    @profile["ProvisionedDevices"] = ["phone"]
+    assert_raises(Dieter::Unavailable) { profile! }
+  end
+
+  def test_exported_app_must_keep_its_signed_push_environment_and_release_identity
+    app!
+    @entitlements.delete("aps-environment")
+    assert_raises(Dieter::Unavailable) { app! }
+    @entitlements["aps-environment"] = "production"
+    @info["DieterAPNSEnvironment"] = "development"
+    assert_raises(Dieter::Unavailable) { app! }
+    @info["DieterAPNSEnvironment"] = "production"
+    @info["CFBundleVersion"] = "1.0.0"
+    assert_raises(Dieter::Unavailable) { app! }
+  end
+
+  def test_another_apps_profile_or_signature_is_rejected
+    @entitlements["application-identifier"] = "TEAM.com.example.other"
+    assert_raises(Dieter::Unavailable) { profile! }
+    assert_raises(Dieter::Unavailable) { app! }
+  end
+
+  def test_share_extension_profile_does_not_need_push
+    @entitlements.delete("aps-environment")
+    assert_equal "profile-id",
+                 Dieter::IOSPush.profile!(
+                   @profile,
+                   **@expected,
+                   environment: nil,
+                   source: "IOS_SHARE_PROVISIONING_PROFILE_BASE64"
+                 )
+  end
+end
 
 class LeaseTest < Minitest::Test
   def test_lease_is_exclusive_and_reports_its_owner

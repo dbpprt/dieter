@@ -26,16 +26,24 @@ builds and TestFlight prereleases can receive push too.
 
 ### iOS / APNs
 
-Background delivery remains disabled in the default iOS signing configuration:
-`apps/apple/ios/App/Dieter.entitlements` omits `aps-environment` because the
-current App Store profile does not include Push Notifications. Local alerts and
-badges continue to work. Enable this entitlement only together with a matching
-profile; adding it alone breaks the release build.
+The main app requests `aps-environment` through `DIETER_APNS_ENVIRONMENT`: development
+builds use sandbox APNs and Release builds use production APNs. Local alerts
+remain available when remote registration fails. A cached token is not reused
+until APNs confirms registration for the running build.
+
+The release lane validates both provisioning profiles before compiling the
+framework. The main profile must allow production push, match the app identity
+and App Group, and be an unexpired App Store profile. It also verifies the
+exported IPA signature, release identity and production push entitlement before
+the IPA can be published. An outdated profile fails with setup instructions;
+removing the push entitlement is not a release workaround.
 
 1. Enable **Push Notifications** on the `com.getdieter.ios` Apple App ID. Refresh
    the main app's signing profile, preserving its App Group. The Share extension
-   needs no push entitlement. Restore `aps-environment` in the main app and
-   ensure its `DieterAPNSEnvironment` agrees with the signed entitlement.
+   needs no push entitlement. Replace `IOS_PROVISIONING_PROFILE_BASE64` in the
+   protected `apple-signing` GitHub environment with the refreshed profile.
+   The app entitlement and `DieterAPNSEnvironment` are already wired to the same
+   Xcode setting; no source toggle is needed.
 2. Create an APNs signing key. Add these optional fields together to the existing
    protected gateway secret input (this is a fragment, not the full object):
 
@@ -130,6 +138,11 @@ counts and encrypted links. Provider HTTP requests are bounded, use fixed
 endpoints, reject redirects and do not log tokens or response bodies.
 
 ## Verification
+
+Release-gate tests reject missing/sandbox push entitlements, wrong app identities,
+lost App Groups, expired/development/ad-hoc profiles and exported apps with an
+incorrect push environment or release identity. These checks use synthetic
+profiles and send no push or Apple Developer mutation.
 
 Unit tests cover shared attention and presentation rules, pending taps, account
 isolation, provider routing, token case, provider JWTs, encrypted payload

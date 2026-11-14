@@ -20,8 +20,9 @@ Local notifications work while Dieter receives updates. Background delivery
 requires a gateway configured for **Apple Push Notification service (APNs)** on
 iOS or **Firebase Cloud Messaging (FCM)** on Android, plus a correctly configured
 app build. A new release alone does not supply that setup. iOS push also requires
-a Push Notifications signing profile; it is disabled in the default signing
-configuration until that profile is available. Ask your gateway operator to
+a Push Notifications signing profile; release builds check that the app is signed
+for production push. Enable **Lock Screen** in iOS notification settings and check
+Focus or Scheduled Summary if alerts are delayed. Ask your gateway operator to
 follow the [mobile notification setup](https://github.com/dbpprt/dieter/blob/main/docs/ios-notifications.md).
 
 Push alerts contain generic text and an encrypted task link. Your task's title
