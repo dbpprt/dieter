@@ -67,7 +67,7 @@ internal class MenuSection(
 internal class ScreenChrome(
     val title: String,
     val subtitle: String = "",
-    /** Root screens use iOS large titles and Material large flexible app bars. */
+    /** Root screens use iOS large titles and Material large app bars on phone layouts. */
     val large: Boolean = false,
     val actions: List<ChromeAction> = emptyList(),
     /** Main creation command: an iOS trailing bar button, an Android floating action button. */
@@ -280,8 +280,10 @@ private fun MaterialScreen(
     bottomBar: (@Composable () -> Unit)?,
     content: @Composable ScreenScope.() -> Unit,
 ) {
+    // Beside the navigation rail, keep pane titles and actions on the same toolbar row.
+    val large = chrome.large && !LocalRailCreates.current
     val behavior =
-        if (chrome.large) TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+        if (large) TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
         else TopAppBarDefaults.pinnedScrollBehavior()
     val back = LocalBackAction.current
     val insets = LocalScreenInsets.current
@@ -322,7 +324,7 @@ private fun MaterialScreen(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             style =
-                                if (chrome.large) LocalTextStyle.current
+                                if (large) LocalTextStyle.current
                                 else
                                     MaterialTheme.typography.titleLarge.copy(
                                         fontWeight = FontWeight.Medium
@@ -359,7 +361,7 @@ private fun MaterialScreen(
                         }
                 }
             }
-            if (chrome.large)
+            if (large)
                 LargeTopAppBar(
                     title = title,
                     navigationIcon = navigation,
