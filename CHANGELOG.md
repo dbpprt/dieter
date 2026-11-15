@@ -10,6 +10,25 @@ copy the **Unreleased** notes into a section named after that exact version
 
 Nothing yet.
 
+## 0.7.448
+
+### Changed
+
+- **Inbox**: every platform lists the same sections, Needs you, Running, Pinned
+  and Recent, newest first within each. A pinned conversation that needs you or
+  is running stays in that section with its pin and returns to Pinned once it
+  is idle. Failed agents now count as needing you (in the Inbox, the badges,
+  widgets, the Mac island and the menu bar) until you retry them, finish the
+  card or archive it, and the Inbox can finish a failed card.
+- **Inbox on Android, iPhone and iPad**: two-line rows with the project, title,
+  time, what the agent is doing or said last and one status mark, under slim
+  section headers. The count tiles and the usage strip are gone; the filter
+  menu shows All, Needs you, Running, Pinned and Review with their counts, and
+  plan usage stays under More › Providers.
+- **Inbox on the Mac**: one line per conversation with its status, title,
+  working subagents, project and age; count segments above the timeline; pin
+  and finish on hover; search with ⌘F.
+
 ## 0.7.447
 
 ### Added
