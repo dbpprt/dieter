@@ -69,9 +69,12 @@ tags: [smoke]
       text: "Signed in"
     timeout: 30000
 - takeScreenshot: providers-scratch-signed-in
+# Centered: on iOS the row can sit under the floating tab bar while counting
+# as visible, and a tap there opens Projects instead.
 - scrollUntilVisible:
     element:
       id: provider-remove
+    centerElement: true
 - tapOn:
     id: provider-remove
     waitToSettleTimeoutMs: 500
