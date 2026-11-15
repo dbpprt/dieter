@@ -764,8 +764,10 @@ type SendMessageRequest struct {
 	ClientId        string                 `protobuf:"bytes,7,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
 	CommandId       string                 `protobuf:"bytes,8,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
 	MessageId       string                 `protobuf:"bytes,9,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Provider account for this turn; empty keeps the conversation's account.
+	AccountId     string `protobuf:"bytes,10,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SendMessageRequest) Reset() {
@@ -857,6 +859,13 @@ func (x *SendMessageRequest) GetCommandId() string {
 func (x *SendMessageRequest) GetMessageId() string {
 	if x != nil {
 		return x.MessageId
+	}
+	return ""
+}
+
+func (x *SendMessageRequest) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
 	}
 	return ""
 }
@@ -1187,7 +1196,7 @@ const file_dieter_v1_conversations_proto_rawDesc = "" +
 	"outputJson\x12\x1d\n" +
 	"\n" +
 	"error_text\x18\b \x01(\tR\terrorText\x12\x1a\n" +
-	"\brevision\x18\t \x01(\tR\brevision\"\xa3\x03\n" +
+	"\brevision\x18\t \x01(\tR\brevision\"\xc2\x03\n" +
 	"\x12SendMessageRequest\x12\x17\n" +
 	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12,\n" +
 	"\x05parts\x18\x02 \x03(\v2\x16.dieter.v1.MessagePartR\x05parts\x12\x1a\n" +
@@ -1199,7 +1208,10 @@ const file_dieter_v1_conversations_proto_rawDesc = "" +
 	"\n" +
 	"command_id\x18\b \x01(\tR\tcommandId\x12\x1d\n" +
 	"\n" +
-	"message_id\x18\t \x01(\tR\tmessageId\x1aB\n" +
+	"message_id\x18\t \x01(\tR\tmessageId\x12\x1d\n" +
+	"\n" +
+	"account_id\x18\n" +
+	" \x01(\tR\taccountId\x1aB\n" +
 	"\x14ProviderOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"`\n" +

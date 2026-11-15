@@ -33,6 +33,8 @@ public struct DieterMacApp: App {
                 .modifier(WorkspaceMailFocus())
                 .environment(permissions)
                 .environment(store)
+                // Agent forms judge provider accounts without the whole session.
+                .environment(store.providersModel)
                 .dieterThemeRoot(
                     palette: store.themeSelection.palette,
                     appearance: store.themeSelection.appearance

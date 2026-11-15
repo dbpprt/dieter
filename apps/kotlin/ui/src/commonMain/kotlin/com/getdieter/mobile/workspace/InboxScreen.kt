@@ -57,11 +57,14 @@ import androidx.compose.ui.unit.sp
 import com.getdieter.api.v1.Card
 import com.getdieter.client.v1.*
 import com.getdieter.core.activity.Activity
+import com.getdieter.core.client.rules.ProviderExports
 import com.getdieter.mobile.app.*
 import com.getdieter.mobile.board.*
 import com.getdieter.mobile.creation.*
 import com.getdieter.mobile.design.*
 import com.getdieter.mobile.navigation.*
+import com.getdieter.mobile.providers.rememberProviders
+import com.getdieter.mobile.providers.tint
 import com.getdieter.mobile.store.*
 import kotlin.time.Instant
 import kotlinx.coroutines.delay
@@ -85,7 +88,7 @@ internal fun InboxScreen(store: MobileStore) {
     val workspace by store.workspace.slice.collectAsState()
     val refreshing by store.session.refreshing.collectAsState()
     val session by store.session.slice.collectAsState()
-    val quotas by store.machines.quotas.collectAsState()
+    val providers = rememberProviders(store)
     val selected by store.conversation.selectedCard.collectAsState()
     var query by rememberSaveable { mutableStateOf("") }
     var searching by rememberSaveable { mutableStateOf(false) }
@@ -238,12 +241,12 @@ internal fun InboxScreen(store: MobileStore) {
                             filter = it
                         }
                     }
-                    if (quotas.group_rows.any { it.lowest_remaining >= 0 })
+                    if (providers.summary?.items.orEmpty().any { it.remaining >= 0 })
                         item("usage") {
-                            UsageStrip(quotas) {
+                            UsageStrip(providers.summary?.items.orEmpty()) {
                                 store.showFrom(
                                     MobileRoute.Root(MobileTab.INBOX),
-                                    MobileRoute.Tool(ToolPage.USAGE),
+                                    MobileRoute.Tool(ToolPage.PROVIDERS),
                                 )
                             }
                         }
@@ -471,44 +474,42 @@ private fun PulseTile(
     }
 }
 
-/** Remaining provider usage as small gauges; opens the Usage page. */
+/** What is left of each provider's tightest allowance as small gauges; opens Providers. */
 @Composable
-private fun UsageStrip(quotas: QuotasSlice, open: () -> Unit) {
-    val groups = quotas.group_rows.filter { it.lowest_remaining >= 0 }
+private fun UsageStrip(summary: List<ProviderSummaryItem>, open: () -> Unit) {
+    val items = summary.filter { it.remaining >= 0 }
     Row(
         Modifier.fillMaxWidth()
             .padding(horizontal = ScreenMargin, vertical = 4.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(palette.cell)
             .pressable(onClick = open, highlight = true)
-            .padding(start = 14.dp, end = 10.dp, top = 9.dp, bottom = 9.dp),
+            .padding(start = 14.dp, end = 10.dp, top = 9.dp, bottom = 9.dp)
+            .testTag("inbox-usage"),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        groups.take(3).forEach { group ->
-            val low = group.lowest_remaining < 20
+        items.take(3).forEach { item ->
+            val tint = item.severity.tint()
+            val normal = item.severity == ProviderSeverity.PROVIDER_SEVERITY_NORMAL
             Row(
                 Modifier.weight(1f),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                UsageGauge(
-                    group.lowest_remaining / 100f,
-                    if (low) palette.warning else palette.success,
-                )
+                UsageGauge(item.remaining / 100f, tint)
                 Column {
                     Text(
-                        group.provider_name,
+                        item.provider_name,
                         style = type.caption2,
                         color = palette.secondaryLabel,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        "${group.lowest_remaining}% left",
+                        ProviderExports.usageText(item.remaining),
                         style = type.footnote.copy(fontWeight = FontWeight.SemiBold),
-                        color =
-                            if (low) palette.warning.readableOn(palette.cell) else palette.label,
+                        color = if (normal) palette.label else tint.readableOn(palette.cell),
                         maxLines = 1,
                     )
                 }
@@ -516,7 +517,7 @@ private fun UsageStrip(quotas: QuotasSlice, open: () -> Unit) {
         }
         Icon(
             Glyph.CHEVRON_RIGHT,
-            "Usage",
+            "Providers",
             tint = palette.tertiaryLabel,
             size = 13.dp,
             weight = GlyphWeight.SEMIBOLD,

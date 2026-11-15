@@ -91,7 +91,7 @@ enum class ToolPage(val title: String, internal val glyph: Glyph, internal val t
     FILES("Files", Glyph.FOLDER, 0xFF0A9EF5),
     CHANGES("Changes", Glyph.CHANGES, 0xFFFF9F0A),
     SCHEDULES("Schedules", Glyph.SCHEDULES, 0xFFFF453A),
-    USAGE("Usage", Glyph.USAGE, 0xFF30B158),
+    PROVIDERS("Providers", Glyph.KEY, 0xFF30B158),
     DEVICES("Devices", Glyph.DEVICES, 0xFF32ADE6),
     SETTINGS("Settings", Glyph.SETTINGS, 0xFF8E8E93),
 }
@@ -242,6 +242,11 @@ sealed class MobileRoute {
 
     data class Machine(val machineId: String) : MobileRoute() {
         override val key = "machine/$machineId"
+    }
+
+    /** A Claude or ChatGPT account: its usage and its sign-in on each machine. */
+    data class ProviderAccount(val accountId: String) : MobileRoute() {
+        override val key = "provider/$accountId"
     }
 
     data class TerminalSession(val terminalId: String, val cardId: String = "") : MobileRoute() {

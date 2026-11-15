@@ -61,6 +61,19 @@ final class ConversationContext {
     @ObservationIgnored var onChooseAgent: (ClientAgentChoice.OneOf_Choice) async -> Void = { _ in }
     /// Changes the composer's agent; the core checks the pickers allow it.
     func chooseAgent(_ choice: ClientAgentChoice.OneOf_Choice) async { await onChooseAgent(choice) }
+    /// The account the next message runs on cannot run on the conversation's
+    /// machine; the composer holds the message and the timeline says why.
+    var accountBlocked: Bool { agentControls?.accountBlocked ?? false }
+    /// Why the conversation's account cannot run now; nil while it can.
+    var providerNotice: ClientProviderNotice? {
+        let state = model.state
+        return state.hasProviderNotice ? state.providerNotice : nil
+    }
+    @ObservationIgnored var onProviderSignIn: (_ accountID: String, _ daemonID: String) async -> Void = { _, _ in }
+    /// Signs the notice's account in on its machine, in the sign-in sheet.
+    func signInProvider(_ notice: ClientProviderNotice) async {
+        await onProviderSignIn(notice.accountID, notice.daemonID)
+    }
     var composerText: String {
         get { composer.draft.text }
         set { composer.draft.text = newValue }

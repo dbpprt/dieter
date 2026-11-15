@@ -12,6 +12,7 @@ import com.getdieter.client.v1.CreationIntent
 import com.getdieter.client.v1.CreationPreview
 import com.getdieter.client.v1.CreationPreviewCommand
 import com.getdieter.client.v1.CreationSlice
+import com.getdieter.client.v1.ProviderNotice
 import com.getdieter.core.CoreRuntime
 import com.getdieter.core.composition.CatalogState
 import com.getdieter.core.composition.Creation
@@ -22,6 +23,8 @@ import com.getdieter.core.composition.DraftKey
 import com.getdieter.core.composition.WorkspaceMode
 import com.getdieter.core.conversation.ConversationView
 import com.getdieter.core.metadata.MachineMetadata
+import com.getdieter.core.providers.AgentAccountRules
+import com.getdieter.core.providers.ProvidersView
 import com.getdieter.core.selection.AgentControls
 import com.getdieter.core.selection.ProviderOptionKind
 import com.getdieter.core.selection.Selections
@@ -191,7 +194,12 @@ internal class CreationPreviewSurface(private val runtime: CoreRuntime) {
                 runtime.workspace.state,
                 runtime.metadata.machines,
                 runtime.connection.machines,
-                combine(runtime.sessions.routes, runtime.creation.state, ::Pair),
+                combine(
+                    runtime.sessions.routes,
+                    runtime.creation.state,
+                    runtime.providers.view,
+                    ::Triple,
+                ),
             ) { bound, _, _, _, _ ->
                 preview(bound)
             }
@@ -269,7 +277,10 @@ internal fun creationPreview(plan: CreationPlan): CreationPreview {
  */
 internal fun agentControlsState(controls: AgentControls): AgentControlsState =
     AgentControlsState(
-        selection = controls.selection,
+        // The account a send uses is preselected; the choice itself stays as it was.
+        selection =
+            controls.account?.let { controls.selection.copy(account_id = it.id) }
+                ?: controls.selection,
         providers = controls.harnesses.map { AgentPickerItem(it.id, it.name.ifEmpty { it.id }) },
         models =
             controls.harness?.models.orEmpty().map {
@@ -307,30 +318,50 @@ internal fun agentControlsState(controls: AgentControls): AgentControlsState =
             controls.options
                 .filter { Selections.optionKind(it) == ProviderOptionKind.TOGGLE }
                 .associate { it.id to Selections.isOn(controls.optionValue(it)) },
+        accounts = controls.accountOptions.map(AgentAccountRules::option),
+        account_enabled = controls.accountEnabled,
+        account_label = controls.accountLabel,
+        account_blocked = controls.accountBlocked,
     )
 
 /**
  * The composer of [view] as the conversation slice shows it ([AgentControls.forComposer]) for
  * [card]: the composer's choice from [selections], else the card's agent, against the catalog of
- * the machine that runs it. Null until the card and its machine are known.
+ * the machine that runs it, with [providers]' accounts judged on that machine. Null until the card
+ * and its machine are known.
  */
+internal fun composerControls(
+    view: ConversationView,
+    card: Card?,
+    selections: Map<DraftKey, HarnessSelection>,
+    machines: Map<String, MachineMetadata>,
+    providers: ProvidersView = ProvidersView(),
+): AgentControls? {
+    val daemonId = view.daemonId ?: return null
+    card ?: return null
+    val harnesses = machines[daemonId]?.harnesses?.harnesses.orEmpty()
+    return AgentControls.forComposer(
+        selections[DraftKey(daemonId, view.cardId)],
+        card,
+        harnesses,
+        hasMessages = view.messages.isNotEmpty(),
+        accounts = AgentAccountRules.forMachine(providers, daemonId, card.provider_account_id),
+    )
+}
+
+/** [composerControls] as the client contract carries them. */
 internal fun composerAgent(
     view: ConversationView,
     card: Card?,
     selections: Map<DraftKey, HarnessSelection>,
     machines: Map<String, MachineMetadata>,
-): AgentControlsState? {
-    val daemonId = view.daemonId ?: return null
-    card ?: return null
-    val harnesses = machines[daemonId]?.harnesses?.harnesses.orEmpty()
-    return agentControlsState(
-        AgentControls.forComposer(
-            selections[DraftKey(daemonId, view.cardId)],
-            card,
-            harnesses,
-            hasMessages = view.messages.isNotEmpty(),
-        )
-    )
+    providers: ProvidersView = ProvidersView(),
+): AgentControlsState? =
+    composerControls(view, card, selections, machines, providers)?.let(::agentControlsState)
+
+/** The conversation's banner when the account its next send uses cannot run on its machine. */
+internal fun providerNotice(controls: AgentControls?): ProviderNotice? = controls?.let {
+    AgentAccountRules.notice(it.account, it.missingAccount, it.accounts)
 }
 
 /**
@@ -363,6 +394,12 @@ internal fun AgentControls.choosing(choice: AgentChoice): HarnessSelection {
                 ?: invalid("That option does not apply to this model.")
         if (!optionEnabled(option)) invalid("This option cannot change in a started conversation.")
         return settingOption(option.id, setting.option_value)
+    }
+    choice.account?.let { id ->
+        if (accountOptions.isEmpty()) invalid("This agent has no provider accounts to choose.")
+        if (accountOptions.none { it.id == id })
+            invalid("That account is not available for this agent.")
+        return choosingAccount(id)
     }
     invalid("Choose an agent setting.")
 }

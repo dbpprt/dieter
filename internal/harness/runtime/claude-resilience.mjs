@@ -88,7 +88,7 @@ export function claudeAuthFailureText(chunk) {
 // summarize a failure by its first line, so lead with what to do about it.
 export function claudeAuthFailureMessage(detail) {
   return [
-    "Claude Code sign-in was rejected, even after retrying. Run `claude auth login` on the host that runs this agent, then retry.",
+    "Claude Code sign-in was rejected on this machine, even after retrying. Sign in again in Settings › Providers (or `dieter provider login`), then retry.",
     detail,
   ]
     .filter(Boolean)

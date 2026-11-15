@@ -17,8 +17,6 @@ import com.getdieter.client.v1.AdminRenameBoard
 import com.getdieter.client.v1.AdminUpdateProject
 import com.getdieter.client.v1.AdminWorkspaceSettings
 import com.getdieter.client.v1.Command
-import com.getdieter.client.v1.QuotasCommand
-import com.getdieter.client.v1.QuotasLoad
 import com.getdieter.client.v1.Slice
 import com.getdieter.client.v1.Step
 import com.getdieter.client.v1.TelemetryCommand
@@ -293,7 +291,7 @@ class ClientApiAdminEndToEndTest : EndToEnd() {
                 .workspace!!
         assertEquals(File(checkout.path).canonicalPath, File(workspace.path).canonicalPath)
 
-        // The selected machine's telemetry streams through its slice; quotas load from the gateway.
+        // The selected machine's telemetry streams through its slice.
         val telemetry = MutableStateFlow<TelemetrySlice?>(null)
         val telemetryWatch =
             api.observe(Slice.SLICE_TELEMETRY, "") {
@@ -337,7 +335,6 @@ class ClientApiAdminEndToEndTest : EndToEnd() {
             Command(telemetry = TelemetryCommand(select = TelemetrySelect(active = false)))
         )
         telemetryWatch.close()
-        api.dispatch(Command(quotas = QuotasCommand(load = QuotasLoad(refresh = false))))
     }
 
     /**

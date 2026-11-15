@@ -13,6 +13,8 @@ harnesses:
         level: between-turns
       - id: effort-selection
         level: between-turns
+      - id: account-selection
+        level: between-turns
       - id: task-plan
         level: snapshots
     options:
@@ -93,6 +95,8 @@ harnesses:
       - id: model-selection
         level: between-turns
       - id: effort-selection
+        level: between-turns
+      - id: account-selection
         level: between-turns
       - id: subagents
         level: lifecycle

@@ -1234,18 +1234,17 @@ type Card struct {
 	RemotePublishMode   string                 `protobuf:"bytes,34,opt,name=remote_publish_mode,json=remotePublishMode,proto3" json:"remote_publish_mode,omitempty"`
 	TokenUsage          *TokenUsage            `protobuf:"bytes,35,opt,name=token_usage,json=tokenUsage,proto3" json:"token_usage,omitempty"`
 	MergedIntoCardId    string                 `protobuf:"bytes,36,opt,name=merged_into_card_id,json=mergedIntoCardId,proto3" json:"merged_into_card_id,omitempty"`
-	// Owner-scoped provider account HMAC used by the latest turn. This is safe
-	// to correlate with credential-free quota snapshots and is not a provider
-	// credential or raw provider account identifier.
-	ProviderAccountKey string `protobuf:"bytes,37,opt,name=provider_account_key,json=providerAccountKey,proto3" json:"provider_account_key,omitempty"`
 	// Owner-local: agent turns of this conversation may use the account vault.
 	// Set only at creation; forks and merges never inherit it.
 	VaultAccess bool `protobuf:"varint,47,opt,name=vault_access,json=vaultAccess,proto3" json:"vault_access,omitempty"`
 	// Owner-local: agent turns of this conversation may send the user mail.
 	// Set only at creation; forks and merges never inherit it.
-	MailAccess    bool `protobuf:"varint,48,opt,name=mail_access,json=mailAccess,proto3" json:"mail_access,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	MailAccess bool `protobuf:"varint,48,opt,name=mail_access,json=mailAccess,proto3" json:"mail_access,omitempty"`
+	// Owner-local: the provider account (a provider-accounts KV key) of the
+	// latest turn. Never a credential.
+	ProviderAccountId string `protobuf:"bytes,49,opt,name=provider_account_id,json=providerAccountId,proto3" json:"provider_account_id,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *Card) Reset() {
@@ -1586,13 +1585,6 @@ func (x *Card) GetMergedIntoCardId() string {
 	return ""
 }
 
-func (x *Card) GetProviderAccountKey() string {
-	if x != nil {
-		return x.ProviderAccountKey
-	}
-	return ""
-}
-
 func (x *Card) GetVaultAccess() bool {
 	if x != nil {
 		return x.VaultAccess
@@ -1605,6 +1597,13 @@ func (x *Card) GetMailAccess() bool {
 		return x.MailAccess
 	}
 	return false
+}
+
+func (x *Card) GetProviderAccountId() string {
+	if x != nil {
+		return x.ProviderAccountId
+	}
+	return ""
 }
 
 type CardOrigin struct {
@@ -3112,8 +3111,11 @@ type HarnessSelection struct {
 	Model           string                 `protobuf:"bytes,2,opt,name=model,proto3" json:"model,omitempty"`
 	Effort          string                 `protobuf:"bytes,3,opt,name=effort,proto3" json:"effort,omitempty"`
 	ProviderOptions map[string]string      `protobuf:"bytes,4,rep,name=provider_options,json=providerOptions,proto3" json:"provider_options,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Provider account (provider-accounts KV key) the turn runs on. Empty uses
+	// the conversation's last account, then the provider default.
+	AccountId     string `protobuf:"bytes,5,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *HarnessSelection) Reset() {
@@ -3172,6 +3174,13 @@ func (x *HarnessSelection) GetProviderOptions() map[string]string {
 		return x.ProviderOptions
 	}
 	return nil
+}
+
+func (x *HarnessSelection) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
+	}
+	return ""
 }
 
 type ValidationCommand struct {
@@ -5202,7 +5211,7 @@ const file_dieter_v1_common_proto_rawDesc = "" +
 	"\x0eCardStateField\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
 	"\brevision\x18\x02 \x01(\tR\brevision\x127\n" +
-	"\bversions\x18\x03 \x03(\v2\x1b.dieter.v1.CardStateVersionR\bversions\"\x8c\x0f\n" +
+	"\bversions\x18\x03 \x03(\v2\x1b.dieter.v1.CardStateVersionR\bversions\"\xa6\x0f\n" +
 	"\x04Card\x12<\n" +
 	"\fstate_fields\x18. \x03(\v2\x19.dieter.v1.CardStateFieldR\vstateFields\x12&\n" +
 	"\x0fowner_daemon_id\x18& \x01(\tR\rownerDaemonId\x12\x1f\n" +
@@ -5253,14 +5262,14 @@ const file_dieter_v1_common_proto_rawDesc = "" +
 	"\x13remote_publish_mode\x18\" \x01(\tR\x11remotePublishMode\x126\n" +
 	"\vtoken_usage\x18# \x01(\v2\x15.dieter.v1.TokenUsageR\n" +
 	"tokenUsage\x12-\n" +
-	"\x13merged_into_card_id\x18$ \x01(\tR\x10mergedIntoCardId\x120\n" +
-	"\x14provider_account_key\x18% \x01(\tR\x12providerAccountKey\x12!\n" +
+	"\x13merged_into_card_id\x18$ \x01(\tR\x10mergedIntoCardId\x12!\n" +
 	"\fvault_access\x18/ \x01(\bR\vvaultAccess\x12\x1f\n" +
 	"\vmail_access\x180 \x01(\bR\n" +
-	"mailAccess\x1aB\n" +
+	"mailAccess\x12.\n" +
+	"\x13provider_account_id\x181 \x01(\tR\x11providerAccountId\x1aB\n" +
 	"\x14ProviderOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x18\x10\x19\"\x8e\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x18\x10\x19J\x04\b%\x10&R\x14provider_account_key\"\x8e\x01\n" +
 	"\n" +
 	"CardOrigin\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x1f\n" +
@@ -5431,12 +5440,14 @@ const file_dieter_v1_common_proto_rawDesc = "" +
 	"\x05parts\x18\x03 \x03(\v2\x16.dieter.v1.MessagePartR\x05parts\x12\x1d\n" +
 	"\n" +
 	"created_at\x18\x04 \x01(\tR\tcreatedAt\x129\n" +
-	"\tselection\x18\x05 \x01(\v2\x1b.dieter.v1.HarnessSelectionR\tselection\"\xfd\x01\n" +
+	"\tselection\x18\x05 \x01(\v2\x1b.dieter.v1.HarnessSelectionR\tselection\"\x9c\x02\n" +
 	"\x10HarnessSelection\x12\x1a\n" +
 	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x14\n" +
 	"\x05model\x18\x02 \x01(\tR\x05model\x12\x16\n" +
 	"\x06effort\x18\x03 \x01(\tR\x06effort\x12[\n" +
-	"\x10provider_options\x18\x04 \x03(\v20.dieter.v1.HarnessSelection.ProviderOptionsEntryR\x0fproviderOptions\x1aB\n" +
+	"\x10provider_options\x18\x04 \x03(\v20.dieter.v1.HarnessSelection.ProviderOptionsEntryR\x0fproviderOptions\x12\x1d\n" +
+	"\n" +
+	"account_id\x18\x05 \x01(\tR\taccountId\x1aB\n" +
 	"\x14ProviderOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xcc\x02\n" +

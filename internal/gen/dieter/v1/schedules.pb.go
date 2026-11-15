@@ -173,7 +173,9 @@ type Schedule struct {
 	// Cards created by this schedule get vault access. Owner-local.
 	VaultAccess bool `protobuf:"varint,42,opt,name=vault_access,json=vaultAccess,proto3" json:"vault_access,omitempty"`
 	// Cards created by this schedule may send the user mail. Owner-local.
-	MailAccess    bool `protobuf:"varint,43,opt,name=mail_access,json=mailAccess,proto3" json:"mail_access,omitempty"`
+	MailAccess bool `protobuf:"varint,43,opt,name=mail_access,json=mailAccess,proto3" json:"mail_access,omitempty"`
+	// Provider account the occurrences run on; empty uses the provider default.
+	AccountId     string `protobuf:"bytes,44,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -404,6 +406,13 @@ func (x *Schedule) GetMailAccess() bool {
 	return false
 }
 
+func (x *Schedule) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
+	}
+	return ""
+}
+
 type ScheduleDraft struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	CheckoutId      string                 `protobuf:"bytes,40,opt,name=checkout_id,json=checkoutId,proto3" json:"checkout_id,omitempty"`
@@ -427,6 +436,7 @@ type ScheduleDraft struct {
 	WorkspaceMode   string                 `protobuf:"bytes,19,opt,name=workspace_mode,json=workspaceMode,proto3" json:"workspace_mode,omitempty"`
 	VaultAccess     bool                   `protobuf:"varint,41,opt,name=vault_access,json=vaultAccess,proto3" json:"vault_access,omitempty"`
 	MailAccess      bool                   `protobuf:"varint,42,opt,name=mail_access,json=mailAccess,proto3" json:"mail_access,omitempty"`
+	AccountId       string                 `protobuf:"bytes,43,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -606,6 +616,13 @@ func (x *ScheduleDraft) GetMailAccess() bool {
 		return x.MailAccess
 	}
 	return false
+}
+
+func (x *ScheduleDraft) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
+	}
+	return ""
 }
 
 type SaveScheduleRequest struct {
@@ -1143,7 +1160,7 @@ const file_dieter_v1_schedules_proto_rawDesc = "" +
 	"\tschedules\x18\x01 \x03(\v2\x13.dieter.v1.ScheduleR\tschedules\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12\x1f\n" +
 	"\vtotal_count\x18\x03 \x01(\x05R\n" +
-	"totalCount\"\xe2\a\n" +
+	"totalCount\"\x81\b\n" +
 	"\bSchedule\x12&\n" +
 	"\x0fowner_daemon_id\x18( \x01(\tR\rownerDaemonId\x12\x1f\n" +
 	"\vcheckout_id\x18) \x01(\tR\n" +
@@ -1178,10 +1195,12 @@ const file_dieter_v1_schedules_proto_rawDesc = "" +
 	"\x0eworkspace_mode\x18\x19 \x01(\tR\rworkspaceMode\x12!\n" +
 	"\fvault_access\x18* \x01(\bR\vvaultAccess\x12\x1f\n" +
 	"\vmail_access\x18+ \x01(\bR\n" +
-	"mailAccess\x1aB\n" +
+	"mailAccess\x12\x1d\n" +
+	"\n" +
+	"account_id\x18, \x01(\tR\taccountId\x1aB\n" +
 	"\x14ProviderOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x12\x10\x13\"\x99\x06\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x12\x10\x13\"\xb8\x06\n" +
 	"\rScheduleDraft\x12\x1f\n" +
 	"\vcheckout_id\x18( \x01(\tR\n" +
 	"checkoutId\x12\x1d\n" +
@@ -1207,7 +1226,9 @@ const file_dieter_v1_schedules_proto_rawDesc = "" +
 	"\x0eworkspace_mode\x18\x13 \x01(\tR\rworkspaceMode\x12!\n" +
 	"\fvault_access\x18) \x01(\bR\vvaultAccess\x12\x1f\n" +
 	"\vmail_access\x18* \x01(\bR\n" +
-	"mailAccess\x1aB\n" +
+	"mailAccess\x12\x1d\n" +
+	"\n" +
+	"account_id\x18+ \x01(\tR\taccountId\x1aB\n" +
 	"\x14ProviderOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x11\x10\x12\"l\n" +

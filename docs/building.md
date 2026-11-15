@@ -88,7 +88,7 @@ concrete port: the runtime status records the address as given.
 
 For client work, the fixture gateway starts a disposable gateway plus an
 enrolled daemon with the deterministic mock harness, on loopback, with no GitHub
-or provider accounts:
+sign-in and no real provider accounts:
 
 ```sh
 go run ./tools/fixtures/gateway -e2e-fixture
@@ -97,12 +97,15 @@ go run ./tools/fixtures/gateway -e2e-fixture
 It prints `DIETER_ISOLATED_*` values (address, session token, daemon, project,
 board) and then `READY`, and keeps running until interrupted. Its state lives in
 a fresh temporary directory unless `-home` is given. The Kotlin `:core:e2e`
-tests, the Mac fixture suites and the Maestro flows all use it.
+tests, the Mac fixture suites and the Maestro flows all use it. It seeds
+provider accounts with fixture sign-ins; see
+[testing.md](testing.md#provider-accounts-in-fixtures).
 
 `-showcase-fixture` seeds the workspace behind the website and README
 screenshots instead: four projects on two online machines plus an offline
-laptop, unread conversations, schedules, provider usage and five scripted agent
-turns that keep running. It never contacts a model provider.
+laptop, unread conversations, schedules, provider accounts with their usage and
+five scripted agent turns that keep running. It never contacts a model
+provider.
 
 To try the real sign-in flow, run `dieter-gateway` in development mode with a
 GitHub OAuth app whose callback is `http://127.0.0.1:4243/auth/github/callback`:

@@ -449,6 +449,22 @@ func (t *Trust) DaemonKey(daemonID string) ([]byte, error) {
 	return append([]byte(nil), member.Descriptor.GetPublicKey()...), nil
 }
 
+// ActiveDaemons returns the gateway daemon IDs of the roster's active daemon
+// devices; nil while the roster is not trusted.
+func (t *Trust) ActiveDaemons() map[string]bool {
+	state, err := t.trusted()
+	if err != nil {
+		return nil
+	}
+	daemons := map[string]bool{}
+	for _, member := range state.Members() {
+		if member.Active() && member.Descriptor.GetKind() == gatewayv1.DeviceKind_DEVICE_KIND_DAEMON && member.Descriptor.GetDaemonId() != "" {
+			daemons[member.Descriptor.GetDaemonId()] = true
+		}
+	}
+	return daemons
+}
+
 // Signer signs roster entries and device certificates as this machine.
 func (t *Trust) Signer() roster.Signer { return t.signer }
 

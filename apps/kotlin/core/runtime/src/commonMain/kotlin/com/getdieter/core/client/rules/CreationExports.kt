@@ -11,12 +11,14 @@ import com.getdieter.client.v1.ChatDestinationGroups
 import com.getdieter.client.v1.ChatDestinationInput
 import com.getdieter.client.v1.Checkouts
 import com.getdieter.client.v1.HostnameSets
+import com.getdieter.client.v1.ProvidersSlice
 import com.getdieter.core.client.agentControlsState
 import com.getdieter.core.client.choosing
 import com.getdieter.core.composition.CapturePages
 import com.getdieter.core.composition.ChatDestinations
 import com.getdieter.core.composition.Creation
 import com.getdieter.core.composition.WorkspaceMode
+import com.getdieter.core.providers.AgentAccountRules
 import com.getdieter.core.selection.AgentControls
 import com.getdieter.core.selection.Selections
 
@@ -97,25 +99,36 @@ object CreationExports {
     /**
      * The pickers for [selection] against [catalog] (the machine's agents); [locked] for a started
      * conversation. A blank provider takes the catalog's first agent and its defaults; a chosen one
-     * is [Selections.validated]. A [choice] (one without a member means none) applies first when
-     * the pickers allow it, so the state shows the next selection.
+     * is [Selections.validated]. The account picker lists [providers]' accounts (the last
+     * `ProvidersSlice`) judged on [daemonId], the machine the agent runs on (empty while none is
+     * chosen). A [choice] (one without a member means none) applies first when the pickers allow
+     * it, so the state shows the next selection.
      */
     fun agentControls(
         selection: HarnessSelection,
         catalog: HarnessCatalog,
         locked: Boolean,
         choice: AgentChoice,
+        providers: ProvidersSlice,
+        daemonId: String,
     ): AgentControlsState {
         val harnesses = catalog.harnesses
         val start =
             if (selection.provider.isEmpty()) Selections.resolve(selection, harnesses) ?: selection
             else Selections.validated(selection, harnesses)
-        val controls = AgentControls(start, harnesses, locked = locked)
+        val controls =
+            AgentControls(
+                start,
+                harnesses,
+                locked = locked,
+                accounts = AgentAccountRules.fromSlice(providers, daemonId),
+            )
         val chosen =
             choice.provider != null ||
                 choice.model != null ||
                 choice.effort != null ||
-                choice.option != null
+                choice.option != null ||
+                choice.account != null
         val next =
             if (chosen) runCatching { controls.choosing(choice) }.getOrDefault(start) else start
         return agentControlsState(controls.copy(selection = next))

@@ -124,7 +124,7 @@ test(
     const errors = result.frames.filter((frame) => frame.chunk?.type === "error");
     assert.equal(errors.length, 1);
     const lines = errors[0].chunk.errorText.split("\n");
-    assert.match(lines[0], /^Claude Code sign-in was rejected.*claude auth login/);
+    assert.match(lines[0], /^Claude Code sign-in was rejected.*Settings › Providers/);
     assert.equal(lines[1], "HTTP 401: authentication_failed");
   },
 );

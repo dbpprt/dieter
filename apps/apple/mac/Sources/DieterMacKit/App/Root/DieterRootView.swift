@@ -103,6 +103,23 @@ struct DieterRootView: View {
         .sheet(isPresented: $store.labelsPresented) { LabelsSheet().environment(store) }
         .sheet(isPresented: $store.archivePolicyPresented) { ArchivePolicySheet().environment(store) }
         .sheet(isPresented: $store.commandPalettePresented) { CommandPalette().environment(store) }
+        .sheet(
+            isPresented: Binding(
+                get: { store.providersModel.presentedSessionID != nil },
+                set: { presented in
+                    guard !presented, let id = store.providersModel.presentedSessionID else { return }
+                    Task { await store.providersModel.close(sessionID: id) }
+                })
+        ) {
+            if let id = store.providersModel.presentedSessionID {
+                ProviderSignInSheet(
+                    sessionID: id, replace: { store.providersModel.present($0) },
+                    close: { store.providersModel.presentedSessionID = nil }
+                )
+                .environment(store)
+                .id(id)
+            }
+        }
         .alert(
             "Dieter",
             isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })

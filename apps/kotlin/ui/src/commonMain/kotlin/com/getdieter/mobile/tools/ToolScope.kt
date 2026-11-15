@@ -5,23 +5,33 @@ import com.getdieter.mobile.app.*
 import com.getdieter.mobile.design.*
 import com.getdieter.mobile.folders.FoldersScreen
 import com.getdieter.mobile.navigation.*
+import com.getdieter.mobile.providers.ProviderAccountScreen
+import com.getdieter.mobile.providers.ProvidersScreen
 import com.getdieter.mobile.settings.DevicesScreen
 import com.getdieter.mobile.settings.SettingsScreen
 import com.getdieter.mobile.store.*
 
 @Composable
-internal fun ToolScreen(store: MobileStore, route: MobileRoute.Tool) {
+internal fun ToolScreen(store: MobileStore, route: MobileRoute.Tool, openUrl: (String) -> Unit) {
     when (route.page) {
         ToolPage.TERMINALS -> TerminalsScreen(store)
         ToolPage.FOLDERS -> FoldersScreen(store)
         ToolPage.FILES -> FilesScreen(store, tool = route)
         ToolPage.CHANGES -> ProjectChangesScreen(store, route)
         ToolPage.SCHEDULES -> SchedulesScreen(store, route.projectId)
-        ToolPage.USAGE -> UsageScreen(store)
+        ToolPage.PROVIDERS -> ProvidersScreen(store, openUrl)
         ToolPage.DEVICES -> DevicesScreen(store)
         ToolPage.SETTINGS -> SettingsScreen(store)
     }
 }
+
+/** A provider account's page, opened from Providers or Settings. */
+@Composable
+internal fun ProviderAccountRoute(
+    store: MobileStore,
+    route: MobileRoute.ProviderAccount,
+    openUrl: (String) -> Unit,
+) = ProviderAccountScreen(store, route.accountId, openUrl)
 
 /** "Project · Machine": what a project tool shows, so its scope is never a guess. */
 @Composable

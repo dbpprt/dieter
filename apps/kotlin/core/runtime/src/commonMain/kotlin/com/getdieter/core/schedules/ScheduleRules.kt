@@ -190,7 +190,8 @@ object ScheduleDrafts {
      * [existing] as an editable draft, or a new one in [timezone] at 09:00 on weekdays. The board
      * is the schedule's when it still exists, else [selectedBoardId], else the first. A draft
      * without an agent gets the first of [harnesses] with its default model (else its first model),
-     * that model's default effort, and its default options.
+     * that model's default effort, and its default options. An existing schedule keeps its provider
+     * account; a new one starts on the provider default (no account).
      */
     fun make(
         existing: Schedule?,
@@ -228,6 +229,7 @@ object ScheduleDrafts {
                     workspace_mode = it.workspace_mode,
                     vault_access = it.vault_access,
                     mail_access = it.mail_access,
+                    account_id = it.account_id,
                 )
             }
                 ?: ScheduleDraft(
@@ -245,6 +247,7 @@ object ScheduleDrafts {
             model = agent?.model ?: base.model,
             effort = agent?.effort ?: base.effort,
             provider_options = agent?.provider_options ?: base.provider_options,
+            account_id = if (agent != null) "" else base.account_id,
             action = if (base.action == "run") "run" else "draft",
             open_card_policy = if (base.open_card_policy == "always") "always" else "skip_if_open",
             misfire_policy = "latest",
@@ -279,15 +282,27 @@ object ScheduleDrafts {
             label_ids = if (id in draft.label_ids) draft.label_ids - id else draft.label_ids + id
         )
 
+    /** The draft's agent as pickers take it, its provider account included. */
     fun selection(draft: ScheduleDraft): HarnessSelection =
-        HarnessSelection(draft.provider, draft.model, draft.effort, draft.provider_options)
+        HarnessSelection(
+            draft.provider,
+            draft.model,
+            draft.effort,
+            draft.provider_options,
+            draft.account_id,
+        )
 
+    /**
+     * The draft with a picker's [selection]: the agent and its provider account (empty runs each
+     * occurrence on the provider default).
+     */
     fun choose(draft: ScheduleDraft, selection: HarnessSelection): ScheduleDraft =
         draft.copy(
             provider = selection.provider,
             model = selection.model,
             effort = selection.effort,
             provider_options = selection.provider_options,
+            account_id = selection.account_id,
         )
 
     const val DRAFT = "draft"

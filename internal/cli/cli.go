@@ -48,6 +48,9 @@ type CLI struct {
 	// chatScope is set while a "dieter chat" action runs a shared card
 	// implementation, so its help names the chat command.
 	chatScope bool
+	// promptHidden reads one line without echo. Nil reads the terminal on In;
+	// tests replace it to drive interactive sign-ins.
+	promptHidden func(ctx context.Context, label string) (string, error)
 }
 
 // New returns a CLI for the local DIETER_HOME root.

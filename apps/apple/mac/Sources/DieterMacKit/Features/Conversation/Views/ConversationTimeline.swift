@@ -198,6 +198,15 @@ struct ConversationTimeline: View {
                     )
                     .id("conversation.turn-failure")
                 }
+                if let providerNotice = context.providerNotice {
+                    ProviderNoticeBanner(
+                        notice: providerNotice,
+                        accounts: context.agentControls?.accounts ?? [],
+                        signIn: { Task { await context.signInProvider(providerNotice) } },
+                        chooseAccount: { id in Task { await context.chooseAgent(.account(id)) } }
+                    )
+                    .id("conversation.provider-notice")
+                }
                 if !renderedThroughLatest {
                     historyEdge(loading: historyLoadInFlight && !loadingEarlier, earlier: false, available: true)
                 }

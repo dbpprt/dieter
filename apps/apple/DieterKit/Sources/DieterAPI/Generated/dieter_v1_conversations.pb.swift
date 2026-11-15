@@ -356,6 +356,9 @@ public nonisolated struct Dieter_V1_SendMessageRequest: Sendable {
 
   public var messageID: String = String()
 
+  /// Provider account for this turn; empty keeps the conversation's account.
+  public var accountID: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -988,7 +991,7 @@ nonisolated extension Dieter_V1_ToolOutput: SwiftProtobuf.Message, SwiftProtobuf
 
 nonisolated extension Dieter_V1_SendMessageRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SendMessageRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{1}parts\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{3}provider_options\0\u{3}client_id\0\u{3}command_id\0\u{3}message_id\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{1}parts\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{3}provider_options\0\u{3}client_id\0\u{3}command_id\0\u{3}message_id\0\u{3}account_id\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1005,6 +1008,7 @@ nonisolated extension Dieter_V1_SendMessageRequest: SwiftProtobuf.Message, Swift
       case 7: try { try decoder.decodeSingularStringField(value: &self.clientID) }()
       case 8: try { try decoder.decodeSingularStringField(value: &self.commandID) }()
       case 9: try { try decoder.decodeSingularStringField(value: &self.messageID) }()
+      case 10: try { try decoder.decodeSingularStringField(value: &self.accountID) }()
       default: break
       }
     }
@@ -1038,6 +1042,9 @@ nonisolated extension Dieter_V1_SendMessageRequest: SwiftProtobuf.Message, Swift
     if !self.messageID.isEmpty {
       try visitor.visitSingularStringField(value: self.messageID, fieldNumber: 9)
     }
+    if !self.accountID.isEmpty {
+      try visitor.visitSingularStringField(value: self.accountID, fieldNumber: 10)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1051,6 +1058,7 @@ nonisolated extension Dieter_V1_SendMessageRequest: SwiftProtobuf.Message, Swift
     if lhs.clientID != rhs.clientID {return false}
     if lhs.commandID != rhs.commandID {return false}
     if lhs.messageID != rhs.messageID {return false}
+    if lhs.accountID != rhs.accountID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

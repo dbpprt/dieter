@@ -65,7 +65,6 @@ internal enum class Glyph(val symbol: String, private val material: () -> ImageV
     FOLDER_ADD("folder.badge.plus", { Icons.Outlined.CreateNewFolder }),
     SCHEDULES("calendar.badge.clock", { Icons.Outlined.CalendarMonth }),
     CLOCK("clock", { Icons.Outlined.Schedule }),
-    USAGE("gauge.with.dots.needle.33percent", { Icons.Outlined.Speed }),
     CHANGES("plus.forwardslash.minus", { Icons.Outlined.Difference }),
     BRANCH("arrow.triangle.branch", { Icons.Outlined.AccountTree }),
     FORK("arrow.triangle.branch", { Icons.Outlined.CallSplit }),

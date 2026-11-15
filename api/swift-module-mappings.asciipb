@@ -16,6 +16,7 @@ mapping {
   proto_file_path: "dieter/v1/machine.proto"
   proto_file_path: "dieter/v1/peer.proto"
   proto_file_path: "dieter/v1/projects.proto"
+  proto_file_path: "dieter/v1/provider_accounts.proto"
   proto_file_path: "dieter/v1/schedules.proto"
   proto_file_path: "dieter/v1/screens.proto"
   proto_file_path: "dieter/v1/settings.proto"

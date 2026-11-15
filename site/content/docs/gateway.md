@@ -10,9 +10,9 @@ slug: "gateway"
 The gateway authenticates allowlisted GitHub accounts and relays each account
 only to its own enrolled daemons. Every relayed connection is TLS between two
 of the account's trusted devices, so the gateway forwards bytes it cannot read.
-It never stores code, transcripts, files, or harness credentials; only control
-metadata, each account's signed device roster, short-lived pairing requests,
-and normalized, credential-free provider quota snapshots.
+It never stores code, transcripts, files, harness credentials or any provider
+data; only control metadata, each account's signed device roster and
+short-lived pairing requests.
 
 ## Register a GitHub OAuth App
 
@@ -111,8 +111,9 @@ configuration lifetime and defaults to five minutes.
 
 The gateway owns a SQLite database under `DIETER_GATEWAY_HOME` plus its private
 signing and daemon-CA keys. The database holds account sessions, enrolled
-daemons, presence and routes, provider quota snapshots, each account's device
-roster and its pending pairing requests. Roster entries are signed by the
+daemons, presence and routes, each account's device roster and its pending
+pairing requests. Provider accounts and usage replicate only between your
+daemons and never reach it. Roster entries are signed by the
 account's devices: the gateway checks every new entry and serves the list, but
 cannot write one, so it cannot add a device to an account. A pairing request
 holds the new device's name, kind and public key and a proof of its code, never

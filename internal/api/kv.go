@@ -110,6 +110,11 @@ func (s *Server) mutateKV(ctx context.Context, ref *dieterv1.KVRef, m kv.Mutatio
 	if schema.DaemonNamespaceKind(ref.GetNamespace()) {
 		return nil, fault.New(fault.PermissionDenied, "folder membership is written by its daemon; use dieter folder")
 	}
+	// Provider account records are written by daemons through
+	// ProviderAccountService, which binds identities and owns login records.
+	if schema.ProviderNamespaceKind(ref.GetNamespace()) {
+		return nil, fault.New(fault.PermissionDenied, "provider account records are written by daemons; use dieter provider")
+	}
 	m.Namespace, m.Key = ref.GetNamespace(), ref.GetKey()
 	record, err := s.store.KV.Mutate(identity, m)
 	if err != nil {

@@ -12,6 +12,9 @@ struct ScheduleEditorContext {
     let harnessCatalog: Dieter_V1_HarnessCatalog
     /// The machine of each of the project's checkouts, by checkout ID.
     var checkoutMachines: [String: String] = [:]
+    /// The machine that runs the draft, whose sign-ins the account picker
+    /// judges; empty while unknown.
+    var daemonID = ""
 }
 
 /// The shown project's schedules, kept by the shared core: lists come from
@@ -196,7 +199,7 @@ final class SchedulesModel {
                 endpointID: base.target.endpointID, projectID: base.target.projectID, checkoutID: draft.checkoutID),
             projectName: base.projectName, boards: base.boards, selectedBoardID: draft.boardID,
             harnessCatalog: (machine.isEmpty ? nil : await catalog(machine)) ?? base.harnessCatalog,
-            checkoutMachines: base.checkoutMachines)
+            checkoutMachines: base.checkoutMachines, daemonID: machine.isEmpty ? base.daemonID : machine)
     }
 
     /// Creates on the chosen checkout's machine, or updates on the owner.

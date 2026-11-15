@@ -27,7 +27,6 @@ type Server struct {
 	Keys        *Keys
 	Auth        *Auth
 	Hub         *Hub
-	Quota       *QuotaManager
 	Push        *PushManager
 	Service     *Service
 	Relay       *RelayService
@@ -46,9 +45,6 @@ func NewServer(config Config, store *Store, logger *slog.Logger) (*Server, error
 	auth := NewAuth(config, store, logger)
 	hub := NewHub(store, config)
 	service := NewService(store, auth, keys, hub, config)
-	quota := NewQuotaManager(store, hub, logger)
-	hub.SetQuotaManager(quota)
-	service.SetQuotaManager(quota)
 	sender, err := newAPNSSender(config)
 	if err != nil {
 		return nil, err
@@ -146,7 +142,7 @@ func NewServer(config Config, store *Store, logger *slog.Logger) (*Server, error
 		httpMux.ServeHTTP(w, r)
 	})
 	handler = limitGatewayRequestBodies(handler, 15*time.Second)
-	return &Server{Config: config, Store: store, Keys: keys, Auth: auth, Hub: hub, Quota: quota, Push: push, Service: service, Relay: relay, APIGRPC: api, HTTPHandler: handler}, nil
+	return &Server{Config: config, Store: store, Keys: keys, Auth: auth, Hub: hub, Push: push, Service: service, Relay: relay, APIGRPC: api, HTTPHandler: handler}, nil
 }
 
 func gatewayMethodRequiresSession(path string) bool {
@@ -261,13 +257,10 @@ func (s *Server) TLSConfig() (*tls.Config, error) {
 }
 
 func (s *Server) Serve(listener net.Listener) error {
-	quotaContext, cancelQuota := context.WithCancel(context.Background())
-	defer cancelQuota()
-	if s.Quota != nil {
-		s.Quota.Start(quotaContext)
-	}
+	backgroundContext, cancelBackground := context.WithCancel(context.Background())
+	defer cancelBackground()
 	if s.Push != nil {
-		s.Push.Start(quotaContext)
+		s.Push.Start(backgroundContext)
 	}
 	httpServer, err := s.httpServer()
 	if err != nil {

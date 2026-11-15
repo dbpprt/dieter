@@ -102,7 +102,7 @@ func protoCard(value model.Card) *dieterv1.Card {
 		Title: value.Title, InitialPrompt: value.InitialPrompt,
 		InitialPromptSentAt: value.InitialPromptSentAt, PhaseChangedAt: value.PhaseChangedAt,
 		MergedIntoCardId: value.MergedIntoCardID,
-		Provider:         value.Provider, ProviderAccountKey: value.ProviderAccountKey, Model: value.Model, Effort: value.Effort,
+		Provider:         value.Provider, ProviderAccountId: value.ProviderAccountID, Model: value.Model, Effort: value.Effort,
 		ProviderOptions: cloneProtoStringMap(value.ProviderOptions),
 		Runtime:         value.Runtime, Summary: value.Summary,
 		RuntimeUpdatedAt: value.RuntimeUpdatedAt, LastActivityAt: value.LastActivityAt,
@@ -313,7 +313,7 @@ func protoContentPresentation(value *model.ContentPresentation) *dieterv1.Conten
 func protoQueuedMessage(value model.QueuedMessage, previews *payloadPreviewCache) *dieterv1.QueuedMessage {
 	result := &dieterv1.QueuedMessage{Id: value.ID, Text: value.Text, CreatedAt: value.CreatedAt}
 	if value.Selection != nil {
-		result.Selection = &dieterv1.HarnessSelection{Provider: value.Selection.Provider, Model: value.Selection.Model, Effort: value.Selection.Effort, ProviderOptions: value.Selection.ProviderOptions}
+		result.Selection = &dieterv1.HarnessSelection{Provider: value.Selection.Provider, Model: value.Selection.Model, Effort: value.Selection.Effort, ProviderOptions: value.Selection.ProviderOptions, AccountId: value.Selection.AccountID}
 	}
 	for _, part := range value.Parts {
 		result.Parts = append(result.Parts, protoMessagePart(part, previews))
@@ -562,7 +562,8 @@ func protoSchedule(value model.Schedule) *dieterv1.Schedule {
 		TitleTemplate: value.TitleTemplate, PromptTemplate: value.PromptTemplate,
 		Provider: value.Provider, Model: value.Model, Effort: value.Effort,
 		ProviderOptions: cloneProtoStringMap(value.ProviderOptions), WorkspaceMode: value.WorkspaceMode, VaultAccess: value.VaultAccess, MailAccess: value.MailAccess,
-		LabelIds: append([]string(nil), value.LabelIDs...), OpenCardPolicy: value.OpenCardPolicy,
+		AccountId: value.AccountID,
+		LabelIds:  append([]string(nil), value.LabelIDs...), OpenCardPolicy: value.OpenCardPolicy,
 		MisfirePolicy: value.MisfirePolicy,
 		NextRunAt:     value.NextRunAt, LastRunAt: value.LastRunAt,
 		CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt,

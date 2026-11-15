@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dbpprt/dieter/internal/engine/accounts"
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/platform/fault"
@@ -43,18 +44,24 @@ func (s *Service) ensureStartStorage(paths ...string) error {
 }
 
 func (s *Service) StartCard(ref, content, provider, modelName, effort string) (<-chan TurnUpdate, error) {
-	return s.startCard(ref, content, nil, provider, modelName, effort, nil, "", "")
+	return s.startCard(ref, content, nil, model.HarnessSelection{Provider: provider, Model: modelName, Effort: effort}, "", "")
 }
 
 func (s *Service) StartCardWithMessageID(ref, content, provider, modelName, effort, messageID string) (<-chan TurnUpdate, error) {
-	return s.startCard(ref, content, nil, provider, modelName, effort, nil, "", messageID)
+	return s.startCard(ref, content, nil, model.HarnessSelection{Provider: provider, Model: modelName, Effort: effort}, "", messageID)
 }
 
 func (s *Service) StartCardWithMessageParts(ref string, parts []model.UIMessagePart, provider, modelName, effort string, providerOptions map[string]string, messageID string) (<-chan TurnUpdate, error) {
-	return s.startCard(ref, messagePartsText(parts), parts, provider, modelName, effort, providerOptions, "", messageID)
+	return s.StartCardWithSelection(ref, parts, model.HarnessSelection{Provider: provider, Model: modelName, Effort: effort, ProviderOptions: providerOptions}, messageID)
 }
 
-func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, provider, modelName, effort string, requestedOptions map[string]string, queueID, messageID string) (<-chan TurnUpdate, error) {
+// StartCardWithSelection starts a turn with a full selection, including the
+// provider account; empty fields keep the conversation's choice.
+func (s *Service) StartCardWithSelection(ref string, parts []model.UIMessagePart, selection model.HarnessSelection, messageID string) (<-chan TurnUpdate, error) {
+	return s.startCard(ref, messagePartsText(parts), parts, selection, "", messageID)
+}
+
+func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, requested model.HarnessSelection, queueID, messageID string) (<-chan TurnUpdate, error) {
 	detail, err := s.Store.Kanban.CardDetail(ref)
 	if err != nil {
 		return nil, err
@@ -86,11 +93,16 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 	if len(parts) == 0 {
 		parts = []model.UIMessagePart{{Type: "text", Text: content}}
 	}
-	adapter, configuredModel, selection, err := resolveTurnSelection(s.Catalog, detail.Card, provider, modelName, effort, requestedOptions)
+	adapter, configuredModel, selection, err := resolveTurnSelection(s.Catalog, detail.Card, requested)
 	if err != nil {
 		return nil, err
 	}
-	provider, modelName, effort = selection.Provider, selection.Model, selection.Effort
+	turnAuth, err := s.resolveTurnAuth(adapter.Runtime, selection.AccountID)
+	if err != nil {
+		return nil, err
+	}
+	selection.AccountID = turnAuth.AccountID
+	provider, modelName, effort := selection.Provider, selection.Model, selection.Effort
 	providerOptions := selection.ProviderOptions
 	var strix strixTurn
 	if adapter.Runtime == strixAdapter {
@@ -98,11 +110,7 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 			return nil, err
 		}
 	}
-	var providerAccountKey *string
-	if s.ProviderAccountKey != nil {
-		resolved := strings.TrimSpace(s.ProviderAccountKey(provider))
-		providerAccountKey = &resolved
-	}
+	providerAccountID := turnAuth.AccountID
 	if err := s.ensureStartStorage(s.Store.Root, detail.Project.Path); err != nil {
 		return nil, err
 	}
@@ -189,12 +197,12 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 		return nil, startErr
 	}
 	if first {
-		_, err = s.Store.Kanban.UpdateCardCache(detail.Card.ID, kanban.CardCacheInput{Provider: provider, ProviderAccountKey: providerAccountKey, Model: modelName, Effort: &effort, ProviderOptions: providerOptions})
+		_, err = s.Store.Kanban.UpdateCardCache(detail.Card.ID, kanban.CardCacheInput{Provider: provider, ProviderAccountID: &providerAccountID, Model: modelName, Effort: &effort, ProviderOptions: providerOptions})
 		if err == nil {
 			_, err = s.Store.Kanban.MarkPromptSent(detail.Card.ID)
 		}
 	} else {
-		_, err = s.Store.Kanban.UpdateCardCache(detail.Card.ID, kanban.CardCacheInput{Provider: provider, ProviderAccountKey: providerAccountKey, Model: modelName, Effort: &effort, ProviderOptions: providerOptions, Runtime: "running"})
+		_, err = s.Store.Kanban.UpdateCardCache(detail.Card.ID, kanban.CardCacheInput{Provider: provider, ProviderAccountID: &providerAccountID, Model: modelName, Effort: &effort, ProviderOptions: providerOptions, Runtime: "running"})
 		if err == nil && detail.Card.Scope == model.ConversationScopeBoard && detail.Card.Lane != model.LaneRunning {
 			_, err = s.Store.Kanban.MoveCard(detail.Card.ID, model.LaneRunning, nil)
 		}
@@ -225,6 +233,7 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 		PresentCommand:             s.CLIWord() + " " + conversationGroup(detail.Card) + " present " + detail.Card.ID,
 		Environment:                s.agentEnvironment(detail.Card.ID, turnID),
 	}
+	applyTurnAuth(turnAuth, &request)
 	if adapter.Runtime == strixAdapter {
 		// Strix gets the submitted instruction directly: no channel
 		// digest, steering or coding-agent context.
@@ -279,6 +288,12 @@ func (s *Service) SubmitCardParts(ref string, parts []model.UIMessagePart, provi
 }
 
 func (s *Service) SubmitCardPartsWithMessageID(ref string, parts []model.UIMessagePart, provider, modelName, effort string, providerOptions map[string]string, messageID string) (bool, error) {
+	return s.SubmitCardPartsWithSelection(ref, parts, model.HarnessSelection{Provider: provider, Model: modelName, Effort: effort, ProviderOptions: providerOptions}, messageID)
+}
+
+// SubmitCardPartsWithSelection starts or queues a message with a full
+// selection, including the provider account.
+func (s *Service) SubmitCardPartsWithSelection(ref string, parts []model.UIMessagePart, requested model.HarnessSelection, messageID string) (bool, error) {
 	parts, err := model.NormalizeMessageParts(parts)
 	if err != nil {
 		return false, err
@@ -295,13 +310,14 @@ func (s *Service) SubmitCardPartsWithMessageID(ref string, parts []model.UIMessa
 		active := s.active[card.ID]
 		if active != nil && active.selection.Provider != "" {
 			card.Provider, card.Model, card.Effort, card.ProviderOptions = active.selection.Provider, active.selection.Model, active.selection.Effort, active.selection.ProviderOptions
+			card.ProviderAccountID = active.selection.AccountID
 			card.InitialPromptSentAt = "active"
 		}
 		s.mu.Unlock()
 		if active != nil {
 			// Discovery can contact a provider. Keep it outside the service lock
 			// so configuration validation cannot stall unrelated active turns.
-			_, _, selection, selectionErr := resolveTurnSelection(s.Catalog, card, provider, modelName, effort, providerOptions)
+			_, _, selection, selectionErr := resolveTurnSelection(s.Catalog, card, requested)
 			if selectionErr != nil {
 				return false, selectionErr
 			}
@@ -316,7 +332,7 @@ func (s *Service) SubmitCardPartsWithMessageID(ref string, parts []model.UIMessa
 			s.mu.Unlock()
 			return err == nil, err
 		}
-		updates, err := s.StartCardWithMessageParts(card.ID, parts, provider, modelName, effort, providerOptions, messageID)
+		updates, err := s.StartCardWithSelection(card.ID, parts, requested, messageID)
 		if errors.Is(err, leases.ErrCardActive) {
 			s.mu.Lock()
 			started := s.active[card.ID] != nil
@@ -330,5 +346,41 @@ func (s *Service) SubmitCardPartsWithMessageID(ref string, parts []model.UIMessa
 		}
 		go drainTurnUpdates(updates)
 		return false, nil
+	}
+}
+
+// resolveTurnAuth resolves the provider account a Claude Code or Codex
+// adapter turn runs on. Without an accounts engine (tests with injected
+// runners, tools) turns keep the adapters' own credentials; other adapters
+// have no accounts.
+func (s *Service) resolveTurnAuth(adapterRuntime, accountID string) (accounts.TurnAuth, error) {
+	if adapterRuntime != "claude-code" && adapterRuntime != "codex" {
+		return accounts.TurnAuth{}, nil
+	}
+	if s.Accounts == nil {
+		return accounts.TurnAuth{AccountID: accountID}, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), turnAuthTimeout)
+	defer cancel()
+	return s.Accounts.ResolveTurn(ctx, adapterRuntime, accountID)
+}
+
+// turnAuthTimeout bounds account resolution, which may refresh a Codex token.
+const turnAuthTimeout = 45 * time.Second
+
+// applyTurnAuth hands a turn its account: environment additions (the
+// account's config directory or Codex home, masked host keys) and the
+// adapter's auth object.
+func applyTurnAuth(auth accounts.TurnAuth, request *harness.Request) {
+	request.ProviderAccountID = auth.AccountID
+	request.Auth = auth.Auth
+	if len(auth.Env) == 0 {
+		return
+	}
+	if request.Environment == nil {
+		request.Environment = make(map[string]string, len(auth.Env))
+	}
+	for key, value := range auth.Env {
+		request.Environment[key] = value
 	}
 }

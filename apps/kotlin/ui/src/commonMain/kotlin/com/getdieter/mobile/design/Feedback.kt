@@ -177,6 +177,8 @@ internal fun Banner(
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
     onDismiss: (() -> Unit)? = null,
+    secondaryLabel: String? = null,
+    onSecondary: (() -> Unit)? = null,
 ) {
     val accent =
         when (tone) {
@@ -232,6 +234,8 @@ internal fun Banner(
                     overflow = TextOverflow.Ellipsis,
                 )
         }
+        if (secondaryLabel != null && onSecondary != null)
+            DButton(secondaryLabel, onSecondary, kind = ButtonKind.PLAIN)
         if (actionLabel != null && onAction != null)
             DButton(actionLabel, onAction, kind = ButtonKind.PLAIN)
         if (onDismiss != null)

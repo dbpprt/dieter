@@ -91,6 +91,8 @@ object Selections {
                     model?.id.orEmpty(),
                     if (harness.id == saved.provider) saved.provider_options else emptyMap(),
                 ),
+            // An account belongs to its provider's harness.
+            account_id = if (harness.id == saved.provider) saved.account_id else "",
         )
     }
 
@@ -250,7 +252,8 @@ object Selections {
      * provider; a draft for another provider sends the card's agent. With the conversation
      * machine's [harnesses] known, a locked conversation also keeps the model, effort, and
      * immutable options its harness does not let change between turns, and the result is
-     * [validated]. An empty catalog counts as unknown.
+     * [validated]. An empty catalog counts as unknown. The draft's account goes along; without one
+     * the daemon keeps the conversation's account.
      */
     fun forSend(
         draft: HarnessSelection?,
@@ -277,7 +280,7 @@ object Selections {
                         ?: (options - option.id)
             }
         }
-        val chosen = HarnessSelection(draft.provider, model, effort, options)
+        val chosen = HarnessSelection(draft.provider, model, effort, options, draft.account_id)
         if (catalog == null) return chosen
         val checked = validated(chosen, catalog)
         // An effort the harness keeps for the conversation stays as the card has it.
@@ -312,8 +315,13 @@ object Selections {
         card: Card?,
         harnesses: List<Harness>,
     ): HarnessSelection {
-        if (selection == null || selection.provider.isEmpty() || selection.model.isEmpty())
-            return initial(card, harnesses)
+        if (selection == null || selection.provider.isEmpty() || selection.model.isEmpty()) {
+            val initial = initial(card, harnesses)
+            val keepsAccount =
+                selection != null &&
+                    (selection.provider.isEmpty() || selection.provider == initial.provider)
+            return if (keepsAccount) initial.copy(account_id = selection.account_id) else initial
+        }
         val harness = harness(harnesses, selection.provider) ?: return selection
         return selection.copy(
             provider_options =
@@ -342,7 +350,8 @@ object Selections {
             chosen.provider == current.provider &&
                 chosen.model == current.model &&
                 plainEffort(chosen.effort) == plainEffort(current.effort) &&
-                chosen.provider_options == current.provider_options
+                chosen.provider_options == current.provider_options &&
+                (chosen.account_id.isEmpty() || chosen.account_id == card.provider_account_id)
         return draft.takeIf { !same }
     }
 

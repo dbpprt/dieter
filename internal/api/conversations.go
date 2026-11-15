@@ -93,9 +93,7 @@ func (api *conversationsAPI) SendMessage(ctx context.Context, request *dieterv1.
 		return nil, fault.New(fault.Invalid, "client_id and command_id must be supplied together")
 	}
 	if clientID == "" {
-		queued, submitErr := api.server.app.SubmitCardParts(
-			request.GetCardId(), parts, request.GetProvider(), request.GetModel(), request.GetEffort(), cloneProtoStringMap(request.GetProviderOptions()),
-		)
+		queued, submitErr := api.server.app.SubmitCardPartsWithSelection(request.GetCardId(), parts, sendSelection(request), "")
 		if submitErr != nil {
 			return nil, sendMessageFailure(submitErr)
 		}
@@ -141,10 +139,7 @@ func (api *conversationsAPI) SendMessage(ctx context.Context, request *dieterv1.
 			}
 		}
 	}
-	queued, err := api.server.app.SubmitCardPartsWithMessageID(
-		request.GetCardId(), parts, request.GetProvider(), request.GetModel(), request.GetEffort(), cloneProtoStringMap(request.GetProviderOptions()),
-		messageID,
-	)
+	queued, err := api.server.app.SubmitCardPartsWithSelection(request.GetCardId(), parts, sendSelection(request), messageID)
 	if err != nil {
 		return nil, sendMessageFailure(err)
 	}
@@ -210,4 +205,13 @@ func (s *Server) conversationWatchRevision(cardID string) (conversationWatchRevi
 	}
 	transcript, err := s.store.Conversations.RevisionByID(cardID)
 	return conversationWatchRevision{metadata, transcript}, s.store.SyncMutationPending(), err
+}
+
+// sendSelection is a message's agent choice, including its provider account;
+// empty fields keep the conversation's.
+func sendSelection(request *dieterv1.SendMessageRequest) model.HarnessSelection {
+	return model.HarnessSelection{
+		Provider: request.GetProvider(), Model: request.GetModel(), Effort: request.GetEffort(),
+		ProviderOptions: cloneProtoStringMap(request.GetProviderOptions()), AccountID: strings.TrimSpace(request.GetAccountId()),
+	}
 }

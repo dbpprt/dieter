@@ -1,19 +1,6 @@
 import DieterClientAPI
 import SwiftUI
 
-struct UsageSettings: View {
-    var body: some View {
-        SettingsPage {
-            SettingsPanel(
-                title: "Provider quotas",
-                subtitle: "Usage limits discovered across all online enrolled machines."
-            ) {
-                ProviderQuotaDetailsView()
-            }
-        }
-    }
-}
-
 struct BrowserSettings: View {
     @State private var externalURLs: [String] = []
     @State private var newURL = ""

@@ -1,6 +1,7 @@
 package com.getdieter.core.client
 
 import com.getdieter.api.v1.Harness
+import com.getdieter.api.v1.HarnessSelection
 import com.getdieter.client.v1.Cards
 import com.getdieter.client.v1.ChannelsCommand
 import com.getdieter.client.v1.ChannelsSlice
@@ -31,11 +32,15 @@ import com.getdieter.core.conversation.ConversationSession
 import com.getdieter.core.files.FileConflictException
 import com.getdieter.core.files.FilesView
 import com.getdieter.core.identity.Gateway
+import com.getdieter.core.metadata.MachineMetadata
 import com.getdieter.core.navigation.FolderScope
 import com.getdieter.core.navigation.NavigationFolder
 import com.getdieter.core.navigation.ProjectOrdering
 import com.getdieter.core.presentation.ConversationPresenter
 import com.getdieter.core.presentation.TimelineCache
+import com.getdieter.core.providers.AgentAccountRules
+import com.getdieter.core.providers.ProvidersPresenter
+import com.getdieter.core.providers.ProvidersView
 import com.getdieter.core.runtime.CoreException
 import com.getdieter.core.runtime.FailureKind
 import com.getdieter.core.runtime.Failures
@@ -184,8 +189,18 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
         command.choose_agent?.let { choose ->
             val choice = choose.choice ?: invalid("Choose an agent setting.")
             val session = conversation(choose.card_id)
+            val daemonId = session.view.value.daemonId
             if (
-                !session.chooseAgent(session.view.value.daemonId?.let(runtime::loadedCatalog)) {
+                !session.chooseAgent(
+                    daemonId?.let(runtime::loadedCatalog),
+                    accounts = { card ->
+                        AgentAccountRules.forMachine(
+                            runtime.providers.view.value,
+                            daemonId,
+                            card.provider_account_id,
+                        )
+                    },
+                ) {
                     it.choosing(choice)
                 }
             )
@@ -476,9 +491,9 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
         command.project_workspaces?.let {
             return surfaces.projectWorkspaces.unscoped().execute(it)
         }
-        // Provider quotas are account-wide and bound to no view.
-        command.quotas?.let {
-            return runtime.quotas.execute(it)
+        // Provider accounts are account-wide and bound to no view.
+        command.providers?.let {
+            return runtime.providerCommands.execute(it)
         }
         command.admin?.let {
             return runtime.administer(it)
@@ -621,8 +636,22 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
                     ) {
                         emit(Update(creation = it))
                     }
-                Slice.SLICE_QUOTAS ->
-                    collect(runtime.quotas.view.map(::quotasSlice)) { emit(Update(quotas = it)) }
+                Slice.SLICE_PROVIDERS -> {
+                    // "Verified 2m ago" advances while nothing else changes.
+                    val ticks = flow {
+                        while (true) {
+                            emit(Unit)
+                            delay(PROVIDERS_TICK)
+                        }
+                    }
+                    collect(
+                        combine(runtime.providers.view, ticks) { view, _ ->
+                            ProvidersPresenter.slice(view, runtime.platform.clock.now())
+                        }
+                    ) {
+                        emit(Update(providers = it))
+                    }
+                }
                 Slice.SLICE_DEVICES -> {
                     // Waiting devices are read while some view shows them.
                     val release = runtime.trust.observeRequests()
@@ -789,7 +818,8 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
                                 runtime.metadata.machines,
                                 runtime.conversations.showReasoning,
                                 selections,
-                                ::Triple,
+                                runtime.providers.view,
+                                ::ComposerInputs,
                             )
                         combine(
                                 session.view.onEach { view ->
@@ -801,7 +831,8 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
                                 runtime.board.view,
                                 runtime.workspace.state,
                                 device,
-                            ) { view, outbox, board, workspace, (machines, showReasoning, chosen) ->
+                            ) { view, outbox, board, workspace, inputs ->
+                                val machines = inputs.machines
                                 val presented =
                                     ConversationPresenter.presentForClient(
                                         view,
@@ -809,13 +840,22 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
                                         workspace,
                                         board.operations,
                                         machines,
-                                        showReasoning,
+                                        inputs.showReasoning,
                                         timeline,
+                                    )
+                                val controls =
+                                    composerControls(
+                                        view,
+                                        presented.card,
+                                        inputs.selections,
+                                        machines,
+                                        inputs.providers,
                                     )
                                 conversationSlice(
                                     view,
                                     presented,
-                                    composerAgent(view, presented.card, chosen, machines),
+                                    controls?.let(::agentControlsState),
+                                    providerNotice(controls),
                                 )
                             }
                             .distinctUntilChanged()
@@ -881,6 +921,9 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
     private companion object {
         val OVERVIEW_RELIST = 3.seconds
 
+        /** How often the providers slice refreshes its relative ages. */
+        val PROVIDERS_TICK = 60.seconds
+
         /** How often the channels slice refreshes its relative ages. */
         val CHANNEL_TICK = 30.seconds
 
@@ -888,6 +931,14 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
         const val SEARCH_LIMIT = 30
     }
 }
+
+/** What a conversation's composer reads besides the conversation itself. */
+private data class ComposerInputs(
+    val machines: Map<String, MachineMetadata>,
+    val showReasoning: Boolean,
+    val selections: Map<DraftKey, HarnessSelection>,
+    val providers: ProvidersView,
+)
 
 internal fun invalid(message: String): Nothing =
     throw ClientFailure(Failure(Failure.Kind.KIND_INVALID, message))

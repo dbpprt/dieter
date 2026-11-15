@@ -9,16 +9,16 @@ are in [invariants.md](invariants.md); the attacker's view is in
 
 ## Components
 
-| Component            | Code                                                      | Runs on                                | Owns                                                                                                                                                                          |
-| -------------------- | --------------------------------------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dieter` daemon      | `cmd/dieter` → `internal/daemon`                          | Apple Silicon macOS, Linux amd64/arm64 | Checkouts, conversations, harness workers, files, terminals, processes, schedules, agent mail, synced folder members, the vault replica; a replica of shared account metadata |
-| `dieter` CLI         | `cmd/dieter` → `internal/cli`                             | Same binary                            | Nothing: a client of a daemon's API                                                                                                                                           |
-| `dieter-gateway`     | `cmd/dieter-gateway` → `internal/gateway`                 | Linux (container image)                | Account sessions, enrolled daemon identities, presence, route metadata, the signed device roster, pairing requests, quota snapshots                                           |
-| Kotlin core          | `apps/kotlin/core`                                        | Every client                           | Session, device trust, routing, sync, outbox, the phones' synced folder engine, every client rule                                                                             |
-| Android and iOS apps | `apps/kotlin/ui`, `apps/kotlin/android`, `apps/apple/ios` | Phones and tablets                     | Presentation and platform adapters                                                                                                                                            |
-| macOS app            | `apps/apple/mac`                                          | macOS 26+                              | Presentation and platform adapters                                                                                                                                            |
-| Native helpers       | `native/macos`, `native/linux-capture`                    | Daemon hosts                           | Screen capture, input injection, macOS privacy mode                                                                                                                           |
-| Harness runtime      | `internal/harness/runtime` (Node)                         | Daemon hosts                           | Bridges Codex, Claude Code, Pi, Oh My Pi, DeepSeek Harness and Strix to the daemon                                                                                            |
+| Component            | Code                                                      | Runs on                                | Owns                                                                                                                                                                                                          |
+| -------------------- | --------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dieter` daemon      | `cmd/dieter` → `internal/daemon`                          | Apple Silicon macOS, Linux amd64/arm64 | Checkouts, conversations, harness workers, files, terminals, processes, schedules, agent mail, synced folder members, the vault replica, this machine's provider logins; a replica of shared account metadata |
+| `dieter` CLI         | `cmd/dieter` → `internal/cli`                             | Same binary                            | Nothing: a client of a daemon's API                                                                                                                                                                           |
+| `dieter-gateway`     | `cmd/dieter-gateway` → `internal/gateway`                 | Linux (container image)                | Account sessions, enrolled daemon identities, presence, route metadata, the signed device roster, pairing requests                                                                                            |
+| Kotlin core          | `apps/kotlin/core`                                        | Every client                           | Session, device trust, routing, sync, outbox, the phones' synced folder engine, every client rule                                                                                                             |
+| Android and iOS apps | `apps/kotlin/ui`, `apps/kotlin/android`, `apps/apple/ios` | Phones and tablets                     | Presentation and platform adapters                                                                                                                                                                            |
+| macOS app            | `apps/apple/mac`                                          | macOS 26+                              | Presentation and platform adapters                                                                                                                                                                            |
+| Native helpers       | `native/macos`, `native/linux-capture`                    | Daemon hosts                           | Screen capture, input injection, macOS privacy mode                                                                                                                                                           |
+| Harness runtime      | `internal/harness/runtime` (Node)                         | Daemon hosts                           | Bridges Codex, Claude Code, Pi, Oh My Pi, DeepSeek Harness and Strix to the daemon                                                                                                                            |
 
 One binary, `dieter`, is both daemon and CLI: `cmd/dieter` sends `serve` and
 `daemon start` to `internal/daemon` and every other command to `internal/cli`,
@@ -98,6 +98,30 @@ so the CLI never links the daemon's storage or engine.
   link those packages into the shared bootstrap directory and check each CLI's
   version and platform package instead of running npm; only DSH still installs
   from npm. An active turn keeps its runtime digest across restarts.
+- **Provider accounts.** `internal/engine/accounts` holds the Claude and
+  ChatGPT accounts that Claude Code and Codex turns run on
+  ([ADR 0006](adr/0006-provider-accounts.md)). Accounts, the default per
+  provider, and each machine's login state with its usage are KV records
+  (`provider-accounts`, `provider-account-defaults`, `provider-logins`) that
+  replicate like other peer records; clients read them from their replica.
+  Credentials stay on the machine that signed in. A sign-in runs the
+  provider's own login on the daemon that serves `StartProviderLogin`:
+  `claude auth login` in the account's config directory
+  (`DIETER_HOME/provider-accounts/<id>/claude`), or `codex app-server`
+  (`internal/harness/codexrpc`) on the account's auth home.
+  `WatchProviderLogin` streams the URL, device code or paste prompt to the
+  client, and `SubmitProviderLoginInput` hands back a pasted code or the
+  loopback address a remote browser could not open. Turn admission resolves
+  the conversation's account on its owner daemon and adds the account's
+  environment: `CLAUDE_CONFIG_DIR` with an empty adapter `auth`, so Claude
+  Code refreshes its own login, or the account's Codex access token from the
+  broker. Every Dieter Codex process uses `DIETER_HOME/codex`, whose
+  `config.toml` the daemon renders from `~/.codex/config.toml` plus its own
+  provider block. Each daemon probes the usage of its own logins through the
+  tools (Claude Code's SDK usage call, Codex `account/rateLimits/read`), adds
+  the limits reported during turns and its token ledger
+  (`DIETER_HOME/provider-accounts/ledger.ndjson`), and writes them into its
+  login records. The gateway carries no provider data.
 
 ## Shared metadata and peer replication
 
@@ -149,12 +173,17 @@ internal/
   api/                   dieter.v1 services: one handler type per service (machine, state,
                          settings, projects, boards, cards, conversations, git, files,
                          terminals, executions, screens, control, schedules, vault, kv,
-                         peer, trust, channels, mail, folders), composed in service.go;
-                         errors.go is the one status mapper
+                         peer, trust, channels, mail, folders, provider accounts),
+                         composed in service.go; errors.go is the one status mapper
   engine/                turn engine: admission, leases, harness turns, queues
+  engine/accounts/       provider accounts: KV registry, sign-in sessions, per-account
+                         Claude config dirs and DIETER_HOME/codex, Codex token broker,
+                         usage probes and token ledger, adoption, status checks, cleanup
   engine/scheduler/      schedules and occurrence history
   harness/               harness adapters, discovery, runner; catalog/ (embedded
                          harnesses.yaml); runtime/ (Node bridge, pinned with package-lock)
+  harness/agentexec/     the pinned claude and codex executables inside the harness runtime
+  harness/codexrpc/      JSON-lines client for codex app-server (login, account, rate limits)
   store/                 central storage: a composition root (Store, New, Ensure, Recover,
                          Close) over aggregates: home/ (DIETER_HOME, writer lock, schema,
                          change counter), replica/ (peer replica), leases/, kv/, settings/,
@@ -168,10 +197,10 @@ internal/
                          (sole writer of both), DirectServer and roster-pinned TLS
                          (tls.go, dial.go), relay tunnels (tunnel.go), possession proofs
   gateway/               auth (GitHub OAuth, enrollment, native sessions), hub,
-                         relay tunnels, device roster and pairing requests, quota
-                         snapshots, SQLite storage, ingress limits
-  transport/             relay/ (lane and tunnel bounds, raw codec, quota protocol),
-                         controlrtc/ (TLS/gRPC over a WebRTC data channel)
+                         relay tunnels, device roster and pairing requests, SQLite
+                         storage, ingress limits
+  transport/             relay/ (lane and tunnel bounds, raw codec), controlrtc/
+                         (TLS/gRPC over a WebRTC data channel)
   security/              roster/ (device roster, pairing, recovery key), codes/ (typed
                          Crockford codes), trust/ (signed claims), linkauth/ (daemon
                          key proofs), localauth/ (loopback API token), vault/ (vault
@@ -190,7 +219,6 @@ internal/
   host/                  machine/ (telemetry, power, updates), terminal/, remoteexec/,
                          serviceruntime/ (signed executables at stable paths)
   remotedesktop/         screen sessions, WebRTC media, native helper IPC
-  providerquota/         provider quota collectors (daemon side)
   cli/                   client commands only; commands.go is the command table that
                          drives dispatch, help, the help contract and tools/clidocs
   model/, prompt/        shared domain types, prompt templates

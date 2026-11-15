@@ -283,6 +283,7 @@ func (m *Manager) processRun(run model.ScheduleRun) {
 			Title: render(schedule.TitleTemplate, variables), Prompt: render(schedule.PromptTemplate, variables),
 			Provider: schedule.Provider, Model: schedule.Model, Effort: schedule.Effort, ProviderOptions: schedule.ProviderOptions, LabelIDs: schedule.LabelIDs, Origin: origin, DeferStart: true,
 			WorkspaceMode: schedule.WorkspaceMode, VaultAccess: schedule.VaultAccess, MailAccess: schedule.MailAccess,
+			AccountID: schedule.AccountID,
 		})
 	}
 	if err != nil {

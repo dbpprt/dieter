@@ -27,6 +27,7 @@ import com.getdieter.core.outbox.Outbox
 import com.getdieter.core.outbox.OutboxPolicy
 import com.getdieter.core.outbox.OutboxView
 import com.getdieter.core.presentation.Parts
+import com.getdieter.core.providers.AgentAccounts
 import com.getdieter.core.runtime.CoreException
 import com.getdieter.core.runtime.CoreLogger
 import com.getdieter.core.runtime.FailureKind
@@ -604,10 +605,13 @@ internal constructor(
 
     /**
      * The composer's agent pickers ([AgentControls.forComposer]) against [harnesses]: the
-     * composer's choice while it differs from the card's agent, else the card's agent. Null until
-     * the card is known.
+     * composer's choice while it differs from the card's agent, else the card's agent. [accounts]
+     * maps the card to the provider accounts judged on its machine. Null until the card is known.
      */
-    fun agentControls(harnesses: List<Harness>? = machineCatalog()): AgentControls? {
+    fun agentControls(
+        harnesses: List<Harness>? = machineCatalog(),
+        accounts: (Card) -> AgentAccounts = { AgentAccounts() },
+    ): AgentControls? {
         val card = runCatching { card() }.getOrNull() ?: return null
         val draft = draftKey()?.let { drafts.state.value[it] }?.selection
         return AgentControls.forComposer(
@@ -615,20 +619,22 @@ internal constructor(
             card,
             harnesses.orEmpty(),
             hasMessages = transcript.messages.isNotEmpty(),
+            accounts = accounts(card),
         )
     }
 
     /**
      * Applies a picker choice to the composer's agent for the next message: [choose] gets the
-     * pickers ([agentControls]) and returns the next selection. False before the conversation's
-     * machine and card are known.
+     * pickers ([agentControls]) and returns the next selection, which the draft keeps (a chosen
+     * account included). False before the conversation's machine and card are known.
      */
     fun chooseAgent(
         harnesses: List<Harness>? = machineCatalog(),
+        accounts: (Card) -> AgentAccounts = { AgentAccounts() },
         choose: (AgentControls) -> HarnessSelection,
     ): Boolean {
         val key = draftKey() ?: return false
-        val controls = agentControls(harnesses) ?: return false
+        val controls = agentControls(harnesses, accounts) ?: return false
         drafts.setSelection(key, choose(controls))
         return true
     }

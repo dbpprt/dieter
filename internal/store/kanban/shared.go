@@ -547,6 +547,11 @@ func (s *Store) ValidatePeerWrite(identity replica.PeerIdentity, data replica.Pe
 	if schema.VaultKind(kind) && kind != "vault" {
 		return fault.New(fault.Invalid, "vault members and items change only through `dieter vault`")
 	}
+	// Agent channel and provider account records have daemon writers that
+	// enforce their ownership rules; the generic peer-write path bypasses them.
+	if strings.HasPrefix(kind, schema.KVKindPrefix+"provider-") || strings.HasPrefix(kind, schema.KVKindPrefix+"channel") {
+		return fault.New(fault.PermissionDenied, "agent channel and provider account records are written only by their daemons")
+	}
 	if !schema.DomainKind(kind) {
 		return nil
 	}

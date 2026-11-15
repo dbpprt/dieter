@@ -21,7 +21,7 @@ enum class DesktopSection(val title: String) {
     /** A project's board, files, changes or schedules. */
     PROJECT("Project"),
     MACHINE("Machine"),
-    USAGE("Usage"),
+    PROVIDERS("Providers"),
     DEVICES("Devices"),
     SETTINGS("Settings"),
     /** More's own page, reached only from the touch shell. */
@@ -120,7 +120,7 @@ fun MobileNavigation.desktopPlace(): DesktopPlace {
                     when (first.page) {
                         ToolPage.TERMINALS -> DesktopPlace(DesktopSection.TERMINALS, 2)
                         ToolPage.FOLDERS -> DesktopPlace(DesktopSection.FOLDERS, 2)
-                        ToolPage.USAGE -> DesktopPlace(DesktopSection.USAGE, 2)
+                        ToolPage.PROVIDERS -> DesktopPlace(DesktopSection.PROVIDERS, 2)
                         ToolPage.DEVICES -> DesktopPlace(DesktopSection.DEVICES, 2)
                         ToolPage.SETTINGS -> DesktopPlace(DesktopSection.SETTINGS, 2)
                         else ->
@@ -160,7 +160,8 @@ fun MobileStore.openSection(section: DesktopSection) {
             show(MobileTab.MORE, moreStack(MobileRoute.Tool(ToolPage.TERMINALS)))
         DesktopSection.FOLDERS ->
             show(MobileTab.MORE, moreStack(MobileRoute.Tool(ToolPage.FOLDERS)))
-        DesktopSection.USAGE -> show(MobileTab.MORE, moreStack(MobileRoute.Tool(ToolPage.USAGE)))
+        DesktopSection.PROVIDERS ->
+            show(MobileTab.MORE, moreStack(MobileRoute.Tool(ToolPage.PROVIDERS)))
         DesktopSection.DEVICES ->
             show(MobileTab.MORE, moreStack(MobileRoute.Tool(ToolPage.DEVICES)))
         DesktopSection.SETTINGS ->

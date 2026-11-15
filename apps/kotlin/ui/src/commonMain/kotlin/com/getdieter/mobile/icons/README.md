@@ -6,7 +6,7 @@ vector paths are unchanged. See [LICENSE.txt](LICENSE.txt) and each source heade
 
 - 31 files were copied from `material-icons-extended-1.7.3-sources.jar`
   (SHA-256 `4e23237644f7da35c391cc4c0263b95248605f499ab46f6d2c92d4fe48793d5a`).
-- 56 files were reconstructed from the path calls in the compiled
+- 55 files were reconstructed from the path calls in the compiled
   `material-icons-extended-desktop-1.7.3.jar` classes, including arc commands.
   Icons whose paths depend on computed locals were not reconstructed.
 - `Flag.kt` holds `Outlined.Flag` and `Filled.Flag` (as `Outlined.FlagFilled`),

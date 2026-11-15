@@ -294,6 +294,9 @@ private fun ScheduleEditor(store: MobileStore, scheduleId: String, onDismiss: ()
     val schedules by store.schedules.slice.collectAsState()
     val busy by store.busy.collectAsState()
     var draft by remember(scheduleId) { mutableStateOf<ScheduleDraft?>(null) }
+    // A schedule keeps a provider account only when one is chosen here (or it had one); else each
+    // occurrence follows the provider's default, whatever account the preview remembers.
+    var accountChosen by remember(scheduleId) { mutableStateOf(false) }
     LaunchedEffect(scheduleId) {
         store.action {
             store.creation.chat.value = false
@@ -328,7 +331,15 @@ private fun ScheduleEditor(store: MobileStore, scheduleId: String, onDismiss: ()
     }
     LaunchedEffect(preview.agent?.selection) {
         preview.agent?.selection?.let { selection ->
-            draft = draft?.let { ScheduleDrafts.choose(it, selection) }
+            draft = draft?.let {
+                val account =
+                    when {
+                        accountChosen -> selection.account_id
+                        selection.provider == it.provider -> it.account_id
+                        else -> ""
+                    }
+                ScheduleDrafts.choose(it, selection.copy(account_id = account))
+            }
         }
     }
     val value = draft
@@ -507,6 +518,8 @@ private fun ScheduleEditor(store: MobileStore, scheduleId: String, onDismiss: ()
         }
         SectionHeader("Agent")
         AgentSettings(preview.agent) { choice ->
+            if (choice.account != null) accountChosen = true
+            else if (choice.provider != null) accountChosen = false
             store.creation.update(store.creation.intent.value, choice)
         }
         SectionHeader("Behavior")

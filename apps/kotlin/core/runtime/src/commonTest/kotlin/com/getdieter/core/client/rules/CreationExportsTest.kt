@@ -7,6 +7,7 @@ import com.getdieter.api.v1.HarnessModel
 import com.getdieter.api.v1.HarnessSelection
 import com.getdieter.api.v1.ProviderOption
 import com.getdieter.client.v1.AgentChoice
+import com.getdieter.client.v1.ProvidersSlice
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -57,6 +58,8 @@ class CreationExportsTest {
                 catalog,
                 locked = false,
                 choice = AgentChoice(),
+                providers = ProvidersSlice(),
+                daemonId = "",
             )
         assertEquals(
             HarnessSelection("codex", "sol", "low", mapOf("fast_mode" to "false")),
@@ -70,6 +73,8 @@ class CreationExportsTest {
                 catalog,
                 locked = false,
                 choice = AgentChoice(model = "spark"),
+                providers = ProvidersSlice(),
+                daemonId = "",
             )
         assertEquals(
             HarnessSelection("codex", "spark", "default"),
@@ -83,6 +88,8 @@ class CreationExportsTest {
                 catalog,
                 locked = false,
                 choice = AgentChoice(),
+                providers = ProvidersSlice(),
+                daemonId = "",
             )
         assertEquals(
             HarnessSelection("codex", "sol", "default", mapOf("fast_mode" to "false")),
@@ -100,6 +107,8 @@ class CreationExportsTest {
                 catalog,
                 locked = true,
                 choice = AgentChoice(provider = "claude"),
+                providers = ProvidersSlice(),
+                daemonId = "",
             )
         assertEquals(agent, refused.selection)
         assertFalse(refused.provider_enabled)
@@ -110,6 +119,8 @@ class CreationExportsTest {
                     catalog,
                     locked = true,
                     choice = AgentChoice(model = "spark"),
+                    providers = ProvidersSlice(),
+                    daemonId = "",
                 )
                 .selection!!
                 .effort,

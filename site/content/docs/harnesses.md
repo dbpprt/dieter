@@ -10,17 +10,21 @@ slug: "harnesses"
 Dieter integrates six harnesses through a pinned JavaScript runtime. The coding
 agents use their normal local configuration on the **execution machine**.
 
-| Harness                | Default configuration                        |
-| ---------------------- | -------------------------------------------- |
-| Codex                  | `~/.codex` or `CODEX_HOME`                   |
-| Claude Code            | `~/.claude` or `CLAUDE_CONFIG_DIR`           |
-| Pi                     | `~/.pi/agent` or `PI_AGENT_DIR`              |
-| Oh My Pi               | `~/.omp/agent`, with `OMP_PROFILE` when set  |
-| DeepSeek Harness (DSH) | `~/.dsh` or `DSH_HOME`                       |
-| Strix                  | a vault item and Docker; see [Strix](#strix) |
+| Harness                | Sign-in and configuration                                                                                   |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Codex                  | a [ChatGPT account](/docs/providers/); Dieter's own `DIETER_HOME/codex`, set up from `~/.codex/config.toml` |
+| Claude Code            | a [Claude account](/docs/providers/); settings, skills and agents shared from `~/.claude`                   |
+| Pi                     | `~/.pi/agent` or `PI_AGENT_DIR`                                                                             |
+| Oh My Pi               | `~/.omp/agent`, with `OMP_PROFILE` when set                                                                 |
+| DeepSeek Harness (DSH) | `~/.dsh` or `DSH_HOME`                                                                                      |
+| Strix                  | a vault item and Docker; see [Strix](#strix)                                                                |
 
-Authenticate or configure the provider on that machine first. Dieter does not
-transfer provider credentials between hosts or store them on the gateway.
+Claude Code and Codex run on the [provider account](/docs/providers/) chosen for
+each conversation. Sign machines in from any app or with
+`dieter provider login`; a login a machine already has is adopted
+automatically. For the other harnesses, authenticate or configure the provider
+on the execution machine first. Dieter never transfers provider credentials
+between hosts or stores them on the gateway.
 
 ## Inspect the actual catalog
 
@@ -52,9 +56,10 @@ model list; this page does not freeze a second copy of it.
 A new conversation uses the selected model's `defaultEffort` when defined.
 `--effort default` explicitly selects the provider's native default.
 
-Codex, Claude Code, and Pi support model and effort changes between turns.
-OMP and DSH support model changes; OMP thinking stays fixed after the first
-message. Provider options appear only where the catalog advertises them.
+Codex, Claude Code, and Pi support model and effort changes between turns, and
+Codex and Claude Code also account changes. OMP and DSH support model changes;
+OMP thinking stays fixed after the first message. Provider options appear only
+where the catalog advertises them.
 Supported Codex models expose mutable **Fast mode** with
 `--provider-option fast_mode=true`; it uses the provider's faster service tier
 at a higher usage rate.
@@ -194,35 +199,17 @@ clears it when the stream recovers or the turn ends. A turn fails only on the
 provider's final error, which leads the failure text; worker diagnostics follow
 it in the log.
 
-## Provider quotas
+## Provider accounts and usage
 
-Mac, Android, and iOS can show remaining account allowance and reset windows. Separate
-accounts and windows stay separate. A provider summary takes the lowest remaining
-percentage among included accounts; it never adds or averages allowances.
+Choose the Claude or ChatGPT account of a conversation in the **Account**
+picker next to the provider, or with `--account`; like the model, it can change
+between turns. Each account shows its plan usage (the 5-hour and weekly
+windows), and the Inbox and the Mac sidebar summarize the tightest window per
+provider. Accounts, sign-in on every machine, defaults, usage and reset credits
+are described in [Provider accounts](/docs/providers/).
 
-```sh
-dieter quota list
-dieter quota refresh openai
-dieter quota exclude openai --account OPAQUE_KEY
-dieter quota include openai --account OPAQUE_KEY
-```
-
-These commands are **gateway-account scoped** and do not accept `--machine`.
-Explicit `DIETER_CODEX_ACCOUNT_HOMES` paths can expose up to eight local Codex
-profiles on a daemon. OpenAI reset credits require an exact confirmation:
-`dieter quota reset openai --account OPAQUE_KEY --confirm RESET` consumes a credit.
-
-OpenAI and Claude quota collectors read the existing OAuth credentials on the
-host and call the providers' usage APIs directly. OpenAI polling does not launch
-Codex or refresh plugin marketplaces, and Codex credentials stay read-only:
-Codex itself must refresh an expired token. OpenAI supports file credentials and
-profile-specific macOS Keychain entries; process-only and encrypted secret
-stores are unsupported. Claude quota polling runs every five minutes, with a
-ten-minute cooldown after failed requests; account discovery and manual refresh
-share that limit.
-
-Quota snapshots can be stale or unavailable. Card token totals are a different
-measure: provider-reported usage, potentially partial, and not a cost estimate.
+Card token totals are a different measure: provider-reported usage, potentially
+partial, and not a cost estimate.
 
 ## Execution permissions
 

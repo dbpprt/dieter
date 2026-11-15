@@ -1,0 +1,238 @@
+{
+  "ranAt": "2026-11-14",
+  "claudeCode": "2.1.317",
+  "codex": "0.166.0",
+  "runtime": "f5a8d61b\u2026",
+  "P0.1_claude_paste": {
+    "delivery": {
+      "pasted": true
+    },
+    "exitCode": 0,
+    "loggedIn": true,
+    "authMethod": "claude.ai",
+    "apiProvider": "firstParty",
+    "subscriptionType": "max",
+    "pastedFormat": "<code>#<state>",
+    "keychainItem": "Claude Code-credentials-<sha256(CLAUDE_CONFIG_DIR as given)[:8]>, account $USER"
+  },
+  "P0.7_claude_forwarded_callback": {
+    "delivery": {
+      "forwarded": 302
+    },
+    "exitCode": 0,
+    "loggedIn": true,
+    "authMethod": "claude.ai",
+    "apiProvider": "firstParty",
+    "subscriptionType": "max",
+    "browserOnOtherDevice": true
+  },
+  "P0.8_sdk_usage_without_prompt": {
+    "ms": 827,
+    "accountInfoFields": ["email", "organization", "subscriptionType", "apiProvider"],
+    "usageFields": [
+      "subscription_type",
+      "rate_limits_available",
+      "rate_limits.five_hour",
+      "rate_limits.seven_day",
+      "rate_limits.limits[]",
+      "rate_limits.spend",
+      "rate_limits.extra_usage",
+      "rate_limits.model_scoped"
+    ]
+  },
+  "P0.2_auth_empty_baseline": {
+    "text": "BASELINE OK",
+    "errors": [],
+    "toolCalls": 0,
+    "hostToolCalls": 0
+  },
+  "P0.2a_corrupted_access_token": {
+    "turn": {
+      "text": "",
+      "errors": ["HTTP 401: authentication_failed"],
+      "toolCalls": 0,
+      "hostToolCalls": 0
+    },
+    "afterTurn": "Claude Code refreshed its own store (access and refresh rotated, 480 min expiry)",
+    "nextTurn": {
+      "text": "HEALED OK",
+      "errors": [],
+      "toolCalls": 0,
+      "hostToolCalls": 0
+    }
+  },
+  "P0.2b_expiry_at_turn_start": {
+    "expiresInMinAtStart": 3.0,
+    "keychain": [
+      {
+        "at": "13:17:40",
+        "rotated": false,
+        "expiresInMin": 3.0
+      },
+      {
+        "at": "13:17:51",
+        "rotated": true,
+        "expiresInMin": 479.8
+      }
+    ],
+    "turn": {
+      "text": "PROACTIVE OK",
+      "errors": [],
+      "toolCalls": 8,
+      "hostToolCalls": 0
+    }
+  },
+  "P0.2b_expiry_mid_turn": {
+    "expiresInMinAtStart": 6.5,
+    "keychain": [
+      {
+        "at": "13:22:53",
+        "rotated": false,
+        "expiresInMin": 6.5
+      },
+      {
+        "at": "13:25:05",
+        "rotated": true,
+        "expiresInMin": 479.9
+      }
+    ],
+    "turn": {
+      "text": "MIDTURN OK",
+      "errors": [],
+      "toolCalls": 10,
+      "hostToolCalls": 0
+    }
+  },
+  "P0.3_parity": {
+    "default": {
+      "commands": 71,
+      "agents": 6,
+      "mcpServers": 1
+    },
+    "a-plain": {
+      "commands": 69,
+      "agents": 6,
+      "mcpServers": 0
+    },
+    "b-shadow": {
+      "commands": 71,
+      "agents": 6,
+      "mcpServers": 3
+    }
+  },
+  "P0.3_parity_notes": [
+    "plain dir lacks the 2 user skills and the 1 user-scope MCP server",
+    "shadow dir (settings.json, skills, plugins symlinked) matches commands and agents; lacks the user-scope MCP server from ~/.claude.json; adds its own account's claude.ai connectors"
+  ],
+  "P0.3_switch_accounts": {
+    "turns": [
+      {
+        "text": "NOTED",
+        "errors": [],
+        "toolCalls": 0,
+        "hostToolCalls": 0
+      },
+      {
+        "text": "MANGO-42",
+        "errors": [],
+        "toolCalls": 0,
+        "hostToolCalls": 0
+      },
+      {
+        "text": "MANGO-42\nBACK ON A",
+        "errors": [],
+        "toolCalls": 0,
+        "hostToolCalls": 0
+      }
+    ],
+    "sameClaudeSession": true
+  },
+  "P0.4_codex_device_code": {
+    "success": true,
+    "plan": "pro",
+    "expiry": "device auth timed out after 15 minutes (first round)"
+  },
+  "P0.4_codex_browser_forwarded": {
+    "callback": 302,
+    "tokensSavedOnCallback": true,
+    "completedOnlyAfterGET": "/success"
+  },
+  "P0.4_injected_token_fresh_home": {
+    "turn": {
+      "text": "",
+      "errors": [
+        "Codex app-server turn/start failed: This chat uses agent_bridge_openai, but your current provider is openai. Switch to agent_bridge_openai to continue."
+      ],
+      "toolCalls": 0,
+      "hostToolCalls": 0
+    },
+    "sameErrorOnTodaysPathAndDefaultCodexHome": true
+  },
+  "P0.4_own_login_auth_empty": {
+    "text": "V4 OK",
+    "errors": [],
+    "toolCalls": 0,
+    "hostToolCalls": 0
+  },
+  "P0.4_provider_declared_in_shared_config": {
+    "turn1": {
+      "text": "NOTED",
+      "errors": [],
+      "toolCalls": 0,
+      "hostToolCalls": 0
+    },
+    "turn2_other_login_resume": {
+      "text": "PAPAYA-7",
+      "errors": [],
+      "toolCalls": 0,
+      "hostToolCalls": 0
+    }
+  },
+  "P0.4_account_read_refreshToken": {
+    "accessRotated": true,
+    "refreshRotated": true,
+    "lastRefreshUpdated": true
+  },
+  "P0.5_siwc_registration": {
+    "tokenStatus": 200,
+    "clientIdPrefix": "oaiapp_",
+    "callbackHadClientId": true,
+    "scope": "chatgpt.tokens.use.direct email offline_access openid profile resource.invoke",
+    "planUsage": true,
+    "expiresIn": 3600,
+    "earliestRefreshAt": 1794661675,
+    "idTokenNonceMatches": true,
+    "idTokenAudMatches": true
+  },
+  "P0.5_siwc_models": {
+    "status": 200,
+    "listed": 8
+  },
+  "P0.5_siwc_turns": {
+    "plain": {
+      "text": "SIWC OK",
+      "errors": [],
+      "toolCalls": 0,
+      "hostToolCalls": 0
+    },
+    "shellAndHostTool": {
+      "text": "TOOLS OK",
+      "errors": [],
+      "toolCalls": 2,
+      "hostToolCalls": 1
+    },
+    "webSearch": {
+      "text": "I couldn\u2019t verify the current Codex CLI release: web search returned an authorization error.",
+      "errors": [],
+      "toolCalls": 0,
+      "hostToolCalls": 0
+    }
+  },
+  "P0.6_codex_auth_command": {
+    "output": "plain bearer token on stdout",
+    "refresh_interval_ms": 10000,
+    "invocationsIn50sTurn": 5,
+    "result": "AUTHCMD OK"
+  },
+  "production_quick_titles": "Dieter Codex quick-title threads on 2026-11-13/14 were created and died at turn/start with the same provider mismatch; every card since late October keeps its 80-rune fallback title"
+}

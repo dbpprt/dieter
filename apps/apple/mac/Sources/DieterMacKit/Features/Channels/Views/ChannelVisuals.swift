@@ -9,7 +9,7 @@ enum ChannelStyle {
     static func avatarColor(_ index: Int32) -> Color {
         let colors: [Color] = [
             DieterTheme.eyes, DieterTheme.amber, DieterTheme.coral, DieterTheme.running,
-            DieterTheme.action, DieterTheme.reviewAccent, DieterTheme.decision, DieterTheme.openAIQuota,
+            DieterTheme.action, DieterTheme.reviewAccent, DieterTheme.decision, DieterTheme.openAITint,
         ]
         return colors[Int(index.magnitude) % colors.count]
     }
@@ -45,7 +45,7 @@ enum ChannelStyle {
 
     static func harnessColor(_ harness: String) -> Color {
         let harness = harness.lowercased()
-        if harness.contains("codex") || harness.contains("openai") { return DieterTheme.openAIQuota }
+        if harness.contains("codex") || harness.contains("openai") { return DieterTheme.openAITint }
         if harness.contains("claude") { return DieterTheme.amber }
         return DieterTheme.subtle
     }

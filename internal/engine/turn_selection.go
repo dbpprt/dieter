@@ -10,7 +10,7 @@ import (
 )
 
 func selectionFromCard(card model.Card) model.HarnessSelection {
-	return model.HarnessSelection{Provider: card.Provider, Model: card.Model, Effort: card.Effort, ProviderOptions: card.ProviderOptions}
+	return model.HarnessSelection{Provider: card.Provider, Model: card.Model, Effort: card.Effort, ProviderOptions: card.ProviderOptions, AccountID: card.ProviderAccountID}
 }
 
 func supportsTurnSelection(adapter harness.Adapter, setting string) bool {
@@ -22,8 +22,9 @@ func supportsTurnSelection(adapter harness.Adapter, setting string) bool {
 	return false
 }
 
-func resolveTurnSelection(catalog *harness.Catalog, card model.Card, provider, modelName, effort string, options map[string]string) (harness.Adapter, harness.Model, model.HarnessSelection, error) {
-	provider, modelName, effort = strings.TrimSpace(provider), strings.TrimSpace(modelName), strings.TrimSpace(effort)
+func resolveTurnSelection(catalog *harness.Catalog, card model.Card, requested model.HarnessSelection) (harness.Adapter, harness.Model, model.HarnessSelection, error) {
+	provider, modelName, effort := strings.TrimSpace(requested.Provider), strings.TrimSpace(requested.Model), strings.TrimSpace(requested.Effort)
+	options, accountID := requested.ProviderOptions, strings.TrimSpace(requested.AccountID)
 	started := card.InitialPromptSentAt != ""
 	if started && provider != "" && provider != card.Provider {
 		return harness.Adapter{}, harness.Model{}, model.HarnessSelection{}, fault.Invalidf("conversation harness is locked to %q", card.Provider)
@@ -36,6 +37,11 @@ func resolveTurnSelection(catalog *harness.Catalog, card model.Card, provider, m
 	}
 	if modelName == "" {
 		modelName = card.Model
+	}
+	// The conversation keeps its account until a turn picks another; a draft
+	// that switches harness drops the account of the other provider.
+	if accountID == "" && provider == card.Provider {
+		accountID = card.ProviderAccountID
 	}
 	adapter, configuredModel, err := catalog.ResolveSelectionWithRefresh(context.Background(), provider, modelName)
 	if err != nil {
@@ -78,7 +84,10 @@ func resolveTurnSelection(catalog *harness.Catalog, card model.Card, provider, m
 			return adapter, configuredModel, model.HarnessSelection{}, err
 		}
 	}
-	return adapter, configuredModel, model.HarnessSelection{Provider: adapter.ID, Model: configuredModel.ID, Effort: effort, ProviderOptions: resolvedOptions}, nil
+	if started && accountID != card.ProviderAccountID && card.ProviderAccountID != "" && !supportsTurnSelection(adapter, "account") {
+		return adapter, configuredModel, model.HarnessSelection{}, fault.Invalidf("conversation account is locked for harness %q", adapter.ID)
+	}
+	return adapter, configuredModel, model.HarnessSelection{Provider: adapter.ID, Model: configuredModel.ID, Effort: effort, ProviderOptions: resolvedOptions, AccountID: accountID}, nil
 }
 
 func selectionEffort(selection model.HarnessSelection) string {

@@ -7,6 +7,9 @@ import com.getdieter.api.v1.HarnessModel
 import com.getdieter.api.v1.HarnessSelection
 import com.getdieter.api.v1.ProviderOption
 import com.getdieter.core.composition.Creation
+import com.getdieter.core.providers.AccountChoice
+import com.getdieter.core.providers.AgentAccounts
+import com.getdieter.core.providers.ProviderKinds
 
 /**
  * The agent pickers of a composer or a new-conversation editor: what is selected, what may change,
@@ -18,6 +21,8 @@ data class AgentControls(
     /** A started conversation fixes its provider; model and effort follow the harness's rules. */
     val locked: Boolean = false,
     val enabled: Boolean = true,
+    /** Provider accounts judged on the machine that runs the agent. */
+    val accounts: AgentAccounts = AgentAccounts(),
 ) {
     val harness: Harness?
         get() = Selections.harness(harnesses, selection.provider)
@@ -97,6 +102,47 @@ data class AgentControls(
     val optionValues: Map<String, String>
         get() = options.associate { it.id to optionValue(it) }
 
+    /** The selected agent's provider accounts; none for agents without accounts. */
+    val accountOptions: List<AccountChoice>
+        get() =
+            ProviderKinds.forHarness(selection.provider)?.let { accounts.byProvider[it] }.orEmpty()
+
+    /** A chosen account that is no longer listed; sending with it would fail. */
+    val missingAccount: String?
+        get() =
+            selection.account_id.takeIf { id ->
+                id.isNotEmpty() &&
+                    accountOptions.isNotEmpty() &&
+                    accountOptions.none { it.id == id }
+            }
+
+    /**
+     * The account a send uses, as the daemon resolves it: the chosen one, else the conversation's
+     * last, else the provider default, else the only one signed in on the machine.
+     */
+    val account: AccountChoice?
+        get() {
+            val options = accountOptions
+            if (options.isEmpty() || missingAccount != null) return null
+            return options.firstOrNull { it.id == selection.account_id }
+                ?: options.firstOrNull { it.id == accounts.last }
+                ?: options.firstOrNull { it.isDefault }
+                ?: options.filter { it.ready }.singleOrNull()
+        }
+
+    /** Accounts may change between turns, so only agents without any disable the picker. */
+    val accountEnabled: Boolean
+        get() = enabled && accountOptions.isNotEmpty()
+
+    val accountLabel: String
+        get() = account?.label ?: "Default account"
+
+    /** The account a send uses cannot run on the machine; the composer blocks sending. */
+    val accountBlocked: Boolean
+        get() = missingAccount != null || account?.ready == false
+
+    fun choosingAccount(id: String): HarnessSelection = selection.copy(account_id = id)
+
     fun choosingProvider(next: Harness): HarnessSelection = Selections.selectingProvider(next)
 
     /** Another model: its default effort, unless the effort may not change now. */
@@ -123,12 +169,14 @@ data class AgentControls(
             card: Card?,
             harnesses: List<Harness>,
             enabled: Boolean = true,
+            accounts: AgentAccounts = AgentAccounts(),
         ): AgentControls =
             AgentControls(
                 Selections.filled(draft, card, harnesses),
                 harnesses,
                 locked = card != null && Selections.locked(card),
                 enabled = enabled,
+                accounts = accounts,
             )
 
         /**
@@ -141,11 +189,13 @@ data class AgentControls(
             card: Card,
             harnesses: List<Harness>,
             hasMessages: Boolean = false,
+            accounts: AgentAccounts = AgentAccounts(),
         ): AgentControls =
             AgentControls(
                 Selections.filled(Selections.pending(draft, card, harnesses), card, harnesses),
                 harnesses,
                 locked = Selections.locked(card, hasMessages),
+                accounts = accounts,
             )
 
         private fun capitalized(id: String): String = id.replaceFirstChar { it.uppercaseChar() }

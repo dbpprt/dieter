@@ -10,22 +10,25 @@ today, with pointers into the code. It complements the user-facing
 
 ## Assets
 
-| Asset                                                                     | Where it lives                                                                       |
-| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Source code, working trees and build outputs                              | Daemon hosts (Git checkouts)                                                         |
-| Transcripts, prompts, attachments, queues, schedules                      | Daemon `DIETER_HOME` (central store)                                                 |
-| Harness and provider credentials (Codex, Claude, Pi, OMP, DSH profiles)   | Daemon hosts, in each tool's normal configuration; Strix's in a vault item           |
-| Daemon identity key (`identity-key.pem`): enrollment and roster key       | Daemon `DIETER_HOME`                                                                 |
-| App device keys                                                           | Secure Enclave (macOS, iOS) or Android Keystore; a software key where neither exists |
-| Pinned device roster                                                      | Daemon `DIETER_HOME/daemon/roster.pb`; each app's core state                         |
-| Roster recovery key                                                       | Printed once by `dieter device init`; kept offline by the operator                   |
-| Local API token                                                           | `DIETER_HOME/runtime/local-api-token`, user-only                                     |
-| Vault items and member key                                                | Ciphertext replicated to every daemon; member key in `DIETER_HOME/vault/member.json` |
-| Synced folder copies (every member, phones included)                      | Folder directories on daemons and phones; trash in `DIETER_HOME/folders`             |
-| Client sessions                                                           | macOS user-only file, Android Keystore-encrypted store, iOS device-only Keychain     |
-| Gateway signing key, internal daemon CA, OAuth app secret, session secret | Gateway state directory and environment                                              |
-| Ability to execute code on a daemon host                                  | Any authenticated operator path (API, CLI, agent turn)                               |
-| Release artifacts and their signatures                                    | GitHub releases, GHCR, Homebrew tap, TestFlight                                      |
+| Asset                                                                                                                               | Where it lives                                                                       |
+| ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Source code, working trees and build outputs                                                                                        | Daemon hosts (Git checkouts)                                                         |
+| Transcripts, prompts, attachments, queues, schedules                                                                                | Daemon `DIETER_HOME` (central store)                                                 |
+| Provider logins: per-account Claude Code directories with their Keychain item or `.credentials.json`, Codex auth homes, `siwc.json` | The machine that signed in only: `DIETER_HOME/provider-accounts/<id>/`, user-only    |
+| Host logins and other harness credentials (`~/.claude`, `~/.codex`, Pi, OMP, DSH; API keys in the daemon environment)               | Daemon hosts, in each tool's normal configuration; Strix's in a vault item           |
+| Provider accounts, each machine's login state and usage (no secrets)                                                                | KV records replicated to every daemon; every client's replica                        |
+| Provider token ledger and sign-in audit (no secrets)                                                                                | `DIETER_HOME/provider-accounts/ledger.ndjson` and `audit.ndjson`, user-only          |
+| Daemon identity key (`identity-key.pem`): enrollment and roster key                                                                 | Daemon `DIETER_HOME`                                                                 |
+| App device keys                                                                                                                     | Secure Enclave (macOS, iOS) or Android Keystore; a software key where neither exists |
+| Pinned device roster                                                                                                                | Daemon `DIETER_HOME/daemon/roster.pb`; each app's core state                         |
+| Roster recovery key                                                                                                                 | Printed once by `dieter device init`; kept offline by the operator                   |
+| Local API token                                                                                                                     | `DIETER_HOME/runtime/local-api-token`, user-only                                     |
+| Vault items and member key                                                                                                          | Ciphertext replicated to every daemon; member key in `DIETER_HOME/vault/member.json` |
+| Synced folder copies (every member, phones included)                                                                                | Folder directories on daemons and phones; trash in `DIETER_HOME/folders`             |
+| Client sessions                                                                                                                     | macOS user-only file, Android Keystore-encrypted store, iOS device-only Keychain     |
+| Gateway signing key, internal daemon CA, OAuth app secret, session secret                                                           | Gateway state directory and environment                                              |
+| Ability to execute code on a daemon host                                                                                            | Any authenticated operator path (API, CLI, agent turn)                               |
+| Release artifacts and their signatures                                                                                              | GitHub releases, GHCR, Homebrew tap, TestFlight                                      |
 
 The most valuable asset is the last-but-one: **anything that can call a daemon's
 API as an operator can run arbitrary commands as the daemon user**, through an
@@ -92,7 +95,7 @@ Since 0.6 the gateway relays ciphertext and is not a root of trust
   requests (descriptors and MACs), daemon names and presence, direct candidates
   (IP addresses), remote-desktop readiness, tunnel open and close times and
   byte counts, client IP addresses, APNs routing tokens, coarse task-attention
-  counts, TURN allocations and provider quota snapshots.
+  counts and TURN allocations.
 - Serve a malicious sign-in page. A session alone reaches no machine without a
   paired device key.
 - Try social engineering: ask a person to type a code that the gateway's own
@@ -101,8 +104,9 @@ Since 0.6 the gateway relays ciphertext and is not a root of trust
 **Cannot:**
 
 - Read or change anything inside a tunnel or WebRTC channel: calls,
-  transcripts, terminals, files, executions, Git, vault content, peer records,
-  WebRTC signaling and screens.
+  transcripts, terminals, files, executions, Git, vault content, peer records
+  (provider accounts and usage among them), provider sign-in codes, WebRTC
+  signaling and screens. The gateway stores no provider data at all.
 - Impersonate a daemon to a device, or a device to a daemon. Both sides of
   every TLS connection are pinned to roster keys, and a daemon token is bound to
   the device key that must present it.
@@ -167,8 +171,11 @@ also reveal sync activity: when a phone or daemon syncs and roughly how much.
 **Can:** act as an operator of every other machine in the account (its roster
 key and enrollment authenticate `dieter --machine` calls), add or remove
 devices (roster membership is flat), write shared records (projects, boards,
-labels, placement, portable settings, synced folder definitions), change the
-files of synced folders it is a member of, decrypt vault items while it is a
+labels, placement, portable settings, synced folder definitions, provider
+accounts), change the files of synced folders it is a member of, forge
+another machine's provider login record (a wrong sign-in state or usage,
+never a credential, because no record holds one), decrypt vault items while
+it is a
 member, and send oversized or malformed peer traffic.
 
 **Mitigations:**
@@ -246,12 +253,18 @@ size-limited before allocation (`internal/gateway/ingress.go`).
   app's Documents container with the default data protection, readable after
   the first unlock.
 - **Daemon host.** A stolen host exposes everything in `DIETER_HOME`, including
-  the identity key that is its roster key, the checkouts and the provider
-  credentials. Remove it from the roster (`dieter device revoke`), revoke it at
-  the gateway (`dieter machine revoke`), remove it from the vault, and rotate
-  provider credentials. `dieter daemon unenroll` on a host you still control
-  removes it from the roster, signs its own gateway revocation and deletes its
-  key.
+  the identity key that is its roster key, the checkouts, and its provider
+  logins (the per-account Claude Code directories with their Keychain items or
+  credential files, the Codex auth homes and `siwc.json`), plus its host logins
+  and API keys. Other machines' logins are not on it. Remove it from the roster
+  (`dieter device revoke`), revoke it at the gateway (`dieter machine revoke`),
+  remove it from the vault, and end its provider sessions: while it is still
+  reachable, sign it out of each account (Sign out on the app's Providers page,
+  or `dieter --machine HOST provider logout ACCOUNT`); otherwise revoke the
+  sessions in your Claude and ChatGPT account settings and rotate API keys.
+  Removing a machine from the roster does not sign it out of anything.
+  `dieter daemon unenroll` on a host you still control removes it from the
+  roster, signs its own gateway revocation and deletes its key.
 - **Recovery key.** The roster recovery key can sign any device into the
   roster, but only into the roster whose root it commits to. Keep it offline. If
   it leaks, revoke it with `dieter device revoke`; a new one comes only with a
@@ -262,6 +275,45 @@ size-limited before allocation (`internal/gateway/ingress.go`).
   accepted, never loopback (`internal/gateway/auth_native.go`). Daemon
   enrollment needs a separate browser approval of the machine name and code
   (`internal/gateway/auth_enrollment.go`).
+
+### Provider sign-in relayed through Dieter
+
+A person signs a machine in to a Claude or ChatGPT account from any app or the
+CLI. The provider's own login runs on that machine (`claude auth login`, Codex
+app-server, or the daemon's Sign in with ChatGPT client); the client opens the
+provider's page in the system browser and relays what the person brings back.
+
+**What travels:** the sign-in URL and device code from the daemon to the
+client, and the pasted Claude code (`code#state`) or a forwarded loopback
+address (`http://localhost:<port>/callback?code=…`) from the client to the
+daemon. All of it runs inside the mutually authenticated TLS connection to the
+machine, on every route, so the gateway sees none of it.
+
+**Mitigations:**
+
+- Every code is a single-use OAuth authorization code bound to a PKCE verifier
+  that only the login process on the daemon holds. A copied code is useless
+  elsewhere, and Claude Code's verifier never leaves the Claude Code process.
+- `SubmitProviderLoginInput` never logs or stores its input. The sign-in audit
+  (`DIETER_HOME/provider-accounts/audit.ndjson`) records the event (code
+  submitted, callback forwarded, signed in or out, reset), never a value.
+- The daemon replays a forwarded address only to the login's own loopback
+  callback (such as `localhost:<port>/callback` for Claude Code or
+  `127.0.0.1:1455/auth/callback` for Codex) and follows redirects only while
+  they stay on loopback, so a pasted address cannot make it fetch anything
+  else.
+- The first verified sign-in fixes an account's identity. A later sign-in as
+  someone else is signed out at once and fails with `identity_mismatch`, so
+  choosing the wrong account in the browser cannot attach a different person's
+  subscription to existing chats.
+- The apps never present a Dieter-branded Claude sign-in: the action reads
+  "Sign in to Claude Code on ‹machine›", and the page is Anthropic's.
+- Only a person signs in: agent turns are refused (see prompt injection).
+
+**Residual risk:** any trusted device can sign any machine of the account in
+to an account it controls, which is within operator access. A person who
+approves a device code they did not start in their own app links their
+subscription to whichever machine started it.
 
 ### Prompt injection against unsandboxed agents
 
@@ -310,6 +362,22 @@ data to its model provider or any network destination.
   files get `com.apple.quarantine`, so Gatekeeper checks an executable before
   it runs. As with the vault, an agent that writes `DIETER_HOME` directly
   bypasses this.
+- Agent turns cannot manage provider accounts. The daemon refuses every
+  `ProviderAccountService` mutation that carries a turn token, also with
+  `--machine`: adding, renaming or removing accounts, changing defaults,
+  signing in or out, and spending reset credits
+  (`internal/api/provider_accounts.go`). Agents may list accounts and pass
+  `--account` to the work they create. Claude Code turns get no Claude
+  credential from Dieter: the account's config directory and an empty adapter
+  `auth`, with `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and
+  `CLAUDE_CODE_OAUTH_TOKEN` blanked unless the account is an API key from the
+  environment. An agent that reads `DIETER_HOME` directly can still read the
+  Codex auth homes and `siwc.json` and run `claude` with an account's
+  directory, the same residual risk as `~/.claude` and `~/.codex`. The Codex
+  process of a turn holds its account's current access token, and a turn on a
+  Sign in with ChatGPT account can fetch it (`GetProviderTurnToken`, local
+  route, its own account only), because Codex renews 1-hour tokens that way
+  inside long turns.
 - Harness workers start with an allowlisted environment (basic user variables,
   provider keys and proxy settings), plus only the names listed in
   `DIETER_HARNESS_ENV` (`Environment.harnessEnvironment` in
@@ -441,7 +509,7 @@ DSH, which daemons install on first use.
 - Keeping prompts or code away from the model provider you configure.
 - Hiding metadata from the gateway or TURN operator: which devices exist,
   their names and keys, presence, direct candidates, which machines talk, when
-  and how much, and provider quota snapshots.
+  and how much.
 - Resisting denial of service by the gateway.
 - Protecting a logged-in desktop against physical attackers beyond what macOS
   privacy mode documents ([research notes](../native/macos/privacy-mode-research.md)).

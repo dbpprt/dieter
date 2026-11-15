@@ -27,9 +27,9 @@ import com.getdieter.client.v1.ProjectChangeSelect
 import com.getdieter.client.v1.ProjectChangesSlice
 import com.getdieter.client.v1.ProjectWorkspaceRow as ClientProjectWorkspaceRow
 import com.getdieter.client.v1.ProjectWorkspacesSlice
+import com.getdieter.client.v1.ProviderNotice
 import com.getdieter.client.v1.PullRequestSignal
 import com.getdieter.client.v1.PullRequestView as ClientPullRequestView
-import com.getdieter.client.v1.QuotasSlice
 import com.getdieter.client.v1.ReviewSlice
 import com.getdieter.client.v1.Samples
 import com.getdieter.client.v1.SchedulesSlice
@@ -67,8 +67,6 @@ import com.getdieter.core.presentation.TimelineItem
 import com.getdieter.core.presentation.TimelineStep
 import com.getdieter.core.presentation.ToolStatus
 import com.getdieter.core.presentation.Tools
-import com.getdieter.core.quotas.QuotaRows
-import com.getdieter.core.quotas.QuotasView
 import com.getdieter.core.schedules.SchedulesPresentation
 import com.getdieter.core.schedules.SchedulesView
 import com.getdieter.core.screens.DisplayMatchView
@@ -513,15 +511,6 @@ internal fun telemetrySlice(view: TelemetryView) =
         operation_result = view.operationResult.orEmpty(),
     )
 
-internal fun quotasSlice(view: QuotasView) =
-    QuotasSlice(
-        groups = view.groups,
-        loading = view.loading,
-        error = view.error.orEmpty(),
-        mutating = view.mutating.sorted(),
-        group_rows = QuotaRows.of(view.groups),
-    )
-
 /** [harnesses] names each schedule's agent by its owner machine's catalog. */
 internal fun schedulesSlice(view: SchedulesView, harnesses: (daemonId: String) -> List<Harness>) =
     SchedulesSlice(
@@ -665,6 +654,7 @@ internal fun conversationSlice(
     view: ConversationView,
     presented: ConversationPresentation,
     agent: AgentControlsState? = null,
+    providerNotice: ProviderNotice? = null,
 ): ConversationSlice =
     ConversationSlice(
         card_id = view.cardId,
@@ -694,7 +684,9 @@ internal fun conversationSlice(
         board = view.presented?.detail?.board,
         page = view.presented?.page,
         earlier_count = view.messages.size - view.presented?.conversation?.messages.orEmpty().size,
-        state = ConversationPresenter.state(presented).copy(agent = agent),
+        state =
+            ConversationPresenter.state(presented)
+                .copy(agent = agent, provider_notice = providerNotice),
         timeline =
             presented.timeline.items.map { item ->
                 timelineItem(item, presented::delivery, presented::unconfirmed)

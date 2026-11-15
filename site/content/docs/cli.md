@@ -41,7 +41,8 @@ no second CLI login. Both machines must be trusted. Verified direct TLS is
 preferred, followed by supported WebRTC and the gateway relay; every route is
 end-to-end encrypted between the two machines.
 `--checkout` chooses among checkouts on the selected machine, not a different host.
-Quota commands are account-wide and reject `--machine`.
+`dieter provider login`, `logout`, `check`, `usage --refresh` and `reset` act on
+the machine that `--machine` names, or on this one.
 
 ## Command map
 
@@ -50,7 +51,7 @@ Quota commands are account-wide and reject `--machine`.
 | `setup`, `doctor`, `daemon`             | Enrollment, prerequisites, permissions, service state, logs, and Linux user units                      |
 | `device`                                | Trusted devices: pairing approvals, removal, roster history, sync and recovery                         |
 | `machine`                               | Directory, routes, live telemetry, contract/release versions, updates, power, and connection signaling |
-| `harness`, `quota`                      | Host model catalogs and account quota windows                                                          |
+| `harness`, `provider`                   | Host model catalogs; Claude and ChatGPT accounts, sign-in per machine, plan usage                      |
 | `project`, `board`                      | Shared project identities, local checkouts, board settings, labels, host mappings, retention           |
 | `card`, `chat`                          | Durable conversations, follow-ups, queues, read receipts, presentation, archives                       |
 | `workspace`                             | Uncommitted changes, revisions, Git and SCM operations                                                 |
@@ -157,17 +158,30 @@ dieter remote wait EXECUTION_ID
 The process belongs to the daemon. Leaving an observer does not stop it. Use
 `remote --help` for explicit read, stdin, and stop operations.
 
-### Inspect schedules and quotas
+### Inspect schedules
 
 ```sh
 dieter schedule list --project PROJECT_ID --page-size 50
 dieter schedule runs SCHEDULE_ID --page-size 50
-dieter quota list
-dieter quota watch --count 3
 ```
 
-Continue paginated schedule output with its opaque `--page-token`. Each quota
-account/window remains separate; provider summaries never combine allowances.
+Continue paginated schedule output with its opaque `--page-token`.
+
+### Sign in to Claude and ChatGPT
+
+```sh
+dieter provider list
+dieter provider add claude --label Work
+dieter --machine MACHINE_ID provider login Work
+dieter provider usage --refresh
+dieter card create --project PROJECT_ID --board BOARD_ID \
+  --provider claude-code --account Work --prompt "Explain the tests" --format id
+```
+
+Each machine signs in to an account on its own; `login` prints the page to open
+and waits for the code. `--account` chooses the account for a card, chat or
+schedule. Each account and window stays separate; provider summaries never
+combine allowances. See [Provider accounts](/docs/providers/#from-the-cli).
 
 ## How agents use the CLI
 

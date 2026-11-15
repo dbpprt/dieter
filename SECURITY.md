@@ -41,15 +41,16 @@ vulnerabilities on their own:
   that account (there are no read-only scopes), and a person who types a
   device's pairing code on a trusted device, or who holds the roster recovery
   key, adds a device;
-- the gateway sees metadata (devices, presence, routes, tunnel timing and sizes,
-  provider quota snapshots) and can deny service or withhold roster entries;
+- the gateway sees metadata (devices, presence, routes, tunnel timing and
+  sizes) and can deny service or withhold roster entries;
 - model providers receive the prompts and code their harness sends.
 
 A way to cross one of those boundaries (another account's machines, a daemon
 without its key, a device that is not in the account's device roster, relayed
 content or a pairing the gateway can read or forge, the loopback API without
-its token, vault content without a member key, a release signer other than the
-one below) is in scope.
+its token, vault content without a member key, a provider credential copied
+off the machine that signed in, a Claude.ai credential that Dieter code reads, a
+release signer other than the one below) is in scope.
 
 Out of scope: third-party services (GitHub, model providers, Apple, Google),
 self-hosted gateways' own infrastructure, and findings that need an already

@@ -91,8 +91,9 @@ chat activity together so you can find recent work without first choosing a
 board. Next to it are [**Mail**](/docs/mail/), **Projects** and **Chats**.
 **More** holds everything else: **Channels**, **Terminals**, your machines,
 **Devices** and **Settings**. On Android, More slides up as a sheet above the
-bar; on iPhone and iPad it is a tab that also lists **Usage**, which the Inbox
-shows too. Its badge counts unread channel
+bar; on iPhone and iPad it is a tab that also lists
+[**Providers**](/docs/providers/), your Claude and ChatGPT accounts with their
+plan usage, which the Inbox summarizes too. Its badge counts unread channel
 messages.
 Completed replies that you have not viewed appear under **Needs you**. Opening
 the latest reply clears that state across clients; questions waiting for your
@@ -120,7 +121,7 @@ matching one are listed. Rules sync across your account like pins, and the
 Inbox says how many conversations they hide.
 
 {{< shots >}}
-{{< screenshot src="ios-inbox.png" kind="phone" width="1206" height="2622" alt="iPhone Inbox with four replies that need you, provider quotas, and running tasks" caption="Inbox on iPhone." >}}
+{{< screenshot src="ios-inbox.png" kind="phone" width="1206" height="2622" alt="iPhone Inbox with four replies that need you, provider usage, and running tasks" caption="Inbox on iPhone." >}}
 {{< screenshot src="android-board.png" kind="phone" width="1080" height="2400" alt="Android Atlas API Roadmap board filtered to its four running tasks, each with its machine, branch, and agent" caption="A board on Android." >}}
 {{< /shots >}}
 
@@ -163,9 +164,10 @@ and the app remembers your choice.
 In Samsung DeX, in Android's desktop windowing and on a connected display, the
 Android app switches to a desktop layout modelled on the Mac app. A sidebar holds
 Inbox, Mail, Channels, Chats and Terminals, your projects with their live work,
-and your machines and quotas. A board shows every lane side by side, and an open
-task sits beside it with a tab for each of its panes. Rows react to the pointer,
-and a right-click opens a card's menu. Drag the gaps between panes to resize them.
+your machines, and the usage of your provider accounts. A board shows every
+lane side by side, and an open task sits beside it with a tab for each of its
+panes. Rows react to the pointer, and a right-click opens a card's menu. Drag
+the gaps between panes to resize them.
 
 With a keyboard:
 

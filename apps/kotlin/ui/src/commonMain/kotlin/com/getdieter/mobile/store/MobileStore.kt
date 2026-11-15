@@ -65,6 +65,7 @@ class MobileStore(
         }
     val screens: ScreensModel = ScreensModel(context)
     val devices: DevicesModel = DevicesModel(context)
+    val providers: ProvidersModel = ProvidersModel(context)
     val channels: ChannelsModel = ChannelsModel(context)
     val mail: MailModel = MailModel(context)
 
@@ -352,6 +353,7 @@ class MobileStore(
         conversation.release()
         devices.release()
         folders.release()
+        providers.release()
         context.release()
     }
 
@@ -405,13 +407,6 @@ class MobileStore(
         if (top.key == activeTop) return
         activeTop = top.key
         when (top) {
-            is MobileRoute.Root ->
-                when (top.tab) {
-                    // Inbox and More show the lowest provider quota.
-                    MobileTab.INBOX,
-                    MobileTab.MORE -> machines.loadQuotas()
-                    else -> Unit
-                }
             is MobileRoute.Channels -> channels.refresh()
             // A machine's page lists its terminals.
             is MobileRoute.Machine -> terminals.loadOverview()
@@ -466,7 +461,6 @@ class MobileStore(
             ToolPage.CHANGES -> review.bindProjectChanges(route.projectId, route.checkoutId)
             ToolPage.SCHEDULES -> schedules.load(route.projectId)
             ToolPage.TERMINALS -> terminals.loadOverview()
-            ToolPage.USAGE -> machines.loadQuotas()
             else -> Unit
         }
     }

@@ -350,7 +350,7 @@ func protoOwnedCard(card model.Card) *dieterv1.Card {
 	return &dieterv1.Card{
 		Id: full.Id, OwnerDaemonId: full.OwnerDaemonId, CheckoutId: full.CheckoutId,
 		InitialPrompt: full.InitialPrompt, Summary: full.Summary, Origin: full.Origin,
-		ProviderOptions: full.ProviderOptions, ProviderAccountKey: full.ProviderAccountKey,
+		ProviderOptions: full.ProviderOptions, ProviderAccountId: full.ProviderAccountId,
 		WorkspaceMode: full.WorkspaceMode, WorkspaceBranch: full.WorkspaceBranch, WorkspaceBaseBranch: full.WorkspaceBaseBranch,
 		WorkspaceBaseRemote: full.WorkspaceBaseRemote, RemotePublishMode: full.RemotePublishMode, VaultAccess: full.VaultAccess, MailAccess: full.MailAccess,
 		Workspace: full.Workspace, PullRequest: full.PullRequest, TokenUsage: full.TokenUsage, UpdatedAt: full.UpdatedAt,

@@ -135,6 +135,14 @@ type Request struct {
 	// Environment is added to the worker after the allowlist, so commands the
 	// agent runs inherit it. Values never enter the stdin request.
 	Environment map[string]string `json:"-"`
+	// ProviderAccountID is the provider account the turn runs on, for the
+	// engine's bookkeeping (usage, expired logins); it never reaches the worker.
+	ProviderAccountID string `json:"-"`
+	// Auth is the adapter's credential object for a provider-account turn:
+	// {} lets Claude Code use its own login, Codex gets its token here. Nil
+	// (sent as null) leaves the adapter to its own discovery, for harnesses
+	// without accounts.
+	Auth map[string]string `json:"auth"`
 	// RuntimeDigest pins only this active turn to an immutable installed
 	// harness runtime. Completed conversations deliberately do not retain it:
 	// their next turn resolves the then-current runtime and resumes the opaque
@@ -173,6 +181,9 @@ type Output struct {
 	ID       string `json:"id,omitempty"`
 	Accepted bool   `json:"accepted,omitempty"`
 	Reason   string `json:"reason,omitempty"`
+	// Data carries provider plan limits a turn observed (type
+	// provider-usage); type auth-failure reports a rejected login in Reason.
+	Data json.RawMessage `json:"data,omitempty"`
 }
 
 type Runner interface {
@@ -332,7 +343,7 @@ func (r *SubprocessRunner) PrepareRuntime(ctx context.Context, digest string) (R
 }
 
 // RuntimeDirectory stages the pinned harness runtime for auxiliary read-only
-// provider integrations such as quota discovery. Callers must still launch
+// provider integrations such as provider accounts. Callers must still launch
 // only checked-in runtime assets and keep provider credentials local.
 func (r *SubprocessRunner) RuntimeDirectory(ctx context.Context) (string, error) {
 	return r.ensure(ctx)

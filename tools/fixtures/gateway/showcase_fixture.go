@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/dbpprt/dieter/internal/api"
-	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/link"
 	"github.com/dbpprt/dieter/internal/model"
@@ -25,13 +24,13 @@ import (
 	"github.com/dbpprt/dieter/internal/store/schedules"
 	"github.com/dbpprt/dieter/internal/testkit/topology"
 	"github.com/dbpprt/dieter/internal/transport/dieterclient"
-	"google.golang.org/protobuf/proto"
 )
 
 // The showcase fixture is the workspace behind the website and README
 // screenshots: four projects, a board shared by two online machines, an
-// offline laptop, finished and unread conversations, schedules, provider
-// usage and five agent turns that stay live. It runs only on loopback with
+// offline laptop, finished and unread conversations, schedules, the "Work"
+// and "Personal" provider accounts signed in on both online machines and five
+// agent turns that stay live. It runs only on loopback with
 // disposable state and never contacts a model provider.
 type showcase struct {
 	home        string
@@ -332,6 +331,9 @@ type showcaseEnvironment struct {
 	officeAddress, officeToken string
 	primaryTrust               *link.Trust // The office machine; it started the device roster.
 	trusts                     map[*boardstore.Store]*link.Trust
+	// seedAccounts signs the home machine in to the provider accounts once
+	// they replicated, before its live turns start.
+	seedAccounts func(*boardstore.Store) error
 }
 
 // connect brings the home machine online and into the device roster, enrolls
@@ -402,6 +404,9 @@ func (s *showcase) connect(ctx context.Context, env showcaseEnvironment) error {
 	officeSync := &peersync.PeerSync{Identity: env.office, Trust: env.primaryTrust, Store: s.officeStore, Log: env.logger, Interval: 5 * time.Second}
 	if err = officeSync.Round(ctx); err != nil {
 		return fmt.Errorf("replicate the office projects: %w", err)
+	}
+	if err = env.seedAccounts(s.homeStore); err != nil {
+		return err
 	}
 	if err = s.seedHome(ctx); err != nil {
 		return err
@@ -521,44 +526,4 @@ func (t localTokenTransport) RoundTrip(request *http.Request) (*http.Response, e
 
 func localConnectClient(address, token string) dieterclient.ConnectClient {
 	return dieterclient.NewConnect(&http.Client{Transport: localTokenTransport{token: token, base: http.DefaultTransport}}, "http://"+address)
-}
-
-// showcaseUsageQuotas reports one Codex and one Claude subscription.
-type showcaseUsageQuotas struct{}
-
-func (showcaseUsageQuotas) Discover(_ context.Context, key []byte) (*gatewayv1.ProviderAccountsPresence, error) {
-	var accounts []*gatewayv1.ProviderAccountPresence
-	for _, provider := range []gatewayv1.ProviderQuotaProvider{gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX, gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE} {
-		accounts = append(accounts, &gatewayv1.ProviderAccountPresence{
-			Provider: provider, AccountKey: showcaseAccountKey(key, provider), AccountKind: gatewayv1.ProviderAccountKind_PROVIDER_ACCOUNT_KIND_SUBSCRIPTION,
-			Availability: gatewayv1.ProviderQuotaAvailability_PROVIDER_QUOTA_AVAILABILITY_AVAILABLE, RefreshSupported: true,
-		})
-	}
-	return &gatewayv1.ProviderAccountsPresence{Accounts: accounts}, nil
-}
-
-func (showcaseUsageQuotas) Refresh(_ context.Context, key []byte, request *gatewayv1.ProviderQuotaRefreshRequest) (*gatewayv1.ProviderQuotaRefreshResult, error) {
-	provider := request.GetProvider()
-	if request.GetAccountKey() != showcaseAccountKey(key, provider) {
-		return &gatewayv1.ProviderQuotaRefreshResult{ErrorCode: "unknown_account"}, nil
-	}
-	plan, windows := "pro", []*gatewayv1.ProviderQuotaWindow{
-		{Id: "five-hour", Label: "5 hours", RemainingPercent: proto.Uint32(81), ResetsAt: time.Now().Add(2*time.Hour + 14*time.Minute).UTC().Format(time.RFC3339)},
-		{Id: "weekly", Label: "Weekly", RemainingPercent: proto.Uint32(64), ResetsAt: time.Now().Add(3*24*time.Hour + 5*time.Hour).UTC().Format(time.RFC3339)},
-	}
-	if provider == gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE {
-		plan = "max"
-		windows = []*gatewayv1.ProviderQuotaWindow{
-			{Id: "five-hour", Label: "5 hours", RemainingPercent: proto.Uint32(57), ResetsAt: time.Now().Add(3*time.Hour + 40*time.Minute).UTC().Format(time.RFC3339)},
-			{Id: "weekly", Label: "Weekly", RemainingPercent: proto.Uint32(42), ResetsAt: time.Now().Add(4*24*time.Hour + 2*time.Hour).UTC().Format(time.RFC3339)},
-		}
-	}
-	return &gatewayv1.ProviderQuotaRefreshResult{Snapshot: &gatewayv1.ProviderQuotaSnapshot{
-		Provider: provider, AccountKey: request.GetAccountKey(), AccountKind: gatewayv1.ProviderAccountKind_PROVIDER_ACCOUNT_KIND_SUBSCRIPTION,
-		Availability: gatewayv1.ProviderQuotaAvailability_PROVIDER_QUOTA_AVAILABILITY_AVAILABLE, DisplayEmail: "alex@example.com", Plan: plan, Windows: windows,
-	}}, nil
-}
-
-func showcaseAccountKey(key []byte, provider gatewayv1.ProviderQuotaProvider) string {
-	return usageAccountKey(append(append([]byte(nil), key...), byte(provider)))
 }

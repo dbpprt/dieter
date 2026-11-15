@@ -1,11 +1,5 @@
 package com.getdieter.core.domains
 
-import com.getdieter.api.gateway.v1.ProviderQuotaAvailability
-import com.getdieter.api.gateway.v1.ProviderQuotaGroup
-import com.getdieter.api.gateway.v1.ProviderQuotaProvider
-import com.getdieter.api.gateway.v1.ProviderQuotaSnapshot
-import com.getdieter.api.gateway.v1.ProviderQuotaWindow
-import com.getdieter.api.gateway.v1.ProviderResetCredits
 import com.getdieter.api.v1.Board
 import com.getdieter.api.v1.Card
 import com.getdieter.api.v1.Execution
@@ -14,19 +8,13 @@ import com.getdieter.api.v1.ExecutionStream
 import com.getdieter.api.v1.Project
 import com.getdieter.core.executions.ProcessTarget
 import com.getdieter.core.executions.Processes
-import com.getdieter.core.quotas.QuotaLevel
-import com.getdieter.core.quotas.Quotas
 import com.getdieter.core.search.SearchDocument
 import com.getdieter.core.search.TaskSearchIndex
 import com.getdieter.core.testing.offlineSessions
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlin.time.Duration.Companion.hours
-import kotlin.time.Duration.Companion.minutes
-import kotlin.time.Instant
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import okio.ByteString.Companion.encodeUtf8
@@ -98,62 +86,6 @@ class DomainRulesTest {
         )
         assertEquals("one two", processes.view.value.stdout.utf8())
         assertEquals("oops", processes.view.value.stderr.utf8())
-    }
-
-    @Test
-    fun quotaPresentationIsComputedOnce() {
-        val now = Instant.parse("2026-09-30T12:00:00Z")
-        assertEquals(
-            "Resets in 2h",
-            Quotas.resetText((now + 2.hours + 30.minutes).toString(), now, fine = false),
-        )
-        assertEquals(
-            "Resets in 2h 30m",
-            Quotas.resetText((now + 2.hours + 30.minutes).toString(), now),
-        )
-        assertEquals("Resets in 1d 2h", Quotas.resetText((now + 26.hours).toString(), now))
-        assertEquals("Reset due", Quotas.resetText(now.toString(), now))
-        assertEquals("Reset time unavailable", Quotas.resetText("soon", now))
-        val account =
-            ProviderQuotaSnapshot(
-                account_key = "k".repeat(32),
-                display_email = "dev@example.com",
-                availability = ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_AVAILABLE,
-                windows =
-                    listOf(
-                        ProviderQuotaWindow(remaining_percent = 40),
-                        ProviderQuotaWindow(remaining_percent = 8),
-                        ProviderQuotaWindow(),
-                    ),
-                reset_credits = ProviderResetCredits(available_count = 1),
-            )
-        assertEquals(8, Quotas.remaining(account))
-        assertEquals(QuotaLevel.CRITICAL, Quotas.level(8))
-        assertEquals(QuotaLevel.UNKNOWN, Quotas.level(null))
-        assertEquals("dev", Quotas.accountLabel(account))
-        assertEquals("••kkkk", Quotas.accountLabel(account.copy(display_email = "")))
-        assertTrue(Quotas.stale(account, now))
-        assertTrue(Quotas.included(account))
-        assertTrue(
-            Quotas.canReset(ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX, account)
-        )
-        val groups =
-            listOf(
-                ProviderQuotaGroup(
-                    provider = ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX,
-                    accounts = listOf(account),
-                )
-            )
-        assertEquals(
-            account,
-            Quotas.forConversation(
-                    Card(provider = "claude", provider_account_key = account.account_key),
-                    groups,
-                )
-                ?.second,
-            "the account key decides, not the provider name",
-        )
-        assertNull(Quotas.forConversation(Card(), groups))
     }
 
     @Test

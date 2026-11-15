@@ -211,6 +211,16 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 			})
 		case "steer-result":
 			return s.completeSteer(detail.Card.ID, turnID, request.ResponseMessageID, output)
+		case "provider-usage":
+			if s.Accounts != nil && request.ProviderAccountID != "" && len(output.Data) > 0 {
+				s.Accounts.ObserveUsage(request.ProviderAccountID, output.Data)
+			}
+			return nil
+		case "auth-failure":
+			if s.Accounts != nil && request.ProviderAccountID != "" {
+				s.Accounts.MarkExpired(request.ProviderAccountID, output.Reason)
+			}
+			return nil
 		case "present-content":
 			var presentation model.ContentPresentation
 			if err := json.Unmarshal(output.Presentation, &presentation); err != nil {
@@ -233,6 +243,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 	if err == nil && reportedFailure != nil {
 		err = reportedFailure
 	}
+	s.recordTurnTokens(detail.Card.ID, request)
 	suspending := s.turnIsSuspending(detail.Card.ID, turnID)
 	if !suspending {
 		if cleaner, ok := s.Runner.(harness.Cleaner); ok {
@@ -384,11 +395,10 @@ func (s *Service) startNextQueued(cardID string) {
 	if next.Selection != nil {
 		selection = *next.Selection
 	}
-	effort := selection.Effort
 	if next.Selection != nil {
-		effort = selectionEffort(selection)
+		selection.Effort = selectionEffort(selection)
 	}
-	updates, err := s.startCard(cardID, next.Text, parts, selection.Provider, selection.Model, effort, selection.ProviderOptions, next.ID, next.ID)
+	updates, err := s.startCard(cardID, next.Text, parts, selection, next.ID, next.ID)
 	if err == nil {
 		go drainTurnUpdates(updates)
 	}
@@ -510,4 +520,17 @@ func (s *Service) finishActive(cardID, turnID string, finalize func() error) err
 	}
 	s.mu.Unlock()
 	return errors.Join(releaseErr, finalizeErr)
+}
+
+// recordTurnTokens adds the reply's provider-reported usage to the token
+// ledger of the turn's provider account.
+func (s *Service) recordTurnTokens(cardID string, request harness.Request) {
+	if s.Accounts == nil || request.ProviderAccountID == "" {
+		return
+	}
+	usage, ok := s.Store.Conversations.MessageTokenUsage(cardID, request.ResponseMessageID)
+	if !ok || usage.TotalTokens <= 0 && usage.InputTokens <= 0 && usage.OutputTokens <= 0 {
+		return
+	}
+	s.Accounts.RecordTurnTokens(request.ProviderAccountID, time.Now(), usage.InputTokens, usage.OutputTokens, usage.TotalTokens)
 }

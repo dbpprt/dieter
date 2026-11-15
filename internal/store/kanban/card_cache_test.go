@@ -20,8 +20,8 @@ func TestUpdateCardCacheNoopDoesNotPublishMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	key, effort := "account", "high"
-	input := kanban.CardCacheInput{Provider: "mock", Model: "mock", Runtime: "running", ProviderAccountKey: &key, Effort: &effort, ProviderOptions: map[string]string{"mode": "fast"}}
+	accountID, effort := "pa_abcdefghijklmnopqrstuvwxyz", "high"
+	input := kanban.CardCacheInput{Provider: "mock", Model: "mock", Runtime: "running", ProviderAccountID: &accountID, Effort: &effort, ProviderOptions: map[string]string{"mode": "fast"}}
 	card, err = s.Kanban.UpdateCardCache(card.ID, input)
 	if err != nil {
 		t.Fatal(err)
@@ -55,8 +55,8 @@ func TestUpdateCardCacheNoopDoesNotPublishMutation(t *testing.T) {
 		t.Fatalf("omitted fields changed cache: %+v %v", got, err)
 	}
 	empty := ""
-	changed, err := s.Kanban.UpdateCardCache(card.ID, kanban.CardCacheInput{Title: "renamed", Runtime: "idle", ProviderAccountKey: &empty, ProviderOptions: map[string]string{}})
-	if err != nil || changed.TitleRevision != card.TitleRevision+1 || changed.Runtime != "idle" || changed.ProviderAccountKey != "" || len(changed.ProviderOptions) != 0 {
+	changed, err := s.Kanban.UpdateCardCache(card.ID, kanban.CardCacheInput{Title: "renamed", Runtime: "idle", ProviderAccountID: &empty, ProviderOptions: map[string]string{}})
+	if err != nil || changed.TitleRevision != card.TitleRevision+1 || changed.Runtime != "idle" || changed.ProviderAccountID != "" || len(changed.ProviderOptions) != 0 {
 		t.Fatalf("real change lost: %+v %v", changed, err)
 	}
 	if changes, metadata := testkit.ChangeCounters(t, s); changes != beforeChanges+1 || metadata != changes {

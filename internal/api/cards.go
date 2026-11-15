@@ -238,7 +238,7 @@ func (api *cardsAPI) UpdateCard(_ context.Context, request *dieterv1.UpdateCardR
 		if err != nil {
 			return nil, err
 		}
-		settings = append(settings, kanban.DraftAgentSettings{Provider: adapter.ID, Model: selected.ID, Effort: effort, ProviderOptions: options})
+		settings = append(settings, kanban.DraftAgentSettings{Provider: adapter.ID, Model: selected.ID, Effort: effort, ProviderOptions: options, AccountID: config.GetAccountId()})
 	}
 	value, err := api.server.store.Kanban.UpdateCard(request.GetCardId(), request.GetTitle(), request.GetInitialPrompt(), settings...)
 	if err != nil {

@@ -19,8 +19,9 @@ host work, or install just a client when your agents run on another machine.
 | Screen host    | With OS permissions | Active X11 / Wayland desktop | No         | No            |
 | Gateway        | Source build        | Published image and binaries | No         | No            |
 
-Each daemon host needs **Node.js 22.19+**, **Git**, and a configured
-[harness account](/docs/harnesses/). Install **tmux** if terminals should survive
+Each daemon host needs **Node.js 22.19+**, **Git**, and a signed-in
+[provider account](/docs/providers/) or another configured
+[harness](/docs/harnesses/). Install **tmux** if terminals should survive
 daemon restarts. Published binaries do not require Go, `just` or npm; only the
 [DSH harness](/docs/harnesses/#runtime-lifecycle) still installs from npm.
 

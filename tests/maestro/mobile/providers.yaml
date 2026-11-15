@@ -1,0 +1,84 @@
+# Settings › Providers: the fixture's Work (Claude) and Personal (ChatGPT)
+# accounts are listed. A Scratch Claude account is added, signs in on the
+# fixture machine with the code the fixture accepts, shows as signed in there
+# and is removed again.
+appId: ${APP_ID}
+name: Providers
+tags: [smoke]
+---
+- runFlow: common/launch.yaml
+- runFlow:
+    file: common/more.yaml
+    env:
+      PLACE: settings
+- scrollUntilVisible:
+    element:
+      text: "Work"
+    timeout: 20000
+- assertVisible: "Personal"
+- scrollUntilVisible:
+    element:
+      id: settings-providers
+- tapOn:
+    id: settings-providers
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible:
+      id: providers-add
+    timeout: 20000
+- tapOn:
+    id: providers-add
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: provider-label
+    waitToSettleTimeoutMs: 500
+- inputText: "Scratch"
+- tapOn:
+    id: "chrome-add-account|sheet-add-account"
+    waitToSettleTimeoutMs: 500
+# The fixture machine starts Claude Code's paste-code sign-in.
+- extendedWaitUntil:
+    visible:
+      id: signin-code
+    timeout: 60000
+- tapOn:
+    id: signin-code
+    waitToSettleTimeoutMs: 500
+- inputText: "FIXTURE-CODE"
+- tapOn:
+    id: signin-submit
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible:
+      id: signin-done
+    timeout: 60000
+- assertVisible: "Signed in.*"
+- tapOn:
+    id: signin-done
+    waitToSettleTimeoutMs: 500
+- scrollUntilVisible:
+    element:
+      text: "Scratch"
+    timeout: 20000
+- tapOn:
+    text: "Scratch"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible:
+      id: "provider-machine-state-.+"
+      text: "Signed in"
+    timeout: 30000
+- takeScreenshot: providers-scratch-signed-in
+- scrollUntilVisible:
+    element:
+      id: provider-remove
+- tapOn:
+    id: provider-remove
+    waitToSettleTimeoutMs: 500
+# The confirmation's button; the row behind it reads "Remove account".
+- tapOn:
+    text: "Remove"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    notVisible: "Scratch"
+    timeout: 20000

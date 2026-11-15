@@ -21,13 +21,15 @@ Use the daemon API or CLI for operations instead of editing central storage.
 
 ## Agent configuration
 
-| Setting                                                                      | Purpose                                                        |
-| ---------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `DIETER_HOME`                                                                | Central daemon data root                                       |
-| `$DIETER_HOME/harnesses.yaml`                                                | Optional per-daemon model/capability registry override         |
-| `DIETER_HARNESS_CONFIG` / `--harness-config`                                 | Explicit registry path                                         |
-| `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `PI_AGENT_DIR`, `OMP_PROFILE`, `DSH_HOME` | Provider-specific configuration selection                      |
-| `DIETER_CODEX_ACCOUNT_HOMES`                                                 | Explicit OS path-list of up to eight quota profile directories |
+| Setting                                      | Purpose                                                                                           |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `DIETER_HOME`                                | Central daemon data root                                                                          |
+| `$DIETER_HOME/harnesses.yaml`                | Optional per-daemon model/capability registry override                                            |
+| `DIETER_HARNESS_CONFIG` / `--harness-config` | Explicit registry path                                                                            |
+| `CODEX_HOME`, `CLAUDE_CONFIG_DIR`            | This machine's own Codex and Claude Code logins, adopted as [provider accounts](/docs/providers/) |
+| `PI_AGENT_DIR`, `OMP_PROFILE`, `DSH_HOME`    | Provider-specific configuration selection                                                         |
+| `$DIETER_HOME/provider-accounts/`            | Logins of the provider accounts you add in Dieter; never replicated                               |
+| `$DIETER_HOME/codex`                         | `CODEX_HOME` of every Dieter Codex process; its `config.toml` follows `~/.codex/config.toml`      |
 
 See [Agents & models](/docs/harnesses/) for credentials and runtime behavior,
 and the [environment reference](/docs/environment/) for every daemon variable.
@@ -63,8 +65,8 @@ text and hex-encodes its exact bytes for Dieter while giving coturn the text.
 Follow the [deployment guide](https://github.com/dbpprt/dieter/tree/main/deploy/gateway)
 when using the bundle; do not double-encode or silently replace an existing secret.
 
-The gateway stores control metadata and normalized credential-free quota
-snapshots. Provider credentials and raw provider responses stay off the gateway.
+The gateway stores control metadata only. Provider accounts, credentials,
+usage and raw provider responses stay off the gateway.
 
 ## Restart and recovery
 

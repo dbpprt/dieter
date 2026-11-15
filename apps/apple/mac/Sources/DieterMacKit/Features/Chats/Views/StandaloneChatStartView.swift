@@ -132,6 +132,17 @@ struct StandaloneChatStartView: View {
 
     private var canSubmit: Bool {
         !submitting && destination != nil && form.previewed && preview.problem.isEmpty
+            && !preview.agent.accountBlocked
+    }
+
+    /// Why the chosen provider account cannot run the first message here.
+    private var accountBlockedText: String {
+        let agent = preview.agent
+        let chosen =
+            agent.accounts.first { $0.id == agent.selection.accountID }
+            ?? agent.accounts.first { $0.label == agent.accountLabel }
+        let reason = chosen.map(\.reason).flatMap { $0.isEmpty ? nil : $0 } ?? "\(agent.accountLabel) can't run here"
+        return "\(reason). Choose another account, or sign it in under Settings › Providers."
     }
 
     private var newChatComposer: some View {
@@ -148,6 +159,11 @@ struct StandaloneChatStartView: View {
                     .foregroundStyle(DieterTheme.coral)
                     .font(.caption2)
                     .accessibilityIdentifier("chats.new.harness-error")
+            } else if destination != nil, preview.agent.accountBlocked {
+                Label(accountBlockedText, systemImage: "person.crop.circle.badge.exclamationmark")
+                    .foregroundStyle(DieterTheme.amber)
+                    .font(.caption2)
+                    .accessibilityIdentifier("chats.new.account-blocked")
             }
 
             ComposerSurface(focused: promptFocused, dropTargeted: attachmentDropTargeted) {

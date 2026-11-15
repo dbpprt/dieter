@@ -73,7 +73,7 @@ Under `core/runtime/src/commonMain/kotlin/com/getdieter/core/`:
 
 - One package per domain (`activity`, `admin`, `board`, `composition`,
   `connection`, `conversation`, `files`, `machines`, `navigation`,
-  `presentation`, `quotas`, `schedules`, `screens`, `terminals`, `workspace`,
+  `presentation`, `providers`, `schedules`, `screens`, `terminals`, `workspace`,
   and others). Each holds the domain's state, operations, and rules; Android
   calls these directly. `CoreRuntime.kt` wires them together.
 - `client/` implements the client contract (`client.proto`): `ClientApi.kt`
@@ -123,7 +123,7 @@ The Android and iOS apps share one Compose Multiplatform UI, organized as
 **Inbox / Mail / Projects / Chats / More**, with compact task cards, project folders,
 agent controls, transcript tools, files, Git review, schedules, terminals,
 screens and machine tools. More holds Channels, Terminals, the machines,
-Usage, Devices and Settings (`app/More.kt`). Tools live with their scope:
+Providers, Devices and Settings (`app/More.kt`). Tools live with their scope:
 Files, Changes and Schedules open from a project and carry its ID (and Files
 and Changes a checkout), a machine's page shows its screen, terminals and
 checkouts, and nothing falls back to the last project opened. Native code supplies credentials, transport,
@@ -184,7 +184,8 @@ commands are shared.
 | Transcript, Markdown/tables/code, tools, plans, subagents, queues and drafts | `ConversationScreen`, `RichText`                | Attachment previews                                |
 | Files/editing/history, Git diffs/operations/merge                            | `ToolScreens`, `ReviewScreen`, `WorkspaceTools` | Binary previews                                    |
 | Schedules/editor/history, projects/checkouts/boards/labels/archive           | `ManagementScreens`, `AdministrationScreens`    | Core administration                                |
-| Machine telemetry/actions, quotas, gateways, appearance                      | `ToolScreens`, `MobileTheme`                    | Core operations                                    |
+| Machine telemetry/actions, gateways, appearance                              | `ToolScreens`, `MobileTheme`                    | Core operations                                    |
+| Provider accounts, machine sign-in sheets, usage meters                      | `providers/` screens and sheets                 | System browser (`openUrl`), clipboard              |
 | Pairing (until this device is trusted), trusted devices, adding a device     | `DevicesScreen`                                 | Device key and TLS client authentication           |
 | Persistent terminals                                                         | Shared controls and bounded core output         | Termux on Android, SwiftTerm on iOS                |
 | Screen sharing                                                               | `ScreenUI` and core session state               | GPU/Metal renderers, WebRTC and native touch input |

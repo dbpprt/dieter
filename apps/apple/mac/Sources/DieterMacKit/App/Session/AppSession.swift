@@ -115,7 +115,6 @@ final class AppSession {
         },
         core: core, reportError: { [weak self] in self?.show($0) })
     var gatewayInformation: [String: Dieter_Gateway_V1_GatewayInformation] = [:]
-    @ObservationIgnored lazy var quotas = CoreProviderQuotas(core: core)
     var archivedProjects: [Dieter_V1_Project] = []
     var archivedCards: [Dieter_V1_Card] = []
     /// Archived chats, which the core's live workspace omits.
@@ -156,6 +155,8 @@ final class AppSession {
     let filesModel = FilesModel()
     /// This device's trust and the account's devices.
     let devicesModel = DevicesModel()
+    /// Claude and ChatGPT accounts, their sign-ins and usage.
+    let providersModel = ProvidersModel()
     let worktreeChanges = WorktreeChangesModel()
     let projectChanges = ProjectChangesModel()
     /// Counts `refreshState()` calls; navigating never makes one.
@@ -343,6 +344,7 @@ final class AppSession {
         conversationModel.core = resolved
         screensModel.core = resolved
         devicesModel.core = resolved
+        providersModel.core = resolved
         screensModel.media = screenMedia
         quickTaskForm.remember = { [weak self] remember in
             Task { await self?.perform { $0.rememberCreation = remember } }

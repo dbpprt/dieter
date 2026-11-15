@@ -1,0 +1,295 @@
+syntax = "proto3";
+
+package dieter.v1;
+
+option go_package = "github.com/dbpprt/dieter/internal/gen/dieter/v1;dieterv1";
+option java_multiple_files = true;
+option java_package = "com.getdieter.api.v1";
+
+import "google/protobuf/empty.proto";
+
+// Provider accounts: the Claude and ChatGPT subscriptions agent turns run on.
+//
+// Accounts, per-machine login state and usage replicate between the account's
+// daemons as KV records (provider-accounts, provider-account-defaults,
+// provider-logins). Credentials never leave the machine that signed in, and
+// Dieter never reads Claude.ai credentials: Claude Code keeps each login in a
+// per-account config directory. Account-wide calls run on any daemon; login,
+// sign-out, check, usage and reset calls act on the daemon that serves them.
+// Every mutation refuses agent turns.
+service ProviderAccountService {
+  // Lists accounts with every machine's login state and usage.
+  rpc ListProviderAccounts(ListProviderAccountsRequest) returns (ListProviderAccountsResponse);
+  // Adds an account. It has no identity until its first verified sign-in.
+  rpc CreateProviderAccount(CreateProviderAccountRequest) returns (ProviderAccount);
+  // Renames an account or changes whether it counts in usage summaries.
+  rpc UpdateProviderAccount(UpdateProviderAccountRequest) returns (ProviderAccount);
+  // Removes an account; every machine signs it out and deletes its files.
+  rpc DeleteProviderAccount(DeleteProviderAccountRequest) returns (google.protobuf.Empty);
+  // Makes an account the default for its provider.
+  rpc SetDefaultProviderAccount(SetDefaultProviderAccountRequest) returns (ProviderAccount);
+  // Starts the provider's own sign-in for an account on this machine.
+  rpc StartProviderLogin(StartProviderLoginRequest) returns (ProviderLogin);
+  // Streams a sign-in until it succeeds, fails or is canceled.
+  rpc WatchProviderLogin(WatchProviderLoginRequest) returns (stream ProviderLogin);
+  // Hands a pasted code or a browser's loopback redirect to a sign-in.
+  rpc SubmitProviderLoginInput(SubmitProviderLoginInputRequest) returns (ProviderLogin);
+  // Cancels a sign-in.
+  rpc CancelProviderLogin(CancelProviderLoginRequest) returns (ProviderLogin);
+  // Signs an account out on this machine.
+  rpc SignOutProviderAccount(SignOutProviderAccountRequest) returns (ProviderAccount);
+  // Verifies an account's login on this machine now.
+  rpc CheckProviderLogin(CheckProviderLoginRequest) returns (ProviderAccount);
+  // Reads an account's plan usage now from a machine where it is signed in.
+  rpc RefreshProviderUsage(RefreshProviderUsageRequest) returns (ProviderAccount);
+  // Spends one ChatGPT rate-limit reset credit of an account signed in here.
+  rpc ConsumeProviderUsageReset(ConsumeProviderUsageResetRequest) returns (ConsumeProviderUsageResetResponse);
+  // Returns the current access token of the calling turn's own Sign in with
+  // ChatGPT account. Local route only, and only with a live turn token.
+  rpc GetProviderTurnToken(GetProviderTurnTokenRequest) returns (ProviderTurnToken);
+}
+
+enum ProviderKind {
+  PROVIDER_KIND_UNSPECIFIED = 0;
+  PROVIDER_KIND_CLAUDE = 1;
+  PROVIDER_KIND_CHATGPT = 2;
+}
+
+enum ProviderLoginMethod {
+  PROVIDER_LOGIN_METHOD_UNSPECIFIED = 0;
+  // Claude Code's own login in a per-account config directory.
+  PROVIDER_LOGIN_METHOD_CLAUDE_CODE = 1;
+  // Codex's own ChatGPT login in a per-account auth home.
+  PROVIDER_LOGIN_METHOD_CODEX = 2;
+  // Sign in with ChatGPT, one session per machine.
+  PROVIDER_LOGIN_METHOD_SIWC = 3;
+  // The machine's existing CLI login (~/.claude, ~/.codex), used in place.
+  PROVIDER_LOGIN_METHOD_HOST = 4;
+  // An API key from the daemon's environment.
+  PROVIDER_LOGIN_METHOD_ENVIRONMENT = 5;
+}
+
+enum ProviderLoginState {
+  PROVIDER_LOGIN_STATE_UNSPECIFIED = 0;
+  PROVIDER_LOGIN_STATE_SIGNED_IN = 1;
+  PROVIDER_LOGIN_STATE_SIGNED_OUT = 2;
+  PROVIDER_LOGIN_STATE_EXPIRED = 3;
+  PROVIDER_LOGIN_STATE_FAILED = 4;
+}
+
+message ProviderIdentity {
+  string email = 1;
+  string organization = 2;
+  string organization_id = 3;
+  string workspace_id = 4;
+  string subject = 5;
+  string plan = 6;
+}
+
+message ProviderUsageWindow {
+  // five_hour, weekly, model or other.
+  string kind = 1;
+  string label = 2;
+  double used_percent = 3;
+  string resets_at = 4;
+  int32 duration_minutes = 5;
+}
+
+// Plan limits as the provider reports them.
+message ProviderUsage {
+  string plan = 1;
+  string observed_at = 2;
+  // probe or turn.
+  string source = 3;
+  repeated ProviderUsageWindow windows = 4;
+  string credits_balance = 5;
+  bool credits_unlimited = 6;
+  double spend_used = 7;
+  double spend_limit = 8;
+  string spend_currency = 9;
+  int32 reset_credits_available = 10;
+  // Why no usage is available: signed_out, unsupported, rate_limited.
+  string unavailable = 11;
+}
+
+message ProviderTokenTotals {
+  int64 input_tokens = 1;
+  int64 output_tokens = 2;
+  int64 total_tokens = 3;
+}
+
+// Tokens Dieter's own turns used on an account.
+message ProviderTokenUsage {
+  ProviderTokenTotals five_hour = 1;
+  ProviderTokenTotals seven_day = 2;
+  string observed_at = 3;
+}
+
+message ProviderMachineLogin {
+  string daemon_id = 1;
+  ProviderLoginState state = 2;
+  ProviderLoginMethod method = 3;
+  ProviderIdentity identity = 4;
+  string verified_at = 5;
+  string error_code = 6;
+  string error_message = 7;
+  ProviderUsage usage = 8;
+  ProviderTokenUsage dieter_tokens = 9;
+}
+
+message ProviderAccount {
+  string id = 1;
+  ProviderKind provider = 2;
+  string label = 3;
+  ProviderLoginMethod method = 4;
+  ProviderIdentity identity = 5;
+  bool include_in_summary = 6;
+  bool is_default = 7;
+  repeated ProviderMachineLogin logins = 8;
+  // The freshest usage of any machine.
+  ProviderUsage usage = 9;
+  // Summed over machines.
+  ProviderTokenUsage dieter_tokens = 10;
+  string created_at = 11;
+  string created_by = 12;
+}
+
+message ListProviderAccountsRequest {
+  ProviderKind provider = 1;
+}
+
+message ListProviderAccountsResponse {
+  repeated ProviderAccount accounts = 1;
+}
+
+message CreateProviderAccountRequest {
+  ProviderKind provider = 1;
+  string label = 2;
+  // CLAUDE_CODE for Claude; CODEX or SIWC for ChatGPT.
+  ProviderLoginMethod method = 3;
+  // Optional client-chosen account ID (pa_…) that makes a retry idempotent.
+  string account_id = 4;
+}
+
+message UpdateProviderAccountRequest {
+  string account_id = 1;
+  optional string label = 2;
+  optional bool include_in_summary = 3;
+}
+
+message DeleteProviderAccountRequest {
+  string account_id = 1;
+}
+
+message SetDefaultProviderAccountRequest {
+  string account_id = 1;
+}
+
+enum ProviderLoginFlow {
+  PROVIDER_LOGIN_FLOW_UNSPECIFIED = 0;
+  // Open a URL, then paste the code the provider shows (Claude).
+  PROVIDER_LOGIN_FLOW_PASTE_CODE = 1;
+  // Enter a code at the provider's device page (ChatGPT).
+  PROVIDER_LOGIN_FLOW_DEVICE_CODE = 2;
+  // Open a URL that redirects to a loopback callback on this machine.
+  PROVIDER_LOGIN_FLOW_BROWSER = 3;
+}
+
+enum ProviderLoginPhase {
+  PROVIDER_LOGIN_PHASE_UNSPECIFIED = 0;
+  PROVIDER_LOGIN_PHASE_STARTING = 1;
+  PROVIDER_LOGIN_PHASE_WAITING = 2;
+  PROVIDER_LOGIN_PHASE_COMPLETING = 3;
+  PROVIDER_LOGIN_PHASE_SUCCEEDED = 4;
+  PROVIDER_LOGIN_PHASE_FAILED = 5;
+  PROVIDER_LOGIN_PHASE_CANCELED = 6;
+}
+
+enum ProviderLoginInput {
+  PROVIDER_LOGIN_INPUT_UNSPECIFIED = 0;
+  // A code the provider page shows.
+  PROVIDER_LOGIN_INPUT_CODE = 1;
+  // Nothing: the provider completes on its own (device code).
+  PROVIDER_LOGIN_INPUT_NONE = 2;
+  // The loopback address the browser was redirected to.
+  PROVIDER_LOGIN_INPUT_CALLBACK = 3;
+}
+
+message ProviderLoginChallenge {
+  // The URL to open on the user's device.
+  string open_url = 1;
+  // The variant that redirects to this machine's loopback, for a browser on
+  // the daemon's own host or a client that forwards the callback.
+  string local_url = 2;
+  int32 callback_port = 3;
+  string user_code = 4;
+  string expires_at = 5;
+  ProviderLoginInput expects = 6;
+}
+
+message ProviderLogin {
+  string login_id = 1;
+  string account_id = 2;
+  string daemon_id = 3;
+  ProviderLoginFlow flow = 4;
+  ProviderLoginPhase phase = 5;
+  ProviderLoginChallenge challenge = 6;
+  ProviderIdentity identity = 7;
+  string error_code = 8;
+  string error_message = 9;
+  string updated_at = 10;
+}
+
+message StartProviderLoginRequest {
+  string account_id = 1;
+  ProviderLoginFlow flow = 2;
+}
+
+message WatchProviderLoginRequest {
+  string login_id = 1;
+  int32 heartbeat_seconds = 2;
+}
+
+message SubmitProviderLoginInputRequest {
+  string login_id = 1;
+  oneof input {
+    string code = 2;
+    string callback_url = 3;
+  }
+}
+
+message CancelProviderLoginRequest {
+  string login_id = 1;
+}
+
+message SignOutProviderAccountRequest {
+  string account_id = 1;
+}
+
+message CheckProviderLoginRequest {
+  string account_id = 1;
+}
+
+message RefreshProviderUsageRequest {
+  string account_id = 1;
+}
+
+message ConsumeProviderUsageResetRequest {
+  string account_id = 1;
+  // UUID; repeating it never spends a second credit.
+  string idempotency_key = 2;
+  string credit_id = 3;
+}
+
+message ConsumeProviderUsageResetResponse {
+  // reset, nothingToReset, noCredit or alreadyRedeemed.
+  string outcome = 1;
+  ProviderAccount account = 2;
+}
+
+message GetProviderTurnTokenRequest {}
+
+message ProviderTurnToken {
+  string token = 1;
+  string expires_at = 2;
+}

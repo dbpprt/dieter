@@ -22,7 +22,6 @@ import (
 	"github.com/dbpprt/dieter/internal/platform/buildinfo"
 	"github.com/dbpprt/dieter/internal/platform/config"
 	"github.com/dbpprt/dieter/internal/platform/version"
-	"github.com/dbpprt/dieter/internal/providerquota"
 	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"github.com/dbpprt/dieter/internal/replication/peersync"
 	"github.com/dbpprt/dieter/internal/security/localauth"
@@ -164,7 +163,6 @@ func Run(ctx context.Context, cfg Config) error {
 
 	runner := harness.NewSubprocessRunner(data.Root, harnessEnvironment(*env))
 	state := daemonstate.New(data)
-	var quotaSource *providerquota.Manager
 	var controlRTC *controlrtc.Manager
 	var deviceTrust *link.Trust
 	if enrolled {
@@ -173,11 +171,6 @@ func Run(ctx context.Context, cfg Config) error {
 			return fmt.Errorf("open device trust: %w", err)
 		}
 		defer deviceTrust.Close()
-		quotaSource = providerquota.NewWithRuntime(data.Root, logger, runner, providerquota.Accounts{
-			CodexHome: env.CodexHome, ClaudeConfigDir: env.ClaudeConfigDir,
-			CodexAccountHomes: env.CodexAccountHomes, ClaudeAccountHomes: env.ClaudeAccountHomes,
-			Environment: env.Environment.List(),
-		})
 		var routes []*gatewayv1.DirectCandidate
 		tunnelTarget := ""
 		loopback, loopbackErr := link.NewDirectRoute(identity, deviceTrust, address, localToken, "loopback", "127.0.0.1:0", "127.0.0.1", "loopback", 1000)
@@ -207,7 +200,7 @@ func Run(ctx context.Context, cfg Config) error {
 		go runGatewayLink(ctx, cancel, gatewayLink{
 			data: data, state: state, identity: identity, logger: logger, statusWriter: statusWriter,
 			tunnelTarget: tunnelTarget, routes: routes,
-			remoteDesktop: remoteDesktop, quotas: quotaSource, controlRTC: controlRTC != nil,
+			remoteDesktop: remoteDesktop, controlRTC: controlRTC != nil,
 		})
 		go (&peersync.PeerSync{Identity: identity, Trust: deviceTrust, Store: data, Log: logger}).Run(ctx)
 	} else if identityErr != nil && !errors.Is(identityErr, os.ErrNotExist) {
@@ -232,12 +225,10 @@ func Run(ctx context.Context, cfg Config) error {
 			_, err := deviceTrust.DaemonKey(daemonID)
 			return err == nil
 		}
+		options.Roster = deviceTrust.ActiveDaemons
 	}
 	if identity != nil {
 		options.Name = identity.Name
-	}
-	if quotaSource != nil {
-		options.ProviderAccountKey = quotaSource.ActiveAccountKey
 	}
 	if controlRTC != nil {
 		defer controlRTC.Close()
@@ -293,9 +284,21 @@ func newCatalog(root, explicit string, env config.Daemon) (*harness.Catalog, err
 			return nil, fmt.Errorf("inspect harness config %q: %w", candidate, err)
 		}
 	}
+	environment := harnessEnvironment(env)
+	environment.CodexModelHomes = codexModelHomes(root)
 	return harness.NewCatalog(harness.CatalogOptions{
-		Path: path, Mock: env.MockHarness, Root: root, Environment: harnessEnvironment(env),
+		Path: path, Mock: env.MockHarness, Root: root, Environment: environment,
 	})
+}
+
+// codexModelHomes lists the Codex homes that may hold a models_cache.json:
+// Dieter's shared Codex home and every provider account's auth home.
+func codexModelHomes(root string) func() []string {
+	return func() []string {
+		homes := []string{filepath.Join(root, "codex")}
+		matches, _ := filepath.Glob(filepath.Join(root, "provider-accounts", "*", "codex"))
+		return append(homes, matches...)
+	}
 }
 
 // gatewayLink is the enrolled daemon's persistent outbound tunnel and the
@@ -309,7 +312,6 @@ type gatewayLink struct {
 	tunnelTarget  string
 	routes        []*gatewayv1.DirectCandidate
 	remoteDesktop *remotedesktop.Manager
-	quotas        *providerquota.Manager
 	controlRTC    bool
 }
 
@@ -376,8 +378,8 @@ func runGatewayLink(ctx context.Context, cancel context.CancelFunc, l gatewayLin
 		Identity: l.identity, TunnelTarget: l.tunnelTarget, Version: buildinfo.ReleaseVersion, Routes: l.routes,
 		Log: l.logger, OnStatus: l.statusWriter.Gateway, OnAcknowledged: l.statusWriter.GatewayAcknowledged,
 		OnCompatibilityPolicy: onCompatibilityPolicy, OnUpdateRequired: onUpdateRequired,
-		RemoteDesktopPresence: l.remoteDesktop.Presence, ProviderQuotas: l.quotas,
-		ControlWebRTC: l.controlRTC,
+		RemoteDesktopPresence: l.remoteDesktop.Presence,
+		ControlWebRTC:         l.controlRTC,
 	}
 	if tunnelErr := client.Run(ctx); tunnelErr != nil && ctx.Err() == nil {
 		var updateRequired *link.UpdateRequiredError

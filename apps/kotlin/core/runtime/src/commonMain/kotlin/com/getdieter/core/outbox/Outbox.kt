@@ -255,6 +255,7 @@ class Outbox(
                 client_id = clientId,
                 command_id = commandId,
                 message_id = messageId,
+                account_id = selection.account_id,
             )
         val daemonId = daemonForCard(target)
         transaction { entries, _ ->

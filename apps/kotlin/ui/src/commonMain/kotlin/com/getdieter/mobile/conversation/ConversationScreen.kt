@@ -44,6 +44,7 @@ import com.getdieter.mobile.design.*
 import com.getdieter.mobile.design.Tone
 import com.getdieter.mobile.navigation.*
 import com.getdieter.mobile.platform.*
+import com.getdieter.mobile.providers.SignInSheet
 import com.getdieter.mobile.store.*
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -93,7 +94,14 @@ internal fun ConversationScreen(store: MobileStore, cardId: String, openUrl: (St
             }
             return@Screen
         }
-        Transcript(store, view, cardId, { store.openContentLink(it, openUrl, cardId) }, padding)
+        Transcript(
+            store,
+            view,
+            cardId,
+            { store.openContentLink(it, openUrl, cardId) },
+            padding,
+            openUrl,
+        )
     }
     if (editing) card?.let { CardEditSheet(store, it) { editing = false } }
 }
@@ -155,6 +163,8 @@ private fun Transcript(
     selected: String,
     openUrl: (String) -> Unit,
     padding: PaddingValues,
+    // Provider sign-in pages open directly, not as content links of the conversation.
+    openWeb: (String) -> Unit,
 ) {
     val busy by store.busy.collectAsState()
     val drafts by store.conversation.draftTexts.collectAsState()
@@ -162,6 +172,7 @@ private fun Transcript(
     var draft by rememberSaveable(selected) { mutableStateOf(drafts[selected].orEmpty()) }
     LaunchedEffect(drafts[selected]) { if (draft.isEmpty()) draft = drafts[selected].orEmpty() }
     var agentSheet by remember(selected) { mutableStateOf(false) }
+    var signingIn by rememberSaveable(selected) { mutableStateOf("") }
     var following by rememberSaveable(selected) { mutableStateOf(true) }
     var toolOutput by remember(selected) { mutableStateOf<ToolOutput?>(null) }
     val list = rememberLazyListState()
@@ -333,6 +344,33 @@ private fun Transcript(
                         )
                     }
                 }
+                state?.provider_notice?.let { notice ->
+                    item("provider-notice") {
+                        val choose = notice.action == "choose_account"
+                        Banner(
+                            notice.title,
+                            "",
+                            Modifier.padding(horizontal = ScreenMargin).testTag("provider-notice"),
+                            tone = Tone.WARNING,
+                            glyph = Glyph.KEY,
+                            actionLabel =
+                                when (notice.action) {
+                                    "sign_in" -> "Sign in"
+                                    "sign_in_again" -> "Sign in again"
+                                    else -> "Choose account"
+                                },
+                            onAction = {
+                                if (choose) agentSheet = true
+                                else
+                                    store.providers.signIn(notice.account_id, notice.daemon_id) {
+                                        signingIn = it
+                                    }
+                            },
+                            secondaryLabel = if (choose) null else "Choose account",
+                            onSecondary = if (choose) null else ({ agentSheet = true }),
+                        )
+                    }
+                }
                 view.turn_failure?.let { failure ->
                     item("turn-failure") {
                         Banner(
@@ -491,6 +529,7 @@ private fun Transcript(
             }
         }
     toolOutput?.let { tool -> ToolOutputSheet(tool) { toolOutput = null } }
+    if (signingIn.isNotEmpty()) SignInSheet(store, signingIn, openWeb) { signingIn = "" }
 }
 
 private fun rowText(row: TimelineItem, view: ConversationSlice) =

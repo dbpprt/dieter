@@ -157,6 +157,12 @@ public nonisolated struct Dieter_V1_CreateConversationRequest: @unchecked Sendab
     set {_uniqueStorage()._mailAccess = newValue}
   }
 
+  /// Provider account for the first turn; empty uses the provider default.
+  public var accountID: String {
+    get {_storage._accountID}
+    set {_uniqueStorage()._accountID = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -338,6 +344,8 @@ public nonisolated struct Dieter_V1_DraftAgentSettings: Sendable {
 
   public var providerOptions: Dictionary<String,String> = [:]
 
+  public var accountID: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -434,7 +442,7 @@ nonisolated extension Dieter_V1_CardsResponse: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension Dieter_V1_CreateConversationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".CreateConversationRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}board_id\0\u{1}lane\0\u{1}title\0\u{1}prompt\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{3}label_ids\0\u{3}defer_start\0\u{3}provider_options\0\u{3}client_id\0\u{3}command_id\0\u{1}attachments\0\u{3}workspace_mode\0\u{3}workspace_branch\0\u{3}workspace_base_branch\0\u{3}auto_generate_title\0\u{3}workspace_base_remote\0\u{3}remote_publish_mode\0\u{4}\u{4}checkout_id\0\u{3}vault_access\0\u{3}mail_access\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}board_id\0\u{1}lane\0\u{1}title\0\u{1}prompt\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{3}label_ids\0\u{3}defer_start\0\u{3}provider_options\0\u{3}client_id\0\u{3}command_id\0\u{1}attachments\0\u{3}workspace_mode\0\u{3}workspace_branch\0\u{3}workspace_base_branch\0\u{3}auto_generate_title\0\u{3}workspace_base_remote\0\u{3}remote_publish_mode\0\u{4}\u{4}checkout_id\0\u{3}vault_access\0\u{3}mail_access\0\u{3}account_id\0")
 
   fileprivate class _StorageClass {
     var _checkoutID: String = String()
@@ -460,6 +468,7 @@ nonisolated extension Dieter_V1_CreateConversationRequest: SwiftProtobuf.Message
     var _remotePublishMode: String = String()
     var _vaultAccess: Bool = false
     var _mailAccess: Bool = false
+    var _accountID: String = String()
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -493,6 +502,7 @@ nonisolated extension Dieter_V1_CreateConversationRequest: SwiftProtobuf.Message
       _remotePublishMode = source._remotePublishMode
       _vaultAccess = source._vaultAccess
       _mailAccess = source._mailAccess
+      _accountID = source._accountID
     }
   }
 
@@ -534,6 +544,7 @@ nonisolated extension Dieter_V1_CreateConversationRequest: SwiftProtobuf.Message
         case 24: try { try decoder.decodeSingularStringField(value: &_storage._checkoutID) }()
         case 25: try { try decoder.decodeSingularBoolField(value: &_storage._vaultAccess) }()
         case 26: try { try decoder.decodeSingularBoolField(value: &_storage._mailAccess) }()
+        case 27: try { try decoder.decodeSingularStringField(value: &_storage._accountID) }()
         default: break
         }
       }
@@ -611,6 +622,9 @@ nonisolated extension Dieter_V1_CreateConversationRequest: SwiftProtobuf.Message
       if _storage._mailAccess != false {
         try visitor.visitSingularBoolField(value: _storage._mailAccess, fieldNumber: 26)
       }
+      if !_storage._accountID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._accountID, fieldNumber: 27)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -643,6 +657,7 @@ nonisolated extension Dieter_V1_CreateConversationRequest: SwiftProtobuf.Message
         if _storage._remotePublishMode != rhs_storage._remotePublishMode {return false}
         if _storage._vaultAccess != rhs_storage._vaultAccess {return false}
         if _storage._mailAccess != rhs_storage._mailAccess {return false}
+        if _storage._accountID != rhs_storage._accountID {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -1038,7 +1053,7 @@ nonisolated extension Dieter_V1_MergeCardRequest: SwiftProtobuf.Message, SwiftPr
 
 nonisolated extension Dieter_V1_DraftAgentSettings: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DraftAgentSettings"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{3}provider_options\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{3}provider_options\0\u{3}account_id\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1050,6 +1065,7 @@ nonisolated extension Dieter_V1_DraftAgentSettings: SwiftProtobuf.Message, Swift
       case 2: try { try decoder.decodeSingularStringField(value: &self.model) }()
       case 3: try { try decoder.decodeSingularStringField(value: &self.effort) }()
       case 4: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: &self.providerOptions) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.accountID) }()
       default: break
       }
     }
@@ -1068,6 +1084,9 @@ nonisolated extension Dieter_V1_DraftAgentSettings: SwiftProtobuf.Message, Swift
     if !self.providerOptions.isEmpty {
       try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: self.providerOptions, fieldNumber: 4)
     }
+    if !self.accountID.isEmpty {
+      try visitor.visitSingularStringField(value: self.accountID, fieldNumber: 5)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1076,6 +1095,7 @@ nonisolated extension Dieter_V1_DraftAgentSettings: SwiftProtobuf.Message, Swift
     if lhs.model != rhs.model {return false}
     if lhs.effort != rhs.effort {return false}
     if lhs.providerOptions != rhs.providerOptions {return false}
+    if lhs.accountID != rhs.accountID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

@@ -78,6 +78,8 @@ message CreationPreferences {
   string project_id = 7;
   // Project ID → the checkout last chosen in it.
   map<string, string> checkouts = 9;
+  // Provider (claude, chatgpt) → the account last chosen for it.
+  map<string, string> accounts = 10;
 }
 
 // Mail bodies kept on this device, least recently used first. Each body is a

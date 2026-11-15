@@ -125,7 +125,7 @@ private struct ComposerDraftField: View {
             if !ComposerReturnPolicy.sendsMessage(shiftPressed: press.modifiers.contains(.shift)) {
                 return .ignored
             }
-            if context.composer.draft.hasContent { submit() }
+            if context.composer.draft.hasContent, !context.accountBlocked { submit() }
             return .handled
         }
         .onKeyPress(.upArrow, phases: .down) { press in
@@ -282,9 +282,12 @@ private struct ComposerActions: View {
                 .e2eTarget("conversation.stop")
             }
 
-            ComposerSendButton(isEnabled: context.composer.draft.hasContent, queuesMessage: working, action: submit)
-                .accessibilityIdentifier("conversation.send")
-                .e2eTarget("conversation.send")
+            ComposerSendButton(
+                isEnabled: context.composer.draft.hasContent && !context.accountBlocked, queuesMessage: working,
+                action: submit
+            )
+            .accessibilityIdentifier("conversation.send")
+            .e2eTarget("conversation.send")
         }
         .fixedSize()
     }

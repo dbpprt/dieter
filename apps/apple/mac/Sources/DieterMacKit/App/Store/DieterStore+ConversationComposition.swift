@@ -37,6 +37,9 @@ extension DieterStore {
         context.onSteer = { [weak self] messageID in await self?.steerConversation(messageID: messageID) }
         context.onSendComposer = { [weak self] in await self?.sendComposer() }
         context.onChooseAgent = { [weak self] choice in await self?.chooseAgent(choice) }
+        context.onProviderSignIn = { [weak self] accountID, daemonID in
+            await self?.providersModel.presentSignIn(accountID: accountID, daemonID: daemonID)
+        }
         context.onShow = { [weak self] error in self?.show(error) }
         context.onToolOutput = { [weak self] messageID, toolCallID, revision in
             try await self?.toolOutput(messageID: messageID, toolCallID: toolCallID, revision: revision) ?? nil

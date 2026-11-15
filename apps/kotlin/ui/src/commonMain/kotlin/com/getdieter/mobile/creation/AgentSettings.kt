@@ -66,6 +66,33 @@ internal fun AgentSettings(agent: AgentControlsState?, onChoice: (AgentChoice) -
                         onChoice(AgentChoice(effort = it))
                     }
                 }
+            // Single choices cannot be disabled, so an account that is not ready says why and
+            // the core blocks sending with it (AgentControlsState.account_blocked).
+            if (agent.accounts.isNotEmpty())
+                add { position ->
+                    PickerRow(
+                        "Account",
+                        agent.account_label,
+                        agent.accounts.map { it.id to it.label },
+                        agent.selection?.account_id.orEmpty(),
+                        agent.account_enabled,
+                        position,
+                        Glyph.KEY,
+                        details =
+                            agent.accounts.associate { account ->
+                                account.id to
+                                    listOf(
+                                            if (account.is_default) "Default" else "",
+                                            account.detail,
+                                            account.reason,
+                                        )
+                                        .filter { it.isNotEmpty() }
+                                        .joinToString(" · ")
+                            },
+                    ) {
+                        onChoice(AgentChoice(account = it))
+                    }
+                }
         }
     Group(rows) { row, position -> row(position) }
     if (agent.options.isNotEmpty()) {

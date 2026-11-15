@@ -61,25 +61,25 @@ func TestSameProviderTurnSelectionPreservesCardAndChatSessions(t *testing.T) {
 func TestTurnSelectionDefaultsAndUnsupportedChanges(t *testing.T) {
 	t.Parallel()
 	card := model.Card{Provider: "codex", Model: "gpt-5.5", Effort: "high", InitialPromptSentAt: "sent", ProviderOptions: map[string]string{"fast_mode": "true"}}
-	_, _, selection, err := resolveTurnSelection(harness.StaticCatalog(false), card, "", "gpt-5.3-codex-spark", "", nil)
+	_, _, selection, err := resolveTurnSelection(harness.StaticCatalog(false), card, model.HarnessSelection{Model: "gpt-5.3-codex-spark"})
 	if err != nil || selection.ProviderOptions["fast_mode"] != "" || selection.Effort != "high" {
 		t.Fatalf("Spark selection=%#v err=%v", selection, err)
 	}
-	_, _, selection, err = resolveTurnSelection(harness.StaticCatalog(false), card, "", "", "default", nil)
+	_, _, selection, err = resolveTurnSelection(harness.StaticCatalog(false), card, model.HarnessSelection{Effort: "default"})
 	if err != nil || selection.Effort != "" {
 		t.Fatalf("default effort=%#v err=%v", selection, err)
 	}
-	if _, _, _, err := resolveTurnSelection(harness.StaticCatalog(false), card, "", "gpt-5.3-codex-spark", "", map[string]string{"fast_mode": "true"}); err == nil {
+	if _, _, _, err := resolveTurnSelection(harness.StaticCatalog(false), card, model.HarnessSelection{Model: "gpt-5.3-codex-spark", ProviderOptions: map[string]string{"fast_mode": "true"}}); err == nil {
 		t.Fatal("accepted unsupported Fast mode")
 	}
-	if _, _, _, err := resolveTurnSelection(harness.StaticCatalog(false), card, "", "", "invalid-effort", nil); err == nil {
+	if _, _, _, err := resolveTurnSelection(harness.StaticCatalog(false), card, model.HarnessSelection{Effort: "invalid-effort"}); err == nil {
 		t.Fatal("accepted unsupported effort")
 	}
 	omp := model.Card{Provider: "omp", Model: "openai-codex/gpt-6-sol", Effort: "high", InitialPromptSentAt: "sent"}
-	if _, _, _, err := resolveTurnSelection(harness.StaticCatalog(false), omp, "", "", "low", nil); err == nil || !strings.Contains(err.Error(), "effort is locked") {
+	if _, _, _, err := resolveTurnSelection(harness.StaticCatalog(false), omp, model.HarnessSelection{Effort: "low"}); err == nil || !strings.Contains(err.Error(), "effort is locked") {
 		t.Fatalf("OMP effort change=%v", err)
 	}
-	if _, _, _, err := resolveTurnSelection(harness.StaticCatalog(false), omp, "", "openai-codex/gpt-6-sol", "", nil); err != nil {
+	if _, _, _, err := resolveTurnSelection(harness.StaticCatalog(false), omp, model.HarnessSelection{Model: "openai-codex/gpt-6-sol"}); err != nil {
 		t.Fatalf("OMP model change=%v", err)
 	}
 }
@@ -168,4 +168,22 @@ func catalogWithModel(t *testing.T, provider string, model harness.Model) *harne
 	}
 	t.Fatalf("provider %q is not in the release catalog", provider)
 	return nil
+}
+
+func TestTurnSelectionKeepsAndSwitchesTheAccount(t *testing.T) {
+	t.Parallel()
+	card := model.Card{Provider: "codex", Model: "gpt-5.5", Effort: "high", InitialPromptSentAt: "sent", ProviderAccountID: "pa_work"}
+	_, _, selection, err := resolveTurnSelection(harness.StaticCatalog(false), card, model.HarnessSelection{})
+	if err != nil || selection.AccountID != "pa_work" {
+		t.Fatalf("kept account=%#v err=%v", selection, err)
+	}
+	_, _, selection, err = resolveTurnSelection(harness.StaticCatalog(false), card, model.HarnessSelection{AccountID: "pa_personal"})
+	if err != nil || selection.AccountID != "pa_personal" {
+		t.Fatalf("switched account=%#v err=%v", selection, err)
+	}
+	draft := model.Card{Provider: "codex", Model: "gpt-5.5", ProviderAccountID: "pa_work"}
+	_, _, selection, err = resolveTurnSelection(harness.StaticCatalog(false), draft, model.HarnessSelection{Provider: "claude-code", Model: "sonnet"})
+	if err != nil || selection.AccountID != "" {
+		t.Fatalf("a draft switching harness must drop the other provider's account: %#v err=%v", selection, err)
+	}
 }

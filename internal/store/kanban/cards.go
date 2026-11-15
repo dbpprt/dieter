@@ -29,6 +29,9 @@ type CreateCardInput struct {
 	ProviderOptions                                                  map[string]string
 	Origin                                                           *model.CardOrigin
 	VaultAccess, MailAccess                                          bool
+	// ProviderAccountID is the account the first turn runs on; it stays the
+	// conversation's account until a turn chooses another.
+	ProviderAccountID string
 }
 
 func stringMapsEqual(left, right map[string]string) bool {
@@ -135,7 +138,7 @@ func (s *Store) CreateCard(input CreateCardInput) (model.Card, error) {
 		return model.Card{}, err
 	}
 	now := home.Timestamp()
-	item := model.Card{ID: input.ID, OwnerDaemonID: checkout.DaemonID, CheckoutID: checkout.ID, Scope: model.ConversationScopeBoard, ProjectID: project.ID, BoardID: board.ID, Lane: canonicalLane(board, lane), Position: int64(len(existing)+1) * 1024, Title: strings.TrimSpace(input.Title), InitialPrompt: strings.TrimSpace(input.Prompt), Provider: input.Provider, Model: input.Model, Effort: input.Effort, ProviderOptions: home.CloneStringMap(input.ProviderOptions), Runtime: "idle", RuntimeUpdatedAt: now, LastActivityAt: now, PhaseChangedAt: now, CreatedAt: now, UpdatedAt: now, LabelIDs: labelIDs, Origin: input.Origin, WorkspaceMode: workspaceMode, WorkspaceBranch: strings.TrimSpace(input.WorkspaceBranch), WorkspaceBaseBranch: strings.TrimSpace(input.WorkspaceBaseBranch), WorkspaceBaseRemote: baseRemote, RemotePublishMode: remotePublishMode, VaultAccess: input.VaultAccess, MailAccess: input.MailAccess}
+	item := model.Card{ID: input.ID, OwnerDaemonID: checkout.DaemonID, CheckoutID: checkout.ID, Scope: model.ConversationScopeBoard, ProjectID: project.ID, BoardID: board.ID, Lane: canonicalLane(board, lane), Position: int64(len(existing)+1) * 1024, Title: strings.TrimSpace(input.Title), InitialPrompt: strings.TrimSpace(input.Prompt), Provider: input.Provider, Model: input.Model, Effort: input.Effort, ProviderOptions: home.CloneStringMap(input.ProviderOptions), Runtime: "idle", RuntimeUpdatedAt: now, LastActivityAt: now, PhaseChangedAt: now, CreatedAt: now, UpdatedAt: now, LabelIDs: labelIDs, Origin: input.Origin, WorkspaceMode: workspaceMode, WorkspaceBranch: strings.TrimSpace(input.WorkspaceBranch), WorkspaceBaseBranch: strings.TrimSpace(input.WorkspaceBaseBranch), WorkspaceBaseRemote: baseRemote, RemotePublishMode: remotePublishMode, VaultAccess: input.VaultAccess, MailAccess: input.MailAccess, ProviderAccountID: strings.TrimSpace(input.ProviderAccountID)}
 	item.OrderKey, err = s.MoveOrderKey(item, nil)
 	if err != nil {
 		return model.Card{}, err
@@ -187,7 +190,7 @@ func (s *Store) CreateChat(input CreateCardInput) (model.Card, error) {
 		return model.Card{}, err
 	}
 	now := home.Timestamp()
-	item := model.Card{ID: input.ID, OwnerDaemonID: checkout.DaemonID, CheckoutID: checkout.ID, Scope: model.ConversationScopeChat, ProjectID: project.ID, Position: int64(len(existing)+1) * 1024, Title: title, InitialPrompt: strings.TrimSpace(input.Prompt), Provider: input.Provider, Model: input.Model, Effort: input.Effort, ProviderOptions: home.CloneStringMap(input.ProviderOptions), Runtime: "idle", RuntimeUpdatedAt: now, LastActivityAt: now, PhaseChangedAt: now, CreatedAt: now, UpdatedAt: now, WorkspaceMode: workspaceMode, WorkspaceBranch: strings.TrimSpace(input.WorkspaceBranch), WorkspaceBaseBranch: strings.TrimSpace(input.WorkspaceBaseBranch), WorkspaceBaseRemote: baseRemote, RemotePublishMode: remotePublishMode, VaultAccess: input.VaultAccess, MailAccess: input.MailAccess}
+	item := model.Card{ID: input.ID, OwnerDaemonID: checkout.DaemonID, CheckoutID: checkout.ID, Scope: model.ConversationScopeChat, ProjectID: project.ID, Position: int64(len(existing)+1) * 1024, Title: title, InitialPrompt: strings.TrimSpace(input.Prompt), Provider: input.Provider, Model: input.Model, Effort: input.Effort, ProviderOptions: home.CloneStringMap(input.ProviderOptions), Runtime: "idle", RuntimeUpdatedAt: now, LastActivityAt: now, PhaseChangedAt: now, CreatedAt: now, UpdatedAt: now, WorkspaceMode: workspaceMode, WorkspaceBranch: strings.TrimSpace(input.WorkspaceBranch), WorkspaceBaseBranch: strings.TrimSpace(input.WorkspaceBaseBranch), WorkspaceBaseRemote: baseRemote, RemotePublishMode: remotePublishMode, VaultAccess: input.VaultAccess, MailAccess: input.MailAccess, ProviderAccountID: strings.TrimSpace(input.ProviderAccountID)}
 	item.OrderKey, err = s.MoveOrderKey(item, nil)
 	if err != nil {
 		return model.Card{}, err
@@ -430,7 +433,7 @@ type CardCacheInput struct {
 	Title, Provider, Model, Runtime, Summary string
 	Effort                                   *string
 	ProviderOptions                          map[string]string
-	ProviderAccountKey                       *string
+	ProviderAccountID                        *string
 }
 
 func (s *Store) UpdateCardCache(ref string, input CardCacheInput) (model.Card, error) {
@@ -451,7 +454,7 @@ func (s *Store) UpdateCardCache(ref string, input CardCacheInput) (model.Card, e
 		title = input.Title
 	}
 	provider, modelName, effort, runtime, summary := item.Provider, item.Model, item.Effort, item.Runtime, item.Summary
-	providerAccountKey := item.ProviderAccountKey
+	providerAccountID := item.ProviderAccountID
 	providerOptions := item.ProviderOptions
 	if input.Provider != "" {
 		provider = input.Provider
@@ -465,8 +468,8 @@ func (s *Store) UpdateCardCache(ref string, input CardCacheInput) (model.Card, e
 	if input.ProviderOptions != nil {
 		providerOptions = home.CloneStringMap(input.ProviderOptions)
 	}
-	if input.ProviderAccountKey != nil {
-		providerAccountKey = strings.TrimSpace(*input.ProviderAccountKey)
+	if input.ProviderAccountID != nil {
+		providerAccountID = strings.TrimSpace(*input.ProviderAccountID)
 	}
 	if input.Runtime != "" {
 		runtime = input.Runtime
@@ -474,7 +477,7 @@ func (s *Store) UpdateCardCache(ref string, input CardCacheInput) (model.Card, e
 	if input.Summary != "" {
 		summary = input.Summary
 	}
-	if title == item.Title && provider == item.Provider && providerAccountKey == item.ProviderAccountKey && modelName == item.Model && effort == item.Effort && stringMapsEqual(providerOptions, item.ProviderOptions) && runtime == item.Runtime && summary == item.Summary {
+	if title == item.Title && provider == item.Provider && providerAccountID == item.ProviderAccountID && modelName == item.Model && effort == item.Effort && stringMapsEqual(providerOptions, item.ProviderOptions) && runtime == item.Runtime && summary == item.Summary {
 		return item, nil
 	}
 	if err := write.Prepare(home.MetadataChange); err != nil {
@@ -488,7 +491,7 @@ func (s *Store) UpdateCardCache(ref string, input CardCacheInput) (model.Card, e
 		item.RuntimeUpdatedAt = item.UpdatedAt
 	}
 	item.Title = title
-	item.Provider, item.ProviderAccountKey, item.Model, item.Effort, item.ProviderOptions, item.Runtime, item.Summary = provider, providerAccountKey, modelName, effort, providerOptions, runtime, summary
+	item.Provider, item.ProviderAccountID, item.Model, item.Effort, item.ProviderOptions, item.Runtime, item.Summary = provider, providerAccountID, modelName, effort, providerOptions, runtime, summary
 	return s.SaveCard(item)
 }
 
@@ -542,8 +545,8 @@ func (s *Store) RenameCard(ref, title string) (model.Card, error) {
 }
 
 type DraftAgentSettings struct {
-	Provider, Model, Effort string
-	ProviderOptions         map[string]string
+	Provider, Model, Effort, AccountID string
+	ProviderOptions                    map[string]string
 }
 
 func (s *Store) UpdateCard(ref, title, initialPrompt string, settings ...DraftAgentSettings) (model.Card, error) {
@@ -582,6 +585,7 @@ func (s *Store) UpdateCard(ref, title, initialPrompt string, settings ...DraftAg
 		}
 		config := settings[0]
 		item.Provider, item.Model, item.Effort, item.ProviderOptions = config.Provider, config.Model, config.Effort, config.ProviderOptions
+		item.ProviderAccountID = strings.TrimSpace(config.AccountID)
 	}
 	if len(settings) == 0 && title == item.Title && initialPrompt == item.InitialPrompt {
 		return item, nil

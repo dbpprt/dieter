@@ -76,8 +76,6 @@ linters:
               desc: replication runs inside the daemon
             - pkg: github.com/dbpprt/dieter/internal/replication/schema
               desc: the daemon validates replicated records
-            - pkg: github.com/dbpprt/dieter/internal/providerquota
-              desc: quota probes run inside the daemon
         # Storage never depends on the API, the engine, or process wiring.
         store:
           files:
@@ -170,7 +168,8 @@ linters:
             - pkg: github.com/dbpprt/dieter/internal/store/
               desc: workspaces, conversations and schedules never import each other
         # The gateway stores only account sessions, daemon identities, presence,
-        # route metadata, and quota snapshots; it never links daemon-side code.
+        # route metadata, the signed device roster, and short-lived pairing
+        # requests; it never links daemon-side code.
         gateway:
           files:
             - "**/internal/gateway/**"
@@ -196,8 +195,6 @@ linters:
               desc: daemon-side
             - pkg: github.com/dbpprt/dieter/internal/remotedesktop
               desc: daemon-side
-            - pkg: github.com/dbpprt/dieter/internal/providerquota
-              desc: provider credentials never reach the gateway
             - pkg: github.com/dbpprt/dieter/internal/cli
               desc: client code
     forbidigo:
