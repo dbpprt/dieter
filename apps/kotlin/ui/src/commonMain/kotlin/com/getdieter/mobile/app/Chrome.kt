@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.getdieter.mobile.design.*
 import com.getdieter.mobile.desktop.DesktopChromeHost
@@ -467,7 +468,12 @@ private fun ActionButton(action: ChromeAction) {
 
 /** Material dropdown with sections, checkmarks and nested submenus. */
 @Composable
-internal fun MaterialMenu(sections: List<MenuSection>, expanded: Boolean, onDismiss: () -> Unit) {
+internal fun MaterialMenu(
+    sections: List<MenuSection>,
+    expanded: Boolean,
+    width: Dp? = null,
+    onDismiss: () -> Unit,
+) {
     if (desktop) {
         DesktopMenu(sections, expanded, onDismiss)
         return
@@ -480,7 +486,9 @@ internal fun MaterialMenu(sections: List<MenuSection>, expanded: Boolean, onDism
             onDismiss()
         },
         // The menu is its own window: expose its items' tags to device flows there too.
-        modifier = Modifier.exposingTestTags(),
+        modifier =
+            Modifier.exposingTestTags()
+                .then(if (width != null) Modifier.width(width) else Modifier),
         shape = MaterialTheme.shapes.large,
         containerColor = colors.surfaceContainer,
     ) {

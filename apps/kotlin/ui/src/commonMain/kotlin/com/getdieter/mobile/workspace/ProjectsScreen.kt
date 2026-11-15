@@ -8,15 +8,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Text
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.getdieter.api.v1.Board
 import com.getdieter.client.v1.*
 import com.getdieter.mobile.admin.*
 import com.getdieter.mobile.app.*
@@ -25,21 +23,26 @@ import com.getdieter.mobile.design.*
 import com.getdieter.mobile.navigation.*
 import com.getdieter.mobile.store.*
 
+/**
+ * Projects in the user's layout: pinned ones, folders, then the rest. Each project is a row with
+ * its machines, followed by a row per board.
+ */
 @Composable
 internal fun ProjectsScreen(store: MobileStore) {
     val workspace by store.workspace.slice.collectAsState()
     val navigation by store.workspace.navigation.collectAsState()
     val session by store.session.slice.collectAsState()
-    var search by rememberSaveable { mutableStateOf("") }
+    val search = rememberListSearch("projects", "Search projects and boards")
+    val query = search.query
     var create by remember { mutableStateOf(false) }
     var editFolder by remember { mutableStateOf<NavigationFolder?>(null) }
     var newFolder by remember { mutableStateOf(false) }
     val layout = navigation.projects
     val order = layout?.order.orEmpty().ifEmpty { workspace.projects.map { it.id } }
     fun matches(id: String) =
-        search.isBlank() ||
-            workspace.projects.firstOrNull { it.id == id }?.name?.contains(search, true) == true ||
-            workspace.boards.any { it.project_id == id && it.name.contains(search, true) }
+        query.isBlank() ||
+            workspace.projects.firstOrNull { it.id == id }?.name?.contains(query, true) == true ||
+            workspace.boards.any { it.project_id == id && it.name.contains(query, true) }
     val chrome =
         ScreenChrome(
             "Projects",
@@ -48,9 +51,10 @@ internal fun ProjectsScreen(store: MobileStore) {
                 else
                     "${workspace.projects.size} project${if (workspace.projects.size == 1) "" else "s"}" +
                         if (!navigation.caught_up) " · Syncing…" else "",
-            large = true,
+            large = false,
             actions =
                 listOf(
+                    search.action(),
                     ChromeAction(
                         "projects-add",
                         "Add",
@@ -72,7 +76,7 @@ internal fun ProjectsScreen(store: MobileStore) {
                                     )
                                 )
                             ),
-                    )
+                    ),
                 ),
             primary = newTaskAction(store),
         )
@@ -84,33 +88,26 @@ internal fun ProjectsScreen(store: MobileStore) {
         ) {
             titleHeader()
             item("notice") { ConnectionNotice(store) }
-            item("search") {
-                SearchField(
-                    search,
-                    { search = it },
-                    "Search projects and boards",
-                    Modifier.padding(horizontal = ScreenMargin, vertical = 6.dp),
-                )
-            }
+            if (search.shown) item("search") { search.Field() }
             val pinned = layout?.pinned.orEmpty().filter(::matches)
             if (pinned.isNotEmpty()) {
-                item("pinned-header") { SectionHeader("Pinned", prominent = true) }
-                pinned.forEach { id -> projectGroup(store, id, "pinned") }
+                item("pinned-header") { ListSectionHeader("Pinned", count = pinned.size) }
+                projectGroups(store, pinned, "pinned")
             }
             layout?.folders.orEmpty().forEach { folder ->
                 val ids = folder.item_ids.filter(::matches)
-                if (search.isNotBlank() && ids.isEmpty()) return@forEach
+                if (query.isNotBlank() && ids.isEmpty()) return@forEach
                 item("folder-${folder.id}") {
                     FolderHeader(store, folder, onEdit = { editFolder = folder })
                 }
-                if (folder.expanded || search.isNotBlank())
-                    ids.forEach { id -> projectGroup(store, id, "folder-${folder.id}") }
+                if (folder.expanded || query.isNotBlank())
+                    projectGroups(store, ids, "folder-${folder.id}")
             }
             val unfiled = (layout?.unfiled ?: order).filter(::matches)
             if (unfiled.isNotEmpty()) {
                 if (pinned.isNotEmpty() || layout?.folders.orEmpty().isNotEmpty())
-                    item("all-header") { SectionHeader("All projects", prominent = true) }
-                unfiled.forEach { id -> projectGroup(store, id, "unfiled") }
+                    item("all-header") { ListSectionHeader("All projects", count = unfiled.size) }
+                projectGroups(store, unfiled, "unfiled")
             }
             if (order.isEmpty() && workspace.loaded)
                 item("empty") {
@@ -125,12 +122,12 @@ internal fun ProjectsScreen(store: MobileStore) {
                         DButton("New project", { create = true }, glyph = Glyph.ADD)
                     }
                 }
-            if (search.isNotBlank() && order.none(::matches))
+            if (query.isNotBlank() && order.none(::matches))
                 item("no-results") {
                     EmptyState(
                         Glyph.SEARCH,
                         "No results",
-                        "No projects or boards match “$search”.",
+                        "No projects or boards match “$query”.",
                         Modifier.padding(top = 32.dp),
                     )
                 }
@@ -144,14 +141,14 @@ internal fun ProjectsScreen(store: MobileStore) {
     }
 }
 
+/** A folder's section header: tapping collapses or expands it, a long press renames it. */
 @Composable
 private fun FolderHeader(store: MobileStore, folder: NavigationFolder, onEdit: () -> Unit) {
     val menu = rememberMenuState()
     MenuAnchor(menu) {
-        Row(
-            Modifier.fillMaxWidth()
-                .padding(top = 14.dp)
-                .pressable(
+        ListSectionHeader(
+            folder.name,
+            Modifier.pressable(
                     onClick = {
                         store.command(
                             Command(
@@ -184,55 +181,31 @@ private fun FolderHeader(store: MobileStore, folder: NavigationFolder, onEdit: (
                         )
                     },
                 )
-                .padding(
-                    start = ScreenMargin + 4.dp,
-                    end = ScreenMargin + 4.dp,
-                    top = 6.dp,
-                    bottom = 8.dp,
-                )
                 .testTag("folder-${folder.id}"),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                Glyph.FOLDER,
-                null,
-                tint =
-                    palette.accent.takeIf { !apple || it != Color.Black } ?: palette.secondaryLabel,
-                size = 20.dp,
-            )
-            Spacer(Modifier.width(10.dp))
-            Text(
-                folder.name,
-                Modifier.weight(1f),
-                style = type.title3,
-                color = palette.label,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                "${folder.item_ids.size}",
-                style = type.subheadline,
-                color = palette.secondaryLabel,
-            )
-            Spacer(Modifier.width(8.dp))
-            DisclosureChevron(folder.expanded)
-        }
+            count = folder.item_ids.size,
+            trailing = {
+                Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+                    DisclosureChevron(folder.expanded)
+                }
+            },
+        )
     }
 }
 
-/** A project as a grouped section: header row, then its boards. */
-private fun LazyListScope.projectGroup(store: MobileStore, id: String, context: String) {
-    item("project-$context-$id") { ProjectGroup(store, id) }
+/** Each project of a section: its row, then its boards. */
+private fun LazyListScope.projectGroups(store: MobileStore, ids: List<String>, context: String) {
+    ids.forEachIndexed { index, id ->
+        item("project-$context-$id") { ProjectGroup(store, id, first = index == 0) }
+    }
 }
 
 @Composable
-private fun ProjectGroup(store: MobileStore, id: String) {
+private fun ProjectGroup(store: MobileStore, id: String, first: Boolean) {
     val workspace by store.workspace.slice.collectAsState()
     val session by store.session.slice.collectAsState()
     val navigation by store.workspace.navigation.collectAsState()
     val project = workspace.projects.firstOrNull { it.id == id } ?: return
     val boards = workspace.boards.filter { it.project_id == id }
-    val count = boards.size + 1
     val machines =
         project.checkouts
             .map { checkout ->
@@ -242,72 +215,63 @@ private fun ProjectGroup(store: MobileStore, id: String) {
             .distinct()
     val menu = rememberMenuState()
     var editing by remember { mutableStateOf("") }
-    Column(Modifier.padding(top = 10.dp)) {
+    Column {
         MenuAnchor(menu) {
-            GroupItem(
-                Position.of(0, count),
-                Modifier.testTag("project-$id"),
-                separatorInset = 66.dp,
+            ListRow(
                 onClick = {
                     store.showFrom(MobileRoute.Root(MobileTab.PROJECTS), MobileRoute.Project(id))
                 },
+                modifier = Modifier.testTag("project-$id"),
                 onLongClick = { menu.show(projectMenu(store, id, navigation) { editing = it }) },
-            ) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    ProjectAvatar(id, project.name, 38.dp)
-                    Spacer(Modifier.width(14.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            project.name,
-                            style = type.headline,
-                            color = palette.label,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            if (machines.isEmpty()) "No checkouts"
-                            else machines.joinToString(" · "),
-                            style = type.subheadline,
-                            color = palette.secondaryLabel,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    MenuButton(
-                        projectMenu(store, id, navigation) { editing = it },
-                        "Project actions",
+                first = first,
+                leading = { ProjectAvatar(id, project.name, ListTile) },
+                subtitle = {
+                    ListSubtitle(
+                        if (machines.isEmpty()) "No checkouts" else machines.joinToString(" · ")
                     )
-                }
+                },
+            ) {
+                ListTitle(project.name)
             }
         }
-        boards.forEachIndexed { index, board ->
+        boards.forEach { board ->
             val cards = workspace.cards.count { it.board_id == board.id }
             val attention = workspace.board_attention[board.id] ?: 0
             ListRow(
-                board.name,
-                Modifier.testTag("board-row-${board.id}"),
-                position = Position.of(index + 1, count),
-                glyph = Glyph.BOARD,
-                glyphTint = labelColor(com.getdieter.core.admin.Labels.stable(board.id)),
-                value = "$cards",
-                accessory = Accessory.CHEVRON,
-                trailing =
-                    if (attention > 0) ({ CountBadge(attention, color = palette.warning) })
-                    else null,
                 onClick = {
                     store.showFrom(
                         MobileRoute.Root(MobileTab.PROJECTS),
                         MobileRoute.Board(board.id),
                     )
                 },
-            )
+                modifier = Modifier.testTag("board-row-${board.id}"),
+                // A board's smaller tile sets it under its project.
+                leading = { ListIconTile(Glyph.BOARD, board.tint, size = BoardTile) },
+                meta = { ListMeta("$cards") },
+                // Without a second line the badge follows the meta at the row's own spacing.
+                badge = { CountBadge(attention, color = palette.warning) },
+            ) {
+                ListTitle(board.name)
+            }
         }
     }
     if (editing.isNotEmpty()) ProjectActionSheet(store, id, editing) { editing = "" }
 }
+
+/** A board row's tile in the projects list, smaller than its project's avatar. */
+private val BoardTile = 32.dp
+
+/** A row that adds the section's first item, e.g. a board or a checkout. */
+@Composable
+private fun AddRow(title: String, first: Boolean, onClick: () -> Unit) {
+    ListRow(onClick, first = first, leading = { ListIconTile(Glyph.ADD, palette.accent) }) {
+        ListTitle(title, color = palette.accent)
+    }
+}
+
+/** A board's stable label colour. */
+private val Board.tint: Color
+    @Composable get() = labelColor(com.getdieter.core.admin.Labels.stable(id))
 
 internal fun projectMenu(
     store: MobileStore,
@@ -473,92 +437,78 @@ internal fun ProjectScreen(store: MobileStore, projectId: String) {
             contentPadding = padding,
         ) {
             item { ConnectionNotice(store) }
-            item { SectionHeader("Boards") }
+            item { ListSectionHeader("Boards", count = boards.size.takeIf { it > 0 }) }
             if (boards.isEmpty())
-                item {
-                    ListRow(
-                        "New board",
-                        position = Position.SINGLE,
-                        glyph = Glyph.ADD,
-                        onClick = { editing = "New board" },
-                    )
-                }
+                item { AddRow("New board", first = true) { editing = "New board" } }
             itemsIndexed(boards, key = { _, board -> board.id }) { index, board ->
                 val cards = workspace.cards.filter { it.board_id == board.id }
                 val running = cards.count { it.lane == "running" }
                 val attention = workspace.board_attention[board.id] ?: 0
                 ListRow(
-                    board.name,
-                    Modifier.testTag("board-row-${board.id}"),
-                    position = Position.of(index, boards.size),
-                    subtitle =
-                        buildList {
-                                add("${cards.size} card${if (cards.size == 1) "" else "s"}")
-                                if (running > 0) add("$running running")
-                            }
-                            .joinToString(" · "),
-                    glyph = Glyph.BOARD,
-                    tile = labelColor(com.getdieter.core.admin.Labels.stable(board.id)),
-                    accessory = Accessory.CHEVRON,
-                    trailing =
-                        if (attention > 0) ({ CountBadge(attention, color = palette.warning) })
-                        else null,
                     onClick = {
                         store.showFrom(MobileRoute.Project(projectId), MobileRoute.Board(board.id))
                     },
+                    modifier = Modifier.testTag("board-row-${board.id}"),
+                    first = index == 0,
+                    leading = { ListIconTile(Glyph.BOARD, board.tint) },
+                    subtitle = {
+                        ListSubtitle(
+                            buildList {
+                                    add("${cards.size} card${if (cards.size == 1) "" else "s"}")
+                                    if (running > 0) add("$running running")
+                                }
+                                .joinToString(" · ")
+                        )
+                    },
+                    badge = { CountBadge(attention, ListBadgeGap, color = palette.warning) },
+                ) {
+                    ListTitle(board.name)
+                }
+            }
+            item { ListSectionHeader("Workspace") }
+            itemsIndexed(listOf(ToolPage.FILES, ToolPage.CHANGES, ToolPage.SCHEDULES)) { index, page
+                ->
+                ListRow(
+                    onClick = {
+                        store.showFrom(
+                            MobileRoute.Project(projectId),
+                            MobileRoute.Tool(page, projectId),
+                        )
+                    },
+                    modifier = Modifier.testTag("project-tool-${page.name.lowercase()}"),
+                    first = index == 0,
+                    leading = { ListIconTile(page.glyph, page.color) },
+                ) {
+                    ListTitle(page.title)
+                }
+            }
+            item {
+                ListSectionHeader(
+                    "Checkouts",
+                    count = project.checkouts.size.takeIf { it > 0 },
                 )
             }
-            item { SectionHeader("Workspace") }
-            item {
-                Group(listOf(ToolPage.FILES, ToolPage.CHANGES, ToolPage.SCHEDULES)) { page, position
-                    ->
-                    ListRow(
-                        page.title,
-                        Modifier.testTag("project-tool-${page.name.lowercase()}"),
-                        position = position,
-                        glyph = page.glyph,
-                        tile = page.color,
-                        accessory = Accessory.CHEVRON,
-                        onClick = {
-                            store.showFrom(
-                                MobileRoute.Project(projectId),
-                                MobileRoute.Tool(page, projectId),
-                            )
-                        },
-                    )
-                }
-            }
-            item { SectionHeader("Checkouts") }
             if (project.checkouts.isEmpty())
-                item {
-                    ListRow(
-                        "Attach a checkout",
-                        position = Position.SINGLE,
-                        glyph = Glyph.ADD,
-                        onClick = { editing = "Checkouts" },
-                    )
-                }
+                item { AddRow("Attach a checkout", first = true) { editing = "Checkouts" } }
             itemsIndexed(project.checkouts, key = { _, checkout -> checkout.id }) { index, checkout
                 ->
                 val machine = session.machines.firstOrNull { it.id == checkout.daemon_id }
                 // A checkout opens its own Files, so the machine is never a guess.
                 ListRow(
-                    machine?.display_name ?: checkout.name,
-                    Modifier.testTag("project-checkout-${checkout.id}"),
-                    position = Position.of(index, project.checkouts.size),
-                    subtitle = checkout.path,
-                    glyph = Glyph.MACHINE,
-                    accessory = if (checkout.detached) Accessory.NONE else Accessory.CHEVRON,
-                    enabled = !checkout.detached,
                     onClick = {
-                        store.showFrom(
-                            MobileRoute.Project(projectId),
-                            MobileRoute.Tool(ToolPage.FILES, projectId, checkout.id),
-                        )
+                        if (!checkout.detached)
+                            store.showFrom(
+                                MobileRoute.Project(projectId),
+                                MobileRoute.Tool(ToolPage.FILES, projectId, checkout.id),
+                            )
                     },
-                    trailing = {
+                    modifier = Modifier.testTag("project-checkout-${checkout.id}"),
+                    first = index == 0,
+                    leading = { ListIconTile(Glyph.MACHINE) },
+                    subtitle = { ListSubtitle(checkout.path) },
+                    badge = {
                         Box(
-                            Modifier.size(8.dp)
+                            ListBadgeGap.size(8.dp)
                                 .background(
                                     if (machine?.online == true) palette.success
                                     else palette.tertiaryLabel,
@@ -566,23 +516,32 @@ internal fun ProjectScreen(store: MobileStore, projectId: String) {
                                 )
                         )
                     },
-                    subtitleMaxLines = 1,
-                )
+                ) {
+                    ListTitle(
+                        machine?.display_name ?: checkout.name,
+                        color = if (checkout.detached) palette.tertiaryLabel else palette.label,
+                    )
+                }
             }
-            if (project.base_branch.isNotEmpty() || project.base_remote.isNotEmpty()) {
-                item { SectionHeader("Git") }
-                item {
-                    Group(
-                        listOfNotNull(
-                            project.base_remote
-                                .takeIf { it.isNotEmpty() }
-                                ?.let { "Base remote" to it },
-                            project.base_branch
-                                .takeIf { it.isNotEmpty() }
-                                ?.let { "Base branch" to it },
-                        )
-                    ) { (title, value), position ->
-                        ListRow(title, position = position, value = value)
+            val git =
+                listOfNotNull(
+                    project.base_remote
+                        .takeIf { it.isNotEmpty() }
+                        ?.let { Triple("Base remote", it, Glyph.GLOBE) },
+                    project.base_branch
+                        .takeIf { it.isNotEmpty() }
+                        ?.let { Triple("Base branch", it, Glyph.BRANCH) },
+                )
+            if (git.isNotEmpty()) {
+                item { ListSectionHeader("Git") }
+                itemsIndexed(git) { index, (title, value, glyph) ->
+                    ListRow(
+                        onClick = null,
+                        first = index == 0,
+                        leading = { ListIconTile(glyph) },
+                        subtitle = { ListSubtitle(value) },
+                    ) {
+                        ListTitle(title)
                     }
                 }
             }

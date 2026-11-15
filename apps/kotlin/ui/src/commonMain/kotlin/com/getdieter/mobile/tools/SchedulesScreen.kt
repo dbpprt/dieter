@@ -13,7 +13,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.getdieter.api.v1.ScheduleDraft
 import com.getdieter.client.v1.*
@@ -25,6 +24,7 @@ import com.getdieter.mobile.app.*
 import com.getdieter.mobile.creation.*
 import com.getdieter.mobile.design.*
 import com.getdieter.mobile.design.Tone
+import com.getdieter.mobile.navigation.*
 import com.getdieter.mobile.store.*
 
 @Composable
@@ -90,7 +90,6 @@ internal fun SchedulesScreen(store: MobileStore, projectId: String) {
                         tone = Tone.DANGER,
                     )
                 }
-            item { Spacer(Modifier.height(8.dp)) }
             if (view.loading && view.schedules.isEmpty())
                 item {
                     Box(
@@ -111,7 +110,7 @@ internal fun SchedulesScreen(store: MobileStore, projectId: String) {
                         DButton("New schedule", { editorId = "" }, glyph = Glyph.ADD)
                     }
                 }
-            itemsIndexed(view.schedules, key = { _, schedule -> schedule.id }) { _, schedule ->
+            itemsIndexed(view.schedules, key = { _, schedule -> schedule.id }) { index, schedule ->
                 val row = view.rows.firstOrNull { it.id == schedule.id }
                 val menu = rememberMenuState()
                 val sections =
@@ -120,6 +119,18 @@ internal fun SchedulesScreen(store: MobileStore, projectId: String) {
                             listOf(
                                 ChromeAction("run-${schedule.id}", "Run now", Glyph.PLAY) {
                                     command(SchedulesCommand(run_now = ScheduleId(schedule.id)))
+                                },
+                                ChromeAction(
+                                    "enable-${schedule.id}",
+                                    if (schedule.enabled) "Pause" else "Resume",
+                                    if (schedule.enabled) Glyph.PAUSE else Glyph.PLAY_CIRCLE,
+                                ) {
+                                    command(
+                                        SchedulesCommand(
+                                            set_enabled =
+                                                ScheduleEnabled(schedule.id, !schedule.enabled)
+                                        )
+                                    )
                                 },
                                 ChromeAction(
                                     "history-${schedule.id}",
@@ -146,61 +157,23 @@ internal fun SchedulesScreen(store: MobileStore, projectId: String) {
                             )
                         ),
                     )
-                MenuAnchor(menu) {
-                    ContentCard(
-                        Modifier.padding(horizontal = ScreenMargin, vertical = 5.dp)
-                            .testTag("schedule-${schedule.id}"),
+                MenuAnchor(menu, atPress = true) {
+                    ListRow(
                         onClick = { editorId = schedule.id },
+                        Modifier.testTag("schedule-${schedule.id}"),
                         onLongClick = { menu.show(sections) },
+                        first = index == 0,
+                        leading = {
+                            ListIconTile(
+                                Glyph.SCHEDULES,
+                                if (schedule.enabled) ToolPage.SCHEDULES.color
+                                else palette.secondaryLabel,
+                            )
+                        },
+                        meta = { ListMeta(row?.status.orEmpty()) },
+                        subtitle = { ListSubtitle(row?.timing.orEmpty()) },
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    schedule.name,
-                                    style = type.headline,
-                                    color = palette.label,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                Text(
-                                    row?.timing.orEmpty(),
-                                    style = type.subheadline,
-                                    color = palette.secondaryLabel,
-                                )
-                            }
-                            DSwitch(
-                                schedule.enabled,
-                                {
-                                    command(
-                                        SchedulesCommand(
-                                            set_enabled = ScheduleEnabled(schedule.id, it)
-                                        )
-                                    )
-                                },
-                            )
-                        }
-                        if (!row?.subtitle.isNullOrEmpty()) {
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                row.subtitle,
-                                style = type.subheadline,
-                                color = palette.label,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                listOf(row?.placement.orEmpty(), row?.status.orEmpty())
-                                    .filter { it.isNotEmpty() }
-                                    .joinToString(" · "),
-                                Modifier.weight(1f),
-                                style = type.footnote,
-                                color = palette.secondaryLabel,
-                            )
-                            MenuButton(sections, "Schedule actions")
-                        }
+                        ListTitle(schedule.name)
                     }
                 }
             }
@@ -216,8 +189,9 @@ internal fun SchedulesScreen(store: MobileStore, projectId: String) {
                 }
             if (view.selected_id.isNotEmpty()) {
                 item {
-                    SectionHeader(
+                    ListSectionHeader(
                         "Run history",
+                        count = view.run_rows.size.takeIf { it > 0 },
                         trailing = {
                             DButton(
                                 "Hide",
@@ -237,22 +211,40 @@ internal fun SchedulesScreen(store: MobileStore, projectId: String) {
                         }
                     }
                 else if (view.run_rows.isEmpty())
-                    item { SectionFooter("This schedule has not run yet.") }
+                    item {
+                        Text(
+                            "This schedule has not run yet.",
+                            Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            style = type.footnote,
+                            color = palette.secondaryLabel,
+                        )
+                    }
                 itemsIndexed(view.run_rows, key = { _, run -> run.id }) { index, run ->
+                    val (glyph, tint) =
+                        when (run.tone) {
+                            ScheduleRunRow.Tone.TONE_ACTIVE -> Glyph.PLAY_CIRCLE to palette.info
+                            ScheduleRunRow.Tone.TONE_SUCCESS ->
+                                Glyph.CHECK_CIRCLE to palette.success
+                            ScheduleRunRow.Tone.TONE_FAILURE -> Glyph.ERROR to palette.destructive
+                            else -> Glyph.HISTORY to palette.secondaryLabel
+                        }
                     ListRow(
-                        run.status,
-                        position = Position.of(index, view.run_rows.size),
-                        subtitle =
-                            listOf(run.at, run.trigger, run.message)
-                                .filter { it.isNotEmpty() }
-                                .joinToString(" · "),
-                        accessory =
-                            if (run.card_id.isNotEmpty()) Accessory.CHEVRON else Accessory.NONE,
-                        onClick =
-                            if (run.card_id.isNotEmpty()) ({ store.openConversation(run.card_id) })
-                            else null,
-                        subtitleMaxLines = 3,
-                    )
+                        onClick = {
+                            if (run.card_id.isNotEmpty()) store.openConversation(run.card_id)
+                        },
+                        first = index == 0,
+                        leading = { ListIconTile(glyph, tint) },
+                        meta = { ListMeta(run.trigger) },
+                        subtitle = {
+                            ListSubtitle(
+                                listOf(run.at, run.message)
+                                    .filter { it.isNotEmpty() }
+                                    .joinToString(" · ")
+                            )
+                        },
+                    ) {
+                        ListTitle(run.status)
+                    }
                 }
                 if (view.runs_next_page_token.isNotEmpty())
                     item {

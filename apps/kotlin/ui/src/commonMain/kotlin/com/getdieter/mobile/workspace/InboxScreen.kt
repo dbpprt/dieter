@@ -31,7 +31,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -39,12 +38,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -80,8 +76,8 @@ internal fun InboxScreen(store: MobileStore) {
     val refreshing by store.session.refreshing.collectAsState()
     val session by store.session.slice.collectAsState()
     val selected by store.conversation.selectedCard.collectAsState()
-    var query by rememberSaveable { mutableStateOf("") }
-    var searching by rememberSaveable { mutableStateOf(false) }
+    val search = rememberListSearch("inbox", "Search activity")
+    val query = search.query
     var project by rememberSaveable { mutableStateOf("") }
     var status by rememberSaveable { mutableStateOf(InboxStatus.ALL) }
     var timeline by rememberSaveable { mutableStateOf(false) }
@@ -164,10 +160,7 @@ internal fun InboxScreen(store: MobileStore) {
             large = false,
             actions =
                 listOf(
-                    ChromeAction("inbox-search", "Search", Glyph.SEARCH, checked = searching) {
-                        if (searching) query = ""
-                        searching = !searching
-                    },
+                    search.action(),
                     ChromeAction(
                         "inbox-filter",
                         "Filter",
@@ -249,16 +242,7 @@ internal fun InboxScreen(store: MobileStore) {
                 ) {
                     titleHeader()
                     item("notice") { ConnectionNotice(store) }
-                    if (searching || query.isNotEmpty())
-                        item("search") {
-                            SearchField(
-                                query,
-                                { query = it },
-                                "Search activity",
-                                Modifier.padding(horizontal = ScreenMargin, vertical = 6.dp),
-                                testTag = "inbox-search-field",
-                            )
-                        }
+                    if (search.shown) item("search") { search.Field() }
                     if (timeline && rows.isNotEmpty())
                         item("timeline") {
                             ActivityTimeline(rows, now) { store.openConversation(it) }
@@ -283,7 +267,22 @@ internal fun InboxScreen(store: MobileStore) {
                             )
                         }
                     InboxSection.group(rows).forEach { (section, sectionRows) ->
-                        item("header-$section") { InboxSectionHeader(section, sectionRows.size) }
+                        item("header-$section") {
+                            ListSectionHeader(
+                                section.title,
+                                Modifier.testTag("inbox-section-${section.name.lowercase()}"),
+                                count = sectionRows.size,
+                                tint =
+                                    when (section) {
+                                        InboxSection.NEEDS_YOU ->
+                                            palette.warning.readableOn(palette.background)
+                                        InboxSection.RUNNING ->
+                                            palette.info.readableOn(palette.background)
+                                        InboxSection.PINNED,
+                                        InboxSection.RECENT -> palette.secondaryLabel
+                                    },
+                            )
+                        }
                         itemsIndexed(sectionRows, key = { _, row -> "row-" + row.card!!.id }) {
                             index,
                             row ->
@@ -338,41 +337,6 @@ private fun contentOn(background: Color) =
 // ---------------------------------------------------------------------------------------------
 // Sections
 // ---------------------------------------------------------------------------------------------
-
-/** A section's title and count in its colour, then a hairline to the edge. */
-@Composable
-private fun InboxSectionHeader(section: InboxSection, count: Int) {
-    val color =
-        when (section) {
-            InboxSection.NEEDS_YOU -> palette.warning.readableOn(palette.background)
-            InboxSection.RUNNING -> palette.info.readableOn(palette.background)
-            InboxSection.PINNED,
-            InboxSection.RECENT -> palette.secondaryLabel
-        }
-    val hairline = with(LocalDensity.current) { 1f / density }.dp
-    Row(
-        Modifier.fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp)
-            .semantics(mergeDescendants = true) { heading() }
-            .testTag("inbox-section-${section.name.lowercase()}"),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Text(
-            section.title,
-            style = type.footnote.copy(fontWeight = FontWeight.SemiBold),
-            color = color,
-        )
-        Text(
-            "$count",
-            style = type.footnote.copy(fontWeight = FontWeight.Medium),
-            color = color.copy(alpha = .8f),
-        )
-        Box(
-            Modifier.weight(1f).padding(start = 4.dp).height(hairline).background(palette.separator)
-        )
-    }
-}
 
 /** The quiet last row: how many conversations the Inbox rules hide; opens the rules. */
 @Composable
@@ -502,7 +466,7 @@ private fun InboxRow(
 ) {
     val card = row.card ?: return
     val menu = rememberMenuState()
-    MenuAnchor(menu) {
+    MenuAnchor(menu, atPress = true) {
         SwipeRow(row, Modifier.testTag("activity-row-${card.id}"), onSwipe = { onSwipe(it, row) }) {
             InboxRowContent(
                 row,
@@ -535,16 +499,8 @@ private fun InboxRowContent(
 ) {
     val card = row.card ?: return
     val running = row.kind == "RUNNING"
-    val surface =
-        when {
-            selected -> palette.accentContainer
-            row.pinned -> lerp(palette.background, palette.label, if (palette.dark) .07f else .035f)
-            else -> palette.background
-        }
+    val surface = listRowSurface(selected, tinted = row.pinned)
     val accent = row.accent(surface)
-    val separator = palette.separator
-    val hairline = with(LocalDensity.current) { 1f / density }.dp
-    val iOS = apple
     // An unfiled chat has no project, so its machine says where it runs.
     val source = row.project_name.ifEmpty { machine.orEmpty() }
     val label = palette.label
@@ -558,76 +514,49 @@ private fun InboxRowContent(
         if (running && row.agents.isNotEmpty())
             withStyle(SpanStyle(color = secondary)) { append(" · ${row.agents}") }
     }
-    Row(
-        Modifier.fillMaxWidth()
-            .heightIn(min = 72.dp)
-            .background(surface)
-            .pressable(onClick = onOpen, onLongClick = onMenu, highlight = true)
-            .drawBehind {
-                if (iOS && !first)
-                    drawRect(
-                        separator,
-                        topLeft = Offset(78.dp.toPx(), 0f),
-                        size = Size(size.width - 78.dp.toPx(), hairline.toPx()),
-                    )
-            }
-            .then(if (row.pinned) Modifier.testTag("inbox-pinned-${card.id}") else Modifier)
-            .padding(start = 12.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        InboxAvatar(row)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (row.chat)
-                    Icon(
-                        Glyph.CHAT,
-                        "Chat",
-                        Modifier.padding(end = 4.dp),
-                        tint = palette.secondaryLabel,
-                        size = 13.dp,
-                    )
-                Text(
-                    row.title,
-                    Modifier.weight(1f),
-                    style = type.bodyEmphasized.copy(fontWeight = FontWeight.SemiBold),
-                    color = palette.label,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (row.stale.isNotEmpty())
-                    Icon(
-                        Glyph.OFFLINE,
-                        row.stale,
-                        Modifier.padding(start = 6.dp),
-                        tint = palette.warning.readableOn(surface),
-                        size = 13.dp,
-                    )
-                Text(
-                    row.age(now),
+    ListRow(
+        onClick = onOpen,
+        modifier = if (row.pinned) Modifier.testTag("inbox-pinned-${card.id}") else Modifier,
+        onLongClick = onMenu,
+        surface = surface,
+        first = first,
+        leading = { InboxAvatar(row) },
+        meta = {
+            if (row.stale.isNotEmpty())
+                Icon(
+                    Glyph.OFFLINE,
+                    row.stale,
                     Modifier.padding(start = 6.dp),
-                    style = type.footnote,
-                    color = if (running || row.needs_you) accent else palette.secondaryLabel,
-                    maxLines = 1,
+                    tint = palette.warning.readableOn(surface),
+                    size = 13.dp,
                 )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    preview,
-                    Modifier.weight(1f),
-                    style = type.subheadline,
-                    color =
-                        when {
-                            running || row.kind == "FAILED" -> accent
-                            row.needs_you -> palette.label
-                            else -> palette.secondaryLabel
-                        },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                InboxBadge(row, showPin, surface, Modifier.padding(start = 8.dp))
-            }
-        }
+            ListMeta(
+                row.age(now),
+                color = if (running || row.needs_you) accent else palette.secondaryLabel,
+            )
+        },
+        subtitle = {
+            ListSubtitle(
+                preview,
+                color =
+                    when {
+                        running || row.kind == "FAILED" -> accent
+                        row.needs_you -> palette.label
+                        else -> palette.secondaryLabel
+                    },
+            )
+        },
+        badge = { InboxBadge(row, showPin, surface, ListBadgeGap) },
+    ) {
+        if (row.chat)
+            Icon(
+                Glyph.CHAT,
+                "Chat",
+                Modifier.padding(end = 4.dp),
+                tint = palette.secondaryLabel,
+                size = 13.dp,
+            )
+        ListTitle(row.title)
     }
 }
 

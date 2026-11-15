@@ -67,7 +67,6 @@ internal fun TerminalsScreen(store: MobileStore, inConversation: Boolean = false
                         tone = Tone.DANGER,
                     )
                 }
-            item { Spacer(Modifier.height(8.dp)) }
             if (entries.isEmpty())
                 item {
                     EmptyState(
@@ -85,18 +84,20 @@ internal fun TerminalsScreen(store: MobileStore, inConversation: Boolean = false
                 else entries.groupBy { it.machine_name }.toList()
             groups.forEach { (machineName, group) ->
                 if (machineName.isNotEmpty())
-                    item(key = "machine-$machineName") { SectionHeader(machineName) }
+                    item(key = "machine-$machineName") {
+                        ListSectionHeader(machineName, count = group.size)
+                    }
                 itemsIndexed(group, key = { _, entry -> entry.id }) { index, entry ->
+                    val status = entry.row?.status.orEmpty()
                     ListRow(
-                        entry.terminal?.name.orEmpty().ifEmpty { "Terminal" },
-                        Modifier.testTag("terminal-${entry.id}"),
-                        position = Position.of(index, group.size),
-                        subtitle = entry.row?.status?.ifEmpty { null },
-                        glyph = Glyph.TERMINAL,
-                        tile = Color(0xFF3A3A3C),
-                        accessory = Accessory.CHEVRON,
                         onClick = { store.push(MobileRoute.TerminalSession(entry.id, cardId)) },
-                    )
+                        Modifier.testTag("terminal-${entry.id}"),
+                        first = index == 0,
+                        leading = { ListIconTile(Glyph.TERMINAL) },
+                        subtitle = if (status.isEmpty()) null else ({ ListSubtitle(status) }),
+                    ) {
+                        ListTitle(entry.terminal?.name.orEmpty().ifEmpty { "Terminal" })
+                    }
                 }
             }
         }

@@ -9,7 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.SnackbarDuration
@@ -30,8 +30,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.getdieter.api.v1.MailFolder
@@ -133,8 +135,16 @@ internal fun MailScreen(store: MobileStore) {
     }
 
     val inTrash = slice.box == MailBox.MAIL_BOX_TRASH
-    val boxTitle = slice.boxes.firstOrNull { it.box == slice.box }?.title ?: "Mail"
+    val box = slice.boxes.firstOrNull { it.box == slice.box }
     val filtered = slice.filter?.let { it != MailFilter() } == true
+    val status =
+        when {
+            slice.search.isNotEmpty() || filtered -> Counts.of(rows.size, "message")
+            box == null -> ""
+            box.unread > 0 -> "${box.unread} unread"
+            box.total > 0 -> Counts.of(box.total, "message")
+            else -> ""
+        }
     val boxMenu =
         listOf(
             MenuSection(
@@ -226,11 +236,17 @@ internal fun MailScreen(store: MobileStore) {
             )
         else
             ScreenChrome(
-                boxTitle,
-                large = apple,
-                titleMenu = boxMenu,
+                box?.title ?: "Mail",
+                subtitle = status,
+                large = false,
+                // iOS's small native title has no menu: there the mailboxes are the first bar
+                // button, under the title menu's ID so either platform opens them the same way.
+                titleMenu = if (apple) emptyList() else boxMenu,
                 actions =
-                    listOf(
+                    listOfNotNull(
+                        if (apple)
+                            ChromeAction("title-menu", "Mailboxes", slice.box.glyph, menu = boxMenu)
+                        else null,
                         ChromeAction("mail-search", "Search", Glyph.SEARCH, checked = searching) {
                             if (searching) {
                                 searching = false
@@ -305,13 +321,17 @@ internal fun MailScreen(store: MobileStore) {
                         }
                     slice.sections.forEach { section ->
                         stickyHeader(key = "section-${section.id}", contentType = "section") {
-                            DateHeader(section.title)
+                            ListSectionHeader(
+                                section.title,
+                                Modifier.background(palette.background),
+                                count = section.rows.size,
+                            )
                         }
-                        items(
+                        itemsIndexed(
                             section.rows,
-                            key = { "row-${refKey(it.ref)}" },
-                            contentType = { "row" },
-                        ) { row ->
+                            key = { _, row -> "row-${refKey(row.ref)}" },
+                            contentType = { _, _ -> "row" },
+                        ) { index, row ->
                             SwipeableRow(
                                 row,
                                 enabled = !selecting,
@@ -320,6 +340,7 @@ internal fun MailScreen(store: MobileStore) {
                             ) {
                                 MailRowView(
                                     row,
+                                    first = index == 0,
                                     selecting = selecting,
                                     chosen = refKey(row.ref) in chosen,
                                     onClick = {
@@ -432,21 +453,6 @@ internal fun overflow(
         else -> actions
     }
 
-@Composable
-private fun DateHeader(title: String) {
-    Text(
-        if (apple) title.uppercase() else title,
-        Modifier.fillMaxWidth()
-            .background(palette.background)
-            .padding(start = ScreenMargin + 4.dp, end = ScreenMargin, top = 10.dp, bottom = 6.dp),
-        style =
-            if (apple) type.footnote.copy(fontWeight = FontWeight.SemiBold)
-            else type.subheadline.copy(fontWeight = FontWeight.Medium),
-        color = if (apple) palette.secondaryLabel else colors.primary,
-        maxLines = 1,
-    )
-}
-
 /** Left: archive (or restore, or delete); right: toggle read. The row springs back after. */
 @Composable
 private fun SwipeableRow(
@@ -518,124 +524,92 @@ private fun SwipeBackground(row: MailRow, direction: SwipeToDismissBoxValue) {
     }
 }
 
+/**
+ * Two lines beside the sender's mark: the subject and its time, then `sender:` and the preview,
+ * with the message's marks. While selecting, a check replaces the mark.
+ */
 @Composable
 private fun MailRowView(
     row: MailRow,
+    first: Boolean,
     selecting: Boolean,
     chosen: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
     val unread = !row.read
-    val stale = row.stale.isNotEmpty()
-    Column(
-        Modifier.fillMaxWidth()
-            .background(
-                if (chosen || (row.selected && !selecting)) palette.accentContainer
-                else palette.background
-            )
-            .pressable(onClick = onClick, onLongClick = onLongClick, highlight = true)
-            .semantics { contentDescription = row.accessibility_label }
-            .testTag("mail-row-${row.ref?.id}")
-    ) {
-        Row(
-            Modifier.fillMaxWidth()
-                .graphicsAlpha(if (stale) .55f else 1f)
-                .padding(start = 4.dp, end = ScreenMargin, top = 10.dp, bottom = 10.dp),
-            verticalAlignment = Alignment.Top,
-        ) {
-            Box(Modifier.width(22.dp).height(40.dp), contentAlignment = Alignment.Center) {
-                when {
-                    selecting -> SelectionMark(chosen)
-                    unread ->
-                        Box(
-                            Modifier.size(9.dp)
-                                .background(palette.info, CircleShape)
-                                .testTag("mail-unread-dot")
-                        )
-                }
-            }
-            MailAvatar(row.initials, row.sender_style, row.harness, row.sender_key)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        row.sender,
-                        Modifier.weight(1f),
-                        style =
-                            type.subheadline.copy(
-                                fontWeight = if (unread) FontWeight.SemiBold else FontWeight.Normal
-                            ),
-                        color = palette.label,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (row.important)
-                        Text(
-                            "!",
-                            Modifier.padding(start = 6.dp),
-                            style = type.subheadline.copy(fontWeight = FontWeight.Bold),
-                            color = palette.destructive,
-                        )
-                    if (row.flagged)
-                        Icon(
-                            Glyph.FLAG_FILL,
-                            "Flagged",
-                            Modifier.padding(start = 6.dp),
-                            tint = palette.warning,
-                            size = 14.dp,
-                        )
-                    Text(
-                        row.time_label,
-                        Modifier.padding(start = 8.dp),
-                        style = type.footnote,
-                        color = if (unread) palette.info else palette.secondaryLabel,
-                        maxLines = 1,
-                    )
-                }
-                Text(
-                    row.subject,
-                    style =
-                        type.subheadline.copy(
-                            fontWeight = if (unread) FontWeight.SemiBold else FontWeight.Normal
-                        ),
-                    color = palette.label,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (row.preview.isNotEmpty())
-                    Text(
-                        row.preview,
-                        style = type.footnote,
-                        color = palette.secondaryLabel,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                if (stale)
-                    Row(
-                        Modifier.padding(top = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Glyph.OFFLINE, null, tint = palette.warning, size = 12.dp)
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            row.stale,
-                            style = type.caption,
-                            color = palette.warning,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-            }
-        }
-        Hairline(inset = 4.dp + 22.dp + 40.dp + 12.dp)
+    val surface = listRowSurface(selected = chosen || (row.selected && !selecting))
+    val label = palette.label
+    val preview = buildAnnotatedString {
+        withStyle(SpanStyle(color = label, fontWeight = FontWeight.Medium)) { append(row.sender) }
+        if (row.preview.isNotEmpty()) append(": ${row.preview}")
     }
+    ListRow(
+        onClick = onClick,
+        modifier =
+            Modifier.semantics { contentDescription = row.accessibility_label }
+                .testTag("mail-row-${row.ref?.id}"),
+        onLongClick = onLongClick,
+        surface = surface,
+        first = first,
+        leading = {
+            if (selecting) SelectionMark(chosen)
+            else MailAvatar(row.initials, row.sender_style, row.harness, row.sender_key, ListTile)
+        },
+        meta = {
+            if (row.stale.isNotEmpty())
+                Icon(
+                    Glyph.OFFLINE,
+                    row.stale,
+                    Modifier.padding(start = 6.dp),
+                    tint = palette.warning.readableOn(surface),
+                    size = 13.dp,
+                )
+            ListMeta(
+                row.time_label,
+                color = if (unread) palette.accent.readableOn(surface) else palette.secondaryLabel,
+            )
+        },
+        subtitle = {
+            ListSubtitle(preview, color = if (unread) palette.label else palette.secondaryLabel)
+        },
+        badge = { MailBadges(row, surface) },
+    ) {
+        ListTitle(row.subject)
+    }
+}
+
+/** The message's marks on its second line: important, flagged, then unread. */
+@Composable
+private fun MailBadges(row: MailRow, surface: Color) {
+    if (row.important)
+        Text(
+            "!",
+            ListBadgeGap,
+            style = type.subheadline.copy(fontWeight = FontWeight.Bold),
+            color = palette.destructive.readableOn(surface),
+        )
+    if (row.flagged)
+        Icon(
+            Glyph.FLAG_FILL,
+            "Flagged",
+            ListBadgeGap,
+            tint = palette.warning.readableOn(surface),
+            size = 15.dp,
+        )
+    if (!row.read)
+        Box(
+            ListBadgeGap.testTag("mail-unread-dot")
+                .padding(horizontal = 5.dp)
+                .size(12.dp)
+                .background(palette.accent, CircleShape)
+        )
 }
 
 @Composable
 private fun SelectionMark(chosen: Boolean) {
     Box(
-        Modifier.size(20.dp)
+        Modifier.size(24.dp)
             .clip(CircleShape)
             .then(
                 if (chosen) Modifier.background(palette.accent)
@@ -648,7 +622,7 @@ private fun SelectionMark(chosen: Boolean) {
                 Glyph.CHECK,
                 "Selected",
                 tint = palette.onAccent,
-                size = 12.dp,
+                size = 14.dp,
                 weight = GlyphWeight.BOLD,
             )
     }

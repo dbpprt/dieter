@@ -21,6 +21,8 @@ tags: [smoke]
     visible: "Ship the new project picker"
     timeout: 10000
 - longPressOn: "Ship the new project picker"
+# The row's menu opens where the press went down, clear of the screen edge.
+- takeScreenshot: inbox-row-menu
 - tapOn:
     text: "Pin in Inbox"
     waitToSettleTimeoutMs: 500
