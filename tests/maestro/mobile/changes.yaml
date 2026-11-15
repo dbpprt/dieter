@@ -18,21 +18,9 @@ tags: [smoke]
 - tapOn:
     id: chrome-new-task
     waitToSettleTimeoutMs: 500
-- tapOn:
-    id: task-title
-    waitToSettleTimeoutMs: 500
-- inputText: "Changes in place"
-- tapOn:
-    id: task-prompt
-    waitToSettleTimeoutMs: 500
-- inputText: "mock-concurrent-workspace-write"
-# The conversation works in the project directory, not a worktree. On small
-# screens the keyboard would cover the choice and swallow the tap.
-- runFlow:
-    when:
-      platform: Android
-    commands:
-      - hideKeyboard
+# The conversation works in the project directory, not a worktree. Choose it
+# before typing: an open keyboard covers the choice on small screens and
+# swallows the tap.
 - scrollUntilVisible:
     element:
       id: workspace-mode-1
@@ -42,6 +30,18 @@ tags: [smoke]
     waitToSettleTimeoutMs: 500
 # Only a worktree asks for a branch.
 - assertNotVisible: "Branch (automatic)"
+- scrollUntilVisible:
+    element:
+      id: task-title
+    direction: UP
+- tapOn:
+    id: task-title
+    waitToSettleTimeoutMs: 500
+- inputText: "Changes in place"
+- tapOn:
+    id: task-prompt
+    waitToSettleTimeoutMs: 500
+- inputText: "mock-concurrent-workspace-write"
 - tapOn:
     id: chrome-start-working
     waitToSettleTimeoutMs: 500
