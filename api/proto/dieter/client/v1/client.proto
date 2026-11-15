@@ -3025,9 +3025,10 @@ message ReviewSlice {
   bool operation_visible = 31;
   // The shown operation can be cancelled (one waiting on a conflict cannot).
   bool operation_cancelable = 32;
-  // "2 files conflict with main", or "This workspace conflicts with main".
+  // "2 files conflict with main", or "This workspace conflicts with main";
+  // empty unless `conflicted`.
   string conflict_title = 33;
-  // The message that hands the conflicts to the agent.
+  // The message that hands the conflicts to the agent; empty unless `conflicted`.
   string conflict_prompt = 34;
   // Merging moves the card to Done by default (a board card or a filed chat).
   bool moves_to_done = 35;

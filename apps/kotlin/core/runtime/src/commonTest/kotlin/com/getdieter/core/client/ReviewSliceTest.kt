@@ -211,6 +211,15 @@ class ReviewSliceTest {
         assertTrue(slice.conflicted)
         assertEquals("This workspace conflicts with main", slice.conflict_title)
         assertTrue(slice.conflict_prompt.startsWith("Please resolve the merge conflicts"))
+        // A ready workspace shows no conflict.
+        val ready =
+            reviewSlice(
+                view.copy(workspace = view.workspace!!.copy(state = "ready"), operation = null),
+                card,
+            )
+        assertFalse(ready.conflicted)
+        assertEquals("", ready.conflict_title)
+        assertEquals("", ready.conflict_prompt)
         assertTrue(slice.moves_to_done)
         assertEquals(listOf("continue_conflict", "abort_conflict"), slice.availability!!.allowed)
         val pr = slice.pull_request!!

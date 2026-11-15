@@ -10818,13 +10818,14 @@ public nonisolated struct ClientReviewSlice: @unchecked Sendable {
     set {_uniqueStorage()._operationCancelable = newValue}
   }
 
-  /// "2 files conflict with main", or "This workspace conflicts with main".
+  /// "2 files conflict with main", or "This workspace conflicts with main";
+  /// empty unless `conflicted`.
   public var conflictTitle: String {
     get {_storage._conflictTitle}
     set {_uniqueStorage()._conflictTitle = newValue}
   }
 
-  /// The message that hands the conflicts to the agent.
+  /// The message that hands the conflicts to the agent; empty unless `conflicted`.
   public var conflictPrompt: String {
     get {_storage._conflictPrompt}
     set {_uniqueStorage()._conflictPrompt = newValue}

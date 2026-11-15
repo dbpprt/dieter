@@ -342,8 +342,9 @@ internal fun reviewSlice(
         split = view.split,
         operation_visible = presentation.operationVisible,
         operation_cancelable = presentation.operationCancelable,
-        conflict_title = presentation.conflictTitle,
-        conflict_prompt = presentation.conflictPrompt,
+        // Only a conflicted workspace has a conflict to show or hand to the agent.
+        conflict_title = if (view.conflicted) presentation.conflictTitle else "",
+        conflict_prompt = if (view.conflicted) presentation.conflictPrompt else "",
         moves_to_done = presentation.movesToDone,
         pull_request = presentation.pullRequest?.let(::pullRequestView),
         merge_readiness = mergeReadiness(presentation.mergeReadiness),
