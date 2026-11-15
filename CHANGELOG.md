@@ -1,14 +1,50 @@
 # Changelog
 
 Dieter ships one version across the daemon/CLI, gateway and native clients.
-Nightly dev prereleases (`v0.6.N`) list their pull requests on the GitHub
+Nightly dev prereleases (`v0.7.N`) list their pull requests on the GitHub
 release. A stable release promotes one tested dev build; before you promote it,
 copy the **Unreleased** notes into a section named after that exact version
-(for example `## 0.6.412`). Promotion fails without that section.
+(for example `## 0.7.447`). Promotion fails without that section.
 
 ## Unreleased
 
 Nothing yet.
+
+## 0.7.447
+
+### Added
+
+- **Provider accounts**: sign in to several Claude and ChatGPT subscriptions
+  from the Mac, iPhone and Android apps or the CLI, for any of your machines,
+  and choose the account each chat, card and schedule runs on (or a default per
+  provider). Settings › Providers lists every account with each machine's
+  sign-in state and its plan usage: the 5-hour and weekly windows, reset times,
+  credits and the tokens Dieter's own turns used. Sign-in uses the provider's
+  own login (Claude Code for Claude; Codex device code or Sign in with ChatGPT
+  for ChatGPT); open the link on any device and paste the code back. Accounts,
+  sign-in state and usage sync between your machines; credentials never leave
+  the machine that signed in, and Dieter never reads Claude credentials. From
+  the CLI: `dieter provider list|add|login|usage|default …` and `--account` on
+  card, chat and schedule commands. See the
+  [provider accounts guide](site/content/docs/providers.md).
+
+### Changed
+
+- Release line 0.7: the gateway's compatibility floors are `0.7.0-dev.0`.
+  Update every daemon and app before the gateway; 0.6 daemons and apps are
+  refused once the gateway runs 0.7.
+- Plan usage now comes from each account instead of the gateway: the gateway
+  stores no provider data, and the old Usage pages are replaced by Settings ›
+  Providers.
+- Existing logins keep working: a machine's own `~/.claude` and `~/.codex`
+  logins are adopted as accounts. Codex turns now keep their state in
+  `DIETER_HOME/codex`, so Codex conversations started before 0.7 start a new
+  session on their next message.
+
+### Fixed
+
+- Quick task titles work again for new cards; since late October they kept
+  their fallback title because Codex rejected the title request.
 
 ## 0.6.446
 
