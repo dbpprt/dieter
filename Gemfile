@@ -3,4 +3,4 @@ source "https://rubygems.org"
 
 ruby file: ".ruby-version"
 gem "fastlane", "2.241.2"
-gem "minitest", "~> 6.0"
+gem "minitest", "~> 6.1"

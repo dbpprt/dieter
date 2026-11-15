@@ -178,9 +178,9 @@ GEM
     logger (1.7.0)
     mini_magick (4.13.2)
     mini_mime (1.1.5)
-    minitest (6.0.6)
+    minitest (6.1.0)
       drb (~> 2.0)
-      prism (~> 1.5)
+      prism (>= 1.5, < 3)
     multi_json (1.21.2)
     multipart-post (2.4.1)
     mutex_m (0.3.0)
@@ -199,7 +199,8 @@ GEM
     pp (0.6.4)
       prettyprint
     prettyprint (0.2.1)
-    prism (1.9.0)
+    prism (2.1.0)
+    prism (2.1.0-arm64-darwin)
     pstore (0.3.0)
     public_suffix (7.0.5)
     rake (13.4.2)
@@ -266,7 +267,7 @@ PLATFORMS
 
 DEPENDENCIES
   fastlane (= 2.241.2)
-  minitest (~> 6.0)
+  minitest (~> 6.1)
 
 RUBY VERSION
    ruby 3.3.11p205
