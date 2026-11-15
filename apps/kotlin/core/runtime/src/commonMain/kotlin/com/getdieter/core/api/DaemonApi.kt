@@ -71,9 +71,8 @@ interface DaemonApi :
     TrustServiceClient,
     ChannelServiceClient,
     MailServiceClient,
-    FolderServiceClient
-
-ProviderAccountServiceClient
+    FolderServiceClient,
+    ProviderAccountServiceClient
 
 /** [DaemonApi] over Wire's generated clients, all sharing [client]'s channel. */
 class GrpcDaemonApi(client: GrpcClient) :
@@ -98,6 +97,5 @@ class GrpcDaemonApi(client: GrpcClient) :
     TrustServiceClient by GrpcTrustServiceClient(client),
     ChannelServiceClient by GrpcChannelServiceClient(client),
     MailServiceClient by GrpcMailServiceClient(client),
-    FolderServiceClient by GrpcFolderServiceClient(client)
-
-ProviderAccountServiceClient by GrpcProviderAccountServiceClient(client)
+    FolderServiceClient by GrpcFolderServiceClient(client),
+    ProviderAccountServiceClient by GrpcProviderAccountServiceClient(client)

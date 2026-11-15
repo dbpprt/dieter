@@ -169,6 +169,12 @@ func fakeRuntime(t *testing.T, scenario string) string {
 	if err != nil {
 		t.Skip(err)
 	}
+	// A coverage build of this binary warns on stderr at exit unless
+	// GOCOVERDIR is set, and the tests read the fakes' stderr.
+	coverage := filepath.Join(dir, "coverage")
+	if err := os.MkdirAll(coverage, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	modules := filepath.Join(dir, "node_modules")
 	packages := map[string]string{
 		"@anthropic-ai/claude-agent-sdk": "",
@@ -195,7 +201,7 @@ func fakeRuntime(t *testing.T, scenario string) string {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		script := "#!/bin/sh\nFAKE_SCENARIO=" + shellQuote(scenario) + " exec " + shellQuote(os.Args[0]) + " " + mode + " \"$@\"\n"
+		script := "#!/bin/sh\nFAKE_SCENARIO=" + shellQuote(scenario) + " GOCOVERDIR=" + shellQuote(coverage) + " exec " + shellQuote(os.Args[0]) + " " + mode + " \"$@\"\n"
 		if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 			t.Fatal(err)
 		}

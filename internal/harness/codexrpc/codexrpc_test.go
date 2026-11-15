@@ -89,7 +89,9 @@ func start(t *testing.T) *Client {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	client, err := Start(ctx, Options{Path: os.Args[0], Args: []string{"fake-app-server"}, Env: []string{"PATH=/usr/bin:/bin"}})
+	// GOCOVERDIR keeps a coverage build of this binary from warning on the
+	// stderr the client reports.
+	client, err := Start(ctx, Options{Path: os.Args[0], Args: []string{"fake-app-server"}, Env: []string{"PATH=/usr/bin:/bin", "GOCOVERDIR=" + t.TempDir()}})
 	if err != nil {
 		t.Fatal(err)
 	}
