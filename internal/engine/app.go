@@ -38,6 +38,7 @@ type Service struct {
 
 	mu               sync.Mutex
 	active           map[string]*activeTurn
+	turns            map[chan struct{}]struct{}
 	strandedLeases   map[string]leases.RuntimeLease
 	shuttingDown     bool
 	quickTitleJobs   map[string]*quickTitleJob
@@ -106,7 +107,7 @@ func NewWithOptions(data *store.Store, options Options) *Service {
 		minimumFreeBytes = *options.MinimumFreeBytes
 	}
 	return &Service{
-		Store: data, Runner: runner, Catalog: catalog, Workspaces: workspace.New(data, nil), active: map[string]*activeTurn{}, strandedLeases: map[string]leases.RuntimeLease{},
+		Store: data, Runner: runner, Catalog: catalog, Workspaces: workspace.New(data, nil), active: map[string]*activeTurn{}, turns: map[chan struct{}]struct{}{}, strandedLeases: map[string]leases.RuntimeLease{},
 		minimumFreeBytes: minimumFreeBytes, diskAvailable: availableDiskBytes, turnTokenKey: newTurnTokenKey(), releaseLease: data.Leases.Release,
 		quickTitleJobs: map[string]*quickTitleJob{}, quickTitleSlots: make(chan struct{}, quickTaskTitleConcurrency),
 	}

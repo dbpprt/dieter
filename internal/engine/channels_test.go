@@ -114,16 +114,11 @@ func channelSetup(t *testing.T) (*Service, *channelRunner, model.Project, model.
 			runner.mu.Unlock()
 			service.mu.Lock()
 			defer service.mu.Unlock()
-			return len(service.active) == 0 && service.channels.work.Load() == 0
+			return len(service.turns) == 0 && service.channels.work.Load() == 0
 		}
-		// Quiet twice in a row: a finishing turn can schedule one more wake.
-		waitFor(t, func() bool {
-			if !quiet() {
-				return false
-			}
-			time.Sleep(50 * time.Millisecond)
-			return quiet()
-		})
+		// Turn completion includes scheduling its final channel wake; the work
+		// counter then keeps the wake and any successor turn visible here.
+		waitFor(t, quiet)
 	})
 	return service, runner, project, board
 }
