@@ -27,6 +27,7 @@ struct EditCardSheet: View {
                 $0.model = card.model
                 $0.effort = card.effort
                 $0.providerOptions = card.providerOptions
+                $0.accountID = card.providerAccountID
             })
         _title = State(initialValue: card.title)
         _task = State(initialValue: card.initialPrompt)
@@ -43,7 +44,8 @@ struct EditCardSheet: View {
 
     private var hasChanges: Bool {
         selection.provider != card.provider || selection.model != card.model || selection.effort != card.effort
-            || selection.providerOptions != card.providerOptions || title != card.title
+            || selection.providerOptions != card.providerOptions || selection.accountID != card.providerAccountID
+            || title != card.title
             || task != card.initialPrompt
             || workspaceDraft
                 != ConversationWorkspaceDraft(
@@ -131,7 +133,7 @@ struct EditCardSheet: View {
                     Divider().overlay(DieterTheme.border)
                     Text("Agent settings")
                         .font(.system(size: 12, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
-                    AgentControlFields(catalog: catalog, selection: $selection)
+                    AgentControlFields(catalog: catalog, selection: $selection, daemonID: card.ownerDaemonID)
                         .accessibilityIdentifier("edit-card.agent-settings")
                         .e2eTarget("edit-card.agent-settings")
                     Divider().overlay(DieterTheme.border)
@@ -219,6 +221,7 @@ struct EditCardSheet: View {
         settings.model = selection.model
         settings.effort = selection.effort
         settings.providerOptions = selection.providerOptions
+        settings.accountID = selection.accountID
         let updated = await store.update(
             card,
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),

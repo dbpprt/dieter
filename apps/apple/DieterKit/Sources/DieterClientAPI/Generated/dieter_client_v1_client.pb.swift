@@ -311,7 +311,6 @@ public nonisolated enum ClientSlice: SwiftProtobuf.Enum, Swift.CaseIterable {
   case review // = 15
   case projectChanges // = 16
   case telemetry // = 18
-  case quotas // = 19
 
   /// Scoped by the view's surface key.
   case processes // = 20
@@ -345,6 +344,9 @@ public nonisolated enum ClientSlice: SwiftProtobuf.Enum, Swift.CaseIterable {
 
   /// This device's folder sync settings and status.
   case folderSyncSettings // = 31
+
+  /// Claude and ChatGPT accounts, their sign-ins and usage. Account-wide.
+  case providers // = 32
   case UNRECOGNIZED(Int)
 
   public init() {
@@ -371,7 +373,6 @@ public nonisolated enum ClientSlice: SwiftProtobuf.Enum, Swift.CaseIterable {
     case 15: self = .review
     case 16: self = .projectChanges
     case 18: self = .telemetry
-    case 19: self = .quotas
     case 20: self = .processes
     case 21: self = .screen
     case 22: self = .boardView
@@ -383,6 +384,7 @@ public nonisolated enum ClientSlice: SwiftProtobuf.Enum, Swift.CaseIterable {
     case 29: self = .folders
     case 30: self = .folder
     case 31: self = .folderSyncSettings
+    case 32: self = .providers
     default: self = .UNRECOGNIZED(rawValue)
     }
   }
@@ -407,7 +409,6 @@ public nonisolated enum ClientSlice: SwiftProtobuf.Enum, Swift.CaseIterable {
     case .review: return 15
     case .projectChanges: return 16
     case .telemetry: return 18
-    case .quotas: return 19
     case .processes: return 20
     case .screen: return 21
     case .boardView: return 22
@@ -419,6 +420,7 @@ public nonisolated enum ClientSlice: SwiftProtobuf.Enum, Swift.CaseIterable {
     case .folders: return 29
     case .folder: return 30
     case .folderSyncSettings: return 31
+    case .providers: return 32
     case .UNRECOGNIZED(let i): return i
     }
   }
@@ -443,7 +445,6 @@ public nonisolated enum ClientSlice: SwiftProtobuf.Enum, Swift.CaseIterable {
     .review,
     .projectChanges,
     .telemetry,
-    .quotas,
     .processes,
     .screen,
     .boardView,
@@ -455,6 +456,7 @@ public nonisolated enum ClientSlice: SwiftProtobuf.Enum, Swift.CaseIterable {
     .folders,
     .folder,
     .folderSyncSettings,
+    .providers,
   ]
 
 }
@@ -1184,8 +1186,8 @@ public nonisolated enum ClientWorkspaceTone: SwiftProtobuf.Enum, Swift.CaseItera
 }
 
 /// How close an allowance is to running out: critical at 10% or less, low at
-/// 30% or less. A severity tint wins over a provider's brand color.
-public nonisolated enum ClientQuotaSeverity: SwiftProtobuf.Enum, Swift.CaseIterable {
+/// 30% or less.
+public nonisolated enum ClientProviderSeverity: SwiftProtobuf.Enum, Swift.CaseIterable {
   public typealias RawValue = Int
   case unknown // = 0
   case normal // = 1
@@ -1218,7 +1220,7 @@ public nonisolated enum ClientQuotaSeverity: SwiftProtobuf.Enum, Swift.CaseItera
   }
 
   // The compiler won't synthesize support with the UNRECOGNIZED case.
-  public static let allCases: [ClientQuotaSeverity] = [
+  public static let allCases: [ClientProviderSeverity] = [
     .unknown,
     .normal,
     .low,
@@ -2136,14 +2138,6 @@ public nonisolated struct ClientCommand: Sendable {
     set {command = .telemetry(newValue)}
   }
 
-  public var quotas: ClientQuotasCommand {
-    get {
-      if case .quotas(let v)? = command {return v}
-      return ClientQuotasCommand()
-    }
-    set {command = .quotas(newValue)}
-  }
-
   public var processes: ClientProcessesCommand {
     get {
       if case .processes(let v)? = command {return v}
@@ -2284,6 +2278,15 @@ public nonisolated struct ClientCommand: Sendable {
     set {command = .folders(newValue)}
   }
 
+  /// Claude and ChatGPT accounts; see ProvidersCommand.
+  public var providers: ClientProvidersCommand {
+    get {
+      if case .providers(let v)? = command {return v}
+      return ClientProvidersCommand()
+    }
+    set {command = .providers(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Command: Equatable, Sendable {
@@ -2347,7 +2350,6 @@ public nonisolated struct ClientCommand: Sendable {
     case projectWorkspaces(ClientProjectWorkspacesCommand)
     case admin(ClientAdminCommand)
     case telemetry(ClientTelemetryCommand)
-    case quotas(ClientQuotasCommand)
     case processes(ClientProcessesCommand)
     case search(ClientSearchCommand)
     case screen(ClientScreenCommand)
@@ -2369,6 +2371,8 @@ public nonisolated struct ClientCommand: Sendable {
     case notificationResponse(ClientNotificationResponse)
     /// Synced folders; see FoldersCommand.
     case folders(ClientFoldersCommand)
+    /// Claude and ChatGPT accounts; see ProvidersCommand.
+    case providers(ClientProvidersCommand)
 
   }
 
@@ -3825,6 +3829,15 @@ public nonisolated struct ClientAgentChoice: Sendable {
     set {choice = .option(newValue)}
   }
 
+  /// A provider account ID (AgentControlsState.accounts).
+  public var account: String {
+    get {
+      if case .account(let v)? = choice {return v}
+      return String()
+    }
+    set {choice = .account(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Choice: Equatable, Sendable {
@@ -3837,6 +3850,8 @@ public nonisolated struct ClientAgentChoice: Sendable {
     /// An effort ID, or "default" for the provider's own default.
     case effort(String)
     case option(ClientAgentOptionChoice)
+    /// A provider account ID (AgentControlsState.accounts).
+    case account(String)
 
   }
 
@@ -4024,11 +4039,63 @@ public nonisolated struct ClientAgentControlsState: @unchecked Sendable {
     set {_uniqueStorage()._fastOptionID = newValue}
   }
 
+  /// The selected agent's provider accounts, for the account picker; empty
+  /// for agents without accounts (Pi, Oh My Pi, DSH).
+  public var accounts: [ClientAgentAccountOption] {
+    get {_storage._accounts}
+    set {_uniqueStorage()._accounts = newValue}
+  }
+
+  public var accountEnabled: Bool {
+    get {_storage._accountEnabled}
+    set {_uniqueStorage()._accountEnabled = newValue}
+  }
+
+  /// The chosen account's label, else "Default account".
+  public var accountLabel: String {
+    get {_storage._accountLabel}
+    set {_uniqueStorage()._accountLabel = newValue}
+  }
+
+  /// The account a send uses on the target machine is not ready there: the
+  /// composer blocks sending and offers ConversationState.provider_notice.
+  public var accountBlocked: Bool {
+    get {_storage._accountBlocked}
+    set {_uniqueStorage()._accountBlocked = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
   fileprivate var _storage = _StorageClass.defaultInstance
+}
+
+/// One entry of an account picker.
+public nonisolated struct ClientAgentAccountOption: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var id: String = String()
+
+  /// "Work".
+  public var label: String = String()
+
+  /// "alice@corp.com · Max".
+  public var detail: String = String()
+
+  /// Signed in on the target machine.
+  public var ready: Bool = false
+
+  /// Why it is not ready, e.g. "Not signed in on box"; empty when ready.
+  public var reason: String = String()
+
+  public var isDefault: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
 }
 
 public nonisolated struct ClientFilesCommand: Sendable {
@@ -6129,6 +6196,33 @@ public nonisolated struct ClientResult: Sendable {
     set {result = .folderSaved(newValue)}
   }
 
+  /// A provider sign-in session started (ProvidersCommand.sign_in).
+  public var providerSignIn: ClientProviderSignInStarted {
+    get {
+      if case .providerSignIn(let v)? = result {return v}
+      return ClientProviderSignInStarted()
+    }
+    set {result = .providerSignIn(newValue)}
+  }
+
+  /// A ChatGPT reset credit's outcome (ProvidersCommand.consume_reset).
+  public var providerReset: ClientProviderResetOutcome {
+    get {
+      if case .providerReset(let v)? = result {return v}
+      return ClientProviderResetOutcome()
+    }
+    set {result = .providerReset(newValue)}
+  }
+
+  /// The account a ProvidersCommand.create added.
+  public var providerAccount: ClientProviderAccountRef {
+    get {
+      if case .providerAccount(let v)? = result {return v}
+      return ClientProviderAccountRef()
+    }
+    set {result = .providerAccount(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Result: Equatable, Sendable {
@@ -6196,6 +6290,12 @@ public nonisolated struct ClientResult: Sendable {
     case folderMember(DieterAPI.Dieter_V1_FolderMember)
     case folderAttach(DieterAPI.Dieter_V1_AttachFolderResult)
     case folderSaved(ClientFolderSaveResult)
+    /// A provider sign-in session started (ProvidersCommand.sign_in).
+    case providerSignIn(ClientProviderSignInStarted)
+    /// A ChatGPT reset credit's outcome (ProvidersCommand.consume_reset).
+    case providerReset(ClientProviderResetOutcome)
+    /// The account a ProvidersCommand.create added.
+    case providerAccount(ClientProviderAccountRef)
 
   }
 
@@ -6527,14 +6627,6 @@ public nonisolated struct ClientUpdate: Sendable {
     set {value = .telemetry(newValue)}
   }
 
-  public var quotas: ClientQuotasSlice {
-    get {
-      if case .quotas(let v)? = value {return v}
-      return ClientQuotasSlice()
-    }
-    set {value = .quotas(newValue)}
-  }
-
   public var processes: ClientProcessesSlice {
     get {
       if case .processes(let v)? = value {return v}
@@ -6623,6 +6715,14 @@ public nonisolated struct ClientUpdate: Sendable {
     set {value = .folderSyncSettings(newValue)}
   }
 
+  public var providers: ClientProvidersSlice {
+    get {
+      if case .providers(let v)? = value {return v}
+      return ClientProvidersSlice()
+    }
+    set {value = .providers(newValue)}
+  }
+
   /// The view's surface could not open, e.g. screen sharing on a device
   /// without it. Sent once; nothing follows.
   public var failure: ClientFailure {
@@ -6655,7 +6755,6 @@ public nonisolated struct ClientUpdate: Sendable {
     case review(ClientReviewSlice)
     case projectChanges(ClientProjectChangesSlice)
     case telemetry(ClientTelemetrySlice)
-    case quotas(ClientQuotasSlice)
     case processes(ClientProcessesSlice)
     case screen(ClientScreenSlice)
     case boardView(ClientBoardViewSlice)
@@ -6667,6 +6766,7 @@ public nonisolated struct ClientUpdate: Sendable {
     case folders(ClientFoldersSlice)
     case folder(ClientFolderSlice)
     case folderSyncSettings(ClientFolderSyncSettingsSlice)
+    case providers(ClientProvidersSlice)
     /// The view's surface could not open, e.g. screen sharing on a device
     /// without it. Sent once; nothing follows.
     case failure(ClientFailure)
@@ -7829,11 +7929,46 @@ public nonisolated struct ClientConversationState: @unchecked Sendable {
     set {_uniqueStorage()._queuedMessages = newValue}
   }
 
+  /// The conversation's provider account cannot run on its machine now, e.g.
+  /// it is not signed in there or its sign-in expired. Unset otherwise.
+  public var providerNotice: ClientProviderNotice {
+    get {_storage._providerNotice ?? ClientProviderNotice()}
+    set {_uniqueStorage()._providerNotice = newValue}
+  }
+  /// Returns true if `providerNotice` has been explicitly set.
+  public var hasProviderNotice: Bool {_storage._providerNotice != nil}
+  /// Clears the value of `providerNotice`. Subsequent reads from it will return its default value.
+  public mutating func clearProviderNotice() {_uniqueStorage()._providerNotice = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
   fileprivate var _storage = _StorageClass.defaultInstance
+}
+
+public nonisolated struct ClientProviderNotice: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var accountID: String = String()
+
+  public var accountLabel: String = String()
+
+  public var daemonID: String = String()
+
+  public var machine: String = String()
+
+  /// "Work isn't signed in on box".
+  public var title: String = String()
+
+  /// sign_in, sign_in_again or choose_account.
+  public var action: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
 }
 
 /// A follow-up can be journaled on this device before its machine confirms the queue.
@@ -12014,72 +12149,210 @@ public nonisolated struct ClientMachineOperationCopy: Sendable {
   public init() {}
 }
 
-public nonisolated struct ClientQuotasCommand: Sendable {
+public nonisolated struct ClientProvidersCommand: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var action: ClientQuotasCommand.OneOf_Action? = nil
+  public var action: ClientProvidersCommand.OneOf_Action? = nil
 
-  public var load: ClientQuotasLoad {
+  /// Result.provider_account: the new account's ID.
+  public var create: ClientProviderCreate {
     get {
-      if case .load(let v)? = action {return v}
-      return ClientQuotasLoad()
+      if case .create(let v)? = action {return v}
+      return ClientProviderCreate()
     }
-    set {action = .load(newValue)}
+    set {action = .create(newValue)}
   }
 
-  public var setIncluded: ClientQuotaInclusion {
+  public var rename: ClientProviderRename {
+    get {
+      if case .rename(let v)? = action {return v}
+      return ClientProviderRename()
+    }
+    set {action = .rename(newValue)}
+  }
+
+  /// Every machine signs the account out and deletes its files.
+  public var remove: ClientProviderAccountRef {
+    get {
+      if case .remove(let v)? = action {return v}
+      return ClientProviderAccountRef()
+    }
+    set {action = .remove(newValue)}
+  }
+
+  public var setDefault: ClientProviderAccountRef {
+    get {
+      if case .setDefault(let v)? = action {return v}
+      return ClientProviderAccountRef()
+    }
+    set {action = .setDefault(newValue)}
+  }
+
+  public var setIncluded: ClientProviderInclusion {
     get {
       if case .setIncluded(let v)? = action {return v}
-      return ClientQuotaInclusion()
+      return ClientProviderInclusion()
     }
     set {action = .setIncluded(newValue)}
   }
 
-  /// Spends one reset of an account; the result is whether it was accepted.
-  public var consumeReset: ClientQuotaAccount {
+  /// Result.provider_sign_in: the session in ProvidersSlice.sessions.
+  public var signIn: ClientProviderSignInStart {
+    get {
+      if case .signIn(let v)? = action {return v}
+      return ClientProviderSignInStart()
+    }
+    set {action = .signIn(newValue)}
+  }
+
+  /// One session that walks every online machine without a sign-in.
+  public var signInAll: ClientProviderAccountRef {
+    get {
+      if case .signInAll(let v)? = action {return v}
+      return ClientProviderAccountRef()
+    }
+    set {action = .signInAll(newValue)}
+  }
+
+  public var submit: ClientProviderSignInInput {
+    get {
+      if case .submit(let v)? = action {return v}
+      return ClientProviderSignInInput()
+    }
+    set {action = .submit(newValue)}
+  }
+
+  public var cancel: ClientProviderSessionRef {
+    get {
+      if case .cancel(let v)? = action {return v}
+      return ClientProviderSessionRef()
+    }
+    set {action = .cancel(newValue)}
+  }
+
+  public var signOut: ClientProviderMachineRef {
+    get {
+      if case .signOut(let v)? = action {return v}
+      return ClientProviderMachineRef()
+    }
+    set {action = .signOut(newValue)}
+  }
+
+  public var check: ClientProviderMachineRef {
+    get {
+      if case .check(let v)? = action {return v}
+      return ClientProviderMachineRef()
+    }
+    set {action = .check(newValue)}
+  }
+
+  public var refreshUsage: ClientProviderAccountRef {
+    get {
+      if case .refreshUsage(let v)? = action {return v}
+      return ClientProviderAccountRef()
+    }
+    set {action = .refreshUsage(newValue)}
+  }
+
+  /// Result.provider_reset.
+  public var consumeReset: ClientProviderAccountRef {
     get {
       if case .consumeReset(let v)? = action {return v}
-      return ClientQuotaAccount()
+      return ClientProviderAccountRef()
     }
     set {action = .consumeReset(newValue)}
+  }
+
+  /// Drops a finished session from the slice.
+  public var dismiss: ClientProviderSessionRef {
+    get {
+      if case .dismiss(let v)? = action {return v}
+      return ClientProviderSessionRef()
+    }
+    set {action = .dismiss(newValue)}
   }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Action: Equatable, Sendable {
-    case load(ClientQuotasLoad)
-    case setIncluded(ClientQuotaInclusion)
-    /// Spends one reset of an account; the result is whether it was accepted.
-    case consumeReset(ClientQuotaAccount)
+    /// Result.provider_account: the new account's ID.
+    case create(ClientProviderCreate)
+    case rename(ClientProviderRename)
+    /// Every machine signs the account out and deletes its files.
+    case remove(ClientProviderAccountRef)
+    case setDefault(ClientProviderAccountRef)
+    case setIncluded(ClientProviderInclusion)
+    /// Result.provider_sign_in: the session in ProvidersSlice.sessions.
+    case signIn(ClientProviderSignInStart)
+    /// One session that walks every online machine without a sign-in.
+    case signInAll(ClientProviderAccountRef)
+    case submit(ClientProviderSignInInput)
+    case cancel(ClientProviderSessionRef)
+    case signOut(ClientProviderMachineRef)
+    case check(ClientProviderMachineRef)
+    case refreshUsage(ClientProviderAccountRef)
+    /// Result.provider_reset.
+    case consumeReset(ClientProviderAccountRef)
+    /// Drops a finished session from the slice.
+    case dismiss(ClientProviderSessionRef)
 
   }
 
   public init() {}
 }
 
-public nonisolated struct ClientQuotasLoad: Sendable {
+public nonisolated struct ClientProviderCreate: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  /// Ask the gateway to read the providers again.
-  public var refresh: Bool = false
+  /// claude or chatgpt.
+  public var provider: String = String()
+
+  public var label: String = String()
+
+  /// claude-code; codex or siwc. Empty picks the provider's default.
+  public var method: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 }
 
-public nonisolated struct ClientQuotaInclusion: Sendable {
+public nonisolated struct ClientProviderRename: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var provider: DieterAPI.Dieter_Gateway_V1_ProviderQuotaProvider = .unspecified
+  public var accountID: String = String()
 
-  public var accountKey: String = String()
+  public var label: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct ClientProviderAccountRef: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var accountID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct ClientProviderInclusion: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var accountID: String = String()
 
   public var included: Bool = false
 
@@ -12088,173 +12361,333 @@ public nonisolated struct ClientQuotaInclusion: Sendable {
   public init() {}
 }
 
-public nonisolated struct ClientQuotaAccount: Sendable {
+public nonisolated struct ClientProviderSignInStart: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var accountKey: String = String()
+  public var accountID: String = String()
+
+  public var daemonID: String = String()
+
+  /// paste_code, device_code or browser; empty picks the method's default.
+  public var flow: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 }
 
-public nonisolated struct ClientQuotasSlice: Sendable {
+public nonisolated struct ClientProviderSignInInput: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var groups: [DieterAPI.Dieter_Gateway_V1_ProviderQuotaGroup] = []
+  public var sessionID: String = String()
 
-  public var loading: Bool = false
+  public var input: ClientProviderSignInInput.OneOf_Input? = nil
 
-  public var error: String = String()
+  public var code: String {
+    get {
+      if case .code(let v)? = input {return v}
+      return String()
+    }
+    set {input = .code(newValue)}
+  }
+
+  /// The loopback address the browser could not open.
+  public var callbackURL: String {
+    get {
+      if case .callbackURL(let v)? = input {return v}
+      return String()
+    }
+    set {input = .callbackURL(newValue)}
+  }
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public nonisolated enum OneOf_Input: Equatable, Sendable {
+    case code(String)
+    /// The loopback address the browser could not open.
+    case callbackURL(String)
+
+  }
+
+  public init() {}
+}
+
+public nonisolated struct ClientProviderSessionRef: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var sessionID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct ClientProviderMachineRef: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var accountID: String = String()
+
+  public var daemonID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct ClientProviderSignInStarted: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var sessionID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct ClientProviderResetOutcome: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var accountID: String = String()
+
+  /// reset, nothingToReset, noCredit or alreadyRedeemed.
+  public var outcome: String = String()
+
+  /// "Usage limits were reset."
+  public var message: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct ClientProvidersSlice: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// Claude, then ChatGPT.
+  public var groups: [ClientProviderGroupRow] = []
+
+  public var summary: ClientProviderSummary {
+    get {_summary ?? ClientProviderSummary()}
+    set {_summary = newValue}
+  }
+  /// Returns true if `summary` has been explicitly set.
+  public var hasSummary: Bool {self._summary != nil}
+  /// Clears the value of `summary`. Subsequent reads from it will return its default value.
+  public mutating func clearSummary() {self._summary = nil}
+
+  /// Live and finished sign-ins of this device.
+  public var sessions: [ClientProviderSignInSession] = []
 
   /// Accounts with a change in flight.
   public var mutating: [String] = []
 
-  /// `groups` as views show them, in the same order. Wording that depends on
-  /// the time (resets, staleness) comes from SharedRules.
-  public var groupRows: [ClientQuotaGroupRow] = []
+  public var error: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _summary: ClientProviderSummary? = nil
+}
+
+/// Header usage over the accounts included in summaries.
+public nonisolated struct ClientProviderSummary: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var items: [ClientProviderSummaryItem] = []
+
+  /// The tightest item, e.g. "62% left"; empty when nothing reports.
+  public var text: String = String()
+
+  public var severity: ClientProviderSeverity = .unknown
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 }
 
-/// One provider's accounts, ready to show.
-public nonisolated struct ClientQuotaGroupRow: Sendable {
+public nonisolated struct ClientProviderSummaryItem: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var provider: DieterAPI.Dieter_Gateway_V1_ProviderQuotaProvider = .unspecified
+  public var provider: String = String()
 
-  /// "OpenAI" or "Claude", for compact labels.
+  /// "Claude" or "ChatGPT".
+  public var providerName: String = String()
+
+  /// 0-100; -1 when no included account reports a limit.
+  public var remaining: Int32 = 0
+
+  public var severity: ClientProviderSeverity = .unknown
+
+  /// "Claude 62% left".
+  public var text: String = String()
+
+  /// The account with the tightest window.
+  public var accountID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct ClientProviderGroupRow: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var provider: String = String()
+
   public var providerName: String = String()
 
   /// "2 accounts · 1 excluded".
   public var summary: String = String()
 
-  /// The gateway's lowest remaining percentage over the included accounts,
-  /// 0-100; -1 when none reports one.
-  public var lowestRemaining: Int32 = 0
+  public var defaultAccountID: String = String()
 
-  public var accounts: [ClientQuotaAccountRow] = []
+  public var accounts: [ClientProviderAccountRow] = []
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 }
 
-/// One provider account, ready to show.
-public nonisolated struct ClientQuotaAccountRow: @unchecked Sendable {
+public nonisolated struct ClientProviderAccountRow: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var accountKey: String {
-    get {_storage._accountKey}
-    set {_uniqueStorage()._accountKey = newValue}
+  public var id: String {
+    get {_storage._id}
+    set {_uniqueStorage()._id = newValue}
   }
 
-  /// A short name: the email's local part, else the plan, else "••" and the
-  /// key's last four characters.
   public var label: String {
     get {_storage._label}
     set {_uniqueStorage()._label = newValue}
   }
 
-  /// The email, else "Plan · ••" and the key's last six characters.
+  /// The identity's email, else "Not signed in yet".
   public var identity: String {
     get {_storage._identity}
     set {_uniqueStorage()._identity = newValue}
   }
 
-  /// Under the identity: the plan when the email is shown, and whether the
-  /// summary excludes the account; "Account details" otherwise.
+  /// "Max · Claude Code sign-in".
   public var subtitle: String {
     get {_storage._subtitle}
     set {_uniqueStorage()._subtitle = newValue}
   }
 
-  /// The lowest remaining percentage of any window, 0-100; -1 when none
-  /// reports one.
-  public var remaining: Int32 {
-    get {_storage._remaining}
-    set {_uniqueStorage()._remaining = newValue}
+  /// claude-code, codex, siwc, host or environment.
+  public var method: String {
+    get {_storage._method}
+    set {_uniqueStorage()._method = newValue}
   }
 
-  public var severity: ClientQuotaSeverity {
-    get {_storage._severity}
-    set {_uniqueStorage()._severity = newValue}
+  public var isDefault: Bool {
+    get {_storage._isDefault}
+    set {_uniqueStorage()._isDefault = newValue}
   }
 
-  public var available: Bool {
-    get {_storage._available}
-    set {_uniqueStorage()._available = newValue}
-  }
-
-  /// Why an unavailable account cannot be used, e.g. "Signed out"; empty
-  /// when available, which is never shown as a warning.
-  public var unavailable: String {
-    get {_storage._unavailable}
-    set {_uniqueStorage()._unavailable = newValue}
-  }
-
-  /// Shown instead of windows when none report a limit, e.g. "No numeric
-  /// limit reported" or "rate limited".
-  public var status: String {
-    get {_storage._status}
-    set {_uniqueStorage()._status = newValue}
-  }
-
-  public var windows: [ClientQuotaWindowRow] {
-    get {_storage._windows}
-    set {_uniqueStorage()._windows = newValue}
-  }
-
-  public var details: [ClientQuotaDetail] {
-    get {_storage._details}
-    set {_uniqueStorage()._details = newValue}
-  }
-
-  /// An OpenAI account with a reset credit left.
-  public var canReset: Bool {
-    get {_storage._canReset}
-    set {_uniqueStorage()._canReset = newValue}
-  }
-
-  /// Counted in the provider's summary and shown in compact quota bars.
   public var included: Bool {
     get {_storage._included}
     set {_uniqueStorage()._included = newValue}
   }
 
-  /// The numbers are current until then; 0 when unknown, which reads as stale.
-  public var freshUntilMillis: Int64 {
-    get {_storage._freshUntilMillis}
-    set {_uniqueStorage()._freshUntilMillis = newValue}
+  /// The lowest remaining percentage of any window, 0-100; -1 when none.
+  public var remaining: Int32 {
+    get {_storage._remaining}
+    set {_uniqueStorage()._remaining = newValue}
   }
 
-  /// For a tooltip or accessibility label, e.g.
-  /// "OpenAI · dev@example.com · 45% remaining" or "Claude · Pro · Signed out".
+  public var severity: ClientProviderSeverity {
+    get {_storage._severity}
+    set {_uniqueStorage()._severity = newValue}
+  }
+
+  /// "Claude · Work · 62% left", for tooltips and accessibility.
   public var summaryLine: String {
     get {_storage._summaryLine}
     set {_uniqueStorage()._summaryLine = newValue}
   }
 
-  /// The gateway is reading the account's numbers again.
-  public var refreshing: Bool {
-    get {_storage._refreshing}
-    set {_uniqueStorage()._refreshing = newValue}
+  public var windows: [ClientProviderWindowRow] {
+    get {_storage._windows}
+    set {_uniqueStorage()._windows = newValue}
   }
 
-  /// The machines that reported the account, as the gateway lists them.
-  public var machines: [ClientQuotaMachineRow] {
+  /// RFC 3339 time the usage was observed; empty when never. SharedRules
+  /// words it ("updated 3 min ago").
+  public var usageObservedAt: String {
+    get {_storage._usageObservedAt}
+    set {_uniqueStorage()._usageObservedAt = newValue}
+  }
+
+  /// "1.2M tokens in 5 h · 8.4M in 7 days" from Dieter's own turns; empty
+  /// when none.
+  public var dieterTokens: String {
+    get {_storage._dieterTokens}
+    set {_uniqueStorage()._dieterTokens = newValue}
+  }
+
+  public var machines: [ClientProviderMachineRow] {
     get {_storage._machines}
     set {_uniqueStorage()._machines = newValue}
+  }
+
+  /// A ChatGPT account with a reset credit left and a machine to spend it.
+  public var canReset: Bool {
+    get {_storage._canReset}
+    set {_uniqueStorage()._canReset = newValue}
+  }
+
+  /// "Reset usage limits (1 credit)".
+  public var resetLabel: String {
+    get {_storage._resetLabel}
+    set {_uniqueStorage()._resetLabel = newValue}
+  }
+
+  /// The provider's usage page, e.g. https://chatgpt.com/settings/usage.
+  public var manageUsageURL: String {
+    get {_storage._manageUsageURL}
+    set {_uniqueStorage()._manageUsageURL = newValue}
+  }
+
+  /// At least one online machine lacks a sign-in.
+  public var canSignInAll: Bool {
+    get {_storage._canSignInAll}
+    set {_uniqueStorage()._canSignInAll = newValue}
+  }
+
+  /// Shown instead of windows when none report, e.g. "Usage not reported".
+  public var status: String {
+    get {_storage._status}
+    set {_uniqueStorage()._status = newValue}
+  }
+
+  /// Host and environment accounts follow the machine's own login or key;
+  /// removing one only hides it until it is adopted again.
+  public var managed: Bool {
+    get {_storage._managed}
+    set {_uniqueStorage()._managed = newValue}
   }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -12264,70 +12697,22 @@ public nonisolated struct ClientQuotaAccountRow: @unchecked Sendable {
   fileprivate var _storage = _StorageClass.defaultInstance
 }
 
-/// A machine that reported a provider account.
-public nonisolated struct ClientQuotaMachineRow: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  public var daemonID: String = String()
-
-  /// The machine's name, else the start of its ID.
-  public var name: String = String()
-
-  public var online: Bool = false
-
-  /// "Online" or "Offline".
-  public var state: String = String()
-
-  public var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  public init() {}
-}
-
-/// Provider quota groups handed to SharedRules.quotaRows.
-public nonisolated struct ClientQuotaGroupList: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  public var groups: [DieterAPI.Dieter_Gateway_V1_ProviderQuotaGroup] = []
-
-  public var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  public init() {}
-}
-
-/// SharedRules.quotaRows: the groups as `QuotasSlice.group_rows` shows them.
-public nonisolated struct ClientQuotaGroupRows: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  public var rows: [ClientQuotaGroupRow] = []
-
-  public var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  public init() {}
-}
-
-/// One quota window of an account.
-public nonisolated struct ClientQuotaWindowRow: Sendable {
+public nonisolated struct ClientProviderWindowRow: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
   public var id: String = String()
 
-  /// The provider's label, else "5 hour", "Weekly", "Monthly", "Model", or "Quota".
+  /// "5 hour", "Weekly", or the provider's label.
   public var name: String = String()
 
-  /// 0-100; -1 when not reported ("Not reported").
+  /// 0-100; -1 when not reported.
   public var remaining: Int32 = 0
 
-  public var severity: ClientQuotaSeverity = .unknown
+  public var severity: ClientProviderSeverity = .unknown
 
-  /// RFC 3339, or empty; SharedRules.quotaResetText words it.
+  /// RFC 3339, or empty.
   public var resetsAt: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -12335,22 +12720,141 @@ public nonisolated struct ClientQuotaWindowRow: Sendable {
   public init() {}
 }
 
-/// One label and text row of an account's details.
-public nonisolated struct ClientQuotaDetail: Sendable {
+public nonisolated struct ClientProviderMachineRow: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var label: String = String()
+  public var daemonID: String = String()
 
-  public var text: String = String()
+  public var name: String = String()
 
-  /// A balance or spend, which views that keep money off screen leave out.
-  public var monetary: Bool = false
+  public var online: Bool = false
+
+  /// signed_in, signed_out, expired, failed or not_signed_in.
+  public var state: String = String()
+
+  /// "Signed in", "Not signed in", "Sign-in expired".
+  public var stateLabel: String = String()
+
+  /// "alice@corp.com · verified 2 min ago" or an error.
+  public var detail: String = String()
+
+  public var canSignIn: Bool = false
+
+  public var canSignOut: Bool = false
+
+  public var canCheck: Bool = false
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
+}
+
+public nonisolated struct ClientProviderSignInSession: @unchecked Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var id: String {
+    get {_storage._id}
+    set {_uniqueStorage()._id = newValue}
+  }
+
+  public var accountID: String {
+    get {_storage._accountID}
+    set {_uniqueStorage()._accountID = newValue}
+  }
+
+  public var accountLabel: String {
+    get {_storage._accountLabel}
+    set {_uniqueStorage()._accountLabel = newValue}
+  }
+
+  public var daemonID: String {
+    get {_storage._daemonID}
+    set {_uniqueStorage()._daemonID = newValue}
+  }
+
+  public var machine: String {
+    get {_storage._machine}
+    set {_uniqueStorage()._machine = newValue}
+  }
+
+  /// "Sign in to Claude Code on box".
+  public var title: String {
+    get {_storage._title}
+    set {_uniqueStorage()._title = newValue}
+  }
+
+  /// starting, waiting, completing, succeeded, failed or canceled.
+  public var phase: String {
+    get {_storage._phase}
+    set {_uniqueStorage()._phase = newValue}
+  }
+
+  /// Open this on the user's device.
+  public var openURL: String {
+    get {_storage._openURL}
+    set {_uniqueStorage()._openURL = newValue}
+  }
+
+  /// The loopback variant; open it instead when same_host.
+  public var localURL: String {
+    get {_storage._localURL}
+    set {_uniqueStorage()._localURL = newValue}
+  }
+
+  /// The device runs on the signing machine, so local_url completes alone.
+  public var sameHost: Bool {
+    get {_storage._sameHost}
+    set {_uniqueStorage()._sameHost = newValue}
+  }
+
+  public var callbackPort: Int32 {
+    get {_storage._callbackPort}
+    set {_uniqueStorage()._callbackPort = newValue}
+  }
+
+  /// A device code to enter at open_url.
+  public var userCode: String {
+    get {_storage._userCode}
+    set {_uniqueStorage()._userCode = newValue}
+  }
+
+  public var expiresAt: String {
+    get {_storage._expiresAt}
+    set {_uniqueStorage()._expiresAt = newValue}
+  }
+
+  /// code, none or callback: what the sheet asks for.
+  public var expects: String {
+    get {_storage._expects}
+    set {_uniqueStorage()._expects = newValue}
+  }
+
+  public var error: String {
+    get {_storage._error}
+    set {_uniqueStorage()._error = newValue}
+  }
+
+  /// Machines still to sign in after this one (sign_in_all).
+  public var remainingMachines: Int32 {
+    get {_storage._remainingMachines}
+    set {_uniqueStorage()._remainingMachines = newValue}
+  }
+
+  /// One line for the sheet, e.g. "Paste the code Anthropic shows you".
+  public var instructions: String {
+    get {_storage._instructions}
+    set {_uniqueStorage()._instructions = newValue}
+  }
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _storage = _StorageClass.defaultInstance
 }
 
 /// The choices project and board forms offer, and what a new project or
@@ -16919,7 +17423,7 @@ nonisolated extension ClientTerminalKey: SwiftProtobuf._ProtoNameProviding {
 }
 
 nonisolated extension ClientSlice: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0SLICE_UNSPECIFIED\0\u{1}SLICE_SESSION\0\u{1}SLICE_WORKSPACE\0\u{1}SLICE_OUTBOX\0\u{1}SLICE_ACTIVITY\0\u{1}SLICE_CONVERSATION\0\u{1}SLICE_METADATA\0\u{1}SLICE_BOARD\0\u{1}SLICE_NAVIGATION\0\u{1}SLICE_CREATION\0\u{1}SLICE_FILES\0\u{1}SLICE_FILE_TREE\0\u{1}SLICE_TERMINALS\0\u{1}SLICE_TERMINAL_OVERVIEW\0\u{1}SLICE_SCHEDULES\0\u{1}SLICE_REVIEW\0\u{1}SLICE_PROJECT_CHANGES\0\u{2}\u{2}SLICE_TELEMETRY\0\u{1}SLICE_QUOTAS\0\u{1}SLICE_PROCESSES\0\u{1}SLICE_SCREEN\0\u{1}SLICE_BOARD_VIEW\0\u{1}SLICE_CHATS\0\u{1}SLICE_CREATION_PREVIEW\0\u{1}SLICE_DEVICES\0\u{1}SLICE_CHANNELS\0\u{2}\u{2}SLICE_MAIL\0\u{1}SLICE_FOLDERS\0\u{1}SLICE_FOLDER\0\u{1}SLICE_FOLDER_SYNC_SETTINGS\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0SLICE_UNSPECIFIED\0\u{1}SLICE_SESSION\0\u{1}SLICE_WORKSPACE\0\u{1}SLICE_OUTBOX\0\u{1}SLICE_ACTIVITY\0\u{1}SLICE_CONVERSATION\0\u{1}SLICE_METADATA\0\u{1}SLICE_BOARD\0\u{1}SLICE_NAVIGATION\0\u{1}SLICE_CREATION\0\u{1}SLICE_FILES\0\u{1}SLICE_FILE_TREE\0\u{1}SLICE_TERMINALS\0\u{1}SLICE_TERMINAL_OVERVIEW\0\u{1}SLICE_SCHEDULES\0\u{1}SLICE_REVIEW\0\u{1}SLICE_PROJECT_CHANGES\0\u{2}\u{2}SLICE_TELEMETRY\0\u{2}\u{2}SLICE_PROCESSES\0\u{1}SLICE_SCREEN\0\u{1}SLICE_BOARD_VIEW\0\u{1}SLICE_CHATS\0\u{1}SLICE_CREATION_PREVIEW\0\u{1}SLICE_DEVICES\0\u{1}SLICE_CHANNELS\0\u{2}\u{2}SLICE_MAIL\0\u{1}SLICE_FOLDERS\0\u{1}SLICE_FOLDER\0\u{1}SLICE_FOLDER_SYNC_SETTINGS\0\u{1}SLICE_PROVIDERS\0")
 }
 
 nonisolated extension ClientMachineSyncState: SwiftProtobuf._ProtoNameProviding {
@@ -16974,8 +17478,8 @@ nonisolated extension ClientWorkspaceTone: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0WORKSPACE_TONE_NEUTRAL\0\u{1}WORKSPACE_TONE_ACTIVE\0\u{1}WORKSPACE_TONE_SUCCESS\0\u{1}WORKSPACE_TONE_WARNING\0\u{1}WORKSPACE_TONE_DANGER\0")
 }
 
-nonisolated extension ClientQuotaSeverity: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0QUOTA_SEVERITY_UNKNOWN\0\u{1}QUOTA_SEVERITY_NORMAL\0\u{1}QUOTA_SEVERITY_LOW\0\u{1}QUOTA_SEVERITY_CRITICAL\0")
+nonisolated extension ClientProviderSeverity: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0PROVIDER_SEVERITY_UNKNOWN\0\u{1}PROVIDER_SEVERITY_NORMAL\0\u{1}PROVIDER_SEVERITY_LOW\0\u{1}PROVIDER_SEVERITY_CRITICAL\0")
 }
 
 nonisolated extension ClientDeviceTrust: SwiftProtobuf._ProtoNameProviding {
@@ -17016,7 +17520,7 @@ nonisolated extension ClientFolderDirection: SwiftProtobuf._ProtoNameProviding {
 
 nonisolated extension ClientCommand: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Command"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}adopt_session\0\u{3}begin_sign_in\0\u{3}complete_sign_in\0\u{4}\u{2}select_gateway\0\u{4}\u{2}set_connected\0\u{3}set_foreground\0\u{4}\u{2}create_conversation\0\u{3}send_message\0\u{3}start_card\0\u{3}move_card\0\u{3}finish_card\0\u{3}set_card_labels\0\u{3}set_card_pinned\0\u{3}rename_card\0\u{3}archive_card\0\u{3}cancel_card\0\u{3}mark_card_read\0\u{3}retry_pending\0\u{3}discard_pending\0\u{3}restore_card\0\u{3}add_card_label\0\u{3}update_card_draft\0\u{3}merge_card\0\u{3}fork_card\0\u{3}list_archived_cards\0\u{4}\u{2}load_earlier_messages\0\u{3}return_to_latest\0\u{3}refresh_conversation\0\u{3}set_visible_conversation\0\u{3}load_later_messages\0\u{3}retry_failed_turn\0\u{3}remove_queued_message\0\u{3}steer_conversation\0\u{3}load_tool_output\0\u{4}\u{2}rename_machine\0\u{3}revoke_machine\0\u{3}ensure_metadata\0\u{3}use_gateway\0\u{1}resync\0\u{3}set_project_order\0\u{4}\u{3}set_project_expanded\0\u{3}set_chat_section_collapsed\0\u{3}set_chats_show_all\0\u{3}set_lane_descending\0\u{3}set_folders\0\u{3}list_drafts\0\u{3}set_draft_text\0\u{3}remember_creation\0\u{1}files\0\u{3}file_tree\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedules\0\u{1}review\0\u{3}project_changes\0\u{3}project_workspaces\0\u{1}admin\0\u{1}telemetry\0\u{1}quotas\0\u{1}processes\0\u{1}search\0\u{1}screen\0\u{4}\u{2}set_show_reasoning\0\u{3}board_view\0\u{2}\u{2}chats\0\u{1}navigation\0\u{3}creation_preview\0\u{3}choose_agent\0\u{3}sign_out\0\u{1}reconnect\0\u{3}remove_gateway\0\u{1}devices\0\u{3}system_woke\0\u{1}channels\0\u{1}mail\0\u{3}notification_response\0\u{1}folders\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}adopt_session\0\u{3}begin_sign_in\0\u{3}complete_sign_in\0\u{4}\u{2}select_gateway\0\u{4}\u{2}set_connected\0\u{3}set_foreground\0\u{4}\u{2}create_conversation\0\u{3}send_message\0\u{3}start_card\0\u{3}move_card\0\u{3}finish_card\0\u{3}set_card_labels\0\u{3}set_card_pinned\0\u{3}rename_card\0\u{3}archive_card\0\u{3}cancel_card\0\u{3}mark_card_read\0\u{3}retry_pending\0\u{3}discard_pending\0\u{3}restore_card\0\u{3}add_card_label\0\u{3}update_card_draft\0\u{3}merge_card\0\u{3}fork_card\0\u{3}list_archived_cards\0\u{4}\u{2}load_earlier_messages\0\u{3}return_to_latest\0\u{3}refresh_conversation\0\u{3}set_visible_conversation\0\u{3}load_later_messages\0\u{3}retry_failed_turn\0\u{3}remove_queued_message\0\u{3}steer_conversation\0\u{3}load_tool_output\0\u{4}\u{2}rename_machine\0\u{3}revoke_machine\0\u{3}ensure_metadata\0\u{3}use_gateway\0\u{1}resync\0\u{3}set_project_order\0\u{4}\u{3}set_project_expanded\0\u{3}set_chat_section_collapsed\0\u{3}set_chats_show_all\0\u{3}set_lane_descending\0\u{3}set_folders\0\u{3}list_drafts\0\u{3}set_draft_text\0\u{3}remember_creation\0\u{1}files\0\u{3}file_tree\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedules\0\u{1}review\0\u{3}project_changes\0\u{3}project_workspaces\0\u{1}admin\0\u{1}telemetry\0\u{2}\u{2}processes\0\u{1}search\0\u{1}screen\0\u{4}\u{2}set_show_reasoning\0\u{3}board_view\0\u{2}\u{2}chats\0\u{1}navigation\0\u{3}creation_preview\0\u{3}choose_agent\0\u{3}sign_out\0\u{1}reconnect\0\u{3}remove_gateway\0\u{1}devices\0\u{3}system_woke\0\u{1}channels\0\u{1}mail\0\u{3}notification_response\0\u{1}folders\0\u{1}providers\0\u{b}quotas\0\u{c}B\u{1}\u{1}")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -17778,19 +18282,6 @@ nonisolated extension ClientCommand: SwiftProtobuf.Message, SwiftProtobuf._Messa
           self.command = .telemetry(v)
         }
       }()
-      case 66: try {
-        var v: ClientQuotasCommand?
-        var hadOneofValue = false
-        if let current = self.command {
-          hadOneofValue = true
-          if case .quotas(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.command = .quotas(v)
-        }
-      }()
       case 67: try {
         var v: ClientProcessesCommand?
         var hadOneofValue = false
@@ -18023,6 +18514,19 @@ nonisolated extension ClientCommand: SwiftProtobuf.Message, SwiftProtobuf._Messa
         if let v = v {
           if hadOneofValue {try decoder.handleConflictingOneOf()}
           self.command = .folders(v)
+        }
+      }()
+      case 87: try {
+        var v: ClientProvidersCommand?
+        var hadOneofValue = false
+        if let current = self.command {
+          hadOneofValue = true
+          if case .providers(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.command = .providers(v)
         }
       }()
       default: break
@@ -18268,10 +18772,6 @@ nonisolated extension ClientCommand: SwiftProtobuf.Message, SwiftProtobuf._Messa
       guard case .telemetry(let v)? = self.command else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 65)
     }()
-    case .quotas?: try {
-      guard case .quotas(let v)? = self.command else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 66)
-    }()
     case .processes?: try {
       guard case .processes(let v)? = self.command else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 67)
@@ -18343,6 +18843,10 @@ nonisolated extension ClientCommand: SwiftProtobuf.Message, SwiftProtobuf._Messa
     case .folders?: try {
       guard case .folders(let v)? = self.command else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 86)
+    }()
+    case .providers?: try {
+      guard case .providers(let v)? = self.command else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 87)
     }()
     case nil: break
     }
@@ -21216,7 +21720,7 @@ nonisolated extension ClientCreationPreview: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension ClientAgentChoice: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".AgentChoice"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{1}option\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{1}option\0\u{1}account\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -21261,6 +21765,14 @@ nonisolated extension ClientAgentChoice: SwiftProtobuf.Message, SwiftProtobuf._M
           self.choice = .option(v)
         }
       }()
+      case 5: try {
+        var v: String?
+        try decoder.decodeSingularStringField(value: &v)
+        if let v = v {
+          if self.choice != nil {try decoder.handleConflictingOneOf()}
+          self.choice = .account(v)
+        }
+      }()
       default: break
       }
     }
@@ -21287,6 +21799,10 @@ nonisolated extension ClientAgentChoice: SwiftProtobuf.Message, SwiftProtobuf._M
     case .option?: try {
       guard case .option(let v)? = self.choice else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+    }()
+    case .account?: try {
+      guard case .account(let v)? = self.choice else { preconditionFailure() }
+      try visitor.visitSingularStringField(value: v, fieldNumber: 5)
     }()
     case nil: break
     }
@@ -21411,7 +21927,7 @@ nonisolated extension ClientAgentPickerItem: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension ClientAgentControlsState: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".AgentControlsState"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}selection\0\u{1}providers\0\u{1}models\0\u{3}provider_enabled\0\u{3}model_enabled\0\u{3}effort_enabled\0\u{3}provider_label\0\u{3}model_label\0\u{3}effort_label\0\u{1}efforts\0\u{1}options\0\u{3}option_values\0\u{3}option_enabled\0\u{3}effort_choices\0\u{3}effort_value\0\u{3}fast_mode\0\u{3}option_kinds\0\u{3}option_on\0\u{3}fast_option_id\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}selection\0\u{1}providers\0\u{1}models\0\u{3}provider_enabled\0\u{3}model_enabled\0\u{3}effort_enabled\0\u{3}provider_label\0\u{3}model_label\0\u{3}effort_label\0\u{1}efforts\0\u{1}options\0\u{3}option_values\0\u{3}option_enabled\0\u{3}effort_choices\0\u{3}effort_value\0\u{3}fast_mode\0\u{3}option_kinds\0\u{3}option_on\0\u{3}fast_option_id\0\u{1}accounts\0\u{3}account_enabled\0\u{3}account_label\0\u{3}account_blocked\0")
 
   fileprivate class _StorageClass {
     var _selection: DieterAPI.Dieter_V1_HarnessSelection? = nil
@@ -21433,6 +21949,10 @@ nonisolated extension ClientAgentControlsState: SwiftProtobuf.Message, SwiftProt
     var _optionKinds: Dictionary<String,ClientAgentOptionKind> = [:]
     var _optionOn: Dictionary<String,Bool> = [:]
     var _fastOptionID: String = String()
+    var _accounts: [ClientAgentAccountOption] = []
+    var _accountEnabled: Bool = false
+    var _accountLabel: String = String()
+    var _accountBlocked: Bool = false
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -21462,6 +21982,10 @@ nonisolated extension ClientAgentControlsState: SwiftProtobuf.Message, SwiftProt
       _optionKinds = source._optionKinds
       _optionOn = source._optionOn
       _fastOptionID = source._fastOptionID
+      _accounts = source._accounts
+      _accountEnabled = source._accountEnabled
+      _accountLabel = source._accountLabel
+      _accountBlocked = source._accountBlocked
     }
   }
 
@@ -21499,6 +22023,10 @@ nonisolated extension ClientAgentControlsState: SwiftProtobuf.Message, SwiftProt
         case 17: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufEnumMap<SwiftProtobuf.ProtobufString,ClientAgentOptionKind>.self, value: &_storage._optionKinds) }()
         case 18: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufBool>.self, value: &_storage._optionOn) }()
         case 19: try { try decoder.decodeSingularStringField(value: &_storage._fastOptionID) }()
+        case 20: try { try decoder.decodeRepeatedMessageField(value: &_storage._accounts) }()
+        case 21: try { try decoder.decodeSingularBoolField(value: &_storage._accountEnabled) }()
+        case 22: try { try decoder.decodeSingularStringField(value: &_storage._accountLabel) }()
+        case 23: try { try decoder.decodeSingularBoolField(value: &_storage._accountBlocked) }()
         default: break
         }
       }
@@ -21568,6 +22096,18 @@ nonisolated extension ClientAgentControlsState: SwiftProtobuf.Message, SwiftProt
       if !_storage._fastOptionID.isEmpty {
         try visitor.visitSingularStringField(value: _storage._fastOptionID, fieldNumber: 19)
       }
+      if !_storage._accounts.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._accounts, fieldNumber: 20)
+      }
+      if _storage._accountEnabled != false {
+        try visitor.visitSingularBoolField(value: _storage._accountEnabled, fieldNumber: 21)
+      }
+      if !_storage._accountLabel.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._accountLabel, fieldNumber: 22)
+      }
+      if _storage._accountBlocked != false {
+        try visitor.visitSingularBoolField(value: _storage._accountBlocked, fieldNumber: 23)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -21596,10 +22136,69 @@ nonisolated extension ClientAgentControlsState: SwiftProtobuf.Message, SwiftProt
         if _storage._optionKinds != rhs_storage._optionKinds {return false}
         if _storage._optionOn != rhs_storage._optionOn {return false}
         if _storage._fastOptionID != rhs_storage._fastOptionID {return false}
+        if _storage._accounts != rhs_storage._accounts {return false}
+        if _storage._accountEnabled != rhs_storage._accountEnabled {return false}
+        if _storage._accountLabel != rhs_storage._accountLabel {return false}
+        if _storage._accountBlocked != rhs_storage._accountBlocked {return false}
         return true
       }
       if !storagesAreEqual {return false}
     }
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientAgentAccountOption: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".AgentAccountOption"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{1}detail\0\u{1}ready\0\u{1}reason\0\u{3}is_default\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.label) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.detail) }()
+      case 4: try { try decoder.decodeSingularBoolField(value: &self.ready) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.reason) }()
+      case 6: try { try decoder.decodeSingularBoolField(value: &self.isDefault) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.id.isEmpty {
+      try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
+    }
+    if !self.label.isEmpty {
+      try visitor.visitSingularStringField(value: self.label, fieldNumber: 2)
+    }
+    if !self.detail.isEmpty {
+      try visitor.visitSingularStringField(value: self.detail, fieldNumber: 3)
+    }
+    if self.ready != false {
+      try visitor.visitSingularBoolField(value: self.ready, fieldNumber: 4)
+    }
+    if !self.reason.isEmpty {
+      try visitor.visitSingularStringField(value: self.reason, fieldNumber: 5)
+    }
+    if self.isDefault != false {
+      try visitor.visitSingularBoolField(value: self.isDefault, fieldNumber: 6)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientAgentAccountOption, rhs: ClientAgentAccountOption) -> Bool {
+    if lhs.id != rhs.id {return false}
+    if lhs.label != rhs.label {return false}
+    if lhs.detail != rhs.detail {return false}
+    if lhs.ready != rhs.ready {return false}
+    if lhs.reason != rhs.reason {return false}
+    if lhs.isDefault != rhs.isDefault {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -24614,7 +25213,7 @@ nonisolated extension ClientNavigationFolder: SwiftProtobuf.Message, SwiftProtob
 
 nonisolated extension ClientResult: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Result"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}done\0\u{3}sign_in_started\0\u{1}card\0\u{3}message_queued\0\u{3}page_loaded\0\u{2}\u{2}cards\0\u{3}queued_message\0\u{3}tool_output\0\u{1}drafts\0\u{3}file_document\0\u{1}files\0\u{3}file_tree\0\u{1}terminal\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedule\0\u{2}\u{2}schedules\0\u{3}git_operation\0\u{3}change_comment\0\u{1}outcome\0\u{1}review\0\u{3}project_changes\0\u{3}project_workspaces\0\u{1}project\0\u{1}board\0\u{1}checkout\0\u{3}directory_listing\0\u{3}prompt_settings\0\u{4}\u{3}prompt_preview\0\u{1}conflict\0\u{2}\u{2}projects\0\u{1}workspace\0\u{3}created_project\0\u{3}machine_operation\0\u{3}search_results\0\u{1}processes\0\u{4}\u{2}schedule_draft\0\u{4}\u{2}creation_preview\0\u{1}channels\0\u{1}mail\0\u{3}notification_target\0\u{1}folders\0\u{1}folder\0\u{3}folder_sync_settings\0\u{3}synced_folder\0\u{3}folder_member\0\u{3}folder_attach\0\u{3}folder_saved\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}done\0\u{3}sign_in_started\0\u{1}card\0\u{3}message_queued\0\u{3}page_loaded\0\u{2}\u{2}cards\0\u{3}queued_message\0\u{3}tool_output\0\u{1}drafts\0\u{3}file_document\0\u{1}files\0\u{3}file_tree\0\u{1}terminal\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedule\0\u{2}\u{2}schedules\0\u{3}git_operation\0\u{3}change_comment\0\u{1}outcome\0\u{1}review\0\u{3}project_changes\0\u{3}project_workspaces\0\u{1}project\0\u{1}board\0\u{1}checkout\0\u{3}directory_listing\0\u{3}prompt_settings\0\u{4}\u{3}prompt_preview\0\u{1}conflict\0\u{2}\u{2}projects\0\u{1}workspace\0\u{3}created_project\0\u{3}machine_operation\0\u{3}search_results\0\u{1}processes\0\u{4}\u{2}schedule_draft\0\u{4}\u{2}creation_preview\0\u{1}channels\0\u{1}mail\0\u{3}notification_target\0\u{1}folders\0\u{1}folder\0\u{3}folder_sync_settings\0\u{3}synced_folder\0\u{3}folder_member\0\u{3}folder_attach\0\u{3}folder_saved\0\u{3}provider_sign_in\0\u{3}provider_reset\0\u{3}provider_account\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -25246,6 +25845,45 @@ nonisolated extension ClientResult: SwiftProtobuf.Message, SwiftProtobuf._Messag
           self.result = .folderSaved(v)
         }
       }()
+      case 56: try {
+        var v: ClientProviderSignInStarted?
+        var hadOneofValue = false
+        if let current = self.result {
+          hadOneofValue = true
+          if case .providerSignIn(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.result = .providerSignIn(v)
+        }
+      }()
+      case 57: try {
+        var v: ClientProviderResetOutcome?
+        var hadOneofValue = false
+        if let current = self.result {
+          hadOneofValue = true
+          if case .providerReset(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.result = .providerReset(v)
+        }
+      }()
+      case 58: try {
+        var v: ClientProviderAccountRef?
+        var hadOneofValue = false
+        if let current = self.result {
+          hadOneofValue = true
+          if case .providerAccount(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.result = .providerAccount(v)
+        }
+      }()
       default: break
       }
     }
@@ -25448,6 +26086,18 @@ nonisolated extension ClientResult: SwiftProtobuf.Message, SwiftProtobuf._Messag
     case .folderSaved?: try {
       guard case .folderSaved(let v)? = self.result else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 55)
+    }()
+    case .providerSignIn?: try {
+      guard case .providerSignIn(let v)? = self.result else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 56)
+    }()
+    case .providerReset?: try {
+      guard case .providerReset(let v)? = self.result else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 57)
+    }()
+    case .providerAccount?: try {
+      guard case .providerAccount(let v)? = self.result else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 58)
     }()
     case nil: break
     }
@@ -25708,7 +26358,7 @@ nonisolated extension ClientReply: SwiftProtobuf.Message, SwiftProtobuf._Message
 
 nonisolated extension ClientUpdate: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Update"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}slice\0\u{1}scope\0\u{1}sequence\0\u{2}\u{6}failure\0\u{1}session\0\u{1}workspace\0\u{3}workspace_delta\0\u{1}outbox\0\u{1}activity\0\u{1}conversation\0\u{3}conversation_delta\0\u{1}metadata\0\u{1}board\0\u{1}navigation\0\u{1}creation\0\u{1}files\0\u{3}file_tree\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedules\0\u{1}review\0\u{3}project_changes\0\u{2}\u{2}telemetry\0\u{1}quotas\0\u{1}processes\0\u{1}screen\0\u{3}board_view\0\u{1}chats\0\u{3}creation_preview\0\u{1}devices\0\u{1}channels\0\u{2}\u{2}mail\0\u{1}folders\0\u{1}folder\0\u{3}folder_sync_settings\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}slice\0\u{1}scope\0\u{1}sequence\0\u{2}\u{6}failure\0\u{1}session\0\u{1}workspace\0\u{3}workspace_delta\0\u{1}outbox\0\u{1}activity\0\u{1}conversation\0\u{3}conversation_delta\0\u{1}metadata\0\u{1}board\0\u{1}navigation\0\u{1}creation\0\u{1}files\0\u{3}file_tree\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedules\0\u{1}review\0\u{3}project_changes\0\u{2}\u{2}telemetry\0\u{2}\u{2}processes\0\u{1}screen\0\u{3}board_view\0\u{1}chats\0\u{3}creation_preview\0\u{1}devices\0\u{1}channels\0\u{2}\u{2}mail\0\u{1}folders\0\u{1}folder\0\u{3}folder_sync_settings\0\u{1}providers\0\u{b}quotas\0\u{c}\u{1e}\u{1}")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -25979,19 +26629,6 @@ nonisolated extension ClientUpdate: SwiftProtobuf.Message, SwiftProtobuf._Messag
           self.value = .telemetry(v)
         }
       }()
-      case 30: try {
-        var v: ClientQuotasSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .quotas(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .quotas(v)
-        }
-      }()
       case 31: try {
         var v: ClientProcessesSlice?
         var hadOneofValue = false
@@ -26135,6 +26772,19 @@ nonisolated extension ClientUpdate: SwiftProtobuf.Message, SwiftProtobuf._Messag
           self.value = .folderSyncSettings(v)
         }
       }()
+      case 43: try {
+        var v: ClientProvidersSlice?
+        var hadOneofValue = false
+        if let current = self.value {
+          hadOneofValue = true
+          if case .providers(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.value = .providers(v)
+        }
+      }()
       default: break
       }
     }
@@ -26235,10 +26885,6 @@ nonisolated extension ClientUpdate: SwiftProtobuf.Message, SwiftProtobuf._Messag
       guard case .telemetry(let v)? = self.value else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 29)
     }()
-    case .quotas?: try {
-      guard case .quotas(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 30)
-    }()
     case .processes?: try {
       guard case .processes(let v)? = self.value else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 31)
@@ -26282,6 +26928,10 @@ nonisolated extension ClientUpdate: SwiftProtobuf.Message, SwiftProtobuf._Messag
     case .folderSyncSettings?: try {
       guard case .folderSyncSettings(let v)? = self.value else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 42)
+    }()
+    case .providers?: try {
+      guard case .providers(let v)? = self.value else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 43)
     }()
     case nil: break
     }
@@ -27761,7 +28411,7 @@ nonisolated extension ClientConversationSlice: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ConversationState"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}runtime\0\u{3}active_turn\0\u{1}working\0\u{3}live_activity\0\u{3}live_reasoning\0\u{3}turn_started_at_millis\0\u{3}responding_model\0\u{3}unsent_task\0\u{3}steerable_id\0\u{4}\u{3}can_start\0\u{1}starting\0\u{3}context_used_tokens\0\u{3}context_window_tokens\0\u{3}unsent_attachments\0\u{3}context_percent\0\u{3}context_near_limit\0\u{3}pending_tools_summary\0\u{3}pending_tool_ids\0\u{3}can_halt\0\u{1}chat\0\u{3}show_reasoning\0\u{2}\u{7}agent\0\u{3}queued_messages\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}runtime\0\u{3}active_turn\0\u{1}working\0\u{3}live_activity\0\u{3}live_reasoning\0\u{3}turn_started_at_millis\0\u{3}responding_model\0\u{3}unsent_task\0\u{3}steerable_id\0\u{4}\u{3}can_start\0\u{1}starting\0\u{3}context_used_tokens\0\u{3}context_window_tokens\0\u{3}unsent_attachments\0\u{3}context_percent\0\u{3}context_near_limit\0\u{3}pending_tools_summary\0\u{3}pending_tool_ids\0\u{3}can_halt\0\u{1}chat\0\u{3}show_reasoning\0\u{2}\u{7}agent\0\u{3}queued_messages\0\u{3}provider_notice\0")
 
   fileprivate class _StorageClass {
     var _runtime: String = String()
@@ -27787,6 +28437,7 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
     var _showReasoning: Bool = false
     var _agent: ClientAgentControlsState? = nil
     var _queuedMessages: [ClientQueuedMessageState] = []
+    var _providerNotice: ClientProviderNotice? = nil
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -27820,6 +28471,7 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
       _showReasoning = source._showReasoning
       _agent = source._agent
       _queuedMessages = source._queuedMessages
+      _providerNotice = source._providerNotice
     }
   }
 
@@ -27861,6 +28513,7 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
         case 23: try { try decoder.decodeSingularBoolField(value: &_storage._showReasoning) }()
         case 30: try { try decoder.decodeSingularMessageField(value: &_storage._agent) }()
         case 31: try { try decoder.decodeRepeatedMessageField(value: &_storage._queuedMessages) }()
+        case 32: try { try decoder.decodeSingularMessageField(value: &_storage._providerNotice) }()
         default: break
         }
       }
@@ -27942,6 +28595,9 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
       if !_storage._queuedMessages.isEmpty {
         try visitor.visitRepeatedMessageField(value: _storage._queuedMessages, fieldNumber: 31)
       }
+      try { if let v = _storage._providerNotice {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 32)
+      } }()
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -27974,10 +28630,66 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
         if _storage._showReasoning != rhs_storage._showReasoning {return false}
         if _storage._agent != rhs_storage._agent {return false}
         if _storage._queuedMessages != rhs_storage._queuedMessages {return false}
+        if _storage._providerNotice != rhs_storage._providerNotice {return false}
         return true
       }
       if !storagesAreEqual {return false}
     }
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientProviderNotice: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ProviderNotice"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}account_id\0\u{3}account_label\0\u{3}daemon_id\0\u{1}machine\0\u{1}title\0\u{1}action\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.accountID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.accountLabel) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.daemonID) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.machine) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.title) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.action) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.accountID.isEmpty {
+      try visitor.visitSingularStringField(value: self.accountID, fieldNumber: 1)
+    }
+    if !self.accountLabel.isEmpty {
+      try visitor.visitSingularStringField(value: self.accountLabel, fieldNumber: 2)
+    }
+    if !self.daemonID.isEmpty {
+      try visitor.visitSingularStringField(value: self.daemonID, fieldNumber: 3)
+    }
+    if !self.machine.isEmpty {
+      try visitor.visitSingularStringField(value: self.machine, fieldNumber: 4)
+    }
+    if !self.title.isEmpty {
+      try visitor.visitSingularStringField(value: self.title, fieldNumber: 5)
+    }
+    if !self.action.isEmpty {
+      try visitor.visitSingularStringField(value: self.action, fieldNumber: 6)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientProviderNotice, rhs: ClientProviderNotice) -> Bool {
+    if lhs.accountID != rhs.accountID {return false}
+    if lhs.accountLabel != rhs.accountLabel {return false}
+    if lhs.daemonID != rhs.daemonID {return false}
+    if lhs.machine != rhs.machine {return false}
+    if lhs.title != rhs.title {return false}
+    if lhs.action != rhs.action {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -35231,9 +35943,9 @@ nonisolated extension ClientMachineOperationCopy: SwiftProtobuf.Message, SwiftPr
   }
 }
 
-nonisolated extension ClientQuotasCommand: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".QuotasCommand"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}load\0\u{3}set_included\0\u{3}consume_reset\0")
+nonisolated extension ClientProvidersCommand: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ProvidersCommand"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}create\0\u{1}rename\0\u{1}remove\0\u{3}set_default\0\u{3}set_included\0\u{3}sign_in\0\u{3}sign_in_all\0\u{1}submit\0\u{1}cancel\0\u{3}sign_out\0\u{1}check\0\u{3}refresh_usage\0\u{3}consume_reset\0\u{1}dismiss\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -35242,20 +35954,59 @@ nonisolated extension ClientQuotasCommand: SwiftProtobuf.Message, SwiftProtobuf.
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try {
-        var v: ClientQuotasLoad?
+        var v: ClientProviderCreate?
         var hadOneofValue = false
         if let current = self.action {
           hadOneofValue = true
-          if case .load(let m) = current {v = m}
+          if case .create(let m) = current {v = m}
         }
         try decoder.decodeSingularMessageField(value: &v)
         if let v = v {
           if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.action = .load(v)
+          self.action = .create(v)
         }
       }()
       case 2: try {
-        var v: ClientQuotaInclusion?
+        var v: ClientProviderRename?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .rename(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .rename(v)
+        }
+      }()
+      case 3: try {
+        var v: ClientProviderAccountRef?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .remove(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .remove(v)
+        }
+      }()
+      case 4: try {
+        var v: ClientProviderAccountRef?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .setDefault(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .setDefault(v)
+        }
+      }()
+      case 5: try {
+        var v: ClientProviderInclusion?
         var hadOneofValue = false
         if let current = self.action {
           hadOneofValue = true
@@ -35267,8 +36018,99 @@ nonisolated extension ClientQuotasCommand: SwiftProtobuf.Message, SwiftProtobuf.
           self.action = .setIncluded(v)
         }
       }()
-      case 3: try {
-        var v: ClientQuotaAccount?
+      case 6: try {
+        var v: ClientProviderSignInStart?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .signIn(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .signIn(v)
+        }
+      }()
+      case 7: try {
+        var v: ClientProviderAccountRef?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .signInAll(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .signInAll(v)
+        }
+      }()
+      case 8: try {
+        var v: ClientProviderSignInInput?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .submit(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .submit(v)
+        }
+      }()
+      case 9: try {
+        var v: ClientProviderSessionRef?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .cancel(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .cancel(v)
+        }
+      }()
+      case 10: try {
+        var v: ClientProviderMachineRef?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .signOut(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .signOut(v)
+        }
+      }()
+      case 11: try {
+        var v: ClientProviderMachineRef?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .check(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .check(v)
+        }
+      }()
+      case 12: try {
+        var v: ClientProviderAccountRef?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .refreshUsage(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .refreshUsage(v)
+        }
+      }()
+      case 13: try {
+        var v: ClientProviderAccountRef?
         var hadOneofValue = false
         if let current = self.action {
           hadOneofValue = true
@@ -35278,6 +36120,19 @@ nonisolated extension ClientQuotasCommand: SwiftProtobuf.Message, SwiftProtobuf.
         if let v = v {
           if hadOneofValue {try decoder.handleConflictingOneOf()}
           self.action = .consumeReset(v)
+        }
+      }()
+      case 14: try {
+        var v: ClientProviderSessionRef?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .dismiss(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .dismiss(v)
         }
       }()
       default: break
@@ -35291,33 +36146,77 @@ nonisolated extension ClientQuotasCommand: SwiftProtobuf.Message, SwiftProtobuf.
     // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
     // https://github.com/apple/swift-protobuf/issues/1182
     switch self.action {
-    case .load?: try {
-      guard case .load(let v)? = self.action else { preconditionFailure() }
+    case .create?: try {
+      guard case .create(let v)? = self.action else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    }()
+    case .rename?: try {
+      guard case .rename(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    }()
+    case .remove?: try {
+      guard case .remove(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
+    }()
+    case .setDefault?: try {
+      guard case .setDefault(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
     }()
     case .setIncluded?: try {
       guard case .setIncluded(let v)? = self.action else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+    }()
+    case .signIn?: try {
+      guard case .signIn(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
+    }()
+    case .signInAll?: try {
+      guard case .signInAll(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
+    }()
+    case .submit?: try {
+      guard case .submit(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 8)
+    }()
+    case .cancel?: try {
+      guard case .cancel(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 9)
+    }()
+    case .signOut?: try {
+      guard case .signOut(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 10)
+    }()
+    case .check?: try {
+      guard case .check(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 11)
+    }()
+    case .refreshUsage?: try {
+      guard case .refreshUsage(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 12)
     }()
     case .consumeReset?: try {
       guard case .consumeReset(let v)? = self.action else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 13)
+    }()
+    case .dismiss?: try {
+      guard case .dismiss(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 14)
     }()
     case nil: break
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  public static func ==(lhs: ClientQuotasCommand, rhs: ClientQuotasCommand) -> Bool {
+  public static func ==(lhs: ClientProvidersCommand, rhs: ClientProvidersCommand) -> Bool {
     if lhs.action != rhs.action {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
 }
 
-nonisolated extension ClientQuotasLoad: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".QuotasLoad"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}refresh\0")
+nonisolated extension ClientProviderCreate: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ProviderCreate"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}provider\0\u{1}label\0\u{1}method\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -35325,29 +36224,39 @@ nonisolated extension ClientQuotasLoad: SwiftProtobuf.Message, SwiftProtobuf._Me
       // allocates stack space for every case branch when no optimizations are
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
-      case 1: try { try decoder.decodeSingularBoolField(value: &self.refresh) }()
+      case 1: try { try decoder.decodeSingularStringField(value: &self.provider) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.label) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.method) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if self.refresh != false {
-      try visitor.visitSingularBoolField(value: self.refresh, fieldNumber: 1)
+    if !self.provider.isEmpty {
+      try visitor.visitSingularStringField(value: self.provider, fieldNumber: 1)
+    }
+    if !self.label.isEmpty {
+      try visitor.visitSingularStringField(value: self.label, fieldNumber: 2)
+    }
+    if !self.method.isEmpty {
+      try visitor.visitSingularStringField(value: self.method, fieldNumber: 3)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  public static func ==(lhs: ClientQuotasLoad, rhs: ClientQuotasLoad) -> Bool {
-    if lhs.refresh != rhs.refresh {return false}
+  public static func ==(lhs: ClientProviderCreate, rhs: ClientProviderCreate) -> Bool {
+    if lhs.provider != rhs.provider {return false}
+    if lhs.label != rhs.label {return false}
+    if lhs.method != rhs.method {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
 }
 
-nonisolated extension ClientQuotaInclusion: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".QuotaInclusion"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}provider\0\u{3}account_key\0\u{1}included\0")
+nonisolated extension ClientProviderRename: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ProviderRename"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}account_id\0\u{1}label\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -35355,39 +36264,99 @@ nonisolated extension ClientQuotaInclusion: SwiftProtobuf.Message, SwiftProtobuf
       // allocates stack space for every case branch when no optimizations are
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
-      case 1: try { try decoder.decodeSingularEnumField(value: &self.provider) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.accountKey) }()
-      case 3: try { try decoder.decodeSingularBoolField(value: &self.included) }()
+      case 1: try { try decoder.decodeSingularStringField(value: &self.accountID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.label) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if self.provider != .unspecified {
-      try visitor.visitSingularEnumField(value: self.provider, fieldNumber: 1)
+    if !self.accountID.isEmpty {
+      try visitor.visitSingularStringField(value: self.accountID, fieldNumber: 1)
     }
-    if !self.accountKey.isEmpty {
-      try visitor.visitSingularStringField(value: self.accountKey, fieldNumber: 2)
-    }
-    if self.included != false {
-      try visitor.visitSingularBoolField(value: self.included, fieldNumber: 3)
+    if !self.label.isEmpty {
+      try visitor.visitSingularStringField(value: self.label, fieldNumber: 2)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  public static func ==(lhs: ClientQuotaInclusion, rhs: ClientQuotaInclusion) -> Bool {
-    if lhs.provider != rhs.provider {return false}
-    if lhs.accountKey != rhs.accountKey {return false}
+  public static func ==(lhs: ClientProviderRename, rhs: ClientProviderRename) -> Bool {
+    if lhs.accountID != rhs.accountID {return false}
+    if lhs.label != rhs.label {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientProviderAccountRef: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ProviderAccountRef"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}account_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.accountID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.accountID.isEmpty {
+      try visitor.visitSingularStringField(value: self.accountID, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientProviderAccountRef, rhs: ClientProviderAccountRef) -> Bool {
+    if lhs.accountID != rhs.accountID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientProviderInclusion: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ProviderInclusion"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}account_id\0\u{1}included\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.accountID) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.included) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.accountID.isEmpty {
+      try visitor.visitSingularStringField(value: self.accountID, fieldNumber: 1)
+    }
+    if self.included != false {
+      try visitor.visitSingularBoolField(value: self.included, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientProviderInclusion, rhs: ClientProviderInclusion) -> Bool {
+    if lhs.accountID != rhs.accountID {return false}
     if lhs.included != rhs.included {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
 }
 
-nonisolated extension ClientQuotaAccount: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".QuotaAccount"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}account_key\0")
+nonisolated extension ClientProviderSignInStart: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ProviderSignInStart"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}account_id\0\u{3}daemon_id\0\u{1}flow\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -35395,29 +36364,236 @@ nonisolated extension ClientQuotaAccount: SwiftProtobuf.Message, SwiftProtobuf._
       // allocates stack space for every case branch when no optimizations are
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
-      case 1: try { try decoder.decodeSingularStringField(value: &self.accountKey) }()
+      case 1: try { try decoder.decodeSingularStringField(value: &self.accountID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.daemonID) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.flow) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if !self.accountKey.isEmpty {
-      try visitor.visitSingularStringField(value: self.accountKey, fieldNumber: 1)
+    if !self.accountID.isEmpty {
+      try visitor.visitSingularStringField(value: self.accountID, fieldNumber: 1)
+    }
+    if !self.daemonID.isEmpty {
+      try visitor.visitSingularStringField(value: self.daemonID, fieldNumber: 2)
+    }
+    if !self.flow.isEmpty {
+      try visitor.visitSingularStringField(value: self.flow, fieldNumber: 3)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  public static func ==(lhs: ClientQuotaAccount, rhs: ClientQuotaAccount) -> Bool {
-    if lhs.accountKey != rhs.accountKey {return false}
+  public static func ==(lhs: ClientProviderSignInStart, rhs: ClientProviderSignInStart) -> Bool {
+    if lhs.accountID != rhs.accountID {return false}
+    if lhs.daemonID != rhs.daemonID {return false}
+    if lhs.flow != rhs.flow {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
 }
 
-nonisolated extension ClientQuotasSlice: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".QuotasSlice"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}groups\0\u{1}loading\0\u{1}error\0\u{1}mutating\0\u{4}\u{2}group_rows\0")
+nonisolated extension ClientProviderSignInInput: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ProviderSignInInput"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}session_id\0\u{1}code\0\u{3}callback_url\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.sessionID) }()
+      case 2: try {
+        var v: String?
+        try decoder.decodeSingularStringField(value: &v)
+        if let v = v {
+          if self.input != nil {try decoder.handleConflictingOneOf()}
+          self.input = .code(v)
+        }
+      }()
+      case 3: try {
+        var v: String?
+        try decoder.decodeSingularStringField(value: &v)
+        if let v = v {
+          if self.input != nil {try decoder.handleConflictingOneOf()}
+          self.input = .callbackURL(v)
+        }
+      }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.sessionID.isEmpty {
+      try visitor.visitSingularStringField(value: self.sessionID, fieldNumber: 1)
+    }
+    switch self.input {
+    case .code?: try {
+      guard case .code(let v)? = self.input else { preconditionFailure() }
+      try visitor.visitSingularStringField(value: v, fieldNumber: 2)
+    }()
+    case .callbackURL?: try {
+      guard case .callbackURL(let v)? = self.input else { preconditionFailure() }
+      try visitor.visitSingularStringField(value: v, fieldNumber: 3)
+    }()
+    case nil: break
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientProviderSignInInput, rhs: ClientProviderSignInInput) -> Bool {
+    if lhs.sessionID != rhs.sessionID {return false}
+    if lhs.input != rhs.input {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientProviderSessionRef: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ProviderSessionRef"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}session_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.sessionID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.sessionID.isEmpty {
+      try visitor.visitSingularStringField(value: self.sessionID, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientProviderSessionRef, rhs: ClientProviderSessionRef) -> Bool {
+    if lhs.sessionID != rhs.sessionID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientProviderMachineRef: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ProviderMachineRef"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}account_id\0\u{3}daemon_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.accountID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.daemonID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.accountID.isEmpty {
+      try visitor.visitSingularStringField(value: self.accountID, fieldNumber: 1)
+    }
+    if !self.daemonID.isEmpty {
+      try visitor.visitSingularStringField(value: self.daemonID, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientProviderMachineRef, rhs: ClientProviderMachineRef) -> Bool {
+    if lhs.accountID != rhs.accountID {return false}
+    if lhs.daemonID != rhs.daemonID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientProviderSignInStarted: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ProviderSignInStarted"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}session_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.sessionID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.sessionID.isEmpty {
+      try visitor.visitSingularStringField(value: self.sessionID, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientProviderSignInStarted, rhs: ClientProviderSignInStarted) -> Bool {
+    if lhs.sessionID != rhs.sessionID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientProviderResetOutcome: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ProviderResetOutcome"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}account_id\0\u{1}outcome\0\u{1}message\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.accountID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.outcome) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.message) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.accountID.isEmpty {
+      try visitor.visitSingularStringField(value: self.accountID, fieldNumber: 1)
+    }
+    if !self.outcome.isEmpty {
+      try visitor.visitSingularStringField(value: self.outcome, fieldNumber: 2)
+    }
+    if !self.message.isEmpty {
+      try visitor.visitSingularStringField(value: self.message, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientProviderResetOutcome, rhs: ClientProviderResetOutcome) -> Bool {
+    if lhs.accountID != rhs.accountID {return false}
+    if lhs.outcome != rhs.outcome {return false}
+    if lhs.message != rhs.message {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientProvidersSlice: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ProvidersSlice"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}groups\0\u{1}summary\0\u{1}sessions\0\u{1}mutating\0\u{1}error\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -35426,48 +36602,52 @@ nonisolated extension ClientQuotasSlice: SwiftProtobuf.Message, SwiftProtobuf._M
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeRepeatedMessageField(value: &self.groups) }()
-      case 2: try { try decoder.decodeSingularBoolField(value: &self.loading) }()
-      case 3: try { try decoder.decodeSingularStringField(value: &self.error) }()
+      case 2: try { try decoder.decodeSingularMessageField(value: &self._summary) }()
+      case 3: try { try decoder.decodeRepeatedMessageField(value: &self.sessions) }()
       case 4: try { try decoder.decodeRepeatedStringField(value: &self.mutating) }()
-      case 6: try { try decoder.decodeRepeatedMessageField(value: &self.groupRows) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.error) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
     if !self.groups.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.groups, fieldNumber: 1)
     }
-    if self.loading != false {
-      try visitor.visitSingularBoolField(value: self.loading, fieldNumber: 2)
-    }
-    if !self.error.isEmpty {
-      try visitor.visitSingularStringField(value: self.error, fieldNumber: 3)
+    try { if let v = self._summary {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    } }()
+    if !self.sessions.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.sessions, fieldNumber: 3)
     }
     if !self.mutating.isEmpty {
       try visitor.visitRepeatedStringField(value: self.mutating, fieldNumber: 4)
     }
-    if !self.groupRows.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.groupRows, fieldNumber: 6)
+    if !self.error.isEmpty {
+      try visitor.visitSingularStringField(value: self.error, fieldNumber: 5)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  public static func ==(lhs: ClientQuotasSlice, rhs: ClientQuotasSlice) -> Bool {
+  public static func ==(lhs: ClientProvidersSlice, rhs: ClientProvidersSlice) -> Bool {
     if lhs.groups != rhs.groups {return false}
-    if lhs.loading != rhs.loading {return false}
-    if lhs.error != rhs.error {return false}
+    if lhs._summary != rhs._summary {return false}
+    if lhs.sessions != rhs.sessions {return false}
     if lhs.mutating != rhs.mutating {return false}
-    if lhs.groupRows != rhs.groupRows {return false}
+    if lhs.error != rhs.error {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
 }
 
-nonisolated extension ClientQuotaGroupRow: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".QuotaGroupRow"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}provider\0\u{3}provider_name\0\u{2}\u{2}summary\0\u{3}lowest_remaining\0\u{1}accounts\0")
+nonisolated extension ClientProviderSummary: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ProviderSummary"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}items\0\u{1}text\0\u{1}severity\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -35475,68 +36655,166 @@ nonisolated extension ClientQuotaGroupRow: SwiftProtobuf.Message, SwiftProtobuf.
       // allocates stack space for every case branch when no optimizations are
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
-      case 1: try { try decoder.decodeSingularEnumField(value: &self.provider) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.providerName) }()
-      case 4: try { try decoder.decodeSingularStringField(value: &self.summary) }()
-      case 5: try { try decoder.decodeSingularInt32Field(value: &self.lowestRemaining) }()
-      case 6: try { try decoder.decodeRepeatedMessageField(value: &self.accounts) }()
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.items) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.text) }()
+      case 3: try { try decoder.decodeSingularEnumField(value: &self.severity) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if self.provider != .unspecified {
-      try visitor.visitSingularEnumField(value: self.provider, fieldNumber: 1)
+    if !self.items.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.items, fieldNumber: 1)
+    }
+    if !self.text.isEmpty {
+      try visitor.visitSingularStringField(value: self.text, fieldNumber: 2)
+    }
+    if self.severity != .unknown {
+      try visitor.visitSingularEnumField(value: self.severity, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientProviderSummary, rhs: ClientProviderSummary) -> Bool {
+    if lhs.items != rhs.items {return false}
+    if lhs.text != rhs.text {return false}
+    if lhs.severity != rhs.severity {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientProviderSummaryItem: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ProviderSummaryItem"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}provider\0\u{3}provider_name\0\u{1}remaining\0\u{1}severity\0\u{1}text\0\u{3}account_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.provider) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.providerName) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.remaining) }()
+      case 4: try { try decoder.decodeSingularEnumField(value: &self.severity) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.text) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.accountID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.provider.isEmpty {
+      try visitor.visitSingularStringField(value: self.provider, fieldNumber: 1)
+    }
+    if !self.providerName.isEmpty {
+      try visitor.visitSingularStringField(value: self.providerName, fieldNumber: 2)
+    }
+    if self.remaining != 0 {
+      try visitor.visitSingularInt32Field(value: self.remaining, fieldNumber: 3)
+    }
+    if self.severity != .unknown {
+      try visitor.visitSingularEnumField(value: self.severity, fieldNumber: 4)
+    }
+    if !self.text.isEmpty {
+      try visitor.visitSingularStringField(value: self.text, fieldNumber: 5)
+    }
+    if !self.accountID.isEmpty {
+      try visitor.visitSingularStringField(value: self.accountID, fieldNumber: 6)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientProviderSummaryItem, rhs: ClientProviderSummaryItem) -> Bool {
+    if lhs.provider != rhs.provider {return false}
+    if lhs.providerName != rhs.providerName {return false}
+    if lhs.remaining != rhs.remaining {return false}
+    if lhs.severity != rhs.severity {return false}
+    if lhs.text != rhs.text {return false}
+    if lhs.accountID != rhs.accountID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientProviderGroupRow: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ProviderGroupRow"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}provider\0\u{3}provider_name\0\u{1}summary\0\u{3}default_account_id\0\u{1}accounts\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.provider) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.providerName) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.summary) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.defaultAccountID) }()
+      case 5: try { try decoder.decodeRepeatedMessageField(value: &self.accounts) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.provider.isEmpty {
+      try visitor.visitSingularStringField(value: self.provider, fieldNumber: 1)
     }
     if !self.providerName.isEmpty {
       try visitor.visitSingularStringField(value: self.providerName, fieldNumber: 2)
     }
     if !self.summary.isEmpty {
-      try visitor.visitSingularStringField(value: self.summary, fieldNumber: 4)
+      try visitor.visitSingularStringField(value: self.summary, fieldNumber: 3)
     }
-    if self.lowestRemaining != 0 {
-      try visitor.visitSingularInt32Field(value: self.lowestRemaining, fieldNumber: 5)
+    if !self.defaultAccountID.isEmpty {
+      try visitor.visitSingularStringField(value: self.defaultAccountID, fieldNumber: 4)
     }
     if !self.accounts.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.accounts, fieldNumber: 6)
+      try visitor.visitRepeatedMessageField(value: self.accounts, fieldNumber: 5)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  public static func ==(lhs: ClientQuotaGroupRow, rhs: ClientQuotaGroupRow) -> Bool {
+  public static func ==(lhs: ClientProviderGroupRow, rhs: ClientProviderGroupRow) -> Bool {
     if lhs.provider != rhs.provider {return false}
     if lhs.providerName != rhs.providerName {return false}
     if lhs.summary != rhs.summary {return false}
-    if lhs.lowestRemaining != rhs.lowestRemaining {return false}
+    if lhs.defaultAccountID != rhs.defaultAccountID {return false}
     if lhs.accounts != rhs.accounts {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
 }
 
-nonisolated extension ClientQuotaAccountRow: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".QuotaAccountRow"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}account_key\0\u{1}label\0\u{1}identity\0\u{1}subtitle\0\u{1}remaining\0\u{1}severity\0\u{1}available\0\u{1}unavailable\0\u{1}status\0\u{1}windows\0\u{1}details\0\u{3}can_reset\0\u{1}included\0\u{3}fresh_until_millis\0\u{3}summary_line\0\u{1}refreshing\0\u{1}machines\0")
+nonisolated extension ClientProviderAccountRow: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ProviderAccountRow"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{1}identity\0\u{1}subtitle\0\u{1}method\0\u{3}is_default\0\u{1}included\0\u{1}remaining\0\u{1}severity\0\u{3}summary_line\0\u{1}windows\0\u{3}usage_observed_at\0\u{3}dieter_tokens\0\u{1}machines\0\u{3}can_reset\0\u{3}reset_label\0\u{3}manage_usage_url\0\u{3}can_sign_in_all\0\u{1}status\0\u{1}managed\0")
 
   fileprivate class _StorageClass {
-    var _accountKey: String = String()
+    var _id: String = String()
     var _label: String = String()
     var _identity: String = String()
     var _subtitle: String = String()
-    var _remaining: Int32 = 0
-    var _severity: ClientQuotaSeverity = .unknown
-    var _available: Bool = false
-    var _unavailable: String = String()
-    var _status: String = String()
-    var _windows: [ClientQuotaWindowRow] = []
-    var _details: [ClientQuotaDetail] = []
-    var _canReset: Bool = false
+    var _method: String = String()
+    var _isDefault: Bool = false
     var _included: Bool = false
-    var _freshUntilMillis: Int64 = 0
+    var _remaining: Int32 = 0
+    var _severity: ClientProviderSeverity = .unknown
     var _summaryLine: String = String()
-    var _refreshing: Bool = false
-    var _machines: [ClientQuotaMachineRow] = []
+    var _windows: [ClientProviderWindowRow] = []
+    var _usageObservedAt: String = String()
+    var _dieterTokens: String = String()
+    var _machines: [ClientProviderMachineRow] = []
+    var _canReset: Bool = false
+    var _resetLabel: String = String()
+    var _manageUsageURL: String = String()
+    var _canSignInAll: Bool = false
+    var _status: String = String()
+    var _managed: Bool = false
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -35547,23 +36825,26 @@ nonisolated extension ClientQuotaAccountRow: SwiftProtobuf.Message, SwiftProtobu
     private init() {}
 
     init(copying source: _StorageClass) {
-      _accountKey = source._accountKey
+      _id = source._id
       _label = source._label
       _identity = source._identity
       _subtitle = source._subtitle
+      _method = source._method
+      _isDefault = source._isDefault
+      _included = source._included
       _remaining = source._remaining
       _severity = source._severity
-      _available = source._available
-      _unavailable = source._unavailable
-      _status = source._status
-      _windows = source._windows
-      _details = source._details
-      _canReset = source._canReset
-      _included = source._included
-      _freshUntilMillis = source._freshUntilMillis
       _summaryLine = source._summaryLine
-      _refreshing = source._refreshing
+      _windows = source._windows
+      _usageObservedAt = source._usageObservedAt
+      _dieterTokens = source._dieterTokens
       _machines = source._machines
+      _canReset = source._canReset
+      _resetLabel = source._resetLabel
+      _manageUsageURL = source._manageUsageURL
+      _canSignInAll = source._canSignInAll
+      _status = source._status
+      _managed = source._managed
     }
   }
 
@@ -35582,23 +36863,26 @@ nonisolated extension ClientQuotaAccountRow: SwiftProtobuf.Message, SwiftProtobu
         // allocates stack space for every case branch when no optimizations are
         // enabled. https://github.com/apple/swift-protobuf/issues/1034
         switch fieldNumber {
-        case 1: try { try decoder.decodeSingularStringField(value: &_storage._accountKey) }()
+        case 1: try { try decoder.decodeSingularStringField(value: &_storage._id) }()
         case 2: try { try decoder.decodeSingularStringField(value: &_storage._label) }()
         case 3: try { try decoder.decodeSingularStringField(value: &_storage._identity) }()
         case 4: try { try decoder.decodeSingularStringField(value: &_storage._subtitle) }()
-        case 5: try { try decoder.decodeSingularInt32Field(value: &_storage._remaining) }()
-        case 6: try { try decoder.decodeSingularEnumField(value: &_storage._severity) }()
-        case 7: try { try decoder.decodeSingularBoolField(value: &_storage._available) }()
-        case 8: try { try decoder.decodeSingularStringField(value: &_storage._unavailable) }()
-        case 9: try { try decoder.decodeSingularStringField(value: &_storage._status) }()
-        case 10: try { try decoder.decodeRepeatedMessageField(value: &_storage._windows) }()
-        case 11: try { try decoder.decodeRepeatedMessageField(value: &_storage._details) }()
-        case 12: try { try decoder.decodeSingularBoolField(value: &_storage._canReset) }()
-        case 13: try { try decoder.decodeSingularBoolField(value: &_storage._included) }()
-        case 14: try { try decoder.decodeSingularInt64Field(value: &_storage._freshUntilMillis) }()
-        case 15: try { try decoder.decodeSingularStringField(value: &_storage._summaryLine) }()
-        case 16: try { try decoder.decodeSingularBoolField(value: &_storage._refreshing) }()
-        case 17: try { try decoder.decodeRepeatedMessageField(value: &_storage._machines) }()
+        case 5: try { try decoder.decodeSingularStringField(value: &_storage._method) }()
+        case 6: try { try decoder.decodeSingularBoolField(value: &_storage._isDefault) }()
+        case 7: try { try decoder.decodeSingularBoolField(value: &_storage._included) }()
+        case 8: try { try decoder.decodeSingularInt32Field(value: &_storage._remaining) }()
+        case 9: try { try decoder.decodeSingularEnumField(value: &_storage._severity) }()
+        case 10: try { try decoder.decodeSingularStringField(value: &_storage._summaryLine) }()
+        case 11: try { try decoder.decodeRepeatedMessageField(value: &_storage._windows) }()
+        case 12: try { try decoder.decodeSingularStringField(value: &_storage._usageObservedAt) }()
+        case 13: try { try decoder.decodeSingularStringField(value: &_storage._dieterTokens) }()
+        case 14: try { try decoder.decodeRepeatedMessageField(value: &_storage._machines) }()
+        case 15: try { try decoder.decodeSingularBoolField(value: &_storage._canReset) }()
+        case 16: try { try decoder.decodeSingularStringField(value: &_storage._resetLabel) }()
+        case 17: try { try decoder.decodeSingularStringField(value: &_storage._manageUsageURL) }()
+        case 18: try { try decoder.decodeSingularBoolField(value: &_storage._canSignInAll) }()
+        case 19: try { try decoder.decodeSingularStringField(value: &_storage._status) }()
+        case 20: try { try decoder.decodeSingularBoolField(value: &_storage._managed) }()
         default: break
         }
       }
@@ -35607,8 +36891,8 @@ nonisolated extension ClientQuotaAccountRow: SwiftProtobuf.Message, SwiftProtobu
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
-      if !_storage._accountKey.isEmpty {
-        try visitor.visitSingularStringField(value: _storage._accountKey, fieldNumber: 1)
+      if !_storage._id.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._id, fieldNumber: 1)
       }
       if !_storage._label.isEmpty {
         try visitor.visitSingularStringField(value: _storage._label, fieldNumber: 2)
@@ -35619,71 +36903,83 @@ nonisolated extension ClientQuotaAccountRow: SwiftProtobuf.Message, SwiftProtobu
       if !_storage._subtitle.isEmpty {
         try visitor.visitSingularStringField(value: _storage._subtitle, fieldNumber: 4)
       }
-      if _storage._remaining != 0 {
-        try visitor.visitSingularInt32Field(value: _storage._remaining, fieldNumber: 5)
+      if !_storage._method.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._method, fieldNumber: 5)
       }
-      if _storage._severity != .unknown {
-        try visitor.visitSingularEnumField(value: _storage._severity, fieldNumber: 6)
-      }
-      if _storage._available != false {
-        try visitor.visitSingularBoolField(value: _storage._available, fieldNumber: 7)
-      }
-      if !_storage._unavailable.isEmpty {
-        try visitor.visitSingularStringField(value: _storage._unavailable, fieldNumber: 8)
-      }
-      if !_storage._status.isEmpty {
-        try visitor.visitSingularStringField(value: _storage._status, fieldNumber: 9)
-      }
-      if !_storage._windows.isEmpty {
-        try visitor.visitRepeatedMessageField(value: _storage._windows, fieldNumber: 10)
-      }
-      if !_storage._details.isEmpty {
-        try visitor.visitRepeatedMessageField(value: _storage._details, fieldNumber: 11)
-      }
-      if _storage._canReset != false {
-        try visitor.visitSingularBoolField(value: _storage._canReset, fieldNumber: 12)
+      if _storage._isDefault != false {
+        try visitor.visitSingularBoolField(value: _storage._isDefault, fieldNumber: 6)
       }
       if _storage._included != false {
-        try visitor.visitSingularBoolField(value: _storage._included, fieldNumber: 13)
+        try visitor.visitSingularBoolField(value: _storage._included, fieldNumber: 7)
       }
-      if _storage._freshUntilMillis != 0 {
-        try visitor.visitSingularInt64Field(value: _storage._freshUntilMillis, fieldNumber: 14)
+      if _storage._remaining != 0 {
+        try visitor.visitSingularInt32Field(value: _storage._remaining, fieldNumber: 8)
+      }
+      if _storage._severity != .unknown {
+        try visitor.visitSingularEnumField(value: _storage._severity, fieldNumber: 9)
       }
       if !_storage._summaryLine.isEmpty {
-        try visitor.visitSingularStringField(value: _storage._summaryLine, fieldNumber: 15)
+        try visitor.visitSingularStringField(value: _storage._summaryLine, fieldNumber: 10)
       }
-      if _storage._refreshing != false {
-        try visitor.visitSingularBoolField(value: _storage._refreshing, fieldNumber: 16)
+      if !_storage._windows.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._windows, fieldNumber: 11)
+      }
+      if !_storage._usageObservedAt.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._usageObservedAt, fieldNumber: 12)
+      }
+      if !_storage._dieterTokens.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._dieterTokens, fieldNumber: 13)
       }
       if !_storage._machines.isEmpty {
-        try visitor.visitRepeatedMessageField(value: _storage._machines, fieldNumber: 17)
+        try visitor.visitRepeatedMessageField(value: _storage._machines, fieldNumber: 14)
+      }
+      if _storage._canReset != false {
+        try visitor.visitSingularBoolField(value: _storage._canReset, fieldNumber: 15)
+      }
+      if !_storage._resetLabel.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._resetLabel, fieldNumber: 16)
+      }
+      if !_storage._manageUsageURL.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._manageUsageURL, fieldNumber: 17)
+      }
+      if _storage._canSignInAll != false {
+        try visitor.visitSingularBoolField(value: _storage._canSignInAll, fieldNumber: 18)
+      }
+      if !_storage._status.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._status, fieldNumber: 19)
+      }
+      if _storage._managed != false {
+        try visitor.visitSingularBoolField(value: _storage._managed, fieldNumber: 20)
       }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  public static func ==(lhs: ClientQuotaAccountRow, rhs: ClientQuotaAccountRow) -> Bool {
+  public static func ==(lhs: ClientProviderAccountRow, rhs: ClientProviderAccountRow) -> Bool {
     if lhs._storage !== rhs._storage {
       let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
         let _storage = _args.0
         let rhs_storage = _args.1
-        if _storage._accountKey != rhs_storage._accountKey {return false}
+        if _storage._id != rhs_storage._id {return false}
         if _storage._label != rhs_storage._label {return false}
         if _storage._identity != rhs_storage._identity {return false}
         if _storage._subtitle != rhs_storage._subtitle {return false}
+        if _storage._method != rhs_storage._method {return false}
+        if _storage._isDefault != rhs_storage._isDefault {return false}
+        if _storage._included != rhs_storage._included {return false}
         if _storage._remaining != rhs_storage._remaining {return false}
         if _storage._severity != rhs_storage._severity {return false}
-        if _storage._available != rhs_storage._available {return false}
-        if _storage._unavailable != rhs_storage._unavailable {return false}
-        if _storage._status != rhs_storage._status {return false}
-        if _storage._windows != rhs_storage._windows {return false}
-        if _storage._details != rhs_storage._details {return false}
-        if _storage._canReset != rhs_storage._canReset {return false}
-        if _storage._included != rhs_storage._included {return false}
-        if _storage._freshUntilMillis != rhs_storage._freshUntilMillis {return false}
         if _storage._summaryLine != rhs_storage._summaryLine {return false}
-        if _storage._refreshing != rhs_storage._refreshing {return false}
+        if _storage._windows != rhs_storage._windows {return false}
+        if _storage._usageObservedAt != rhs_storage._usageObservedAt {return false}
+        if _storage._dieterTokens != rhs_storage._dieterTokens {return false}
         if _storage._machines != rhs_storage._machines {return false}
+        if _storage._canReset != rhs_storage._canReset {return false}
+        if _storage._resetLabel != rhs_storage._resetLabel {return false}
+        if _storage._manageUsageURL != rhs_storage._manageUsageURL {return false}
+        if _storage._canSignInAll != rhs_storage._canSignInAll {return false}
+        if _storage._status != rhs_storage._status {return false}
+        if _storage._managed != rhs_storage._managed {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -35693,113 +36989,8 @@ nonisolated extension ClientQuotaAccountRow: SwiftProtobuf.Message, SwiftProtobu
   }
 }
 
-nonisolated extension ClientQuotaMachineRow: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".QuotaMachineRow"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0\u{1}name\0\u{1}online\0\u{1}state\0")
-
-  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularStringField(value: &self.daemonID) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.name) }()
-      case 3: try { try decoder.decodeSingularBoolField(value: &self.online) }()
-      case 4: try { try decoder.decodeSingularStringField(value: &self.state) }()
-      default: break
-      }
-    }
-  }
-
-  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if !self.daemonID.isEmpty {
-      try visitor.visitSingularStringField(value: self.daemonID, fieldNumber: 1)
-    }
-    if !self.name.isEmpty {
-      try visitor.visitSingularStringField(value: self.name, fieldNumber: 2)
-    }
-    if self.online != false {
-      try visitor.visitSingularBoolField(value: self.online, fieldNumber: 3)
-    }
-    if !self.state.isEmpty {
-      try visitor.visitSingularStringField(value: self.state, fieldNumber: 4)
-    }
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  public static func ==(lhs: ClientQuotaMachineRow, rhs: ClientQuotaMachineRow) -> Bool {
-    if lhs.daemonID != rhs.daemonID {return false}
-    if lhs.name != rhs.name {return false}
-    if lhs.online != rhs.online {return false}
-    if lhs.state != rhs.state {return false}
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
-nonisolated extension ClientQuotaGroupList: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".QuotaGroupList"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}groups\0")
-
-  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.groups) }()
-      default: break
-      }
-    }
-  }
-
-  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if !self.groups.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.groups, fieldNumber: 1)
-    }
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  public static func ==(lhs: ClientQuotaGroupList, rhs: ClientQuotaGroupList) -> Bool {
-    if lhs.groups != rhs.groups {return false}
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
-nonisolated extension ClientQuotaGroupRows: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".QuotaGroupRows"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}rows\0")
-
-  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.rows) }()
-      default: break
-      }
-    }
-  }
-
-  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if !self.rows.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.rows, fieldNumber: 1)
-    }
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  public static func ==(lhs: ClientQuotaGroupRows, rhs: ClientQuotaGroupRows) -> Bool {
-    if lhs.rows != rhs.rows {return false}
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
-nonisolated extension ClientQuotaWindowRow: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".QuotaWindowRow"
+nonisolated extension ClientProviderWindowRow: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ProviderWindowRow"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{1}remaining\0\u{1}severity\0\u{3}resets_at\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -35837,7 +37028,7 @@ nonisolated extension ClientQuotaWindowRow: SwiftProtobuf.Message, SwiftProtobuf
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  public static func ==(lhs: ClientQuotaWindowRow, rhs: ClientQuotaWindowRow) -> Bool {
+  public static func ==(lhs: ClientProviderWindowRow, rhs: ClientProviderWindowRow) -> Bool {
     if lhs.id != rhs.id {return false}
     if lhs.name != rhs.name {return false}
     if lhs.remaining != rhs.remaining {return false}
@@ -35848,9 +37039,9 @@ nonisolated extension ClientQuotaWindowRow: SwiftProtobuf.Message, SwiftProtobuf
   }
 }
 
-nonisolated extension ClientQuotaDetail: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".QuotaDetail"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}label\0\u{1}text\0\u{1}monetary\0")
+nonisolated extension ClientProviderMachineRow: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ProviderMachineRow"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0\u{1}name\0\u{1}online\0\u{1}state\0\u{3}state_label\0\u{1}detail\0\u{3}can_sign_in\0\u{3}can_sign_out\0\u{3}can_check\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -35858,31 +37049,239 @@ nonisolated extension ClientQuotaDetail: SwiftProtobuf.Message, SwiftProtobuf._M
       // allocates stack space for every case branch when no optimizations are
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
-      case 1: try { try decoder.decodeSingularStringField(value: &self.label) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.text) }()
-      case 3: try { try decoder.decodeSingularBoolField(value: &self.monetary) }()
+      case 1: try { try decoder.decodeSingularStringField(value: &self.daemonID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self.online) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.state) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.stateLabel) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.detail) }()
+      case 7: try { try decoder.decodeSingularBoolField(value: &self.canSignIn) }()
+      case 8: try { try decoder.decodeSingularBoolField(value: &self.canSignOut) }()
+      case 9: try { try decoder.decodeSingularBoolField(value: &self.canCheck) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if !self.label.isEmpty {
-      try visitor.visitSingularStringField(value: self.label, fieldNumber: 1)
+    if !self.daemonID.isEmpty {
+      try visitor.visitSingularStringField(value: self.daemonID, fieldNumber: 1)
     }
-    if !self.text.isEmpty {
-      try visitor.visitSingularStringField(value: self.text, fieldNumber: 2)
+    if !self.name.isEmpty {
+      try visitor.visitSingularStringField(value: self.name, fieldNumber: 2)
     }
-    if self.monetary != false {
-      try visitor.visitSingularBoolField(value: self.monetary, fieldNumber: 3)
+    if self.online != false {
+      try visitor.visitSingularBoolField(value: self.online, fieldNumber: 3)
+    }
+    if !self.state.isEmpty {
+      try visitor.visitSingularStringField(value: self.state, fieldNumber: 4)
+    }
+    if !self.stateLabel.isEmpty {
+      try visitor.visitSingularStringField(value: self.stateLabel, fieldNumber: 5)
+    }
+    if !self.detail.isEmpty {
+      try visitor.visitSingularStringField(value: self.detail, fieldNumber: 6)
+    }
+    if self.canSignIn != false {
+      try visitor.visitSingularBoolField(value: self.canSignIn, fieldNumber: 7)
+    }
+    if self.canSignOut != false {
+      try visitor.visitSingularBoolField(value: self.canSignOut, fieldNumber: 8)
+    }
+    if self.canCheck != false {
+      try visitor.visitSingularBoolField(value: self.canCheck, fieldNumber: 9)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  public static func ==(lhs: ClientQuotaDetail, rhs: ClientQuotaDetail) -> Bool {
-    if lhs.label != rhs.label {return false}
-    if lhs.text != rhs.text {return false}
-    if lhs.monetary != rhs.monetary {return false}
+  public static func ==(lhs: ClientProviderMachineRow, rhs: ClientProviderMachineRow) -> Bool {
+    if lhs.daemonID != rhs.daemonID {return false}
+    if lhs.name != rhs.name {return false}
+    if lhs.online != rhs.online {return false}
+    if lhs.state != rhs.state {return false}
+    if lhs.stateLabel != rhs.stateLabel {return false}
+    if lhs.detail != rhs.detail {return false}
+    if lhs.canSignIn != rhs.canSignIn {return false}
+    if lhs.canSignOut != rhs.canSignOut {return false}
+    if lhs.canCheck != rhs.canCheck {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientProviderSignInSession: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ProviderSignInSession"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}account_id\0\u{3}account_label\0\u{3}daemon_id\0\u{1}machine\0\u{1}title\0\u{1}phase\0\u{3}open_url\0\u{3}local_url\0\u{3}same_host\0\u{3}callback_port\0\u{3}user_code\0\u{3}expires_at\0\u{1}expects\0\u{1}error\0\u{3}remaining_machines\0\u{1}instructions\0")
+
+  fileprivate class _StorageClass {
+    var _id: String = String()
+    var _accountID: String = String()
+    var _accountLabel: String = String()
+    var _daemonID: String = String()
+    var _machine: String = String()
+    var _title: String = String()
+    var _phase: String = String()
+    var _openURL: String = String()
+    var _localURL: String = String()
+    var _sameHost: Bool = false
+    var _callbackPort: Int32 = 0
+    var _userCode: String = String()
+    var _expiresAt: String = String()
+    var _expects: String = String()
+    var _error: String = String()
+    var _remainingMachines: Int32 = 0
+    var _instructions: String = String()
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _id = source._id
+      _accountID = source._accountID
+      _accountLabel = source._accountLabel
+      _daemonID = source._daemonID
+      _machine = source._machine
+      _title = source._title
+      _phase = source._phase
+      _openURL = source._openURL
+      _localURL = source._localURL
+      _sameHost = source._sameHost
+      _callbackPort = source._callbackPort
+      _userCode = source._userCode
+      _expiresAt = source._expiresAt
+      _expects = source._expects
+      _error = source._error
+      _remainingMachines = source._remainingMachines
+      _instructions = source._instructions
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularStringField(value: &_storage._id) }()
+        case 2: try { try decoder.decodeSingularStringField(value: &_storage._accountID) }()
+        case 3: try { try decoder.decodeSingularStringField(value: &_storage._accountLabel) }()
+        case 4: try { try decoder.decodeSingularStringField(value: &_storage._daemonID) }()
+        case 5: try { try decoder.decodeSingularStringField(value: &_storage._machine) }()
+        case 6: try { try decoder.decodeSingularStringField(value: &_storage._title) }()
+        case 7: try { try decoder.decodeSingularStringField(value: &_storage._phase) }()
+        case 8: try { try decoder.decodeSingularStringField(value: &_storage._openURL) }()
+        case 9: try { try decoder.decodeSingularStringField(value: &_storage._localURL) }()
+        case 10: try { try decoder.decodeSingularBoolField(value: &_storage._sameHost) }()
+        case 11: try { try decoder.decodeSingularInt32Field(value: &_storage._callbackPort) }()
+        case 12: try { try decoder.decodeSingularStringField(value: &_storage._userCode) }()
+        case 13: try { try decoder.decodeSingularStringField(value: &_storage._expiresAt) }()
+        case 14: try { try decoder.decodeSingularStringField(value: &_storage._expects) }()
+        case 15: try { try decoder.decodeSingularStringField(value: &_storage._error) }()
+        case 16: try { try decoder.decodeSingularInt32Field(value: &_storage._remainingMachines) }()
+        case 17: try { try decoder.decodeSingularStringField(value: &_storage._instructions) }()
+        default: break
+        }
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      if !_storage._id.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._id, fieldNumber: 1)
+      }
+      if !_storage._accountID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._accountID, fieldNumber: 2)
+      }
+      if !_storage._accountLabel.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._accountLabel, fieldNumber: 3)
+      }
+      if !_storage._daemonID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._daemonID, fieldNumber: 4)
+      }
+      if !_storage._machine.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._machine, fieldNumber: 5)
+      }
+      if !_storage._title.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._title, fieldNumber: 6)
+      }
+      if !_storage._phase.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._phase, fieldNumber: 7)
+      }
+      if !_storage._openURL.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._openURL, fieldNumber: 8)
+      }
+      if !_storage._localURL.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._localURL, fieldNumber: 9)
+      }
+      if _storage._sameHost != false {
+        try visitor.visitSingularBoolField(value: _storage._sameHost, fieldNumber: 10)
+      }
+      if _storage._callbackPort != 0 {
+        try visitor.visitSingularInt32Field(value: _storage._callbackPort, fieldNumber: 11)
+      }
+      if !_storage._userCode.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._userCode, fieldNumber: 12)
+      }
+      if !_storage._expiresAt.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._expiresAt, fieldNumber: 13)
+      }
+      if !_storage._expects.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._expects, fieldNumber: 14)
+      }
+      if !_storage._error.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._error, fieldNumber: 15)
+      }
+      if _storage._remainingMachines != 0 {
+        try visitor.visitSingularInt32Field(value: _storage._remainingMachines, fieldNumber: 16)
+      }
+      if !_storage._instructions.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._instructions, fieldNumber: 17)
+      }
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientProviderSignInSession, rhs: ClientProviderSignInSession) -> Bool {
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._id != rhs_storage._id {return false}
+        if _storage._accountID != rhs_storage._accountID {return false}
+        if _storage._accountLabel != rhs_storage._accountLabel {return false}
+        if _storage._daemonID != rhs_storage._daemonID {return false}
+        if _storage._machine != rhs_storage._machine {return false}
+        if _storage._title != rhs_storage._title {return false}
+        if _storage._phase != rhs_storage._phase {return false}
+        if _storage._openURL != rhs_storage._openURL {return false}
+        if _storage._localURL != rhs_storage._localURL {return false}
+        if _storage._sameHost != rhs_storage._sameHost {return false}
+        if _storage._callbackPort != rhs_storage._callbackPort {return false}
+        if _storage._userCode != rhs_storage._userCode {return false}
+        if _storage._expiresAt != rhs_storage._expiresAt {return false}
+        if _storage._expects != rhs_storage._expects {return false}
+        if _storage._error != rhs_storage._error {return false}
+        if _storage._remainingMachines != rhs_storage._remainingMachines {return false}
+        if _storage._instructions != rhs_storage._instructions {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

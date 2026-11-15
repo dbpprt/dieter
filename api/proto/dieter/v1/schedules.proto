@@ -65,6 +65,8 @@ message Schedule {
   bool vault_access = 42;
   // Cards created by this schedule may send the user mail. Owner-local.
   bool mail_access = 43;
+  // Provider account the occurrences run on; empty uses the provider default.
+  string account_id = 44;
 }
 
 message ScheduleDraft {
@@ -90,6 +92,7 @@ message ScheduleDraft {
   string workspace_mode = 19;
   bool vault_access = 41;
   bool mail_access = 42;
+  string account_id = 43;
 }
 
 message SaveScheduleRequest {

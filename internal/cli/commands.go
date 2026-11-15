@@ -54,11 +54,11 @@ func commandTable() []command {
 			subcommands: []string{"list"},
 		},
 		{
-			name:        "quota",
-			aliases:     []string{"quotas"},
-			summary:     "Show, summarize, refresh, and reset provider-account quotas",
-			run:         (*CLI).quotaCommand,
-			subcommands: []string{"list", "watch", "refresh", "include", "exclude", "reset"},
+			name:        "provider",
+			aliases:     []string{"providers"},
+			summary:     "Add Claude and ChatGPT accounts, sign in on machines, read plan usage",
+			run:         (*CLI).rpcProvider,
+			subcommands: []string{"list", "add", "rename", "include", "exclude", "default", "remove", "login", "logout", "check", "usage", "reset", "token"},
 		},
 		{
 			name:        "project",

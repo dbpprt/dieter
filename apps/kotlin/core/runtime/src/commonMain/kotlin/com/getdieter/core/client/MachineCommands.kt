@@ -2,16 +2,13 @@ package com.getdieter.core.client
 
 import com.getdieter.api.v1.Harness
 import com.getdieter.client.v1.Done
-import com.getdieter.client.v1.Outcome
 import com.getdieter.client.v1.ProcessesCommand
-import com.getdieter.client.v1.QuotasCommand
 import com.getdieter.client.v1.Result
 import com.getdieter.client.v1.SchedulesCommand
 import com.getdieter.client.v1.TelemetryCommand
 import com.getdieter.core.admin.MachineTelemetry
 import com.getdieter.core.executions.ProcessTarget
 import com.getdieter.core.executions.Processes
-import com.getdieter.core.quotas.ProviderQuotas
 import com.getdieter.core.schedules.Schedules
 
 internal suspend fun Processes.execute(command: ProcessesCommand): Result {
@@ -33,16 +30,6 @@ internal suspend fun MachineTelemetry.execute(command: TelemetryCommand): Result
             ?: Result(done = Done())
     }
     command.select?.let { select(it.daemon_id.ifEmpty { null }, it.active) }
-    return Result(done = Done())
-}
-
-/** The result is whether a reset was accepted, else done. */
-internal suspend fun ProviderQuotas.execute(command: QuotasCommand): Result {
-    command.consume_reset?.let {
-        return Result(outcome = Outcome(succeeded = consumeReset(it.account_key)))
-    }
-    command.load?.let { load(it.refresh) }
-    command.set_included?.let { setIncluded(it.provider, it.account_key, it.included) }
     return Result(done = Done())
 }
 

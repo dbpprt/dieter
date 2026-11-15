@@ -30,6 +30,8 @@ type (
 	trustAPI         struct{ server *Server }
 	channelsAPI      struct{ server *Server }
 	mailAPI          struct{ server *Server }
+	// providerAccountsAPI is ProviderAccountService (provider_accounts.go).
+	providerAccountsAPI struct{ server *Server }
 )
 
 // service composes every domain handler: the whole daemon API, Dieter's only
@@ -58,30 +60,32 @@ type service struct {
 	*channelsAPI
 	*mailAPI
 	*foldersAPI
+	*providerAccountsAPI
 }
 
 var (
-	_ dieterv1connect.MachineServiceHandler      = (*machineAPI)(nil)
-	_ dieterv1connect.StateServiceHandler        = (*stateAPI)(nil)
-	_ dieterv1connect.SettingsServiceHandler     = (*settingsAPI)(nil)
-	_ dieterv1connect.ProjectServiceHandler      = (*projectsAPI)(nil)
-	_ dieterv1connect.BoardServiceHandler        = (*boardsAPI)(nil)
-	_ dieterv1connect.CardServiceHandler         = (*cardsAPI)(nil)
-	_ dieterv1connect.ConversationServiceHandler = (*conversationsAPI)(nil)
-	_ dieterv1connect.GitServiceHandler          = (*gitAPI)(nil)
-	_ dieterv1connect.FileServiceHandler         = (*filesAPI)(nil)
-	_ dieterv1connect.TerminalServiceHandler     = (*terminalsAPI)(nil)
-	_ dieterv1connect.ExecutionServiceHandler    = (*executionsAPI)(nil)
-	_ dieterv1connect.ScreenServiceHandler       = (*screensAPI)(nil)
-	_ dieterv1connect.ControlServiceHandler      = (*controlAPI)(nil)
-	_ dieterv1connect.ScheduleServiceHandler     = (*schedulesAPI)(nil)
-	_ dieterv1connect.VaultServiceHandler        = (*vaultAPI)(nil)
-	_ dieterv1connect.KVServiceHandler           = (*kvAPI)(nil)
-	_ dieterv1connect.PeerServiceHandler         = (*peerAPI)(nil)
-	_ dieterv1connect.TrustServiceHandler        = (*trustAPI)(nil)
-	_ dieterv1connect.ChannelServiceHandler      = (*channelsAPI)(nil)
-	_ dieterv1connect.MailServiceHandler         = (*mailAPI)(nil)
-	_ dieterv1connect.FolderServiceHandler       = (*foldersAPI)(nil)
+	_ dieterv1connect.MachineServiceHandler         = (*machineAPI)(nil)
+	_ dieterv1connect.StateServiceHandler           = (*stateAPI)(nil)
+	_ dieterv1connect.SettingsServiceHandler        = (*settingsAPI)(nil)
+	_ dieterv1connect.ProjectServiceHandler         = (*projectsAPI)(nil)
+	_ dieterv1connect.BoardServiceHandler           = (*boardsAPI)(nil)
+	_ dieterv1connect.CardServiceHandler            = (*cardsAPI)(nil)
+	_ dieterv1connect.ConversationServiceHandler    = (*conversationsAPI)(nil)
+	_ dieterv1connect.GitServiceHandler             = (*gitAPI)(nil)
+	_ dieterv1connect.FileServiceHandler            = (*filesAPI)(nil)
+	_ dieterv1connect.TerminalServiceHandler        = (*terminalsAPI)(nil)
+	_ dieterv1connect.ExecutionServiceHandler       = (*executionsAPI)(nil)
+	_ dieterv1connect.ScreenServiceHandler          = (*screensAPI)(nil)
+	_ dieterv1connect.ControlServiceHandler         = (*controlAPI)(nil)
+	_ dieterv1connect.ScheduleServiceHandler        = (*schedulesAPI)(nil)
+	_ dieterv1connect.VaultServiceHandler           = (*vaultAPI)(nil)
+	_ dieterv1connect.KVServiceHandler              = (*kvAPI)(nil)
+	_ dieterv1connect.PeerServiceHandler            = (*peerAPI)(nil)
+	_ dieterv1connect.TrustServiceHandler           = (*trustAPI)(nil)
+	_ dieterv1connect.ChannelServiceHandler         = (*channelsAPI)(nil)
+	_ dieterv1connect.MailServiceHandler            = (*mailAPI)(nil)
+	_ dieterv1connect.FolderServiceHandler          = (*foldersAPI)(nil)
+	_ dieterv1connect.ProviderAccountServiceHandler = (*providerAccountsAPI)(nil)
 )
 
 func newService(s *Server) *service {
@@ -93,6 +97,7 @@ func newService(s *Server) *service {
 		controlAPI: &controlAPI{s}, schedulesAPI: &schedulesAPI{s}, vaultAPI: &vaultAPI{s},
 		kvAPI: &kvAPI{s}, peerAPI: &peerAPI{s}, trustAPI: &trustAPI{s}, channelsAPI: &channelsAPI{s},
 		mailAPI: &mailAPI{s}, foldersAPI: &foldersAPI{s},
+		providerAccountsAPI: &providerAccountsAPI{s},
 	}
 }
 
@@ -121,6 +126,7 @@ func (svc *service) handlers(options ...connect.HandlerOption) map[string]http.H
 	add(dieterv1connect.NewChannelServiceHandler(svc.channelsAPI, options...))
 	add(dieterv1connect.NewMailServiceHandler(svc.mailAPI, options...))
 	add(dieterv1connect.NewFolderServiceHandler(svc.foldersAPI, options...))
+	add(dieterv1connect.NewProviderAccountServiceHandler(svc.providerAccountsAPI, options...))
 	return result
 }
 

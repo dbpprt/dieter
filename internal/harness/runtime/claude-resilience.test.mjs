@@ -178,6 +178,6 @@ test("retries an authentication failure once with the resume prompt, for Claude 
 
 test("the final authentication message leads with the action and keeps the provider text", () => {
   const [first, second] = claudeAuthFailureMessage("HTTP 401: authentication_failed").split("\n");
-  assert.match(first, /claude auth login/);
+  assert.match(first, /Settings › Providers/);
   assert.equal(second, "HTTP 401: authentication_failed");
 });

@@ -111,6 +111,21 @@ exactly as `dieter device approve` does. Clients receive the code in
 is the production path: the client still verifies the approver's confirmation
 before it pins the roster.
 
+### Provider accounts in fixtures
+
+No test signs in to Anthropic or OpenAI, or touches `~/.claude`, `~/.codex` or
+the Keychain. Go tests drive the account engine against fake `claude` and
+`codex` executables in a temporary runtime directory. The fixture gateway's
+`-e2e-fixture` seeds, through the real KV writers, a Claude account "Work"
+(signed in on the primary daemon only) and a ChatGPT account "Personal"
+(signed in on every fixture daemon, with a reset credit), with a default for
+each provider. The second daemon exists with `-daemon-restart-trigger`; peer
+sync then keeps both daemons' accounts and logins in step. Every fixture daemon
+serves sign-ins and turns from an in-process fixture backend: the
+paste code `FIXTURE-CODE` succeeds, a device code approves itself after two
+seconds, and a forwarded callback with `code=fixture` succeeds. Usage changes
+deterministically. Client and Maestro flows sign in with these values.
+
 ## Swift
 
 ```sh

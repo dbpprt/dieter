@@ -38,7 +38,7 @@ Commands:
   machine      List, route, rename, revoke, inspect, control, or privately lock machines
   status       Show target daemon health, runtime, route, and state counts
   harness      List target daemon harnesses, models, and options
-  quota        Show, summarize, refresh, and reset provider-account quotas
+  provider     Add Claude and ChatGPT accounts, sign in on machines, read plan usage
   project      Create, browse, configure archive cleanup, relocate, and restore projects
   board        Manage boards, retirement/restore, hostnames, workflows, and labels
   card         Create, edit, read, present files, merge, and manage board conversations
@@ -289,60 +289,170 @@ Usage: dieter harness list [--format table|json|jsonl|ids]
 Usage: dieter harness list [--format table|json|jsonl|ids]
 ```
 
-## dieter quota (alias: quotas)
+## dieter provider (alias: providers)
 
 ```text
-Usage: dieter quota <action>
+Usage: dieter provider <action> [options]
 
-Actions:
-  list [PROVIDER] [--format table|json|jsonl]  List account quotas and provider summaries
-  watch [PROVIDER] [--count N]                Stream quota updates as JSON Lines
-  refresh [PROVIDER] [--account KEY]          Request a bounded refresh and show the result
-  include PROVIDER --account KEY              Include an account in its header summary
-  exclude PROVIDER --account KEY              Exclude an account from its header summary
-  reset openai --account KEY --confirm RESET  Consume one available reset credit
+The Claude and ChatGPT accounts agent turns run on. Accounts, each machine's
+sign-in state and plan usage replicate between your machines; credentials
+never leave the machine that signed in. Claude Code and Codex keep their own
+logins, so Dieter never reads Claude credentials.
 
-PROVIDER is openai, codex, or claude. Quotas are gateway-account scoped and
-combine accounts discovered by all online enrolled machines. Summary values
-show the lowest remaining window; separate account quotas are never summed.
+Accounts (any machine):
+  list     List accounts, their sign-in state and tightest usage window
+  add      Add a Claude or ChatGPT account; then sign in with login
+  rename   Rename an account
+  include  Count an account in usage summaries
+  exclude  Leave an account out of usage summaries
+  default  Make an account its provider's default for new conversations
+  remove   Remove an account; every machine signs it out and deletes its files
+
+On the target machine (this one, or global --machine ID|NAME):
+  login    Sign an account in with the provider's own sign-in
+  logout   Sign an account out
+  check    Verify an account's sign-in now
+  usage    Show plan usage and Dieter's token use; --refresh reads it now
+  reset    Spend one ChatGPT rate-limit reset credit
+
+ACCOUNT is an account ID (pa_...) or a unique case-insensitive label. Pass
+--account ID|LABEL to card, chat and schedule commands to pick the account a
+conversation runs on. Agent turns may list accounts and read usage; they
+cannot add, change, sign in or remove accounts.
 ```
 
-### dieter quota list
+### dieter provider list
 
 ```text
-Usage: dieter quota list [PROVIDER] [--format table|json|jsonl]
+Usage: dieter provider list [--provider claude|chatgpt] [--format table|json|jsonl|ids]
+
+List provider accounts. IDENTITY is the provider login the account is bound
+to by its first sign-in, USAGE the tightest plan window's remaining share and
+MACHINES how many machines reporting the account are signed in to it.
 ```
 
-### dieter quota watch
+### dieter provider add
 
 ```text
-Usage: dieter quota watch [PROVIDER] [--count N]
+Usage: dieter provider add claude|chatgpt --label LABEL [--method claude-code|codex|siwc] [--format text|json|id]
+
+Add an account. Its first verified sign-in binds it to that provider login
+for good. Claude accounts sign in with Claude Code (claude-code); ChatGPT
+accounts with Codex (codex, the default) or Sign in with ChatGPT (siwc).
+Then sign in on every machine that should run turns on it:
+  dieter [--machine ID|NAME] provider login ACCOUNT
 ```
 
-### dieter quota refresh
+### dieter provider rename
 
 ```text
-Usage: dieter quota refresh [PROVIDER] [--account KEY] [--format table|json]
-
-Claude refresh respects its five-minute polling interval and ten-minute failure cooldown.
+Usage: dieter provider rename ACCOUNT LABEL [--format text|json]
+Rename an account on every machine. Labels are one line of at most 60 characters.
 ```
 
-### dieter quota include
+### dieter provider include
 
 ```text
-Usage: dieter quota include PROVIDER --account KEY
+Usage: dieter provider include ACCOUNT [--format text|json]
+Count ACCOUNT in the provider usage summaries the apps show.
 ```
 
-### dieter quota exclude
+### dieter provider exclude
 
 ```text
-Usage: dieter quota exclude PROVIDER --account KEY
+Usage: dieter provider exclude ACCOUNT [--format text|json]
+Leave ACCOUNT out of the provider usage summaries the apps show.
 ```
 
-### dieter quota reset
+### dieter provider default
 
 ```text
-Usage: dieter quota reset openai --account KEY --confirm RESET
+Usage: dieter provider default ACCOUNT [--format text|json]
+Make ACCOUNT its provider's default: conversations started without --account use it.
+```
+
+### dieter provider remove
+
+```text
+Usage: dieter provider remove ACCOUNT --confirm REMOVE
+Remove an account. Every machine signs it out and deletes its local files.
+```
+
+### dieter provider login
+
+```text
+Usage: dieter provider login ACCOUNT [--device-code|--browser] [--code CODE] [--callback URL]
+
+Sign ACCOUNT in on the target machine (this one, or global --machine ID|NAME)
+with the provider's own sign-in: Claude Code for Claude accounts, Codex or
+Sign in with ChatGPT for ChatGPT accounts. Dieter never sees your password.
+
+By default Claude prints a URL: open it on any device, approve, then paste
+the code the page shows. ChatGPT prints a URL and a device code to enter
+there. --browser uses a URL that redirects to the machine's loopback
+instead: a browser on that machine finishes by itself; elsewhere, paste the
+http://localhost... address the browser could not open. On a terminal the
+code or address is read without echo; --code and --callback hand it over
+without prompting. Ctrl-C cancels the sign-in. Exits non-zero unless the
+sign-in succeeds.
+
+Options:
+  --device-code   Enter a code on the provider's device page
+  --browser       Redirect the browser to the machine's loopback
+  --code CODE     The code the provider's page shows
+  --callback URL  The loopback address the browser was sent to
+```
+
+### dieter provider logout
+
+```text
+Usage: dieter provider logout ACCOUNT [--format text|json]
+Sign ACCOUNT out on the target machine (this one, or global --machine ID|NAME).
+Other machines stay signed in.
+```
+
+### dieter provider check
+
+```text
+Usage: dieter provider check ACCOUNT [--format text|json]
+
+Verify ACCOUNT's sign-in on the target machine (this one, or global --machine
+ID|NAME) now, with the provider's own status check, and print the result.
+Exits non-zero unless the account is signed in there.
+```
+
+### dieter provider usage
+
+```text
+Usage: dieter provider usage [ACCOUNT] [--refresh] [--format table|json|jsonl]
+
+Show plan usage as the provider reports it: each window's remaining share,
+when it resets and when it was read, and the tokens Dieter's own turns used
+in the last 5 hours and 7 days, summed over machines. Without ACCOUNT, every
+account. --refresh reads usage now on the target machine (this one, or global
+--machine ID|NAME) for each account signed in there.
+```
+
+### dieter provider reset
+
+```text
+Usage: dieter provider reset ACCOUNT --confirm RESET [--key UUID]
+
+Spend one rate-limit reset credit of a ChatGPT account signed in on the target
+machine (this one, or global --machine ID|NAME). Each run prints a fresh
+idempotency key first; if the outcome is lost, rerun with --key KEY: a
+repeated key never spends a second credit.
+```
+
+### dieter provider token
+
+```text
+Usage: dieter provider token --turn
+
+Print the current access token of the running agent turn's own Sign in with
+ChatGPT account, and nothing else. Codex runs this as its provider auth
+command inside Dieter turns. It needs the turn's DIETER_TURN_TOKEN and talks
+only to the local daemon.
 ```
 
 ## dieter project (alias: projects)
@@ -720,6 +830,8 @@ Options:
   --model MODEL             Model for the first turn
   --effort EFFORT           Reasoning or thinking effort
   --provider-option K=V     Provider option; repeat as needed
+  --account ID|LABEL        Provider account (default: the provider's default;
+                            see dieter provider list)
   --labels LABELS           Comma-separated label IDs
   --workspace MODE          project or worktree
   --branch BRANCH           Optional worktree branch
@@ -800,12 +912,13 @@ Usage: dieter card fork [--at MESSAGE_ID] [--title TITLE] [--format json|id] CAR
 ### dieter card send
 
 ```text
-Usage: dieter card send [--message TEXT|--file FILE] [--attach FILE ...] [--provider P] [--model M] [--effort E] [--provider-option K=V] CARD
+Usage: dieter card send [--message TEXT|--file FILE] [--attach FILE ...] [--provider P] [--model M] [--effort E] [--provider-option K=V] [--account ID|LABEL] CARD
 
 Send a message as the human. It starts a turn, or queues behind the running turn
 with its model selection. Model, effort and mutable provider options apply to this
 message where supported; the provider stays fixed after the first message. Use
---effort default to reset reasoning.
+--effort default to reset reasoning. --account switches the provider account
+(ID or label, see dieter provider list) from this turn on.
 ```
 
 ### dieter card queue
@@ -880,9 +993,11 @@ Usage: dieter card rename --title TITLE CARD
 ### dieter card update
 
 ```text
-Usage: dieter card update [--title TITLE] [--prompt TEXT|--prompt-file FILE] [--provider P] [--model M] [--effort E] [--provider-option K=V] CARD
+Usage: dieter card update [--title TITLE] [--prompt TEXT|--prompt-file FILE] [--provider P] [--model M] [--effort E] [--provider-option K=V] [--account ID|LABEL] CARD
 
 The task brief and agent settings are editable only before the first turn.
+--account picks the provider account (ID or label, see dieter provider list);
+--account "" uses the provider's default. Changing --provider resets it.
 ```
 
 ### dieter card archive
@@ -954,6 +1069,8 @@ Options:
   --model MODEL             Model for the first turn
   --effort EFFORT           Reasoning or thinking effort
   --provider-option K=V     Provider option; repeat as needed
+  --account ID|LABEL        Provider account (default: the provider's default;
+                            see dieter provider list)
   --workspace MODE          project or worktree
   --branch BRANCH           Optional worktree branch
   --base-branch BRANCH      Optional worktree base branch
@@ -1033,12 +1150,13 @@ Usage: dieter chat fork [--at MESSAGE_ID] [--title TITLE] [--format json|id] CHA
 ### dieter chat send
 
 ```text
-Usage: dieter chat send [--message TEXT|--file FILE] [--attach FILE ...] [--provider P] [--model M] [--effort E] [--provider-option K=V] CHAT
+Usage: dieter chat send [--message TEXT|--file FILE] [--attach FILE ...] [--provider P] [--model M] [--effort E] [--provider-option K=V] [--account ID|LABEL] CHAT
 
 Send a message as the human. It starts a turn, or queues behind the running turn
 with its model selection. Model, effort and mutable provider options apply to this
 message where supported; the provider stays fixed after the first message. Use
---effort default to reset reasoning.
+--effort default to reset reasoning. --account switches the provider account
+(ID or label, see dieter provider list) from this turn on.
 ```
 
 ### dieter chat queue
@@ -1085,9 +1203,11 @@ Usage: dieter chat rename --title TITLE CHAT
 ### dieter chat update
 
 ```text
-Usage: dieter chat update [--title TITLE] [--prompt TEXT|--prompt-file FILE] [--provider P] [--model M] [--effort E] [--provider-option K=V] CHAT
+Usage: dieter chat update [--title TITLE] [--prompt TEXT|--prompt-file FILE] [--provider P] [--model M] [--effort E] [--provider-option K=V] [--account ID|LABEL] CHAT
 
 The task brief and agent settings are editable only before the first turn.
+--account picks the provider account (ID or label, see dieter provider list);
+--account "" uses the provider's default. Changing --provider resets it.
 ```
 
 ### dieter chat archive
@@ -2095,6 +2215,8 @@ Options:
   --labels ID,ID                     Board-label IDs
   --provider HARNESS --model MODEL --effort EFFORT
   --provider-option KEY=VALUE        Repeatable harness option
+  --account ID|LABEL                 Provider account (dieter provider list);
+                                     empty uses the provider's default
   --enabled=true|false
   --open-card skip_if_open|always
   --vault=true|false                 Cards it creates may use the account vault
@@ -2131,6 +2253,8 @@ Options:
   --labels ID,ID                     Board-label IDs
   --provider HARNESS --model MODEL --effort EFFORT
   --provider-option KEY=VALUE        Repeatable harness option
+  --account ID|LABEL                 Provider account (dieter provider list);
+                                     empty uses the provider's default
   --enabled=true|false
   --open-card skip_if_open|always
   --vault=true|false                 Cards it creates may use the account vault

@@ -92,8 +92,8 @@ internal fun paletteCommands(store: MobileStore): List<PaletteEntry> =
         PaletteEntry("open-folders", "Synced folders", "", Glyph.FOLDER) {
             store.openSection(DesktopSection.FOLDERS)
         },
-        PaletteEntry("open-usage", "Provider usage", "", Glyph.USAGE) {
-            store.openSection(DesktopSection.USAGE)
+        PaletteEntry("open-providers", "Open providers", "Claude and ChatGPT accounts", Glyph.KEY) {
+            store.openSection(DesktopSection.PROVIDERS)
         },
         PaletteEntry("open-devices", "Devices", "", Glyph.DEVICES) {
             store.openSection(DesktopSection.DEVICES)

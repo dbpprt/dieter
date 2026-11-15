@@ -20,7 +20,10 @@ import androidx.compose.ui.unit.dp
 import com.getdieter.client.v1.*
 import com.getdieter.mobile.app.*
 import com.getdieter.mobile.design.*
+import com.getdieter.mobile.navigation.*
 import com.getdieter.mobile.platform.*
+import com.getdieter.mobile.providers.ProviderAccountListRow
+import com.getdieter.mobile.providers.rememberProviders
 import com.getdieter.mobile.store.*
 
 @Composable
@@ -31,6 +34,7 @@ internal fun SettingsScreen(store: MobileStore) {
     val dynamic by store.theme.dynamicColor.collectAsState()
     val interfaceMode by store.layout.interfaceMode.collectAsState()
     val outbox by store.workspace.outbox.collectAsState()
+    val providers = rememberProviders(store)
     var signOut by remember { mutableStateOf(false) }
     var gatewayEditor by remember { mutableStateOf<GatewayEntry?>(null) }
     var addGateway by remember { mutableStateOf(false) }
@@ -178,6 +182,32 @@ internal fun SettingsScreen(store: MobileStore) {
                     }
                 }
                 if (session.error.isNotEmpty()) SectionFooter(session.error)
+            }
+            item("providers") {
+                SectionHeader("Providers")
+                val accounts =
+                    providers.groups.flatMap { group -> group.accounts.map { group to it } }
+                Group(accounts + listOf(null)) { entry, position ->
+                    if (entry == null)
+                        ListRow(
+                            if (accounts.isEmpty()) "Add a Claude or ChatGPT account"
+                            else "Manage providers",
+                            Modifier.testTag("settings-providers"),
+                            position = position,
+                            glyph = Glyph.KEY,
+                            accessory = Accessory.CHEVRON,
+                            onClick = { store.push(MobileRoute.Tool(ToolPage.PROVIDERS)) },
+                        )
+                    else
+                        ProviderAccountListRow(
+                            entry.second,
+                            position,
+                            Modifier.testTag("settings-provider-${entry.second.id}"),
+                            providerName = entry.first.provider_name,
+                        ) {
+                            store.push(MobileRoute.ProviderAccount(entry.second.id))
+                        }
+                }
             }
             item("gateways") {
                 SectionHeader("Gateways")

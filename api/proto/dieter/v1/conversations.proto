@@ -122,6 +122,8 @@ message SendMessageRequest {
   string client_id = 7;
   string command_id = 8;
   string message_id = 9;
+  // Provider account for this turn; empty keeps the conversation's account.
+  string account_id = 10;
 }
 
 message SendMessageResponse {

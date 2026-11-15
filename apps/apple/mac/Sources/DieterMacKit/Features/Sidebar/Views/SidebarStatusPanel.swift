@@ -2,7 +2,7 @@ import DieterClientAPI
 import DieterCore
 import SwiftUI
 
-/// The machines and provider quotas, in one recessed panel at the foot of the
+/// The machines and provider usage, in one recessed panel at the foot of the
 /// sidebar card.
 struct SidebarStatusPanel: View {
     @Environment(DieterStore.self) private var store
@@ -19,7 +19,7 @@ struct SidebarStatusPanel: View {
                 SidebarMachineRow(machine: machine)
             }
             Rectangle().fill(DieterTheme.hairline).frame(height: 1).padding(.horizontal, 8).padding(.vertical, 5)
-            ProviderQuotaSidebarBlock()
+            ProviderSidebarBlock()
         }
         .padding(.vertical, 6)
         .dieterInset(radius: 12)

@@ -7,7 +7,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
     case connection = "Connection"
     case devices = "Devices"
     case folders = "Folders"
-    case usage = "Usage"
+    case providers = "Providers"
     case prompts = "Prompts"
     case notifications = "Notifications"
     case island = "Island"
@@ -23,7 +23,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .connection: "network"
         case .devices: "lock.laptopcomputer"
         case .folders: "folder"
-        case .usage: "chart.bar.xaxis"
+        case .providers: "key.horizontal"
         case .prompts: "text.quote"
         case .notifications: "bell"
         case .island: "capsule.tophalf.filled"
@@ -39,7 +39,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .connection: "Machines, gateways, and authentication"
         case .devices: "Trusted devices and end-to-end encryption"
         case .folders: "This Mac's copies of your synced folders"
-        case .usage: "Provider accounts, limits, and reset windows"
+        case .providers: "Claude and ChatGPT accounts"
         case .prompts: "Global and scoped agent instructions"
         case .notifications: "macOS alerts for agent activity"
         case .island: "Live activity around the notch"
@@ -104,7 +104,7 @@ struct DieterSettingsView: View {
                         case .connection: ConnectionSettings()
                         case .devices: DevicesSettings()
                         case .folders: FolderSettingsPage()
-                        case .usage: UsageSettings()
+                        case .providers: ProvidersSettings()
                         case .prompts: PromptSettingsEditor()
                         case .notifications: NotificationSettings()
                         case .island: IslandSettings()

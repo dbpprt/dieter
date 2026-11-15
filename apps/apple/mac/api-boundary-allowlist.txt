@@ -84,7 +84,7 @@ Sources/DieterMacKit/Features/Projects/Model/ProjectSetup.swift builds the diete
 Sources/DieterMacKit/Features/Projects/Views/RemoteDirectoryBrowserSheet.swift browses dieter.v1 DirectoryListing/DirectoryEntries (AdminDirectories result)
 Sources/DieterMacKit/Features/Projects/Views/SharedConflictsView.swift resolves dieter.v1 PeerRecord/PeerVersion conflicts (ClientConflictRecord, AdminResolveConflict)
 
-# Files, terminals, schedules, machines, quotas, screens, settings: feature
+# Files, terminals, schedules, machines, screens, settings: feature
 # slices embed the dieter.v1 (or gateway) values these views render.
 Sources/DieterMacKit/Features/Files/Model/FilesModel.swift holds ClientFilesSlice's dieter.v1 FileEntries and FileDocument
 Sources/DieterMacKit/Features/Files/Views/FileDocumentActions.swift export and save-copy actions take the open dieter.v1 FileDocument
@@ -96,8 +96,6 @@ Sources/DieterMacKit/Features/Schedules/Views/ScheduleEditor.swift edits a diete
 Sources/DieterMacKit/Features/Schedules/Views/SchedulesView.swift renders dieter.v1 Schedules (name, enabled, cron, timezone, templates); ScheduleRow lacks them
 Sources/DieterMacKit/Features/Machines/Model/FleetModel.swift holds ClientTelemetrySlice's dieter.v1 MachineInformation and sends MachineOperationActions
 Sources/DieterMacKit/Features/Machines/Views/MachinesView.swift renders dieter.v1 MachineInformation, GPUDevices, MachineProcesses, and MachineOperationActions
-Sources/DieterMacKit/Features/ProviderQuotas/Model/CoreProviderQuotas.swift holds ClientQuotasSlice's gateway ProviderQuotaGroups and sends QuotaInclusion with a gateway ProviderQuotaProvider
-Sources/DieterMacKit/Features/ProviderQuotas/Views/ProviderQuotaViews.swift keys, tints, and picks symbols by ClientQuotaGroupRow's gateway ProviderQuotaProvider
 Sources/DieterMacKit/Features/Screens/Model/ScreenSessionModel.swift holds ClientScreenSlice's dieter.v1 RemoteDesktopCapabilities and RemoteDesktopSessionState
 Sources/DieterMacKit/Features/Screens/Rendering/RemoteDesktopController.swift sends ClientScreenCommands with dieter.v1 RemoteDesktop codec, quality, and pointer-button enums
 Sources/DieterMacKit/Features/Screens/Views/RemoteDesktopInputView.swift maps AppKit mouse buttons to dieter.v1 RemoteDesktopPointerButton.Button (ClientScreenButton.button)

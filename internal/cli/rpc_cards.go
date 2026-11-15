@@ -190,6 +190,8 @@ Options:
   --model MODEL             Model for the first turn
   --effort EFFORT           Reasoning or thinking effort
   --provider-option K=V     Provider option; repeat as needed
+  --account ID|LABEL        Provider account (default: the provider's default;
+                            see dieter provider list)
   --labels LABELS           Comma-separated label IDs
   --workspace MODE          project or worktree
   --branch BRANCH           Optional worktree branch
@@ -227,6 +229,7 @@ before the command to create on another enrolled machine.
 	effort := set.String("effort", "", "reasoning effort")
 	providerOptions := parameterFlags{}
 	set.Var(&providerOptions, "provider-option", "provider option KEY=VALUE")
+	account := set.String("account", "", "provider account ID or label")
 	labels := set.String("labels", "", "comma-separated label IDs")
 	workspaceMode := set.String("workspace", "", "project or worktree")
 	branch := set.String("branch", "", "worktree branch")
@@ -292,6 +295,9 @@ before the command to create on another enrolled machine.
 	}
 	client, rpcCtx, err := c.rpc(ctx)
 	if err != nil {
+		return err
+	}
+	if request.AccountId, err = providerAccountID(rpcCtx, client, *account); err != nil {
 		return err
 	}
 	var value *dieterv1.Card
@@ -710,7 +716,7 @@ func (c *CLI) rpcCardFork(args []string) error {
 }
 
 func (c *CLI) rpcCardSend(args []string) error {
-	const usage = "Usage: dieter card send [--message TEXT|--file FILE] [--attach FILE ...] [--provider P] [--model M] [--effort E] [--provider-option K=V] CARD\n\nSend a message as the human. It starts a turn, or queues behind the running turn\nwith its model selection. Model, effort and mutable provider options apply to this\nmessage where supported; the provider stays fixed after the first message. Use\n--effort default to reset reasoning.\n"
+	const usage = "Usage: dieter card send [--message TEXT|--file FILE] [--attach FILE ...] [--provider P] [--model M] [--effort E] [--provider-option K=V] [--account ID|LABEL] CARD\n\nSend a message as the human. It starts a turn, or queues behind the running turn\nwith its model selection. Model, effort and mutable provider options apply to this\nmessage where supported; the provider stays fixed after the first message. Use\n--effort default to reset reasoning. --account switches the provider account\n(ID or label, see dieter provider list) from this turn on.\n"
 	set := flags("card send")
 	message := set.String("message", "", "message text")
 	file := set.String("file", "", "message file or -")
@@ -721,6 +727,7 @@ func (c *CLI) rpcCardSend(args []string) error {
 	effort := set.String("effort", "", "reasoning effort")
 	providerOptions := parameterFlags{}
 	set.Var(&providerOptions, "provider-option", "provider option KEY=VALUE")
+	account := set.String("account", "", "provider account ID or label")
 	help, err := parse(set, args, c.scoped(usage), c.Out)
 	if help || err != nil {
 		return err
@@ -754,9 +761,13 @@ func (c *CLI) rpcCardSend(args []string) error {
 	if err != nil {
 		return err
 	}
+	accountID, err := providerAccountID(rpcCtx, client, *account)
+	if err != nil {
+		return err
+	}
 	response, err := client.SendMessage(rpcCtx, &dieterv1.SendMessageRequest{
 		CardId: set.Arg(0), Parts: messageParts(parts), Provider: *provider, Model: *modelName,
-		Effort: *effort, ProviderOptions: providerOptions, ClientId: "dieter-cli", CommandId: commandID,
+		Effort: *effort, ProviderOptions: providerOptions, ClientId: "dieter-cli", CommandId: commandID, AccountId: accountID,
 	})
 	if err != nil {
 		return err
@@ -953,7 +964,7 @@ func (c *CLI) rpcCardRename(args []string) error {
 }
 
 func (c *CLI) rpcCardUpdate(args []string) error {
-	const usage = "Usage: dieter card update [--title TITLE] [--prompt TEXT|--prompt-file FILE] [--provider P] [--model M] [--effort E] [--provider-option K=V] CARD\n\nThe task brief and agent settings are editable only before the first turn.\n"
+	const usage = "Usage: dieter card update [--title TITLE] [--prompt TEXT|--prompt-file FILE] [--provider P] [--model M] [--effort E] [--provider-option K=V] [--account ID|LABEL] CARD\n\nThe task brief and agent settings are editable only before the first turn.\n--account picks the provider account (ID or label, see dieter provider list);\n--account \"\" uses the provider's default. Changing --provider resets it.\n"
 	set := flags("card update")
 	provider, modelName, effort := &optional{}, &optional{}, &optional{}
 	set.Var(provider, "provider", "draft agent")
@@ -961,6 +972,8 @@ func (c *CLI) rpcCardUpdate(args []string) error {
 	set.Var(effort, "effort", "draft reasoning effort; default for provider default")
 	options := parameterFlags{}
 	set.Var(&options, "provider-option", "draft provider option KEY=VALUE; repeat to replace options")
+	account := &optional{}
+	set.Var(account, "account", "draft provider account ID or label; empty for the provider default")
 	title, prompt := &optional{}, &optional{}
 	set.Var(title, "title", "title")
 	set.Var(prompt, "prompt", "initial prompt")
@@ -996,9 +1009,9 @@ func (c *CLI) rpcCardUpdate(args []string) error {
 		return err
 	}
 	request := &dieterv1.UpdateCardRequest{CardId: detail.GetCard().GetId(), Title: titleValue, InitialPrompt: promptValue}
-	if provider.set || modelName.set || effort.set || len(options) > 0 {
+	if provider.set || modelName.set || effort.set || len(options) > 0 || account.set {
 		card := detail.GetCard()
-		config := &dieterv1.DraftAgentSettings{Provider: card.Provider, Model: card.Model, Effort: card.Effort, ProviderOptions: card.ProviderOptions}
+		config := &dieterv1.DraftAgentSettings{Provider: card.Provider, Model: card.Model, Effort: card.Effort, ProviderOptions: card.ProviderOptions, AccountId: card.ProviderAccountId}
 		if config.Effort == "" {
 			config.Effort = "default"
 		}
@@ -1007,6 +1020,8 @@ func (c *CLI) rpcCardUpdate(args []string) error {
 			config.Model = ""
 			config.Effort = ""
 			config.ProviderOptions = nil
+			// Accounts belong to one provider.
+			config.AccountId = ""
 		}
 		if modelName.set {
 			config.Model = modelName.value
@@ -1018,6 +1033,11 @@ func (c *CLI) rpcCardUpdate(args []string) error {
 		}
 		if len(options) > 0 {
 			config.ProviderOptions = options
+		}
+		if account.set {
+			if config.AccountId, err = providerAccountID(rpcCtx, client, account.value); err != nil {
+				return err
+			}
 		}
 		request.AgentSettings = config
 	}

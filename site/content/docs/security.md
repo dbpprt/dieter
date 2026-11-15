@@ -114,17 +114,17 @@ fill a pool that every machine and client shares.
 
 ## Storage and what the gateway sees
 
-| Location      | Stored data                                                                                                                                                                                                                                           |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Daemon        | Checkouts and local execution state; transcripts, files, schedules; shared metadata replicas; the trusted device list; encrypted vault replica and this machine's vault member key; local harness credentials in their normal configuration locations |
-| Gateway       | Account sessions, daemon identities, presence, routes, revocation metadata, the signed device roster, pairing requests for up to 15 minutes, and normalized credential-free provider quota snapshots                                                  |
-| Native client | Session credential, device key, the trusted device list, caches, drafts, and pending commands appropriate to that platform                                                                                                                            |
+| Location      | Stored data                                                                                                                                                                                                                                                                                    |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Daemon        | Checkouts and local execution state; transcripts, files, schedules; shared metadata replicas, provider accounts and their usage among them; the trusted device list; encrypted vault replica and this machine's vault member key; this machine's provider logins and other harness credentials |
+| Gateway       | Account sessions, daemon identities, presence, routes, revocation metadata, the signed device roster, and pairing requests for up to 15 minutes                                                                                                                                                |
+| Native client | Session credential, device key, the trusted device list, caches, drafts, and pending commands appropriate to that platform                                                                                                                                                                     |
 
-The gateway **does not store** repositories, transcripts, project files, schedules,
-provider credentials, or raw provider responses. It relays your calls only
-inside end-to-end encrypted connections, so it can neither read nor change
-them: chats, prompts, terminals, files, executions, Git, vault content, shared
-project records, screen signaling and screens.
+The gateway **does not store** repositories, transcripts, project files,
+schedules, provider accounts, usage or credentials, or raw provider responses.
+It relays your calls only inside end-to-end encrypted connections, so it can
+neither read nor change them: chats, prompts, terminals, files, executions, Git,
+vault content, shared project records, screen signaling and screens.
 
 It still sees metadata:
 
@@ -133,21 +133,36 @@ It still sees metadata:
 - machine names, presence and direct route addresses;
 - whether a machine can share its screen;
 - when relay tunnels open and close, and how many bytes they carry;
-- client IP addresses and TURN allocations;
-- provider quota snapshots.
+- client IP addresses and TURN allocations.
 
 A gateway can refuse service, and it can withhold changes to the device list
 from some devices until they talk to each other. None of this protects a
 machine whose own user account is compromised, for example by a prompt-injected
 agent.
 
-Quota snapshots may include a bounded account display email when returned by the
-provider's structured account API. Opaque account keys are account-scoped HMACs,
-not raw provider account IDs.
-
 Agent model requests follow your provider's configuration. Cloud model providers
 may receive prompts, code, and tool output. Dieter does not make that inference
 local or replace the provider's data policy.
+
+## Provider accounts
+
+[Provider accounts](/docs/providers/) sync between your machines; logins do
+not. Each machine signs in to an account on its own and keeps that login:
+Claude Code keeps it in its own store (a macOS Keychain item, or a file on
+Linux) for the account's directory under `DIETER_HOME`, and Codex and Sign in
+with ChatGPT tokens stay in user-only files there. Dieter never reads Claude
+logins. Accounts, each machine's sign-in state and usage replicate between your
+machines inside the end-to-end encrypted connections and never reach the
+gateway. Apps see sign-in pages, device codes and the codes you paste, never a
+token.
+
+A code you paste, or a browser address you forward, travels to the machine
+inside the encrypted connection. It works only together with a secret that
+never leaves the sign-in process on that machine, and Dieter never logs it.
+Agents can list accounts and choose one for the work they create, but cannot
+add or remove accounts or sign a machine in or out. They still run as your
+user, so an agent that reads `DIETER_HOME` could read a machine's Codex tokens,
+just as it could read `~/.codex`.
 
 ## Vault
 
@@ -187,6 +202,10 @@ token, with ten seconds of clock tolerance.
 its revocation request, deletes its key and gateway credential, and leaves
 projects and conversations intact. Clients stop recovery on revocation.
 Read-subscription retries do not restart agents or processes.
+
+Neither removal nor unenrollment signs a machine out of its
+[provider accounts](/docs/providers/#sign-out-and-remove). Sign it out first,
+or end those sessions in your Claude and ChatGPT account settings.
 
 ## Native sessions and device keys
 

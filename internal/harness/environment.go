@@ -22,6 +22,11 @@ type Environment struct {
 	// archive this release binary was built with (ReleaseRuntimeArchive);
 	// source builds have none and install with npm.
 	RuntimeArchive RuntimeArchive
+	// CodexModelHomes lists Codex homes whose models_cache.json may describe
+	// the models Codex offers: Dieter's shared Codex home and the provider
+	// accounts' auth homes. Discovery reads the newest cache among them, then
+	// the host's CODEX_HOME.
+	CodexModelHomes func() []string
 }
 
 // runtimeArchive is the prebuilt runtime this environment installs, if any.

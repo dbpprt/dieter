@@ -11,6 +11,10 @@ import com.getdieter.api.v1.MessagePart
 import com.getdieter.api.v1.Project
 import com.getdieter.core.board.Lanes
 import com.getdieter.core.presentation.Counts
+import com.getdieter.core.providers.AgentAccountRules
+import com.getdieter.core.providers.AgentAccounts
+import com.getdieter.core.providers.ProviderKinds
+import com.getdieter.core.providers.ProvidersView
 import com.getdieter.core.runtime.CoreLogger
 import com.getdieter.core.selection.AgentControls
 import com.getdieter.core.selection.Selections
@@ -114,6 +118,8 @@ data class CreationDestinations(
     val projectMachines: Map<String, String> = emptyMap(),
     /** Daemon ID → its loaded agent catalog. */
     val catalogs: Map<String, List<Harness>> = emptyMap(),
+    /** The account's provider accounts and where each is signed in. */
+    val providers: ProvidersView = ProvidersView(),
 )
 
 /** A new task or chat checked against its destination ([Creation.plan]). */
@@ -129,6 +135,8 @@ data class CreationPlan(
      * What the agent pickers offer: the catalog of [Creation.catalogMachine]; empty while it loads.
      */
     val harnesses: List<Harness>,
+    /** Provider accounts judged on [daemonId]. */
+    val accounts: AgentAccounts = AgentAccounts(),
 ) {
     /**
      * The catalog [input] is validated against; null while it loads, or for a chat whose machine is
@@ -143,7 +151,7 @@ data class CreationPlan(
 
     /** The agent pickers for [input]'s selection. */
     val controls: AgentControls
-        get() = AgentControls(input.selection, harnesses)
+        get() = AgentControls(input.selection, harnesses, accounts = accounts)
 
     val destinationStatus: String
         get() = Creation.destinationStatus(input.project, checkout, machineOnline, catalogState)
@@ -393,6 +401,7 @@ object Creation {
             auto_generate_title = Titles.generated(input.title, input.prompt),
             vault_access = input.vaultAccess,
             mail_access = input.mailAccess,
+            account_id = input.selection.account_id,
         )
     }
 
@@ -456,13 +465,14 @@ object Creation {
             machineOnline = online,
             catalogState = catalogState(checkout, loaded, online),
             harnesses = catalogMachine?.let(destinations.catalogs::get).orEmpty(),
+            accounts = AgentAccountRules.forMachine(destinations.providers, daemonId),
         )
     }
 }
 
 /**
- * Creation choices remembered on this device: last agent, workspace mode, and per-project board and
- * checkout.
+ * Creation choices remembered on this device: last agent, each provider's last account, workspace
+ * mode, and per-project board and checkout.
  */
 class CreationMemory(private val storage: CoreStorage, private val logger: CoreLogger) {
     private val mutableState = MutableStateFlow(load())
@@ -473,14 +483,19 @@ class CreationMemory(private val storage: CoreStorage, private val logger: CoreL
             runCatching { CreationPreferences.ADAPTER.decode(it) }.getOrNull()
         } ?: CreationPreferences(workspace_mode = WorkspaceMode.WORKTREE.wire)
 
-    /** The remembered agent, validated against [harnesses]. */
+    /** The remembered agent, validated against [harnesses], with its provider's last account. */
     fun selection(harnesses: List<Harness>): HarnessSelection? {
         val saved = state.value
         return Selections.resolve(
-            HarnessSelection(saved.provider, saved.model, saved.effort, saved.provider_options),
-            harnesses,
-        )
+                HarnessSelection(saved.provider, saved.model, saved.effort, saved.provider_options),
+                harnesses,
+            )
+            ?.let { it.copy(account_id = account(it.provider)) }
     }
+
+    /** The account last chosen for [harness]'s provider; "" for none. */
+    fun account(harness: String): String =
+        ProviderKinds.forHarness(harness)?.let { state.value.accounts[it] }.orEmpty()
 
     val workspaceMode: WorkspaceMode
         get() = WorkspaceMode.parse(state.value.workspace_mode)
@@ -494,7 +509,7 @@ class CreationMemory(private val storage: CoreStorage, private val logger: CoreL
         checkoutId: String? = null,
     ) {
         var next = state.value
-        if (selection != null)
+        if (selection != null) {
             next =
                 next.copy(
                     provider = selection.provider,
@@ -502,6 +517,11 @@ class CreationMemory(private val storage: CoreStorage, private val logger: CoreL
                     effort = selection.effort,
                     provider_options = selection.provider_options,
                 )
+            // Each provider remembers its own account; choosing none keeps the last one.
+            val provider = ProviderKinds.forHarness(selection.provider)
+            if (provider != null && selection.account_id.isNotEmpty())
+                next = next.copy(accounts = next.accounts + (provider to selection.account_id))
+        }
         if (workspaceMode != null) next = next.copy(workspace_mode = workspaceMode.wire)
         if (projectId != null) {
             next =

@@ -95,7 +95,9 @@ type CreateConversationRequest struct {
 	VaultAccess bool `protobuf:"varint,25,opt,name=vault_access,json=vaultAccess,proto3" json:"vault_access,omitempty"`
 	// Let this conversation's agent turns send the user mail (MailService).
 	// An agent turn may grant it only when its own conversation has it.
-	MailAccess    bool `protobuf:"varint,26,opt,name=mail_access,json=mailAccess,proto3" json:"mail_access,omitempty"`
+	MailAccess bool `protobuf:"varint,26,opt,name=mail_access,json=mailAccess,proto3" json:"mail_access,omitempty"`
+	// Provider account for the first turn; empty uses the provider default.
+	AccountId     string `protobuf:"bytes,27,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -289,6 +291,13 @@ func (x *CreateConversationRequest) GetMailAccess() bool {
 		return x.MailAccess
 	}
 	return false
+}
+
+func (x *CreateConversationRequest) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
+	}
+	return ""
 }
 
 type ListChatsRequest struct {
@@ -865,6 +874,7 @@ type DraftAgentSettings struct {
 	Model           string                 `protobuf:"bytes,2,opt,name=model,proto3" json:"model,omitempty"`
 	Effort          string                 `protobuf:"bytes,3,opt,name=effort,proto3" json:"effort,omitempty"`
 	ProviderOptions map[string]string      `protobuf:"bytes,4,rep,name=provider_options,json=providerOptions,proto3" json:"provider_options,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	AccountId       string                 `protobuf:"bytes,5,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -925,6 +935,13 @@ func (x *DraftAgentSettings) GetProviderOptions() map[string]string {
 		return x.ProviderOptions
 	}
 	return nil
+}
+
+func (x *DraftAgentSettings) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
+	}
+	return ""
 }
 
 type UpdateCardRequest struct {
@@ -1105,7 +1122,7 @@ const file_dieter_v1_cards_proto_rawDesc = "" +
 	"\n" +
 	"\x15dieter/v1/cards.proto\x12\tdieter.v1\x1a\x16dieter/v1/common.proto\x1a\x1bgoogle/protobuf/empty.proto\"6\n" +
 	"\rCardsResponse\x12%\n" +
-	"\x05cards\x18\x01 \x03(\v2\x0f.dieter.v1.CardR\x05cards\"\xbe\a\n" +
+	"\x05cards\x18\x01 \x03(\v2\x0f.dieter.v1.CardR\x05cards\"\xdd\a\n" +
 	"\x19CreateConversationRequest\x12\x1f\n" +
 	"\vcheckout_id\x18\x18 \x01(\tR\n" +
 	"checkoutId\x12\x1d\n" +
@@ -1135,7 +1152,9 @@ const file_dieter_v1_cards_proto_rawDesc = "" +
 	"\x13remote_publish_mode\x18\x14 \x01(\tR\x11remotePublishMode\x12!\n" +
 	"\fvault_access\x18\x19 \x01(\bR\vvaultAccess\x12\x1f\n" +
 	"\vmail_access\x18\x1a \x01(\bR\n" +
-	"mailAccess\x1aB\n" +
+	"mailAccess\x12\x1d\n" +
+	"\n" +
+	"account_id\x18\x1b \x01(\tR\taccountId\x1aB\n" +
 	"\x14ProviderOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"=\n" +
@@ -1177,12 +1196,14 @@ const file_dieter_v1_cards_proto_rawDesc = "" +
 	"\x05title\x18\x02 \x01(\tR\x05title\"Q\n" +
 	"\x10MergeCardRequest\x12\x17\n" +
 	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12$\n" +
-	"\x0etarget_card_id\x18\x02 \x01(\tR\ftargetCardId\"\x81\x02\n" +
+	"\x0etarget_card_id\x18\x02 \x01(\tR\ftargetCardId\"\xa0\x02\n" +
 	"\x12DraftAgentSettings\x12\x1a\n" +
 	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x14\n" +
 	"\x05model\x18\x02 \x01(\tR\x05model\x12\x16\n" +
 	"\x06effort\x18\x03 \x01(\tR\x06effort\x12]\n" +
-	"\x10provider_options\x18\x04 \x03(\v22.dieter.v1.DraftAgentSettings.ProviderOptionsEntryR\x0fproviderOptions\x1aB\n" +
+	"\x10provider_options\x18\x04 \x03(\v22.dieter.v1.DraftAgentSettings.ProviderOptionsEntryR\x0fproviderOptions\x12\x1d\n" +
+	"\n" +
+	"account_id\x18\x05 \x01(\tR\taccountId\x1aB\n" +
 	"\x14ProviderOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xaf\x01\n" +

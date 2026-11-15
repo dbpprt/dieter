@@ -1,0 +1,132 @@
+{
+  "ranAt": "2026-11-13T11:50:56.464Z",
+  "platform": "darwin-arm64",
+  "claudeLogin": {
+    "version": "2.1.317 (Claude Code)",
+    "status": "{\n  \"loggedIn\": false,\n  \"authMethod\": \"none\",\n  \"apiProvider\": \"firstParty\",\n  \"analyticsDisabled\": false,\n  \"projectsDirectory\": \"<tmp>/claude-login/projects\",\n  \"configDirectory\": \"<tmp>/claude-login\"\n}",
+    "loginOutput": "Opening browser to sign in…\nIf the browser didn't open, visit: https://claude.com/cai/oauth/authorize?code=true&client_id=9d1c250a-e61b-44d9-88ed-5944d1962f5e&response_type=code&redirect_uri=https%3A%2F%2Fplatform.claude.com%2Foauth%2Fcode%2Fcallback&scope=org%3Acreate_api_key+user%3Aprofile+user%3Ainference+user%3Asessions%3Aclaude_code+user%3Amcp_servers+user%3Afile_upload+user%3Aplugins&code_challenge=<redacted>&code_challenge_method=S256&state=<redacted>\nPaste code here if prompted >",
+    "browserHookCalls": [
+      "https://claude.com/cai/oauth/authorize?code=true&client_id=9d1c250a-e61b-44d9-88ed-5944d1962f5e&response_type=code&redirect_uri=http%3A%2F%2Flocalhost%3A63596%2Fcallback&scope=org%3Acreate_api_key+user%3Aprofile+user%3Ainference+user%3Asessions%3Aclaude_code+user%3Amcp_servers+user%3Afile_upload+user%3Aplugins&code_challenge=<redacted>&code_challenge_method=S256&state=<redacted>"
+    ]
+  },
+  "claudeResumeAcrossConfigDirs": {
+    "created": "Failed to authenticate. API Error: 401 OAuth access token is invalid.",
+    "transcripts": [
+      "-private-var-folders-nk-8324zqs10fq249x2ythzxc540000gn-T-dieter-provider-accounts-V1Xf10-work/6f1c2a7e-1111-4c3d-9e2f-0123456789ab.jsonl"
+    ],
+    "sharedProjectsResume": "Failed to authenticate. API Error: 401 OAuth access token is invalid.",
+    "isolatedResume": "No conversation found with session ID: 6f1c2a7e-1111-4c3d-9e2f-0123456789ab"
+  },
+  "codexProtocol": {
+    "version": "codex-cli 0.166.0",
+    "loginVariants": [
+      {
+        "type": "apiKey",
+        "fields": ["apiKey"]
+      },
+      {
+        "type": "chatgpt",
+        "fields": ["appBrand", "codexStreamlinedLogin", "useHostedLoginSuccessPage"]
+      },
+      {
+        "type": "chatgptDeviceCode",
+        "fields": []
+      },
+      {
+        "type": "chatgptAuthTokens",
+        "fields": ["accessToken", "chatgptAccountId", "chatgptPlanType"],
+        "note": "[UNSTABLE] FOR OPENAI INTERNAL USE ONLY - DO NOT USE. The access token must cont"
+      },
+      {
+        "type": "amazonBedrock",
+        "fields": ["apiKey", "region"],
+        "note": "[UNSTABLE] Managed Amazon Bedrock login is experimental."
+      },
+      {
+        "type": "amazonBedrockAccessKeys",
+        "fields": ["accessKeyId", "region", "secretAccessKey", "sessionToken"],
+        "note": "[UNSTABLE] Managed Amazon Bedrock AWS access key login is experimental."
+      }
+    ],
+    "accountServerRequests": ["\"account/chatgptAuthTokens/refresh\""]
+  },
+  "codexBrowserLogin": {
+    "codexHome": "<tmp>/codex-chatgpt",
+    "account": {
+      "account": null,
+      "requiresOpenaiAuth": true,
+      "workspaceRouting": null
+    },
+    "login": {
+      "type": "chatgpt",
+      "loginId": "fa99ca42-c0fe-4aba-9872-78f9710ce54f",
+      "authUrl": "https://auth.openai.com/oauth/authorize?response_type=code&client_id=app_EMoamEEZ73f0CkXaXp7hrann&redirect_uri=http%3A%2F%2F127.0.0.1%3A1455%2Fauth%2Fcallback&code_challenge=<redacted>&code_challenge_method=S256&state=<redacted>&scope=openid+profile+email+offline_access+api.connectors.read+api.connectors.invoke&id_token_add_organizations=true&codex_cli_simplified_flow=true&originator=dieter_spike"
+    },
+    "cancel": {
+      "status": "canceled"
+    },
+    "browserHookCalls": [],
+    "notifications": ["remoteControl/status/changed"],
+    "codexHomeEntries": [
+      ".tmp",
+      "goals_1.sqlite",
+      "goals_1.sqlite-shm",
+      "goals_1.sqlite-wal",
+      "installation_id",
+      "logs_2.sqlite",
+      "logs_2.sqlite-shm",
+      "logs_2.sqlite-wal",
+      "memories_1.sqlite",
+      "memories_1.sqlite-shm",
+      "memories_1.sqlite-wal",
+      "queue_1.sqlite",
+      "queue_1.sqlite-shm",
+      "queue_1.sqlite-wal",
+      "skills",
+      "state_5.sqlite",
+      "state_5.sqlite-shm",
+      "state_5.sqlite-wal",
+      "tmp"
+    ]
+  },
+  "codexDeviceCodeLogin": {
+    "codexHome": "<tmp>/codex-chatgptDeviceCode",
+    "account": {
+      "account": null,
+      "requiresOpenaiAuth": true,
+      "workspaceRouting": null
+    },
+    "login": {
+      "type": "chatgptDeviceCode",
+      "loginId": "24bf44c6-14d0-4e79-844f-6cdc24e26893",
+      "verificationUrl": "https://auth.openai.com/codex/device",
+      "userCode": "<redacted>"
+    },
+    "cancel": {
+      "status": "canceled"
+    },
+    "browserHookCalls": [],
+    "notifications": ["remoteControl/status/changed"],
+    "codexHomeEntries": [
+      ".tmp",
+      "goals_1.sqlite",
+      "goals_1.sqlite-shm",
+      "goals_1.sqlite-wal",
+      "installation_id",
+      "logs_2.sqlite",
+      "logs_2.sqlite-shm",
+      "logs_2.sqlite-wal",
+      "memories_1.sqlite",
+      "memories_1.sqlite-shm",
+      "memories_1.sqlite-wal",
+      "queue_1.sqlite",
+      "queue_1.sqlite-shm",
+      "queue_1.sqlite-wal",
+      "skills",
+      "state_5.sqlite",
+      "state_5.sqlite-shm",
+      "state_5.sqlite-wal",
+      "tmp"
+    ]
+  }
+}

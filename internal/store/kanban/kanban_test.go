@@ -176,7 +176,7 @@ func TestUpdateCardEditsOnlyAnUnsentTask(t *testing.T) {
 	}
 }
 
-func TestUpdateCardCachePersistsAndClearsProviderAccountKey(t *testing.T) {
+func TestUpdateCardCachePersistsAndClearsProviderAccountID(t *testing.T) {
 	t.Parallel()
 	s, project, board := testkit.BoardStore(t, model.WorkflowReview)
 	card, err := s.Kanban.CreateCard(kanban.CreateCardInput{
@@ -185,14 +185,14 @@ func TestUpdateCardCachePersistsAndClearsProviderAccountKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	accountKey := "owner_scoped_account_key"
-	updated, err := s.Kanban.UpdateCardCache(card.ID, kanban.CardCacheInput{ProviderAccountKey: &accountKey})
-	if err != nil || updated.ProviderAccountKey != accountKey {
+	accountID := "pa_abcdefghijklmnopqrstuvwxyz"
+	updated, err := s.Kanban.UpdateCardCache(card.ID, kanban.CardCacheInput{ProviderAccountID: &accountID})
+	if err != nil || updated.ProviderAccountID != accountID {
 		t.Fatalf("provider account update = %#v, %v", updated, err)
 	}
 	empty := ""
-	updated, err = s.Kanban.UpdateCardCache(card.ID, kanban.CardCacheInput{ProviderAccountKey: &empty})
-	if err != nil || updated.ProviderAccountKey != "" {
+	updated, err = s.Kanban.UpdateCardCache(card.ID, kanban.CardCacheInput{ProviderAccountID: &empty})
+	if err != nil || updated.ProviderAccountID != "" {
 		t.Fatalf("provider account clear = %#v, %v", updated, err)
 	}
 }

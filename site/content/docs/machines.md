@@ -127,6 +127,11 @@ dieter --machine MACHINE_ID device sync  # also offer this machine's roster to a
 `--machine`; `init` and `recover` run only on the machine itself. Agent turns
 cannot change device trust.
 
+Removing a machine does not sign it out of its Claude and ChatGPT accounts.
+Before you remove one you still control, sign it out on the Providers page or
+with `dieter --machine MACHINE_ID provider logout ACCOUNT`; see
+[provider accounts](/docs/providers/#sign-out-and-remove).
+
 If every trusted device is lost, set up a machine with `dieter setup`; it waits
 with a code. Add it with the recovery key instead, then approve your other
 devices from it:
@@ -293,5 +298,7 @@ storage or `identity.json` by hand; see `dieter daemon recover --help`.
 On the machine being removed, run `dieter daemon unenroll`. It removes the
 machine from your trusted devices, revokes its gateway identity, and deletes
 its key and gateway credential while retaining project data, conversations,
-schedules, and harness settings. Enrolling it again creates a new machine that
-a trusted device approves.
+schedules, and harness settings. It keeps its provider logins; sign it out of
+its [provider accounts](/docs/providers/#sign-out-and-remove) first if it
+should not keep them. Enrolling it again creates a new machine that a trusted
+device approves.

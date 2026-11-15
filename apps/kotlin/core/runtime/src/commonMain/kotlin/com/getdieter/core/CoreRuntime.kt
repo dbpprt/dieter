@@ -70,7 +70,12 @@ import com.getdieter.core.outbox.OutboxPolicy
 import com.getdieter.core.outbox.OutboxView
 import com.getdieter.core.platform.Platform
 import com.getdieter.core.presentation.LiveActivities
-import com.getdieter.core.quotas.ProviderQuotas
+import com.getdieter.core.providers.ProviderAccounts
+import com.getdieter.core.providers.ProviderCommands
+import com.getdieter.core.providers.ProviderMachine
+import com.getdieter.core.providers.ProviderRecords
+import com.getdieter.core.providers.ProviderSignIn
+import com.getdieter.core.providers.providerMachines
 import com.getdieter.core.routing.RouteKind
 import com.getdieter.core.routing.RouteSelector
 import com.getdieter.core.routing.RoutingPolicy
@@ -226,8 +231,10 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
                 schedules.stop()
                 telemetry.reset()
                 projectWorkspaces.reset()
-                quotas.reset()
                 folders.bind(prepared)
+                providerSignIn.reset()
+                providerCommands.reset()
+                providers.reset()
                 gatewayListeners.forEach { it() }
             },
         )
@@ -264,7 +271,11 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
     val schedules = Schedules(sessions, workspace, choice, scope, metadata)
     val telemetry = MachineTelemetry(sessions, scope)
     val projectWorkspaces = ProjectWorkspaces(sessions, workspace, choice)
-    val quotas = ProviderQuotas(platform.logger)
+    /** Claude and ChatGPT accounts, their sign-ins on each machine and their usage. */
+    val providers = ProviderAccounts()
+    private val providerDaemons = sessions.providerMachines()
+    val providerSignIn = ProviderSignIn(providers, providerDaemons, scope, platform.logger)
+    val providerCommands = ProviderCommands(providers, providerSignIn, providerDaemons)
     private var gatewayStorage: CoreStorage? = null
     val terminalPumps = TerminalInputPumps(sessions, scope)
     val terminalSelections = TerminalSelections { gatewayStorage }
@@ -473,7 +484,6 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
                     }
             }
         }
-        scope.launch { quotas.run(connection.session.map { it?.client }.distinctUntilChanged()) }
         // A home daemon's folder head moved while Dieter is open: keep in sync live.
         scope.launch {
             accountSync.snapshot
@@ -483,6 +493,32 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
                     for ((machine, byFolder) in heads) for ((folderId, head) in byFolder) folders
                         .headMoved(folderId, machine, head.index_id, head.sequence)
                 }
+        }
+        // Provider records are read from the account replica, so they show offline from cache;
+        // each login record is keyed by the daemon that wrote it, mapped to its machine.
+        scope.launch {
+            providers.run(
+                accountSync.snapshot
+                    .map { snapshot ->
+                        Triple(
+                            snapshot.kv[ProviderRecords.ACCOUNTS].orEmpty(),
+                            snapshot.kv[ProviderRecords.DEFAULTS].orEmpty(),
+                            snapshot.kv[ProviderRecords.LOGINS].orEmpty(),
+                        )
+                    }
+                    .distinctUntilChanged()
+                    .map { (accounts, defaults, logins) ->
+                        val directory = accountSync.snapshot.value.directory
+                        val records = ProviderRecords.decode(accounts, defaults, logins)
+                        records.copy(
+                            logins =
+                                records.logins.map {
+                                    it.copy(daemonId = directory.machine(it.daemonId))
+                                }
+                        )
+                    },
+                providerMachineList(),
+            )
         }
         scope.launch {
             var known = emptyMap<String, String>()
@@ -510,6 +546,26 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
             ) { session, machines, routes, trusted ->
                 if (session == null || !trusted) emptyList()
                 else MachineChoice.ordered(machines, routes)
+            }
+            .distinctUntilChanged()
+
+    /** The account's machines as provider surfaces show them. */
+    private fun providerMachineList(): Flow<List<ProviderMachine>> =
+        combine(connection.machines, reachableMachines(), sessions.routes) {
+                directory,
+                reachable,
+                routes ->
+                val takesCalls = reachable.toSet()
+                directory.all.map { machine ->
+                    ProviderMachine(
+                        id = machine.id,
+                        name = machine.name.ifBlank { machine.id },
+                        online = machine.online(directory.evaluatedAt),
+                        reachable = machine.id in takesCalls,
+                        local =
+                            machine.id in takesCalls && routes[machine.id]?.kind == RouteKind.LOCAL,
+                    )
+                }
             }
             .distinctUntilChanged()
 
@@ -662,6 +718,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
                 metadata.machines.value
                     .mapNotNull { (id, machine) -> machine.harnesses?.let { id to it.harnesses } }
                     .toMap(),
+            providers = providers.view.value,
         )
 
     /**

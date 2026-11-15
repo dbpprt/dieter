@@ -273,6 +273,114 @@ internal object DesktopFixture {
             state_title = "All states",
         )
 
+    /** Work (Claude) signed in on the mini with its usage; Personal (ChatGPT) signed in nowhere. */
+    val providers =
+        ProvidersSlice(
+            groups =
+                listOf(
+                    ProviderGroupRow(
+                        provider = "claude",
+                        provider_name = "Claude",
+                        summary = "1 account",
+                        default_account_id = "pa_work",
+                        accounts =
+                            listOf(
+                                ProviderAccountRow(
+                                    id = "pa_work",
+                                    label = "Work",
+                                    identity = "alice@example.com",
+                                    subtitle = "Max · Claude Code sign-in",
+                                    method = "claude-code",
+                                    is_default = true,
+                                    included = true,
+                                    remaining = 62,
+                                    severity = ProviderSeverity.PROVIDER_SEVERITY_NORMAL,
+                                    windows =
+                                        listOf(
+                                            ProviderWindowRow(
+                                                id = "five_hour",
+                                                name = "5 hour",
+                                                remaining = 62,
+                                                severity =
+                                                    ProviderSeverity.PROVIDER_SEVERITY_NORMAL,
+                                            ),
+                                            ProviderWindowRow(
+                                                id = "weekly",
+                                                name = "Weekly",
+                                                remaining = 88,
+                                                severity =
+                                                    ProviderSeverity.PROVIDER_SEVERITY_NORMAL,
+                                            ),
+                                        ),
+                                    machines =
+                                        listOf(
+                                            ProviderMachineRow(
+                                                daemon_id = "mini",
+                                                name = "Home mini",
+                                                online = true,
+                                                state = "signed_in",
+                                                state_label = "Signed in",
+                                                detail = "alice@example.com · verified 2m ago",
+                                                can_sign_out = true,
+                                                can_check = true,
+                                            ),
+                                            ProviderMachineRow(
+                                                daemon_id = "mbp",
+                                                name = "MacBook Pro",
+                                                state = "not_signed_in",
+                                                state_label = "Not signed in",
+                                            ),
+                                        ),
+                                )
+                            ),
+                    ),
+                    ProviderGroupRow(
+                        provider = "chatgpt",
+                        provider_name = "ChatGPT",
+                        summary = "1 account",
+                        accounts =
+                            listOf(
+                                ProviderAccountRow(
+                                    id = "pa_personal",
+                                    label = "Personal",
+                                    identity = "Not signed in yet",
+                                    method = "codex",
+                                    included = true,
+                                    remaining = -1,
+                                    status = "Usage not reported",
+                                    machines =
+                                        listOf(
+                                            ProviderMachineRow(
+                                                daemon_id = "mini",
+                                                name = "Home mini",
+                                                online = true,
+                                                state = "not_signed_in",
+                                                state_label = "Not signed in",
+                                                can_sign_in = true,
+                                            )
+                                        ),
+                                )
+                            ),
+                    ),
+                ),
+            summary =
+                ProviderSummary(
+                    items =
+                        listOf(
+                            ProviderSummaryItem(
+                                provider = "claude",
+                                provider_name = "Claude",
+                                remaining = 62,
+                                severity = ProviderSeverity.PROVIDER_SEVERITY_NORMAL,
+                                text = "Claude 62% left",
+                                account_id = "pa_work",
+                            )
+                        ),
+                    text = "62% left",
+                    severity = ProviderSeverity.PROVIDER_SEVERITY_NORMAL,
+                ),
+        )
+
     fun conversation(id: String) =
         ConversationSlice(
             card_id = id,
@@ -326,6 +434,9 @@ internal object DesktopFixture {
                 ),
         )
     }
+
+    fun publishProviders(core: FakeMobileCore) =
+        core.publish(Slice.SLICE_PROVIDERS, update = Update(providers = providers))
 
     fun publishBoard(core: FakeMobileCore) =
         core.publish(Slice.SLICE_BOARD_VIEW, MobileStore.BOARD_SCOPE, Update(board_view = board))

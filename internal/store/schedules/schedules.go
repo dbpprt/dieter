@@ -34,6 +34,7 @@ type Input struct {
 	LabelIDs                                                  []string
 	ProviderOptions                                           map[string]string
 	Enabled, VaultAccess, MailAccess                          bool
+	AccountID                                                 string
 }
 
 type Page struct {
@@ -357,7 +358,8 @@ func (s *Store) Create(input Input) (model.Schedule, error) {
 		Enabled: input.Enabled, Action: input.Action, TitleTemplate: input.TitleTemplate,
 		PromptTemplate: input.PromptTemplate, Provider: input.Provider, Model: input.Model,
 		Effort: strings.TrimSpace(input.Effort), ProviderOptions: home.CloneStringMap(input.ProviderOptions),
-		LabelIDs: labels, WorkspaceMode: input.WorkspaceMode, VaultAccess: input.VaultAccess, MailAccess: input.MailAccess, OpenCardPolicy: input.OpenCardPolicy,
+		AccountID: strings.TrimSpace(input.AccountID),
+		LabelIDs:  labels, WorkspaceMode: input.WorkspaceMode, VaultAccess: input.VaultAccess, MailAccess: input.MailAccess, OpenCardPolicy: input.OpenCardPolicy,
 		MisfirePolicy: input.MisfirePolicy, NextRunAt: input.NextRunAt,
 		CreatedAt: now, UpdatedAt: now,
 	}
@@ -610,6 +612,7 @@ func (s *Store) Update(ref string, input Input) (model.Schedule, error) {
 	current.TitleTemplate, current.PromptTemplate = input.TitleTemplate, input.PromptTemplate
 	current.Provider, current.Model, current.Effort, current.LabelIDs = input.Provider, input.Model, strings.TrimSpace(input.Effort), labels
 	current.ProviderOptions = home.CloneStringMap(input.ProviderOptions)
+	current.AccountID = strings.TrimSpace(input.AccountID)
 	current.WorkspaceMode, current.VaultAccess, current.MailAccess = input.WorkspaceMode, input.VaultAccess, input.MailAccess
 	current.OpenCardPolicy, current.MisfirePolicy, current.NextRunAt = input.OpenCardPolicy, input.MisfirePolicy, input.NextRunAt
 	current.UpdatedAt = home.Timestamp()

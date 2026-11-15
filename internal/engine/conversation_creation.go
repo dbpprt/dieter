@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dbpprt/dieter/internal/engine/accounts"
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/platform/fault"
@@ -65,9 +66,12 @@ type CardInput struct {
 	LabelIDs                                                     []string
 	ProviderOptions                                              map[string]string
 	DeferStart, AutoGenerateTitle, VaultAccess, MailAccess       bool
-	ID                                                           string
-	Origin                                                       *model.CardOrigin
-	Attachments                                                  []model.UIMessagePart
+	// AccountID is the provider account of the first turn; empty uses the
+	// provider default.
+	AccountID   string
+	ID          string
+	Origin      *model.CardOrigin
+	Attachments []model.UIMessagePart
 }
 
 const (
@@ -144,7 +148,7 @@ func (s *Service) createConversation(ctx context.Context, input CardInput, scope
 			return model.Card{}, err
 		}
 	}
-	createInput := kanban.CreateCardInput{CheckoutID: input.CheckoutID, Project: project.ID, Board: input.Board, ID: input.ID, Lane: input.Lane, Title: input.Title, Prompt: input.Prompt, Provider: provider, Model: input.Model, Effort: input.Effort, ProviderOptions: input.ProviderOptions, LabelIDs: input.LabelIDs, Origin: input.Origin, WorkspaceMode: input.WorkspaceMode, WorkspaceBranch: input.WorkspaceBranch, WorkspaceBaseBranch: input.WorkspaceBaseBranch, WorkspaceBaseRemote: input.WorkspaceBaseRemote, RemotePublishMode: input.RemotePublishMode, VaultAccess: input.VaultAccess, MailAccess: input.MailAccess}
+	createInput := kanban.CreateCardInput{CheckoutID: input.CheckoutID, Project: project.ID, Board: input.Board, ID: input.ID, Lane: input.Lane, Title: input.Title, Prompt: input.Prompt, Provider: provider, Model: input.Model, Effort: input.Effort, ProviderOptions: input.ProviderOptions, LabelIDs: input.LabelIDs, Origin: input.Origin, WorkspaceMode: input.WorkspaceMode, WorkspaceBranch: input.WorkspaceBranch, WorkspaceBaseBranch: input.WorkspaceBaseBranch, WorkspaceBaseRemote: input.WorkspaceBaseRemote, RemotePublishMode: input.RemotePublishMode, VaultAccess: input.VaultAccess, MailAccess: input.MailAccess, ProviderAccountID: input.AccountID}
 	var card model.Card
 	if scope == model.ConversationScopeChat {
 		card, err = s.Store.Kanban.CreateChat(createInput)
@@ -167,7 +171,7 @@ func (s *Service) createConversation(ctx context.Context, input CardInput, scope
 	shouldStart := scope == model.ConversationScopeChat || strings.EqualFold(input.Lane, model.LaneRunning)
 	if shouldStart && !input.DeferStart {
 		parts := initialMessageParts(input.Prompt, input.Attachments)
-		updates, startErr := s.StartCardWithMessageParts(card.ID, parts, provider, input.Model, input.Effort, input.ProviderOptions, "")
+		updates, startErr := s.StartCardWithSelection(card.ID, parts, model.HarnessSelection{Provider: provider, Model: input.Model, Effort: input.Effort, ProviderOptions: input.ProviderOptions, AccountID: input.AccountID}, "")
 		if startErr != nil {
 			if scope == model.ConversationScopeBoard {
 				_, _ = s.Store.Kanban.MoveCard(card.ID, model.LaneTodo, nil)
@@ -188,6 +192,14 @@ func (s *Service) generateQuickTaskTitle(ctx context.Context, story string) (str
 	if err != nil {
 		return "", fmt.Errorf("resolve quick-task title model: %w", err)
 	}
+	var turnAuth accounts.TurnAuth
+	if s.Accounts != nil && adapter.Runtime == "codex" {
+		auth, ok := s.Accounts.QuickTitleAuth(ctx)
+		if !ok {
+			return "", errQuickTitleSkipped
+		}
+		turnAuth = auth
+	}
 	base := filepath.Join(s.Store.RuntimeDir(), "quick-title-workspaces")
 	if err := os.MkdirAll(base, 0o700); err != nil {
 		return "", fmt.Errorf("prepare quick-task title workspace: %w", err)
@@ -207,6 +219,7 @@ func (s *Service) generateQuickTaskTitle(ctx context.Context, story string) (str
 		SessionID:    newRuntimeID("title_"), ResponseMessageID: newRuntimeID("msg_"),
 		ProjectPath: workspacePath, RuntimeRoot: filepath.Join(s.Store.RuntimeDir(), "quick-title-sessions"),
 	}
+	applyTurnAuth(turnAuth, &request)
 	if err := s.Runner.Run(ctx, request, func(output harness.Output) error {
 		if output.Type != "chunk" || len(output.Chunk) == 0 {
 			return nil
@@ -292,3 +305,7 @@ func (s *Service) resolveInstructions(detail model.CardDetail, workspaceValue mo
 
 // LinkedFolder is a synced folder linked to a project.
 type LinkedFolder = model.LinkedFolder
+
+// errQuickTitleSkipped means no ChatGPT account is signed in on this machine
+// to generate titles with; cards keep their fallback title.
+var errQuickTitleSkipped = errors.New("quick-task title skipped: no ChatGPT account is signed in on this machine")

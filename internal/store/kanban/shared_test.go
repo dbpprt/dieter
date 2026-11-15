@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/platform/fault"
 	"github.com/dbpprt/dieter/internal/replication/crdt"
 	"github.com/dbpprt/dieter/internal/store"
 	"github.com/dbpprt/dieter/internal/store/kanban"
@@ -458,5 +459,34 @@ func TestArchiveCleanupPreferenceReplicatesAndDefaultsOff(t *testing.T) {
 	replica, err = a.Kanban.ResolveProject(project.ID)
 	if err != nil || replica.DeleteWorktreesOnArchive || replica.Name != name {
 		t.Fatalf("disable was not replicated: %+v %v", replica, err)
+	}
+}
+
+func TestGenericPeerWritesRefuseChannelAndProviderRecords(t *testing.T) {
+	t.Parallel()
+	s := testkit.PeerStore(t, "machine_a")
+	identity, err := s.Replica.PeerIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const account = "pa_abcdefghijklmnopqrstuvwxyz"
+	for kind, id := range map[string]string{
+		"kv.provider-accounts":         account,
+		"kv.provider-account-defaults": "claude",
+		"kv.provider-logins":           account + ".machine_a",
+		"kv.channel":                   "p.machine_a.1",
+		"kv.channel-claims":            "p.machine_a",
+	} {
+		_, err := s.Replica.PutPeerRecord(identity, kind, id, "", []byte(`{}`), false)
+		if kindOf, _ := fault.KindOf(err); kindOf != fault.PermissionDenied {
+			t.Errorf("%s accepted through the generic peer path: %v", kind, err)
+		}
+	}
+	// The daemon's own writers do not go through that hook.
+	if err := s.KV.PutProviderDefault("claude", account); err != nil {
+		t.Fatalf("provider writer refused: %v", err)
+	}
+	if err := s.KV.PutChannel("channel-claims", "p_one.machine_a", map[string]any{"at": "2026-11-14T10:00:00Z", "claims": []any{}}); err != nil {
+		t.Fatalf("channel writer refused: %v", err)
 	}
 }

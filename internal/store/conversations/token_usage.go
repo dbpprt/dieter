@@ -133,3 +133,22 @@ func (s *Store) rememberTokenUsage(id string, conversation model.Conversation) {
 	}
 	s.usageCache[id] = cardUsageCacheEntry{revision, usage}
 }
+
+// MessageTokenUsage is the provider-reported usage of one assistant message,
+// for the provider account's token ledger.
+func (s *Store) MessageTokenUsage(cardID, messageID string) (model.TokenUsage, bool) {
+	if messageID == "" {
+		return model.TokenUsage{}, false
+	}
+	conversation, err := s.loadConversation(cardID)
+	if err != nil {
+		return model.TokenUsage{}, false
+	}
+	for _, message := range conversation.Messages {
+		if message.ID == messageID && message.Role == "assistant" {
+			usage := conversationTokenUsage(model.Conversation{Messages: []model.UIMessage{message}})
+			return usage, usage.ReportedMessages > 0
+		}
+	}
+	return model.TokenUsage{}, false
+}

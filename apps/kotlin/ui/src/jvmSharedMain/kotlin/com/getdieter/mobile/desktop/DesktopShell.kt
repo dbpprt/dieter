@@ -532,7 +532,7 @@ internal fun RoutePane(
     }
 }
 
-/** A page that fills the workspace: settings, devices, usage, a machine or a project tool. */
+/** A page that fills the workspace: settings, devices, providers, a machine or a project tool. */
 @Composable
 private fun DesktopPage(
     store: MobileStore,
@@ -549,7 +549,7 @@ private fun DesktopPage(
             setOf(
                 DesktopSection.SETTINGS,
                 DesktopSection.DEVICES,
-                DesktopSection.USAGE,
+                DesktopSection.PROVIDERS,
                 DesktopSection.PLACES,
             )
     DesktopPanel(modifier.fillMaxSize().testTag("desktop-page")) {

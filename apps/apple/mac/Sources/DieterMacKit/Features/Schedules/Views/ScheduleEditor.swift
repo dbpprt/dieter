@@ -14,6 +14,10 @@ struct ScheduleEditor: View {
     @State private var timezones: [String]
     @State private var saveError = ""
     @State private var saving = false
+    /// The user picked an account in this editor. Until then the draft keeps
+    /// its account (none for a new schedule, which follows the provider
+    /// default) whatever the pickers resolve.
+    @State private var accountPicked = false
     @FocusState private var templateField: TemplateField?
 
     private enum TemplateField { case title, prompt }
@@ -66,6 +70,7 @@ struct ScheduleEditor: View {
                     $0.model = draft.model
                     $0.effort = draft.effort
                     $0.providerOptions = draft.providerOptions
+                    $0.accountID = draft.accountID
                 }
             },
             set: {
@@ -73,6 +78,7 @@ struct ScheduleEditor: View {
                 draft.model = $0.model
                 draft.effort = $0.effort
                 draft.providerOptions = $0.providerOptions
+                if accountPicked { draft.accountID = $0.accountID }
             })
     }
 
@@ -172,7 +178,11 @@ struct ScheduleEditor: View {
                             subtitle: "Choose the harness saved on every card this schedule creates",
                             symbol: "cpu"
                         ) {
-                            AgentControlFields(catalog: context.harnessCatalog, selection: agent)
+                            AgentControlFields(
+                                catalog: context.harnessCatalog, selection: agent, daemonID: context.daemonID
+                            ) { choice in
+                                if case .account = choice { accountPicked = true }
+                            }
                         }
 
                         ScheduleEditorSection(

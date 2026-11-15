@@ -346,7 +346,8 @@ internal fun RouteContent(store: MobileStore, route: MobileRoute, openUrl: (Stri
         is MobileRoute.Channel -> ChannelScreen(store, route.projectId, openUrl)
         is MobileRoute.MailMessage -> MailMessageScreen(store, route, openUrl)
         is MobileRoute.Pane -> CardPaneScreen(store, card(route.cardId), route.pane, openUrl)
-        is MobileRoute.Tool -> ToolScreen(store, route)
+        is MobileRoute.Tool -> ToolScreen(store, route, openUrl)
+        is MobileRoute.ProviderAccount -> ProviderAccountRoute(store, route, openUrl)
         is MobileRoute.Folder -> com.getdieter.mobile.folders.FolderScreen(store, route.folderId)
         is MobileRoute.FolderFiles ->
             com.getdieter.mobile.folders.FolderFilesScreen(store, route.folderId, route.path)

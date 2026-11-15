@@ -67,6 +67,8 @@ message CreateConversationRequest {
   // Let this conversation's agent turns send the user mail (MailService).
   // An agent turn may grant it only when its own conversation has it.
   bool mail_access = 26;
+  // Provider account for the first turn; empty uses the provider default.
+  string account_id = 27;
 }
 
 message ListChatsRequest {
@@ -131,6 +133,7 @@ message DraftAgentSettings {
   string model = 2;
   string effort = 3;
   map<string, string> provider_options = 4;
+  string account_id = 5;
 }
 
 message UpdateCardRequest {

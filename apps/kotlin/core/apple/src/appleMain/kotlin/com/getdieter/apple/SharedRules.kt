@@ -36,8 +36,7 @@ import com.getdieter.client.v1.MachineOperationCopy
 import com.getdieter.client.v1.NavigationSlice
 import com.getdieter.client.v1.ProjectNavigation
 import com.getdieter.client.v1.Projects
-import com.getdieter.client.v1.QuotaGroupList
-import com.getdieter.client.v1.QuotaGroupRows
+import com.getdieter.client.v1.ProvidersSlice
 import com.getdieter.client.v1.ScheduleCadence
 import com.getdieter.client.v1.ScheduleEditorOptions
 import com.getdieter.client.v1.ScreenStreamOptions
@@ -62,7 +61,7 @@ import com.getdieter.core.client.rules.LabelExports
 import com.getdieter.core.client.rules.LinkExports
 import com.getdieter.core.client.rules.MachineExports
 import com.getdieter.core.client.rules.NavigationExports
-import com.getdieter.core.client.rules.QuotaExports
+import com.getdieter.core.client.rules.ProviderExports
 import com.getdieter.core.client.rules.ScheduleExports
 import com.getdieter.core.client.rules.ScreenExports
 import com.getdieter.core.client.rules.TerminalExports
@@ -170,24 +169,47 @@ object SharedRules {
 
     fun labelProblem(name: String, color: String): String = LabelExports.problem(name, color)
 
-    // --- Quotas -------------------------------------------------------------------
+    // --- Providers ----------------------------------------------------------------
 
-    fun quotaResetText(resetsAt: String, nowMillis: Long, fine: Boolean): String =
-        QuotaExports.resetText(resetsAt, nowMillis, fine)
+    /**
+     * "Resets in 2h 30m", "Resets in 1d 2h", "Reset due", or "Reset time unavailable" for a
+     * window's RFC 3339 [resetsAt]; without [fine], only the largest unit.
+     */
+    fun providerResetText(resetsAt: String, nowMillis: Long, fine: Boolean): String =
+        ProviderExports.resetText(resetsAt, nowMillis, fine)
 
-    fun quotaWarning(unavailable: String, freshUntilMillis: Long, nowMillis: Long): String =
-        QuotaExports.warning(unavailable, freshUntilMillis, nowMillis)
+    /** "Updated 3m ago" for an account row's `usage_observed_at`; "Not reported yet" when empty. */
+    fun providerUsageUpdated(observedAt: String, nowMillis: Long): String =
+        ProviderExports.usageUpdated(observedAt, nowMillis)
 
-    fun quotaResetTitle(): String = QuotaExports.resetTitle()
+    /** The usage is older than 30 minutes or was never reported. */
+    fun providerUsageStale(observedAt: String, nowMillis: Long): Boolean =
+        ProviderExports.usageStale(observedAt, nowMillis)
 
-    fun quotaResetMessage(): String = QuotaExports.resetMessage()
+    /** "62% left" for 0-100; "" for -1. */
+    fun providerUsageText(remaining: Int): String = ProviderExports.usageText(remaining)
 
-    /** [groups] is an encoded `QuotaGroupList`; returns an encoded `QuotaGroupRows`. */
-    fun quotaRows(groups: NSData): NSData =
-        QuotaGroupRows.ADAPTER.encode(
-                QuotaExports.rows(QuotaGroupList.ADAPTER.decode(groups.toByteArray()))
-            )
-            .toNSData()
+    /** A `ProviderSeverity` value for a remaining percentage (-1: unknown). */
+    fun providerSeverity(remaining: Int): Int = ProviderExports.severity(remaining).value
+
+    /** A device code grouped for reading, e.g. "ABCD-EFGH". */
+    fun providerDeviceCode(code: String): String = ProviderExports.deviceCode(code)
+
+    /** A sign-in challenge's countdown: "Expires in 14:32", "Expired"; "" when unknown. */
+    fun providerCodeExpiry(expiresAt: String, nowMillis: Long): String =
+        ProviderExports.codeExpiry(expiresAt, nowMillis)
+
+    /**
+     * Why an account cannot run on a machine, from its `ProviderMachineRow` [state], name and
+     * presence: "Not signed in on box", "Sign-in expired on box", "box is offline"; "" when ready.
+     */
+    fun providerReadinessReason(state: String, machine: String, online: Boolean): String =
+        ProviderExports.readinessReason(state, machine, online)
+
+    /** The confirmation before a ChatGPT reset credit is spent. */
+    fun providerResetTitle(): String = ProviderExports.resetTitle()
+
+    fun providerResetMessage(): String = ProviderExports.resetMessage()
 
     // --- Files --------------------------------------------------------------------
 
@@ -925,16 +947,26 @@ object SharedRules {
 
     /**
      * [selection] is an encoded `dieter.v1.HarnessSelection`, [catalog] an encoded
-     * `dieter.v1.HarnessCatalog`, [choice] an encoded `AgentChoice` (empty for none); returns an
-     * encoded `AgentControlsState`.
+     * `dieter.v1.HarnessCatalog`, [choice] an encoded `AgentChoice` (empty for none), [providers]
+     * the last encoded `ProvidersSlice` (empty for none) and [daemonId] the machine the agent runs
+     * on (empty while none is chosen); returns an encoded `AgentControlsState`.
      */
-    fun agentControls(selection: NSData, catalog: NSData, locked: Boolean, choice: NSData): NSData =
+    fun agentControls(
+        selection: NSData,
+        catalog: NSData,
+        locked: Boolean,
+        choice: NSData,
+        providers: NSData,
+        daemonId: String,
+    ): NSData =
         AgentControlsState.ADAPTER.encode(
                 CreationExports.agentControls(
                     HarnessSelection.ADAPTER.decode(selection.toByteArray()),
                     HarnessCatalog.ADAPTER.decode(catalog.toByteArray()),
                     locked,
                     AgentChoice.ADAPTER.decode(choice.toByteArray()),
+                    ProvidersSlice.ADAPTER.decode(providers.toByteArray()),
+                    daemonId,
                 )
             )
             .toNSData()

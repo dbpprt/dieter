@@ -75,6 +75,12 @@ invariant, it is named; keep it passing rather than weakening it.
   conversation created with mail access may send the user a message, and no
   mail ever reaches a prompt, starts a turn, or is readable by an agent. Mail
   stays on the daemon that received it and is never replicated.
+- A provider login belongs to one account on one machine and has exactly one
+  refresher: the provider's own tool, or the daemon under that account's lock.
+  Never copy a login to another machine. A Claude Code or Codex turn runs on
+  the account its selection names, resolved on the conversation's owner
+  daemon, and is refused when that account is not signed in there
+  (`internal/engine/accounts`).
 - Permit concurrent agent turns in the same registered checkout. There are no
   global, harness or board parallel-session caps. Runtime leases enforce at most
   one active turn per conversation across API, CLI and scheduled starts.
@@ -108,16 +114,28 @@ invariant, it is named; keep it passing rather than weakening it.
   roster only after the approver's pairing confirmation verifies. Never let the
   gateway add a device or decide membership.
 - The gateway stores only account sessions, daemon identities, presence, route
-  metadata, the signed device roster, short-lived pairing requests and
-  normalized, credential-free provider quota snapshots. Never put Dieter
-  projects, transcripts, provider credentials, raw provider responses or
-  harness credentials on the gateway.
+  metadata, the signed device roster and short-lived pairing requests. Never
+  put Dieter projects, transcripts, provider credentials, provider accounts or
+  usage, raw provider responses or harness credentials on the gateway.
+- Dieter never reads, stores, refreshes, replicates or injects Claude.ai
+  credentials: Claude Code keeps each login in its own store, inside a
+  per-account config directory
+  ([ADR 0006](adr/0006-provider-accounts.md)). Provider credentials never leave
+  the machine that signed in; they never enter KV records, the vault, a client
+  or the gateway. Provider accounts, each machine's login state and usage
+  replicate between the account's daemons as validated KV records without
+  secrets (`internal/replication/schema`), which only `ProviderAccountService`
+  writes; a machine writes only its own login records.
 - A daemon proves possession of its enrolled Ed25519 key on every gateway link
   connection (`internal/link/possession.go`, `internal/security/linkauth`).
   Never accept a daemon ID without cryptographic proof.
 - Agent turns never change device trust: `TrustService` mutations refuse a turn
   token (`internal/api/trust.go`), and starting a roster or recovering with the
   recovery key runs only on the local route.
+- Agent turns never manage provider accounts: every `ProviderAccountService`
+  mutation, sign-in and sign-out included, refuses a turn token
+  (`internal/api/provider_accounts.go`). Agents may list accounts and choose
+  one for the work they create.
 - Client sessions and roster devices have binary full access or no access. Do
   not add scopes.
 - Keep relay tunnels, queues and messages bounded (`internal/transport/relay`:

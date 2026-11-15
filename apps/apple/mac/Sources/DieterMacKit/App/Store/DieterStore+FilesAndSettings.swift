@@ -94,7 +94,7 @@ extension DieterStore {
             selectedBoardID: selectedBoardID, harnessCatalog: harnessCatalog(forDaemon: machine),
             checkoutMachines: Dictionary(
                 (selectedProject?.checkouts ?? []).map { ($0.id, $0.daemonID) }, uniquingKeysWith: { first, _ in first }
-            ))
+            ), daemonID: machine)
     }
 
     func loadSchedules() async { bindSchedules(); await schedulesModel.loadSchedules() }

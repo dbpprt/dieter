@@ -109,9 +109,22 @@ machine could detach it.
 ## A model is unavailable
 
 Run `dieter harness list --format jsonl` on the execution host, or use global
-`--machine MACHINE_ID`. Verify that provider's normal configuration and login on
-that host. The catalog is machine-specific. Updating a global CLI does not update
-Dieter's pinned runtime. See [Agents & models](/docs/harnesses/).
+`--machine MACHINE_ID`. For Claude Code and Codex, check that a
+[provider account](/docs/providers/) is signed in on that host
+(`dieter --machine MACHINE_ID provider list`); for other harnesses, verify the
+provider's normal configuration and login there. The catalog is
+machine-specific. Updating a global CLI does not update Dieter's pinned
+runtime. See [Agents & models](/docs/harnesses/).
+
+## An account is not signed in
+
+A chat that shows **‹Account› isn't signed in on ‹machine›** runs on a machine
+where that account has no working login. Choose **Sign in** in the chat, or
+sign in from the account's page or with
+`dieter --machine MACHINE_ID provider login ACCOUNT`; or choose another
+account. Each machine signs in separately. Sign-in problems such as disabled
+device codes, a busy port 1455 or a login that doesn't match are covered in
+[provider troubleshooting](/docs/providers/#troubleshooting).
 
 ## A task seems stuck
 

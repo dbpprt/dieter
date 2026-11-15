@@ -33,6 +33,7 @@ type Client interface {
 	dieterv1.ChannelServiceClient
 	dieterv1.MailServiceClient
 	dieterv1.FolderServiceClient
+	dieterv1.ProviderAccountServiceClient
 }
 
 type client struct {
@@ -57,32 +58,34 @@ type client struct {
 	dieterv1.ChannelServiceClient
 	dieterv1.MailServiceClient
 	dieterv1.FolderServiceClient
+	dieterv1.ProviderAccountServiceClient
 }
 
 // New returns the gRPC clients of every dieter.v1 service sharing conn.
 func New(conn grpc.ClientConnInterface) Client {
 	return client{
-		MachineServiceClient:      dieterv1.NewMachineServiceClient(conn),
-		StateServiceClient:        dieterv1.NewStateServiceClient(conn),
-		SettingsServiceClient:     dieterv1.NewSettingsServiceClient(conn),
-		ProjectServiceClient:      dieterv1.NewProjectServiceClient(conn),
-		BoardServiceClient:        dieterv1.NewBoardServiceClient(conn),
-		CardServiceClient:         dieterv1.NewCardServiceClient(conn),
-		ConversationServiceClient: dieterv1.NewConversationServiceClient(conn),
-		GitServiceClient:          dieterv1.NewGitServiceClient(conn),
-		FileServiceClient:         dieterv1.NewFileServiceClient(conn),
-		TerminalServiceClient:     dieterv1.NewTerminalServiceClient(conn),
-		ExecutionServiceClient:    dieterv1.NewExecutionServiceClient(conn),
-		ScreenServiceClient:       dieterv1.NewScreenServiceClient(conn),
-		ControlServiceClient:      dieterv1.NewControlServiceClient(conn),
-		ScheduleServiceClient:     dieterv1.NewScheduleServiceClient(conn),
-		VaultServiceClient:        dieterv1.NewVaultServiceClient(conn),
-		KVServiceClient:           dieterv1.NewKVServiceClient(conn),
-		PeerServiceClient:         dieterv1.NewPeerServiceClient(conn),
-		TrustServiceClient:        dieterv1.NewTrustServiceClient(conn),
-		ChannelServiceClient:      dieterv1.NewChannelServiceClient(conn),
-		MailServiceClient:         dieterv1.NewMailServiceClient(conn),
-		FolderServiceClient:       dieterv1.NewFolderServiceClient(conn),
+		MachineServiceClient:         dieterv1.NewMachineServiceClient(conn),
+		StateServiceClient:           dieterv1.NewStateServiceClient(conn),
+		SettingsServiceClient:        dieterv1.NewSettingsServiceClient(conn),
+		ProjectServiceClient:         dieterv1.NewProjectServiceClient(conn),
+		BoardServiceClient:           dieterv1.NewBoardServiceClient(conn),
+		CardServiceClient:            dieterv1.NewCardServiceClient(conn),
+		ConversationServiceClient:    dieterv1.NewConversationServiceClient(conn),
+		GitServiceClient:             dieterv1.NewGitServiceClient(conn),
+		FileServiceClient:            dieterv1.NewFileServiceClient(conn),
+		TerminalServiceClient:        dieterv1.NewTerminalServiceClient(conn),
+		ExecutionServiceClient:       dieterv1.NewExecutionServiceClient(conn),
+		ScreenServiceClient:          dieterv1.NewScreenServiceClient(conn),
+		ControlServiceClient:         dieterv1.NewControlServiceClient(conn),
+		ScheduleServiceClient:        dieterv1.NewScheduleServiceClient(conn),
+		VaultServiceClient:           dieterv1.NewVaultServiceClient(conn),
+		KVServiceClient:              dieterv1.NewKVServiceClient(conn),
+		PeerServiceClient:            dieterv1.NewPeerServiceClient(conn),
+		TrustServiceClient:           dieterv1.NewTrustServiceClient(conn),
+		ChannelServiceClient:         dieterv1.NewChannelServiceClient(conn),
+		MailServiceClient:            dieterv1.NewMailServiceClient(conn),
+		FolderServiceClient:          dieterv1.NewFolderServiceClient(conn),
+		ProviderAccountServiceClient: dieterv1.NewProviderAccountServiceClient(conn),
 	}
 }
 
@@ -109,6 +112,7 @@ type ConnectClient interface {
 	dieterv1connect.ChannelServiceClient
 	dieterv1connect.MailServiceClient
 	dieterv1connect.FolderServiceClient
+	dieterv1connect.ProviderAccountServiceClient
 }
 
 type connectClient struct {
@@ -133,31 +137,33 @@ type connectClient struct {
 	dieterv1connect.ChannelServiceClient
 	dieterv1connect.MailServiceClient
 	dieterv1connect.FolderServiceClient
+	dieterv1connect.ProviderAccountServiceClient
 }
 
 // NewConnect returns the Connect clients of every dieter.v1 service at baseURL.
 func NewConnect(httpClient connect.HTTPClient, baseURL string, options ...connect.ClientOption) ConnectClient {
 	return connectClient{
-		MachineServiceClient:      dieterv1connect.NewMachineServiceClient(httpClient, baseURL, options...),
-		StateServiceClient:        dieterv1connect.NewStateServiceClient(httpClient, baseURL, options...),
-		SettingsServiceClient:     dieterv1connect.NewSettingsServiceClient(httpClient, baseURL, options...),
-		ProjectServiceClient:      dieterv1connect.NewProjectServiceClient(httpClient, baseURL, options...),
-		BoardServiceClient:        dieterv1connect.NewBoardServiceClient(httpClient, baseURL, options...),
-		CardServiceClient:         dieterv1connect.NewCardServiceClient(httpClient, baseURL, options...),
-		ConversationServiceClient: dieterv1connect.NewConversationServiceClient(httpClient, baseURL, options...),
-		GitServiceClient:          dieterv1connect.NewGitServiceClient(httpClient, baseURL, options...),
-		FileServiceClient:         dieterv1connect.NewFileServiceClient(httpClient, baseURL, options...),
-		TerminalServiceClient:     dieterv1connect.NewTerminalServiceClient(httpClient, baseURL, options...),
-		ExecutionServiceClient:    dieterv1connect.NewExecutionServiceClient(httpClient, baseURL, options...),
-		ScreenServiceClient:       dieterv1connect.NewScreenServiceClient(httpClient, baseURL, options...),
-		ControlServiceClient:      dieterv1connect.NewControlServiceClient(httpClient, baseURL, options...),
-		ScheduleServiceClient:     dieterv1connect.NewScheduleServiceClient(httpClient, baseURL, options...),
-		VaultServiceClient:        dieterv1connect.NewVaultServiceClient(httpClient, baseURL, options...),
-		KVServiceClient:           dieterv1connect.NewKVServiceClient(httpClient, baseURL, options...),
-		PeerServiceClient:         dieterv1connect.NewPeerServiceClient(httpClient, baseURL, options...),
-		TrustServiceClient:        dieterv1connect.NewTrustServiceClient(httpClient, baseURL, options...),
-		ChannelServiceClient:      dieterv1connect.NewChannelServiceClient(httpClient, baseURL, options...),
-		MailServiceClient:         dieterv1connect.NewMailServiceClient(httpClient, baseURL, options...),
-		FolderServiceClient:       dieterv1connect.NewFolderServiceClient(httpClient, baseURL, options...),
+		MachineServiceClient:         dieterv1connect.NewMachineServiceClient(httpClient, baseURL, options...),
+		StateServiceClient:           dieterv1connect.NewStateServiceClient(httpClient, baseURL, options...),
+		SettingsServiceClient:        dieterv1connect.NewSettingsServiceClient(httpClient, baseURL, options...),
+		ProjectServiceClient:         dieterv1connect.NewProjectServiceClient(httpClient, baseURL, options...),
+		BoardServiceClient:           dieterv1connect.NewBoardServiceClient(httpClient, baseURL, options...),
+		CardServiceClient:            dieterv1connect.NewCardServiceClient(httpClient, baseURL, options...),
+		ConversationServiceClient:    dieterv1connect.NewConversationServiceClient(httpClient, baseURL, options...),
+		GitServiceClient:             dieterv1connect.NewGitServiceClient(httpClient, baseURL, options...),
+		FileServiceClient:            dieterv1connect.NewFileServiceClient(httpClient, baseURL, options...),
+		TerminalServiceClient:        dieterv1connect.NewTerminalServiceClient(httpClient, baseURL, options...),
+		ExecutionServiceClient:       dieterv1connect.NewExecutionServiceClient(httpClient, baseURL, options...),
+		ScreenServiceClient:          dieterv1connect.NewScreenServiceClient(httpClient, baseURL, options...),
+		ControlServiceClient:         dieterv1connect.NewControlServiceClient(httpClient, baseURL, options...),
+		ScheduleServiceClient:        dieterv1connect.NewScheduleServiceClient(httpClient, baseURL, options...),
+		VaultServiceClient:           dieterv1connect.NewVaultServiceClient(httpClient, baseURL, options...),
+		KVServiceClient:              dieterv1connect.NewKVServiceClient(httpClient, baseURL, options...),
+		PeerServiceClient:            dieterv1connect.NewPeerServiceClient(httpClient, baseURL, options...),
+		TrustServiceClient:           dieterv1connect.NewTrustServiceClient(httpClient, baseURL, options...),
+		ChannelServiceClient:         dieterv1connect.NewChannelServiceClient(httpClient, baseURL, options...),
+		MailServiceClient:            dieterv1connect.NewMailServiceClient(httpClient, baseURL, options...),
+		FolderServiceClient:          dieterv1connect.NewFolderServiceClient(httpClient, baseURL, options...),
+		ProviderAccountServiceClient: dieterv1connect.NewProviderAccountServiceClient(httpClient, baseURL, options...),
 	}
 }

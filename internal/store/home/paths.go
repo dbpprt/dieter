@@ -27,3 +27,15 @@ func (s *Dir) RuntimeDir() string { return filepath.Join(s.Root, "runtime") }
 func (s *Dir) WorktreeRoot() string { return filepath.Join(s.Root, "worktrees") }
 
 func (s *Dir) RecoveryDir() string { return filepath.Join(s.Root, "recovery") }
+
+// ProviderAccountsDir holds each provider account's local files on this
+// machine (never replicated), the token ledger and the audit log.
+func (s *Dir) ProviderAccountsDir() string { return filepath.Join(s.Root, "provider-accounts") }
+
+// ProviderAccountDir is one account's local directory. Its path string is
+// canonical (filepath.Join cleans it): the macOS Keychain item of a Claude
+// login is named after the exact CLAUDE_CONFIG_DIR string beneath it.
+func (s *Dir) ProviderAccountDir(id string) string { return filepath.Join(s.ProviderAccountsDir(), id) }
+
+// CodexHome is the CODEX_HOME every Dieter Codex process shares.
+func (s *Dir) CodexHome() string { return filepath.Join(s.Root, "codex") }

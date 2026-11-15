@@ -7,10 +7,10 @@ weight: 11
 slug: "quickstart"
 ---
 
-You need a Git repository, a configured agent account on the host, and access to
-a Dieter gateway. A gateway operator must allow your numeric GitHub account ID;
-installing Dieter does not grant access to somebody else's gateway. You can
-[run your own](/docs/gateway/).
+You need a Git repository, a Claude or ChatGPT subscription (or another
+agent's configuration on the host), and access to a Dieter gateway. A gateway
+operator must allow your numeric GitHub account ID; installing Dieter does not
+grant access to somebody else's gateway. You can [run your own](/docs/gateway/).
 
 ## 1. Install the host
 
@@ -42,8 +42,19 @@ dieter harness list
 
 Use an existing Git working tree on this machine. `setup` enrolls the machine;
 `project open` registers the repository. They are separate operations.
-Verify that your chosen [harness](/docs/harnesses/) has working credentials on the
-host before starting work.
+
+Claude Code and Codex run on a [provider account](/docs/providers/). If the
+host is already signed in to Claude Code or Codex, Dieter adopts that login.
+Otherwise add an account and sign the host in, from the app once it is
+connected (step 3) or here:
+
+```sh
+dieter provider add claude --label Work
+dieter provider login Work
+```
+
+Other [harnesses](/docs/harnesses/) need working credentials on the host before
+you start work.
 
 ## 3. Open a client
 
@@ -71,7 +82,7 @@ app that is already trusted.
 
 Open a project and its board, then add a task. Give the agent a concrete request,
 such as “Explain the test setup and identify a small missing test.” Choose a
-provider, model, and available reasoning level.
+provider, its account, the model, and an available reasoning level.
 
 Choose **New worktree** for a separate branch and working directory, or **Project
 directory** to work in the registered checkout as it stands. On a project with

@@ -24,12 +24,6 @@ type Daemon struct {
 	// HarnessEnv is DIETER_HARNESS_ENV: additional variable names forwarded
 	// to harness workers.
 	HarnessEnv []string
-	// CodexHome and ClaudeConfigDir are the active provider profiles
-	// (CODEX_HOME, CLAUDE_CONFIG_DIR) used for quota account correlation.
-	CodexHome, ClaudeConfigDir string
-	// CodexAccountHomes and ClaudeAccountHomes are path lists of additional
-	// provider profiles (DIETER_CODEX_ACCOUNT_HOMES, DIETER_CLAUDE_ACCOUNT_HOMES).
-	CodexAccountHomes, ClaudeAccountHomes string
 	// Shell is SHELL, the default shell of new terminals.
 	Shell string
 	// RemoteDesktop configures screen sharing.
@@ -59,18 +53,14 @@ type RemoteDesktop struct {
 // LoadDaemon parses the daemon configuration from env.
 func LoadDaemon(env Env) Daemon {
 	return Daemon{
-		HarnessConfig:      env.Value("DIETER_HARNESS_CONFIG"),
-		ServiceManager:     env.Value("DIETER_SERVICE_MANAGER"),
-		NotifySocket:       env.Value("NOTIFY_SOCKET"),
-		MockHarness:        env.Enabled("DIETER_ENABLE_MOCK_HARNESS"),
-		MinimumFreeBytes:   env.Uint("DIETER_MIN_FREE_BYTES"),
-		HarnessRuntimeDir:  env.Value("DIETER_HARNESS_RUNTIME_DIR"),
-		HarnessEnv:         env.Fields("DIETER_HARNESS_ENV"),
-		CodexHome:          env.Value("CODEX_HOME"),
-		ClaudeConfigDir:    env.Value("CLAUDE_CONFIG_DIR"),
-		CodexAccountHomes:  env.Value("DIETER_CODEX_ACCOUNT_HOMES"),
-		ClaudeAccountHomes: env.Value("DIETER_CLAUDE_ACCOUNT_HOMES"),
-		Shell:              env.Value("SHELL"),
+		HarnessConfig:     env.Value("DIETER_HARNESS_CONFIG"),
+		ServiceManager:    env.Value("DIETER_SERVICE_MANAGER"),
+		NotifySocket:      env.Value("NOTIFY_SOCKET"),
+		MockHarness:       env.Enabled("DIETER_ENABLE_MOCK_HARNESS"),
+		MinimumFreeBytes:  env.Uint("DIETER_MIN_FREE_BYTES"),
+		HarnessRuntimeDir: env.Value("DIETER_HARNESS_RUNTIME_DIR"),
+		HarnessEnv:        env.Fields("DIETER_HARNESS_ENV"),
+		Shell:             env.Value("SHELL"),
 		RemoteDesktop: RemoteDesktop{
 			Source:                    env.Value("DIETER_REMOTE_DESKTOP_SOURCE"),
 			Helper:                    env.Value("DIETER_REMOTE_DESKTOP_HELPER"),

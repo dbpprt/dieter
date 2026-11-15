@@ -260,9 +260,9 @@ struct ComposerSendButton: View {
     }
 }
 
-/// The agent pickers of a composer as the core shows them: provider, model,
-/// reasoning effort, and the model's options. Each pick is a choice the
-/// caller sends to the core.
+/// The agent pickers of a composer as the core shows them: provider, provider
+/// account, model, reasoning effort, and the model's options. Each pick is a
+/// choice the caller sends to the core.
 struct AgentComposerMenus: View {
     let controls: ClientAgentControlsState
     let compact: Bool
@@ -282,6 +282,29 @@ struct AgentComposerMenus: View {
         .accessibilityIdentifier("\(identifierPrefix).provider")
         .e2eTarget("\(identifierPrefix).provider")
         .disabled(!controls.providerEnabled)
+        if !controls.accounts.isEmpty {
+            ComposerSelectionMenu(
+                title: controls.accountLabel, symbol: "person.crop.circle", help: "Account", compact: compact,
+                maximumWidth: 100
+            ) {
+                ForEach(controls.accounts, id: \.id) { account in
+                    Button {
+                        choose(.account(account.id))
+                    } label: {
+                        if account.id == controls.selection.accountID {
+                            Label(AccountOptionText.title(account), systemImage: "checkmark")
+                        } else {
+                            Text(AccountOptionText.title(account))
+                        }
+                    }
+                    .disabled(!account.ready)
+                }
+            }
+            .accessibilityLabel("Account: \(controls.accountLabel)")
+            .accessibilityIdentifier("\(identifierPrefix).account")
+            .e2eTarget("\(identifierPrefix).account", text: controls.accountLabel)
+            .disabled(!controls.accountEnabled)
+        }
         ComposerSelectionMenu(
             title: compact ? controls.modelLabel.replacingOccurrences(of: "GPT-", with: "") : controls.modelLabel,
             symbol: "sparkles", help: "Model"

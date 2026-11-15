@@ -13,6 +13,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/dbpprt/dieter/internal/engine"
+	"github.com/dbpprt/dieter/internal/engine/accounts"
 	"github.com/dbpprt/dieter/internal/engine/scheduler"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/git/changeset"
@@ -32,16 +33,18 @@ import (
 )
 
 type Server struct {
-	privacyMu       sync.Mutex
-	privacyDriver   remotedesktop.PrivacyDriver
-	privacyBootID   func(context.Context) (string, error)
-	privacySnapshot *dieterv1.MachinePrivacy
-	privacyReadAt   time.Time
-	kvWatches       atomic.Int32
-	channelWatches  atomic.Int32
-	changeStreams   atomic.Int32
-	local           *localChanges
-	previews        *payloadPreviewCache
+	privacyMu            sync.Mutex
+	privacyDriver        remotedesktop.PrivacyDriver
+	privacyBootID        func(context.Context) (string, error)
+	privacySnapshot      *dieterv1.MachinePrivacy
+	privacyReadAt        time.Time
+	kvWatches            atomic.Int32
+	channelWatches       atomic.Int32
+	providerLoginWatches atomic.Int32
+	accounts             *accounts.Service
+	changeStreams        atomic.Int32
+	local                *localChanges
+	previews             *payloadPreviewCache
 	// commandMu serializes idempotent create/send/start commands.
 	commandMu sync.Mutex
 	// Recent conversation snapshots per card for delta watches.
@@ -111,6 +114,9 @@ type Options struct {
 	// Folders runs synced folders; nil selects an engine that is never run
 	// (requests work, nothing syncs in the background).
 	Folders *hostfolders.Engine
+	// Accounts is the provider accounts engine; nil serves no
+	// ProviderAccountService calls.
+	Accounts *accounts.Service
 }
 
 func New(data *store.Store, logger *slog.Logger) *Server {
@@ -139,6 +145,7 @@ func NewWithOptions(data *store.Store, logger *slog.Logger, options Options) *Se
 		store: data, vaults: vaults.New(data), daemonState: options.DaemonState, app: service, workspaces: service.Workspaces, schedules: options.Schedules, log: logger,
 		mux: http.NewServeMux(), terminals: options.Terminals, executions: options.Executions, previews: &payloadPreviewCache{},
 		remoteDesktop: options.RemoteDesktop, machine: options.Machine, controlRTC: options.ControlRTC, trust: options.Trust,
+		accounts:            options.Accounts,
 		machineAction:       options.MachineAction,
 		machineCapabilities: options.MachineCapabilities, machineDelay: options.MachineDelay,
 		machineOperations: map[string]acceptedMachineOperation{},

@@ -367,6 +367,16 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 			return err
 		}
 	}
+	// Credentials may have rotated while Dieter was down: resolve the
+	// account again for the continuation.
+	turnAuth, err := s.resolveTurnAuth(adapter.Runtime, selection.AccountID)
+	if err != nil {
+		cancel()
+		_ = s.Store.Leases.Release(lease)
+		s.clearActive(detail.Card.ID, turnID)
+		close(done)
+		return err
+	}
 	request := harness.Request{
 		Harness: adapter.ID, Adapter: adapter.Runtime, Model: configuredModel.RuntimeID(), ConfiguredModel: configuredModel.ID,
 		ContextWindow: configuredModel.ContextWindow, Effort: effort, Options: providerOptions, ResponseMessageID: responseMessageID,
@@ -375,12 +385,14 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 		ContentPresentationEnabled: true, RuntimeDigest: runtimeReference.Digest,
 		Environment: s.agentEnvironment(detail.Card.ID, turnID),
 	}
+	applyTurnAuth(turnAuth, &request)
 	if adapter.Runtime == strixAdapter {
 		strix.apply(s, detail.Card.ID, workspaceValue, &request)
 	}
 	// The card is the active/last-admitted selection shown by clients. Restore
 	// every field from the same snapshot used by the recovered request.
-	if _, err := s.Store.Kanban.UpdateCardCache(detail.Card.ID, kanban.CardCacheInput{Provider: adapter.ID, Model: configuredModel.ID, Effort: &effort, ProviderOptions: providerOptions, Runtime: "running"}); err != nil {
+	accountID := turnAuth.AccountID
+	if _, err := s.Store.Kanban.UpdateCardCache(detail.Card.ID, kanban.CardCacheInput{Provider: adapter.ID, ProviderAccountID: &accountID, Model: configuredModel.ID, Effort: &effort, ProviderOptions: providerOptions, Runtime: "running"}); err != nil {
 		cancel()
 		_ = s.Store.Leases.Release(lease)
 		s.clearActive(detail.Card.ID, turnID)

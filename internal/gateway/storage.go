@@ -199,66 +199,12 @@ CREATE TABLE IF NOT EXISTS daemons (
   routes_json BLOB NOT NULL DEFAULT '[]',
   remote_desktop_json BLOB NOT NULL DEFAULT '{}'
 );
-CREATE TABLE IF NOT EXISTS provider_account_keys (
-  github_id INTEGER PRIMARY KEY,
-  correlation_key BLOB NOT NULL,
-  created_at TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS provider_accounts (
-  github_id INTEGER NOT NULL,
-  provider INTEGER NOT NULL,
-  account_key TEXT NOT NULL,
-  account_kind INTEGER NOT NULL,
-  plan TEXT NOT NULL DEFAULT '',
-  availability INTEGER NOT NULL,
-  first_seen_at TEXT NOT NULL,
-  last_seen_at TEXT NOT NULL,
-  next_attempt_at TEXT NOT NULL DEFAULT '',
-  failure_count INTEGER NOT NULL DEFAULT 0,
-  last_failure_code TEXT NOT NULL DEFAULT '',
-  summary_included INTEGER NOT NULL DEFAULT 1,
-  PRIMARY KEY(github_id, provider, account_key)
-);
-CREATE TABLE IF NOT EXISTS provider_account_sources (
-  github_id INTEGER NOT NULL,
-  provider INTEGER NOT NULL,
-  account_key TEXT NOT NULL,
-  daemon_id TEXT NOT NULL,
-  refresh_supported INTEGER NOT NULL DEFAULT 0,
-  availability INTEGER NOT NULL,
-  last_seen_at TEXT NOT NULL,
-  last_success_at TEXT NOT NULL DEFAULT '',
-  last_failure_code TEXT NOT NULL DEFAULT '',
-  PRIMARY KEY(github_id, provider, account_key, daemon_id),
-  FOREIGN KEY(github_id, provider, account_key)
-    REFERENCES provider_accounts(github_id, provider, account_key)
-    ON DELETE CASCADE,
-  FOREIGN KEY(daemon_id) REFERENCES daemons(id) ON DELETE CASCADE
-);
-CREATE INDEX IF NOT EXISTS provider_account_sources_daemon
-  ON provider_account_sources(daemon_id);
-CREATE TABLE IF NOT EXISTS provider_account_preferences (
-  github_id INTEGER NOT NULL,
-  provider INTEGER NOT NULL,
-  account_key TEXT NOT NULL,
-  summary_included INTEGER NOT NULL DEFAULT 1,
-  updated_at TEXT NOT NULL,
-  PRIMARY KEY(github_id, provider, account_key)
-);
-CREATE TABLE IF NOT EXISTS provider_quota_snapshots (
-  github_id INTEGER NOT NULL,
-  provider INTEGER NOT NULL,
-  account_key TEXT NOT NULL,
-  schema_version INTEGER NOT NULL,
-  snapshot BLOB NOT NULL,
-  source_daemon_id TEXT NOT NULL,
-  refreshed_at TEXT NOT NULL,
-  fresh_until TEXT NOT NULL,
-  PRIMARY KEY(github_id, provider, account_key),
-  FOREIGN KEY(github_id, provider, account_key)
-    REFERENCES provider_accounts(github_id, provider, account_key)
-    ON DELETE CASCADE
-);
+-- Provider quotas moved to the daemons; drop the old tables, children first.
+DROP TABLE IF EXISTS provider_quota_snapshots;
+DROP TABLE IF EXISTS provider_account_sources;
+DROP TABLE IF EXISTS provider_accounts;
+DROP TABLE IF EXISTS provider_account_preferences;
+DROP TABLE IF EXISTS provider_account_keys;
 CREATE TABLE IF NOT EXISTS device_roster_entries (
   github_id INTEGER NOT NULL,
   sequence INTEGER NOT NULL,
@@ -490,26 +436,10 @@ func (s *Store) RevokeDaemon(id string, githubID int64) (uint64, error) {
 		return 0, errors.New("daemon not found")
 	}
 	next := record.Generation + 1
-	tx, err := s.DB.Begin()
-	if err != nil {
+	if _, err := s.DB.Exec(`UPDATE daemons SET revoked=1, generation=? WHERE id=?`, next, id); err != nil {
 		return 0, err
 	}
-	defer tx.Rollback()
-	if _, err := tx.Exec(`DELETE FROM provider_account_sources WHERE daemon_id=?`, id); err != nil {
-		return 0, err
-	}
-	if _, err := tx.Exec(`DELETE FROM provider_accounts WHERE NOT EXISTS (
-		SELECT 1 FROM provider_account_sources sources
-		WHERE sources.github_id=provider_accounts.github_id
-		  AND sources.provider=provider_accounts.provider
-		  AND sources.account_key=provider_accounts.account_key
-	)`); err != nil {
-		return 0, err
-	}
-	if _, err := tx.Exec(`UPDATE daemons SET revoked=1, generation=? WHERE id=?`, next, id); err != nil {
-		return 0, err
-	}
-	return next, tx.Commit()
+	return next, nil
 }
 
 // RecoverDaemon restores only the verified snapshot of a revoked identity while

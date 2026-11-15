@@ -3,18 +3,14 @@ package com.getdieter.mobile.store
 import com.getdieter.client.v1.*
 import kotlinx.coroutines.flow.MutableStateFlow
 
-/** Machine telemetry and provider usage. */
+/** Machine telemetry. */
 class MachinesModel internal constructor(private val context: StoreContext) {
     val telemetry = MutableStateFlow(TelemetrySlice())
-    val quotas = MutableStateFlow(QuotasSlice())
     private var selected = ""
 
     internal fun subscribe() {
         context.observeAlways(Slice.SLICE_TELEMETRY, "") {
             it.telemetry?.let { value -> telemetry.value = value }
-        }
-        context.observeAlways(Slice.SLICE_QUOTAS, "") {
-            it.quotas?.let { value -> quotas.value = value }
         }
     }
 
@@ -29,7 +25,4 @@ class MachinesModel internal constructor(private val context: StoreContext) {
             )
         )
     }
-
-    internal fun loadQuotas() =
-        context.command(Command(quotas = QuotasCommand(load = QuotasLoad())))
 }

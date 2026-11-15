@@ -240,6 +240,8 @@ Options:
   --labels ID,ID                     Board-label IDs
   --provider HARNESS --model MODEL --effort EFFORT
   --provider-option KEY=VALUE        Repeatable harness option
+  --account ID|LABEL                 Provider account (dieter provider list);
+                                     empty uses the provider's default
   --enabled=true|false
   --open-card skip_if_open|always
   --vault=true|false                 Cards it creates may use the account vault
@@ -270,6 +272,7 @@ Options:
 	openCard := set.String("open-card", defaults.GetOpenCardPolicy(), "open-card policy")
 	vaultAccess := set.Bool("vault", defaults.GetVaultAccess(), "cards created by this schedule may use the account vault")
 	mailAccess := set.Bool("mail", defaults.GetMailAccess(), "cards created by this schedule may send the user mail")
+	account := set.String("account", defaults.GetAccountId(), "provider account ID or label")
 
 	providerOptions := parameterFlags{}
 	for key, value := range defaults.GetProviderOptions() {
@@ -312,7 +315,15 @@ Options:
 	if err != nil {
 		return err
 	}
-	draft := &dieterv1.ScheduleDraft{CheckoutId: *checkout, ProjectId: projectValue.GetId(), BoardId: boardValue.GetId(), Name: *name, Description: *description, Cron: *expression, Timezone: *timezone, Enabled: *enabled, Action: *action, TitleTemplate: *title, PromptTemplate: promptValue, Provider: *provider, Model: *modelName, Effort: *effort, LabelIds: splitCSV(*labels), OpenCardPolicy: *openCard, MisfirePolicy: "latest", ProviderOptions: map[string]string(providerOptions), WorkspaceMode: *workspaceMode, VaultAccess: *vaultAccess, MailAccess: *mailAccess}
+	// Only a given --account is resolved; an unchanged one stays as saved.
+	accountID, accountGiven := *account, false
+	set.Visit(func(item *flag.Flag) { accountGiven = accountGiven || item.Name == "account" })
+	if accountGiven {
+		if accountID, err = providerAccountID(rpcCtx, client, *account); err != nil {
+			return err
+		}
+	}
+	draft := &dieterv1.ScheduleDraft{CheckoutId: *checkout, ProjectId: projectValue.GetId(), BoardId: boardValue.GetId(), Name: *name, Description: *description, Cron: *expression, Timezone: *timezone, Enabled: *enabled, Action: *action, TitleTemplate: *title, PromptTemplate: promptValue, Provider: *provider, Model: *modelName, Effort: *effort, LabelIds: splitCSV(*labels), OpenCardPolicy: *openCard, MisfirePolicy: "latest", ProviderOptions: map[string]string(providerOptions), WorkspaceMode: *workspaceMode, VaultAccess: *vaultAccess, MailAccess: *mailAccess, AccountId: accountID}
 	request := &dieterv1.SaveScheduleRequest{Schedule: draft}
 	var value *dieterv1.Schedule
 	if updating {

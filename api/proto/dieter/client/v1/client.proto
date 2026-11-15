@@ -91,7 +91,6 @@ message Command {
     ProjectWorkspacesCommand project_workspaces = 63;
     AdminCommand admin = 64;
     TelemetryCommand telemetry = 65;
-    QuotasCommand quotas = 66;
     ProcessesCommand processes = 67;
     SearchCommand search = 68;
     ScreenCommand screen = 69;
@@ -113,7 +112,11 @@ message Command {
     NotificationResponse notification_response = 85;
     // Synced folders; see FoldersCommand.
     FoldersCommand folders = 86;
+    // Claude and ChatGPT accounts; see ProvidersCommand.
+    ProvidersCommand providers = 87;
   }
+  reserved 66;
+  reserved "quotas";
 }
 
 // An action without arguments, e.g. a surface's refresh.
@@ -622,6 +625,8 @@ message AgentChoice {
     // An effort ID, or "default" for the provider's own default.
     string effort = 3;
     AgentOptionChoice option = 4;
+    // A provider account ID (AgentControlsState.accounts).
+    string account = 5;
   }
 }
 
@@ -695,6 +700,29 @@ message AgentControlsState {
   // The provider's fast-mode toggle, which pickers show apart; empty when it
   // has none.
   string fast_option_id = 19;
+  // The selected agent's provider accounts, for the account picker; empty
+  // for agents without accounts (Pi, Oh My Pi, DSH).
+  repeated AgentAccountOption accounts = 20;
+  bool account_enabled = 21;
+  // The chosen account's label, else "Default account".
+  string account_label = 22;
+  // The account a send uses on the target machine is not ready there: the
+  // composer blocks sending and offers ConversationState.provider_notice.
+  bool account_blocked = 23;
+}
+
+// One entry of an account picker.
+message AgentAccountOption {
+  string id = 1;
+  // "Work".
+  string label = 2;
+  // "alice@corp.com · Max".
+  string detail = 3;
+  // Signed in on the target machine.
+  bool ready = 4;
+  // Why it is not ready, e.g. "Not signed in on box"; empty when ready.
+  string reason = 5;
+  bool is_default = 6;
 }
 
 // ---------------------------------------------------------------------------
@@ -1269,6 +1297,12 @@ message Result {
     dieter.v1.FolderMember folder_member = 53;
     dieter.v1.AttachFolderResult folder_attach = 54;
     FolderSaveResult folder_saved = 55;
+    // A provider sign-in session started (ProvidersCommand.sign_in).
+    ProviderSignInStarted provider_sign_in = 56;
+    // A ChatGPT reset credit's outcome (ProvidersCommand.consume_reset).
+    ProviderResetOutcome provider_reset = 57;
+    // The account a ProvidersCommand.create added.
+    ProviderAccountRef provider_account = 58;
   }
 }
 
@@ -1327,7 +1361,6 @@ enum Slice {
   SLICE_REVIEW = 15;
   SLICE_PROJECT_CHANGES = 16;
   SLICE_TELEMETRY = 18;
-  SLICE_QUOTAS = 19;
   // Scoped by the view's surface key.
   SLICE_PROCESSES = 20;
   // Scoped by the view's surface key.
@@ -1350,6 +1383,10 @@ enum Slice {
   SLICE_FOLDER = 30;
   // This device's folder sync settings and status.
   SLICE_FOLDER_SYNC_SETTINGS = 31;
+  // Claude and ChatGPT accounts, their sign-ins and usage. Account-wide.
+  SLICE_PROVIDERS = 32;
+  reserved 19;
+  reserved "SLICE_QUOTAS";
 }
 
 message Update {
@@ -1378,7 +1415,6 @@ message Update {
     ReviewSlice review = 26;
     ProjectChangesSlice project_changes = 27;
     TelemetrySlice telemetry = 29;
-    QuotasSlice quotas = 30;
     ProcessesSlice processes = 31;
     ScreenSlice screen = 32;
     BoardViewSlice board_view = 33;
@@ -1390,10 +1426,13 @@ message Update {
     FoldersSlice folders = 40;
     FolderSlice folder = 41;
     FolderSyncSettingsSlice folder_sync_settings = 42;
+    ProvidersSlice providers = 43;
     // The view's surface could not open, e.g. screen sharing on a device
     // without it. Sent once; nothing follows.
     Failure failure = 9;
   }
+  reserved 30;
+  reserved "quotas";
 }
 
 message SessionSlice {
@@ -1793,6 +1832,20 @@ message ConversationState {
   AgentControlsState agent = 30;
   // Delivery and available actions for each message in Conversation.queue.
   repeated QueuedMessageState queued_messages = 31;
+  // The conversation's provider account cannot run on its machine now, e.g.
+  // it is not signed in there or its sign-in expired. Unset otherwise.
+  ProviderNotice provider_notice = 32;
+}
+
+message ProviderNotice {
+  string account_id = 1;
+  string account_label = 2;
+  string daemon_id = 3;
+  string machine = 4;
+  // "Work isn't signed in on box".
+  string title = 5;
+  // sign_in, sign_in_again or choose_account.
+  string action = 6;
 }
 
 // A follow-up can be journaled on this device before its machine confirms the queue.
@@ -3366,141 +3419,232 @@ message MachineOperationCopy {
 }
 
 // ---------------------------------------------------------------------------
-// Provider quotas: credential-free snapshots from the gateway, watched rather
-// than polled.
+// Providers: the Claude and ChatGPT accounts agent turns run on. Accounts,
+// per-machine sign-ins and usage come from the account replica (provider-*
+// KV records), so the slice works offline from cache; changes go through a
+// reachable machine's ProviderAccountService. Sign-ins are live sessions
+// with the machine that signs in.
 
-message QuotasCommand {
+message ProvidersCommand {
   oneof action {
-    QuotasLoad load = 1;
-    QuotaInclusion set_included = 2;
-    // Spends one reset of an account; the result is whether it was accepted.
-    QuotaAccount consume_reset = 3;
+    // Result.provider_account: the new account's ID.
+    ProviderCreate create = 1;
+    ProviderRename rename = 2;
+    // Every machine signs the account out and deletes its files.
+    ProviderAccountRef remove = 3;
+    ProviderAccountRef set_default = 4;
+    ProviderInclusion set_included = 5;
+    // Result.provider_sign_in: the session in ProvidersSlice.sessions.
+    ProviderSignInStart sign_in = 6;
+    // One session that walks every online machine without a sign-in.
+    ProviderAccountRef sign_in_all = 7;
+    ProviderSignInInput submit = 8;
+    ProviderSessionRef cancel = 9;
+    ProviderMachineRef sign_out = 10;
+    ProviderMachineRef check = 11;
+    ProviderAccountRef refresh_usage = 12;
+    // Result.provider_reset.
+    ProviderAccountRef consume_reset = 13;
+    // Drops a finished session from the slice.
+    ProviderSessionRef dismiss = 14;
   }
 }
 
-message QuotasLoad {
-  // Ask the gateway to read the providers again.
-  bool refresh = 1;
+message ProviderCreate {
+  // claude or chatgpt.
+  string provider = 1;
+  string label = 2;
+  // claude-code; codex or siwc. Empty picks the provider's default.
+  string method = 3;
 }
 
-message QuotaInclusion {
-  dieter.gateway.v1.ProviderQuotaProvider provider = 1;
-  string account_key = 2;
-  bool included = 3;
+message ProviderRename {
+  string account_id = 1;
+  string label = 2;
 }
 
-message QuotaAccount { string account_key = 1; }
+message ProviderAccountRef { string account_id = 1; }
 
-message QuotasSlice {
-  repeated dieter.gateway.v1.ProviderQuotaGroup groups = 1;
-  bool loading = 2;
-  string error = 3;
+message ProviderInclusion {
+  string account_id = 1;
+  bool included = 2;
+}
+
+message ProviderSignInStart {
+  string account_id = 1;
+  string daemon_id = 2;
+  // paste_code, device_code or browser; empty picks the method's default.
+  string flow = 3;
+}
+
+message ProviderSignInInput {
+  string session_id = 1;
+  oneof input {
+    string code = 2;
+    // The loopback address the browser could not open.
+    string callback_url = 3;
+  }
+}
+
+message ProviderSessionRef { string session_id = 1; }
+
+message ProviderMachineRef {
+  string account_id = 1;
+  string daemon_id = 2;
+}
+
+message ProviderSignInStarted { string session_id = 1; }
+
+message ProviderResetOutcome {
+  string account_id = 1;
+  // reset, nothingToReset, noCredit or alreadyRedeemed.
+  string outcome = 2;
+  // "Usage limits were reset."
+  string message = 3;
+}
+
+message ProvidersSlice {
+  // Claude, then ChatGPT.
+  repeated ProviderGroupRow groups = 1;
+  ProviderSummary summary = 2;
+  // Live and finished sign-ins of this device.
+  repeated ProviderSignInSession sessions = 3;
   // Accounts with a change in flight.
   repeated string mutating = 4;
-  // `groups` as views show them, in the same order. Wording that depends on
-  // the time (resets, staleness) comes from SharedRules.
-  repeated QuotaGroupRow group_rows = 6;
+  string error = 5;
 }
 
 // How close an allowance is to running out: critical at 10% or less, low at
-// 30% or less. A severity tint wins over a provider's brand color.
-enum QuotaSeverity {
-  QUOTA_SEVERITY_UNKNOWN = 0;
-  QUOTA_SEVERITY_NORMAL = 1;
-  QUOTA_SEVERITY_LOW = 2;
-  QUOTA_SEVERITY_CRITICAL = 3;
+// 30% or less.
+enum ProviderSeverity {
+  PROVIDER_SEVERITY_UNKNOWN = 0;
+  PROVIDER_SEVERITY_NORMAL = 1;
+  PROVIDER_SEVERITY_LOW = 2;
+  PROVIDER_SEVERITY_CRITICAL = 3;
 }
 
-// One provider's accounts, ready to show.
-message QuotaGroupRow {
-  dieter.gateway.v1.ProviderQuotaProvider provider = 1;
-  // "OpenAI" or "Claude", for compact labels.
+// Header usage over the accounts included in summaries.
+message ProviderSummary {
+  repeated ProviderSummaryItem items = 1;
+  // The tightest item, e.g. "62% left"; empty when nothing reports.
+  string text = 2;
+  ProviderSeverity severity = 3;
+}
+
+message ProviderSummaryItem {
+  string provider = 1;
+  // "Claude" or "ChatGPT".
+  string provider_name = 2;
+  // 0-100; -1 when no included account reports a limit.
+  int32 remaining = 3;
+  ProviderSeverity severity = 4;
+  // "Claude 62% left".
+  string text = 5;
+  // The account with the tightest window.
+  string account_id = 6;
+}
+
+message ProviderGroupRow {
+  string provider = 1;
   string provider_name = 2;
   // "2 accounts · 1 excluded".
-  string summary = 4;
-  // The gateway's lowest remaining percentage over the included accounts,
-  // 0-100; -1 when none reports one.
-  int32 lowest_remaining = 5;
-  repeated QuotaAccountRow accounts = 6;
+  string summary = 3;
+  string default_account_id = 4;
+  repeated ProviderAccountRow accounts = 5;
 }
 
-// One provider account, ready to show.
-message QuotaAccountRow {
-  string account_key = 1;
-  // A short name: the email's local part, else the plan, else "••" and the
-  // key's last four characters.
-  string label = 2;
-  // The email, else "Plan · ••" and the key's last six characters.
-  string identity = 3;
-  // Under the identity: the plan when the email is shown, and whether the
-  // summary excludes the account; "Account details" otherwise.
-  string subtitle = 4;
-  // The lowest remaining percentage of any window, 0-100; -1 when none
-  // reports one.
-  int32 remaining = 5;
-  QuotaSeverity severity = 6;
-  bool available = 7;
-  // Why an unavailable account cannot be used, e.g. "Signed out"; empty
-  // when available, which is never shown as a warning.
-  string unavailable = 8;
-  // Shown instead of windows when none report a limit, e.g. "No numeric
-  // limit reported" or "rate limited".
-  string status = 9;
-  repeated QuotaWindowRow windows = 10;
-  repeated QuotaDetail details = 11;
-  // An OpenAI account with a reset credit left.
-  bool can_reset = 12;
-  // Counted in the provider's summary and shown in compact quota bars.
-  bool included = 13;
-  // The numbers are current until then; 0 when unknown, which reads as stale.
-  int64 fresh_until_millis = 14;
-  // For a tooltip or accessibility label, e.g.
-  // "OpenAI · dev@example.com · 45% remaining" or "Claude · Pro · Signed out".
-  string summary_line = 15;
-  // The gateway is reading the account's numbers again.
-  bool refreshing = 16;
-  // The machines that reported the account, as the gateway lists them.
-  repeated QuotaMachineRow machines = 17;
-}
-
-// A machine that reported a provider account.
-message QuotaMachineRow {
-  string daemon_id = 1;
-  // The machine's name, else the start of its ID.
-  string name = 2;
-  bool online = 3;
-  // "Online" or "Offline".
-  string state = 4;
-}
-
-// Provider quota groups handed to SharedRules.quotaRows.
-message QuotaGroupList {
-  repeated dieter.gateway.v1.ProviderQuotaGroup groups = 1;
-}
-
-// SharedRules.quotaRows: the groups as `QuotasSlice.group_rows` shows them.
-message QuotaGroupRows {
-  repeated QuotaGroupRow rows = 1;
-}
-
-// One quota window of an account.
-message QuotaWindowRow {
+message ProviderAccountRow {
   string id = 1;
-  // The provider's label, else "5 hour", "Weekly", "Monthly", "Model", or "Quota".
+  string label = 2;
+  // The identity's email, else "Not signed in yet".
+  string identity = 3;
+  // "Max · Claude Code sign-in".
+  string subtitle = 4;
+  // claude-code, codex, siwc, host or environment.
+  string method = 5;
+  bool is_default = 6;
+  bool included = 7;
+  // The lowest remaining percentage of any window, 0-100; -1 when none.
+  int32 remaining = 8;
+  ProviderSeverity severity = 9;
+  // "Claude · Work · 62% left", for tooltips and accessibility.
+  string summary_line = 10;
+  repeated ProviderWindowRow windows = 11;
+  // RFC 3339 time the usage was observed; empty when never. SharedRules
+  // words it ("updated 3 min ago").
+  string usage_observed_at = 12;
+  // "1.2M tokens in 5 h · 8.4M in 7 days" from Dieter's own turns; empty
+  // when none.
+  string dieter_tokens = 13;
+  repeated ProviderMachineRow machines = 14;
+  // A ChatGPT account with a reset credit left and a machine to spend it.
+  bool can_reset = 15;
+  // "Reset usage limits (1 credit)".
+  string reset_label = 16;
+  // The provider's usage page, e.g. https://chatgpt.com/settings/usage.
+  string manage_usage_url = 17;
+  // At least one online machine lacks a sign-in.
+  bool can_sign_in_all = 18;
+  // Shown instead of windows when none report, e.g. "Usage not reported".
+  string status = 19;
+  // Host and environment accounts follow the machine's own login or key;
+  // removing one only hides it until it is adopted again.
+  bool managed = 20;
+}
+
+message ProviderWindowRow {
+  string id = 1;
+  // "5 hour", "Weekly", or the provider's label.
   string name = 2;
-  // 0-100; -1 when not reported ("Not reported").
+  // 0-100; -1 when not reported.
   int32 remaining = 3;
-  QuotaSeverity severity = 4;
-  // RFC 3339, or empty; SharedRules.quotaResetText words it.
+  ProviderSeverity severity = 4;
+  // RFC 3339, or empty.
   string resets_at = 5;
 }
 
-// One label and text row of an account's details.
-message QuotaDetail {
-  string label = 1;
-  string text = 2;
-  // A balance or spend, which views that keep money off screen leave out.
-  bool monetary = 3;
+message ProviderMachineRow {
+  string daemon_id = 1;
+  string name = 2;
+  bool online = 3;
+  // signed_in, signed_out, expired, failed or not_signed_in.
+  string state = 4;
+  // "Signed in", "Not signed in", "Sign-in expired".
+  string state_label = 5;
+  // "alice@corp.com · verified 2 min ago" or an error.
+  string detail = 6;
+  bool can_sign_in = 7;
+  bool can_sign_out = 8;
+  bool can_check = 9;
+}
+
+message ProviderSignInSession {
+  string id = 1;
+  string account_id = 2;
+  string account_label = 3;
+  string daemon_id = 4;
+  string machine = 5;
+  // "Sign in to Claude Code on box".
+  string title = 6;
+  // starting, waiting, completing, succeeded, failed or canceled.
+  string phase = 7;
+  // Open this on the user's device.
+  string open_url = 8;
+  // The loopback variant; open it instead when same_host.
+  string local_url = 9;
+  // The device runs on the signing machine, so local_url completes alone.
+  bool same_host = 10;
+  int32 callback_port = 11;
+  // A device code to enter at open_url.
+  string user_code = 12;
+  string expires_at = 13;
+  // code, none or callback: what the sheet asks for.
+  string expects = 14;
+  string error = 15;
+  // Machines still to sign in after this one (sign_in_all).
+  int32 remaining_machines = 16;
+  // One line for the sheet, e.g. "Paste the code Anthropic shows you".
+  string instructions = 17;
 }
 
 // ---------------------------------------------------------------------------

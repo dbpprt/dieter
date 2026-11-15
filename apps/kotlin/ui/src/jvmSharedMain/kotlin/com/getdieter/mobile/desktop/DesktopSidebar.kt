@@ -30,13 +30,14 @@ import com.getdieter.core.activity.Activity
 import com.getdieter.mobile.admin.ProjectEditor
 import com.getdieter.mobile.design.*
 import com.getdieter.mobile.navigation.*
+import com.getdieter.mobile.providers.rememberProviders
 import com.getdieter.mobile.store.*
 import kotlin.time.Instant
 
 /**
  * The navigation as a floating card: destinations, projects with their live conversations, then
- * machines and quotas, as the Mac sidebar. [onNavigate] runs after any choice, e.g. to close a
- * floating sidebar.
+ * machines and provider usage, as the Mac sidebar. [onNavigate] runs after any choice, e.g. to
+ * close a floating sidebar.
  */
 @Composable
 internal fun DesktopSidebar(
@@ -208,7 +209,7 @@ internal val DesktopSection.glyph: Glyph
             DesktopSection.PROJECTS,
             DesktopSection.PROJECT -> Glyph.PROJECTS
             DesktopSection.MACHINE -> Glyph.MACHINE
-            DesktopSection.USAGE -> Glyph.USAGE
+            DesktopSection.PROVIDERS -> Glyph.KEY
             DesktopSection.DEVICES -> Glyph.DEVICES
             DesktopSection.SETTINGS -> Glyph.SETTINGS
             DesktopSection.PLACES -> Glyph.TOOLS
@@ -578,12 +579,11 @@ internal fun ActivityRow.tint(): Color =
         else -> tokens.tertiary
     }
 
-/** Machines with their connection, then provider quotas, in a recessed well. */
+/** Machines with their connection, then provider usage, in a recessed well. */
 @Composable
 private fun StatusPanel(store: MobileStore, place: DesktopPlace, onNavigate: () -> Unit) {
     val session by store.session.slice.collectAsState()
-    val quotas by store.machines.quotas.collectAsState()
-    LaunchedEffect(Unit) { store.machines.loadQuotas() }
+    val providers = rememberProviders(store)
     Column(
         Modifier.fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -638,39 +638,40 @@ private fun StatusPanel(store: MobileStore, place: DesktopPlace, onNavigate: () 
                 )
             }
         }
-        val rows = quotas.group_rows.filter { it.lowest_remaining >= 0 }
-        if (rows.isNotEmpty()) {
+        val items = providers.summary?.items.orEmpty().filter { it.remaining >= 0 }
+        if (items.isNotEmpty()) {
             Box(
                 Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                     .fillMaxWidth()
                     .height(1.dp)
                     .background(tokens.hairline)
             )
-            DesktopSectionHeader("Quotas")
-            rows.forEach { group ->
+            DesktopSectionHeader("Providers")
+            items.forEach { item ->
                 Row(
                     Modifier.fillMaxWidth()
                         .padding(horizontal = 4.dp)
                         .height(24.dp)
                         .desktopClickable(
                             {
-                                store.openSection(DesktopSection.USAGE)
+                                store.openSection(DesktopSection.PROVIDERS)
                                 onNavigate()
                             },
                             RoundedCornerShape(7.dp),
+                            selected = place.section == DesktopSection.PROVIDERS,
                         )
                         .padding(horizontal = 8.dp)
-                        .testTag("sidebar-quota-${group.provider_name.lowercase()}"),
+                        .semantics { contentDescription = item.text }
+                        .testTag("sidebar-provider-${item.provider}"),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        group.provider_name,
+                        item.provider_name,
                         Modifier.weight(1f),
                         color = tokens.subtle,
                         fontSize = 11.5.sp,
                         maxLines = 1,
                     )
-                    val fraction = group.lowest_remaining / 100f
                     Box(
                         Modifier.size(width = 44.dp, height = 4.dp)
                             .clip(RoundedCornerShape(50))
@@ -678,18 +679,18 @@ private fun StatusPanel(store: MobileStore, place: DesktopPlace, onNavigate: () 
                     ) {
                         Box(
                             Modifier.fillMaxHeight()
-                                .fillMaxWidth(fraction.coerceIn(0f, 1f))
+                                .fillMaxWidth((item.remaining / 100f).coerceIn(0f, 1f))
                                 .background(
-                                    when {
-                                        group.lowest_remaining < 15 -> tokens.coral
-                                        group.lowest_remaining < 35 -> tokens.attention
+                                    when (item.severity) {
+                                        ProviderSeverity.PROVIDER_SEVERITY_CRITICAL -> tokens.coral
+                                        ProviderSeverity.PROVIDER_SEVERITY_LOW -> tokens.attention
                                         else -> tokens.running
                                     }
                                 )
                         )
                     }
                     Spacer(Modifier.width(6.dp))
-                    Text("${group.lowest_remaining}%", style = MonoSmall, color = tokens.tertiary)
+                    Text("${item.remaining}%", style = MonoSmall, color = tokens.tertiary)
                 }
             }
         }

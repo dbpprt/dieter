@@ -83,9 +83,9 @@ delivered sequence or complete sync projection. Transient failures allow five
 retries between delivered frames; revocation and permanent errors stop recovery.
 Mutations, process starts, and stdin writes are never replayed by this recovery.
 The gateway relays opaque tunnels and stores only control-plane state, the
-signed device roster and short-lived pairing requests, plus normalized,
-credential-free provider quota snapshots. It does not store projects,
-transcripts, files, schedules, provider credentials, or harness credentials. Use
+signed device roster and short-lived pairing requests. It does not store
+projects, transcripts, files, schedules, provider accounts, usage, provider
+credentials, or harness credentials. Use
 `dieter machine show <machine-id>` and `dieter machine route <machine-id>` to
 inspect presence and advertised routes. Route JSON also includes `relay_lanes`:
 control (0), replication (1), command (2), and subscription (3), with connectivity,
@@ -137,38 +137,83 @@ Claude Code, Codex and OMP run at the versions in the runtime's
 so a release daemon host needs no npm (`dieter doctor` reports it as optional).
 Only DSH still installs from npm on first use.
 
-Provider quotas are scoped to the enrolled daemon's gateway account, not one
-daemon. Do not pass global `--machine`:
+Claude Code and Codex turns run on provider accounts: Claude and ChatGPT
+logins that every machine of the account lists, each signed in separately on
+each machine. Accounts, every machine's login state and plan usage replicate
+between daemons as KV records; the logins never leave the machine that signed
+in, and Dieter never reads Claude credentials. Read them with:
 
 ```sh
-dieter quota list
-dieter quota list openai --format json
-dieter quota watch --count 3
-dieter quota refresh openai
-dieter quota exclude openai --account <opaque-key>
-dieter quota include openai --account <opaque-key>
-dieter quota reset openai --account <opaque-key> --confirm RESET
+dieter provider list                         # accounts, each machine's state, usage
+dieter provider list --format json
+dieter provider usage [ACCOUNT]
+dieter --machine <machine-id> provider list
 ```
 
-The table abbreviates opaque account keys. JSON retains the opaque key so it
-can be passed to account-specific commands; it is an owner-scoped HMAC, not a
-provider account ID. OpenAI rows may also include the bounded display email
-returned by the provider usage API. Provider summaries choose the lowest remaining percentage
-across included account windows and never sum or average separate allowances.
-Use `quota include` or `quota exclude` to change summary membership. OpenAI
-`quota reset` consumes one reset credit, requires `--confirm RESET`, and is
-routed to an online daemon that currently has the exact account.
+`ACCOUNT` is an account ID (`pa_…`) or a unique label. A login state is
+`signed_in`, `signed_out`, `expired` or `failed` per machine; an account can
+run a turn only on a machine where it is `signed_in`. Usage lists the
+provider's 5-hour, weekly and other windows with `observedAt`, plus Dieter's
+own token totals for 5 hours and 7 days; summaries take the lowest remaining
+percentage across included accounts and never sum or average allowances.
+Methods: `claude-code` and `codex` (accounts added in Dieter), `siwc` (Sign in
+with ChatGPT: no web search), `host` (the machine's own `~/.claude` or
+`~/.codex` login, adopted) and `environment` (an API key in the daemon's
+environment).
 
-OpenAI quota collection reads the configured Codex profile's existing OAuth
-credentials and calls the ChatGPT usage API directly, without launching Codex or
-refreshing plugin marketplaces. File credentials and profile-specific macOS
-Keychain entries are supported; process-only and encrypted secret stores are
-unsupported. Quota reads and resets never refresh or rewrite Codex-owned
-credentials. If its access token expires, run Codex to refresh the login.
+Choose the account for new work or the next message with `--account ID|LABEL`
+on `card create`, `card send`, `chat create`, `chat send` and
+`schedule create|update`.
+It must belong to the conversation's provider (`claude-code` takes Claude
+accounts, `codex` ChatGPT accounts) and may change between turns. Without it,
+Dieter uses the conversation's last account, then the provider's default, then
+the only account signed in on the owner machine. A card an agent creates should
+normally keep the account of its own conversation; pass `--account` only when
+the user asked for a specific one.
 
-Claude usage is polled at most once every five minutes per profile, with a
-ten-minute cooldown after a failed probe. Discovery and explicit `quota refresh`
-share that cooldown; cached reads do not force another provider request.
+```sh
+dieter card create --project <project-id> --board <board-id> \
+  --provider claude-code --account Work --lane todo --prompt-file task.md --format id
+dieter card send --account Personal --message "Continue." <card-id>
+```
+
+Admission fails with FailedPrecondition when the account is not signed in on
+the conversation's machine ("Work isn't signed in on box") or no account of the
+provider exists ("Add a Claude account in Settings › Providers"). Report that
+to the user; do not retry with another account unless asked.
+
+Agents cannot manage accounts. Adding, renaming, including or excluding,
+removing, setting defaults, signing in (`provider login`) or out, and spending
+reset credits fail with PermissionDenied while `DIETER_TURN_TOKEN` is set, also
+with `--machine`; leave `provider check` and `usage --refresh` to people too.
+Never ask the user for a provider password, token or sign-in code, and never
+read or copy files under `DIETER_HOME/provider-accounts`, `~/.claude` or
+`~/.codex`. `dieter provider token` exists only for Codex itself inside Sign in
+with ChatGPT turns; never call it or print its output.
+
+People run the rest:
+
+```sh
+dieter provider add claude|chatgpt --label LABEL [--method codex|siwc]
+dieter [--machine M] provider login ACCOUNT [--device-code|--browser] [--code CODE] [--callback URL]
+dieter [--machine M] provider logout ACCOUNT
+dieter [--machine M] provider check ACCOUNT
+dieter provider rename ACCOUNT LABEL
+dieter provider include|exclude ACCOUNT
+dieter provider default ACCOUNT
+dieter provider usage [ACCOUNT] --refresh
+dieter [--machine M] provider reset ACCOUNT --confirm RESET
+dieter provider remove ACCOUNT --confirm REMOVE
+```
+
+`login`, `logout`, `check`, `usage --refresh` and `reset` act on the daemon that
+serves the call; the other mutations change the account on every machine.
+`login` prints the page to open (and a ChatGPT device code), then waits; a
+Claude sign-in reads the code Anthropic shows, and any browser sign-in accepts
+the loopback address a browser on another device could not open. Removing an
+account signs it out and deletes its files on every machine; `host` and
+`environment` accounts are never signed out and reappear while the machine
+still has that login or key.
 
 Machine restart, shutdown, and daemon update require the exact confirmation
 phrases shown by `--help` and are available only when the target daemon reports

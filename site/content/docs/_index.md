@@ -20,6 +20,7 @@ Dieter is open source under the MIT license. The name is pronounced **DEE-ter**.
 | See what the apps can do                    | [Product tour](/docs/tour/)                |
 | Install a daemon and a client               | [Installation](/docs/installation/)        |
 | Run your first task                         | [Quick start](/docs/quickstart/)           |
+| Sign in to Claude or ChatGPT                | [Provider accounts](/docs/providers/)      |
 | Organize projects, boards, and checkouts    | [Projects & tasks](/docs/projects/)        |
 | Review files, changes, and running commands | [Conversation workspace](/docs/workspace/) |
 | Connect more machines                       | [Machines & routes](/docs/machines/)       |
@@ -32,6 +33,8 @@ Dieter is open source under the MIT license. The name is pronounced **DEE-ter**.
 **Agents run on daemon hosts.** Install `dieter` on Apple Silicon macOS or Linux
 amd64/arm64. It starts agents beside your Git checkout using their normal local
 configuration. Codex, Claude Code, Pi, Oh My Pi, and DeepSeek Harness are supported, plus the Strix security scanner.
+Sign your machines in to Claude and ChatGPT from any app, and choose the
+account per chat.
 
 **Native apps are your workspace.** macOS, Android, and iOS provide boards,
 chats, files, terminals, schedules, and machine tools; Android and iOS share one
@@ -42,8 +45,8 @@ distribution.
 **The gateway connects your devices.** It authenticates accounts and enrolled
 machines, advertises routes, and relays end-to-end encrypted connections when
 needed, without being able to read them. Your devices trust each other only
-after you pair them. The gateway stores control metadata and normalized quota
-snapshots, not your repositories or conversations.
+after you pair them. The gateway stores control metadata, not your
+repositories, conversations or provider accounts.
 There is no browser-based Dieter application; this website is documentation.
 
 ## What stays where

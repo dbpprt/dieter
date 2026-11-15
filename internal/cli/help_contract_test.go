@@ -60,6 +60,10 @@ var rpcCommand = map[string]string{
 	"GetTrustStatus": "device status", "GetDeviceRoster": "device roster", "SyncDeviceRoster": "device sync", "InitializeDeviceRoster": "device init",
 	"ListPairingRequests": "device requests", "ApproveDevice": "device approve", "RevokeDevice": "device revoke", "RecoverDeviceTrust": "device recover",
 	"ListVaultItems": "vault list", "GetVaultItem": "vault show", "RevealVaultItem": "vault get", "CreateVaultItem": "vault add", "UpdateVaultItem": "vault edit", "DeleteVaultItem": "vault remove", "ListVaultAudit": "vault audit",
+	"ListProviderAccounts": "provider list", "CreateProviderAccount": "provider add", "UpdateProviderAccount": "provider rename", "DeleteProviderAccount": "provider remove",
+	"SetDefaultProviderAccount": "provider default", "StartProviderLogin": "provider login", "WatchProviderLogin": "provider login", "SubmitProviderLoginInput": "provider login",
+	"CancelProviderLogin": "provider login", "SignOutProviderAccount": "provider logout", "CheckProviderLogin": "provider check", "RefreshProviderUsage": "provider usage",
+	"ConsumeProviderUsageReset": "provider reset", "GetProviderTurnToken": "provider token",
 }
 
 func TestEveryDaemonRPCMapsToCLICommand(t *testing.T) {

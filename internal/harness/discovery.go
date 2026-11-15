@@ -459,15 +459,7 @@ type codexCache struct {
 }
 
 func (c *Catalog) discoverCodexModels() ([]Model, error) {
-	root := strings.TrimSpace(c.env.Value("CODEX_HOME"))
-	if root == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, err
-		}
-		root = filepath.Join(home, ".codex")
-	}
-	data, err := os.ReadFile(filepath.Join(root, "models_cache.json"))
+	data, err := os.ReadFile(c.codexModelsCache())
 	if err != nil {
 		return nil, err
 	}
@@ -729,4 +721,28 @@ func effortName(id string) string {
 func titleWords(value string) string {
 	value = strings.ReplaceAll(value, "-", " ")
 	return strings.Title(value) //nolint:staticcheck // capability labels are short ASCII identifiers
+}
+
+// codexModelsCache is the newest models_cache.json among the provider
+// account homes, else the host's CODEX_HOME (~/.codex).
+func (c *Catalog) codexModelsCache() string {
+	newest, newestTime := "", time.Time{}
+	if c.env.CodexModelHomes != nil {
+		for _, home := range c.env.CodexModelHomes() {
+			path := filepath.Join(home, "models_cache.json")
+			if info, err := os.Stat(path); err == nil && info.ModTime().After(newestTime) {
+				newest, newestTime = path, info.ModTime()
+			}
+		}
+	}
+	if newest != "" {
+		return newest
+	}
+	root := strings.TrimSpace(c.env.Value("CODEX_HOME"))
+	if root == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			root = filepath.Join(home, ".codex")
+		}
+	}
+	return filepath.Join(root, "models_cache.json")
 }

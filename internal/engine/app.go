@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dbpprt/dieter/internal/engine/accounts"
 	"github.com/dbpprt/dieter/internal/git/workspace"
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
@@ -23,7 +24,6 @@ type Service struct {
 	Catalog             *harness.Catalog
 	Workspaces          *workspace.Manager
 	BackgroundProcesses func(context.Context, string, harness.ProcessCall) (json.RawMessage, error)
-	ProviderAccountKey  func(string) string
 	// CLIExecutable is the dieter binary that turn instructions tell agents to
 	// run and that channel file-claim hooks run (DaemonExecutable in a daemon).
 	// Naming the daemon's own binary keeps an older dieter earlier on a login
@@ -33,6 +33,10 @@ type Service struct {
 	// LinkedFolders lists the synced folders linked to a project that this
 	// daemon keeps, for turn instructions; nil when folders are not running.
 	LinkedFolders func(projectID string) []model.LinkedFolder
+	// Accounts resolves the provider account a Claude Code or Codex turn runs
+	// on. Nil (tests and tools without accounts) leaves credentials to the
+	// adapters and records no account.
+	Accounts ProviderAccounts
 
 	channels channelHub
 
@@ -86,6 +90,17 @@ type Options struct {
 	Runner           harness.Runner
 	Catalog          *harness.Catalog
 	MinimumFreeBytes *uint64
+	Accounts         ProviderAccounts
+}
+
+// ProviderAccounts is what turns need from the provider accounts engine
+// (internal/engine/accounts).
+type ProviderAccounts interface {
+	ResolveTurn(ctx context.Context, harness, accountID string) (accounts.TurnAuth, error)
+	QuickTitleAuth(ctx context.Context) (accounts.TurnAuth, bool)
+	ObserveUsage(accountID string, data json.RawMessage)
+	MarkExpired(accountID, reason string)
+	RecordTurnTokens(accountID string, at time.Time, input, output, total int64)
 }
 
 func New(data *store.Store, runner harness.Runner) *Service {
@@ -109,6 +124,7 @@ func NewWithOptions(data *store.Store, options Options) *Service {
 		Store: data, Runner: runner, Catalog: catalog, Workspaces: workspace.New(data, nil), active: map[string]*activeTurn{}, strandedLeases: map[string]leases.RuntimeLease{},
 		minimumFreeBytes: minimumFreeBytes, diskAvailable: availableDiskBytes, turnTokenKey: newTurnTokenKey(), releaseLease: data.Leases.Release,
 		quickTitleJobs: map[string]*quickTitleJob{}, quickTitleSlots: make(chan struct{}, quickTaskTitleConcurrency),
+		Accounts: options.Accounts,
 	}
 }
 

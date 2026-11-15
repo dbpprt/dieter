@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -46,7 +48,14 @@ func (s *Service) scheduleQuickTaskTitle(card model.Card, story string) {
 			return
 		}
 		title, err := s.generateQuickTaskTitle(ctx, story)
-		if err != nil || ctx.Err() != nil {
+		switch {
+		case errors.Is(err, errQuickTitleSkipped):
+			slog.Info("quick-task title skipped", "card", card.ID, "reason", err)
+			return
+		case err != nil && ctx.Err() == nil:
+			slog.Warn("quick-task title failed", "card", card.ID, "error", err)
+			return
+		case err != nil || ctx.Err() != nil:
 			return
 		}
 		// Compare the durable revision as well as the text: changing a title and

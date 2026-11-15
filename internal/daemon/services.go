@@ -10,6 +10,7 @@ import (
 
 	"github.com/dbpprt/dieter/internal/api"
 	"github.com/dbpprt/dieter/internal/engine"
+	"github.com/dbpprt/dieter/internal/engine/accounts"
 	"github.com/dbpprt/dieter/internal/engine/scheduler"
 	"github.com/dbpprt/dieter/internal/harness"
 	hostfolders "github.com/dbpprt/dieter/internal/host/folders"
@@ -27,21 +28,27 @@ import (
 // daemon object graph. Nil collaborators are built from Env for the store
 // root.
 type ServiceOptions struct {
-	Env                config.Daemon
-	Runner             harness.Runner
-	Catalog            *harness.Catalog
-	RemoteDesktop      *remotedesktop.Manager
-	ControlRTC         *controlrtc.Manager
-	ProviderAccountKey func(string) string
-	DaemonState        *daemonstate.Store
+	Env           config.Daemon
+	Runner        harness.Runner
+	Catalog       *harness.Catalog
+	RemoteDesktop *remotedesktop.Manager
+	ControlRTC    *controlrtc.Manager
+	DaemonState   *daemonstate.Store
 	// Trust is the enrolled daemon's device roster; nil when not enrolled.
 	Trust api.DeviceTrust
 	// FolderPeers dials the other daemons of the account for synced folders;
 	// nil when not enrolled. FolderTrusted reports roster membership.
 	FolderPeers   hostfolders.Dialer
 	FolderTrusted func(daemonID string) bool
-	// Name is this machine's enrolled name.
+	// Name is this machine's enrolled name, also used in provider account
+	// messages.
 	Name string
+	// Roster lists the account's active daemons; provider logins of other
+	// daemons are ignored. Optional.
+	Roster func() map[string]bool
+	// AccountsBackend replaces the provider tools the accounts engine runs
+	// (fixtures); nil runs Claude Code and Codex from the harness runtime.
+	AccountsBackend accounts.Backend
 }
 
 // Services is the wired daemon object graph over one central store.
@@ -53,6 +60,7 @@ type Services struct {
 	Executions    *remoteexec.Manager
 	RemoteDesktop *remotedesktop.Manager
 	Folders       *hostfolders.Engine
+	Accounts      *accounts.Service
 	API           *api.Server
 	log           *slog.Logger
 }
@@ -71,10 +79,15 @@ func NewServices(data *store.Store, logger *slog.Logger, options ServiceOptions)
 	if catalog == nil {
 		catalog = harness.DefaultCatalog(data.Root, options.Env.MockHarness)
 	}
-	application := engine.NewWithOptions(data, engine.Options{Runner: runner, Catalog: catalog, MinimumFreeBytes: options.Env.MinimumFreeBytes})
-	if options.ProviderAccountKey != nil {
-		application.ProviderAccountKey = options.ProviderAccountKey
+	providerAccounts := newProviderAccounts(data, logger, runner, options)
+	// Turns resolve provider accounts when they really run Claude Code and
+	// Codex, or when a fixture supplies the provider tools; injected test
+	// runners keep the adapters' own credentials.
+	var turnAccounts engine.ProviderAccounts
+	if _, real := runner.(*harness.SubprocessRunner); real || options.AccountsBackend != nil {
+		turnAccounts = providerAccounts
 	}
+	application := engine.NewWithOptions(data, engine.Options{Runner: runner, Catalog: catalog, MinimumFreeBytes: options.Env.MinimumFreeBytes, Accounts: turnAccounts})
 	// Agent channel hooks run this binary's `dieter channel hook`.
 	application.CLIExecutable = engine.DaemonExecutable()
 	remoteDesktop := options.RemoteDesktop
@@ -100,6 +113,7 @@ func NewServices(data *store.Store, logger *slog.Logger, options ServiceOptions)
 		}),
 		Executions:    remoteexec.New(),
 		RemoteDesktop: remoteDesktop,
+		Accounts:      providerAccounts,
 		log:           logger,
 	}
 	services.API = api.NewWithOptions(data, logger, api.Options{
@@ -107,9 +121,47 @@ func NewServices(data *store.Store, logger *slog.Logger, options ServiceOptions)
 		App: application, Schedules: services.Schedules, Terminals: services.Terminals,
 		Executions: services.Executions, Machine: machine.NewCollector(data.Root),
 		Catalog: catalog, MinimumFreeBytes: options.Env.MinimumFreeBytes, DaemonState: options.DaemonState,
-		Trust: options.Trust, Folders: folders,
+		Trust: options.Trust, Folders: folders, Accounts: providerAccounts,
 	})
 	return services
+}
+
+// providerAccountEnvironment names the daemon variables the accounts engine
+// hands to provider tools: the basics their CLIs need, the host logins it
+// adopts (CLAUDE_CONFIG_DIR, CODEX_HOME) and API keys of environment accounts.
+var providerAccountEnvironment = []string{
+	"PATH", "HOME", "USER", "LOGNAME", "LANG", "TMPDIR", "SHELL",
+	"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy", "ALL_PROXY", "all_proxy",
+	"NODE_EXTRA_CA_CERTS", "NODE_USE_ENV_PROXY",
+	"CLAUDE_CONFIG_DIR", "CODEX_HOME",
+	"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL",
+	"OPENAI_API_KEY", "CODEX_API_KEY", "OPENAI_BASE_URL",
+}
+
+// newProviderAccounts builds the provider accounts engine over the harness
+// runtime that ships Claude Code and Codex.
+func newProviderAccounts(data *store.Store, logger *slog.Logger, runner harness.Runner, options ServiceOptions) *accounts.Service {
+	environment := map[string]string{}
+	for _, key := range providerAccountEnvironment {
+		if value := options.Env.Environment.Value(key); value != "" {
+			environment[key] = value
+		}
+	}
+	opts := accounts.Options{
+		Store: data, HostHome: environment["HOME"], Environment: environment, Logger: logger,
+		MachineName: func() string { return options.Name }, Roster: options.Roster, Backend: options.AccountsBackend,
+	}
+	if subprocess, ok := runner.(*harness.SubprocessRunner); ok {
+		opts.RuntimeDir = subprocess.RuntimeDirectory
+	}
+	service, err := accounts.New(opts)
+	if err != nil {
+		// Only a relative HOME fails here; turns then fail with the reason.
+		logger.Warn("provider accounts are unavailable", "error", err)
+		opts.HostHome = ""
+		service, _ = accounts.New(opts)
+	}
+	return service
 }
 
 // storageRecoveryInterval bounds how long work left by a failed storage
@@ -159,6 +211,9 @@ func (s *Services) Serve(ctx context.Context, listener net.Listener, activating 
 	// Agent channels are account-wide: publish this daemon's channel records
 	// and ingest the other daemons'.
 	go s.App.RunChannelReplication(ctx)
+	// Provider accounts: adoption of host logins, login checks, usage probes
+	// and cleanup of removed accounts.
+	go s.Accounts.Run(ctx)
 	// During a launchd/systemd replacement the previous owner PID can remain
 	// alive for a fraction of a second after the new process starts. Recheck
 	// once after handoff so that transiently-valid leases cannot strand a turn.
@@ -217,6 +272,7 @@ func (s *Services) Serve(ctx context.Context, listener net.Listener, activating 
 	if err := s.App.SuspendActiveTurns(shutdownCtx); err != nil {
 		logger.Warn("some active agent turns could not be suspended for restart", "error", err)
 	}
+	s.Accounts.Shutdown()
 	s.Terminals.Shutdown(shutdownCtx)
 	s.Executions.Shutdown(shutdownCtx)
 	s.RemoteDesktop.Shutdown(shutdownCtx)

@@ -101,8 +101,10 @@ Adopt the proposal's design. Both parts ship together in the 0.6 release line:
 
 - `ROTATE` entries. A device that needs a new key is removed and pairs again.
 - QR pairing.
-- Phase 4 metadata minimization: provider quota snapshots, daemon names and
-  remote-desktop presence are not sealed.
+- Phase 4 metadata minimization: daemon names and remote-desktop presence are
+  not sealed. Provider quota snapshots, the third item here, no longer exist:
+  since [ADR 0006](0006-provider-accounts.md) the gateway stores no provider
+  data.
 - Publishing the vault member key in the roster; vault membership keeps its own
   join codes.
 
@@ -113,7 +115,7 @@ Adopt the proposal's design. Both parts ship together in the 0.6 release line:
   device, or add one. It still sees metadata: accounts, device IDs, names, kinds
   and public keys, pairing requests, daemon names and presence, direct
   candidates, remote-desktop readiness, tunnel open and close times and sizes,
-  client IP addresses, TURN allocations and provider quota snapshots. It can
+  client IP addresses and TURN allocations. It can
   deny service and withhold roster entries; gossip detects withheld entries.
 - Pairing is a human step on every new device. The residual risk is social
   engineering: a person who types a code they did not see on their own device

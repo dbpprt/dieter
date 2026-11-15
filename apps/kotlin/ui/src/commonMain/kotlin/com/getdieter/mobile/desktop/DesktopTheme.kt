@@ -31,7 +31,7 @@ internal class DesktopTokens(
     val tileSelected: Color,
     val tileRim: Color,
     val tileRimSelected: Color,
-    /** A recessed well, e.g. the machines and quotas panel. */
+    /** A recessed well, e.g. the machines and providers panel. */
     val inset: Color,
     val hairline: Color,
     val text: Color,

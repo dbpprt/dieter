@@ -27,6 +27,7 @@ import com.getdieter.client.v1.MachineEntry
 import com.getdieter.mobile.design.*
 import com.getdieter.mobile.navigation.*
 import com.getdieter.mobile.platform.exposingTestTags
+import com.getdieter.mobile.providers.rememberProviders
 import com.getdieter.mobile.store.*
 import com.getdieter.mobile.tools.machineGlyph
 
@@ -42,14 +43,14 @@ internal class MoreEntry(
     val value: String = "",
 )
 
-/** More's places (channels, folders, terminals, usage) and account pages (devices, settings). */
+/**
+ * More's places (channels, folders, terminals, providers) and account pages (devices, settings).
+ */
 @Composable
 internal fun rememberMoreEntries(store: MobileStore): Pair<List<MoreEntry>, List<MoreEntry>> {
     val channels by store.channels.slice.collectAsState()
-    val quotas by store.machines.quotas.collectAsState()
+    val providers = rememberProviders(store)
     val terminals by store.terminals.overview.collectAsState()
-    val lowest =
-        quotas.group_rows.filter { it.lowest_remaining >= 0 }.minOfOrNull { it.lowest_remaining }
     fun tool(page: ToolPage, value: String = "") =
         MoreEntry(
             page.name.lowercase(),
@@ -73,7 +74,7 @@ internal fun rememberMoreEntries(store: MobileStore): Pair<List<MoreEntry>, List
             ToolPage.TERMINALS,
             terminals.entries.size.takeIf { it > 0 }?.let { "$it open" }.orEmpty(),
         ),
-        tool(ToolPage.USAGE, lowest?.let { "$it% left" }.orEmpty()),
+        tool(ToolPage.PROVIDERS, providers.summary?.text.orEmpty()),
     ) to listOf(tool(ToolPage.DEVICES), tool(ToolPage.SETTINGS))
 }
 
@@ -265,9 +266,10 @@ internal fun MoreSheet(
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 12.dp)
         ) {
-            // Usage shows on the Inbox; the sheet's tiles are only places to go, all alike.
+            // Providers live in Settings and their usage on the Inbox; the sheet's tiles are only
+            // places to go, all alike.
             TileGrid(
-                (places + account).filter { it.id != ToolPage.USAGE.name.lowercase() },
+                (places + account).filter { it.id != ToolPage.PROVIDERS.name.lowercase() },
                 selected,
                 ::open,
             )

@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/dbpprt/dieter/internal/api"
+	"github.com/dbpprt/dieter/internal/engine"
 	"github.com/dbpprt/dieter/internal/gateway"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
@@ -73,7 +74,6 @@ func main() {
 	inboxFixture := flag.Bool("inbox-fixture", false, "seed deterministic Inbox activity and real conversations")
 	mailReport := flag.String("mail-report", "", "optional Markdown file to seed as a revised report in the isolated E2E mailbox")
 	e2eFixture := flag.Bool("e2e-fixture", false, "seed the small persisted workspace that every Maestro flow uses")
-	usageFixture := flag.Bool("usage-fixture", false, "publish deterministic provider usage without provider credentials")
 	showcaseFixture := flag.Bool("showcase-fixture", false, "seed the multi-machine workspace with live agent turns used for documentation screenshots")
 	channelsFixture := flag.Bool("channels-fixture", false, "seed the project channel and its agents' conversations with a two-agent coordination")
 	directRoute := flag.String("direct-route", "", `advertise a loopback direct TLS route for the primary daemon: "live" serves it, "dead" advertises a closed port`)
@@ -82,13 +82,13 @@ func main() {
 		fmt.Fprintln(os.Stderr, `error: -direct-route must be "live" or "dead"`)
 		os.Exit(2)
 	}
-	if err := run(*address, *home, *offlineTrigger, *daemonRestartTrigger, *directRoute, *mailReport, *inboxFixture, *usageFixture, *e2eFixture, *showcaseFixture, *channelsFixture); err != nil {
+	if err := run(*address, *home, *offlineTrigger, *daemonRestartTrigger, *directRoute, *mailReport, *inboxFixture, *e2eFixture, *showcaseFixture, *channelsFixture); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
-func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute, mailReport string, inboxFixture, usageFixture, e2eFixture, showcaseFixture, channelsFixture bool) error {
+func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute, mailReport string, inboxFixture, e2eFixture, showcaseFixture, channelsFixture bool) error {
 	if home == "" {
 		var err error
 		home, err = os.MkdirTemp("", "dieter-isolated-*")
@@ -266,6 +266,13 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute, mailR
 	// cache, so concurrent fixtures don't each run npm ci.
 	runtimeHome, runtimeEnvironment := fixtureHarnessRuntime()
 	folders := hostfolders.New(hostfolders.Options{Store: data, Log: logger, Name: primaryName, Walk: 2 * time.Second, PeerPoll: 5 * time.Second})
+	// Every fixture daemon runs the real provider accounts engine over an
+	// in-process fixture backend, for its API and for its turns.
+	hostHome, err := filepath.Abs(home)
+	if err != nil {
+		return err
+	}
+	providerAccounts := newFixtureProviderAccounts(logger, hostHome)
 	newFixtureServer := func(fixtureData *boardstore.Store) *api.Server {
 		runner := newIsolatedRunner(harness.NewSubprocessRunner(runtimeHome, runtimeEnvironment))
 		// Smoke fixtures exercise client delivery and reconnect behavior with the
@@ -274,15 +281,20 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute, mailR
 		noDiskReserve := uint64(0)
 		runner.logger = logger
 		runner.showcase = showcaseFixture
+		// Keep the real release choices without triggering provider CLI/network
+		// discovery or runtime installation in each disposable fixture home. The
+		// mock harness answers every prompt deterministically, so end-to-end
+		// turns complete without real provider credentials.
+		catalog := harness.StaticCatalog(true)
+		providers := providerAccounts.forStore(fixtureData, trusts[fixtureData])
+		application := engine.NewWithOptions(fixtureData, engine.Options{Runner: runner, Catalog: catalog, MinimumFreeBytes: &noDiskReserve, Accounts: providers})
 		value := api.NewWithOptions(fixtureData, logger, api.Options{
-			Runner:        runner,
-			PrivacyDriver: &isolatedPrivacy{},
-			PrivacyBootID: func(context.Context) (string, error) { return "isolated-boot", nil },
-			// Keep the real release choices without triggering provider CLI/network
-			// discovery or runtime installation in each disposable fixture home. The
-			// mock harness answers every prompt deterministically, so end-to-end
-			// turns complete without real provider credentials.
-			Catalog:          harness.StaticCatalog(true),
+			Runner:           runner,
+			App:              application,
+			Accounts:         providers,
+			PrivacyDriver:    &isolatedPrivacy{},
+			PrivacyBootID:    func(context.Context) (string, error) { return "isolated-boot", nil },
+			Catalog:          catalog,
 			MinimumFreeBytes: &noDiskReserve,
 			ControlRTC: func() *controlrtc.Manager {
 				if fixtureData == data {
@@ -325,8 +337,14 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute, mailR
 		for index := len(runners) - 1; index >= 0; index-- {
 			runners[index].Shutdown()
 		}
+		providerAccounts.shutdown()
 	}()
 	boardServer := newFixtureServer(data)
+	if e2eFixture || showcaseFixture {
+		if err = seedPrimaryProviderAccounts(ctx, providerAccounts.forStore(data, primaryTrust), data); err != nil {
+			return err
+		}
+	}
 	boardHTTP := &http.Server{Handler: boardServer.Handler(), Protocols: api.LoopbackProtocols()}
 	go func() { _ = boardHTTP.Serve(boardListener) }()
 	defer boardHTTP.Close()
@@ -374,12 +392,6 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute, mailR
 		return err
 	}
 	tunnel := &link.GatewayClient{ControlWebRTC: control != nil, Identity: identity, TunnelTarget: endpoint.Listener.Addr().String(), Version: buildinfo.ReleaseVersion, Routes: routes.candidates, Log: logger}
-	if usageFixture {
-		tunnel.ProviderQuotas = isolatedUsageQuotas{}
-	}
-	if showcaseFixture {
-		tunnel.ProviderQuotas = showcaseUsageQuotas{}
-	}
 	defer routes.close()
 	if offlineTrigger == "" {
 		go func() { _ = tunnel.Run(ctx) }()
@@ -557,6 +569,17 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute, mailR
 			return fmt.Errorf("pair the isolated second machine: %w", err)
 		}
 	}
+	if e2eFixture && secondDaemonID != "" {
+		// The second machine holds the accounts through peer sync, signs in to
+		// Personal only, and both machines keep syncing so a later sign-in
+		// on either reaches the other.
+		if err = replicateFixtureProviderAccounts(ctx, logger,
+			fixturePeer{identity: identity, trust: primaryTrust, data: data},
+			fixturePeer{identity: secondIdentity, trust: trusts[secondData], data: secondData, accounts: providerAccounts.forStore(secondData, trusts[secondData])},
+			fixturePersonal); err != nil {
+			return err
+		}
+	}
 	// Clients pair with one shared code; the primary machine approves every
 	// request that proves it, exactly as `dieter device approve CODE` does.
 	_, pairingCode, err := roster.NewPairingSecret()
@@ -574,10 +597,15 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute, mailR
 			logger: logger, gateway: isolated, enroll: enroll, newServer: newFixtureServer, account: account, subject: subject,
 			office: identity, officeAddress: boardListener.Addr().String(), officeToken: localToken,
 			primaryTrust: primaryTrust, trusts: trusts,
+			seedAccounts: func(home *boardstore.Store) error {
+				// Live Claude Code and Codex turns run on both online machines.
+				return signInFixtureAccounts(ctx, providerAccounts.forStore(home, trusts[home]), home, fixtureWork, fixturePersonal)
+			},
 		}); err != nil {
 			return err
 		}
 	}
+	providerAccounts.start(ctx)
 
 	fmt.Printf("DIETER_ISOLATED_ADDR=%s\n", isolated.Address)
 	fmt.Printf("DIETER_ISOLATED_TOKEN=%s\n", token)

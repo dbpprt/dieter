@@ -48,8 +48,14 @@ internal fun Composer(
 ) {
     val state = view.state
     val agent = state?.agent
+    // An account that cannot run on the conversation's machine blocks sending; the timeline's
+    // provider notice offers to sign it in or choose another.
     val canSend =
-        (draft.isNotBlank() || attachments.isNotEmpty()) && !busy && !sending && view.card != null
+        (draft.isNotBlank() || attachments.isNotEmpty()) &&
+            !busy &&
+            !sending &&
+            view.card != null &&
+            agent?.account_blocked != true
     val showStop = state?.can_halt == true && draft.isBlank() && attachments.isEmpty()
     val reviewable =
         view.card?.scope != "chat" &&
@@ -84,7 +90,10 @@ internal fun Composer(
         ) {
             if (agent != null)
                 ComposerChip(
-                    listOf(agent.provider_label, agent.model_label, agent.effort_label)
+                    // Agents with provider accounts name the account in place of the effort.
+                    (if (agent.accounts.isNotEmpty())
+                            listOf(agent.provider_label, agent.account_label, agent.model_label)
+                        else listOf(agent.provider_label, agent.model_label, agent.effort_label))
                         .filter { it.isNotEmpty() }
                         .joinToString(" · "),
                     Glyph.SPARKLES,

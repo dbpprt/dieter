@@ -175,6 +175,18 @@ struct ConversationBreadcrumb: View {
                     .accessibilityIdentifier("conversation.access")
                 }
             }
+            // The provider account the next message runs on.
+            if let controls = context.agentControls, !controls.accounts.isEmpty {
+                Text("·")
+                Label(controls.accountLabel, systemImage: "person.crop.circle")
+                    .labelStyle(.titleAndIcon)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(controls.accountBlocked ? DieterTheme.amber : DieterTheme.tertiary)
+                    .lineLimit(1)
+                    .help("Provider account")
+                    .accessibilityIdentifier("conversation.account")
+                    .e2eTarget("conversation.account", text: controls.accountLabel)
+            }
             Spacer(minLength: 0)
         }
         .foregroundStyle(DieterTheme.tertiary)

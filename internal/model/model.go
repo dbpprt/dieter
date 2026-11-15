@@ -222,7 +222,7 @@ type Card struct {
 	InitialPromptSentAt string                     `json:"initialPromptSentAt,omitempty" yaml:"initial_prompt_sent_at,omitempty"`
 	PhaseChangedAt      string                     `json:"phaseChangedAt" yaml:"phase_changed_at"`
 	Provider            string                     `json:"provider,omitempty" yaml:"provider_cache,omitempty"`
-	ProviderAccountKey  string                     `json:"providerAccountKey,omitempty" yaml:"provider_account_key_cache,omitempty"`
+	ProviderAccountID   string                     `json:"providerAccountId,omitempty" yaml:"provider_account_id_cache,omitempty"`
 	Model               string                     `json:"model,omitempty" yaml:"model_cache,omitempty"`
 	Effort              string                     `json:"effort,omitempty" yaml:"effort_cache,omitempty"`
 	ProviderOptions     map[string]string          `json:"providerOptions,omitempty" yaml:"provider_options_cache,omitempty"`
@@ -532,6 +532,7 @@ type Schedule struct {
 	Model           string            `json:"model" yaml:"model"`
 	Effort          string            `json:"effort,omitempty" yaml:"effort,omitempty"`
 	ProviderOptions map[string]string `json:"providerOptions,omitempty" yaml:"provider_options,omitempty"`
+	AccountID       string            `json:"accountId,omitempty" yaml:"account_id,omitempty"`
 	WorkspaceMode   string            `json:"workspaceMode" yaml:"workspace_mode"`
 	VaultAccess     bool              `json:"vaultAccess,omitempty" yaml:"vault_access,omitempty"`
 	MailAccess      bool              `json:"mailAccess,omitempty" yaml:"mail_access,omitempty"`
@@ -648,6 +649,9 @@ type HarnessSelection struct {
 	Model           string            `json:"model"`
 	Effort          string            `json:"effort"`
 	ProviderOptions map[string]string `json:"providerOptions,omitempty"`
+	// AccountID is the provider account (a provider-accounts KV key) the turn
+	// runs on; empty keeps the conversation's account, then the default.
+	AccountID string `json:"accountId,omitempty"`
 }
 
 // TaskPlan is the provider-neutral latest progress snapshot for one assistant

@@ -143,6 +143,41 @@ if (workspaceProbe.exitCode !== 0 || actualWorkspace !== expectedWorkspace) {
     `harness workspace mismatch: expected ${expectedWorkspace}, resolved ${actualWorkspace || "<empty>"}`,
   );
 }
+// A provider-account turn carries the adapter's credential object: {} lets
+// Claude Code use its own login in CLAUDE_CONFIG_DIR, Codex gets its token.
+// Without one (null) the adapter keeps its own discovery.
+function providerAuth(request) {
+  return request.auth && typeof request.auth === "object" ? { auth: request.auth } : {};
+}
+
+// Plan limits the provider reports during a turn (Claude rate_limit_event,
+// Codex account/rateLimits/updated) reach Dieter as provider-usage frames,
+// at most one per second; the stream itself passes through unchanged.
+let lastProviderUsageAt = 0;
+function providerUsageFrom(part) {
+  if (part?.type !== "raw") return undefined;
+  const value = part.rawValue ?? part.raw ?? part.value;
+  if (value?.type === "rate_limit_event" && value.rate_limit_info) return value;
+  if (value?.method === "account/rateLimits/updated" && value.params) return value.params;
+  if (value?.type === "account/rateLimits/updated" && value.rateLimits) return value;
+  return undefined;
+}
+function observeProviderUsage(stream) {
+  if (typeof stream?.pipeThrough !== "function") return stream;
+  return stream.pipeThrough(
+    new TransformStream({
+      transform(part, controller) {
+        const usage = providerUsageFrom(part);
+        if (usage && Date.now() - lastProviderUsageAt >= 1000) {
+          lastProviderUsageAt = Date.now();
+          send({ type: "provider-usage", data: usage });
+        }
+        controller.enqueue(part);
+      },
+    }),
+  );
+}
+
 const heartbeatTimer = setInterval(() => send({ type: "heartbeat" }), 5_000);
 heartbeatTimer.unref?.();
 send({ type: "heartbeat" });
@@ -361,10 +396,14 @@ switch (adapter) {
       reasoningEffort: request.effort || undefined,
       webSearch: request.webSearch === true,
       codexConfig: codexConfig(request),
+      ...providerAuth(request),
     });
     break;
   case "claude-code":
-    harness = createLocalClaudeCode({ effort: request.effort || undefined });
+    harness = createLocalClaudeCode({
+      effort: request.effort || undefined,
+      ...providerAuth(request),
+    });
     break;
   case "pi":
     harness = createPi({
@@ -617,7 +656,7 @@ try {
       reportModelId: adapter === "claude-code",
     });
     const stream = toUIMessageStream({
-      stream: result.stream,
+      stream: observeProviderUsage(result.stream),
       onError: harnessErrorMessage,
       generateMessageId: () => request.responseMessageId,
       messageMetadata,
@@ -638,6 +677,9 @@ try {
             continue;
           }
           chunk = { ...chunk, errorText: claudeAuthFailureMessage(authFailure) };
+          // The account's login on this machine was rejected twice: Dieter
+          // marks it expired so the apps offer to sign in again.
+          send({ type: "auth-failure", reason: authFailure });
         }
         if (observeClaudeTurnChunk(summary, chunk))
           claudeDiagnostics.observeActivity(diagnosticTurn);

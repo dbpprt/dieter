@@ -9,6 +9,10 @@ import UniformTypeIdentifiers
 /// caller applies.
 struct AgentPickerFields: View {
     let controls: ClientAgentControlsState
+    /// The account picker offers "Default account" (an empty choice) even
+    /// after an account was chosen, for forms that keep following the
+    /// provider default, e.g. schedules.
+    var offersDefaultAccount = false
     let choose: (ClientAgentChoice.OneOf_Choice) -> Void
 
     var body: some View {
@@ -16,6 +20,23 @@ struct AgentPickerFields: View {
             ForEach(controls.providers, id: \.id) { Text($0.name).tag($0.id) }
         }
         .disabled(!controls.providerEnabled)
+        if !controls.accounts.isEmpty {
+            Picker(
+                "Account",
+                selection: Binding(
+                    get: { controls.selection.accountID },
+                    set: { id in if id != controls.selection.accountID { choose(.account(id)) } })
+            ) {
+                if offersDefaultAccount || controls.selection.accountID.isEmpty {
+                    Text("Default account").tag("")
+                }
+                ForEach(controls.accounts, id: \.id) { account in
+                    Text(AccountOptionText.title(account)).tag(account.id).disabled(!account.ready)
+                }
+            }
+            .disabled(!controls.accountEnabled)
+            .accessibilityIdentifier("agent-fields.account")
+        }
         Picker("Model", selection: Binding(get: { controls.selection.model }, set: { choose(.model($0)) })) {
             ForEach(controls.models, id: \.id) { Text($0.name).tag($0.id) }
         }
@@ -39,46 +60,81 @@ struct AgentPickerFields: View {
 /// Agent pickers for a form outside a conversation, e.g. a schedule or a
 /// card's draft, as the shared core resolves them against the destination
 /// machine's catalog: a blank agent becomes the catalog's first, and a choice
-/// the pickers do not allow changes nothing.
+/// the pickers do not allow changes nothing. The account picker judges the
+/// account's provider accounts on `daemonID`, the machine that runs the agent.
 struct AgentControlFields: View {
+    /// Absent outside the workspace window (e.g. in isolated tests); the
+    /// fields then offer no accounts.
+    @Environment(ProvidersModel.self) private var providers: ProvidersModel?
     let catalog: Dieter_V1_HarnessCatalog
     @Binding var selection: Dieter_V1_HarnessSelection
+    var daemonID = ""
+    /// Sees each choice before the selection changes, e.g. to note that the
+    /// user picked an account.
+    var onChoose: (ClientAgentChoice.OneOf_Choice) -> Void = { _ in }
     @State private var resolved = AgentControlsMemo()
 
     var body: some View {
-        AgentPickerFields(controls: resolved.controls(selection, catalog: catalog)) { choice in
-            selection = Self.controls(selection, catalog: catalog, choice: choice).selection
+        let slice = providers?.slice ?? ClientProvidersSlice()
+        AgentPickerFields(
+            controls: resolved.controls(selection, catalog: catalog, providers: slice, daemonID: daemonID),
+            offersDefaultAccount: true
+        ) { choice in
+            onChoose(choice)
+            // The core offers no empty account; the form itself goes back to
+            // the provider default.
+            if case .account(let id) = choice, id.isEmpty {
+                selection.accountID = ""
+                return
+            }
+            selection =
+                Self.controls(selection, catalog: catalog, providers: slice, daemonID: daemonID, choice: choice)
+                .selection
         }
+        .onAppear { providers?.observe() }
+        .onDisappear { providers?.release() }
     }
 
     /// The pickers for `selection`, after `choice` when there is one.
     static func controls(
         _ selection: Dieter_V1_HarnessSelection, catalog: Dieter_V1_HarnessCatalog,
+        providers: ClientProvidersSlice = ClientProvidersSlice(), daemonID: String = "",
         choice: ClientAgentChoice.OneOf_Choice? = nil
     ) -> ClientAgentControlsState {
         let choiceData = choice.map { value in ClientAgentChoice.with { $0.choice = value }.rulesData } ?? Data()
         return ClientAgentControlsState(
             rules: SharedRules.shared.agentControls(
-                selection: selection.rulesData, catalog: catalog.rulesData, locked: false, choice: choiceData))
+                selection: selection.rulesData, catalog: catalog.rulesData, locked: false, choice: choiceData,
+                providers: providers == ClientProvidersSlice() ? Data() : providers.rulesData, daemonId: daemonID))
     }
 }
 
-/// The pickers last resolved for a selection and catalog. A form redraws its
-/// agent fields as other fields change; only a new selection or catalog asks
-/// the core again, rather than serializing the whole catalog on every keystroke.
+/// The pickers last resolved for a selection, catalog, accounts and machine.
+/// A form redraws its agent fields as other fields change; only a change of
+/// these asks the core again, rather than serializing the whole catalog on
+/// every keystroke.
 @MainActor
 private final class AgentControlsMemo {
     private var selection: Dieter_V1_HarnessSelection?
     private var catalog: Dieter_V1_HarnessCatalog?
+    private var providers: ClientProvidersSlice?
+    private var daemonID: String?
     private var value = ClientAgentControlsState()
 
     func controls(
-        _ selection: Dieter_V1_HarnessSelection, catalog: Dieter_V1_HarnessCatalog
+        _ selection: Dieter_V1_HarnessSelection, catalog: Dieter_V1_HarnessCatalog,
+        providers: ClientProvidersSlice, daemonID: String
     ) -> ClientAgentControlsState {
-        if selection == self.selection, catalog == self.catalog { return value }
-        value = AgentControlFields.controls(selection, catalog: catalog)
+        if selection == self.selection, catalog == self.catalog, providers == self.providers,
+            daemonID == self.daemonID
+        {
+            return value
+        }
+        value = AgentControlFields.controls(selection, catalog: catalog, providers: providers, daemonID: daemonID)
         self.selection = selection
         self.catalog = catalog
+        self.providers = providers
+        self.daemonID = daemonID
         return value
     }
 }

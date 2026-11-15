@@ -500,7 +500,10 @@ internal fun FilterPill(
     }
 }
 
-/** A row showing a value that opens a menu of choices (iOS pop-up button, Android dropdown). */
+/**
+ * A row showing a value that opens a menu of choices (iOS pop-up button, Android dropdown).
+ * [details] adds a second line to choices, e.g. why an account is not ready.
+ */
 @Composable
 internal fun PickerRow(
     title: String,
@@ -510,6 +513,7 @@ internal fun PickerRow(
     enabled: Boolean,
     position: Position,
     glyph: Glyph? = null,
+    details: Map<String, String> = emptyMap(),
     tag: String = "picker-${title.lowercase().replace(' ', '-')}",
     onSelect: (String) -> Unit,
 ) {
@@ -545,7 +549,18 @@ internal fun PickerRow(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             RadioButton(selected = option.first == selected, onClick = null)
-                            Text(option.second, Modifier.padding(start = 12.dp), style = type.body)
+                            Column(Modifier.padding(start = 12.dp)) {
+                                Text(option.second, style = type.body)
+                                details[option.first]
+                                    ?.takeIf { it.isNotEmpty() }
+                                    ?.let {
+                                        Text(
+                                            it,
+                                            style = type.footnote,
+                                            color = palette.secondaryLabel,
+                                        )
+                                    }
+                            }
                         }
                     }
                 }
@@ -574,6 +589,7 @@ internal fun PickerRow(
                                         "$tag-$key",
                                         label,
                                         checked = key == selected,
+                                        subtitle = details[key].orEmpty(),
                                     ) {
                                         onSelect(key)
                                     }

@@ -811,7 +811,7 @@ class AccountProjector {
                 summary = owned.summary,
                 origin = owned.origin,
                 provider_options = owned.provider_options,
-                provider_account_key = owned.provider_account_key,
+                provider_account_id = owned.provider_account_id,
                 workspace_mode = owned.workspace_mode,
                 workspace_branch = owned.workspace_branch,
                 workspace_base_branch = owned.workspace_base_branch,

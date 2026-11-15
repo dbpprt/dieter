@@ -27,7 +27,10 @@ func (c readResumingConn) NewStream(ctx context.Context, desc *grpc.StreamDesc, 
 		dieterv1.TerminalService_WatchTerminal_FullMethodName,
 		dieterv1.ExecutionService_WatchExecution_FullMethodName,
 		dieterv1.GitService_WatchGitOperation_FullMethodName,
-		dieterv1.ChannelService_WatchChannel_FullMethodName:
+		dieterv1.ChannelService_WatchChannel_FullMethodName,
+		// A sign-in watch starts with the session's current state, so a
+		// resumed one needs no checkpoint.
+		dieterv1.ProviderAccountService_WatchProviderLogin_FullMethodName:
 		return &resumingReadStream{ctx: ctx, open: func(ctx context.Context) (grpc.ClientStream, error) {
 			return c.ClientConnInterface.NewStream(ctx, desc, method, opts...)
 		}}, nil

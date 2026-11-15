@@ -9,11 +9,11 @@ slug: "architecture"
 
 ## Three components
 
-| Component               | Owns                                                                                                                                     |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `dieter` daemon and CLI | Local checkouts, conversations, harness workers, files, terminals, processes, and schedules; a replica of shared account metadata        |
-| `dieter-gateway`        | Account sessions, enrolled machine identity, presence, route metadata, the signed device roster, and normalized provider quota snapshots |
-| Native clients          | Presentation, local caches, drafts, and durable pending client commands                                                                  |
+| Component               | Owns                                                                                                                                                   |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `dieter` daemon and CLI | Local checkouts, conversations, harness workers, files, terminals, processes, schedules, and its provider logins; a replica of shared account metadata |
+| `dieter-gateway`        | Account sessions, enrolled machine identity, presence, route metadata, and the signed device roster                                                    |
+| Native clients          | Presentation, local caches, drafts, and durable pending client commands                                                                                |
 
 The Go daemon hosts agents on macOS and Linux. A SwiftUI client serves macOS;
 Android and iOS share one Compose Multiplatform interface inside thin native
@@ -30,6 +30,11 @@ a leaderless account peer store. No machine owns the logical project.
 A conversation or schedule retains one execution owner and checkout. Replication
 does not move a running agent or copy a Git working tree. Client operations route
 to the owner of the selected conversation, checkout, terminal, or process.
+
+[Provider accounts](/docs/providers/), each machine's sign-in state and plan
+usage replicate between daemons the same way. The logins themselves stay on the
+machine that signed in, so a conversation's account must be signed in on its
+owner.
 
 Concurrent peer edits are causal siblings that can require explicit resolution.
 A write acknowledges local durability, not a quorum or globally linearizable CAS.

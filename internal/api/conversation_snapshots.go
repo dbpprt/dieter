@@ -50,6 +50,7 @@ func conversationInput(request *dieterv1.CreateConversationRequest) (engine.Card
 		WorkspaceMode: workspaceMode, WorkspaceBranch: request.GetWorkspaceBranch(),
 		WorkspaceBaseBranch: request.GetWorkspaceBaseBranch(), WorkspaceBaseRemote: request.GetWorkspaceBaseRemote(),
 		RemotePublishMode: request.GetRemotePublishMode(), VaultAccess: request.GetVaultAccess(), MailAccess: request.GetMailAccess(),
+		AccountID: strings.TrimSpace(request.GetAccountId()),
 	}, nil
 }
 
@@ -130,6 +131,7 @@ func scheduleInput(request *dieterv1.SaveScheduleRequest) (schedules.Input, erro
 		Effort: value.GetEffort(), ProviderOptions: cloneProtoStringMap(value.GetProviderOptions()), LabelIDs: append([]string(nil), value.GetLabelIds()...),
 		OpenCardPolicy: value.GetOpenCardPolicy(), MisfirePolicy: value.GetMisfirePolicy(),
 		WorkspaceMode: workspaceMode, VaultAccess: value.GetVaultAccess(), MailAccess: value.GetMailAccess(),
+		AccountID: strings.TrimSpace(value.GetAccountId()),
 	}, nil
 }
 
@@ -241,7 +243,7 @@ func (s *Server) completeConversationCreation(card model.Card, request *dieterv1
 		return card, err
 	}
 	parts := append([]model.UIMessagePart{{Type: "text", Text: card.InitialPrompt}}, attachments...)
-	updates, err := s.app.StartCardWithMessageParts(card.ID, parts, card.Provider, card.Model, card.Effort, card.ProviderOptions, "")
+	updates, err := s.app.StartCardWithSelection(card.ID, parts, model.HarnessSelection{Provider: card.Provider, Model: card.Model, Effort: card.Effort, ProviderOptions: card.ProviderOptions, AccountID: card.ProviderAccountID}, "")
 	if err != nil {
 		return card, err
 	}

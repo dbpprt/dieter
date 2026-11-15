@@ -13,7 +13,7 @@ enum SidebarSizing {
 }
 
 /// The navigation as a floating glass card: window controls, destinations,
-/// projects, then machines and quotas. Each part observes what it shows, so
+/// projects, then machines and provider usage. Each part observes what it shows, so
 /// chat, activity, and selection updates redraw only their own part.
 struct AppSidebar: View {
     @Environment(DieterStore.self) private var store
@@ -51,12 +51,6 @@ struct AppSidebar: View {
         .accessibilityIdentifier("sidebar.main-pane")
         .e2eTarget("sidebar.main-pane")
         .ignoresSafeArea(.container, edges: .top)
-        .task(id: store.phase.isConnected) {
-            // The quota subscription starts with the workspace, not with the
-            // first popover; the panel below the machines shows it.
-            guard store.phase.isConnected else { return }
-            await store.quotas.load()
-        }
         .sheet(item: $folderEditor) { editor in
             NavigationFolderNameSheet(
                 editor: editor,
