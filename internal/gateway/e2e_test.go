@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/dbpprt/dieter/internal/api"
+	"github.com/dbpprt/dieter/internal/engine"
 	"github.com/dbpprt/dieter/internal/gateway"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
@@ -199,9 +200,10 @@ func startRelayFixture(t *testing.T) *relayFixture {
 		Logger: logger, DetachGrace: 100 * time.Millisecond, MonitorInterval: 10 * time.Millisecond,
 	})
 	t.Cleanup(func() { f.desktop.Shutdown(context.Background()) })
+	application := engine.NewWithOptions(data, engine.Options{Runner: f.runner, Catalog: testkit.MockCatalog()})
 	f.daemon = topology.StartDaemon(t, f.gateway, topology.DaemonOptions{
 		Identity: identity, Store: data, Logger: logger, Account: owner, Direct: true,
-		API: api.Options{Runner: f.runner, RemoteDesktop: f.desktop, Catalog: testkit.MockCatalog()},
+		API: api.Options{App: application, Runner: f.runner, RemoteDesktop: f.desktop, Catalog: testkit.MockCatalog()},
 		Tunnel: func(tunnel *link.GatewayClient) {
 			// The broad relay workload uses production liveness deadlines.
 			// Watchdog expiry is exercised separately without Git/WebRTC work
@@ -214,8 +216,16 @@ func startRelayFixture(t *testing.T) *relayFixture {
 			f.events = recordGatewayEvents(t, tunnel)
 		},
 	})
-	// Release held turns before the daemon stops.
-	t.Cleanup(f.runner.Release)
+	// Release and join held turns before the daemon stops. A persisted idle
+	// status can be visible before finalization finishes writing to the store.
+	t.Cleanup(func() {
+		f.runner.Release()
+		ctx, cancel := context.WithTimeout(context.Background(), testkit.Budget(35*time.Second))
+		defer cancel()
+		if err := application.WaitForTurns(ctx); err != nil {
+			t.Errorf("join relay fixture turns: %v", err)
+		}
+	})
 	waitForGatewayEvent(t, f.events, link.GatewayConnected, 2*time.Second)
 	f.connection = topology.Dial(t, f.gateway)
 	f.app = topology.StartClient(t, f.gateway, f.daemon, "Test phone")

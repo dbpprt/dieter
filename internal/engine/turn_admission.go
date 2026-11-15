@@ -140,20 +140,21 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 		detail = *lease.Detail
 	}
 	s.active[detail.Card.ID] = &activeTurn{selection: selection, cancel: cancel, cardID: detail.Card.ID, turnID: turnID, lease: lease, done: done, startedAt: now, lastProgress: now}
+	s.turns[done] = struct{}{}
 	s.mu.Unlock()
 	workspaceValue, err := s.Workspaces.Ensure(context.Background(), detail.Card.ID)
 	if err != nil {
 		cancel()
 		_ = s.Store.Leases.Release(lease)
 		s.clearActive(detail.Card.ID, turnID)
-		close(done)
+		s.completeTurn(done)
 		return nil, err
 	}
 	resolution, err := s.resolveInstructions(detail, workspaceValue)
 	if err != nil {
 		cancel()
 		s.clearActive(detail.Card.ID, turnID)
-		close(done)
+		s.completeTurn(done)
 		return nil, err
 	}
 
@@ -170,7 +171,7 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 	if startErr != nil {
 		cancel()
 		s.clearActive(detail.Card.ID, turnID)
-		close(done)
+		s.completeTurn(done)
 		return nil, startErr
 	}
 	labelIDs := make([]string, 0, len(resolution.AppliedLabels))
@@ -185,7 +186,7 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 	}); startErr != nil {
 		cancel()
 		s.clearActive(detail.Card.ID, turnID)
-		close(done)
+		s.completeTurn(done)
 		return nil, startErr
 	}
 	if first {
@@ -202,7 +203,7 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 	if err != nil {
 		cancel()
 		s.clearActive(detail.Card.ID, turnID)
-		close(done)
+		s.completeTurn(done)
 		return nil, err
 	}
 

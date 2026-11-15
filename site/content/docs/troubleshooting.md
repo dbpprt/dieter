@@ -143,8 +143,11 @@ device latency measurements.
 ## Phone updates stop in the background
 
 The Android and iOS apps observe your workspace only while they are open. They
-have no background sync service, notifications, or widgets; reopening the app
-reconnects and catches up. The host's agent continues regardless.
+have no background sync service; reopening reconnects and catches up. The host's
+agent continues regardless. [Attention notifications](/docs/notifications/) use
+APNs on iOS and FCM on Android. They require provider setup and OS notification
+permission; installing a new release alone does not enable them. Android
+force-stop prevents push until the app is launched again.
 
 ## A terminal disappeared after a host restart
 

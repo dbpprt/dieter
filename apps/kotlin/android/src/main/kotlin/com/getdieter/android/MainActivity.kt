@@ -19,6 +19,7 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.getdieter.android.update.AppUpdateDialog
 import com.getdieter.mobile.app.*
 import com.getdieter.mobile.desktop.DesktopKeys
@@ -26,10 +27,20 @@ import com.getdieter.mobile.navigation.MobileRoute
 import com.getdieter.mobile.navigation.ToolPage
 import com.getdieter.mobile.share.*
 import com.getdieter.mobile.store.InterfaceMode
+import com.getdieter.mobile.store.pairing
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private lateinit var session: DieterSession
+    private val notificationPermission =
+        registerForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+        ) {
+            if (::session.isInitialized) {
+                session.notifications.refreshToken()
+                session.runtime.refreshPushRegistration()
+            }
+        }
     private val store
         get() = session.store
 
@@ -62,6 +73,21 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) {
             receiveShare(intent)
             openFolder(intent)
+        }
+        session.notifications.tap(intent)
+        lifecycleScope.launch {
+            lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+                store.session.slice.collect { state ->
+                    if (
+                        !session.fixtureAdopted &&
+                            state.phase !=
+                                com.getdieter.client.v1.SessionSlice.Phase.PHASE_AUTH_REQUIRED &&
+                            !state.pairing &&
+                            state.synced
+                    )
+                        requestNotificationPermission()
+                }
+            }
         }
         setContent {
             // Debuggable builds (debug and e2e) expose the shared Compose testTags as
@@ -121,6 +147,7 @@ class MainActivity : ComponentActivity() {
         intent.data?.let { store.session.completeSignIn(it.toString()) }
         receiveShare(intent)
         openFolder(intent)
+        session.notifications.tap(intent)
     }
 
     /**
@@ -161,7 +188,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (::session.isInitialized) session.updates.refreshInstallerPermission()
+        if (::session.isInitialized) {
+            session.updates.refreshInstallerPermission()
+            session.notifications.refreshToken()
+            session.runtime.refreshPushRegistration()
+        }
+    }
+
+    private fun requestNotificationPermission() {
+        if (android.os.Build.VERSION.SDK_INT < 33) return
+        val preferences = getSharedPreferences("dieter_push", MODE_PRIVATE)
+        if (preferences.getBoolean("permissionAsked", false)) return
+        preferences.edit().putBoolean("permissionAsked", true).apply()
+        notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
     }
 
     override fun onStop() {

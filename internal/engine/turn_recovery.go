@@ -344,13 +344,14 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 		detail = *lease.Detail
 	}
 	s.active[detail.Card.ID] = &activeTurn{selection: selection, cancel: cancel, cardID: detail.Card.ID, turnID: turnID, lease: lease, done: done, startedAt: now, lastProgress: now}
+	s.turns[done] = struct{}{}
 	s.mu.Unlock()
 	updates := make(chan TurnUpdate, 1024)
 	workspaceValue, err := s.Workspaces.Ensure(context.Background(), detail.Card.ID)
 	if err != nil {
 		cancel()
 		s.clearActive(detail.Card.ID, turnID)
-		close(done)
+		s.completeTurn(done)
 		return err
 	}
 	if conversation.ActiveTurn != nil && conversation.ActiveTurn.Instructions != "" {
@@ -363,7 +364,7 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 			cancel()
 			_ = s.Store.Leases.Release(lease)
 			s.clearActive(detail.Card.ID, turnID)
-			close(done)
+			s.completeTurn(done)
 			return err
 		}
 	}
@@ -384,7 +385,7 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 		cancel()
 		_ = s.Store.Leases.Release(lease)
 		s.clearActive(detail.Card.ID, turnID)
-		close(done)
+		s.completeTurn(done)
 		return err
 	}
 	go s.runTurn(ctx, detail, turnID, request, updates, done)
@@ -496,7 +497,7 @@ func (s *Service) SuspendActiveTurns(ctx context.Context) error {
 			return errors.Join(append(suspensionErrors, ctx.Err())...)
 		}
 	}
-	return errors.Join(suspensionErrors...)
+	return errors.Join(append(suspensionErrors, s.WaitForTurns(ctx))...)
 }
 
 func (s *Service) turnRecoveryFailure(cardID, turnID string) error {

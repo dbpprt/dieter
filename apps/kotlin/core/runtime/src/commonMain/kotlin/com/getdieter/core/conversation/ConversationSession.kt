@@ -669,7 +669,7 @@ internal constructor(
         if (!canSteer(messageId)) return false
         steeringMessageId = messageId
         try {
-            return board.cancel(cardId).also { if (!it) steeringMessageId = null }
+            return board.cancel(cardId, card()).also { if (!it) steeringMessageId = null }
         } catch (error: Throwable) {
             steeringMessageId = null
             throw error

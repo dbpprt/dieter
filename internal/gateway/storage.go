@@ -36,6 +36,7 @@ type Session struct {
 	PushPublicKey []byte    `json:"pushPublicKey,omitempty"`
 	PushDeviceID  string    `json:"pushDeviceId,omitempty"`
 	PushSignature []byte    `json:"pushSignature,omitempty"`
+	PushProvider  int32     `json:"pushProvider,omitempty"`
 	PushSandbox   bool      `json:"pushSandbox,omitempty"`
 }
 

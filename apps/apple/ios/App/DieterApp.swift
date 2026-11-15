@@ -46,6 +46,11 @@ final class PushApplicationDelegate: NSObject, UIApplicationDelegate {
         token = deviceToken
         receive?(deviceToken)
     }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        token = Data()
+        receive?(Data())
+    }
 }
 
 #if DEBUG || targetEnvironment(simulator)

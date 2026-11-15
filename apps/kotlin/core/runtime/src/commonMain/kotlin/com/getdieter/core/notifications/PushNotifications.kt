@@ -37,6 +37,7 @@ class PushNotifications(
                     sink.registered(false)
                     return@collectLatest
                 }
+                sink.registered(false)
                 var attempt = 0
                 while (true) {
                     try {
@@ -51,6 +52,7 @@ class PushNotifications(
                                             token = device.token,
                                             public_key = device.publicKey,
                                             sandbox = device.sandbox,
+                                            provider = device.provider,
                                             device_id = view.deviceId,
                                             signature =
                                                 keys

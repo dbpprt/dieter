@@ -45,6 +45,10 @@ jobs:
           packages: platforms;android-37.1 build-tools;37.0.0
       - name: Signed release APK
         env:
+          DIETER_FCM_APPLICATION_ID: ${{ vars.FCM_APPLICATION_ID }}
+          DIETER_FCM_API_KEY: ${{ vars.FCM_API_KEY }}
+          DIETER_FCM_PROJECT_ID: ${{ vars.FCM_PROJECT_ID }}
+          DIETER_FCM_SENDER_ID: ${{ vars.FCM_SENDER_ID }}
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           DIETER_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           DIETER_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}

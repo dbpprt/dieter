@@ -83,6 +83,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 	}
 	s.channelTurnBegin(detail, turnID, &request)
 	finished := false
+	reviewScan := false
 	finish := func(startQueued bool, finalCache kanban.CardCacheInput) error {
 		if finished {
 			return nil
@@ -97,6 +98,11 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 				return nil
 			}
 			_, err := s.Store.Kanban.UpdateCardCache(detail.Card.ID, finalCache)
+			if err == nil && reviewScan {
+				// Keep the turn active until its last board write finishes so a
+				// successor cannot race that write.
+				s.moveFinishedScanToReview(detail.Card.ID)
+			}
 			return err
 		})
 		if releaseClaims {
@@ -114,8 +120,8 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 	}
 	defer func() {
 		_ = finish(false, kanban.CardCacheInput{})
-		close(done)
 		close(updates)
+		s.completeTurn(done)
 	}()
 	streamFailed := false
 	var reportedFailure error
@@ -330,11 +336,8 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 	if streamFailed {
 		finalRuntime = "failed"
 	}
-	reviewScan := request.Adapter == strixAdapter && finalRuntime == "idle" && !s.hasQueuedMessages(detail.Card.ID)
+	reviewScan = request.Adapter == strixAdapter && finalRuntime == "idle" && !s.hasQueuedMessages(detail.Card.ID)
 	_ = finish(true, kanban.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: finalRuntime})
-	if reviewScan {
-		s.moveFinishedScanToReview(detail.Card.ID)
-	}
 	select {
 	case updates <- TurnUpdate{Done: true}:
 	case <-ctx.Done():
@@ -477,8 +480,8 @@ func (s *Service) clearActive(cardID, turnID string) {
 }
 
 // finishActive keeps the in-process turn visible until its runtime lease is
-// released and its last durable update is complete. Callers can therefore use
-// the active map as a teardown barrier without racing the final store write.
+// released and its last durable update is complete. WaitForTurns also joins the
+// queued handoff and other work after releasing this admission slot.
 func (s *Service) finishActive(cardID, turnID string, finalize func() error) error {
 	s.mu.Lock()
 	var lease leases.RuntimeLease
@@ -510,4 +513,37 @@ func (s *Service) finishActive(cardID, turnID string, finalize func() error) err
 	}
 	s.mu.Unlock()
 	return errors.Join(releaseErr, finalizeErr)
+}
+
+// completeTurn signals that all post-admission work has finished, including the
+// handoff between releasing a turn's active slot and admitting its queued successor.
+func (s *Service) completeTurn(done chan struct{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.turns, done)
+	close(done)
+}
+
+// WaitForTurns waits for admitted turns and their queued successors to finish,
+// including finalization after their active slot is released. Callers must stop
+// new submissions first; scheduled channel wakes are owned by their caller.
+func (s *Service) WaitForTurns(ctx context.Context) error {
+	for {
+		s.mu.Lock()
+		pending := make([]chan struct{}, 0, len(s.turns))
+		for done := range s.turns {
+			pending = append(pending, done)
+		}
+		s.mu.Unlock()
+		if len(pending) == 0 {
+			return nil
+		}
+		for _, done := range pending {
+			select {
+			case <-done:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+	}
 }

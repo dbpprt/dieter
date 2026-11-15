@@ -201,7 +201,9 @@ workspace has loaded: a new task opens prefilled, or `ShareTargetScreen` picks
 the task or chat whose composer receives them. Screens use the core's touch
 model (`TouchScreenInput`): one finger moves the remote cursor, a tap clicks, a
 long press drags, two fingers zoom and pan, and three fingers scroll. The apps
-have no background service, notifications or widgets.
+use shared attention notifications with APNs/FCM background delivery; see
+[mobile notifications](../../docs/ios-notifications.md) for setup. They do not
+keep a background sync service alive.
 
 ## Android app (`:android`)
 

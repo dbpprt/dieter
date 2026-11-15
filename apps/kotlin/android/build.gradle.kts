@@ -14,6 +14,17 @@ val bundlePrefix =
         .map { (JsonSlurper().parseText(it) as Map<*, *>)["bundle_prefix"] as String }
         .get()
 
+val firebaseFields = listOf("APPLICATION_ID", "API_KEY", "PROJECT_ID", "SENDER_ID")
+val firebaseConfig = firebaseFields.associateWith {
+    providers.environmentVariable("DIETER_FCM_$it").orElse("").get()
+}
+
+require(
+    firebaseConfig.values.all { it.isBlank() } || firebaseConfig.values.all { it.isNotBlank() }
+) {
+    "Firebase requires all four DIETER_FCM_APPLICATION_ID, API_KEY, PROJECT_ID and SENDER_ID values"
+}
+
 val releaseKeystorePath = providers.environmentVariable("DIETER_ANDROID_KEYSTORE_PATH")
 val releaseKeystorePassword = providers.environmentVariable("DIETER_ANDROID_KEYSTORE_PASSWORD")
 val releaseKeyAlias = providers.environmentVariable("DIETER_ANDROID_KEY_ALIAS")
@@ -42,6 +53,11 @@ android {
         targetSdk = 37
         versionCode = releaseVersionCode.get()
         versionName = releaseVersionName.get()
+        // Public Firebase app configuration; service-account credentials belong only on the
+        // gateway.
+        for ((field, value) in firebaseConfig) {
+            buildConfigField("String", "FCM_$field", groovy.json.JsonOutput.toJson(value))
+        }
     }
 
     signingConfigs {
@@ -100,6 +116,11 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.bouncycastle)
     implementation(libs.bouncycastle.tls)
+    implementation(libs.firebase.messaging)
+    constraints {
+        // Play services brings an older Fragment; Activity Result needs its fixed dispatcher.
+        implementation(libs.androidx.fragment)
+    }
 
     // JVM unit tests of the shell's pure logic (src/test/kotlin): no device or emulator.
     testImplementation(libs.junit)
@@ -110,3 +131,8 @@ dependencies {
 // The adapter uses a package-private injection seam. Pin the exact AAR, so an
 // accidental dependency substitution cannot silently change that contract.
 apply(from = file("webrtc/sdk.gradle"))
+
+// The daemon-produced envelope is also consumed by Android's crypto adapter.
+tasks.withType<Test>().configureEach {
+    systemProperty("dieter.repository", rootProject.file("../..").absolutePath)
+}

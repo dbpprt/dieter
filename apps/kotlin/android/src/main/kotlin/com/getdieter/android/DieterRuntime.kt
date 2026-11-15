@@ -9,6 +9,7 @@ import com.getdieter.android.folders.AndroidFolderFileSystem
 import com.getdieter.android.folders.AndroidFolderScheduler
 import com.getdieter.android.folders.AndroidFolderSources
 import com.getdieter.android.folders.FolderNotifier
+import com.getdieter.android.notifications.AndroidNotifications
 import com.getdieter.core.*
 import com.getdieter.core.folders.FolderPlatform
 import com.getdieter.core.identity.DistributionIdentity
@@ -31,7 +32,11 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider
  * every machine's view, and the next acquire starts a fresh one once that shutdown finished.
  */
 object DieterRuntime {
-    private class Running(val runtime: CoreRuntime, val scope: CoroutineScope)
+    private class Running(
+        val runtime: CoreRuntime,
+        val scope: CoroutineScope,
+        val notifications: AndroidNotifications,
+    )
 
     private val lock = Any()
     private var running: Running? = null
@@ -48,12 +53,23 @@ object DieterRuntime {
             stopping?.let { previous -> runBlocking { previous.join() } }
             stopping = null
             val application = context.applicationContext
-            val runtime = create(application)
+            val notifications = AndroidNotifications(application)
+            val runtime = create(application, notifications)
             val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-            running = Running(runtime, scope)
+            running = Running(runtime, scope, notifications)
+            notifications.refreshRegistration = runtime::refreshPushRegistration
+            notifications.refreshToken()
             runtime.start()
             FolderNotifier(application, runtime).start(scope)
             runtime
+        }
+
+    /** Notification delivery lives as long as the shared runtime, including folder windows. */
+    fun notifications(runtime: CoreRuntime): AndroidNotifications =
+        synchronized(lock) {
+            val active = checkNotNull(running)
+            check(active.runtime === runtime)
+            active.notifications
         }
 
     fun release() {
@@ -63,12 +79,13 @@ object DieterRuntime {
             if (holders > 0) return
             val last = running ?: return
             running = null
+            last.notifications.close()
             last.scope.cancel()
             stopping = CoroutineScope(Dispatchers.Default).launch { last.runtime.shutdown() }
         }
     }
 
-    private fun create(application: Context): CoreRuntime {
+    private fun create(application: Context, notifications: AndroidNotifications): CoreRuntime {
         val credentials = DieterCredentialStore(application)
         val preferences =
             application.getSharedPreferences("dieter_core", android.content.Context.MODE_PRIVATE)
@@ -81,6 +98,7 @@ object DieterRuntime {
         return CoreRuntime(
             Platform(
                 transport = transport,
+                attentionNotifications = notifications,
                 tunnels = GrpcTunnelFactory(transport),
                 deviceKeys = deviceKeys,
                 secureStore =

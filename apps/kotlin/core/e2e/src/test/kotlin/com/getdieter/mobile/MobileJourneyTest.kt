@@ -15,6 +15,59 @@ class MobileJourneyTest : EndToEnd() {
     @AfterTest fun cleanup() = tearDownRuntimes()
 
     @Test
+    fun sendNowUsesTheLiveConversationBeforeItsDirectoryEntryArrives() = e2e {
+        val fixture = fixture()
+        val runtime = runtime(fixture)
+        runtime.awaitConnected()
+        runtime.awaitLoaded(fixture)
+        val local =
+            runtime.createConversation(
+                com.getdieter.api.v1.CreateConversationRequest(
+                    project_id = fixture.projectId,
+                    title = "Send now before directory catch-up",
+                    prompt = "mock-queue-hold mock-queue-slow-stop",
+                    provider = "mock",
+                    model = "mock",
+                    workspace_mode = "project",
+                ),
+                chat = true,
+            )
+        val session = runtime.openConversation(local.id)
+        session.view.await(30.seconds) { !it.pending && it.conversation?.status == "running" }
+        runtime.onConversation(session) {
+            send(Attachments.messageParts("mock-activity-reply", emptyList()))
+        }
+        val queued =
+            session.view
+                .await(20.seconds) { it.transcript.conversation?.queue?.size == 1 }
+                .transcript
+                .conversation!!
+                .queue
+                .single()
+        runtime.onConversation(session) {
+            // Force the ordering seen in CI: the owner stream is live while the directory lags.
+            runtime.workspace.applyDirectory(
+                com.getdieter.core.sync.DirectoryProjection.EMPTY,
+                true,
+            )
+            try {
+                assertNull(runtime.workspace.shownItem(cardId))
+                assertTrue(canSteer(queued.id))
+                assertTrue(steer(queued.id))
+            } finally {
+                runtime.accountSync.publish()
+            }
+        }
+        session.view.await(30.seconds) { view ->
+            view.conversation?.queue?.isEmpty() == true &&
+                view.messages.any { message ->
+                    message.role == "assistant" &&
+                        message.parts.any { it.text == "Activity reply ready to read." }
+                }
+        }
+    }
+
+    @Test
     fun sendNowWaitsForCleanupAndStartsTheQueuedMessageOnce() = e2e {
         val fixture = fixture()
         val runtime = runtime(fixture)

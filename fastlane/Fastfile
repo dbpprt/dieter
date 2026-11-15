@@ -7,6 +7,7 @@
 require_relative "helpers/dieter"
 require_relative "helpers/e2e"
 require_relative "helpers/emulator"
+require_relative "helpers/ios_push"
 require_relative "helpers/release"
 require_relative "helpers/swift"
 
@@ -567,6 +568,25 @@ platform :ios do
     release = Dieter::Release.current
     ids = Dieter::Release.ids
     team = Dieter.identity.fetch("apple_team_id")
+    group = "group.#{ids["ios"]}"
+    # Validate before the expensive Kotlin/Native build. Never ship a build
+    # with push silently disabled to accommodate an outdated signing profile.
+    profile_files =
+      {
+        ids["ios"] => "IOS_PROVISIONING_PROFILE_BASE64",
+        ids["ios_share"] => "IOS_SHARE_PROVISIONING_PROFILE_BASE64"
+      }.to_h do |bundle, variable|
+        file = Dieter.secret_file(variable, "#{bundle}.mobileprovision")
+        Dieter::IOSPush.profile!(
+          FastlaneCore::ProvisioningProfile.parse(file),
+          bundle: bundle,
+          team: team,
+          group: group,
+          environment: bundle == ids["ios"] ? "production" : nil,
+          source: variable
+        )
+        [bundle, file]
+      end
     Dieter::Lease.hold("apple-build") { build_framework("release", ["ios-device"]) }
     setup_ci(force: true)
     import_certificate(
@@ -577,14 +597,8 @@ platform :ios do
       keychain_password: ""
     )
     profiles =
-      {
-        ids["ios"] => "IOS_PROVISIONING_PROFILE_BASE64",
-        ids["ios_share"] => "IOS_SHARE_PROVISIONING_PROFILE_BASE64"
-      }.to_h do |bundle, variable|
-        path =
-          install_provisioning_profile(
-            path: Dieter.secret_file(variable, "#{bundle}.mobileprovision")
-          )
+      profile_files.to_h do |bundle, file|
+        path = install_provisioning_profile(path: file)
         [bundle, FastlaneCore::ProvisioningProfile.uuid(path)]
       end
     settings = [
@@ -621,21 +635,14 @@ platform :ios do
         xcodebuild_formatter: xcode_formatter,
         xcargs: "-skipPackagePluginValidation -skipMacroValidation #{settings.shelljoin}"
       )
-    info =
-      Dieter.sh(
-        "sh",
-        "-c",
-        "unzip -p \"$0\" 'Payload/Dieter.app/Info.plist' | plutil -convert json -o - -",
-        ipa,
-        log: false
-      )
-    plist = JSON.parse(info)
-    actual = plist.values_at("CFBundleIdentifier", "CFBundleShortVersionString", "CFBundleVersion")
-    unless actual == [ids["ios"], release["version"], release["apple_build"]]
-      UI.user_error!(
-        "IPA identity #{actual} differs from #{[ids["ios"], release["version"], release["apple_build"]]}"
-      )
-    end
+    Dieter::IOSPush.verify_ipa!(
+      ipa,
+      bundle: ids["ios"],
+      team: team,
+      group: group,
+      version: release["version"],
+      build: release["apple_build"]
+    )
   end
 
   desc "CI: upload dist/ios/Dieter-iOS.ipa to TestFlight and deliver it to the identity's internal groups"

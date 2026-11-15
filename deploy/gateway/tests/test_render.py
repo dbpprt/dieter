@@ -39,6 +39,32 @@ class RenderTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "APNs"):
             secrets(self.secret_file)
 
+    def test_fcm_credentials_remain_protected(self):
+        account = {
+            "type": "service_account",
+            "project_id": "test-project",
+            "client_email": "test@test-project.iam.gserviceaccount.com",
+            "private_key": "private-test-key",
+        }
+        encoded = base64.b64encode(json.dumps(account).encode()).decode()
+        self.private["fcmServiceAccountBase64"] = encoded
+        self.secret_file.write_text(json.dumps(self.private))
+        self.assertEqual(secrets(self.secret_file)["fcmServiceAccountBase64"], encoded)
+        out = self.rendered()
+        self.assertIn(
+            "DIETER_FCM_SERVICE_ACCOUNT_BASE64=" + encoded,
+            (out / "private/gateway.env").read_text(),
+        )
+        self.assertEqual((out / "private/gateway.env").stat().st_mode & 0o777, 0o600)
+        for path in (out / "public").iterdir():
+            self.assertNotIn(encoded, path.read_text())
+        self.private["fcmServiceAccountBase64"] = base64.b64encode(
+            b'{"type":"authorized_user"}'
+        ).decode()
+        self.secret_file.write_text(json.dumps(self.private))
+        with self.assertRaisesRegex(ValueError, "FCM"):
+            secrets(self.secret_file)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

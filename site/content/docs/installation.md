@@ -101,8 +101,8 @@ typing the code it shows on a trusted device. No daemon runs on the phone.
 When it starts, the app checks the latest public release, verifies the
 asset's published SHA-256 digest, and hands installation to Android. You still
 confirm each installation. Installing over an earlier release keeps your
-sign-in. The app connects while it is open; it has no background sync,
-notifications, or home-screen widgets.
+sign-in. The app syncs while it is open. [Attention notifications](/docs/notifications/)
+can also arrive in the background when push is configured.
 
 For source builds, see the [Kotlin and Android guide](https://github.com/dbpprt/dieter/blob/main/apps/kotlin/README.md).
 

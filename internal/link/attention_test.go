@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/security/roster"
+	"os"
 	"testing"
 
 	"github.com/dbpprt/dieter/internal/model"
@@ -74,30 +75,8 @@ func TestSealedAttentionRequiresRecipientAndAuthenticatesCiphertext(t *testing.T
 	if bytes.Contains(sealed, []byte("c_private_card")) {
 		t.Fatal("plaintext destination leaked")
 	}
-	open := func(private *ecdh.PrivateKey, payload []byte) ([]byte, error) {
-		ephemeral, e := ecdh.X25519().NewPublicKey(payload[:32])
-		if e != nil {
-			return nil, e
-		}
-		shared, e := private.ECDH(ephemeral)
-		if e != nil {
-			return nil, e
-		}
-		derived, e := hkdf.Key(sha256.New, shared, nil, "dieter-attention-v1", 32)
-		if e != nil {
-			return nil, e
-		}
-		block, e := aes.NewCipher(derived)
-		if e != nil {
-			return nil, e
-		}
-		aead, e := cipher.NewGCM(block)
-		if e != nil {
-			return nil, e
-		}
-		return aead.Open(nil, payload[32:44], payload[44:], []byte("dieter-attention-v1"))
-	}
-	plain, err := open(key, sealed)
+
+	plain, err := openAttentionVector(key, sealed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,11 +85,11 @@ func TestSealedAttentionRequiresRecipientAndAuthenticatesCiphertext(t *testing.T
 		t.Fatalf("destination: %s %v", plain, err)
 	}
 	wrong, _ := ecdh.X25519().GenerateKey(rand.Reader)
-	if _, err = open(wrong, sealed); err == nil {
+	if _, err = openAttentionVector(wrong, sealed); err == nil {
 		t.Fatal("another account decrypted destination")
 	}
 	sealed[len(sealed)-1] ^= 1
-	if _, err = open(key, sealed); err == nil {
+	if _, err = openAttentionVector(key, sealed); err == nil {
 		t.Fatal("tampered destination accepted")
 	}
 	if _, err = sealAttention(make([]byte, 32), "card"); err == nil {
@@ -192,5 +171,56 @@ func TestPushRecipientProofRejectsGatewaySubstitution(t *testing.T) {
 	}
 	if validPushDestination(after, destination) {
 		t.Fatal("revoked phone retained delivery")
+	}
+}
+
+func openAttentionVector(private *ecdh.PrivateKey, payload []byte) ([]byte, error) {
+	ephemeral, e := ecdh.X25519().NewPublicKey(payload[:32])
+	if e != nil {
+		return nil, e
+	}
+	shared, e := private.ECDH(ephemeral)
+	if e != nil {
+		return nil, e
+	}
+	derived, e := hkdf.Key(sha256.New, shared, nil, "dieter-attention-v1", 32)
+	if e != nil {
+		return nil, e
+	}
+	block, e := aes.NewCipher(derived)
+	if e != nil {
+		return nil, e
+	}
+	aead, e := cipher.NewGCM(block)
+	if e != nil {
+		return nil, e
+	}
+	return aead.Open(nil, payload[32:44], payload[44:], []byte("dieter-attention-v1"))
+}
+
+// This daemon envelope is consumed by Android's platform crypto unit test too.
+func TestPushEnvelopeMatchesAndroidVector(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile("../../tests/fixtures/push-envelope.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var vector struct{ PrivateKey, Sealed, CardID string }
+	if err := json.Unmarshal(raw, &vector); err != nil {
+		t.Fatal(err)
+	}
+	private, _ := base64.StdEncoding.DecodeString(vector.PrivateKey)
+	sealed, _ := base64.StdEncoding.DecodeString(vector.Sealed)
+	key, err := ecdh.X25519().NewPrivateKey(private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := openAttentionVector(key, sealed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload struct{ CardID string }
+	if err := json.Unmarshal(plain, &payload); err != nil || payload.CardID != vector.CardID {
+		t.Fatal("cross-platform envelope drift", err)
 	}
 }
