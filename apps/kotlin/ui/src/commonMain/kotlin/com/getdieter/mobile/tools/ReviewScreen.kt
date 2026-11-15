@@ -35,6 +35,11 @@ internal fun ReviewScreen(store: MobileStore) {
         send(ReviewCommand(active = Toggle(true)))
         onDispose { send(ReviewCommand(active = Toggle(false))) }
     }
+    // The daemon says the conversation works in a shared project checkout.
+    if (view.scope == "checkout") {
+        CheckoutReview(store, view)
+        return
+    }
     val changeset = view.changeset
     val operations = view.availability?.allowed.orEmpty()
     val chrome =
@@ -126,6 +131,16 @@ internal fun ReviewScreen(store: MobileStore) {
                         tone = Tone.DANGER,
                         actionLabel = "Retry",
                         onAction = { send(ReviewCommand(refresh = Step())) },
+                    )
+                }
+            if (view.activity.isNotEmpty())
+                item {
+                    Banner(
+                        view.activity,
+                        view.availability?.blocked_reason.orEmpty(),
+                        Modifier.padding(horizontal = ScreenMargin, vertical = 6.dp)
+                            .testTag("review-activity"),
+                        glyph = Glyph.CHANGES,
                     )
                 }
             if (view.loading && changeset == null)
@@ -289,6 +304,15 @@ internal fun ReviewScreen(store: MobileStore) {
                 item {
                     SectionHeader("${files.size} changed file${if (files.size == 1) "" else "s"}")
                 }
+                if (view.outdated_comments > 0)
+                    item {
+                        Text(
+                            "${view.outdated_comments} comment${if (view.outdated_comments == 1) "" else "s"} on an earlier version of this file",
+                            Modifier.padding(horizontal = ScreenMargin + 4.dp, vertical = 4.dp),
+                            style = type.footnote,
+                            color = palette.secondaryLabel,
+                        )
+                    }
                 changedFiles(
                     files,
                     view.selected_path,
@@ -369,5 +393,52 @@ internal fun ReviewScreen(store: MobileStore) {
             { comment = null },
             placeholder = "Review comment",
         )
+    }
+}
+
+/**
+ * A project-directory conversation's Changes: its shared checkout, driven through the review so the
+ * conversation never decides where its changes live.
+ */
+@Composable
+private fun CheckoutReview(store: MobileStore, review: ReviewSlice) {
+    val view = review.checkout ?: ProjectChangesSlice()
+    var operation by remember { mutableStateOf<String?>(null) }
+    fun send(value: ProjectChangesCommand) =
+        store.command(
+            Command(review = ReviewCommand(scope = MobileStore.REVIEW_SCOPE, checkout = value))
+        )
+    DisposableEffect(store) {
+        send(ProjectChangesCommand(active = Toggle(true)))
+        onDispose { send(ProjectChangesCommand(active = Toggle(false))) }
+    }
+    val chrome =
+        ScreenChrome(
+            "Changes",
+            subtitle =
+                listOfNotNull(
+                        view.shared_label.ifEmpty { null },
+                        view.changes?.let {
+                            if (it.additions + it.deletions > 0) "+${it.additions} −${it.deletions}"
+                            else null
+                        },
+                    )
+                    .joinToString(" · "),
+            actions =
+                listOf(
+                    ChromeAction(
+                        "changes-menu",
+                        "Git actions",
+                        Glyph.MORE_HORIZONTAL,
+                        menu = checkoutMenu(view, ::send) { operation = it },
+                    )
+                ),
+        )
+    Screen(chrome) { CheckoutChanges(view, ::send) }
+    operation?.let { kind ->
+        GitOperationEditor(kind, null, { operation = null }) {
+            send(ProjectChangesCommand(run = it))
+            operation = null
+        }
     }
 }

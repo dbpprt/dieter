@@ -1256,22 +1256,34 @@ Usage: dieter workspace <action>
 Actions:
   show CARD                 Provision and show a conversation workspace
   list --project PROJECT    List durable project workspaces
-  changes [target]          Show local changes for a worktree card or project
+  changes [target]          Show the local changes of a conversation or project
+  watch-changes [target]    Stream changes as JSON Lines whenever they change
   diff [target]             Read a staged, unstaged, or combined file diff
-  comments CARD             List changeset review comments
-  comment [options] CARD    Add a changeset review comment
+  comments CARD             List review comments with their file revisions
+  comment [options] CARD    Add a review comment on one file line
   scm CARD                  Show daemon-host source-control capabilities
   operation OPERATION       Show a durable Git operation
   watch OPERATION           Stream operation and log frames as JSON Lines
   run --kind KIND [target]  Start a serialized durable Git operation
   cancel OPERATION          Request cancellation of an operation
 
-A target is --project PROJECT or a CARD. Run kinds for a project: stage,
-unstage, discard_changes, commit, update, validate and push. A worktree card
-also supports continue_conflict, abort_conflict, merge_local, cleanup, discard,
-adopt, create_pr, refresh_pr and merge_pr. Commit uses the staged index; pass
---param stage_all=true only when explicitly committing every local change.
-Repeat --param KEY=VALUE for kind-specific parameters.
+A target is --project PROJECT or a CARD. A project-directory CARD reads and
+operates on its project checkout, which every conversation in that directory
+shares; a worktree CARD has its own. Changes stay readable while agents work.
+
+Run kinds for a checkout: stage, unstage, discard_changes, commit, update,
+validate and push. A worktree card also supports continue_conflict,
+abort_conflict, merge_local, cleanup, discard, adopt, create_pr, refresh_pr
+and merge_pr. Commit uses the staged index; pass --param stage_all=true only
+when explicitly committing every local change. Repeat --param KEY=VALUE for
+kind-specific parameters.
+
+Stage, unstage and discard_changes act on exactly the files they were given
+and fail only if one of those files changed since: --expect PATH=REVISION
+pins a file (revisions are in "workspace changes"); without --expect, the
+current files under --param path=PATH (or every relevant file) are used.
+A commit of the index checks --index (current when omitted); other kinds
+check --revision when given.
 ```
 
 ### dieter workspace show
@@ -1292,22 +1304,35 @@ Usage: dieter workspace list --project PROJECT
 Usage: dieter workspace changes [--project PROJECT] [CARD]
 ```
 
+### dieter workspace watch-changes
+
+```text
+Usage: dieter workspace watch-changes [--project PROJECT] [--checkout ID] [--count N] [CARD]
+
+Streams the changeset first, then again whenever its files, branch,
+activity or running operation change; heartbeat frames prove liveness.
+
+Read subscriptions renew credentials and resume from their last delivered checkpoint
+after transient failures (up to five retries between frames). Revocation stops
+recovery. Mutations, process starts, and stdin writes are never replayed.
+```
+
 ### dieter workspace diff
 
 ```text
-Usage: dieter workspace diff --path PATH [--project PROJECT] [--section combined|staged|unstaged] [--revision REVISION] [--commit SHA] [--offset N] [--limit N] [CARD]
+Usage: dieter workspace diff --path PATH [--project PROJECT] [--section combined|staged|unstaged] [--commit SHA] [--offset N --file-revision REVISION] [--limit N] [CARD]
 ```
 
 ### dieter workspace comments
 
 ```text
-Usage: dieter workspace comments [--revision REVISION] CARD
+Usage: dieter workspace comments CARD
 ```
 
 ### dieter workspace comment
 
 ```text
-Usage: dieter workspace comment --path PATH --revision REVISION --message TEXT [--side new|old] [--line N] [--author NAME] [--commit SHA] CARD
+Usage: dieter workspace comment --path PATH --message TEXT [--file-revision REVISION] [--side new|old] [--line N] [--author NAME] [--commit SHA] CARD
 ```
 
 ### dieter workspace scm
@@ -1335,7 +1360,7 @@ recovery. Mutations, process starts, and stdin writes are never replayed.
 ### dieter workspace run
 
 ```text
-Usage: dieter workspace run --kind KIND [--project PROJECT] [--revision REVISION] [--param KEY=VALUE ...] [--wait] [CARD]
+Usage: dieter workspace run --kind KIND [--project PROJECT] [--revision REVISION] [--index FINGERPRINT] [--expect PATH=REVISION ...] [--param KEY=VALUE ...] [--wait] [CARD]
 ```
 
 ### dieter workspace cancel

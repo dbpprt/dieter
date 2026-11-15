@@ -31,6 +31,7 @@ const (
 	GitService_GetGitOperation_FullMethodName       = "/dieter.v1.GitService/GetGitOperation"
 	GitService_WatchGitOperation_FullMethodName     = "/dieter.v1.GitService/WatchGitOperation"
 	GitService_CancelGitOperation_FullMethodName    = "/dieter.v1.GitService/CancelGitOperation"
+	GitService_WatchChangeset_FullMethodName        = "/dieter.v1.GitService/WatchChangeset"
 )
 
 // GitServiceClient is the client API for GitService service.
@@ -51,6 +52,9 @@ type GitServiceClient interface {
 	GetGitOperation(ctx context.Context, in *GitOperationRef, opts ...grpc.CallOption) (*GitOperation, error)
 	WatchGitOperation(ctx context.Context, in *WatchGitOperationRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GitOperationFrame], error)
 	CancelGitOperation(ctx context.Context, in *GitOperationRef, opts ...grpc.CallOption) (*GitOperation, error)
+	// Streams a conversation's or checkout's changes: the full changeset first,
+	// then a frame whenever its revision or activity changes, plus heartbeats.
+	WatchChangeset(ctx context.Context, in *WatchChangesetRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ChangesetFrame], error)
 }
 
 type gitServiceClient struct {
@@ -190,6 +194,25 @@ func (c *gitServiceClient) CancelGitOperation(ctx context.Context, in *GitOperat
 	return out, nil
 }
 
+func (c *gitServiceClient) WatchChangeset(ctx context.Context, in *WatchChangesetRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ChangesetFrame], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &GitService_ServiceDesc.Streams[1], GitService_WatchChangeset_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[WatchChangesetRequest, ChangesetFrame]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type GitService_WatchChangesetClient = grpc.ServerStreamingClient[ChangesetFrame]
+
 // GitServiceServer is the server API for GitService service.
 // All implementations must embed UnimplementedGitServiceServer
 // for forward compatibility.
@@ -208,6 +231,9 @@ type GitServiceServer interface {
 	GetGitOperation(context.Context, *GitOperationRef) (*GitOperation, error)
 	WatchGitOperation(*WatchGitOperationRequest, grpc.ServerStreamingServer[GitOperationFrame]) error
 	CancelGitOperation(context.Context, *GitOperationRef) (*GitOperation, error)
+	// Streams a conversation's or checkout's changes: the full changeset first,
+	// then a frame whenever its revision or activity changes, plus heartbeats.
+	WatchChangeset(*WatchChangesetRequest, grpc.ServerStreamingServer[ChangesetFrame]) error
 	mustEmbedUnimplementedGitServiceServer()
 }
 
@@ -253,6 +279,9 @@ func (UnimplementedGitServiceServer) WatchGitOperation(*WatchGitOperationRequest
 }
 func (UnimplementedGitServiceServer) CancelGitOperation(context.Context, *GitOperationRef) (*GitOperation, error) {
 	return nil, status.Error(codes.Unimplemented, "method CancelGitOperation not implemented")
+}
+func (UnimplementedGitServiceServer) WatchChangeset(*WatchChangesetRequest, grpc.ServerStreamingServer[ChangesetFrame]) error {
+	return status.Error(codes.Unimplemented, "method WatchChangeset not implemented")
 }
 func (UnimplementedGitServiceServer) mustEmbedUnimplementedGitServiceServer() {}
 func (UnimplementedGitServiceServer) testEmbeddedByValue()                    {}
@@ -484,6 +513,17 @@ func _GitService_CancelGitOperation_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _GitService_WatchChangeset_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(WatchChangesetRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(GitServiceServer).WatchChangeset(m, &grpc.GenericServerStream[WatchChangesetRequest, ChangesetFrame]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type GitService_WatchChangesetServer = grpc.ServerStreamingServer[ChangesetFrame]
+
 // GitService_ServiceDesc is the grpc.ServiceDesc for GitService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -540,6 +580,11 @@ var GitService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "WatchGitOperation",
 			Handler:       _GitService_WatchGitOperation_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "WatchChangeset",
+			Handler:       _GitService_WatchChangeset_Handler,
 			ServerStreams: true,
 		},
 	},

@@ -416,7 +416,7 @@ private struct ProjectShipActions: View {
     var body: some View {
         HStack(spacing: 6) {
             shipButton("Update", symbol: "arrow.down.circle", kind: "update")
-                .help("Fetch and rebase onto the base branch")
+                .help(model.unavailableReasons["update"] ?? "Fetch and rebase onto the base branch")
             shipButton("Validate", symbol: "checkmark.seal", kind: "validate")
                 .help("Run the project's validation")
             shipButton("Push", symbol: "arrow.up.circle", kind: "push")
@@ -528,6 +528,12 @@ private struct ProjectChangesNavigator: View {
     private var embeddedToolbar: some View {
         HStack(spacing: 6) {
             ProjectBranchSummary(model: model, ready: access.ready)
+            if !model.sharedLabel.isEmpty {
+                Text("Shared checkout").font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(DieterTheme.tertiary)
+                    .help("This conversation works in the project directory; its changes are the checkout's.")
+                    .accessibilityIdentifier("project-changes.shared").e2eTarget("project-changes.shared")
+            }
             Spacer(minLength: 4)
             ProjectShipActions(model: model, access: access, iconOnly: true, size: 26)
             ProjectRefreshButton(model: model, size: 26)
@@ -851,6 +857,7 @@ private struct ProjectFolderRow: View, Equatable {
                         navigation.discard = .init(path: row.path, folder: true, fileCount: row.fileCount)
                     }
                     .disabled(!access.allows("discard_changes", in: model))
+                    .help(model.unavailableReasons["discard_changes"] ?? "")
                 }
             }
             ProjectStageButton(
@@ -874,6 +881,7 @@ private struct ProjectFolderRow: View, Equatable {
         Button("Discard Changes in Folder…", role: .destructive) {
             navigation.discard = .init(path: row.path, folder: true, fileCount: row.fileCount)
         }.disabled(!access.allows("discard_changes", in: model))
+            .help(model.unavailableReasons["discard_changes"] ?? "")
         Divider()
         if access.standalone {
             Button("Open in Files") { openInFiles(store, row.path, directory: true) }
@@ -948,6 +956,7 @@ private struct ProjectFileRow: View, Equatable {
                         navigation.discard = .init(path: file.path, folder: false, fileCount: 1)
                     }
                     .disabled(!access.allows("discard_changes", in: model))
+                    .help(model.unavailableReasons["discard_changes"] ?? "")
                 }
             }
             ProjectStageButton(
@@ -990,6 +999,7 @@ private struct ProjectFileRow: View, Equatable {
         Button("Discard Changes…", role: .destructive) {
             navigation.discard = .init(path: file.path, folder: false, fileCount: 1)
         }.disabled(!access.allows("discard_changes", in: model))
+            .help(model.unavailableReasons["discard_changes"] ?? "")
         Divider()
         Button("Copy Path") { copyToPasteboard(file.path) }
         Button("Copy File Name") { copyToPasteboard(ClientChangedFileLabel.of(file.path).filename) }
@@ -1191,6 +1201,7 @@ private struct ProjectDiffToolbar: View {
             Button("Discard") { navigation.discard = .init(path: selection.path, folder: false, fileCount: 1) }
                 .buttonStyle(DieterBarButtonStyle(destructive: true, size: 28))
                 .disabled(!access.allows("discard_changes", in: model))
+                .help(model.unavailableReasons["discard_changes"] ?? "")
                 .help("Discard all changes to this file")
                 .accessibilityIdentifier("project-changes.discard").e2eTarget("project-changes.discard")
             Button(staged ? "Unstage" : "Stage") {
@@ -1212,6 +1223,7 @@ private struct ProjectDiffToolbar: View {
                     navigation.discard = .init(path: selection.path, folder: false, fileCount: 1)
                 }
                 .disabled(!access.allows("discard_changes", in: model))
+                .help(model.unavailableReasons["discard_changes"] ?? "")
             } label: {
                 DieterMenuLabel(symbol: "ellipsis", size: 28)
             }
@@ -1268,17 +1280,20 @@ private struct ProjectChangesFeedback: View {
     var body: some View {
         HStack(spacing: 8) {
             if model.pendingKind != nil || model.diffLoading { ProgressView().controlSize(.mini) }
-            if let error = model.operationError ?? model.refreshError {
+            if let error = model.operationError {
                 Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(DieterTheme.coral)
             } else if let kind = model.pendingKind {
                 Text("\(kind.replacingOccurrences(of: "_", with: " ").capitalized)…")
-            } else if model.changes?.volatile == true {
-                Label(
-                    "An agent is editing this checkout. Git actions resume when it finishes.",
-                    systemImage: "person.crop.circle.badge.clock"
-                ).foregroundStyle(DieterTheme.amber)
+            } else if let error = model.refreshError, model.changes != nil {
+                // The last list stays; reading it again failed.
+                Label("Couldn't refresh · \(error)", systemImage: "arrow.clockwise")
+                    .foregroundStyle(DieterTheme.amber)
+            } else if !model.activity.isEmpty {
+                Label(model.activity, systemImage: "person.crop.circle.badge.clock")
+                    .foregroundStyle(DieterTheme.amber)
+                    .accessibilityIdentifier("project-changes.activity").e2eTarget("project-changes.activity")
             } else if model.busy {
-                Text("Updating checkout state…")
+                Text(model.changes == nil ? "Reading changes…" : "A Git operation is running…")
             } else {
                 Text(model.notice ?? "\(model.stagedFiles.count) staged · \(model.unstagedFiles.count) unstaged")
             }

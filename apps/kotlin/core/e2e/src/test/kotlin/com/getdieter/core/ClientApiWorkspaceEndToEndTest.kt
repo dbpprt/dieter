@@ -18,6 +18,7 @@ import com.getdieter.client.v1.ReviewSlice
 import com.getdieter.client.v1.ReviewTarget
 import com.getdieter.client.v1.Slice
 import com.getdieter.client.v1.Step
+import com.getdieter.client.v1.Toggle
 import com.getdieter.client.v1.Update
 import com.getdieter.core.client.ClientApi
 import com.getdieter.core.client.ClientFailure
@@ -295,5 +296,114 @@ class ClientApiWorkspaceEndToEndTest : EndToEnd() {
             }!!
         assertTrue(stagedSlice.changes!!.files.single { it.path == "contract-notes.txt" }.staged)
         changesWatch.close()
+    }
+
+    @Test
+    fun aProjectDirectoryConversationShowsItsCheckoutLiveThroughTheReview() = e2e {
+        val fixture = fixture()
+        val runtime = runtime(fixture)
+        runtime.awaitConnected()
+        runtime.awaitLoaded(fixture)
+        val api = ClientApi(runtime)
+        suspend fun step(name: String, command: Command) =
+            try {
+                api.dispatch(command)
+            } catch (failure: ClientFailure) {
+                throw AssertionError("$name: ${failure.message}", failure)
+            }
+        val local =
+            runtime.createConversation(
+                CreateConversationRequest(
+                    project_id = fixture.projectId,
+                    board_id = fixture.boardId,
+                    lane = "todo",
+                    title = "Work in place",
+                    prompt = "Edit the checkout",
+                    defer_start = true,
+                    workspace_mode = "project",
+                ),
+                chat = false,
+            )
+        val cardId =
+            runtime.outbox.view.await(45.seconds) { local.id in it.resolutions }.resolve(local.id)
+        val checkout =
+            runtime.workspace.state.value.project(fixture.projectId)!!.checkouts.first {
+                it.daemon_id == fixture.daemonId
+            }
+        File(checkout.path, "in-place.txt").writeText("first\n")
+        File(checkout.path, "agent-scratch.txt").writeText("v1\n")
+
+        val review = MutableStateFlow<ReviewSlice?>(null)
+        val watch =
+            api.observe(Slice.SLICE_REVIEW, "conversation-changes") {
+                review.value = Update.ADAPTER.decode(it.encode()).review
+            }
+        fun reviewCommand(action: ReviewCommand) =
+            Command(review = action.copy(scope = "conversation-changes"))
+        fun checkoutCommand(action: ProjectChangesCommand) =
+            reviewCommand(ReviewCommand(checkout = action))
+        step("bind", reviewCommand(ReviewCommand(bind = ReviewTarget(cardId, fixture.daemonId))))
+        step("active", reviewCommand(ReviewCommand(active = Toggle(true))))
+        // The daemon says where the changes live; the client never decides by mode.
+        val shown =
+            review.await(
+                30.seconds,
+                describe = { "checkout scope: ${review.value?.copy(display_rows = emptyList())}" },
+            ) {
+                it?.scope == "checkout" &&
+                    it.checkout?.changes?.files?.any { file -> file.path == "in-place.txt" } == true
+            }!!
+        assertEquals(null, shown.changeset, "a shared checkout's changes travel in `checkout`")
+        assertTrue(shown.error.isEmpty(), "error: ${shown.error}")
+        assertTrue(shown.checkout!!.shared_label.startsWith("Shared checkout"), "${shown.checkout}")
+
+        val selected =
+            step(
+                    "select",
+                    checkoutCommand(
+                        ProjectChangesCommand(
+                            select = ProjectChangeSelect(path = "in-place.txt", staged = false)
+                        )
+                    ),
+                )
+                .review!!
+                .checkout!!
+        assertTrue(
+            selected.display_rows.any { it.line?.row?.text?.contains("first") == true },
+            "diff: ${selected.display_rows}",
+        )
+        // An agent rewriting another file neither breaks nor reloads the shown diff.
+        File(checkout.path, "agent-scratch.txt").writeText("v2, longer\n")
+        File(checkout.path, "agent-new.txt").writeText("new\n")
+        val pushed =
+            review.await(
+                20.seconds,
+                describe = { "pushed: ${review.value?.checkout?.changes?.files?.map { it.path }}" },
+            ) {
+                it?.checkout?.changes?.files?.any { file -> file.path == "agent-new.txt" } == true
+            }!!
+        assertTrue(pushed.checkout!!.diff_error.isEmpty(), "diff error: ${pushed.checkout}")
+        assertEquals(selected.diff?.file_revision, pushed.checkout!!.diff?.file_revision)
+
+        val staged =
+            step(
+                    "stage",
+                    checkoutCommand(
+                        ProjectChangesCommand(
+                            run = GitOperationForm(kind = "stage", path = "in-place.txt")
+                        )
+                    ),
+                )
+                .outcome!!
+        assertTrue(staged.succeeded, "stage: ${review.value?.checkout?.operation_error}")
+        review.await(describe = { "staged: ${review.value?.checkout?.changes}" }) {
+            it?.checkout
+                ?.changes
+                ?.files
+                ?.singleOrNull { file -> file.path == "in-place.txt" }
+                ?.staged == true
+        }
+        step("inactive", reviewCommand(ReviewCommand(active = Toggle(false))))
+        watch.close()
     }
 }

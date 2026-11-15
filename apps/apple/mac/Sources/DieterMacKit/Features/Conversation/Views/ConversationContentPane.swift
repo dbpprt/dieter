@@ -415,15 +415,10 @@ private struct ConversationWorkspaceTabView: View {
             case .processes:
                 ConversationProcessesPane(model: tab.processes, active: active)
             case .review:
-                Group {
-                    if tab.usesProjectReview {
-                        ProjectChangesView(
-                            model: tab.projectReview, projectName: tab.scope?.projectName ?? "Project",
-                            active: active, isLive: tab.transportsLive, bindingRevision: tab.transportRevision)
-                    } else {
-                        WorkspaceChangesView(model: tab.review, background: .clear, active: active)
-                    }
-                }
+                ConversationChangesView(
+                    model: tab.review, projectName: tab.scope?.projectName ?? "Project", background: .clear,
+                    active: active, isLive: tab.transportsLive, bindingRevision: tab.transportRevision
+                )
                 .accessibilityIdentifier("conversation.content.review")
                 .e2eTarget("conversation.content.review")
             case .files:

@@ -13,6 +13,7 @@ import (
 	"github.com/dbpprt/dieter/internal/git/operations"
 	"github.com/dbpprt/dieter/internal/git/workspace"
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/platform/fault"
 	"github.com/dbpprt/dieter/internal/store/kanban"
 	"github.com/dbpprt/dieter/internal/testkit"
 )
@@ -38,7 +39,7 @@ func TestCommitFastForwardMergeAndCleanupEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	manager := operations.New(data, workspaces, nil)
-	changes, err := manager.Changesets.Get(context.Background(), chat.ID)
+	changes, err := manager.Changesets.GetTarget(context.Background(), chat.ID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -364,12 +365,12 @@ func TestProjectCheckoutStageCommitAndDiscardAreProjectScoped(t *testing.T) {
 	}
 	workspaces := workspace.New(data, nil)
 	manager := operations.New(data, workspaces, nil)
-	changes, err := manager.Changesets.GetProject(context.Background(), project.ID)
+	changes, err := manager.Changesets.GetTarget(context.Background(), "", project.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	stage, err := manager.Start(context.Background(), operations.Request{
-		ProjectID: project.ID, Kind: "stage", ExpectedRevision: changes.Revision, Parameters: map[string]string{"path": "README.md"},
+		ProjectID: project.ID, Kind: "stage", ExpectedFiles: expectFiles(changes, "README.md"), Parameters: map[string]string{"path": "README.md"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -378,12 +379,12 @@ func TestProjectCheckoutStageCommitAndDiscardAreProjectScoped(t *testing.T) {
 	if stage.Status != model.GitOperationSucceeded || stage.CardID != "" || stage.ProjectID != project.ID {
 		t.Fatalf("project stage failed: %#v", stage)
 	}
-	changes, err = manager.Changesets.GetProject(context.Background(), project.ID)
+	changes, err = manager.Changesets.GetTarget(context.Background(), "", project.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	commit, err := manager.Start(context.Background(), operations.Request{
-		ProjectID: project.ID, Kind: "commit", ExpectedRevision: changes.Revision,
+		ProjectID: project.ID, Kind: "commit", ExpectedIndex: changes.IndexFingerprint,
 		Parameters: map[string]string{"subject": "project change", "validate": "false"},
 	})
 	if err != nil {
@@ -393,7 +394,7 @@ func TestProjectCheckoutStageCommitAndDiscardAreProjectScoped(t *testing.T) {
 	if commit.Status != model.GitOperationSucceeded {
 		t.Fatalf("project commit failed: %#v", commit)
 	}
-	changes, err = manager.Changesets.GetProject(context.Background(), project.ID)
+	changes, err = manager.Changesets.GetTarget(context.Background(), "", project.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -401,7 +402,7 @@ func TestProjectCheckoutStageCommitAndDiscardAreProjectScoped(t *testing.T) {
 		t.Fatalf("commit did not preserve the unstaged file: %#v", changes.Files)
 	}
 	discard, err := manager.Start(context.Background(), operations.Request{
-		ProjectID: project.ID, Kind: "discard_changes", ExpectedRevision: changes.Revision, Parameters: map[string]string{"path": "scratch.txt"},
+		ProjectID: project.ID, Kind: "discard_changes", ExpectedFiles: expectFiles(changes, "scratch.txt"), Parameters: map[string]string{"path": "scratch.txt"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -452,12 +453,12 @@ func TestProjectCheckoutDiscardsAFolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	manager := operations.New(data, workspace.New(data, nil), nil)
-	changes, err := manager.Changesets.GetProject(context.Background(), project.ID)
+	changes, err := manager.Changesets.GetTarget(context.Background(), "", project.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	discard, err := manager.Start(context.Background(), operations.Request{
-		ProjectID: project.ID, Kind: "discard_changes", ExpectedRevision: changes.Revision, Parameters: map[string]string{"path": "pkg"},
+		ProjectID: project.ID, Kind: "discard_changes", ExpectedFiles: expectFiles(changes, "pkg"), Parameters: map[string]string{"path": "pkg"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -500,7 +501,7 @@ func TestProjectCheckoutCanPushItsCurrentBranch(t *testing.T) {
 	}
 	workspaces := workspace.New(data, nil)
 	manager := operations.New(data, workspaces, nil)
-	changes, err := manager.Changesets.GetProject(context.Background(), project.ID)
+	changes, err := manager.Changesets.GetTarget(context.Background(), "", project.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -551,12 +552,12 @@ func TestProjectCheckoutCanStageWhileAProjectModeAgentIsActive(t *testing.T) {
 		t.Fatal(err)
 	}
 	manager := operations.New(data, workspace.New(data, nil), nil)
-	changes, err := manager.Changesets.GetProject(context.Background(), project.ID)
+	changes, err := manager.Changesets.GetTarget(context.Background(), "", project.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	stage, err := manager.Start(context.Background(), operations.Request{
-		ProjectID: project.ID, Kind: "stage", ExpectedRevision: changes.Revision,
+		ProjectID: project.ID, Kind: "stage", ExpectedFiles: expectFiles(changes, "README.md"),
 		Parameters: map[string]string{"path": "README.md"},
 	})
 	if err != nil {
@@ -589,12 +590,12 @@ func TestProjectCheckoutUnstageAndDiscardSupportUnbornRepository(t *testing.T) {
 	}
 	workspaces := workspace.New(data, nil)
 	manager := operations.New(data, workspaces, nil)
-	changes, err := manager.Changesets.GetProject(context.Background(), project.ID)
+	changes, err := manager.Changesets.GetTarget(context.Background(), "", project.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	stage, err := manager.Start(context.Background(), operations.Request{
-		ProjectID: project.ID, Kind: "stage", ExpectedRevision: changes.Revision, Parameters: map[string]string{"path": "new.txt"},
+		ProjectID: project.ID, Kind: "stage", ExpectedFiles: expectFiles(changes, "new.txt"), Parameters: map[string]string{"path": "new.txt"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -605,12 +606,12 @@ func TestProjectCheckoutUnstageAndDiscardSupportUnbornRepository(t *testing.T) {
 	if err := os.WriteFile(path, []byte("changed after staging\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	changes, err = manager.Changesets.GetProject(context.Background(), project.ID)
+	changes, err = manager.Changesets.GetTarget(context.Background(), "", project.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	unstage, err := manager.Start(context.Background(), operations.Request{
-		ProjectID: project.ID, Kind: "unstage", ExpectedRevision: changes.Revision, Parameters: map[string]string{"path": "new.txt"},
+		ProjectID: project.ID, Kind: "unstage", ExpectedFiles: expectFiles(changes, "new.txt"), Parameters: map[string]string{"path": "new.txt"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -618,7 +619,7 @@ func TestProjectCheckoutUnstageAndDiscardSupportUnbornRepository(t *testing.T) {
 	if unstage = waitOperation(t, manager, unstage.ID); unstage.Status != model.GitOperationSucceeded {
 		t.Fatalf("unstage in unborn repository failed: %#v", unstage)
 	}
-	changes, err = manager.Changesets.GetProject(context.Background(), project.ID)
+	changes, err = manager.Changesets.GetTarget(context.Background(), "", project.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -626,7 +627,7 @@ func TestProjectCheckoutUnstageAndDiscardSupportUnbornRepository(t *testing.T) {
 		t.Fatalf("unborn unstage did not leave a working-tree-only file: %#v", changes.Files)
 	}
 	stage, err = manager.Start(context.Background(), operations.Request{
-		ProjectID: project.ID, Kind: "stage", ExpectedRevision: changes.Revision, Parameters: map[string]string{"path": "new.txt"},
+		ProjectID: project.ID, Kind: "stage", ExpectedFiles: expectFiles(changes, "new.txt"), Parameters: map[string]string{"path": "new.txt"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -637,12 +638,12 @@ func TestProjectCheckoutUnstageAndDiscardSupportUnbornRepository(t *testing.T) {
 	if err := os.WriteFile(path, []byte("changed before discard\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	changes, err = manager.Changesets.GetProject(context.Background(), project.ID)
+	changes, err = manager.Changesets.GetTarget(context.Background(), "", project.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	discard, err := manager.Start(context.Background(), operations.Request{
-		ProjectID: project.ID, Kind: "discard_changes", ExpectedRevision: changes.Revision, Parameters: map[string]string{"path": "new.txt"},
+		ProjectID: project.ID, Kind: "discard_changes", ExpectedFiles: expectFiles(changes, "new.txt"), Parameters: map[string]string{"path": "new.txt"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -703,4 +704,137 @@ func waitOperation(t *testing.T, manager *operations.Manager, id string) model.G
 	}
 	t.Fatal("timed out waiting for Git operation")
 	return model.GitOperation{}
+}
+
+// expectFiles is the precondition of a file-scoped operation on scope: every
+// listed file at or under it, with its revision.
+func expectFiles(changes model.Changeset, scope string) map[string]string {
+	result := map[string]string{}
+	for _, file := range changes.Files {
+		if scope == "" || file.Path == scope || strings.HasPrefix(file.Path, scope+"/") {
+			result[file.Path] = file.Revision
+		}
+	}
+	return result
+}
+
+func TestFileScopedOperationsFailOnlyWhenTheirOwnFilesChanged(t *testing.T) {
+	t.Parallel()
+	repository := testkit.GitRepo(t)
+	data := testkit.Store(t)
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Concurrent", Path: repository, BaseBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(repository, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("README.md", "reviewed\n")
+	write("agent.txt", "agent v1\n")
+	manager := operations.New(data, workspace.New(data, nil), nil)
+	ctx := context.Background()
+	if _, err := manager.Start(ctx, operations.Request{ProjectID: project.ID, Kind: "stage", Parameters: map[string]string{"path": "README.md"}}); faultKind(err) != fault.Invalid {
+		t.Fatalf("a stage without reviewed files must be refused: %v", err)
+	}
+	changes, err := manager.Changesets.GetTarget(ctx, "", project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An agent keeps writing another file: staging README.md is unaffected.
+	time.Sleep(10 * time.Millisecond)
+	write("agent.txt", "agent v2, longer\n")
+	stage, err := manager.Start(ctx, operations.Request{ProjectID: project.ID, Kind: "stage", ExpectedFiles: expectFiles(changes, "README.md"), Parameters: map[string]string{"path": "README.md"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stage = waitOperation(t, manager, stage.ID); stage.Status != model.GitOperationSucceeded {
+		t.Fatalf("stage after an unrelated write: %#v", stage)
+	}
+	// The reviewed file itself changes: the stage is refused and names it.
+	changes, err = manager.Changesets.GetTarget(ctx, "", project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(10 * time.Millisecond)
+	write("agent.txt", "agent v3, even longer\n")
+	stale, err := manager.Start(ctx, operations.Request{ProjectID: project.ID, Kind: "stage", ExpectedFiles: expectFiles(changes, "agent.txt"), Parameters: map[string]string{"path": "agent.txt"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stale = waitOperation(t, manager, stale.ID); stale.Status != model.GitOperationFailed || !strings.Contains(stale.Error, "agent.txt changed since it was reviewed") {
+		t.Fatalf("stage of a changed file: %#v", stale)
+	}
+	// A commit takes the index it was given, whatever the working tree does.
+	changes, err = manager.Changesets.GetTarget(ctx, "", project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write("agent.txt", "agent v4\n")
+	commit, err := manager.Start(ctx, operations.Request{ProjectID: project.ID, Kind: "commit", ExpectedIndex: changes.IndexFingerprint, Parameters: map[string]string{"subject": "Reviewed", "validate": "false"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if commit = waitOperation(t, manager, commit.ID); commit.Status != model.GitOperationSucceeded {
+		t.Fatalf("commit after a working-tree write: %#v", commit)
+	}
+	if shown := testkit.RunGit(t, repository, "show", "--name-only", "--format=", "HEAD"); strings.TrimSpace(shown) != "README.md" {
+		t.Fatalf("commit took %q, want only the reviewed README.md", shown)
+	}
+	// The index changing after review refuses the commit.
+	changes, err = manager.Changesets.GetTarget(ctx, "", project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	testkit.RunGit(t, repository, "add", "agent.txt")
+	refused, err := manager.Start(ctx, operations.Request{ProjectID: project.ID, Kind: "commit", ExpectedIndex: changes.IndexFingerprint, Parameters: map[string]string{"subject": "Stale", "validate": "false"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refused = waitOperation(t, manager, refused.ID); refused.Status != model.GitOperationFailed || !strings.Contains(refused.Error, "staged changes changed") {
+		t.Fatalf("commit of a changed index: %#v", refused)
+	}
+}
+
+func TestProjectDirectoryConversationOperatesOnItsCheckout(t *testing.T) {
+	t.Parallel()
+	repository := testkit.GitRepo(t)
+	data := testkit.Store(t)
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Shared", Path: repository, BaseBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "In place", Prompt: "work", WorkspaceMode: model.WorkspaceModeProject})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, "README.md"), []byte("conversation edit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manager := operations.New(data, workspace.New(data, nil), nil)
+	ctx := context.Background()
+	changes, err := manager.Changesets.GetTarget(ctx, chat.ID, "")
+	if err != nil || changes.Scope != model.ChangesetScopeCheckout || len(changes.Files) != 1 {
+		t.Fatalf("conversation changes=%#v err=%v", changes, err)
+	}
+	stage, err := manager.Start(ctx, operations.Request{CardID: chat.ID, Kind: "stage", ExpectedFiles: expectFiles(changes, "")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stage.CardID != "" || stage.ProjectID != project.ID || stage.RequestedByCardID != chat.ID || stage.CheckoutID == "" {
+		t.Fatalf("a project-directory conversation must start a checkout operation: %#v", stage)
+	}
+	if stage = waitOperation(t, manager, stage.ID); stage.Status != model.GitOperationSucceeded {
+		t.Fatalf("stage through the conversation: %#v", stage)
+	}
+	if _, err := manager.Start(ctx, operations.Request{CardID: chat.ID, Kind: "merge_local"}); faultKind(err) != fault.Invalid {
+		t.Fatalf("worktree-only kinds stay unavailable in a checkout: %v", err)
+	}
+}
+
+func faultKind(err error) fault.Kind {
+	kind, _ := fault.KindOf(err)
+	return kind
 }

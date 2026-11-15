@@ -4,14 +4,16 @@ import (
 	"github.com/dbpprt/dieter/internal/model"
 )
 
-// ProjectCheckoutActive reports only turns that execute in the
-// registered project directory. Worktree turns in the same project do not
-// share its index or working tree and must not block checkout-scoped actions.
-func (s *Store) ProjectCheckoutActive(projectID, exceptCardID string, checkoutIDs ...string) (bool, error) {
+// ProjectCheckoutTurns lists the conversations whose active turns execute in
+// the registered project directory, optionally only those on one checkout.
+// Worktree turns in the same project do not share its index or working tree
+// and are not listed.
+func (s *Store) ProjectCheckoutTurns(projectID, exceptCardID string, checkoutIDs ...string) ([]string, error) {
 	activeLeases, err := s.leases.Active()
 	if err != nil {
-		return false, err
+		return nil, err
 	}
+	var cards []string
 	for _, lease := range activeLeases {
 		if s.kanban.CanonicalProjectRef(lease.ProjectID) != projectID || lease.CardID == exceptCardID {
 			continue
@@ -30,8 +32,14 @@ func (s *Store) ProjectCheckoutActive(projectID, exceptCardID string, checkoutID
 		}
 		canonical, ok := model.CanonicalWorkspaceMode(mode)
 		if ok && canonical == model.WorkspaceModeProject {
-			return true, nil
+			cards = append(cards, lease.CardID)
 		}
 	}
-	return false, nil
+	return cards, nil
+}
+
+// ProjectCheckoutActive reports whether ProjectCheckoutTurns lists any turn.
+func (s *Store) ProjectCheckoutActive(projectID, exceptCardID string, checkoutIDs ...string) (bool, error) {
+	cards, err := s.ProjectCheckoutTurns(projectID, exceptCardID, checkoutIDs...)
+	return len(cards) > 0, err
 }

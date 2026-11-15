@@ -130,13 +130,13 @@ func TestDaemonCLIControlsLocalDaemonEndToEnd(t *testing.T) {
 	if err := json.Unmarshal([]byte(changesJSON), &projectChanges); err != nil || projectChanges.ProjectID != created.Project.ID || projectChanges.Revision == "" || len(projectChanges.Files) != 1 || projectChanges.Files[0].Path != "README.md" || !projectChanges.Files[0].Unstaged {
 		t.Fatalf("project changes JSON=%q value=%#v err=%v", changesJSON, projectChanges, err)
 	}
-	runDaemonCLI(t, client, output, "workspace", "diff", "--project", created.Project.ID, "--path", "README.md", "--section", "unstaged", "--revision", projectChanges.Revision)
-	runDaemonCLI(t, client, output, "workspace", "run", "--project", created.Project.ID, "--kind", "stage", "--revision", projectChanges.Revision, "--param", "path=README.md", "--wait")
+	runDaemonCLI(t, client, output, "workspace", "diff", "--project", created.Project.ID, "--path", "README.md", "--section", "unstaged")
+	runDaemonCLI(t, client, output, "workspace", "run", "--project", created.Project.ID, "--kind", "stage", "--param", "path=README.md", "--wait")
 	changesJSON = runDaemonCLI(t, client, output, "workspace", "changes", "--project", created.Project.ID)
 	if err := json.Unmarshal([]byte(changesJSON), &projectChanges); err != nil || projectChanges.Revision == "" {
 		t.Fatalf("staged project changes JSON=%q err=%v", changesJSON, err)
 	}
-	runDaemonCLI(t, client, output, "workspace", "run", "--project", created.Project.ID, "--kind", "commit", "--revision", projectChanges.Revision, "--param", "subject=initial project commit", "--param", "validate=false", "--wait")
+	runDaemonCLI(t, client, output, "workspace", "run", "--project", created.Project.ID, "--kind", "commit", "--param", "subject=initial project commit", "--param", "validate=false", "--wait")
 	runDaemonCLI(t, client, output, "workspace", "run", "--project", created.Project.ID, "--kind", "push", "--wait")
 	runDaemonCLI(t, client, output, "workspace", "run", "--project", created.Project.ID, "--kind", "update", "--param", "fetch=true", "--param", "validate=false", "--wait")
 	runDaemonCLI(t, client, output, "workspace", "run", "--project", created.Project.ID, "--kind", "validate", "--wait")

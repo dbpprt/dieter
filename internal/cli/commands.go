@@ -93,7 +93,7 @@ func commandTable() []command {
 			aliases:     []string{"workspaces", "git"},
 			summary:     "Inspect changes and run durable Git/SCM operations",
 			run:         (*CLI).rpcWorkspace,
-			subcommands: []string{"show", "list", "changes", "diff", "comments", "comment", "scm", "operation", "watch", "run", "cancel"},
+			subcommands: []string{"show", "list", "changes", "watch-changes", "diff", "comments", "comment", "scm", "operation", "watch", "run", "cancel"},
 		},
 		{
 			name:        "file",

@@ -9,9 +9,11 @@ struct ProjectChangeSelection: Hashable, Sendable {
     var section: String
 }
 
-/// One checkout's changes outside any conversation's worktree, kept by the
-/// shared core on the checkout's machine. An active surface refreshes
-/// itself; leaving the view never cancels a machine-owned Git operation.
+/// One checkout's changes, kept by the shared core on the checkout's machine:
+/// the project's Changes, or (embedded in a conversation's review) the checkout
+/// a project-directory conversation works in. An active surface follows the
+/// daemon's changeset stream; leaving the view never cancels a machine-owned
+/// Git operation.
 @MainActor @Observable
 final class ProjectChangesModel {
     private(set) var projectID = ""
@@ -37,6 +39,12 @@ final class ProjectChangesModel {
     var diffError: String?
     var operationError: String?
     var notice: String?
+    /// "Agent working · changes update live" while an agent's turn runs in the checkout.
+    private(set) var activity = ""
+    /// Why an operation cannot run now, by kind, as the core says it.
+    private(set) var unavailableReasons: [String: String] = [:]
+    /// "Shared checkout · main" inside a project-directory conversation.
+    private(set) var sharedLabel = ""
     var commitSubject = ""
     var commitBody = ""
     /// Visible and foregrounded: the core refreshes the checkout periodically.
@@ -48,7 +56,9 @@ final class ProjectChangesModel {
         }
     }
     @ObservationIgnored private var core: CoreClient?
-    @ObservationIgnored private let scope = "changes-\(UUID().uuidString)"
+    @ObservationIgnored private let scope: String
+    /// The conversation review this checkout is part of; nil for the project's own surface.
+    @ObservationIgnored private let reviewScope: String?
     @ObservationIgnored private var subscription: SliceSubscription?
     /// The checkout the core was last told to show; slices for another are stale.
     @ObservationIgnored private var bound = ClientProjectChangesTarget()
@@ -59,7 +69,49 @@ final class ProjectChangesModel {
     @ObservationIgnored private var requestedSplit: Bool?
     private var mutable = false
 
+    /// The project's own Changes surface.
+    init() {
+        scope = "changes-\(UUID().uuidString)"
+        reviewScope = nil
+    }
+
+    /// The checkout of the conversation review in `reviewScope`: the review
+    /// delivers its slices (`receive`) and carries its commands.
+    init(reviewScope: String) {
+        scope = reviewScope
+        self.reviewScope = reviewScope
+    }
+
     var mutationsDisabled: Bool { core == nil || !mutable }
+
+    /// Whether this checkout belongs to a conversation's review.
+    var embedded: Bool { reviewScope != nil }
+
+    /// Reaches the core through the review the checkout belongs to.
+    func attach(core: CoreClient?) {
+        guard embedded, self.core == nil else { return }
+        self.core = core
+    }
+
+    /// A checkout slice the owning review received.
+    func receive(_ slice: ClientProjectChangesSlice) {
+        guard embedded else { return }
+        if projectID != slice.projectID {
+            projectID = slice.projectID
+            commitSubject = ""; commitBody = ""; operationError = nil; notice = nil
+        }
+        fold(slice)
+    }
+
+    /// Clears what an embedded checkout shows when its conversation changes.
+    func resetEmbedded() {
+        guard embedded else { return }
+        projectID = ""
+        show(nil); diff = nil; diffLayout = WorkspaceDiffLayout(); selection = nil; operation = nil
+        allowed = []; unavailableReasons = [:]; activity = ""; sharedLabel = ""
+        refreshError = nil; diffError = nil; operationError = nil; notice = nil
+        commitSubject = ""; commitBody = ""
+    }
 
     /// Whether the checkout operation `kind` can run now.
     func allows(_ kind: String) -> Bool { allowed.contains(kind) }
@@ -100,8 +152,10 @@ final class ProjectChangesModel {
     func disconnect() { active = false }
 
     private func fold(_ slice: ClientProjectChangesSlice) {
-        guard slice.projectID == bound.projectID, slice.checkoutID == bound.checkoutID,
-            slice.daemonID == bound.daemonID
+        guard
+            embedded
+                || (slice.projectID == bound.projectID && slice.checkoutID == bound.checkoutID
+                    && slice.daemonID == bound.daemonID)
         else { return }
         let changes = slice.hasChanges ? slice.changes : nil
         show(changes)
@@ -144,6 +198,9 @@ final class ProjectChangesModel {
         if self.operationError != operationError { self.operationError = operationError }
         let notice = slice.notice.isEmpty ? nil : slice.notice
         if self.notice != notice { self.notice = notice }
+        if activity != slice.activity { activity = slice.activity }
+        if unavailableReasons != slice.unavailableReasons { unavailableReasons = slice.unavailableReasons }
+        if sharedLabel != slice.sharedLabel { sharedLabel = slice.sharedLabel }
     }
 
     /// Shows `changes`, splitting its files into the two halves only when they change.
@@ -168,9 +225,12 @@ final class ProjectChangesModel {
         }
     }
 
+    /// Runs a command and folds the slice it returns. A failed operation
+    /// shows as the operation's error; any other failed command (a read, a
+    /// selection) as a refresh error, never as a failed Git action.
     @discardableResult
     private func run(
-        afterQueued: Bool = true, _ build: (inout ClientProjectChangesCommand) -> Void
+        afterQueued: Bool = true, operation: Bool = false, _ build: (inout ClientProjectChangesCommand) -> Void
     ) async -> ClientResult? {
         guard let core else { return nil }
         if afterQueued, let queued { await queued.value }
@@ -179,11 +239,24 @@ final class ProjectChangesModel {
         build(&command)
         let sent = command, target = bound
         do {
+            if let reviewScope {
+                let result = try await core.dispatch(
+                    .with {
+                        $0.review = .with {
+                            $0.scope = reviewScope
+                            $0.checkout = sent
+                        }
+                    })
+                if case .review(let review)? = result.result, review.hasCheckout { fold(review.checkout) }
+                return result
+            }
             let result = try await core.dispatch(.with { $0.projectChanges = sent })
             if case .projectChanges(let slice)? = result.result { fold(slice) }
             return result
         } catch let failure as CoreFailure {
-            if target == bound { operationError = failure.message }
+            if target == bound {
+                if operation { operationError = failure.message } else { refreshError = failure.message }
+            }
             return nil
         } catch {
             return nil
@@ -191,7 +264,7 @@ final class ProjectChangesModel {
     }
 
     func refresh() async {
-        guard !bound.projectID.isEmpty else { return }
+        guard embedded || !bound.projectID.isEmpty else { return }
         await run { $0.refresh = ClientStep() }
     }
 
@@ -246,7 +319,7 @@ final class ProjectChangesModel {
         notice = nil
         return Task { [weak self] () -> Bool in
             guard let self else { return false }
-            let result = await self.run { command in command.run = form }
+            let result = await self.run(operation: true) { command in command.run = form }
             if self.pendingKind == kind { self.pendingKind = nil }
             guard case .outcome(let outcome)? = result?.result, outcome.succeeded else { return false }
             if kind == "commit" { self.commitSubject = ""; self.commitBody = "" }

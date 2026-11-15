@@ -4502,6 +4502,16 @@ public nonisolated struct ClientReviewCommand: Sendable {
     set {action = .layout(newValue)}
   }
 
+  /// Drives the checkout of a project-directory conversation (`scope`
+  /// "checkout"); its result is the review.
+  public var checkout: ClientProjectChangesCommand {
+    get {
+      if case .checkout(let v)? = action {return v}
+      return ClientProjectChangesCommand()
+    }
+    set {action = .checkout(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Action: Equatable, Sendable {
@@ -4529,6 +4539,9 @@ public nonisolated struct ClientReviewCommand: Sendable {
     case clearToast_p(ClientStep)
     /// Lays the diff out for this view; the surface keeps it across conversations.
     case layout(ClientReviewLayout)
+    /// Drives the checkout of a project-directory conversation (`scope`
+    /// "checkout"); its result is the review.
+    case checkout(ClientProjectChangesCommand)
 
   }
 
@@ -10602,6 +10615,10 @@ public nonisolated struct ClientWorkspaceAvailability: Sendable {
   /// "project" or "worktree".
   public var mode: String = String()
 
+  /// Why no operation can start now ("Git actions wait for the agent's turn
+  /// to end."); empty when operations are available.
+  public var blockedReason: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -10845,6 +10862,38 @@ public nonisolated struct ClientReviewSlice: @unchecked Sendable {
     set {_uniqueStorage()._workspaceState = newValue}
   }
 
+  /// "worktree" when the conversation has its own worktree, "checkout" when it
+  /// works in a project checkout; empty until the daemon says which. With
+  /// "checkout", `checkout` carries the changes and `changeset` stays empty.
+  public var scope: String {
+    get {_storage._scope}
+    set {_uniqueStorage()._scope = newValue}
+  }
+
+  /// The checkout's changes for a project-directory conversation, driven with
+  /// `ReviewCommand.checkout`.
+  public var checkout: ClientProjectChangesSlice {
+    get {_storage._checkout ?? ClientProjectChangesSlice()}
+    set {_uniqueStorage()._checkout = newValue}
+  }
+  /// Returns true if `checkout` has been explicitly set.
+  public var hasCheckout: Bool {_storage._checkout != nil}
+  /// Clears the value of `checkout`. Subsequent reads from it will return its default value.
+  public mutating func clearCheckout() {_uniqueStorage()._checkout = nil}
+
+  /// Comments on the selected file written against an earlier version of it.
+  public var outdatedComments: Int32 {
+    get {_storage._outdatedComments}
+    set {_uniqueStorage()._outdatedComments = newValue}
+  }
+
+  /// "Agent working · changes update live" while an agent's turn runs in the
+  /// workspace; empty otherwise. A state, never an error.
+  public var activity: String {
+    get {_storage._activity}
+    set {_uniqueStorage()._activity = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -11008,6 +11057,27 @@ public nonisolated struct ClientProjectChangesSlice: @unchecked Sendable {
   public var allowed: [String] {
     get {_storage._allowed}
     set {_uniqueStorage()._allowed = newValue}
+  }
+
+  /// Why a checkout operation cannot run now, by kind, for the ones that are
+  /// not allowed for a reason worth telling ("Wait for the agent to finish…").
+  public var unavailableReasons: Dictionary<String,String> {
+    get {_storage._unavailableReasons}
+    set {_uniqueStorage()._unavailableReasons = newValue}
+  }
+
+  /// "Agent working · changes update live" while an agent's turn runs in the
+  /// checkout; empty otherwise.
+  public var activity: String {
+    get {_storage._activity}
+    set {_uniqueStorage()._activity = newValue}
+  }
+
+  /// Set when the checkout is shown inside a project-directory conversation:
+  /// "Shared checkout · main".
+  public var sharedLabel: String {
+    get {_storage._sharedLabel}
+    set {_uniqueStorage()._sharedLabel = newValue}
   }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -22803,7 +22873,7 @@ nonisolated extension ClientFilesDelete: SwiftProtobuf.Message, SwiftProtobuf._M
 
 nonisolated extension ClientReviewCommand: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ReviewCommand"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}scope\0\u{1}bind\0\u{1}active\0\u{1}refresh\0\u{1}select\0\u{3}load_more_diff\0\u{3}add_comment\0\u{1}start\0\u{3}cancel_operation\0\u{1}merge\0\u{4}\u{2}clear_toast\0\u{2}\u{2}layout\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}scope\0\u{1}bind\0\u{1}active\0\u{1}refresh\0\u{1}select\0\u{3}load_more_diff\0\u{3}add_comment\0\u{1}start\0\u{3}cancel_operation\0\u{1}merge\0\u{4}\u{2}clear_toast\0\u{2}\u{2}layout\0\u{1}checkout\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -22955,6 +23025,19 @@ nonisolated extension ClientReviewCommand: SwiftProtobuf.Message, SwiftProtobuf.
           self.action = .layout(v)
         }
       }()
+      case 15: try {
+        var v: ClientProjectChangesCommand?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .checkout(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .checkout(v)
+        }
+      }()
       default: break
       }
     }
@@ -23012,6 +23095,10 @@ nonisolated extension ClientReviewCommand: SwiftProtobuf.Message, SwiftProtobuf.
     case .layout?: try {
       guard case .layout(let v)? = self.action else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 14)
+    }()
+    case .checkout?: try {
+      guard case .checkout(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 15)
     }()
     case nil: break
     }
@@ -33040,7 +33127,7 @@ nonisolated extension ClientDiffRow.Kind: SwiftProtobuf._ProtoNameProviding {
 
 nonisolated extension ClientWorkspaceAvailability: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".WorkspaceAvailability"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}allowed\0\u{3}allows_merge_flow\0\u{3}merge_destination\0\u{3}has_review_branch\0\u{2}\u{b}mode\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}allowed\0\u{3}allows_merge_flow\0\u{3}merge_destination\0\u{3}has_review_branch\0\u{2}\u{b}mode\0\u{3}blocked_reason\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -33053,6 +33140,7 @@ nonisolated extension ClientWorkspaceAvailability: SwiftProtobuf.Message, SwiftP
       case 3: try { try decoder.decodeSingularStringField(value: &self.mergeDestination) }()
       case 4: try { try decoder.decodeSingularBoolField(value: &self.hasReviewBranch_p) }()
       case 15: try { try decoder.decodeSingularStringField(value: &self.mode) }()
+      case 16: try { try decoder.decodeSingularStringField(value: &self.blockedReason) }()
       default: break
       }
     }
@@ -33074,6 +33162,9 @@ nonisolated extension ClientWorkspaceAvailability: SwiftProtobuf.Message, SwiftP
     if !self.mode.isEmpty {
       try visitor.visitSingularStringField(value: self.mode, fieldNumber: 15)
     }
+    if !self.blockedReason.isEmpty {
+      try visitor.visitSingularStringField(value: self.blockedReason, fieldNumber: 16)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -33083,6 +33174,7 @@ nonisolated extension ClientWorkspaceAvailability: SwiftProtobuf.Message, SwiftP
     if lhs.mergeDestination != rhs.mergeDestination {return false}
     if lhs.hasReviewBranch_p != rhs.hasReviewBranch_p {return false}
     if lhs.mode != rhs.mode {return false}
+    if lhs.blockedReason != rhs.blockedReason {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -33090,7 +33182,7 @@ nonisolated extension ClientWorkspaceAvailability: SwiftProtobuf.Message, SwiftP
 
 nonisolated extension ClientReviewSlice: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ReviewSlice"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{3}daemon_id\0\u{1}workspace\0\u{1}changeset\0\u{1}scm\0\u{1}comments\0\u{1}loading\0\u{1}error\0\u{3}selected_path\0\u{3}selected_commit\0\u{1}diff\0\u{4}\u{2}diff_loading\0\u{1}operation\0\u{1}logs\0\u{1}submitting\0\u{3}needs_reconciliation\0\u{4}\u{2}merge_step\0\u{1}toast\0\u{3}operation_active\0\u{1}conflicted\0\u{1}availability\0\u{3}display_rows\0\u{3}diff_max_columns\0\u{3}diff_unchanged\0\u{3}diff_more\0\u{3}diff_too_large\0\u{3}diff_note\0\u{1}split\0\u{3}operation_visible\0\u{3}operation_cancelable\0\u{3}conflict_title\0\u{3}conflict_prompt\0\u{3}moves_to_done\0\u{3}pull_request\0\u{3}merge_readiness\0\u{3}workspace_state\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{3}daemon_id\0\u{1}workspace\0\u{1}changeset\0\u{1}scm\0\u{1}comments\0\u{1}loading\0\u{1}error\0\u{3}selected_path\0\u{3}selected_commit\0\u{1}diff\0\u{4}\u{2}diff_loading\0\u{1}operation\0\u{1}logs\0\u{1}submitting\0\u{3}needs_reconciliation\0\u{4}\u{2}merge_step\0\u{1}toast\0\u{3}operation_active\0\u{1}conflicted\0\u{1}availability\0\u{3}display_rows\0\u{3}diff_max_columns\0\u{3}diff_unchanged\0\u{3}diff_more\0\u{3}diff_too_large\0\u{3}diff_note\0\u{1}split\0\u{3}operation_visible\0\u{3}operation_cancelable\0\u{3}conflict_title\0\u{3}conflict_prompt\0\u{3}moves_to_done\0\u{3}pull_request\0\u{3}merge_readiness\0\u{3}workspace_state\0\u{1}scope\0\u{1}checkout\0\u{3}outdated_comments\0\u{1}activity\0")
 
   fileprivate class _StorageClass {
     var _cardID: String = String()
@@ -33129,6 +33221,10 @@ nonisolated extension ClientReviewSlice: SwiftProtobuf.Message, SwiftProtobuf._M
     var _pullRequest: ClientPullRequestView? = nil
     var _mergeReadiness: ClientMergeReadiness? = nil
     var _workspaceState: String = String()
+    var _scope: String = String()
+    var _checkout: ClientProjectChangesSlice? = nil
+    var _outdatedComments: Int32 = 0
+    var _activity: String = String()
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -33175,6 +33271,10 @@ nonisolated extension ClientReviewSlice: SwiftProtobuf.Message, SwiftProtobuf._M
       _pullRequest = source._pullRequest
       _mergeReadiness = source._mergeReadiness
       _workspaceState = source._workspaceState
+      _scope = source._scope
+      _checkout = source._checkout
+      _outdatedComments = source._outdatedComments
+      _activity = source._activity
     }
   }
 
@@ -33229,6 +33329,10 @@ nonisolated extension ClientReviewSlice: SwiftProtobuf.Message, SwiftProtobuf._M
         case 36: try { try decoder.decodeSingularMessageField(value: &_storage._pullRequest) }()
         case 37: try { try decoder.decodeSingularMessageField(value: &_storage._mergeReadiness) }()
         case 38: try { try decoder.decodeSingularStringField(value: &_storage._workspaceState) }()
+        case 39: try { try decoder.decodeSingularStringField(value: &_storage._scope) }()
+        case 40: try { try decoder.decodeSingularMessageField(value: &_storage._checkout) }()
+        case 41: try { try decoder.decodeSingularInt32Field(value: &_storage._outdatedComments) }()
+        case 42: try { try decoder.decodeSingularStringField(value: &_storage._activity) }()
         default: break
         }
       }
@@ -33349,6 +33453,18 @@ nonisolated extension ClientReviewSlice: SwiftProtobuf.Message, SwiftProtobuf._M
       if !_storage._workspaceState.isEmpty {
         try visitor.visitSingularStringField(value: _storage._workspaceState, fieldNumber: 38)
       }
+      if !_storage._scope.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._scope, fieldNumber: 39)
+      }
+      try { if let v = _storage._checkout {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 40)
+      } }()
+      if _storage._outdatedComments != 0 {
+        try visitor.visitSingularInt32Field(value: _storage._outdatedComments, fieldNumber: 41)
+      }
+      if !_storage._activity.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._activity, fieldNumber: 42)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -33394,6 +33510,10 @@ nonisolated extension ClientReviewSlice: SwiftProtobuf.Message, SwiftProtobuf._M
         if _storage._pullRequest != rhs_storage._pullRequest {return false}
         if _storage._mergeReadiness != rhs_storage._mergeReadiness {return false}
         if _storage._workspaceState != rhs_storage._workspaceState {return false}
+        if _storage._scope != rhs_storage._scope {return false}
+        if _storage._checkout != rhs_storage._checkout {return false}
+        if _storage._outdatedComments != rhs_storage._outdatedComments {return false}
+        if _storage._activity != rhs_storage._activity {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -33405,7 +33525,7 @@ nonisolated extension ClientReviewSlice: SwiftProtobuf.Message, SwiftProtobuf._M
 
 nonisolated extension ClientProjectChangesSlice: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ProjectChangesSlice"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}checkout_id\0\u{3}daemon_id\0\u{1}changes\0\u{1}selection\0\u{1}diff\0\u{4}\u{2}diff_loading\0\u{1}operation\0\u{3}pending_kind\0\u{3}needs_reconciliation\0\u{1}refreshing\0\u{3}refresh_error\0\u{3}diff_error\0\u{3}operation_error\0\u{1}notice\0\u{1}busy\0\u{3}mutations_disabled\0\u{4}\u{2}display_rows\0\u{3}diff_max_columns\0\u{3}diff_unchanged\0\u{3}diff_more\0\u{3}diff_too_large\0\u{3}diff_note\0\u{1}split\0\u{1}allowed\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}checkout_id\0\u{3}daemon_id\0\u{1}changes\0\u{1}selection\0\u{1}diff\0\u{4}\u{2}diff_loading\0\u{1}operation\0\u{3}pending_kind\0\u{3}needs_reconciliation\0\u{1}refreshing\0\u{3}refresh_error\0\u{3}diff_error\0\u{3}operation_error\0\u{1}notice\0\u{1}busy\0\u{3}mutations_disabled\0\u{4}\u{2}display_rows\0\u{3}diff_max_columns\0\u{3}diff_unchanged\0\u{3}diff_more\0\u{3}diff_too_large\0\u{3}diff_note\0\u{1}split\0\u{1}allowed\0\u{3}unavailable_reasons\0\u{1}activity\0\u{3}shared_label\0")
 
   fileprivate class _StorageClass {
     var _projectID: String = String()
@@ -33433,6 +33553,9 @@ nonisolated extension ClientProjectChangesSlice: SwiftProtobuf.Message, SwiftPro
     var _diffNote: String = String()
     var _split: Bool = false
     var _allowed: [String] = []
+    var _unavailableReasons: Dictionary<String,String> = [:]
+    var _activity: String = String()
+    var _sharedLabel: String = String()
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -33468,6 +33591,9 @@ nonisolated extension ClientProjectChangesSlice: SwiftProtobuf.Message, SwiftPro
       _diffNote = source._diffNote
       _split = source._split
       _allowed = source._allowed
+      _unavailableReasons = source._unavailableReasons
+      _activity = source._activity
+      _sharedLabel = source._sharedLabel
     }
   }
 
@@ -33511,6 +33637,9 @@ nonisolated extension ClientProjectChangesSlice: SwiftProtobuf.Message, SwiftPro
         case 25: try { try decoder.decodeSingularStringField(value: &_storage._diffNote) }()
         case 26: try { try decoder.decodeSingularBoolField(value: &_storage._split) }()
         case 27: try { try decoder.decodeRepeatedStringField(value: &_storage._allowed) }()
+        case 28: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: &_storage._unavailableReasons) }()
+        case 29: try { try decoder.decodeSingularStringField(value: &_storage._activity) }()
+        case 30: try { try decoder.decodeSingularStringField(value: &_storage._sharedLabel) }()
         default: break
         }
       }
@@ -33598,6 +33727,15 @@ nonisolated extension ClientProjectChangesSlice: SwiftProtobuf.Message, SwiftPro
       if !_storage._allowed.isEmpty {
         try visitor.visitRepeatedStringField(value: _storage._allowed, fieldNumber: 27)
       }
+      if !_storage._unavailableReasons.isEmpty {
+        try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: _storage._unavailableReasons, fieldNumber: 28)
+      }
+      if !_storage._activity.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._activity, fieldNumber: 29)
+      }
+      if !_storage._sharedLabel.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._sharedLabel, fieldNumber: 30)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -33632,6 +33770,9 @@ nonisolated extension ClientProjectChangesSlice: SwiftProtobuf.Message, SwiftPro
         if _storage._diffNote != rhs_storage._diffNote {return false}
         if _storage._split != rhs_storage._split {return false}
         if _storage._allowed != rhs_storage._allowed {return false}
+        if _storage._unavailableReasons != rhs_storage._unavailableReasons {return false}
+        if _storage._activity != rhs_storage._activity {return false}
+        if _storage._sharedLabel != rhs_storage._sharedLabel {return false}
         return true
       }
       if !storagesAreEqual {return false}

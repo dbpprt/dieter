@@ -1,0 +1,59 @@
+# A project-directory conversation's Changes show its shared checkout: the
+# mock agent writes a file there and the conversation lists it, without an
+# error and without leaving the conversation.
+appId: ${APP_ID}
+name: Conversation changes
+tags: [smoke]
+---
+- runFlow: common/launch.yaml
+- tapOn:
+    text: "Projects"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Main"
+    timeout: 40000
+- tapOn:
+    text: "Main"
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: chrome-new-task
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: task-title
+    waitToSettleTimeoutMs: 500
+- inputText: "Changes in place"
+- tapOn:
+    id: task-prompt
+    waitToSettleTimeoutMs: 500
+- inputText: "mock-concurrent-workspace-write"
+# The conversation works in the project directory, not a worktree.
+- scrollUntilVisible:
+    element:
+      id: workspace-mode-1
+    direction: DOWN
+- tapOn:
+    id: workspace-mode-1
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: chrome-start-working
+    waitToSettleTimeoutMs: 500
+# A safety bound: mock turns take seconds, but hosted macOS runners shared with
+# the simulator have stalled worker start-up for minutes.
+- extendedWaitUntil:
+    visible: "Mock harness received: mock-concurrent-workspace-write.*"
+    timeout: 300000
+- tapOn:
+    id: chrome-pane-changes
+    waitToSettleTimeoutMs: 500
+# The core says the conversation shares the checkout and shows its changes.
+- extendedWaitUntil:
+    visible:
+      id: project-changes
+    timeout: 30000
+- extendedWaitUntil:
+    visible: ".dieter-mock-.*"
+    timeout: 30000
+- assertVisible: "Shared checkout.*"
+- assertNotVisible: "Changes unavailable"
+- takeScreenshot: conversation-changes
+- runFlow: common/back.yaml

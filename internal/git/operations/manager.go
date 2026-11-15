@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -39,7 +40,14 @@ type Request struct {
 	Kind             string
 	ExpectedRevision string
 	Parameters       map[string]string
+	// ExpectedFiles and ExpectedIndex are the preconditions of file-scoped
+	// operations and of commits of the index (see checkPreconditions).
+	ExpectedFiles map[string]string
+	ExpectedIndex string
 }
+
+// pathChunk bounds the paths passed to one Git command.
+const pathChunk = 200
 
 type Manager struct {
 	Store      *store.Store
@@ -77,7 +85,7 @@ func (m *Manager) Start(ctx context.Context, request Request) (model.GitOperatio
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	workspaceValue, err := m.resolveTarget(ctx, request.CardID, request.ProjectID)
+	workspaceValue, requestedBy, err := m.resolveTarget(ctx, request.CardID, request.ProjectID)
 	if err != nil {
 		return model.GitOperation{}, err
 	}
@@ -89,22 +97,22 @@ func (m *Manager) Start(ctx context.Context, request Request) (model.GitOperatio
 		}
 	}
 	if workspaceValue.Mode == model.WorkspaceModeProject && !projectCheckoutOperation(request.Kind) {
-		return model.GitOperation{}, fault.Invalidf("Git operation %q is not available from project Changes", request.Kind)
+		return model.GitOperation{}, fault.Invalidf("Git operation %q is not available in a project checkout", request.Kind)
 	}
-	if mutationRequiresRevision(request.Kind) && strings.TrimSpace(request.ExpectedRevision) == "" {
-		return model.GitOperation{}, fault.New(fault.Invalid, "expected revision is required for checkout mutations")
+	if err := admitPreconditions(request); err != nil {
+		return model.GitOperation{}, err
 	}
 	if m.Busy != nil && workspaceValue.CardID != "" && m.Busy(workspaceValue.CardID) {
-		return model.GitOperation{}, fmt.Errorf("%w: active terminal or process", ErrWorkspaceBusy)
+		return model.GitOperation{}, fmt.Errorf("%w: a terminal or process is running in it", ErrWorkspaceBusy)
 	}
 	if m.BusyPath != nil && m.BusyPath(workspaceValue.Path) {
-		return model.GitOperation{}, fmt.Errorf("%w: active terminal or process in the checkout", ErrWorkspaceBusy)
+		return model.GitOperation{}, fmt.Errorf("%w: a terminal or process is running in the checkout", ErrWorkspaceBusy)
 	}
 	if (workspaceValue.Mode == model.WorkspaceModeProject && projectOperationRequiresIdle(request.Kind)) || request.Kind == "merge_local" {
 		if active, activeErr := m.Store.Workspaces.ProjectCheckoutActive(workspaceValue.ProjectID, workspaceValue.CardID, workspaceValue.CheckoutID); activeErr != nil {
 			return model.GitOperation{}, activeErr
 		} else if active {
-			return model.GitOperation{}, fmt.Errorf("%w: another conversation is active in the shared checkout", ErrWorkspaceBusy)
+			return model.GitOperation{}, fmt.Errorf("%w: an agent is working in this checkout; wait for it to finish or stop it", ErrWorkspaceBusy)
 		}
 	}
 	release, err := m.lockTarget(ctx, workspaceValue)
@@ -112,7 +120,7 @@ func (m *Manager) Start(ctx context.Context, request Request) (model.GitOperatio
 		return model.GitOperation{}, err
 	}
 	defer release()
-	workspaceValue, err = m.resolveTarget(ctx, request.CardID, request.ProjectID)
+	workspaceValue, _, err = m.resolveTarget(ctx, request.CardID, request.ProjectID)
 	if err != nil {
 		return model.GitOperation{}, err
 	}
@@ -147,6 +155,8 @@ func (m *Manager) Start(ctx context.Context, request Request) (model.GitOperatio
 	}
 	operation.CheckoutID = workspaceValue.CheckoutID
 	operation.Parameters = cloneMap(request.Parameters)
+	operation.ExpectedFiles, operation.ExpectedIndex = cloneMap(request.ExpectedFiles), strings.TrimSpace(request.ExpectedIndex)
+	operation.RequestedByCardID = requestedBy
 	operation.ExpectedBaseSHA, operation.ExpectedHeadSHA = workspaceValue.CurrentBaseSHA, workspaceValue.HeadSHA
 	if request.Kind == "merge_local" && workspaceValue.BaseBranch != "" {
 		if project, projectErr := m.Store.Kanban.ProjectForCheckout(workspaceValue.ProjectID, workspaceValue.CheckoutID); projectErr == nil {
@@ -202,13 +212,141 @@ func projectOperationRequiresIdle(value string) bool {
 	}
 }
 
-func mutationRequiresRevision(value string) bool {
-	switch value {
-	case "stage", "unstage", "discard_changes", "commit":
-		return true
-	default:
-		return false
+// admitPreconditions requires the precondition that matches what an
+// operation acts on: the reviewed files for stage, unstage and
+// discard_changes, the reviewed index for a commit of staged changes, the
+// whole tree's revision for a commit of every change.
+func admitPreconditions(request Request) error {
+	switch request.Kind {
+	case "stage", "unstage", "discard_changes":
+		if len(request.ExpectedFiles) == 0 {
+			return fault.Invalidf("%s needs the reviewed files and their revisions", request.Kind)
+		}
+		for filePath := range request.ExpectedFiles {
+			if _, err := relativePath(filePath); err != nil {
+				return err
+			}
+		}
+	case "commit":
+		if request.Parameters["stage_all"] == "true" {
+			if strings.TrimSpace(request.ExpectedRevision) == "" {
+				return fault.New(fault.Invalid, "committing every change needs the reviewed revision")
+			}
+		} else if strings.TrimSpace(request.ExpectedIndex) == "" {
+			return fault.New(fault.Invalid, "a commit needs the reviewed staged changes")
+		}
 	}
+	return nil
+}
+
+// checkPreconditions fails an operation only when what it acts on changed
+// since it was reviewed: writes elsewhere in the tree do not matter to a
+// file-scoped operation or to a commit of the index.
+func checkPreconditions(operation model.GitOperation, changes model.Changeset) error {
+	switch operation.Kind {
+	case "stage", "unstage", "discard_changes":
+		if changes.FilesTruncated {
+			return git.ErrTooManyChanges
+		}
+		current := make(map[string]string, len(changes.Files))
+		for _, file := range changes.Files {
+			current[file.Path] = file.Revision
+		}
+		var changed []string
+		for filePath, revision := range operation.ExpectedFiles {
+			if current[filePath] != revision {
+				changed = append(changed, filePath)
+			}
+		}
+		if len(changed) > 0 {
+			return staleFiles(changed)
+		}
+	case "commit":
+		if operation.Parameters["stage_all"] == "true" {
+			if operation.ExpectedRevision != changes.Revision {
+				return changeset.ErrStaleRevision
+			}
+		} else if operation.ExpectedIndex != changes.IndexFingerprint {
+			return fault.New(fault.Conflict, "the staged changes changed since they were reviewed; review them again")
+		}
+	default:
+		if operation.ExpectedRevision != "" && changes.Revision != operation.ExpectedRevision {
+			return changeset.ErrStaleRevision
+		}
+	}
+	return nil
+}
+
+func staleFiles(paths []string) error {
+	sort.Strings(paths)
+	if len(paths) == 1 {
+		return fault.New(fault.Conflict, paths[0]+" changed since it was reviewed; review it again")
+	}
+	shown := paths
+	if len(shown) > 3 {
+		shown = shown[:3]
+	}
+	names := strings.Join(shown, ", ")
+	if extra := len(paths) - len(shown); extra > 0 {
+		names += fmt.Sprintf(" and %d more", extra)
+	}
+	return fault.New(fault.Conflict, names+" changed since they were reviewed; review them again")
+}
+
+// targetPaths are exactly the reviewed files a file-scoped operation acts on,
+// within its optional path parameter, plus the old path of a staged rename.
+func targetPaths(operation model.GitOperation, changes model.Changeset) ([]string, error) {
+	scope, err := operationPath(operation.Parameters, false)
+	if err != nil {
+		return nil, err
+	}
+	previous := make(map[string]string, len(changes.Files))
+	for _, file := range changes.Files {
+		previous[file.Path] = file.PreviousPath
+	}
+	set := map[string]bool{}
+	for filePath := range operation.ExpectedFiles {
+		clean, err := relativePath(filePath)
+		if err != nil {
+			return nil, err
+		}
+		if scope != "" && clean != scope && !strings.HasPrefix(clean, scope+"/") {
+			return nil, fault.Invalidf("%s is outside %s", clean, scope)
+		}
+		set[clean] = true
+		if old := previous[clean]; old != "" {
+			set[old] = true
+		}
+	}
+	paths := make([]string, 0, len(set))
+	for filePath := range set {
+		paths = append(paths, filePath)
+	}
+	sort.Strings(paths)
+	return paths, nil
+}
+
+// runPaths runs args followed by "--" and the paths, at most pathChunk at a
+// time, and concatenates the outputs.
+func (m *Manager) runPaths(ctx context.Context, directory string, args []string, paths []string) ([]byte, error) {
+	var output []byte
+	for start := 0; start < len(paths); start += pathChunk {
+		end := min(start+pathChunk, len(paths))
+		command := append(append(append([]string{"--literal-pathspecs"}, args...), "--"), paths[start:end]...)
+		result, err := m.Git.Run(ctx, directory, command...)
+		if err != nil {
+			return nil, err
+		}
+		output = append(output, result.Output...)
+	}
+	return output, nil
+}
+
+func describePaths(verb string, paths []string) string {
+	if len(paths) == 1 {
+		return verb + " " + paths[0]
+	}
+	return fmt.Sprintf("%s %d files", verb, len(paths))
 }
 
 func cloneMap(values map[string]string) map[string]string {
@@ -222,18 +360,24 @@ func cloneMap(values map[string]string) map[string]string {
 	return result
 }
 
-func (m *Manager) resolveTarget(ctx context.Context, cardID, projectID string) (model.Workspace, error) {
+// resolveTarget returns the directory an operation acts on. A
+// project-directory conversation acts on its checkout; requestedBy is then
+// that conversation.
+func (m *Manager) resolveTarget(ctx context.Context, cardID, projectID string) (value model.Workspace, requestedBy string, err error) {
 	if projectID != "" {
-		return m.Workspaces.ProjectCheckout(ctx, projectID, false)
+		value, err = m.Workspaces.ProjectCheckout(ctx, projectID, false)
+		return value, "", err
 	}
-	value, err := m.Workspaces.Ensure(ctx, cardID)
-	if err != nil {
-		return model.Workspace{}, err
+	value, err = m.Workspaces.Ensure(ctx, cardID)
+	if err != nil || value.Mode != model.WorkspaceModeProject {
+		return value, "", err
 	}
-	if value.Mode == model.WorkspaceModeProject {
-		return model.Workspace{}, changeset.ErrProjectChangesRequireProject
+	checkoutID := value.CheckoutID
+	if card, cardErr := m.Store.Kanban.ResolveCard(value.CardID); cardErr == nil && card.CheckoutID != "" {
+		checkoutID = card.CheckoutID
 	}
-	return value, nil
+	checkout, err := m.Workspaces.ProjectCheckout(kanban.WithCheckout(ctx, checkoutID), value.ProjectID, false)
+	return checkout, value.CardID, err
 }
 
 func (m *Manager) lockTarget(ctx context.Context, value model.Workspace) (func(), error) {
@@ -250,7 +394,7 @@ func (m *Manager) run(ctx context.Context, operation model.GitOperation) {
 	m.appendLog(&operation, "operation started: "+operation.Kind)
 	m.notify(operation.ID)
 
-	workspaceValue, err := m.resolveTarget(ctx, operation.CardID, func() string {
+	workspaceValue, _, err := m.resolveTarget(ctx, operation.CardID, func() string {
 		if operation.CardID == "" {
 			return operation.ProjectID
 		}
@@ -303,8 +447,14 @@ func (m *Manager) execute(ctx context.Context, operation *model.GitOperation, va
 	if err != nil {
 		return err
 	}
-	if operation.ExpectedRevision != "" && changes.Revision != operation.ExpectedRevision {
-		return changeset.ErrStaleRevision
+	if err := checkPreconditions(*operation, changes); err != nil {
+		return err
+	}
+	var paths []string
+	if operation.Kind == "stage" || operation.Kind == "unstage" || operation.Kind == "discard_changes" {
+		if paths, err = targetPaths(*operation, changes); err != nil {
+			return err
+		}
 	}
 	// Start and execution are intentionally separate durable steps. Refresh the
 	// branch and HEAD under the operation lock so a push/update never acts on the
@@ -313,11 +463,11 @@ func (m *Manager) execute(ctx context.Context, operation *model.GitOperation, va
 	value.Ahead, value.Behind, value.Dirty = changes.Ahead, changes.Behind, changes.Dirty
 	switch operation.Kind {
 	case "stage":
-		return m.stage(ctx, operation, value)
+		return m.stage(ctx, operation, value, paths)
 	case "unstage":
-		return m.unstage(ctx, operation, value)
+		return m.unstage(ctx, operation, value, paths)
 	case "discard_changes":
-		return m.discardChanges(ctx, operation, value)
+		return m.discardChanges(ctx, operation, value, paths)
 	case "commit":
 		return m.commit(ctx, operation, value)
 	case "update":
@@ -371,6 +521,10 @@ func operationPath(parameters map[string]string, required bool) (string, error) 
 		}
 		return "", nil
 	}
+	return relativePath(value)
+}
+
+func relativePath(value string) (string, error) {
 	if strings.ContainsRune(value, '\x00') || strings.Contains(value, "\\") || strings.HasPrefix(value, "/") || filepath.IsAbs(value) {
 		return "", fault.New(fault.Invalid, "checkout path must be relative")
 	}
@@ -381,100 +535,67 @@ func operationPath(parameters map[string]string, required bool) (string, error) 
 	return value, nil
 }
 
-func (m *Manager) stage(ctx context.Context, operation *model.GitOperation, value model.Workspace) error {
-	filePath, err := operationPath(operation.Parameters, false)
-	if err != nil {
+func (m *Manager) stage(ctx context.Context, operation *model.GitOperation, value model.Workspace, paths []string) error {
+	if _, err := m.runPaths(ctx, value.Path, []string{"add", "-A"}, paths); err != nil {
 		return err
 	}
-	args := []string{"add", "-A"}
-	if filePath != "" {
-		args = []string{"--literal-pathspecs", "add", "-A", "--", filePath}
-	}
-	if _, err := m.Git.Run(ctx, value.Path, args...); err != nil {
-		return err
-	}
-	message := "staged " + filePath
-	if filePath == "" {
-		message = "staged all checkout changes"
-	}
-	m.step(operation, message)
+	m.step(operation, describePaths("staged", paths))
 	m.refreshTarget(ctx, value)
 	return nil
 }
 
-func (m *Manager) unstage(ctx context.Context, operation *model.GitOperation, value model.Workspace) error {
-	filePath, err := operationPath(operation.Parameters, false)
-	if err != nil {
-		return err
-	}
-	var args []string
+func (m *Manager) unstage(ctx context.Context, operation *model.GitOperation, value model.Workspace, paths []string) error {
+	args := []string{"reset", "-q", "HEAD"}
 	if value.HeadSHA == "" {
 		// An unborn repository has no HEAD for reset to copy into the index.
 		// Removing the cached entry is the equivalent unstage operation; force
 		// is required when the working copy changed after it was staged.
-		args = []string{"rm", "-r", "--cached", "-q", "-f", "--ignore-unmatch", "--", "."}
-		if filePath != "" {
-			args = []string{"--literal-pathspecs", "rm", "-r", "--cached", "-q", "-f", "--ignore-unmatch", "--", filePath}
-		}
-	} else {
-		args = []string{"reset", "-q", "HEAD", "--", "."}
-		if filePath != "" {
-			args = []string{"--literal-pathspecs", "reset", "-q", "HEAD", "--", filePath}
-		}
+		args = []string{"rm", "-r", "--cached", "-q", "-f", "--ignore-unmatch"}
 	}
-	if _, err := m.Git.Run(ctx, value.Path, args...); err != nil {
+	if _, err := m.runPaths(ctx, value.Path, args, paths); err != nil {
 		return err
 	}
-	message := "unstaged " + filePath
-	if filePath == "" {
-		message = "unstaged all checkout changes"
-	}
-	m.step(operation, message)
+	m.step(operation, describePaths("unstaged", paths))
 	m.refreshTarget(ctx, value)
 	return nil
 }
 
-// discardChanges restores one file, or every file under one folder, to HEAD.
-// Paths absent from HEAD are untracked there and removed; ignored files stay.
-func (m *Manager) discardChanges(ctx context.Context, operation *model.GitOperation, value model.Workspace) error {
-	filePath, err := operationPath(operation.Parameters, true)
-	if err != nil {
-		return err
-	}
+// discardChanges restores exactly the reviewed files to HEAD after saving a
+// recovery copy. Files absent from HEAD are untracked there and removed;
+// ignored files and files nobody reviewed stay.
+func (m *Manager) discardChanges(ctx context.Context, operation *model.GitOperation, value model.Workspace, paths []string) error {
 	if err := m.createRecovery(ctx, operation, value); err != nil {
 		return err
 	}
 	var headFiles []string
 	if value.HeadSHA != "" {
-		listed, headErr := m.Git.Run(ctx, value.Path, "--literal-pathspecs", "ls-tree", "-r", "--name-only", "-z", "HEAD", "--", filePath)
-		if headErr != nil {
-			return headErr
-		}
-		headFiles = zeroFields(listed.Output)
-	}
-	if value.HeadSHA != "" {
-		if _, err := m.Git.Run(ctx, value.Path, "--literal-pathspecs", "reset", "-q", "HEAD", "--", filePath); err != nil {
+		listed, err := m.runPaths(ctx, value.Path, []string{"ls-tree", "-r", "--name-only", "-z", "HEAD"}, paths)
+		if err != nil {
 			return err
 		}
-	} else if _, err := m.Git.Run(ctx, value.Path, "--literal-pathspecs", "rm", "-r", "--cached", "--ignore-unmatch", "-q", "-f", "--", filePath); err != nil {
+		headFiles = zeroFields(listed)
+		if _, err := m.runPaths(ctx, value.Path, []string{"reset", "-q", "HEAD"}, paths); err != nil {
+			return err
+		}
+	} else if _, err := m.runPaths(ctx, value.Path, []string{"rm", "-r", "--cached", "--ignore-unmatch", "-q", "-f"}, paths); err != nil {
 		return err
 	}
 	if len(headFiles) > 0 {
-		if _, err := m.Git.Run(ctx, value.Path, "--literal-pathspecs", "restore", "--source=HEAD", "--worktree", "--", filePath); err != nil {
+		if _, err := m.runPaths(ctx, value.Path, []string{"restore", "--source=HEAD", "--worktree"}, headFiles); err != nil {
 			return err
 		}
 	}
 	// After the reset, anything left that HEAD lacks is untracked.
-	untracked, err := m.Git.Run(ctx, value.Path, "--literal-pathspecs", "ls-files", "--others", "--exclude-standard", "-z", "--", filePath)
+	untracked, err := m.runPaths(ctx, value.Path, []string{"ls-files", "--others", "--exclude-standard", "-z"}, paths)
 	if err != nil {
 		return err
 	}
-	for _, relative := range zeroFields(untracked.Output) {
+	for _, relative := range zeroFields(untracked) {
 		if err := removeUntracked(value.Path, relative); err != nil {
 			return err
 		}
 	}
-	m.step(operation, "discarded "+filePath+" after creating recovery artifacts")
+	m.step(operation, describePaths("discarded", paths)+" after creating recovery artifacts")
 	m.refreshTarget(ctx, value)
 	return nil
 }

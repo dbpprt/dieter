@@ -66,6 +66,9 @@ const (
 	// GitServiceCancelGitOperationProcedure is the fully-qualified name of the GitService's
 	// CancelGitOperation RPC.
 	GitServiceCancelGitOperationProcedure = "/dieter.v1.GitService/CancelGitOperation"
+	// GitServiceWatchChangesetProcedure is the fully-qualified name of the GitService's WatchChangeset
+	// RPC.
+	GitServiceWatchChangesetProcedure = "/dieter.v1.GitService/WatchChangeset"
 )
 
 // GitServiceClient is a client for the dieter.v1.GitService service.
@@ -82,6 +85,9 @@ type GitServiceClient interface {
 	GetGitOperation(context.Context, *v1.GitOperationRef) (*v1.GitOperation, error)
 	WatchGitOperation(context.Context, *v1.WatchGitOperationRequest) (*connect.ServerStreamForClient[v1.GitOperationFrame], error)
 	CancelGitOperation(context.Context, *v1.GitOperationRef) (*v1.GitOperation, error)
+	// Streams a conversation's or checkout's changes: the full changeset first,
+	// then a frame whenever its revision or activity changes, plus heartbeats.
+	WatchChangeset(context.Context, *v1.WatchChangesetRequest) (*connect.ServerStreamForClient[v1.ChangesetFrame], error)
 }
 
 // NewGitServiceClient constructs a client for the dieter.v1.GitService service. By default, it uses
@@ -167,6 +173,12 @@ func NewGitServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...
 			connect.WithSchema(gitServiceMethods.ByName("CancelGitOperation")),
 			connect.WithClientOptions(opts...),
 		),
+		watchChangeset: connect.NewClient[v1.WatchChangesetRequest, v1.ChangesetFrame](
+			httpClient,
+			baseURL+GitServiceWatchChangesetProcedure,
+			connect.WithSchema(gitServiceMethods.ByName("WatchChangeset")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -184,6 +196,7 @@ type gitServiceClient struct {
 	getGitOperation       *connect.Client[v1.GitOperationRef, v1.GitOperation]
 	watchGitOperation     *connect.Client[v1.WatchGitOperationRequest, v1.GitOperationFrame]
 	cancelGitOperation    *connect.Client[v1.GitOperationRef, v1.GitOperation]
+	watchChangeset        *connect.Client[v1.WatchChangesetRequest, v1.ChangesetFrame]
 }
 
 // GetWorkspace calls dieter.v1.GitService.GetWorkspace.
@@ -290,6 +303,11 @@ func (c *gitServiceClient) CancelGitOperation(ctx context.Context, req *v1.GitOp
 	return nil, err
 }
 
+// WatchChangeset calls dieter.v1.GitService.WatchChangeset.
+func (c *gitServiceClient) WatchChangeset(ctx context.Context, req *v1.WatchChangesetRequest) (*connect.ServerStreamForClient[v1.ChangesetFrame], error) {
+	return c.watchChangeset.CallServerStream(ctx, connect.NewRequest(req))
+}
+
 // GitServiceHandler is an implementation of the dieter.v1.GitService service.
 type GitServiceHandler interface {
 	GetWorkspace(context.Context, *v1.ConversationRef) (*v1.Workspace, error)
@@ -304,6 +322,9 @@ type GitServiceHandler interface {
 	GetGitOperation(context.Context, *v1.GitOperationRef) (*v1.GitOperation, error)
 	WatchGitOperation(context.Context, *v1.WatchGitOperationRequest, *connect.ServerStream[v1.GitOperationFrame]) error
 	CancelGitOperation(context.Context, *v1.GitOperationRef) (*v1.GitOperation, error)
+	// Streams a conversation's or checkout's changes: the full changeset first,
+	// then a frame whenever its revision or activity changes, plus heartbeats.
+	WatchChangeset(context.Context, *v1.WatchChangesetRequest, *connect.ServerStream[v1.ChangesetFrame]) error
 }
 
 // NewGitServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -385,6 +406,12 @@ func NewGitServiceHandler(svc GitServiceHandler, opts ...connect.HandlerOption) 
 		connect.WithSchema(gitServiceMethods.ByName("CancelGitOperation")),
 		connect.WithHandlerOptions(opts...),
 	)
+	gitServiceWatchChangesetHandler := connect.NewServerStreamHandlerSimple(
+		GitServiceWatchChangesetProcedure,
+		svc.WatchChangeset,
+		connect.WithSchema(gitServiceMethods.ByName("WatchChangeset")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/dieter.v1.GitService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case GitServiceGetWorkspaceProcedure:
@@ -411,6 +438,8 @@ func NewGitServiceHandler(svc GitServiceHandler, opts ...connect.HandlerOption) 
 			gitServiceWatchGitOperationHandler.ServeHTTP(w, r)
 		case GitServiceCancelGitOperationProcedure:
 			gitServiceCancelGitOperationHandler.ServeHTTP(w, r)
+		case GitServiceWatchChangesetProcedure:
+			gitServiceWatchChangesetHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -466,4 +495,8 @@ func (UnimplementedGitServiceHandler) WatchGitOperation(context.Context, *v1.Wat
 
 func (UnimplementedGitServiceHandler) CancelGitOperation(context.Context, *v1.GitOperationRef) (*v1.GitOperation, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.GitService.CancelGitOperation is not implemented"))
+}
+
+func (UnimplementedGitServiceHandler) WatchChangeset(context.Context, *v1.WatchChangesetRequest, *connect.ServerStream[v1.ChangesetFrame]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.GitService.WatchChangeset is not implemented"))
 }

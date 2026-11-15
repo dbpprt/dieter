@@ -677,16 +677,23 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
                 Slice.SLICE_REVIEW ->
                     observeSurface(surfaces.reviews, scope, ::emit) { review ->
                         // Availability and the pull request follow the card, which the
-                        // workspace carries; display rows the view already has are left out.
+                        // workspace carries; display rows the view already has are left out. A
+                        // project-directory conversation's checkout rides along.
                         var previous: WorkspaceReviewView? = null
-                        combine(review.view, runtime.workspace.state) { view, workspace ->
-                                view to view.cardId?.let(workspace::card)
+                        var previousCheckout: ProjectChangesView? = null
+                        combine(review.view, review.checkout.view, runtime.workspace.state) {
+                                view,
+                                checkout,
+                                workspace ->
+                                Triple(view, checkout, view.cardId?.let(workspace::card))
                             }
                             .distinctUntilChanged()
-                            .map { (view, card) ->
+                            .map { (view, checkout, card) ->
                                 val unchanged = reviewDiffUnchanged(previous, view)
+                                val checkoutUnchanged = previousCheckout?.layout === checkout.layout
                                 previous = view
-                                reviewSlice(view, card, unchanged)
+                                previousCheckout = checkout
+                                reviewSlice(view, card, unchanged, checkout, checkoutUnchanged)
                             }
                             .distinctUntilChanged()
                             .map { Update(review = it) }

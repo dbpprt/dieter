@@ -26,16 +26,56 @@ class ReviewSliceTest {
     private val patch =
         "diff --git a/Sample.swift b/Sample.swift\n--- a/Sample.swift\n+++ b/Sample.swift\n@@ -1,2 +1,2 @@\n-let old = 1\n+let new = 2\n print(new)"
 
+    /** Comments show on the file version they were written against. */
+    private val changes =
+        Changeset(
+            files =
+                listOf(
+                    ChangedFile(path = "Sample.swift", revision = "r1"),
+                    ChangedFile(path = "Other.swift", revision = "o1"),
+                )
+        )
+
     @Test
     fun displayRowsCarryTheirLinesComments() {
         val comments =
             listOf(
-                ChangeComment(id = "old", path = "Sample.swift", side = "old", line = 1),
-                ChangeComment(id = "new", path = "Sample.swift", side = "new", line = 1),
-                ChangeComment(id = "elsewhere", path = "Other.swift", side = "new", line = 1),
+                ChangeComment(
+                    id = "old",
+                    path = "Sample.swift",
+                    side = "old",
+                    line = 1,
+                    file_revision = "r1",
+                ),
+                ChangeComment(
+                    id = "new",
+                    path = "Sample.swift",
+                    side = "new",
+                    line = 1,
+                    file_revision = "r1",
+                ),
+                ChangeComment(
+                    id = "elsewhere",
+                    path = "Other.swift",
+                    side = "new",
+                    line = 1,
+                    file_revision = "o1",
+                ),
+                ChangeComment(
+                    id = "outdated",
+                    path = "Sample.swift",
+                    side = "new",
+                    line = 1,
+                    file_revision = "r0",
+                ),
             )
         val view =
-            WorkspaceReviewView(cardId = "c", selectedPath = "Sample.swift", comments = comments)
+            WorkspaceReviewView(
+                    cardId = "c",
+                    selectedPath = "Sample.swift",
+                    comments = comments,
+                    changeset = changes,
+                )
                 .withDiffLines(UnifiedDiff.parse(patch))
         val slice = reviewSlice(view, Card(id = "c"))
         val lines = slice.display_rows.mapNotNull { it.line }
@@ -52,6 +92,12 @@ class ReviewSliceTest {
             lines.map { line -> line.comments.map { it.id } },
         )
         assertTrue(lines.all { it.commentable })
+        assertEquals(
+            1,
+            slice.outdated_comments,
+            "an earlier version's comment is counted, not shown",
+        )
+        assertEquals(listOf("old", "new", "elsewhere"), slice.comments.map { it.id })
         assertEquals("@@ -1,2 +1,2 @@", slice.display_rows.firstNotNullOf { it.hunk }.text)
         assertEquals(
             1 to 1,
@@ -81,12 +127,18 @@ class ReviewSliceTest {
     @Test
     fun unchangedDisplayRowsAreLeftOut() {
         val view =
-            WorkspaceReviewView(cardId = "c", selectedPath = "Sample.swift")
+            WorkspaceReviewView(cardId = "c", selectedPath = "Sample.swift", changeset = changes)
                 .withDiffLines(UnifiedDiff.parse(patch))
         assertFalse(reviewDiffUnchanged(null, view))
         assertTrue(reviewDiffUnchanged(view, view.copy(loading = true)))
         assertFalse(
-            reviewDiffUnchanged(view, view.copy(comments = listOf(ChangeComment(id = "x")))),
+            reviewDiffUnchanged(
+                view,
+                view.copy(
+                    comments =
+                        listOf(ChangeComment(id = "x", path = "Sample.swift", file_revision = "r1"))
+                ),
+            ),
             "a new comment resends the rows",
         )
         assertFalse(

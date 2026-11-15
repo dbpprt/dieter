@@ -5,9 +5,12 @@ import DieterPlatform
 import Foundation
 import Observation
 
-/// A conversation workspace's review, kept by the shared core on the machine
-/// that owns the conversation: changes, diffs, comments, Git operations, and
-/// the merge flow. An active review refreshes itself.
+/// A conversation's review, kept by the shared core on the machine that owns
+/// the conversation: changes, diffs, comments, Git operations, and the merge
+/// flow. The core says where the changes live: the conversation's own
+/// worktree, or the project checkout a project-directory conversation shares
+/// (`isCheckout`, shown through `checkout`). An active review follows the
+/// daemon's changeset stream.
 @MainActor @Observable
 final class WorktreeChangesModel {
     private(set) var target = WorkspaceTarget(endpointID: "", projectID: "")
@@ -46,6 +49,16 @@ final class WorktreeChangesModel {
     private(set) var movesToDone = false
     private(set) var pullRequest: ClientPullRequestView?
     private(set) var mergeReadiness = ClientMergeReadiness()
+    /// The conversation works in a shared project checkout; `checkout` shows it.
+    private(set) var isCheckout = false
+    /// "Agent working · changes update live" while the conversation's agent works.
+    private(set) var activity = ""
+    /// Comments on the selected file written against an earlier version of it.
+    private(set) var outdatedComments = 0
+    /// Why no Git operation can start now, as the core says it.
+    private(set) var blockedReason = ""
+    /// The shared checkout of a project-directory conversation.
+    let checkout: ProjectChangesModel
     @ObservationIgnored private var operationActive = false
     /// The layout last asked of the core.
     @ObservationIgnored private var requestedSplit: Bool?
@@ -66,12 +79,19 @@ final class WorktreeChangesModel {
         _, _, _ in false
     }
     @ObservationIgnored private var core: CoreClient?
-    @ObservationIgnored private let scope = "review-\(UUID().uuidString)"
+    /// The review's core scope; its checkout shares it.
+    @ObservationIgnored package let scope: String
     @ObservationIgnored private var subscription: SliceSubscription?
     /// What the core was last told to review; slices for another are stale.
     @ObservationIgnored private var bound = ClientReviewTarget()
     @ObservationIgnored private var queued: Task<Void, Never>?
     @ObservationIgnored private var shownToast = ""
+
+    init() {
+        let scope = "review-\(UUID().uuidString)"
+        self.scope = scope
+        checkout = ProjectChangesModel(reviewScope: scope)
+    }
 
     /// The branch the workspace merges into; "base" until it is known.
     var baseBranch: String {
@@ -93,6 +113,7 @@ final class WorktreeChangesModel {
     func bind(target: WorkspaceTarget, core: CoreClient?, card: Dieter_V1_Card?) {
         if subscription == nil, let core {
             self.core = core
+            checkout.attach(core: core)
             subscription = SliceSubscription(client: core, slice: .review, scope: scope) { [weak self] update in
                 guard let self, case .review(let slice) = update.value else { return }
                 self.fold(slice)
@@ -127,6 +148,8 @@ final class WorktreeChangesModel {
         operationVisible = false; operationCancelable = false; operationActive = false
         conflictTitle = ""; conflictPrompt = ""; movesToDone = false; pullRequest = nil
         mergeReadiness = ClientMergeReadiness()
+        isCheckout = false; activity = ""; outdatedComments = 0; blockedReason = ""
+        checkout.resetEmbedded()
     }
 
     /// Lays the diff out side by side or in one column; the core keeps the
@@ -183,6 +206,13 @@ final class WorktreeChangesModel {
         let pull = slice.hasPullRequest ? slice.pullRequest : nil
         if pullRequest != pull { pullRequest = pull }
         if mergeReadiness != slice.mergeReadiness { mergeReadiness = slice.mergeReadiness }
+        let checkoutScope = slice.scope == "checkout"
+        if isCheckout != checkoutScope { isCheckout = checkoutScope }
+        if checkoutScope, slice.hasCheckout { checkout.receive(slice.checkout) }
+        if activity != slice.activity { activity = slice.activity }
+        if outdatedComments != Int(slice.outdatedComments) { outdatedComments = Int(slice.outdatedComments) }
+        let blocked = slice.hasAvailability ? slice.availability.blockedReason : ""
+        if blockedReason != blocked { blockedReason = blocked }
         if !slice.toast.isEmpty, slice.toast != shownToast {
             shownToast = slice.toast
             showWorkspaceToast(slice.toast)

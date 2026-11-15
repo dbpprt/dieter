@@ -43,6 +43,7 @@ type Server struct {
 	providerLoginWatches atomic.Int32
 	accounts             *accounts.Service
 	changeStreams        atomic.Int32
+	changesetStreams     atomic.Int32
 	local                *localChanges
 	previews             *payloadPreviewCache
 	// commandMu serializes idempotent create/send/start commands.
@@ -59,6 +60,7 @@ type Server struct {
 	app                     *engine.Service
 	workspaces              *workspace.Manager
 	changesets              *changeset.Service
+	changesetHub            *changeset.Hub
 	gitOperations           *operations.Manager
 	schedules               *scheduler.Manager
 	log                     *slog.Logger
@@ -197,6 +199,7 @@ func NewWithOptions(data *store.Store, logger *slog.Logger, options Options) *Se
 		s.privacyBootID = options.PrivacyBootID
 	}
 	s.changesets = changeset.New(s.workspaces)
+	s.changesetHub = changeset.NewHub(s.changesets)
 	s.local = newLocalChanges(s)
 	service.BackgroundProcesses = s.backgroundProcess
 	if err := data.Workspaces.InterruptRunningGitOperations(); err != nil {

@@ -36,21 +36,13 @@ func (api *gitAPI) ListProjectWorkspaces(_ context.Context, request *dieterv1.Pr
 	return result, nil
 }
 
+// GetChangeset reads a conversation's changes (its worktree, or the checkout
+// a project-directory conversation works in) or a project checkout's.
 func (api *gitAPI) GetChangeset(ctx context.Context, request *dieterv1.GetChangesetRequest) (*dieterv1.Changeset, error) {
 	ctx = kanban.WithCheckout(ctx, request.GetCheckoutId())
 	value, err := api.server.changesets.GetTarget(ctx, request.GetCardId(), request.GetProjectId())
 	if err != nil {
 		return nil, err
-	}
-	if request.GetProjectId() != "" {
-		if active, leaseErr := api.server.store.Workspaces.ProjectCheckoutActive(value.ProjectID, ""); leaseErr == nil {
-			value.Volatile = active
-		}
-		if operation, operationErr := api.server.store.Workspaces.ActiveProjectGitOperation(value.ProjectID); operationErr == nil {
-			value.CurrentOperationID = operation.ID
-		}
-	} else if active, leaseErr := api.server.store.Leases.CardActive(request.GetCardId()); leaseErr == nil {
-		value.Volatile = active
 	}
 	return protoChangeset(value), nil
 }
@@ -58,7 +50,7 @@ func (api *gitAPI) GetChangeset(ctx context.Context, request *dieterv1.GetChange
 func (api *gitAPI) GetFileDiff(ctx context.Context, request *dieterv1.GetDiffRequest) (*dieterv1.FileDiff, error) {
 	ctx = kanban.WithCheckout(ctx, request.GetCheckoutId())
 	value, err := api.server.changesets.FileDiffTarget(
-		ctx, request.GetCardId(), request.GetProjectId(), request.GetExpectedRevision(), request.GetPath(), "", request.GetSection(), int(request.GetOffset()), int(request.GetLimit()),
+		ctx, request.GetCardId(), request.GetProjectId(), request.GetPath(), "", request.GetSection(), request.GetFileRevision(), int(request.GetOffset()), int(request.GetLimit()),
 	)
 	if err != nil {
 		return nil, err
@@ -72,7 +64,7 @@ func (api *gitAPI) GetCommitDiff(ctx context.Context, request *dieterv1.GetDiffR
 		return nil, fault.New(fault.Invalid, "commit SHA is required")
 	}
 	value, err := api.server.changesets.FileDiffTarget(
-		ctx, request.GetCardId(), request.GetProjectId(), request.GetExpectedRevision(), request.GetPath(), request.GetCommitSha(), "combined", int(request.GetOffset()), int(request.GetLimit()),
+		ctx, request.GetCardId(), request.GetProjectId(), request.GetPath(), request.GetCommitSha(), "combined", request.GetFileRevision(), int(request.GetOffset()), int(request.GetLimit()),
 	)
 	if err != nil {
 		return nil, err
@@ -83,11 +75,11 @@ func (api *gitAPI) GetCommitDiff(ctx context.Context, request *dieterv1.GetDiffR
 }
 
 func (api *gitAPI) AddChangeComment(_ context.Context, request *dieterv1.AddChangeCommentRequest) (*dieterv1.ChangeComment, error) {
-	if request.GetRevision() == "" {
-		return nil, fault.New(fault.Invalid, "revision is required")
+	if request.GetFileRevision() == "" {
+		return nil, fault.New(fault.Invalid, "file revision is required")
 	}
 	value, err := api.server.store.Workspaces.AddChangeComment(model.ChangeComment{
-		CardID: request.GetCardId(), ChangesetRevision: request.GetRevision(), Path: request.GetPath(),
+		CardID: request.GetCardId(), FileRevision: request.GetFileRevision(), Path: request.GetPath(),
 		Side: request.GetSide(), Line: int(request.GetLine()), Body: request.GetBody(),
 		Author: model.Author{Kind: "human", Name: request.GetAuthor()},
 	})
@@ -102,11 +94,11 @@ func (api *gitAPI) ListChangeComments(_ context.Context, request *dieterv1.ListC
 	if err != nil {
 		return nil, err
 	}
+	// Every comment is listed with its file revision; a client shows the ones
+	// that match the current file inline and counts the rest as outdated.
 	result := &dieterv1.ChangeCommentsResponse{}
 	for _, value := range values {
-		if request.GetRevision() == "" || request.GetRevision() == value.ChangesetRevision {
-			result.Comments = append(result.Comments, protoChangeComment(value))
-		}
+		result.Comments = append(result.Comments, protoChangeComment(value))
 	}
 	return result, nil
 }
@@ -124,7 +116,8 @@ func (api *gitAPI) StartGitOperation(ctx context.Context, request *dieterv1.Star
 	ctx = kanban.WithCheckout(ctx, request.GetCheckoutId())
 	value, err := api.server.gitOperations.Start(ctx, operations.Request{
 		CardID: request.GetCardId(), ProjectID: request.GetProjectId(), Kind: request.GetKind(), ExpectedRevision: request.GetExpectedRevision(),
-		Parameters: cloneProtoStringMap(request.GetParameters()),
+		Parameters: cloneProtoStringMap(request.GetParameters()), ExpectedFiles: cloneProtoStringMap(request.GetExpectedFiles()),
+		ExpectedIndex: request.GetExpectedIndex(),
 	})
 	if err != nil {
 		return nil, err
@@ -153,6 +146,10 @@ func (api *gitAPI) CancelGitOperation(_ context.Context, request *dieterv1.GitOp
 
 func (api *gitAPI) WatchGitOperation(ctx context.Context, request *dieterv1.WatchGitOperationRequest, stream *connect.ServerStream[dieterv1.GitOperationFrame]) error {
 	return api.server.watchGitOperation(ctx, request, stream.Send)
+}
+
+func (api *gitAPI) WatchChangeset(ctx context.Context, request *dieterv1.WatchChangesetRequest, stream *connect.ServerStream[dieterv1.ChangesetFrame]) error {
+	return api.server.watchChangeset(ctx, request, stream.Send)
 }
 
 func terminalGitOperation(value string) bool {

@@ -178,9 +178,14 @@ func protoChangeset(value model.Changeset) *dieterv1.Changeset {
 	result := &dieterv1.Changeset{
 		CardId: value.CardID, ProjectId: value.ProjectID, Revision: value.Revision, ComparisonSha: value.MergeBaseSHA,
 		HeadSha: value.HeadSHA, BaseSha: value.CurrentBaseSHA, Additions: int32(value.Additions),
-		Deletions: int32(value.Deletions), Volatile: value.Volatile, GeneratedAt: value.CreatedAt,
+		Deletions: int32(value.Deletions), GeneratedAt: value.CreatedAt,
 		Branch: value.Branch, BaseBranch: value.BaseBranch, Ahead: int32(value.Ahead), Behind: int32(value.Behind),
 		Dirty: value.Dirty, Conflicted: value.Conflicted, CurrentOperationId: value.CurrentOperationID,
+		Scope: value.Scope, CheckoutId: value.CheckoutID, IndexFingerprint: value.IndexFingerprint,
+		Activity: &dieterv1.ChangesetActivity{
+			AgentActive: value.Activity.AgentActive, AgentCardIds: append([]string(nil), value.Activity.AgentCardIDs...),
+		},
+		FilesTruncated: value.FilesTruncated, TotalFiles: int32(value.TotalFiles),
 	}
 	for _, file := range value.Files {
 		result.Files = append(result.Files, &dieterv1.ChangedFile{
@@ -189,6 +194,7 @@ func protoChangeset(value model.Changeset) *dieterv1.Changeset {
 			IndexStatus: file.IndexStatus, WorktreeStatus: file.WorktreeStatus, Staged: file.Staged, Unstaged: file.Unstaged,
 			StagedAdditions: int32(file.StagedAdditions), StagedDeletions: int32(file.StagedDeletions),
 			UnstagedAdditions: int32(file.UnstagedAdditions), UnstagedDeletions: int32(file.UnstagedDeletions),
+			Revision: file.Revision,
 		})
 	}
 	for _, commit := range value.Commits {
@@ -211,13 +217,14 @@ func protoFileDiff(value model.FileDiff) *dieterv1.FileDiff {
 	return &dieterv1.FileDiff{
 		CardId: value.CardID, ProjectId: value.ProjectID, Path: value.Path, CommitSha: value.CommitSHA, Revision: value.Revision, Patch: value.Patch, Section: value.Section,
 		Binary: value.Binary, Truncated: value.Truncated, NextOffset: int64(value.NextOffset), TotalBytes: int64(value.TotalBytes),
+		FileRevision: value.FileRevision, Restarted: value.Restarted,
 	}
 }
 
 func protoChangeComment(value model.ChangeComment) *dieterv1.ChangeComment {
 	return &dieterv1.ChangeComment{
 		Id: value.ID, CardId: value.CardID, Path: value.Path, Side: value.Side, Line: int32(value.Line),
-		Body: value.Body, Author: value.Author.Name, Revision: value.ChangesetRevision, CreatedAt: value.CreatedAt,
+		Body: value.Body, Author: value.Author.Name, FileRevision: value.FileRevision, CreatedAt: value.CreatedAt,
 	}
 }
 
@@ -236,6 +243,7 @@ func protoGitOperation(value model.GitOperation) *dieterv1.GitOperation {
 		Parameters: cloneProtoStringMap(value.Parameters), CompletedSteps: append([]string(nil), value.CompletedSteps...),
 		Result: value.Result, Error: value.Error, Sequence: value.Sequence, CreatedAt: value.CreatedAt,
 		StartedAt: value.StartedAt, FinishedAt: value.FinishedAt, UpdatedAt: value.UpdatedAt,
+		ExpectedFiles: cloneProtoStringMap(value.ExpectedFiles), ExpectedIndex: value.ExpectedIndex, RequestedByCardId: value.RequestedByCardID,
 	}
 	for _, conflict := range value.Conflicts {
 		result.Conflicts = append(result.Conflicts, &dieterv1.GitConflict{Path: conflict.Path, HunkCount: int32(conflict.HunkCount)})

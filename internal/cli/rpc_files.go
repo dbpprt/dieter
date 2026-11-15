@@ -105,6 +105,11 @@ func (c *CLI) resolveFileScope(ctx context.Context, client dieterclient.Client, 
 	if cardID != "" {
 		return "", cardID, nil
 	}
+	// A project ID needs no lookup: the daemon resolves it. Only a name is
+	// matched against the projects this machine knows.
+	if strings.HasPrefix(projectRef, "p_") && !strings.ContainsAny(projectRef, " /") {
+		return projectRef, "", nil
+	}
 	state, err := client.GetState(rpcCtx, &dieterv1.GetStateRequest{})
 	if err != nil {
 		return "", "", err

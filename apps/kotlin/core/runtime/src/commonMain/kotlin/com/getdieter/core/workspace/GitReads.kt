@@ -27,7 +27,8 @@ object DiffPages {
 
     /**
      * Reads the first page of [request] from [daemonId], or the page after [loaded]; the result
-     * carries every page read so far.
+     * carries every page read so far. A later page comes from the same rendering as [loaded]; when
+     * the daemon no longer has it and the file changed, the diff restarts with its new first page.
      */
     suspend fun read(
         sessions: MachineSessions,
@@ -35,13 +36,19 @@ object DiffPages {
         request: GetDiffRequest,
         loaded: FileDiff? = null,
     ): FileDiff {
-        val paged = request.copy(offset = loaded?.next_offset ?: 0, limit = PAGE)
+        val paged =
+            request.copy(
+                offset = loaded?.next_offset ?: 0,
+                limit = PAGE,
+                file_revision = loaded?.file_revision.orEmpty(),
+            )
         val page =
             sessions.call(daemonId, Deadlines.READ) { client ->
                 if (paged.commit_sha.isNotEmpty()) client.GetCommitDiff().execute(paged)
                 else client.GetFileDiff().execute(paged)
             }
-        return if (loaded != null) page.copy(patch = loaded.patch + page.patch) else page
+        return if (loaded != null && !page.restarted) page.copy(patch = loaded.patch + page.patch)
+        else page
     }
 }
 

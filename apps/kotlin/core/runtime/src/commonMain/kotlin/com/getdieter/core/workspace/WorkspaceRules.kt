@@ -472,6 +472,15 @@ data class WorkspaceAvailability(
                 "The validated result is pushed to the configured base remote."
             else "Runs locally on the Dieter machine · nothing is pushed."
 
+    /** Why no operation can start now, or null when some can. */
+    val blockedReason: String?
+        get() =
+            when {
+                agentActive -> "Git actions wait for the agent's turn to end."
+                operationActive -> "Another Git operation is running."
+                else -> null
+            }
+
     val allowsMergeFlow: Boolean
         get() =
             !agentActive &&
@@ -815,7 +824,8 @@ object WorkspaceStatus {
                 "Provisioning" to StatusTone.NEUTRAL
             workspace?.state in setOf("orphaned", "recovery_required", "failed") ->
                 "Needs attention · ${workspace?.state}" to StatusTone.WARNING
-            changeset?.volatile == true -> "Agent is working — live view" to StatusTone.ACTIVE
+            changeset?.activity?.agent_active == true ->
+                ProjectChangesRules.AGENT_ACTIVITY to StatusTone.ACTIVE
             workspace?.dirty == true -> "Uncommitted changes" to StatusTone.WARNING
             else -> null
         }

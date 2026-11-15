@@ -102,15 +102,15 @@ func TestConversationWorkspaceConnectEndToEndForCardAndChat(t *testing.T) {
 		t.Fatalf("changeset=%#v err=%v", set, err)
 	}
 	diff, err := client.GetFileDiff(ctx, &dieterv1.GetDiffRequest{
-		CardId: card.GetId(), Path: "README.md", ExpectedRevision: set.GetRevision(),
+		CardId: card.GetId(), Path: "README.md",
 	})
 	if err != nil || !strings.Contains(diff.GetPatch(), "+conversation scoped") {
 		t.Fatalf("diff=%#v err=%v", diff, err)
 	}
 	comment, err := client.AddChangeComment(ctx, &dieterv1.AddChangeCommentRequest{
-		CardId: card.GetId(), Revision: set.GetRevision(), Path: "README.md", Side: "new", Line: 1, Body: "Looks good", Author: "Tester",
+		CardId: card.GetId(), FileRevision: set.GetFiles()[0].GetRevision(), Path: "README.md", Side: "new", Line: 1, Body: "Looks good", Author: "Tester",
 	})
-	if err != nil || comment.GetBody() != "Looks good" {
+	if err != nil || comment.GetBody() != "Looks good" || comment.GetFileRevision() != set.GetFiles()[0].GetRevision() {
 		t.Fatalf("comment=%#v err=%v", comment, err)
 	}
 	terminalSession, err := client.CreateTerminal(ctx, &dieterv1.CreateTerminalRequest{
@@ -121,7 +121,7 @@ func TestConversationWorkspaceConnectEndToEndForCardAndChat(t *testing.T) {
 		t.Fatalf("terminal=%#v err=%v", terminalSession, err)
 	}
 	if _, err := client.StartGitOperation(ctx, &dieterv1.StartGitOperationRequest{
-		CardId: card.GetId(), Kind: "commit", ExpectedRevision: set.GetRevision(),
+		CardId: card.GetId(), Kind: "commit", ExpectedIndex: set.GetIndexFingerprint(),
 		Parameters: map[string]string{"subject": "must wait", "validate": "false"},
 	}); connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("active workspace terminal did not block Git operation: %v", err)
@@ -181,15 +181,25 @@ func TestProjectCheckoutChangesAreProjectScopedAndMutable(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repository, "README.md"), []byte("project checkout\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.GetChangeset(ctx, &dieterv1.GetChangesetRequest{CardId: card.GetId()}); connect.CodeOf(err) != connect.CodeFailedPrecondition {
-		t.Fatalf("project-mode card changes must redirect to project Changes: %v", err)
+	// A project-directory conversation reads its checkout, the same changes
+	// the project shows.
+	conversation, err := client.GetChangeset(ctx, &dieterv1.GetChangesetRequest{CardId: card.GetId()})
+	if err != nil || conversation.GetScope() != model.ChangesetScopeCheckout || conversation.GetCardId() != card.GetId() || len(conversation.GetFiles()) != 1 {
+		t.Fatalf("project-mode conversation changeset=%#v err=%v", conversation, err)
 	}
 	set, err := client.GetChangeset(ctx, &dieterv1.GetChangesetRequest{ProjectId: project.GetId()})
 	if err != nil || set.GetProjectId() != project.GetId() || set.GetCardId() != "" || len(set.GetFiles()) != 1 || !set.GetFiles()[0].GetUnstaged() {
 		t.Fatalf("project changeset=%#v err=%v", set, err)
 	}
+	if set.GetRevision() != conversation.GetRevision() || set.GetCheckoutId() != conversation.GetCheckoutId() {
+		t.Fatalf("conversation and project changes differ: %#v vs %#v", conversation, set)
+	}
+	conversationDiff, err := client.GetFileDiff(ctx, &dieterv1.GetDiffRequest{CardId: card.GetId(), Path: "README.md", Section: "unstaged"})
+	if err != nil || !strings.Contains(conversationDiff.GetPatch(), "+project checkout") {
+		t.Fatalf("conversation diff=%#v err=%v", conversationDiff, err)
+	}
 	operation, err := client.StartGitOperation(ctx, &dieterv1.StartGitOperationRequest{
-		ProjectId: project.GetId(), Kind: "stage", ExpectedRevision: set.GetRevision(), Parameters: map[string]string{"path": "README.md"},
+		ProjectId: project.GetId(), Kind: "stage", ExpectedFiles: map[string]string{"README.md": set.GetFiles()[0].GetRevision()}, Parameters: map[string]string{"path": "README.md"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -200,13 +210,13 @@ func TestProjectCheckoutChangesAreProjectScopedAndMutable(t *testing.T) {
 		t.Fatalf("staged project changeset=%#v err=%v", staged, err)
 	}
 	diff, err := client.GetFileDiff(ctx, &dieterv1.GetDiffRequest{
-		ProjectId: project.GetId(), Path: "README.md", ExpectedRevision: staged.GetRevision(), Section: "staged",
+		ProjectId: project.GetId(), Path: "README.md", Section: "staged",
 	})
 	if err != nil || diff.GetProjectId() != project.GetId() || !strings.Contains(diff.GetPatch(), "+project checkout") {
 		t.Fatalf("staged project diff=%#v err=%v", diff, err)
 	}
 	operation, err = client.StartGitOperation(ctx, &dieterv1.StartGitOperationRequest{
-		ProjectId: project.GetId(), Kind: "commit", ExpectedRevision: staged.GetRevision(),
+		ProjectId: project.GetId(), Kind: "commit", ExpectedIndex: staged.GetIndexFingerprint(),
 		Parameters: map[string]string{"subject": "project checkout change", "validate": "false"},
 	})
 	if err != nil {
@@ -277,5 +287,69 @@ func TestConversationInputRequiresPerConversationWorkspaceMode(t *testing.T) {
 		if err != nil || input.WorkspaceMode != want {
 			t.Fatalf("workspace %q input=%#v err=%v", wire, input, err)
 		}
+	}
+}
+
+func TestWatchChangesetStreamsAProjectDirectoryConversationWhileAnAgentWorks(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), testkit.Budget(30*time.Second))
+	defer cancel()
+	data := testkit.Store(t)
+	client, _ := newConnectTestClient(t, data, newFakeRunner())
+	repository := testkit.GitRepo(t)
+	created, err := client.CreateProject(ctx, &dieterv1.CreateProjectRequest{
+		Mode: "open", Path: repository, Name: "Watched", BoardName: "Main", Workflow: model.WorkflowReview, BaseBranch: "main",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := created.GetProject()
+	card, err := client.CreateChat(ctx, &dieterv1.CreateConversationRequest{
+		ProjectId: project.GetId(), Title: "Shared", Prompt: "work", DeferStart: true, WorkspaceMode: model.WorkspaceModeProject,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := data.Kanban.AcquireRuntimeLease(project.GetId(), card.GetId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = data.Leases.Release(lease) }()
+	stream, err := client.WatchChangeset(ctx, &dieterv1.WatchChangesetRequest{CardId: card.GetId(), HeartbeatMs: 1_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := func() *dieterv1.Changeset {
+		t.Helper()
+		for stream.Receive() {
+			if value := stream.Msg().GetChangeset(); value != nil {
+				return value
+			}
+		}
+		t.Fatalf("stream ended: %v", stream.Err())
+		return nil
+	}
+	first := next()
+	if first.GetScope() != model.ChangesetScopeCheckout || len(first.GetFiles()) != 0 || !first.GetActivity().GetAgentActive() || first.GetActivity().GetAgentCardIds()[0] != card.GetId() {
+		t.Fatalf("first frame=%#v", first)
+	}
+	// The agent writes a file: the stream shows it without being asked.
+	if err := os.WriteFile(filepath.Join(repository, "agent.txt"), []byte("one\ntwo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	written := time.Now()
+	changed := next()
+	if len(changed.GetFiles()) != 1 || changed.GetFiles()[0].GetPath() != "agent.txt" || changed.GetFiles()[0].GetUnstagedAdditions() != 2 || changed.GetRevision() == first.GetRevision() {
+		t.Fatalf("changed frame=%#v", changed)
+	}
+	if waited := time.Since(written); waited > 5*time.Second {
+		t.Fatalf("a write took %s to reach the stream", waited)
+	}
+	// The agent finishing is a change too.
+	if err := data.Leases.Release(lease); err != nil {
+		t.Fatal(err)
+	}
+	if finished := next(); finished.GetActivity().GetAgentActive() || finished.GetRevision() != changed.GetRevision() {
+		t.Fatalf("finished frame=%#v", finished)
 	}
 }

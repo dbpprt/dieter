@@ -469,15 +469,18 @@ dieter file save --card <card-id> --revision auto \
   --file /tmp/replacement.go path/to/file.go
 ```
 
-Inspect local, uncommitted Git state through exactly one scope. A worktree
-conversation is addressed by card ID. The registered project directory is
-addressed by `--project`; a project-mode card is intentionally rejected because
-that checkout is shared rather than owned by the card:
+Inspect Git state through a conversation or a project. A card ID reads the
+conversation's own worktree, or, for a project-directory conversation, the
+project checkout it shares with every conversation in that directory (the
+changeset's `scope` is `worktree` or `checkout`). `--project` reads the
+registered checkout directly. Changes stay readable while agents write;
+`activity.agentActive` says one is working there:
 
 ```sh
 dieter workspace show <card-id>
-dieter workspace changes <worktree-card-id>
-dieter workspace diff --section unstaged --path path/to/file.go <worktree-card-id>
+dieter workspace changes <card-id>
+dieter workspace diff --section unstaged --path path/to/file.go <card-id>
+dieter workspace watch-changes --count 2 <card-id>
 dieter workspace changes --project <project-id-or-name>
 dieter workspace diff --project <project-id-or-name> \
   --section staged --path path/to/file.go
@@ -486,28 +489,38 @@ dieter workspace scm <card-id>
 ```
 
 `changes` separates the staged index from unstaged/untracked working-tree
-edits. A path can appear in both sections. `diff --section` accepts `staged`,
-`unstaged`, or `combined`; always carry the newest returned revision into a
-mutation.
+edits. A path can appear in both sections. Each file has a `revision` that
+changes only when that file does; `indexFingerprint` changes only when the
+staged content does. `diff --section` accepts `staged`, `unstaged`, or
+`combined` and never needs a revision. A worktree changeset also lists the
+branch's `commits` since its base. `watch-changes` streams the changeset
+whenever it changes (JSON Lines, with heartbeats).
 
-Git operations are daemon-owned, serialized, and durable. Supply the expected
-revision where the operation depends on the changeset, and repeat `--param` for
-kind-specific values:
+Git operations are daemon-owned, serialized, and durable. Each checks only what
+it acts on: `stage`, `unstage` and `discard_changes` act on exactly the files
+they were given and fail only if one of those files changed (`--expect
+PATH=REVISION` pins a file; without it the CLI uses the current files under
+`--param path=…`); a commit of the index checks `--index` (current when
+omitted); a `stage_all` commit and worktree-wide kinds check `--revision`.
+Repeat `--param` for kind-specific values:
 
 ```sh
-dieter workspace run --kind stage --project <project-id-or-name> \
-  --revision <revision> --param path=path/to/file.go --wait
+dieter workspace run --kind stage --expect path/to/file.go=<file-revision> \
+  --param path=path/to/file.go --wait <card-id>
 dieter workspace run --kind commit --project <project-id-or-name> \
-  --revision <revision> --param subject="Focused change" --wait
+  --param subject="Focused change" --wait
 dieter workspace run --kind push --project <project-id-or-name> --wait
 dieter workspace run --kind validate --wait <worktree-card-id>
 dieter workspace operation <operation-id>
 dieter workspace watch <operation-id>
 ```
 
-Project targets support `stage`, `unstage`, `discard_changes`, `commit`,
-`update`, `validate`, and `push`. An empty stage/unstage path means all files; `discard_changes`
-requires one path and creates recovery artifacts first. `commit` commits only
+Checkout targets (a project, or a project-directory card) support `stage`,
+`unstage`, `discard_changes`, `commit`, `update`, `validate`, and `push`; an
+operation started through a card is recorded as the checkout's, with
+`requestedByCardId`. While an agent works in the checkout, `discard_changes`
+and `update` are refused; the rest stay available. `discard_changes` creates
+recovery artifacts first. `commit` commits only
 the staged index unless `--param stage_all=true` is explicitly supplied.
 Worktree targets additionally support `update`, `continue_conflict`,
 `abort_conflict`, `merge_local`, `push`, `cleanup`, `discard`, `adopt`,

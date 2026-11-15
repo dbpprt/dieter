@@ -33,8 +33,6 @@ internal fun ProjectChangesScreen(store: MobileStore, route: MobileRoute.Tool) {
         onDispose { send(ProjectChangesCommand(active = Toggle(false))) }
     }
     val scope = scopeSubtitle(store, view.project_id, view.daemon_id)
-    val files = view.changes?.files.orEmpty()
-    val selected = view.selection?.path.orEmpty()
     val chrome =
         ScreenChrome(
             "Changes",
@@ -51,44 +49,10 @@ internal fun ProjectChangesScreen(store: MobileStore, route: MobileRoute.Tool) {
                         "Git actions",
                         Glyph.MORE_HORIZONTAL,
                         menu =
-                            listOfNotNull(
-                                if (view.allowed.isNotEmpty())
-                                    MenuSection(
-                                        view.allowed
-                                            .filter { it != "stage" && it != "unstage" }
-                                            .map { kind ->
-                                                ChromeAction(
-                                                    "git-$kind",
-                                                    GitOperations.title(kind),
-                                                    gitGlyph(kind),
-                                                    enabled = !view.mutations_disabled,
-                                                ) {
-                                                    operation = kind
-                                                }
-                                            }
-                                    )
-                                else null,
-                                MenuSection(
-                                    listOf(
-                                        ChromeAction(
-                                            "split",
-                                            "Side-by-side diff",
-                                            Glyph.CHANGES,
-                                            checked = view.split,
-                                        ) {
-                                            send(
-                                                ProjectChangesCommand(
-                                                    layout = ReviewLayout(!view.split)
-                                                )
-                                            )
-                                        },
-                                        ChromeAction("refresh-changes", "Refresh", Glyph.REFRESH) {
-                                            send(ProjectChangesCommand(refresh = Step()))
-                                        },
-                                    )
+                            checkoutMenu(view, ::send) { operation = it } +
+                                listOfNotNull(
+                                    checkoutMenu(store, route)?.let { MenuSection(listOf(it)) }
                                 ),
-                                checkoutMenu(store, route)?.let { MenuSection(listOf(it)) },
-                            ),
                     )
                 ),
         )
@@ -106,108 +70,185 @@ internal fun ProjectChangesScreen(store: MobileStore, route: MobileRoute.Tool) {
         }
         return
     }
-    Screen(chrome) {
-        LazyColumn(
-            Modifier.fillMaxSize().testTag("project-changes"),
-            state = listState,
-            contentPadding = padding,
-        ) {
-            item { Spacer(Modifier.height(4.dp)) }
-            listOf(view.refresh_error, view.diff_error, view.operation_error)
-                .filter { it.isNotEmpty() }
-                .forEach { failure ->
-                    item {
-                        Banner(
-                            "Changes unavailable",
-                            failure,
-                            Modifier.padding(horizontal = ScreenMargin, vertical = 6.dp),
-                            tone = Tone.DANGER,
-                            actionLabel = "Retry",
-                            onAction = { send(ProjectChangesCommand(refresh = Step())) },
-                        )
-                    }
-                }
-            if (view.notice.isNotEmpty())
-                item {
-                    Banner(
-                        "Note",
-                        view.notice,
-                        Modifier.padding(horizontal = ScreenMargin, vertical = 6.dp),
-                    )
-                }
-            if (view.changes == null && (view.refreshing || view.busy))
-                item {
-                    Box(
-                        Modifier.fillMaxWidth().padding(40.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Spinner(Modifier.size(24.dp))
-                    }
-                }
-            if (files.isNotEmpty()) {
-                item {
-                    SectionHeader("${files.size} changed file${if (files.size == 1) "" else "s"}")
-                }
-                changedFiles(
-                    files,
-                    selected,
-                    view.display_rows,
-                    view,
-                    onSelect = { path ->
-                        val file = files.firstOrNull { it.path == path }
-                        send(
-                            ProjectChangesCommand(
-                                select = ProjectChangeSelect(path, staged = file?.unstaged != true)
-                            )
-                        )
-                    },
-                    onComment = null,
-                    onMore = { send(ProjectChangesCommand(load_more_diff = Step())) },
-                    trailing = { file ->
-                        if (file.unstaged && "stage" in view.allowed)
-                            DButton(
-                                "Stage",
-                                {
-                                    send(
-                                        ProjectChangesCommand(
-                                            run = GitOperationForm(kind = "stage", path = file.path)
-                                        )
-                                    )
-                                },
-                                kind = ButtonKind.PLAIN,
-                            )
-                        else if (file.staged && "unstage" in view.allowed)
-                            DButton(
-                                "Unstage",
-                                {
-                                    send(
-                                        ProjectChangesCommand(
-                                            run =
-                                                GitOperationForm(kind = "unstage", path = file.path)
-                                        )
-                                    )
-                                },
-                                kind = ButtonKind.PLAIN,
-                            )
-                    },
-                )
-            }
-            if (!view.refreshing && view.changes != null && files.isEmpty())
-                item {
-                    EmptyState(
-                        Glyph.TASK_DONE,
-                        "Working tree clean",
-                        "This checkout has no uncommitted changes.",
-                        Modifier.padding(top = 40.dp),
-                    )
-                }
-        }
-    }
+    Screen(chrome) { CheckoutChanges(view, ::send) }
     operation?.let { kind ->
         GitOperationEditor(kind, null, { operation = null }) {
             send(ProjectChangesCommand(run = it))
             operation = null
         }
+    }
+}
+
+/**
+ * A checkout's Git actions and view options: what can run now, what waits and why, the diff layout
+ * and a refresh. [choose] opens a kind's editor.
+ */
+internal fun checkoutMenu(
+    view: ProjectChangesSlice,
+    send: (ProjectChangesCommand) -> Unit,
+    choose: (String) -> Unit,
+): List<MenuSection> =
+    listOfNotNull(
+        if (view.allowed.isNotEmpty() || view.unavailable_reasons.isNotEmpty())
+            MenuSection(
+                view.allowed
+                    .filter { it != "stage" && it != "unstage" }
+                    .map { kind ->
+                        ChromeAction(
+                            "git-$kind",
+                            GitOperations.title(kind),
+                            gitGlyph(kind),
+                            enabled = !view.mutations_disabled,
+                        ) {
+                            choose(kind)
+                        }
+                    } +
+                    view.unavailable_reasons.map { (kind, reason) ->
+                        ChromeAction(
+                            "git-$kind",
+                            GitOperations.title(kind),
+                            gitGlyph(kind),
+                            enabled = false,
+                            subtitle = reason,
+                        )
+                    }
+            )
+        else null,
+        MenuSection(
+            listOf(
+                ChromeAction("split", "Side-by-side diff", Glyph.CHANGES, checked = view.split) {
+                    send(ProjectChangesCommand(layout = ReviewLayout(!view.split)))
+                },
+                ChromeAction("refresh-changes", "Refresh", Glyph.REFRESH) {
+                    send(ProjectChangesCommand(refresh = Step()))
+                },
+            )
+        ),
+    )
+
+/**
+ * A checkout's changes: activity, errors and the file list with diffs. The project's Changes and a
+ * project-directory conversation's Changes show the same list; a read failure keeps the last list
+ * and says so instead of replacing it.
+ */
+@Composable
+internal fun ScreenScope.CheckoutChanges(
+    view: ProjectChangesSlice,
+    send: (ProjectChangesCommand) -> Unit,
+) {
+    val files = view.changes?.files.orEmpty()
+    val selected = view.selection?.path.orEmpty()
+    LazyColumn(
+        Modifier.fillMaxSize().testTag("project-changes"),
+        state = listState,
+        contentPadding = padding,
+    ) {
+        item { Spacer(Modifier.height(4.dp)) }
+        if (view.activity.isNotEmpty())
+            item {
+                Banner(
+                    view.activity,
+                    view.shared_label,
+                    Modifier.padding(horizontal = ScreenMargin, vertical = 6.dp)
+                        .testTag("project-changes-activity"),
+                    glyph = Glyph.CHANGES,
+                )
+            }
+        if (view.refresh_error.isNotEmpty())
+            item {
+                Banner(
+                    if (view.changes == null) "Changes unavailable" else "Couldn't refresh",
+                    view.refresh_error,
+                    Modifier.padding(horizontal = ScreenMargin, vertical = 6.dp),
+                    tone = if (view.changes == null) Tone.DANGER else Tone.WARNING,
+                    actionLabel = "Retry",
+                    onAction = { send(ProjectChangesCommand(refresh = Step())) },
+                )
+            }
+        listOf(view.diff_error, view.operation_error)
+            .filter { it.isNotEmpty() }
+            .forEach { failure ->
+                item {
+                    Banner(
+                        "Git action failed",
+                        failure,
+                        Modifier.padding(horizontal = ScreenMargin, vertical = 6.dp),
+                        tone = Tone.DANGER,
+                        actionLabel = "Retry",
+                        onAction = { send(ProjectChangesCommand(refresh = Step())) },
+                    )
+                }
+            }
+        if (view.notice.isNotEmpty())
+            item {
+                Banner(
+                    "Note",
+                    view.notice,
+                    Modifier.padding(horizontal = ScreenMargin, vertical = 6.dp),
+                )
+            }
+        if (view.changes == null && view.refresh_error.isEmpty())
+            item {
+                Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                    Spinner(Modifier.size(24.dp))
+                }
+            }
+        if (files.isNotEmpty()) {
+            item {
+                SectionHeader("${files.size} changed file${if (files.size == 1) "" else "s"}")
+            }
+            changedFiles(
+                files,
+                selected,
+                view.display_rows,
+                view,
+                onSelect = { path ->
+                    val file = files.firstOrNull { it.path == path }
+                    send(
+                        ProjectChangesCommand(
+                            select = ProjectChangeSelect(path, staged = file?.unstaged != true)
+                        )
+                    )
+                },
+                onComment = null,
+                onMore = { send(ProjectChangesCommand(load_more_diff = Step())) },
+                trailing = { file ->
+                    if (file.unstaged && "stage" in view.allowed)
+                        DButton(
+                            "Stage",
+                            {
+                                send(
+                                    ProjectChangesCommand(
+                                        run = GitOperationForm(kind = "stage", path = file.path)
+                                    )
+                                )
+                            },
+                            kind = ButtonKind.PLAIN,
+                        )
+                    else if (file.staged && "unstage" in view.allowed)
+                        DButton(
+                            "Unstage",
+                            {
+                                send(
+                                    ProjectChangesCommand(
+                                        run = GitOperationForm(kind = "unstage", path = file.path)
+                                    )
+                                )
+                            },
+                            kind = ButtonKind.PLAIN,
+                        )
+                },
+            )
+        }
+        if (view.changes != null && files.isEmpty())
+            item {
+                EmptyState(
+                    Glyph.TASK_DONE,
+                    "Working tree clean",
+                    "This checkout has no uncommitted changes.",
+                    Modifier.padding(top = 40.dp),
+                )
+            }
     }
 }
 

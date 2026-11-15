@@ -4,6 +4,7 @@ import com.getdieter.api.v1.Card
 import com.getdieter.api.v1.ChangeComment
 import com.getdieter.api.v1.ChangedFile
 import com.getdieter.api.v1.Changeset
+import com.getdieter.api.v1.ChangesetActivity
 import com.getdieter.api.v1.GitConflict
 import com.getdieter.api.v1.GitOperation
 import com.getdieter.api.v1.PullRequestSummary
@@ -208,7 +209,7 @@ class WorkspacePresentationTest {
             "Conflicted" to StatusTone.DANGER,
             WorkspaceStatus.status(
                 Workspace(state = "conflicted", dirty = true),
-                Changeset(volatile = true),
+                Changeset(activity = ChangesetActivity(agent_active = true)),
             ),
         )
         assertEquals(
@@ -224,8 +225,11 @@ class WorkspacePresentationTest {
             WorkspaceStatus.status(Workspace(state = "orphaned"), null),
         )
         assertEquals(
-            "Agent is working — live view" to StatusTone.ACTIVE,
-            WorkspaceStatus.status(Workspace(dirty = true), Changeset(volatile = true)),
+            "Agent working · changes update live" to StatusTone.ACTIVE,
+            WorkspaceStatus.status(
+                Workspace(dirty = true),
+                Changeset(activity = ChangesetActivity(agent_active = true)),
+            ),
         )
         assertEquals("Uncommitted changes", WorkspaceStatus.line(Workspace(dirty = true), null))
         assertNull(WorkspaceStatus.status(Workspace(state = "ready"), Changeset()))

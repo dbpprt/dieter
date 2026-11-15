@@ -849,6 +849,9 @@ message ReviewCommand {
     Step clear_toast = 12;
     // Lays the diff out for this view; the surface keeps it across conversations.
     ReviewLayout layout = 14;
+    // Drives the checkout of a project-directory conversation (`scope`
+    // "checkout"); its result is the review.
+    ProjectChangesCommand checkout = 15;
   }
 }
 
@@ -2971,6 +2974,9 @@ message WorkspaceAvailability {
   bool has_review_branch = 4;
   // "project" or "worktree".
   string mode = 15;
+  // Why no operation can start now ("Git actions wait for the agent's turn
+  // to end."); empty when operations are available.
+  string blocked_reason = 16;
 }
 
 // One conversation workspace's review.
@@ -3031,6 +3037,18 @@ message ReviewSlice {
   // The workspace's state in words: "Ready", "Conflicted", "Provisioning",
   // "Cleanup pending", …; empty without a workspace.
   string workspace_state = 38;
+  // "worktree" when the conversation has its own worktree, "checkout" when it
+  // works in a project checkout; empty until the daemon says which. With
+  // "checkout", `checkout` carries the changes and `changeset` stays empty.
+  string scope = 39;
+  // The checkout's changes for a project-directory conversation, driven with
+  // `ReviewCommand.checkout`.
+  ProjectChangesSlice checkout = 40;
+  // Comments on the selected file written against an earlier version of it.
+  int32 outdated_comments = 41;
+  // "Agent working · changes update live" while an agent's turn runs in the
+  // workspace; empty otherwise. A state, never an error.
+  string activity = 42;
 }
 
 // One project checkout's changes.
@@ -3071,6 +3089,15 @@ message ProjectChangesSlice {
   // "discard_changes", "commit", "update", "validate", "push"); a commit
   // also needs a subject (SharedRules.gitOperationReady).
   repeated string allowed = 27;
+  // Why a checkout operation cannot run now, by kind, for the ones that are
+  // not allowed for a reason worth telling ("Wait for the agent to finish…").
+  map<string, string> unavailable_reasons = 28;
+  // "Agent working · changes update live" while an agent's turn runs in the
+  // checkout; empty otherwise.
+  string activity = 29;
+  // Set when the checkout is shown inside a project-directory conversation:
+  // "Shared checkout · main".
+  string shared_label = 30;
 }
 
 // A project's conversation workspaces after a ProjectWorkspacesCommand.

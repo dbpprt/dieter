@@ -27,6 +27,7 @@ func (c readResumingConn) NewStream(ctx context.Context, desc *grpc.StreamDesc, 
 		dieterv1.TerminalService_WatchTerminal_FullMethodName,
 		dieterv1.ExecutionService_WatchExecution_FullMethodName,
 		dieterv1.GitService_WatchGitOperation_FullMethodName,
+		dieterv1.GitService_WatchChangeset_FullMethodName,
 		dieterv1.ChannelService_WatchChannel_FullMethodName,
 		// A sign-in watch starts with the session's current state, so a
 		// resumed one needs no checkpoint.
@@ -161,6 +162,8 @@ func (s *resumingReadStream) checkpoint(value any) {
 		for _, log := range value.(*dieterv1.GitOperationFrame).GetLogs() {
 			request.AfterSequence = max(request.AfterSequence, log.GetSequence())
 		}
+	case *dieterv1.WatchChangesetRequest:
+		// Every changeset frame is complete; a resumed watch starts with a fresh one.
 	case *dieterv1.WatchChannelRequest:
 		// A resumed watch starts after the last delivered sequence, without a reset page.
 		request.AfterSeq = max(request.AfterSeq, value.(*dieterv1.ChannelFrame).GetLastSeq())

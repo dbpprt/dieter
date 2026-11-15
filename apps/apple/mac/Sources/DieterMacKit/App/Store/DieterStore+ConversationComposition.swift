@@ -25,7 +25,6 @@ extension DieterStore {
             guard let self else { return }
             await self.openConversation(cardID: cardID, chat: chat, fromInbox: self.section == .inbox)
         }
-        context.onOpenProjectChanges = { [weak self] id in await self?.openProjectChanges(id) }
         context.onOpenWorkspaceFiles = { [weak self] card in await self?.openWorkspaceFiles(card: card) }
         context.onOpenWorkspaceTerminal = { [weak self] card in await self?.openWorkspaceTerminal(card: card) }
         context.onPin = { [weak self] card, pinned in await self?.pin(card, pinned: pinned) }

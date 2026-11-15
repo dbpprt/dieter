@@ -92,6 +92,7 @@ import com.getdieter.core.workspace.ProjectWorkspacesView
 import com.getdieter.core.workspace.PullRequestView
 import com.getdieter.core.workspace.ReviewComments
 import com.getdieter.core.workspace.ReviewPresentation
+import com.getdieter.core.workspace.ReviewScope
 import com.getdieter.core.workspace.WorkspaceAvailability
 import com.getdieter.core.workspace.WorkspaceReviewView
 import com.getdieter.core.workspace.WorkspaceStatus
@@ -270,10 +271,16 @@ private fun mergeReadiness(readiness: MergeReadiness) =
  * [card] is the reviewed card, which availability and the pull request follow; [diffUnchanged]
  * leaves out the display rows the view already has.
  */
+/**
+ * [checkout] is the review's checkout surface, shown for a project-directory conversation;
+ * [checkoutUnchanged] leaves out its display rows the view already has.
+ */
 internal fun reviewSlice(
     view: WorkspaceReviewView,
     card: Card? = null,
     diffUnchanged: Boolean = false,
+    checkout: ProjectChangesView? = null,
+    checkoutUnchanged: Boolean = false,
 ): ReviewSlice {
     val presentation = ReviewPresentation.of(view, card)
     // Comments attach to one line of one file's diff, never to a whole commit.
@@ -284,7 +291,7 @@ internal fun reviewSlice(
         workspace = view.workspace,
         changeset = view.changeset,
         scm = view.scm,
-        comments = view.comments,
+        comments = view.currentComments,
         loading = view.loading,
         error = view.error.orEmpty(),
         selected_path = view.selectedPath.orEmpty(),
@@ -316,6 +323,7 @@ internal fun reviewSlice(
                     merge_destination = availability.mergeDestination,
                     has_review_branch = availability.hasReviewBranch,
                     mode = availability.mode.wire,
+                    blocked_reason = availability.blockedReason.orEmpty(),
                 )
             },
         display_rows =
@@ -323,7 +331,7 @@ internal fun reviewSlice(
             else
                 displayRows(
                     view.layout,
-                    ReviewComments.byLine(view.comments, view.selectedPath),
+                    ReviewComments.byLine(view.currentComments, view.selectedPath),
                     commentable,
                 ),
         diff_max_columns = view.layout.maxColumns,
@@ -340,6 +348,13 @@ internal fun reviewSlice(
         pull_request = presentation.pullRequest?.let(::pullRequestView),
         merge_readiness = mergeReadiness(presentation.mergeReadiness),
         workspace_state = WorkspaceStatus.stateLabel(view.workspace?.state.orEmpty()),
+        scope = view.scope?.wire.orEmpty(),
+        checkout =
+            checkout
+                ?.takeIf { view.scope == ReviewScope.CHECKOUT }
+                ?.let { projectChangesSlice(it, checkoutUnchanged) },
+        outdated_comments = view.outdatedComments,
+        activity = view.activity,
     )
 }
 
@@ -352,7 +367,7 @@ internal fun reviewDiffUnchanged(
 ): Boolean =
     previous != null &&
         previous.layout === next.layout &&
-        previous.comments == next.comments &&
+        previous.currentComments == next.currentComments &&
         previous.selectedPath == next.selectedPath &&
         previous.selectedCommit == next.selectedCommit
 
@@ -389,6 +404,9 @@ internal fun projectChangesSlice(view: ProjectChangesView, diffUnchanged: Boolea
         diff_note = if (view.diffTooLarge) DiffPages.TOO_LARGE else "",
         split = view.split,
         allowed = view.allowed,
+        unavailable_reasons = view.unavailableReasons,
+        activity = view.activity,
+        shared_label = view.sharedLabel,
     )
 
 internal fun projectWorkspacesSlice(view: ProjectWorkspacesView) =
