@@ -8,7 +8,36 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
-Nothing yet.
+### Fixed
+
+- **Changes in every conversation.** A conversation that works in the project
+  directory now shows its changes in place on the Mac, iPhone, iPad and
+  Android (and with `dieter workspace changes CARD`), labelled **Shared
+  checkout**. Before, Android and iOS failed with "project-directory changes
+  are project-scoped" and the Mac showed a redirect. Chats get Changes on
+  mobile too.
+- **Changes keep working while agents write.** Diffs no longer fail because
+  another file changed. Staging, unstaging and discarding fail only if a file
+  you picked changed, and say which; a commit takes exactly the staged changes
+  you reviewed. While an agent works in a shared checkout, Changes says
+  **Agent working · changes update live**; only discarding and updating the
+  branch wait for it.
+- Worktree reviews on Android and iOS no longer show a false "conflicts with
+  main" banner.
+
+### Changed
+
+- Changes update live: the daemon pushes them as they happen instead of every
+  open view polling. New `dieter workspace watch-changes` streams them.
+- A worktree conversation's Changes list the commits its branch made and line
+  counts for every file, so committed work no longer looks like "no changes".
+- Review comments belong to the version of the file they were written on;
+  once the file changes they are counted as outdated.
+- `dieter workspace run` pins exactly the files it acts on (`--expect
+PATH=REVISION`, automatic by default); `workspace diff` and `workspace
+comment` no longer take a changeset revision. `--project p_…` no longer
+  looks up every project first.
+- Compatibility floors are `0.7.448`: update every daemon and app together.
 
 ## 0.7.448
 
