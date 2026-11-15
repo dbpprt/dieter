@@ -249,6 +249,11 @@ func TestProjectCheckoutChangesAreProjectScopedAndMutable(t *testing.T) {
 		}
 		waitConnectGitOperation(t, ctx, client, operation.GetId())
 	}
+	// An operation's status is visible before its writer finishes committing;
+	// let it finish before the store's directory is removed.
+	if err := data.WaitForWriter(ctx); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func waitConnectGitOperation(t *testing.T, ctx context.Context, client dieterclient.ConnectClient, id string) *dieterv1.GitOperation {
