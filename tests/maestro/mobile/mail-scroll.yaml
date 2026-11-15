@@ -20,11 +20,10 @@ tags: [full]
 - tapOn:
     text: "Release smoke results: all platforms passed"
     waitToSettleTimeoutMs: 500
-- scrollUntilVisible:
-    element:
-      id: mail-diagram-mermaid-rendered
-    direction: DOWN
-    timeout: 30000
+- runFlow:
+    file: common/mail-diagram.yaml
+    env:
+      DIAGRAM: mermaid
 - takeScreenshot: mail-scroll-start
 - repeat:
     times: 8
@@ -43,11 +42,10 @@ tags: [full]
           duration: 80
           waitToSettleTimeoutMs: 0
 - takeScreenshot: mail-scroll-end
-- scrollUntilVisible:
-    element:
-      id: mail-diagram-mermaid-rendered
-    direction: DOWN
-    timeout: 30000
+- runFlow:
+    file: common/mail-diagram.yaml
+    env:
+      DIAGRAM: mermaid
 - takeScreenshot: mail-scroll-recovered
 - runFlow: common/back.yaml
 - tapOn:

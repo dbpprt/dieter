@@ -51,7 +51,9 @@ internal fun MarkdownDiagram(
             if (!ready && error == null) error = "The diagram renderer timed out."
         }
         val loaded = assets
-        Column(Modifier.fillMaxWidth()) {
+        // A stable anchor lets accessibility clients stop scrolling before the
+        // asynchronous renderer replaces its loading state with the result.
+        Column(Modifier.fillMaxWidth().testTag("mail-diagram-${fenceLanguage.lowercase()}")) {
             if (error == null && loaded != null) {
                 Box(
                     Modifier.fillMaxWidth()

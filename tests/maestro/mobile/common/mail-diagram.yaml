@@ -1,0 +1,14 @@
+appId: ${APP_ID}
+---
+# Stop at the diagram while it loads. Searching for its eventual rendered tag
+# can scroll past it and dispose the lazy item before WebKit reports readiness.
+- scrollUntilVisible:
+    element:
+      id: mail-diagram-${DIAGRAM}
+    direction: DOWN
+    centerElement: true
+    timeout: 30000
+- extendedWaitUntil:
+    visible:
+      id: mail-diagram-${DIAGRAM}-rendered
+    timeout: 30000

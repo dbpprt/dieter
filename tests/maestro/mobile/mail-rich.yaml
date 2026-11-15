@@ -14,34 +14,30 @@ tags: [smoke]
 - tapOn:
     text: "Release smoke results: all platforms passed"
     waitToSettleTimeoutMs: 500
-- scrollUntilVisible:
-    element:
-      id: mail-diagram-mermaid-rendered
-    direction: DOWN
-    timeout: 30000
+- runFlow:
+    file: common/mail-diagram.yaml
+    env:
+      DIAGRAM: mermaid
 - takeScreenshot: mail-rich-mermaid
-- scrollUntilVisible:
-    element:
-      id: mail-diagram-vega-lite-rendered
-    direction: DOWN
-    timeout: 30000
+- runFlow:
+    file: common/mail-diagram.yaml
+    env:
+      DIAGRAM: vega-lite
 - takeScreenshot: mail-rich-vega-lite
 - scrollUntilVisible:
     element:
       text: "Alias chart"
     direction: DOWN
     timeout: 30000
-- scrollUntilVisible:
-    element:
-      id: mail-diagram-vegalite-rendered
-    direction: DOWN
-    timeout: 30000
+- runFlow:
+    file: common/mail-diagram.yaml
+    env:
+      DIAGRAM: vegalite
 - takeScreenshot: mail-rich-alias
-- scrollUntilVisible:
-    element:
-      id: mail-diagram-vega-rendered
-    direction: DOWN
-    timeout: 30000
+- runFlow:
+    file: common/mail-diagram.yaml
+    env:
+      DIAGRAM: vega
 - takeScreenshot: mail-rich-vega-and-alias
 - scrollUntilVisible:
     element:
@@ -74,11 +70,10 @@ tags: [smoke]
       id: mail-subject
     direction: UP
     timeout: 30000
-- scrollUntilVisible:
-    element:
-      id: mail-diagram-mermaid-rendered
-    direction: DOWN
-    timeout: 30000
+- runFlow:
+    file: common/mail-diagram.yaml
+    env:
+      DIAGRAM: mermaid
 - takeScreenshot: mail-rich-reopened
 - runFlow: common/back.yaml
 - runFlow:
@@ -104,9 +99,8 @@ tags: [smoke]
       id: mail-subject
     direction: UP
     timeout: 30000
-- scrollUntilVisible:
-    element:
-      id: mail-diagram-mermaid-rendered
-    direction: DOWN
-    timeout: 30000
+- runFlow:
+    file: common/mail-diagram.yaml
+    env:
+      DIAGRAM: mermaid
 - takeScreenshot: mail-rich-dark
