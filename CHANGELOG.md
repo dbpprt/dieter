@@ -37,7 +37,7 @@ copy the **Unreleased** notes into a section named after that exact version
 PATH=REVISION`, automatic by default); `workspace diff` and `workspace
 comment` no longer take a changeset revision. `--project p_…` no longer
   looks up every project first.
-- Compatibility floors are `0.7.448`: update every daemon and app together.
+- Compatibility floors are `0.7.449`: update every daemon and app together.
 
 ## 0.7.448
 
