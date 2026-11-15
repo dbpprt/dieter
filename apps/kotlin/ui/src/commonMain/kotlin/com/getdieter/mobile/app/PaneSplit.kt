@@ -47,6 +47,7 @@ import kotlin.math.roundToInt
 internal fun ListDetailSplit(
     store: MobileStore,
     detailOpen: Boolean,
+    onListWidth: (Float) -> Unit = {},
     list: @Composable () -> Unit,
     detail: @Composable () -> Unit,
 ) {
@@ -65,6 +66,7 @@ internal fun ListDetailSplit(
             )
         val showList = width > .5f
         val showDetail = total - width > .5f
+        SideEffect { onListWidth(if (showList) width else 0f) }
         Row(Modifier.fillMaxSize()) {
             if (showList)
                 Box(

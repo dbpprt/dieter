@@ -12,6 +12,30 @@ enum class InterfaceMode(val title: String) {
     TOUCH("Touch"),
 }
 
+/**
+ * How the Android touch shell navigates between tabs. [CLASSIC] is the docked Material bar (a rail
+ * on wide windows); the others float as liquid glass above the page: [DOCK] a full bar with labels,
+ * [LENS] a bar whose selection is a lens you can drag and which shrinks while you scroll, [ISLAND]
+ * a compact pill whose selected tab grows its label. Portrait windows float it at the bottom (under
+ * the list in two panes), landscape two-pane and short windows on the leading edge.
+ */
+enum class NavigationStyle(val title: String) {
+    CLASSIC("Classic"),
+    DOCK("Dock"),
+    LENS("Lens"),
+    ISLAND("Island"),
+}
+
+/**
+ * How the Android conversation composer looks. [CLASSIC] is the docked band; [CARD] floats a raised
+ * card with its controls inside; [GLASS] floats the same card as liquid glass.
+ */
+enum class ComposerStyle(val title: String) {
+    CLASSIC("Classic"),
+    CARD("Card"),
+    GLASS("Glass"),
+}
+
 /** Which pane of a two-pane window was dragged away. */
 enum class PaneCollapse {
     NONE,
@@ -44,6 +68,20 @@ class LayoutModel internal constructor(private val preferences: MobilePreference
             } ?: InterfaceMode.AUTOMATIC
         )
 
+    val navigationStyle =
+        MutableStateFlow(
+            preferences.read("navigation-style")?.let { value ->
+                NavigationStyle.entries.firstOrNull { it.name == value }
+            } ?: NavigationStyle.LENS
+        )
+
+    val composerStyle =
+        MutableStateFlow(
+            preferences.read("composer-style")?.let { value ->
+                ComposerStyle.entries.firstOrNull { it.name == value }
+            } ?: ComposerStyle.CARD
+        )
+
     /** The desktop sidebar is hidden; the window keeps a button that shows it again. */
     val sidebarHidden = MutableStateFlow(preferences.read("desktop-sidebar-hidden") == "true")
 
@@ -59,6 +97,16 @@ class LayoutModel internal constructor(private val preferences: MobilePreference
     fun setInterfaceMode(value: InterfaceMode) {
         interfaceMode.value = value
         preferences.write("interface", value.name)
+    }
+
+    fun setNavigationStyle(value: NavigationStyle) {
+        navigationStyle.value = value
+        preferences.write("navigation-style", value.name)
+    }
+
+    fun setComposerStyle(value: ComposerStyle) {
+        composerStyle.value = value
+        preferences.write("composer-style", value.name)
     }
 
     fun setSidebarHidden(value: Boolean) {

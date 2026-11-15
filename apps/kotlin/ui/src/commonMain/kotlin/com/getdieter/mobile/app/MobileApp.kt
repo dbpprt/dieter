@@ -3,6 +3,7 @@
 package com.getdieter.mobile.app
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -13,6 +14,10 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -33,6 +38,9 @@ import com.getdieter.mobile.share.*
 import com.getdieter.mobile.store.*
 import com.getdieter.mobile.tools.*
 import com.getdieter.mobile.workspace.*
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.TimeSource
+import kotlinx.coroutines.delay
 
 /**
  * The touch shell Android hosts on phones, tablets and foldables (see `MobileApp`, which is only
@@ -71,29 +79,105 @@ internal fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
     }
     var moreOpen by remember { mutableStateOf(false) }
     val collapse by store.layout.paneCollapse.collectAsState()
+    val style by store.layout.navigationStyle.collectAsState()
+    val floating = style != NavigationStyle.CLASSIC
+    val backdrop = rememberGlassBackdrop()
+    val primarySlot = remember { PrimarySlot() }
+    // Lens shrinks to the current tab while a page scrolls down, and returns on the way up or
+    // once scrolling has rested for a moment, so the other tabs are never gone for long.
+    var minimized by remember { mutableStateOf(false) }
+    val scrolled = remember { ScrollRest() }
+    LaunchedEffect(navigation.tab, style) { minimized = false }
+    LaunchedEffect(minimized) {
+        while (minimized) {
+            delay(250)
+            if (scrolled.restedFor() >= MinimizedRest) minimized = false
+        }
+    }
+    val minimizer = remember {
+        object : NestedScrollConnection {
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset {
+                if (consumed.y < -8f) {
+                    scrolled.mark()
+                    minimized = true
+                } else if (consumed.y > 8f) minimized = false
+                return Offset.Zero
+            }
+        }
+    }
+    // The list pane's width in two panes, so the bottom navigation floats beneath the list.
+    var listWidth by remember { mutableFloatStateOf(Float.NaN) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         // Unfolded foldables and tablets show a list beside its detail; landscape phones don't.
         val twoPane = maxWidth >= 600.dp && maxHeight >= 480.dp
-        val rail = maxWidth >= 840.dp
+        val rail = !floating && maxWidth >= 840.dp
         // With its list sent away, an open conversation fills the screen as on a phone.
         val listHidden = twoPane && collapse.shown(navigation.detailOpen) == PaneCollapse.LIST
         val immersive = (!twoPane || listHidden) && navigation.top.immersive
+        // Floating glass stands on the leading edge where height is scarce: landscape two-pane
+        // windows and short ones (a phone or a cover screen turned sideways).
+        val compact = maxHeight < 480.dp
+        val side = floating && !immersive && (compact || (twoPane && maxWidth > maxHeight))
+        val bottom = floating && !immersive && !side
+        val navBars = WindowInsets.navigationBars
+        val base =
+            WindowInsets.statusBars.union(
+                WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)
+            )
+        val classicBottom = if (rail || immersive) navBars else WindowInsets(0, 0, 0, 0)
+        // Two panes leave the bar a narrow list pane: it drops its labels there.
+        val narrow =
+            (if (twoPane && !listHidden && listWidth > 0f && listWidth < maxWidth.value)
+                listWidth.dp
+            else maxWidth) < DenseNavigation
+        // A pane beneath the floating bar runs under it and keeps its last rows clear of it.
+        fun paneInsets(beneath: Boolean): WindowInsets {
+            val bottomInsets =
+                when {
+                    !floating -> classicBottom
+                    bottom && beneath ->
+                        navBars.add(
+                            WindowInsets(bottom = style.floatingReserve(false, compact, narrow))
+                        )
+                    else -> navBars
+                }
+            return base.union(bottomInsets)
+        }
+        val single = paneInsets(beneath = true)
         Row(Modifier.fillMaxSize()) {
             if (rail) NavigationRailBar(store, navigation) { moreOpen = true }
             Column(Modifier.weight(1f)) {
-                val bottomInsets =
-                    if (rail || immersive) WindowInsets.navigationBars else WindowInsets(0, 0, 0, 0)
                 CompositionLocalProvider(
-                    LocalScreenInsets provides
-                        WindowInsets.statusBars
-                            .union(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
-                            .union(bottomInsets),
+                    LocalScreenInsets provides single,
                     LocalRailCreates provides rail,
+                    LocalPrimarySlot provides if (floating) primarySlot else null,
                 ) {
-                    Box(Modifier.weight(1f)) { TabStack(store, navigation, twoPane, openUrl) }
+                    Box(
+                        Modifier.weight(1f)
+                            .glassSource(if (floating) backdrop else null)
+                            .nestedScroll(minimizer)
+                            // The side bar keeps a gutter: rows never pass beneath it.
+                            .padding(
+                                start = if (side) style.floatingReserve(true, compact) else 0.dp
+                            )
+                    ) {
+                        TabStack(
+                            store,
+                            navigation,
+                            twoPane,
+                            openUrl,
+                            listInsets = single,
+                            detailInsets = paneInsets(beneath = listHidden),
+                            onListWidth = { listWidth = it },
+                        )
+                    }
                 }
                 AnimatedVisibility(
-                    !rail && !immersive,
+                    !floating && !rail && !immersive,
                     enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
                     exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
                 ) {
@@ -101,13 +185,124 @@ internal fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
                 }
             }
         }
+        val onSelect: (MobileTab) -> Unit = { tab ->
+            if (tab == MobileTab.MORE) moreOpen = true else store.selectTab(tab)
+        }
+        // Beneath the list in two panes, else across the window.
+        val area =
+            if (twoPane && !listHidden && listWidth > 0f && listWidth < maxWidth.value) listWidth.dp
+            else maxWidth
+        val dense = area < DenseNavigation
+        AnimatedVisibility(
+            bottom,
+            Modifier.align(Alignment.BottomStart).width(area),
+            enter = slideInVertically(spring(.8f, 380f)) { it } + fadeIn(),
+            exit = slideOutVertically { it } + fadeOut(),
+        ) {
+            Box(
+                Modifier.fillMaxWidth()
+                    .windowInsetsPadding(
+                        WindowInsets.navigationBars.union(
+                            WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)
+                        )
+                    )
+                    .padding(start = 14.dp, end = 14.dp, bottom = FloatingMargin),
+                contentAlignment = Alignment.BottomCenter,
+            ) {
+                FloatingNavigation(
+                    store,
+                    navigation,
+                    style,
+                    vertical = false,
+                    compact = compact,
+                    dense = dense,
+                    backdrop = backdrop,
+                    minimized = minimized,
+                    moreOpen = false,
+                    primary = primarySlot.current,
+                    onSelect = onSelect,
+                    onExpand = { minimized = false },
+                    modifier =
+                        if (style == NavigationStyle.ISLAND) Modifier
+                        else Modifier.widthIn(max = 560.dp).fillMaxWidth(),
+                )
+            }
+        }
+        AnimatedVisibility(
+            side,
+            Modifier.align(Alignment.CenterStart),
+            enter = slideInHorizontally(spring(.8f, 380f)) { -it } + fadeIn(),
+            exit = slideOutHorizontally { -it } + fadeOut(),
+        ) {
+            FloatingNavigation(
+                store,
+                navigation,
+                style,
+                vertical = true,
+                compact = compact,
+                dense = false,
+                backdrop = backdrop,
+                minimized = false,
+                moreOpen = false,
+                primary = primarySlot.current,
+                onSelect = onSelect,
+                onExpand = {},
+                modifier =
+                    Modifier.windowInsetsPadding(
+                            WindowInsets.safeDrawing.only(
+                                WindowInsetsSides.Start + WindowInsetsSides.Vertical
+                            )
+                        )
+                        .padding(start = FloatingMargin, top = 8.dp, bottom = 8.dp),
+            )
+        }
         SnackbarHost(
             snackbar,
             Modifier.align(Alignment.BottomCenter)
                 .navigationBarsPadding()
-                .padding(bottom = if (!rail && !immersive) 80.dp else 16.dp),
+                .padding(
+                    bottom =
+                        when {
+                            bottom -> style.floatingReserve(false, compact, narrow)
+                            !floating && !rail && !immersive -> 80.dp
+                            else -> 16.dp
+                        }
+                ),
         )
-        if (moreOpen) MoreSheet(store, navigation, showBar = !rail) { moreOpen = false }
+        if (moreOpen)
+            MoreSheet(
+                store,
+                navigation,
+                showBar = !rail && !floating,
+                floatingBar =
+                    if (!bottom) null
+                    else {
+                        {
+                            FloatingNavigation(
+                                store,
+                                navigation,
+                                style,
+                                vertical = false,
+                                compact = compact,
+                                dense = maxWidth < DenseNavigation,
+                                backdrop = null,
+                                minimized = false,
+                                moreOpen = true,
+                                primary = null,
+                                onSelect = { tab ->
+                                    moreOpen = false
+                                    if (tab != MobileTab.MORE) store.selectTab(tab)
+                                },
+                                onExpand = {},
+                                modifier =
+                                    if (style == NavigationStyle.ISLAND) Modifier
+                                    else Modifier.widthIn(max = 560.dp).fillMaxWidth(),
+                            )
+                        }
+                    },
+            ) {
+                moreOpen = false
+            }
         val modal = navigation.modal
         AnimatedVisibility(
             modal != null,
@@ -126,33 +321,6 @@ internal fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
     }
 }
 
-/** Each tab's badge: Inbox attention, unread mail, and unread channel messages on More. */
-@Composable
-private fun rememberTabBadges(store: MobileStore): (MobileTab) -> String {
-    val activity by store.workspace.activity.collectAsState()
-    val channels by store.channels.slice.collectAsState()
-    val mail by store.mail.slice.collectAsState()
-    val attention = activity.summary?.attention ?: 0
-    return { tab ->
-        when (tab) {
-            MobileTab.INBOX -> if (attention > 0) attention.toString() else ""
-            MobileTab.MAIL -> mail.unread_label
-            MobileTab.MORE -> channels.unread_label
-            else -> ""
-        }
-    }
-}
-
-/** More shows a grid until its sheet is open, then the chevron that closes it. */
-@Composable
-private fun TabIcon(tab: MobileTab, badge: String, moreOpen: Boolean) {
-    BadgedBox(badge = { if (badge.isNotEmpty() && !moreOpen) Badge { Text(badge) } }) {
-        Crossfade(tab == MobileTab.MORE && moreOpen, label = "more") { open ->
-            Icon(if (open) Glyph.CHEVRON_DOWN else tab.glyph, null, size = 24.dp)
-        }
-    }
-}
-
 /** The bar's items; More opens its sheet instead of switching tabs. */
 @Composable
 internal fun RowScope.NavigationItems(
@@ -166,7 +334,7 @@ internal fun RowScope.NavigationItems(
         NavigationBarItem(
             selected = if (moreOpen) tab == MobileTab.MORE else navigation.tab == tab,
             onClick = { onSelect(tab) },
-            icon = { TabIcon(tab, badge(tab), moreOpen) },
+            icon = { TabIcon(tab, badge(tab), moreOpen, LocalContentColor.current) },
             label = { Text(tab.title) },
             modifier =
                 Modifier.testTag("nav-${tab.name.lowercase()}").semantics {
@@ -216,7 +384,7 @@ private fun NavigationRailBar(
             NavigationRailItem(
                 selected = navigation.tab == tab,
                 onClick = { if (tab == MobileTab.MORE) onMore() else store.selectTab(tab) },
-                icon = { TabIcon(tab, badge(tab), moreOpen = false) },
+                icon = { TabIcon(tab, badge(tab), moreOpen = false, LocalContentColor.current) },
                 label = { Text(tab.title) },
                 modifier = Modifier.testTag("nav-${tab.name.lowercase()}"),
             )
@@ -231,6 +399,9 @@ private fun TabStack(
     navigation: MobileNavigation,
     twoPane: Boolean,
     openUrl: (String) -> Unit,
+    listInsets: WindowInsets,
+    detailInsets: WindowInsets,
+    onListWidth: (Float) -> Unit,
 ) {
     val holder = rememberSaveableStateHolder()
     val stack = navigation.stack
@@ -258,9 +429,11 @@ private fun TabStack(
         ListDetailSplit(
             store,
             detailOpen = detail != null,
+            onListWidth = onListWidth,
             list = {
                 CompositionLocalProvider(
-                    LocalBackAction provides if (listIndex > 0) store::pop else null
+                    LocalBackAction provides if (listIndex > 0) store::pop else null,
+                    LocalScreenInsets provides listInsets,
                 ) {
                     holder.SaveableStateProvider(list.key) { RouteContent(store, list, openUrl) }
                 }
@@ -270,7 +443,8 @@ private fun TabStack(
                 CompositionLocalProvider(
                     LocalBackAction provides
                         if (details.size > 1 || (listHidden && details.isNotEmpty())) store::pop
-                        else null
+                        else null,
+                    LocalScreenInsets provides detailInsets,
                 ) {
                     AnimatedContent(
                         detail,
@@ -294,6 +468,7 @@ private fun TabStack(
         }
         return
     }
+    SideEffect { onListWidth(Float.NaN) }
     val depth = stack.size
     AnimatedContent(
         targetState = navigation.tab to stack.last(),
@@ -446,4 +621,21 @@ private fun SignInScreen(store: MobileStore) {
 internal fun SignInContent(store: MobileStore) {
     val session by store.session.slice.collectAsState()
     if (session.pairing) PairingScreen(store) else SignInScreen(store)
+}
+
+/** Narrower than this, the bottom navigation shows icons only. */
+private val DenseNavigation = 390.dp
+
+/** How long the shrunken Lens bar waits after the last downward scroll before it returns. */
+private val MinimizedRest = 1800.milliseconds
+
+/** When a page last scrolled down; read without recomposing the shell on every frame. */
+private class ScrollRest {
+    private var last = TimeSource.Monotonic.markNow()
+
+    fun mark() {
+        last = TimeSource.Monotonic.markNow()
+    }
+
+    fun restedFor() = last.elapsedNow()
 }

@@ -20,11 +20,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -42,6 +44,7 @@ import com.getdieter.mobile.board.*
 import com.getdieter.mobile.creation.*
 import com.getdieter.mobile.design.*
 import com.getdieter.mobile.design.Tone
+import com.getdieter.mobile.desktop.desktop
 import com.getdieter.mobile.navigation.*
 import com.getdieter.mobile.platform.*
 import com.getdieter.mobile.providers.SignInSheet
@@ -256,13 +259,127 @@ private fun Transcript(
                 )
                 .tool_output
     }
+    // Card and Glass composers float above the transcript, which scrolls on beneath them.
+    val composerStyle by store.layout.composerStyle.collectAsState()
+    val floating = !apple && !desktop && composerStyle != ComposerStyle.CLASSIC
+    val transcript = rememberGlassBackdrop()
+    var dockHeight by remember { mutableStateOf(0.dp) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val scrim = palette.background
+    val dock: @Composable () -> Unit = {
+        if (view.syncing) {
+            Row(
+                Modifier.fillMaxWidth()
+                    .padding(horizontal = ScreenMargin, vertical = 8.dp)
+                    .testTag("conversation-refreshing")
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = "Refreshing conversation"
+                    },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Spinner(Modifier.size(14.dp))
+                Text("Refreshing…", style = type.caption, color = palette.secondaryLabel)
+            }
+        }
+        val queue = view.conversation?.queue.orEmpty()
+        if (queue.isNotEmpty()) {
+            // Keep pending input beside the composer, independent of transcript scrolling.
+            // A long queue scrolls within its own bounded area so the input stays reachable.
+            BoxWithConstraints(Modifier.fillMaxWidth().background(palette.background)) {
+                Column(Modifier.fillMaxWidth().heightIn(max = minOf(220.dp, maxHeight * .4f))) {
+                    if (queue.size > 1)
+                        Text(
+                            "${queue.size} queued messages",
+                            Modifier.padding(horizontal = ScreenMargin, vertical = 4.dp),
+                            style = type.footnote,
+                            color = palette.secondaryLabel,
+                        )
+                    LazyColumn(
+                        Modifier.fillMaxWidth().weight(1f, fill = false).testTag("composer-queue"),
+                        contentPadding = PaddingValues(vertical = 6.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(queue, key = { it.id }) { queued ->
+                            val action = queueAction?.takeIf { it.cardId == selected }
+                            QueuedMessage(
+                                queued.id,
+                                queued.text.ifBlank {
+                                    queued.parts
+                                        .map { it.filename }
+                                        .filter { it.isNotBlank() }
+                                        .joinToString()
+                                },
+                                state = state?.queued_messages?.firstOrNull { it.id == queued.id },
+                                action = action?.takeIf { it.messageId == queued.id },
+                                enabled = action?.pending != true,
+                                onEdit = {
+                                    store.conversation.editQueued(queued.id) {
+                                        draft = it.text
+                                        attachments =
+                                            it.parts.filter { part -> part.type != "text" }
+                                    }
+                                },
+                                onRemove = { store.conversation.removeQueued(queued.id) },
+                                onSteer = { store.conversation.sendNow(queued.id) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        Composer(
+            store,
+            view,
+            selected,
+            draft,
+            onDraft = {
+                draft = it
+                store.conversation.saveDraft(selected, it)
+            },
+            attachments = attachments,
+            onRemoveAttachment = { index ->
+                attachments = attachments.filterIndexed { i, _ -> i != index }
+            },
+            onAttach = pick,
+            busy = busy,
+            sending = sending,
+            bottomInset = padding.calculateBottomPadding(),
+            onAgent = { agentSheet = true },
+            style = if (floating) composerStyle else ComposerStyle.CLASSIC,
+            backdrop = if (composerStyle == ComposerStyle.GLASS) transcript else null,
+            onSend = {
+                if (!sending) {
+                    sending = true
+                    val text = draft
+                    val parts = attachments
+                    store.action {
+                        try {
+                            store.conversation.send(text, selected, parts)
+                            if (draft == text) draft = ""
+                            if (attachments == parts) attachments = emptyList()
+                            following = true
+                        } finally {
+                            sending = false
+                        }
+                    }
+                }
+            },
+        )
+    }
     Column(Modifier.fillMaxSize().imePadding()) {
         Box(Modifier.weight(1f)) {
             LazyColumn(
-                Modifier.fillMaxSize().nestedScroll(userScroll).testTag("conversation-timeline"),
+                Modifier.fillMaxSize()
+                    .then(if (floating) Modifier.glassSource(transcript) else Modifier)
+                    .nestedScroll(userScroll)
+                    .testTag("conversation-timeline"),
                 state = list,
                 contentPadding =
-                    PaddingValues(top = padding.calculateTopPadding() + 8.dp, bottom = 12.dp),
+                    PaddingValues(
+                        top = padding.calculateTopPadding() + 8.dp,
+                        bottom = 12.dp + if (floating) dockHeight else 0.dp,
+                    ),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 if (view.error.isNotBlank())
@@ -388,7 +505,8 @@ private fun Transcript(
             }
             JumpToLatest(
                 !following,
-                Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp),
+                Modifier.align(Alignment.BottomCenter)
+                    .padding(bottom = 10.dp + if (floating) dockHeight else 0.dp),
             ) {
                 val jump = {
                     following = true
@@ -423,104 +541,36 @@ private fun Transcript(
                         Icon(Glyph.ARROW_DOWN, null, size = 24.dp)
                     }
             }
-        }
-        if (view.syncing) {
-            Row(
-                Modifier.fillMaxWidth()
-                    .padding(horizontal = ScreenMargin, vertical = 8.dp)
-                    .testTag("conversation-refreshing")
-                    .semantics(mergeDescendants = true) {
-                        contentDescription = "Refreshing conversation"
-                    },
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Spinner(Modifier.size(14.dp))
-                Text("Refreshing…", style = type.caption, color = palette.secondaryLabel)
-            }
-        }
-        val queue = view.conversation?.queue.orEmpty()
-        if (queue.isNotEmpty()) {
-            // Keep pending input beside the composer, independent of transcript scrolling.
-            // A long queue scrolls within its own bounded area so the input stays reachable.
-            BoxWithConstraints(Modifier.fillMaxWidth().background(palette.background)) {
-                Column(Modifier.fillMaxWidth().heightIn(max = minOf(220.dp, maxHeight * .4f))) {
-                    if (queue.size > 1)
-                        Text(
-                            "${queue.size} queued messages",
-                            Modifier.padding(horizontal = ScreenMargin, vertical = 4.dp),
-                            style = type.footnote,
-                            color = palette.secondaryLabel,
-                        )
-                    LazyColumn(
-                        Modifier.fillMaxWidth().weight(1f, fill = false).testTag("composer-queue"),
-                        contentPadding = PaddingValues(vertical = 6.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        items(queue, key = { it.id }) { queued ->
-                            val action = queueAction?.takeIf { it.cardId == selected }
-                            QueuedMessage(
-                                queued.id,
-                                queued.text.ifBlank {
-                                    queued.parts
-                                        .map { it.filename }
-                                        .filter { it.isNotBlank() }
-                                        .joinToString()
-                                },
-                                state = state?.queued_messages?.firstOrNull { it.id == queued.id },
-                                action = action?.takeIf { it.messageId == queued.id },
-                                enabled = action?.pending != true,
-                                onEdit = {
-                                    store.conversation.editQueued(queued.id) {
-                                        draft = it.text
-                                        attachments =
-                                            it.parts.filter { part -> part.type != "text" }
-                                    }
-                                },
-                                onRemove = { store.conversation.removeQueued(queued.id) },
-                                onSteer = { store.conversation.sendNow(queued.id) },
+            if (floating)
+                Box(
+                    Modifier.align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .onSizeChanged { dockHeight = with(density) { it.height.toDp() } }
+                        // Fades the transcript out under the composer, more for the raised card.
+                        .drawBehind {
+                            drawRect(
+                                androidx.compose.ui.graphics.Brush.verticalGradient(
+                                    0f to scrim.copy(alpha = 0f),
+                                    .45f to
+                                        scrim.copy(
+                                            alpha =
+                                                if (composerStyle == ComposerStyle.GLASS) .35f
+                                                else .8f
+                                        ),
+                                    1f to
+                                        scrim.copy(
+                                            alpha =
+                                                if (composerStyle == ComposerStyle.GLASS) .55f
+                                                else .96f
+                                        ),
+                                )
                             )
                         }
-                    }
+                ) {
+                    Column { dock() }
                 }
-            }
         }
-        Composer(
-            store,
-            view,
-            selected,
-            draft,
-            onDraft = {
-                draft = it
-                store.conversation.saveDraft(selected, it)
-            },
-            attachments = attachments,
-            onRemoveAttachment = { index ->
-                attachments = attachments.filterIndexed { i, _ -> i != index }
-            },
-            onAttach = pick,
-            busy = busy,
-            sending = sending,
-            bottomInset = padding.calculateBottomPadding(),
-            onAgent = { agentSheet = true },
-            onSend = {
-                if (!sending) {
-                    sending = true
-                    val text = draft
-                    val parts = attachments
-                    store.action {
-                        try {
-                            store.conversation.send(text, selected, parts)
-                            if (draft == text) draft = ""
-                            if (attachments == parts) attachments = emptyList()
-                            following = true
-                        } finally {
-                            sending = false
-                        }
-                    }
-                }
-            },
-        )
+        if (!floating) dock()
     }
     if (agentSheet)
         Sheet("Agent", { agentSheet = false }, size = SheetSize.MEDIUM) {

@@ -10,7 +10,8 @@ import kotlinx.coroutines.flow.first
  * touch automation. Steps are separated by ";", e.g. "tab projects; board Main; card Design; pane
  * subagents", "channel Pricing", "mail Dependency audit" or "project Atlas; tool files". `more`
  * opens channels, terminals, providers, devices or settings in More; `interface
- * desktop|touch|automatic` picks the shell.
+ * desktop|touch|automatic` picks the shell; `nav classic|dock|lens|island` and `composer
+ * classic|card|glass` pick the Android navigation and composer styles.
  */
 internal suspend fun MobileStore.runDebugScript(script: String) {
     workspace.slice.first { it.loaded }
@@ -89,6 +90,14 @@ internal suspend fun MobileStore.runDebugScript(script: String) {
                 InterfaceMode.entries
                     .firstOrNull { it.name.equals(argument, true) }
                     ?.let(layout::setInterfaceMode)
+            "nav" ->
+                NavigationStyle.entries
+                    .firstOrNull { it.name.equals(argument, true) }
+                    ?.let(layout::setNavigationStyle)
+            "composer" ->
+                ComposerStyle.entries
+                    .firstOrNull { it.name.equals(argument, true) }
+                    ?.let(layout::setComposerStyle)
             "palette" -> theme.setPalette(DieterPalette.resolve(argument))
             "back" -> pop()
             "wait" -> delay(argument.toLongOrNull() ?: 500)
