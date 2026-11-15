@@ -83,6 +83,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 	}
 	s.channelTurnBegin(detail, turnID, &request)
 	finished := false
+	reviewScan := false
 	finish := func(startQueued bool, finalCache kanban.CardCacheInput) error {
 		if finished {
 			return nil
@@ -97,6 +98,11 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 				return nil
 			}
 			_, err := s.Store.Kanban.UpdateCardCache(detail.Card.ID, finalCache)
+			if err == nil && reviewScan {
+				// Keep the turn active until its last board write finishes: callers
+				// use the active map as the teardown/admission barrier.
+				s.moveFinishedScanToReview(detail.Card.ID)
+			}
 			return err
 		})
 		if releaseClaims {
@@ -330,11 +336,8 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 	if streamFailed {
 		finalRuntime = "failed"
 	}
-	reviewScan := request.Adapter == strixAdapter && finalRuntime == "idle" && !s.hasQueuedMessages(detail.Card.ID)
+	reviewScan = request.Adapter == strixAdapter && finalRuntime == "idle" && !s.hasQueuedMessages(detail.Card.ID)
 	_ = finish(true, kanban.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: finalRuntime})
-	if reviewScan {
-		s.moveFinishedScanToReview(detail.Card.ID)
-	}
 	select {
 	case updates <- TurnUpdate{Done: true}:
 	case <-ctx.Done():

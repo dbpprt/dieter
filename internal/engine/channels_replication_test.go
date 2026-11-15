@@ -350,6 +350,12 @@ func TestChannelWakeStartsStrixAfterCredentialsAreReady(t *testing.T) {
 			group.Wait()
 			waitFor(t, func() bool { return len(runner.turns(scan.ID)) == 1 })
 			waitIdle(t, service, scan.ID)
+			// Idle must also mean the scan's final board write has finished;
+			// otherwise teardown or a new wake can race the move to Review.
+			finished, err := service.Store.Kanban.ResolveCard(scan.ID)
+			if err != nil || finished.Lane != model.LaneReview {
+				t.Fatalf("idle scan has not reached Review: %+v, %v", finished, err)
+			}
 			service.SyncChannels()
 			service.wakeCard(scan.ID)
 			turns := runner.turns(scan.ID)
