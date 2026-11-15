@@ -1,9 +1,12 @@
 package com.getdieter.core.client.rules
 
 import com.getdieter.api.v1.Card
+import com.getdieter.client.v1.ActivityRow
 import com.getdieter.client.v1.ActivityTimelineBar
 import com.getdieter.core.activity.Activity
 import com.getdieter.core.activity.InboxRuleText
+import com.getdieter.core.activity.InboxSection
+import com.getdieter.core.activity.InboxStatus
 import kotlin.time.Instant
 
 /**
@@ -35,6 +38,27 @@ object ActivityExports {
         projectNames: List<String>,
         labelNames: List<String>,
     ): String = InboxRuleText.summary(hide, matchAll, projectNames, labelNames)
+
+    /** The Inbox status filters in menu order, by name: "ALL", "NEEDS_YOU", "RUNNING", … */
+    fun inboxStatuses(): List<String> = InboxStatus.entries.map { it.name }
+
+    /** A status filter's title: "All", "Needs you", "Running", "Pinned", "Review". */
+    fun inboxStatusTitle(status: String): String = InboxStatus.named(status).title
+
+    /** Whether a row of activity [kind] passes the status filter named [status]. */
+    fun inboxStatusMatches(
+        status: String,
+        kind: String,
+        needsYou: Boolean,
+        pinned: Boolean,
+    ): Boolean = InboxStatus.named(status).matches(kind, needsYou, pinned)
+
+    /** An Inbox section's header by its `ActivityRow.Section` value: "Needs you", "Pinned", … */
+    fun inboxSectionTitle(section: Int): String =
+        InboxSection.of(
+                ActivityRow.Section.fromValue(section) ?: ActivityRow.Section.SECTION_RECENT
+            )
+            .title
 
     /** The timeline windows the range menu offers, in hours. */
     fun timelineHours(): List<Int> = Activity.TIMELINE_HOURS

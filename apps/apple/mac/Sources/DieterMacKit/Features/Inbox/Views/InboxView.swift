@@ -6,7 +6,7 @@ struct InboxView: View {
 
     var body: some View {
         ChatPaneSplit(layout: .inbox) {
-            InboxFeed { entry in
+            InboxFeed(active: active) { entry in
                 guard (store.selectedCardID ?? store.selectedChatID) != entry.id else { return }
                 Task { await store.openConversation(cardID: entry.id, chat: entry.row.chat, fromInbox: true) }
             }

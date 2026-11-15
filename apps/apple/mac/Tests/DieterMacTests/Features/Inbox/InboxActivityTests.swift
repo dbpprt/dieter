@@ -1,5 +1,6 @@
 import DieterAPI
 import DieterClientAPI
+import DieterCore
 import Foundation
 import Testing
 @testable import DieterMacKit
@@ -40,6 +41,12 @@ struct InboxActivityTests {
                 $0.detail = "Running tests"
             },
             .with {
+                $0.card = card("kept", runtime: "idle")
+                $0.kind = "RECENT"
+                $0.section = .pinned
+                $0.pinned = true
+            },
+            .with {
                 $0.card = card("done", runtime: "idle", lane: "In review")
                 $0.kind = "REVIEW"
                 $0.section = .recent
@@ -50,15 +57,33 @@ struct InboxActivityTests {
             },
         ]
         let entries = store.inboxEntries
-        #expect(entries.map(\.id) == ["needs", "busy", "done"], "kinds this Mac does not know are skipped")
-        #expect(entries.map(\.kind) == [.answer, .running, .review])
+        #expect(entries.map(\.id) == ["needs", "busy", "kept", "done"], "kinds this Mac does not know are skipped")
+        #expect(entries.map(\.kind) == [.answer, .running, .recent, .review])
         // Needing the user and finishing are the core's, not re-derived from the card.
-        #expect(entries.map(\.needsYou) == [true, false, false])
-        #expect(entries.map(\.canFinish) == [false, false, true])
+        #expect(entries.map(\.needsYou) == [true, false, false, false])
+        #expect(entries.map(\.canFinish) == [false, false, false, true])
         #expect(entries[1].running && entries[1].row.detail == "Running tests")
         // The Inbox lists each entry where the core places it, with the core's names.
-        #expect(entries.map(\.section) == [.attention, .running, .recent])
+        #expect(entries.map(\.section) == [.attention, .running, .pinned, .recent])
         #expect(entries[0].row.projectName == "Dieter" && entries[0].row.boardName == "Release")
+    }
+
+    @Test func theCoreNamesTheSectionsAndOwnsTheStatusFilters() {
+        let rules = SharedRules.shared
+        #expect(rules.inboxStatuses() == ["ALL", "NEEDS_YOU", "RUNNING", "PINNED", "REVIEW"])
+        #expect(rules.inboxStatusTitle(status: "NEEDS_YOU") == "Needs you")
+        func title(_ section: ClientActivityRow.Section) -> String {
+            rules.inboxSectionTitle(section: Int32(section.rawValue))
+        }
+        #expect(
+            [title(.attention), title(.running), title(.pinned), title(.recent)] == [
+                "Needs you", "Running", "Pinned", "Recent",
+            ])
+        // Pinned takes every pin, whatever its section; a failure needs the user.
+        #expect(rules.inboxStatusMatches(status: "PINNED", kind: "RUNNING", needsYou: false, pinned: true))
+        #expect(!rules.inboxStatusMatches(status: "RUNNING", kind: "REVIEW", needsYou: false, pinned: true))
+        #expect(rules.inboxStatusMatches(status: "NEEDS_YOU", kind: "FAILED", needsYou: true, pinned: false))
+        #expect(rules.inboxStatusMatches(status: "REVIEW", kind: "REVIEW", needsYou: false, pinned: false))
     }
 
     @Test func statusChangesReplaceTheRenderedRowButKeepTheConversationIdentity() {

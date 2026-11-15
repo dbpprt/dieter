@@ -750,6 +750,21 @@ object SharedRules {
         labelNames: List<String>,
     ): String = ActivityExports.inboxRuleSummary(hide, matchAll, projectNames, labelNames)
 
+    /** The Inbox status filters in menu order, by name: "ALL", "NEEDS_YOU", "RUNNING", … */
+    fun inboxStatuses(): List<String> = ActivityExports.inboxStatuses()
+
+    fun inboxStatusTitle(status: String): String = ActivityExports.inboxStatusTitle(status)
+
+    fun inboxStatusMatches(
+        status: String,
+        kind: String,
+        needsYou: Boolean,
+        pinned: Boolean,
+    ): Boolean = ActivityExports.inboxStatusMatches(status, kind, needsYou, pinned)
+
+    /** An Inbox section's header by its `ActivityRow.Section` value. */
+    fun inboxSectionTitle(section: Int): String = ActivityExports.inboxSectionTitle(section)
+
     fun timelineHours(): List<Int> = ActivityExports.timelineHours()
 
     fun timelineRangeTitle(hours: Int): String = ActivityExports.timelineRangeTitle(hours)

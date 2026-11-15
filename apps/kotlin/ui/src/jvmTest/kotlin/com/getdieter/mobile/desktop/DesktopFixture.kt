@@ -155,6 +155,7 @@ internal object DesktopFixture {
             kind = kind,
             section = section,
             detail = detail,
+            preview = detail,
             project_name = "Atlas API",
             board_name = if (card.scope == "chat") "" else "Main",
             chat = card.scope == "chat",
@@ -168,15 +169,8 @@ internal object DesktopFixture {
     val activity =
         ActivitySlice(
             rows =
+                // In the core's Inbox order: needs you, running, then the rest.
                 listOf(
-                    row(
-                        cards[3],
-                        "REVIEW",
-                        ActivityRow.Section.SECTION_ATTENTION,
-                        "Ready for review: 3 files changed.",
-                        "Review",
-                        finish = true,
-                    ),
                     row(
                         cards[5],
                         "ANSWER",
@@ -193,6 +187,14 @@ internal object DesktopFixture {
                         "Running",
                     ),
                     row(
+                        cards[3],
+                        "REVIEW",
+                        ActivityRow.Section.SECTION_RECENT,
+                        "Ready for review: 3 files changed.",
+                        "Review",
+                        finish = true,
+                    ),
+                    row(
                         cards[4],
                         "RECENT",
                         ActivityRow.Section.SECTION_RECENT,
@@ -200,7 +202,14 @@ internal object DesktopFixture {
                         "Recent",
                     ),
                 ),
-            summary = ActivitySummary(running = 1, attention = 2, recent = 1, review = 1),
+            summary =
+                ActivitySummary(
+                    running = 1,
+                    attention = 1,
+                    recent = 2,
+                    review = 1,
+                    headline = "1 needs you · 1 running",
+                ),
         )
 
     val chats =

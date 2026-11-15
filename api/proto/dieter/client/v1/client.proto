@@ -1667,10 +1667,13 @@ message MachineOutbox {
   string status_suffix = 14;
 }
 
-// The account-wide activity feed: one latest activity per conversation,
-// newest first except that running rows keep their start order. Sent again
-// when a menu bar row leaves its six-hour window.
+// The account-wide activity feed: one latest activity per conversation. Sent
+// again when a menu bar row leaves its six-hour window.
 message ActivitySlice {
+  // In Inbox display order: by section (needs you, running, pinned, recent),
+  // then newest first within a section (a running row by its turn start, any
+  // other by its latest activity). Clients filter the rows but never reorder
+  // or regroup them.
   repeated ActivityRow rows = 1;
   // Counts over every row.
   ActivitySummary summary = 2;
@@ -1678,17 +1681,17 @@ message ActivitySlice {
   // then the rest, each in the feed's order.
   repeated string island_ids = 3;
   // The macOS menu bar's rows (at most 4): what needs the user or waits in
-  // review, then failures and results from the last six hours.
+  // review, then results from the last six hours.
   repeated string menu_bar_ids = 4;
-  // "Dieter Island. 2 running, 1 need attention, 3 recent."
+  // "Dieter Island. 2 running, 1 needs you, 3 recent."
   string island_accessibility = 5;
 }
 
 message ActivitySummary {
   int32 running = 1;
-  // Rows waiting for the user: an answer or an unread reply.
+  // Rows waiting for the user: an answer, an unread reply, or a failure.
   int32 attention = 2;
-  // Every other row: review, failed, and finished work.
+  // Every other row: review and finished work.
   int32 recent = 3;
   // Board cards in a review lane, whatever their agent does.
   int32 review = 4;
@@ -1696,13 +1699,19 @@ message ActivitySummary {
   int32 subagents = 5;
   // Conversations the Inbox rules hide; not in the rows or the counts above.
   int32 hidden = 6;
+  // The Inbox subtitle: "3 need you · 4 running", "All caught up".
+  string headline = 7;
 }
 
 message ActivityRow {
+  // The Inbox section, in display order: attention ("Needs you"), running,
+  // pinned, recent. A pinned row that needs the user or runs stays in that
+  // section; pinned holds the idle pinned rows.
   enum Section {
     SECTION_ATTENTION = 0;
     SECTION_RUNNING = 1;
     SECTION_RECENT = 2;
+    SECTION_PINNED = 3;
   }
   dieter.v1.Card card = 1;
   // The core's ActivityKind name: "ANSWER", "RUNNING", "UNREAD", "REVIEW",
@@ -1716,9 +1725,10 @@ message ActivityRow {
   string board_name = 8;
   // An unfiled chat; a chat filed on a board is a card.
   bool chat = 9;
-  // Waits for the user: an answer or an unread reply.
+  // Waits for the user: an answer, an unread reply, or a failure.
   bool needs_you = 10;
-  // Inbox "Finish": a board card waiting in a review lane.
+  // Inbox "Finish": a board card waiting in a review lane, or a failed board
+  // card; it moves the card to its board's done lane.
   bool can_finish = 11;
   // "Answer", "Running", "Unread reply", "Review", "Failed", "Recent".
   string kind_label = 12;
@@ -1734,6 +1744,11 @@ message ActivityRow {
   // while current.
   string stale = 16;
   bool pinned = 17;
+  // The row's second line: what the agent does now or said last, as plain
+  // text on one line, e.g. "Thinking…", "Tag it stable now?".
+  string preview = 18;
+  // Delegated agents at work: "6 agents", "1 agent"; empty with none.
+  string agents = 19;
 }
 
 // Where an activity row sits on the Inbox timeline, as fractions of the

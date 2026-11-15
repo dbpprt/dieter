@@ -24,6 +24,7 @@ import com.getdieter.mobile.desktop.DesktopChromeHost
 import com.getdieter.mobile.desktop.DesktopMenu
 import com.getdieter.mobile.desktop.DesktopScreen
 import com.getdieter.mobile.desktop.desktop
+import com.getdieter.mobile.platform.exposingTestTags
 import com.getdieter.mobile.store.*
 
 /** A toolbar or menu command. iOS renders it as a bar button or UIMenu element. */
@@ -478,6 +479,8 @@ internal fun MaterialMenu(sections: List<MenuSection>, expanded: Boolean, onDism
             nested = null
             onDismiss()
         },
+        // The menu is its own window: expose its items' tags to device flows there too.
+        modifier = Modifier.exposingTestTags(),
         shape = MaterialTheme.shapes.large,
         containerColor = colors.surfaceContainer,
     ) {

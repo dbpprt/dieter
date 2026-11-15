@@ -66,6 +66,18 @@ class ActivityTest {
         assertEquals(ActivityKind.REVIEW, Activity.classify(started("v", "idle", lane = "review")))
         assertEquals(ActivityKind.FAILED, Activity.classify(started("f", "failed")))
         assertEquals(
+            ActivityKind.FAILED,
+            Activity.classify(started("fc", "failed", scope = "chat")),
+            "a failed chat waits until it is retried or archived",
+        )
+        val finished = started("fd", "failed", lane = "done")
+        assertEquals(
+            ActivityKind.RECENT,
+            Activity.classify(finished),
+            "finishing a failed card stops it needing the user",
+        )
+        assertEquals("Agent failed", Activity.detail(finished, ActivityKind.RECENT, null))
+        assertEquals(
             ActivityKind.RECENT,
             Activity.classify(started("c", "idle", lane = "review", scope = "chat")),
         )
@@ -225,7 +237,7 @@ class ActivityTest {
             )
         val widget = WidgetModel.build(items, now, maxItems = 3)
         assertEquals(
-            listOf("Needs attention · 1", "Running · 1", "Recent · 2"),
+            listOf("Needs you · 1", "Running · 1", "Recent · 2"),
             widget.rows.filterIsInstance<WidgetModel.Row.Header>().map { it.title },
         )
         assertEquals(
@@ -233,13 +245,13 @@ class ActivityTest {
             widget.rows.filterIsInstance<WidgetModel.Row.Item>().size,
             "sections share one budget",
         )
-        assertEquals("1 need attention · 1 running", widget.summary)
+        assertEquals("1 needs you · 1 running", widget.summary)
         assertTrue(WidgetModel.build(items, now, widthDp = 200).compact)
         assertEquals("Cards and chats, together", WidgetModel.build(emptyList(), now).summary)
 
         val island = IslandModel.build(items)
         assertEquals(listOf("run", "ask", "chat", "rev"), island.items.map { it.id })
-        assertEquals("Dieter Island. 1 running, 1 need attention, 2 recent.", island.accessibility)
+        assertEquals("Dieter Island. 1 running, 1 needs you, 2 recent.", island.accessibility)
         assertEquals(
             ActivityCounts(running = 1, attention = 1, recent = 2, review = 1, subagents = 0),
             ActivityCounts.of(items),
@@ -296,22 +308,22 @@ class ActivityTest {
         }
         val island = IslandModel.build(items)
         assertEquals(1, island.running)
-        assertEquals(2, island.attention)
-        assertEquals(3, island.recent)
+        assertEquals(3, island.attention, "a failure needs the user")
+        assertEquals(2, island.recent)
         assertEquals(2, island.subagents)
         assertEquals(
-            listOf("RUNNING", "UNREAD", "ANSWER", "RECENT"),
+            listOf("RUNNING", "FAILED", "UNREAD", "ANSWER"),
             island.items.map { it.id },
             "groups first, the feed's order within them, four rows",
         )
-        assertTrue(island.items[2].chat)
-        assertEquals("Inbox detail for UNREAD", island.items[1].detail)
+        assertTrue(island.items[3].chat)
+        assertEquals("Inbox detail for UNREAD", island.items[2].detail)
         // A seen reply leaves attention through the same classification as the Inbox.
         val seen = items.map {
             if (it.kind == ActivityKind.UNREAD) it.copy(kind = ActivityKind.REVIEW) else it
         }
-        assertEquals(1, IslandModel.build(seen).attention)
-        assertEquals(4, IslandModel.build(seen).recent)
+        assertEquals(2, IslandModel.build(seen).attention)
+        assertEquals(3, IslandModel.build(seen).recent)
         assertEquals(IslandModel(emptyList(), 0, 0, 0, 0), IslandModel.build(emptyList()))
     }
 
@@ -340,6 +352,9 @@ class ActivityTest {
             item("a", ActivityKind.ANSWER).needsYou && item("u", ActivityKind.UNREAD).needsYou
         )
         assertFalse(item("v", ActivityKind.REVIEW).needsYou)
+        assertTrue(item("f", ActivityKind.FAILED).needsYou)
+        assertTrue(item("f", ActivityKind.FAILED).canFinish, "a failed card can be finished")
+        assertFalse(item("f", ActivityKind.FAILED, scope = "chat").canFinish)
         assertFalse(
             item("c", ActivityKind.REVIEW, scope = "chat", lane = "review").canFinish,
             "an unfiled chat never finishes",
@@ -367,9 +382,13 @@ class ActivityTest {
             )
         val next = MenuBar.nextChange(items, now)!!
         assertEquals(now - 300.minutes + 6.hours + 1.milliseconds, next)
-        assertEquals(listOf("ask", "old", "new"), MenuBar.items(items, now).map { it.id })
         assertEquals(
-            listOf("ask", "new"),
+            listOf("new", "ask", "old"),
+            MenuBar.items(items, now).map { it.id },
+            "a failure is actionable, listed once",
+        )
+        assertEquals(
+            listOf("new", "ask"),
             MenuBar.items(items, next).map { it.id },
             "the oldest result has left",
         )
@@ -386,7 +405,22 @@ class ActivityTest {
     }
 
     @Test
-    fun rowsNameTheirPlaceAndTheHeaderCountsTheFeed() {
+    fun previewsArePlainOneLineTextCappedInLength() {
+        assertEquals("a b c", Activity.plain("  a\n\t b   c "))
+        val long = Activity.plain("x".repeat(500))
+        assertEquals(Activity.PREVIEW_LIMIT, long.length)
+        assertTrue(long.endsWith("…"))
+        val running = item("run", ActivityKind.RUNNING, subagents = 1)
+        assertEquals("Inbox detail for run", running.preview, "a running row says what it does")
+        assertEquals("1 agent", running.agents)
+        val said =
+            item("u", ActivityKind.UNREAD).let { it.copy(card = it.card.copy(summary = "Done.")) }
+        assertEquals("Done.", said.preview, "other rows say what the agent said last")
+        assertEquals("Inbox detail for v", item("v", ActivityKind.REVIEW).preview)
+    }
+
+    @Test
+    fun rowsNameTheirPlaceAndTheHeadlineCountsTheFeed() {
         val card =
             item("card", ActivityKind.REVIEW).copy(projectName = "dieter", boardName = "Main")
         assertEquals("Card", card.noun)
@@ -401,22 +435,10 @@ class ActivityTest {
             item("lost", ActivityKind.RECENT).context,
             "unknown places are left out",
         )
-        val items =
-            listOf(
-                item("ask", ActivityKind.ANSWER),
-                item("run", ActivityKind.RUNNING),
-                item("run2", ActivityKind.RUNNING),
-                card,
-            )
-        assertEquals("3 projects · 1 needs attention · 2 running", Activity.overview(3, items))
-        assertEquals("1 project · 0 need attention · 0 running", Activity.overview(1, emptyList()))
-        assertEquals(
-            "2 projects · 2 need attention · 0 running",
-            Activity.overview(
-                2,
-                listOf(item("a", ActivityKind.ANSWER), item("u", ActivityKind.UNREAD)),
-            ),
-        )
+        assertEquals("1 needs you · 2 running", Activity.headline(1, 2))
+        assertEquals("3 need you", Activity.headline(3, 0))
+        assertEquals("4 running", Activity.headline(0, 4))
+        assertEquals("All caught up", Activity.headline(0, 0))
     }
 
     @Test

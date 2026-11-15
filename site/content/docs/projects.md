@@ -72,9 +72,8 @@ An unsuccessful action shows an error beside the message so you can retry.
 
 Send a human message to ask for more work.
 
-Completed replies you have not viewed, and questions waiting for an answer,
-appear under **Needs attention** on Mac and **Needs you** in the Android and iOS
-Inbox. Viewing the latest reply in the foreground acknowledges it on every
+Completed replies you have not viewed, questions waiting for an answer and
+failed agents appear under **Needs you** in the Inbox on every platform. Viewing the latest reply in the foreground acknowledges it on every
 client. Moving a card to Review alone does not mark a reply as unread.
 
 ```sh

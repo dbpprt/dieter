@@ -5,6 +5,7 @@ import com.getdieter.api.v1.Card
 import com.getdieter.api.v1.Conversation
 import com.getdieter.api.v1.Project
 import com.getdieter.core.board.Cards
+import com.getdieter.core.board.LaneKind
 import com.getdieter.core.board.Lanes
 import com.getdieter.core.board.RuntimeState
 import com.getdieter.core.board.Runtimes
@@ -22,12 +23,13 @@ enum class ActivityKind(val label: String, val needsYou: Boolean) {
     RUNNING("Running", false),
     UNREAD("Unread reply", true),
     REVIEW("Review", false),
-    FAILED("Failed", false),
+    /** A failed turn waits for the user to retry it, finish its card, or archive it. */
+    FAILED("Failed", true),
     RECENT("Recent", false),
 }
 
 enum class ActivitySection(val title: String) {
-    ATTENTION("Needs attention"),
+    ATTENTION("Needs you"),
     RUNNING("Running"),
     RECENT("Recent"),
 }
@@ -55,7 +57,7 @@ data class ActivityItem(
     val running: Boolean
         get() = kind == ActivityKind.RUNNING
 
-    /** Waits for the user: an answer or an unread reply. */
+    /** Waits for the user: an answer, an unread reply, or a failure. */
     val needsYou: Boolean
         get() = kind.needsYou
 
@@ -67,9 +69,34 @@ data class ActivityItem(
                 else -> ActivitySection.RECENT
             }
 
-    /** Inbox "Finish": a board card waiting in review. */
+    /** Inbox "Finish": a board card waiting in review, or a failed board card. */
     val canFinish: Boolean
-        get() = !chat && Lanes.isReview(card.lane) && !running && kind != ActivityKind.ANSWER
+        get() =
+            !chat &&
+                !running &&
+                kind != ActivityKind.ANSWER &&
+                (Lanes.isReview(card.lane) || kind == ActivityKind.FAILED)
+
+    /**
+     * The row's second line, plain and on one line: what a running agent does now, else what it
+     * said last ([Card.summary]) or, without one, what happened.
+     */
+    val preview: String
+        get() {
+            val summary = Activity.plain(card.summary)
+            return Activity.plain(
+                when (kind) {
+                    ActivityKind.RUNNING -> detail
+                    ActivityKind.FAILED -> if (summary.isEmpty()) detail else "$detail: $summary"
+                    else -> summary.ifEmpty { detail }
+                }
+            )
+        }
+
+    /** Delegated agents at work: "6 agents", "1 agent"; empty with none. */
+    val agents: String
+        get() =
+            card.active_subagents.size.takeIf { it > 0 }?.let { Counts.of(it, "agent") }.orEmpty()
 
     /** The card's title, or "Untitled chat" / "Untitled card". */
     val title: String
@@ -106,7 +133,11 @@ object Activity {
             state == RuntimeState.ACTIVE || state == RuntimeState.STOPPING -> ActivityKind.RUNNING
             Runtimes.isUnread(card) -> ActivityKind.UNREAD
             !Cards.isChat(card) && Lanes.isReview(card.lane) -> ActivityKind.REVIEW
-            state == RuntimeState.FAILED -> ActivityKind.FAILED
+            // A finished card's failure no longer waits for the user.
+            state == RuntimeState.FAILED &&
+                (Cards.isChat(card) || Lanes.kind(card.lane) != LaneKind.DONE) ->
+                ActivityKind.FAILED
+            state == RuntimeState.FAILED -> ActivityKind.RECENT
             card.runtime.isNotBlank() &&
                 !card.runtime.equals("pending", ignoreCase = true) &&
                 card.initial_prompt_sent_at.isNotEmpty() &&
@@ -126,6 +157,7 @@ object Activity {
             kind == ActivityKind.ANSWER -> "Waiting for your answer"
             kind == ActivityKind.REVIEW -> "Ready for review"
             kind == ActivityKind.FAILED -> "Agent failed"
+            Runtimes.classify(card.runtime) == RuntimeState.FAILED -> "Agent failed"
             card.runtime.trim().lowercase() in stopped -> "Stopped"
             Cards.isChat(card) -> "Replied"
             else -> "Finished"
@@ -236,12 +268,54 @@ object Activity {
 
     fun needsYouCount(items: List<ActivityItem>): Int = items.count { it.kind.needsYou }
 
-    /** The Inbox header: "3 projects · 1 needs attention · 2 running" over [items]. */
-    fun overview(projects: Int, items: List<ActivityItem>): String {
-        val attention = needsYouCount(items)
-        val running = items.count { it.running }
-        return "${Counts.of(projects, "project")} · $attention ${Counts.word(attention, "needs", "need")} attention · $running running"
+    /**
+     * The Inbox subtitle over [attention] rows that need the user and [running] ones: "3 need you ·
+     * 4 running", "1 needs you"; "All caught up" when both are 0.
+     */
+    fun headline(attention: Int, running: Int): String =
+        listOfNotNull(
+                needYou(attention).takeIf { attention > 0 },
+                "$running running".takeIf { running > 0 },
+            )
+            .joinToString(" · ")
+            .ifEmpty { "All caught up" }
+
+    /** "1 needs you", "3 need you". */
+    fun needYou(count: Int): String = "$count ${Counts.word(count, "needs", "need")} you"
+
+    /** [text] on one line: whitespace runs become one space, at most [PREVIEW_LIMIT] characters. */
+    fun plain(text: String): String {
+        val line = text.trim().replace(WHITESPACE, " ")
+        return if (line.length <= PREVIEW_LIMIT) line
+        else line.take(PREVIEW_LIMIT - 1).trimEnd() + "…"
     }
+
+    const val PREVIEW_LIMIT = 200
+    private val WHITESPACE = Regex("\\s+")
+
+    /**
+     * The Inbox section of [item]: what needs the user, then running work, then the idle [pinned]
+     * rows, then the rest. A pinned row that needs the user or runs stays in that section.
+     */
+    fun inboxSection(item: ActivityItem, pinned: Boolean): InboxSection =
+        when {
+            item.needsYou -> InboxSection.NEEDS_YOU
+            item.running -> InboxSection.RUNNING
+            pinned -> InboxSection.PINNED
+            else -> InboxSection.RECENT
+        }
+
+    /**
+     * [items] in Inbox order: by [inboxSection], then each section newest first by
+     * [ActivityItem.sortAt] (a running row by its turn start, so its progress never moves it), then
+     * by ID. Pins get no priority within a section.
+     */
+    fun inboxOrder(items: List<ActivityItem>, pins: Set<String>): List<ActivityItem> =
+        items.sortedWith(
+            compareBy<ActivityItem> { inboxSection(it, it.id in pins).ordinal }
+                .thenByDescending { it.sortAt ?: Instant.DISTANT_PAST }
+                .thenBy { it.id }
+        )
 
     /** "Just now", "5m", "3h", "2d"; [suffix] appends " ago" except to "Just now". */
     fun age(at: Instant?, now: Instant, suffix: Boolean = false): String {
@@ -428,8 +502,8 @@ data class WidgetModel(val rows: List<Row>, val summary: String, val compact: Bo
             val summary =
                 when {
                     attention + running > 0 && compact ->
-                        "$attention need attention\n$running running"
-                    attention + running > 0 -> "$attention need attention · $running running"
+                        "${Activity.needYou(attention)}\n$running running"
+                    attention + running > 0 -> "${Activity.needYou(attention)} · $running running"
                     items.isNotEmpty() ->
                         "${items.size} recent conversation${if (items.size == 1) "" else "s"}"
                     else -> "Cards and chats, together"
@@ -442,9 +516,9 @@ data class WidgetModel(val rows: List<Row>, val summary: String, val compact: Bo
 /** Counts over the whole activity feed, for the island and the menu bar. */
 data class ActivityCounts(
     val running: Int = 0,
-    /** Rows waiting for the user: an answer or an unread reply. */
+    /** Rows waiting for the user: an answer, an unread reply, or a failure. */
     val attention: Int = 0,
-    /** Every other row: review, failed, and finished work. */
+    /** Every other row: review and finished work. */
     val recent: Int = 0,
     /** Board cards in a review lane, whatever their agent does. */
     val review: Int = 0,
@@ -475,7 +549,7 @@ data class IslandModel(
     val subagents: Int,
 ) {
     val accessibility: String
-        get() = "Dieter Island. $running running, $attention need attention, $recent recent."
+        get() = "Dieter Island. $running running, ${Activity.needYou(attention)}, $recent recent."
 
     companion object {
         const val MAX_ROWS = 4
@@ -496,7 +570,7 @@ data class IslandModel(
     }
 }
 
-/** The macOS menu bar: what needs you, then recent results from the last six hours. */
+/** The macOS menu bar: what needs you or waits in review, then results from the last six hours. */
 object MenuBar {
     const val MAX_ROWS = 4
     val RECENT_WINDOW: Duration = 6.hours
@@ -535,6 +609,6 @@ object MenuBar {
             .minOrNull()
             ?.plus(1.milliseconds)
 
-    private fun recent(item: ActivityItem): Boolean =
-        item.kind == ActivityKind.FAILED || item.kind == ActivityKind.RECENT
+    /** Failures need the user, so they are listed as actionable, not as results. */
+    private fun recent(item: ActivityItem): Boolean = item.kind == ActivityKind.RECENT
 }
