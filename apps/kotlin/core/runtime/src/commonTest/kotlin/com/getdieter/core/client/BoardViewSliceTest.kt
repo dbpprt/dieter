@@ -175,12 +175,19 @@ class BoardViewSliceTest {
         assertEquals("Untitled chat", rows.getValue("chat").title)
         assertTrue(rows.getValue("chat").chat)
         assertEquals(
-            ActivitySummary(running = 1, attention = 1, recent = 3, review = 1, subagents = 1),
+            ActivitySummary(
+                running = 1,
+                attention = 1,
+                recent = 3,
+                review = 1,
+                subagents = 1,
+                headline = "1 needs you · 1 running",
+            ),
             slice.summary,
         )
         assertEquals(listOf("run", "ask", "chat", "rev"), slice.island_ids)
         assertEquals(
-            "Dieter Island. 1 running, 1 need attention, 3 recent.",
+            "Dieter Island. 1 running, 1 needs you, 3 recent.",
             slice.island_accessibility,
         )
         assertEquals(

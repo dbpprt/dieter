@@ -99,15 +99,18 @@ tags: [smoke]
 - assertNotVisible:
     id: 'inbox\.status\..+\.RUNNING'
     text: "Design the mobile workspace · Running"
+# Pin and Unpin appear on hover but stay laid out, so the flow reaches them.
+# A pinned row keeps its pin mark in any section: an idle pin sits under
+# Pinned, one that still waits for the user stays under Needs you.
 - tapOn:
     id: 'inbox\.pin\..+'
 - assertVisible:
-    id: inbox.section.pinned
+    id: 'inbox\.pinned\..+'
 - assertVisible: Unpin from inbox
 - takeScreenshot: mac-inbox-pinned
 - tapOn: Unpin from inbox
 - assertNotVisible:
-    id: inbox.section.pinned
+    id: 'inbox\.pinned\..+'
 
 # Reuse the expanded project for the large-file journey.
 - tapOn:

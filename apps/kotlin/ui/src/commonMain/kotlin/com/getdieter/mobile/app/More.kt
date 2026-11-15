@@ -266,13 +266,7 @@ internal fun MoreSheet(
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 12.dp)
         ) {
-            // Providers live in Settings and their usage on the Inbox; the sheet's tiles are only
-            // places to go, all alike.
-            TileGrid(
-                (places + account).filter { it.id != ToolPage.PROVIDERS.name.lowercase() },
-                selected,
-                ::open,
-            )
+            TileGrid(places + account, selected, ::open)
             if (session.machines.isNotEmpty()) {
                 Row(
                     Modifier.fillMaxWidth().padding(start = 4.dp, top = 20.dp, bottom = 8.dp),

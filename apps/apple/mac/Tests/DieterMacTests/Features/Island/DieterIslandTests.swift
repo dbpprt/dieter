@@ -35,7 +35,7 @@ import Testing
         slice.summary = .with {
             $0.running = 1; $0.attention = 2; $0.recent = 3; $0.subagents = 4
         }
-        slice.islandAccessibility = "Dieter Island. 1 running, 2 need attention, 3 recent."
+        slice.islandAccessibility = "Dieter Island. 1 running, 2 need you, 3 recent."
     }
     let activity = store.islandActivity
     #expect(activity.runningCount == 1 && activity.attentionCount == 2 && activity.recentCount == 3)
@@ -46,7 +46,7 @@ import Testing
     #expect(activity.items[1].title == "Title UNREAD" && activity.items[1].kindLabel == "Label UNREAD")
     #expect(activity.items[1].detail == "Inbox detail for UNREAD" && activity.items[1].provider == "codex")
     #expect(activity.items[1].shownAtMillis == 1_000)
-    #expect(activity.accessibilityLabel == "Dieter Island. 1 running, 2 need attention, 3 recent.")
+    #expect(activity.accessibilityLabel == "Dieter Island. 1 running, 2 need you, 3 recent.")
     store.activity = ClientActivitySlice()
     #expect(store.islandActivity == .empty)
 }

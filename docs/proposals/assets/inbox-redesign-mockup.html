@@ -1,0 +1,741 @@
+<!doctype html>
+<!--
+  Static mockup for docs/proposals/inbox-redesign.md. Phones: Android light
+  theme (Material scheme as in MobileTheme.kt: info #00629E, warning #9A5B00,
+  purple #7440B6), 1 CSS px = 1 dp on a 412 x 915 dp phone, rows 72 dp. Mac:
+  the target design the user supplied (mac-inbox-target.png). Content is
+  illustrative, taken from the 2026-11-15 screenshots where possible.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Dieter · Inbox redesign mockup</title>
+    <style>
+      :root {
+        --bg: #f8f9fd;
+        --pinned: #eef1f8;
+        --selected: #d6e3ff;
+        --line: rgba(68, 71, 78, 0.16);
+        --text: #1a1c1e;
+        --text2: #5d6068;
+        --text3: #8b8e96;
+        --primary: #35618e;
+        --info: #00629e;
+        --warning: #9a5b00;
+        --warning-fill: #f2a43a;
+        --purple: #7440b6;
+        --error: #ba1a1a;
+        --bar: #eef0f5;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 28px;
+        background: #dfe2e8;
+        color: var(--text);
+        font: 14px/1.4 Roboto, -apple-system, "SF Pro Text", system-ui, sans-serif;
+      }
+      h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+      .caption { color: #4a4d55; margin: 0 0 22px; max-width: 1300px; }
+      .stage { display: flex; gap: 36px; align-items: flex-start; }
+      .label { font-size: 13px; font-weight: 600; color: #4a4d55; margin: 0 0 8px 4px; }
+      .phone {
+        position: relative;
+        width: 412px;
+        height: 915px;
+        border-radius: 36px;
+        overflow: hidden;
+        background: var(--bg);
+        box-shadow: 0 0 0 10px #1b1c1f, 0 18px 50px rgba(0, 0, 0, 0.35);
+        display: flex;
+        flex-direction: column;
+      }
+      .status { height: 36px; padding: 10px 22px 0; display: flex; justify-content: space-between; font-size: 13px; font-weight: 500; }
+      .topbar { height: 64px; display: flex; align-items: center; padding: 0 8px 0 20px; gap: 4px; }
+      .topbar .titles { flex: 1; min-width: 0; }
+      .topbar .title { font-size: 22px; line-height: 28px; }
+      .topbar .subtitle { font-size: 12px; color: var(--text2); line-height: 16px; }
+      .iconbtn { width: 48px; height: 48px; border-radius: 24px; display: grid; place-items: center; }
+      .iconbtn.checked { background: var(--selected); }
+      .iconbtn svg { width: 24px; height: 24px; }
+      .list { flex: 1; overflow: hidden; position: relative; }
+      .sh {
+        height: 30px;
+        display: flex;
+        align-items: flex-end;
+        gap: 6px;
+        padding: 0 16px 5px 16px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text2);
+      }
+      .sh .c { font-weight: 500; opacity: 0.85; }
+      .sh .rule { flex: 1; height: 1px; background: var(--line); margin: 0 0 7px 6px; }
+      .sh.needs { color: var(--warning); }
+      .sh.run { color: var(--info); }
+      .row { height: 72px; display: flex; align-items: center; gap: 14px; padding: 0 16px 0 14px; background: var(--bg); position: relative; }
+      .row.pinned { background: var(--pinned); }
+      .row.selected { background: var(--selected); }
+      .avatar { position: relative; width: 52px; height: 52px; flex: none; display: grid; place-items: center; }
+      .tile { width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center; color: white; font-weight: 700; font-size: 19px; }
+      .running .tile { width: 42px; height: 42px; border-radius: 12px; }
+      .ring {
+        position: absolute;
+        inset: 0;
+        border-radius: 16px;
+        padding: 2px;
+        background: conic-gradient(from var(--a, 0deg), rgba(0, 98, 158, 0) 0deg, rgba(0, 98, 158, 0) 200deg, var(--info) 360deg);
+        -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+        -webkit-mask-composite: xor;
+        mask-composite: exclude;
+        animation: spin 1.6s linear infinite;
+      }
+      @property --a { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
+      @keyframes spin { to { --a: 360deg; } }
+      .track { position: absolute; inset: 0; border-radius: 16px; border: 2px solid rgba(0, 98, 158, 0.16); }
+      .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+      .line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+      .t { flex: 1; min-width: 0; font-size: 16px; font-weight: 600; line-height: 21px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .time { font-size: 12.5px; color: var(--text2); flex: none; display: flex; align-items: center; gap: 3px; }
+      .time svg { width: 13px; height: 13px; }
+      .p { flex: 1; min-width: 0; font-size: 14.5px; line-height: 20px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .p b { font-weight: 500; color: var(--text); }
+      .p.live { color: var(--info); }
+      .p.strong { color: var(--text); }
+      .p.fail { color: var(--error); }
+      .p .agents { color: var(--text2); }
+      .badge { flex: none; min-width: 22px; height: 22px; border-radius: 11px; display: grid; place-items: center; color: white; font-size: 12.5px; font-weight: 700; padding: 0 6px; }
+      .badge svg { width: 13px; height: 13px; }
+      .badge.unread { background: var(--primary); min-width: 12px; height: 12px; padding: 0; margin: 5px; }
+      .badge.answer { background: var(--warning-fill); color: #3d2400; }
+      .badge.fail { background: var(--error); }
+      .badge.quiet { background: transparent; color: var(--text3); padding: 0; }
+      .badge.review { background: transparent; color: var(--purple); padding: 0; }
+      .tint-info { color: var(--info); }
+      .tint-warn { color: var(--warning); }
+      .tint-primary { color: var(--primary); }
+      .tint-error { color: var(--error); }
+      .fab { position: absolute; right: 16px; bottom: 16px; height: 56px; width: 56px; border-radius: 16px; background: #d6e3ff; color: #001b3e; display: grid; place-items: center; box-shadow: 0 3px 8px rgba(0, 0, 0, 0.18); }
+      .fab svg { width: 24px; height: 24px; }
+      .nav { height: 80px; background: var(--bar); display: flex; justify-content: space-around; align-items: center; padding-bottom: 6px; flex: none; }
+      .nav div { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px; font-weight: 500; color: var(--text2); position: relative; }
+      .nav .pill { width: 64px; height: 32px; border-radius: 16px; display: grid; place-items: center; }
+      .nav .on .pill { background: #d6e3ff; }
+      .nav .on { color: var(--text); }
+      .nav svg { width: 24px; height: 24px; }
+      .nav .count { position: absolute; top: -4px; left: 38px; background: var(--error); color: white; font-size: 11px; border-radius: 9px; min-width: 18px; height: 18px; display: grid; place-items: center; padding: 0 4px; }
+      .gesture { height: 20px; background: var(--bar); display: grid; place-items: center; flex: none; }
+      .gesture span { width: 108px; height: 4px; border-radius: 2px; background: #9a9da5; }
+      .scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.06); }
+      .menu { position: absolute; top: 92px; right: 12px; width: 236px; background: #f1f3f9; border-radius: 12px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22); padding: 8px 0; font-size: 14px; }
+      .menu .h { font-size: 12px; color: var(--text2); padding: 6px 16px 4px; font-weight: 500; }
+      .menu .i { height: 42px; display: flex; align-items: center; gap: 12px; padding: 0 16px; }
+      .menu .i .n { margin-left: auto; color: var(--text2); font-size: 13px; }
+      .menu .i .ck { width: 18px; color: var(--primary); }
+      .menu hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
+      .mac { width: 336px; }
+      .mac img { width: 336px; border-radius: 12px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35); display: block; }
+      .mac p { font-size: 12.5px; color: #3a3d44; margin: 10px 2px 0; }
+      .notes { width: 400px; font-size: 13.5px; color: #2c2e33; }
+      .notes h2 { font-size: 15px; margin: 0 0 8px; }
+      .notes table { border-collapse: collapse; width: 100%; margin-bottom: 18px; }
+      .notes td { border-top: 1px solid rgba(0, 0, 0, 0.1); padding: 6px 6px 6px 0; vertical-align: top; }
+      .notes td:first-child { width: 112px; font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <svg width="0" height="0" style="position: absolute">
+      <defs>
+        <symbol id="search" viewBox="0 0 24 24">
+          <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2" />
+          <path
+            d="M15.5 15.5 21 21"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+          />
+        </symbol>
+        <symbol id="filter" viewBox="0 0 24 24">
+          <path
+            d="M4 7h16M7 12h10M10 17h4"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+          />
+        </symbol>
+        <symbol id="pin" viewBox="0 0 24 24">
+          <path
+            d="M9 3h6l-1 6 3 3v2h-4v6l-1 1-1-1v-6H7v-2l3-3z"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linejoin="round"
+          />
+        </symbol>
+        <symbol id="eye" viewBox="0 0 24 24">
+          <path
+            d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          />
+          <circle cx="12" cy="12" r="3" fill="currentColor" />
+        </symbol>
+        <symbol id="q" viewBox="0 0 24 24">
+          <path
+            d="M9 9a3 3 0 1 1 4.5 2.6c-.9.5-1.5 1.2-1.5 2.4"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.6"
+            stroke-linecap="round"
+          />
+          <circle cx="12" cy="18.5" r="1.6" fill="currentColor" />
+        </symbol>
+        <symbol id="bang" viewBox="0 0 24 24">
+          <path d="M12 5v9" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
+          <circle cx="12" cy="19" r="1.8" fill="currentColor" />
+        </symbol>
+        <symbol id="offline" viewBox="0 0 24 24">
+          <path
+            d="M2 9a15 15 0 0 1 20 0M5.5 12.5a10 10 0 0 1 13 0M9 16a5 5 0 0 1 6 0M3 3l18 18"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+          />
+        </symbol>
+        <symbol id="pencil" viewBox="0 0 24 24">
+          <path
+            d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linejoin="round"
+          />
+        </symbol>
+        <symbol id="inbox" viewBox="0 0 24 24">
+          <path
+            d="M3 13l2.5-8h13L21 13v6H3zM3 13h5l1.5 2.5h5L16 13h5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linejoin="round"
+          />
+        </symbol>
+        <symbol id="mail" viewBox="0 0 24 24">
+          <path
+            d="M3 6h18v12H3zM3 7l9 6 9-6"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linejoin="round"
+          />
+        </symbol>
+        <symbol id="folder" viewBox="0 0 24 24">
+          <path
+            d="M3 6h6l2 2h10v10H3z"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linejoin="round"
+          />
+        </symbol>
+        <symbol id="chats" viewBox="0 0 24 24">
+          <path
+            d="M3 4h13v9H8l-5 4zM8 16v2h8l5 3V9h-3"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linejoin="round"
+          />
+        </symbol>
+        <symbol id="more" viewBox="0 0 24 24">
+          <path
+            d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          />
+        </symbol>
+      </defs>
+    </svg>
+
+    <h1>Inbox redesign: one section order everywhere, dense rows</h1>
+    <p class="caption">
+      Mockup for docs/proposals/inbox-redesign.md. Every platform uses the same sections in the same
+      order: <b>Needs you → Running → Pinned → Recent</b>. Pinned holds idle pins; a pinned row that
+      needs you or is running stays in that section and shows a pin. Phones get 72&nbsp;dp two-line
+      rows and lose the tiles and the usage strip. The Mac follows the supplied screenshot: one-line
+      rows, count segments and the timeline.
+    </p>
+
+    <div class="stage">
+      <!-- Phone 1 ------------------------------------------------------------------ -->
+      <div>
+        <div class="label">Phone · default</div>
+        <div class="phone">
+          <div class="status"><span>9:27</span><span>94%</span></div>
+          <div class="topbar">
+            <div class="titles">
+              <div class="title">Inbox</div>
+              <div class="subtitle">3 need you · 4 running</div>
+            </div>
+            <div class="iconbtn">
+              <svg><use href="#search" /></svg>
+            </div>
+            <div class="iconbtn">
+              <svg><use href="#filter" /></svg>
+            </div>
+          </div>
+          <div class="list">
+            <div class="sh needs">Needs you <span class="c">3</span><span class="rule"></span></div>
+            <div class="row">
+              <div class="avatar"><div class="tile" style="background: #3a9a94">D</div></div>
+              <div class="body">
+                <div class="line">
+                  <div class="t">0.6.446 release notes</div>
+                  <div class="time tint-warn">4m</div>
+                </div>
+                <div class="line">
+                  <div class="p strong"><b>dieter:</b> Tag it stable now, or keep it nightly?</div>
+                  <div class="badge answer">
+                    <svg><use href="#q" /></svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="row selected">
+              <div class="avatar"><div class="tile" style="background: #3a9a94">D</div></div>
+              <div class="body">
+                <div class="line">
+                  <div class="t">inbox redesign</div>
+                  <div class="time tint-primary">12m</div>
+                </div>
+                <div class="line">
+                  <div class="p strong">
+                    <b>dieter:</b> Proposal and mockup are in docs/proposals
+                  </div>
+                  <div class="badge unread"></div>
+                </div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="avatar"><div class="tile" style="background: #8e6cd8">W</div></div>
+              <div class="body">
+                <div class="line">
+                  <div class="t">nightly backup check</div>
+                  <div class="time tint-error">
+                    <svg class="tint-warn"><use href="#offline" /></svg>1h
+                  </div>
+                </div>
+                <div class="line">
+                  <div class="p fail"><b>workbench:</b> Agent failed: no space left on /var</div>
+                  <div class="badge fail">
+                    <svg><use href="#bang" /></svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="sh run">Running <span class="c">4</span><span class="rule"></span></div>
+            <div class="row running">
+              <div class="avatar">
+                <div class="track"></div>
+                <div class="ring"></div>
+                <div class="tile" style="background: #e07a4f">N</div>
+              </div>
+              <div class="body">
+                <div class="line">
+                  <div class="t">maintenance</div>
+                  <div class="time tint-info">now</div>
+                </div>
+                <div class="line">
+                  <div class="p live"><b>nmt-aigency:</b> Thinking…</div>
+                  <div class="badge quiet">
+                    <svg><use href="#pin" /></svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="row running">
+              <div class="avatar">
+                <div class="track"></div>
+                <div class="ring"></div>
+                <div class="tile" style="background: #e05a6b">Q</div>
+              </div>
+              <div class="body">
+                <div class="line">
+                  <div class="t">
+                    understand the current project, move it to old/ folder then lets start
+                  </div>
+                  <div class="time tint-info">1m</div>
+                </div>
+                <div class="line">
+                  <div class="p live"><b>quizblitz:</b> Thinking…</div>
+                </div>
+              </div>
+            </div>
+            <div class="row running">
+              <div class="avatar">
+                <div class="track"></div>
+                <div class="ring"></div>
+                <div class="tile" style="background: #e07a4f">N</div>
+              </div>
+              <div class="body">
+                <div class="line">
+                  <div class="t">affinity</div>
+                  <div class="time tint-info">20m</div>
+                </div>
+                <div class="line">
+                  <div class="p live">
+                    <b>nmt-aigency:</b> Reading src/affinity/score.ts
+                    <span class="agents">· 3 agents</span>
+                  </div>
+                  <div class="badge quiet">
+                    <svg><use href="#pin" /></svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="row running">
+              <div class="avatar">
+                <div class="track"></div>
+                <div class="ring"></div>
+                <div class="tile" style="background: #3a9a94">D</div>
+              </div>
+              <div class="body">
+                <div class="line">
+                  <div class="t">
+                    managed login experience for claude / chatgpt to login in the app
+                  </div>
+                  <div class="time tint-info">14h</div>
+                </div>
+                <div class="line">
+                  <div class="p live">
+                    <b>dieter:</b> Running pgrep -lf DieterMac
+                    <span class="agents">· 5 agents</span>
+                  </div>
+                  <div class="badge quiet">
+                    <svg><use href="#pin" /></svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="sh">Pinned <span class="c">1</span><span class="rule"></span></div>
+            <div class="row pinned">
+              <div class="avatar"><div class="tile" style="background: #3a9a94">D</div></div>
+              <div class="body">
+                <div class="line">
+                  <div class="t">Ship the new project picker</div>
+                  <div class="time">1d</div>
+                </div>
+                <div class="line">
+                  <div class="p"><b>dieter:</b> Picker remembers the last project per board</div>
+                  <div class="badge review">
+                    <svg><use href="#eye" /></svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="sh">Recent <span class="c">308</span><span class="rule"></span></div>
+            <div class="row">
+              <div class="avatar"><div class="tile" style="background: #3a9a94">D</div></div>
+              <div class="body">
+                <div class="line">
+                  <div class="t">fix gateway TURN fallback</div>
+                  <div class="time">38m</div>
+                </div>
+                <div class="line">
+                  <div class="p"><b>dieter:</b> Retries over TCP after 3 s; tests pass</div>
+                  <div class="badge review">
+                    <svg><use href="#eye" /></svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="avatar"><div class="tile" style="background: #e05a6b">Q</div></div>
+              <div class="body">
+                <div class="line">
+                  <div class="t">quiz import from csv</div>
+                  <div class="time">3h</div>
+                </div>
+                <div class="line">
+                  <div class="p"><b>quizblitz:</b> Imported 120 questions; 3 skipped</div>
+                </div>
+              </div>
+            </div>
+            <div class="fab">
+              <svg><use href="#pencil" /></svg>
+            </div>
+          </div>
+          <div class="nav">
+            <div class="on">
+              <span class="pill"
+                ><svg><use href="#inbox" /></svg></span
+              >Inbox<span class="count">3</span>
+            </div>
+            <div>
+              <span class="pill"
+                ><svg><use href="#mail" /></svg></span
+              >Mail<span class="count">1</span>
+            </div>
+            <div>
+              <span class="pill"
+                ><svg><use href="#folder" /></svg></span
+              >Projects
+            </div>
+            <div>
+              <span class="pill"
+                ><svg><use href="#chats" /></svg></span
+              >Chats
+            </div>
+            <div>
+              <span class="pill"
+                ><svg><use href="#more" /></svg></span
+              >More<span class="count">99+</span>
+            </div>
+          </div>
+          <div class="gesture"><span></span></div>
+        </div>
+      </div>
+
+      <!-- Phone 2 ------------------------------------------------------------------ -->
+      <div>
+        <div class="label">Phone · filter menu (Review)</div>
+        <div class="phone">
+          <div class="status"><span>9:27</span><span>94%</span></div>
+          <div class="topbar">
+            <div class="titles">
+              <div class="title">Inbox</div>
+              <div class="subtitle">Review · 9</div>
+            </div>
+            <div class="iconbtn">
+              <svg><use href="#search" /></svg>
+            </div>
+            <div class="iconbtn checked">
+              <svg><use href="#filter" /></svg>
+            </div>
+          </div>
+          <div class="list">
+            <div class="sh">Pinned <span class="c">1</span><span class="rule"></span></div>
+            <div class="row pinned">
+              <div class="avatar"><div class="tile" style="background: #3a9a94">D</div></div>
+              <div class="body">
+                <div class="line">
+                  <div class="t">Ship the new project picker</div>
+                  <div class="time">1d</div>
+                </div>
+                <div class="line">
+                  <div class="p"><b>dieter:</b> Picker remembers the last project per board</div>
+                  <div class="badge review">
+                    <svg><use href="#eye" /></svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="sh">Recent <span class="c">8</span><span class="rule"></span></div>
+            <div class="row">
+              <div class="avatar"><div class="tile" style="background: #3a9a94">D</div></div>
+              <div class="body">
+                <div class="line">
+                  <div class="t">fix gateway TURN fallback</div>
+                  <div class="time">38m</div>
+                </div>
+                <div class="line">
+                  <div class="p"><b>dieter:</b> Retries over TCP after 3 s; tests pass</div>
+                  <div class="badge review">
+                    <svg><use href="#eye" /></svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="avatar"><div class="tile" style="background: #3a9a94">D</div></div>
+              <div class="body">
+                <div class="line">
+                  <div class="t">symbolicate release Mac samples</div>
+                  <div class="time">2h</div>
+                </div>
+                <div class="line">
+                  <div class="p"><b>dieter:</b> Recovered 41 Kotlin frames from the K/N binary</div>
+                  <div class="badge review">
+                    <svg><use href="#eye" /></svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="avatar"><div class="tile" style="background: #e07a4f">N</div></div>
+              <div class="body">
+                <div class="line">
+                  <div class="t">prod visibility alerts h46</div>
+                  <div class="time">4h</div>
+                </div>
+                <div class="line">
+                  <div class="p"><b>nmt-aigency:</b> Alert routes now page the on-call rota</div>
+                  <div class="badge review">
+                    <svg><use href="#eye" /></svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="avatar"><div class="tile" style="background: #8e6cd8">W</div></div>
+              <div class="body">
+                <div class="line">
+                  <div class="t">rotate TLS certificates</div>
+                  <div class="time">1d</div>
+                </div>
+                <div class="line">
+                  <div class="p"><b>workbench:</b> New certs installed; old ones expire Friday</div>
+                  <div class="badge review">
+                    <svg><use href="#eye" /></svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="scrim"></div>
+            <div class="menu">
+              <div class="h">Show</div>
+              <div class="i"><span class="ck"></span>All<span class="n">24</span></div>
+              <div class="i"><span class="ck"></span>Needs you<span class="n">3</span></div>
+              <div class="i"><span class="ck"></span>Running<span class="n">4</span></div>
+              <div class="i"><span class="ck"></span>Pinned<span class="n">4</span></div>
+              <div class="i"><span class="ck">✓</span>Review<span class="n">9</span></div>
+              <hr />
+              <div class="h">Project</div>
+              <div class="i"><span class="ck">✓</span>All projects</div>
+              <div class="i"><span class="ck"></span>dieter</div>
+              <hr />
+              <div class="i">
+                <span class="ck"></span>Inbox rules…<span class="n">72 hidden</span>
+              </div>
+              <div class="i"><span class="ck"></span>Activity timeline</div>
+            </div>
+          </div>
+          <div class="nav">
+            <div class="on">
+              <span class="pill"
+                ><svg><use href="#inbox" /></svg></span
+              >Inbox<span class="count">3</span>
+            </div>
+            <div>
+              <span class="pill"
+                ><svg><use href="#mail" /></svg></span
+              >Mail<span class="count">1</span>
+            </div>
+            <div>
+              <span class="pill"
+                ><svg><use href="#folder" /></svg></span
+              >Projects
+            </div>
+            <div>
+              <span class="pill"
+                ><svg><use href="#chats" /></svg></span
+              >Chats
+            </div>
+            <div>
+              <span class="pill"
+                ><svg><use href="#more" /></svg></span
+              >More<span class="count">99+</span>
+            </div>
+          </div>
+          <div class="gesture"><span></span></div>
+        </div>
+      </div>
+
+      <!-- Mac ---------------------------------------------------------------------- -->
+      <div class="mac">
+        <div class="label">Mac · target (supplied screenshot)</div>
+        <img
+          src="mac-inbox-target.png"
+          alt="Mac Inbox target: count segments, timeline, Needs you, Running and Recent sections with one-line rows"
+        />
+        <p>
+          The same sections, with Pinned between Running and Recent; it is empty here because every
+          pin is active. Rows are one line: status glyph, title, subagents, project chip, age. Pin
+          and Done appear on hover.
+        </p>
+      </div>
+
+      <!-- Notes -------------------------------------------------------------------- -->
+      <div class="notes">
+        <h2>Sections (every platform)</h2>
+        <table>
+          <tr>
+            <td>Order</td>
+            <td><b>Needs you → Running → Pinned → Recent</b>, each row once.</td>
+          </tr>
+          <tr>
+            <td>Needs you</td>
+            <td>
+              A question for you or an unread reply (and failures, if adopted). Pinned rows stay
+              here and show a pin.
+            </td>
+          </tr>
+          <tr>
+            <td>Running</td>
+            <td>Agents at work, pinned or not; pins get no priority inside.</td>
+          </tr>
+          <tr>
+            <td>Pinned</td>
+            <td>Pinned rows that are idle, so pins sit above the Recent pile.</td>
+          </tr>
+          <tr>
+            <td>Recent</td>
+            <td>Everything else. Reviews carry an eye badge and have their own filter.</td>
+          </tr>
+          <tr>
+            <td>Inside</td>
+            <td>Newest first. A row moves when a turn starts or ends, not on every tool call.</td>
+          </tr>
+          <tr>
+            <td>Owner</td>
+            <td>Kotlin core: the slice carries each row's section, in display order.</td>
+          </tr>
+        </table>
+        <h2>Phone row (72 dp)</h2>
+        <table>
+          <tr>
+            <td>Avatar</td>
+            <td>Project tile; a ring spins around it while the agent works.</td>
+          </tr>
+          <tr>
+            <td>Line 1</td>
+            <td>Title; time, tinted when the row wants you; offline glyph when stale.</td>
+          </tr>
+          <tr>
+            <td>Line 2</td>
+            <td><b>project:</b>, then the preview (· N agents while running).</td>
+          </tr>
+          <tr>
+            <td>Badge</td>
+            <td>? asks you · ● unread · ! failed · eye review · pin.</td>
+          </tr>
+        </table>
+        <h2>Density</h2>
+        <table>
+          <tr>
+            <td>Phone now</td>
+            <td>About 230 dp of header, then 120–150 dp cards: 3½ rows.</td>
+          </tr>
+          <tr>
+            <td>Phone new</td>
+            <td>30 dp section headers and 72 dp rows: about 8–9 rows.</td>
+          </tr>
+          <tr>
+            <td>Mac now</td>
+            <td>Tiles of at least 76 pt: about 7 rows in a 725 pt column.</td>
+          </tr>
+          <tr>
+            <td>Mac new</td>
+            <td>One-line rows of about 26 pt: 20 or more rows.</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+  </body>
+</html>

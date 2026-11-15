@@ -65,7 +65,7 @@ class WidgetModelTest {
             assertEquals(compact, result.compact)
             assertEquals(expected, result.items().map { it.id })
             assertEquals(
-                if (compact) "2 need attention\n1 running" else "2 need attention · 1 running",
+                if (compact) "2 need you\n1 running" else "2 need you · 1 running",
                 result.summary,
             )
             assertEquals("Ready for review", result.items()[3].detail)
@@ -73,7 +73,7 @@ class WidgetModelTest {
         assertEquals("Dieter · Chat", model(input).items()[0].subtitle)
         assertEquals("Dieter · Card", model(input).items()[1].subtitle)
         assertEquals(
-            listOf("Needs attention · 2", "Running · 1", "Recent · 2"),
+            listOf("Needs you · 2", "Running · 1", "Recent · 2"),
             model(input).rows.filterIsInstance<WidgetModel.Row.Header>().map { it.title },
         )
         assertTrue(

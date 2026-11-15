@@ -1,5 +1,5 @@
-# Inbox: pinning a card gives it the Pinned section, and swiping a card left
-# archives it and offers an undo.
+# Inbox: the Review filter finds a card without scrolling, pinning it moves it
+# to the Pinned section, and swiping it left archives it and offers an undo.
 appId: ${APP_ID}
 name: Inbox
 tags: [smoke]
@@ -7,12 +7,16 @@ tags: [smoke]
 - runFlow: common/launch.yaml
 - extendedWaitUntil:
     visible:
-      id: inbox-filter-review
+      id: chrome-inbox-filter
     timeout: 40000
 # Show only cards waiting for review: the card is then on screen without a
 # scroll, which can fling past it on a small emulator.
 - tapOn:
-    id: inbox-filter-review
+    id: chrome-inbox-filter
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: menu-inbox-status-review
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: "Ship the new project picker"
     timeout: 10000
@@ -20,10 +24,14 @@ tags: [smoke]
 - tapOn:
     text: "Pin in Inbox"
     waitToSettleTimeoutMs: 500
+# An idle pinned card leaves Recent for the Pinned section and keeps its pin
+# mark.
 - extendedWaitUntil:
     visible:
       id: inbox-section-pinned
     timeout: 10000
+- assertVisible:
+    id: "inbox-pinned-.+"
 - assertVisible: "Ship the new project picker"
 - takeScreenshot: inbox-pinned
 # An injected swipe occasionally does not register as a drag; then Undo never

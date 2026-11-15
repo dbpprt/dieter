@@ -90,26 +90,47 @@ host telemetry without losing your board.
 chat activity together so you can find recent work without first choosing a
 board. Next to it are [**Mail**](/docs/mail/), **Projects** and **Chats**.
 **More** holds everything else: **Channels**, **Terminals**, your machines,
-**Devices** and **Settings**. On Android, More slides up as a sheet above the
-bar; on iPhone and iPad it is a tab that also lists
-[**Providers**](/docs/providers/), your Claude and ChatGPT accounts with their
-plan usage, which the Inbox summarizes too. Its badge counts unread channel
+[**Providers**](/docs/providers/) (your Claude and ChatGPT accounts with their
+plan usage), **Devices** and **Settings**. On Android, More slides up as a sheet
+above the bar; on iPhone and iPad it is a tab. Its badge counts unread channel
 messages.
-Completed replies that you have not viewed appear under **Needs you**. Opening
-the latest reply clears that state across clients; questions waiting for your
-answer continue to need attention.
 
-On Android, iPhone and iPad the Inbox opens with tiles counting running work,
-replies that need you and cards ready for review; tap one to show only those.
-**Running** comes first, pinned or not, followed by **Pinned**, **Needs you**,
-**Review** and **Recent**. Swipe a card right to mark a reply read, finish a
-reviewed card or pin it, and left to archive it or stop a running agent; an
-archive can be undone. Touch and hold a card for all its actions.
+Every platform lists the Inbox in the same four sections:
 
-On the Mac, use the small pin button on an Inbox card to keep it in the
-**Pinned** section at the top; tap it again to unpin. Pins sync across your
-account through shared KV; offline edits sync when a machine is available.
-Search and project filters still apply to pinned cards.
+- **Needs you:** questions waiting for your answer, completed replies you have
+  not viewed, and failed agents.
+- **Running:** agents at work.
+- **Pinned:** pinned conversations that are idle.
+- **Recent:** everything else.
+
+Within a section the newest comes first. A conversation moves up when a turn
+starts or ends, not on every step of the agent. Opening the latest reply clears
+it from Needs you on every client. A failure stays there until you retry the
+agent, finish its card or archive it. The Inbox tab's badge counts what needs
+you.
+
+On Android, iPhone and iPad each conversation is a two-line row. The first line
+holds its project avatar, title and time. The second holds the project and what
+the agent is doing or said last, plus one mark: **?** waits for your answer, a
+dot is an unread reply, **!** failed, an eye is ready for review, a pin is
+pinned. A running agent's avatar has a spinning ring. The filter menu shows
+**All**, **Needs you**, **Running**, **Pinned** or **Review**, each with its
+count. It also filters by project and opens Inbox rules.
+
+Swipe a row right to mark a reply read, finish a reviewed or failed card, or pin
+it. Swipe it left to archive it or stop a running agent; an archive can be
+undone. Touch and hold a row for all its actions.
+
+On the Mac each conversation is one line: its status, title, working subagents,
+project and age. The segments above the timeline filter by status, and the
+filter button holds search (⌘F), the project, the timeline range and Inbox
+rules. Hover a row to pin or unpin it, or to finish a card waiting for review or
+a failed one.
+
+A pinned conversation that needs you or is running stays in that section and
+keeps its pin; it returns to **Pinned** once it is idle. Pins sync across your
+account through shared KV, and offline edits sync when a machine is available.
+Search and project filters still apply to pinned conversations.
 
 Inbox rules decide which conversations the Inbox lists. Open **Inbox rules**
 from the filter button on the Mac or the filter menu on Android and iOS, then
@@ -117,11 +138,11 @@ add a rule that hides or shows only the conversations of some projects and
 labels. A rule can require a project and a label together or accept either, and
 you can keep several rules and switch each on or off. A conversation matching
 any hiding rule is left out; while a showing rule is on, only conversations
-matching one are listed. Rules sync across your account like pins, and the
-Inbox says how many conversations they hide.
+matching one are listed. Rules sync across your account like pins. The end of
+the Inbox and the Inbox rules menu item say how many conversations they hide.
 
 {{< shots >}}
-{{< screenshot src="ios-inbox.png" kind="phone" width="1206" height="2622" alt="iPhone Inbox with four replies that need you, provider usage, and running tasks" caption="Inbox on iPhone." >}}
+{{< screenshot src="ios-inbox.png" kind="phone" width="1206" height="2622" alt="iPhone Inbox with replies that need you and running tasks" caption="Inbox on iPhone." >}}
 {{< screenshot src="android-board.png" kind="phone" width="1080" height="2400" alt="Android Atlas API Roadmap board filtered to its four running tasks, each with its machine, branch, and agent" caption="A board on Android." >}}
 {{< /shots >}}
 

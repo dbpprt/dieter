@@ -24,6 +24,8 @@ import androidx.compose.ui.unit.sp
 import com.getdieter.api.v1.Card
 import com.getdieter.client.v1.*
 import com.getdieter.core.activity.Activity
+import com.getdieter.core.activity.InboxSection
+import com.getdieter.core.activity.InboxStatus
 import com.getdieter.core.board.CardAges
 import com.getdieter.mobile.app.ChromeAction
 import com.getdieter.mobile.app.MenuSection
@@ -31,8 +33,6 @@ import com.getdieter.mobile.board.cardMenuSections
 import com.getdieter.mobile.design.*
 import com.getdieter.mobile.store.*
 import com.getdieter.mobile.workspace.InboxRulesSheet
-import com.getdieter.mobile.workspace.InboxSection
-import com.getdieter.mobile.workspace.inboxSections
 import kotlin.time.Instant
 
 /** A list column's band: sidebar toggle, title and count, then its actions. */
@@ -70,21 +70,6 @@ internal fun ListBand(
     }
 }
 
-private enum class InboxFilter(val title: String) {
-    ALL("All"),
-    NEEDS_YOU("Needs you"),
-    RUNNING("Running"),
-    REVIEW("Review"),
-}
-
-private fun ActivityRow.matches(filter: InboxFilter) =
-    when (filter) {
-        InboxFilter.ALL -> true
-        InboxFilter.NEEDS_YOU -> needs_you
-        InboxFilter.RUNNING -> kind == "RUNNING"
-        InboxFilter.REVIEW -> kind == "REVIEW"
-    }
-
 /** The Inbox as the Mac's feed: a summary, search, filters, then sections of compact tiles. */
 @Composable
 internal fun DesktopInbox(store: MobileStore) {
@@ -93,18 +78,18 @@ internal fun DesktopInbox(store: MobileStore) {
     val session by store.session.slice.collectAsState()
     val selected by store.conversation.selectedCard.collectAsState()
     var query by rememberSaveable { mutableStateOf("") }
-    var filter by rememberSaveable { mutableStateOf(InboxFilter.ALL) }
+    var filter by rememberSaveable { mutableStateOf(InboxStatus.ALL) }
     var project by rememberSaveable { mutableStateOf("") }
     var rules by remember { mutableStateOf(false) }
     val now = rememberNow()
     val scoped =
         view.rows.filter { row ->
-            (project.isEmpty() || row.card?.project_id == project) &&
+            row.card != null &&
+                (project.isEmpty() || row.card?.project_id == project) &&
                 Activity.matches(query, row.title, row.project_name, row.board_name)
         }
-    val rows = scoped.filter { it.matches(filter) }
-    val running = view.summary?.running ?: 0
-    val attention = view.summary?.attention ?: 0
+    val rows = scoped.filter(filter::matches)
+    val counts = InboxStatus.counts(scoped)
     Column(Modifier.fillMaxSize().testTag("activity-feed")) {
         ListBand("Inbox", "${view.rows.size}") {
             val menu = rememberMenuState()
@@ -159,11 +144,7 @@ internal fun DesktopInbox(store: MobileStore) {
             )
         }
         Row(Modifier.padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            StatusDot(tokens.running, size = 6.dp)
-            Text(" $running running", color = tokens.subtle, fontSize = 11.sp)
-            Text("  ·  ", color = tokens.tertiary, fontSize = 11.sp)
-            StatusDot(tokens.attention, size = 6.dp)
-            Text(" $attention need attention", color = tokens.subtle, fontSize = 11.sp)
+            Text(view.summary?.headline.orEmpty(), color = tokens.subtle, fontSize = 11.sp)
             val hidden = view.summary?.hidden ?: 0
             if (hidden > 0)
                 Text(
@@ -182,12 +163,12 @@ internal fun DesktopInbox(store: MobileStore) {
             testTag = "inbox-search",
         )
         DesktopSegments(
-            InboxFilter.entries.map { value ->
-                val total = scoped.count { it.matches(value) }
-                if (value == InboxFilter.ALL || total == 0) value.title else "${value.title} $total"
+            InboxStatus.entries.map { value ->
+                val total = counts[value] ?: 0
+                if (value == InboxStatus.ALL || total == 0) value.title else "${value.title} $total"
             },
             filter.ordinal,
-            { filter = InboxFilter.entries[it] },
+            { filter = InboxStatus.entries[it] },
             Modifier.padding(start = 4.dp, top = 8.dp, bottom = 4.dp),
             testTagPrefix = "inbox-filter",
         )
@@ -203,24 +184,19 @@ internal fun DesktopInbox(store: MobileStore) {
                         when {
                             !workspace.loaded -> "Loading activity…"
                             query.isNotBlank() -> "No results"
-                            filter != InboxFilter.ALL -> "Nothing here"
+                            filter != InboxStatus.ALL -> "Nothing here"
                             else -> "All quiet"
                         },
                         "Running work, replies and reviews appear here.",
                         Modifier.padding(top = 40.dp),
                     )
                 }
-            inboxSections(rows).forEach { (section, sectionRows) ->
+            InboxSection.group(rows).forEach { (section, sectionRows) ->
                 item("header-$section") {
                     DesktopSectionHeader(
-                        when (section) {
-                            InboxSection.RUNNING -> "Running"
-                            InboxSection.PINNED -> "Pinned"
-                            InboxSection.ATTENTION -> "Needs attention"
-                            InboxSection.REVIEW -> "Ready for review"
-                            InboxSection.RECENT -> "Recent"
-                        },
-                        Modifier.padding(top = 6.dp),
+                        section.title,
+                        Modifier.padding(top = 6.dp)
+                            .testTag("inbox-section-${section.name.lowercase()}"),
                     ) {
                         Text("${sectionRows.size}", style = MonoSmall, color = tokens.tertiary)
                     }

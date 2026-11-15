@@ -12,7 +12,6 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -33,13 +32,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
@@ -47,40 +44,34 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.getdieter.api.v1.Card
 import com.getdieter.client.v1.*
 import com.getdieter.core.activity.Activity
-import com.getdieter.core.client.rules.ProviderExports
+import com.getdieter.core.activity.InboxSection
+import com.getdieter.core.activity.InboxStatus
 import com.getdieter.mobile.app.*
 import com.getdieter.mobile.board.*
 import com.getdieter.mobile.creation.*
 import com.getdieter.mobile.design.*
 import com.getdieter.mobile.navigation.*
-import com.getdieter.mobile.providers.rememberProviders
-import com.getdieter.mobile.providers.tint
 import com.getdieter.mobile.store.*
 import kotlin.time.Instant
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private enum class InboxFilter(val title: String, val glyph: Glyph) {
-    ALL("All", Glyph.INBOX),
-    RUNNING("Running", Glyph.BOLT),
-    NEEDS_YOU("Needs you", Glyph.CHAT),
-    REVIEW("Review", Glyph.EYE),
-}
-
 /**
- * Running work first, then pins, what needs the user and the rest. Live and waiting work sits on
- * raised cards; finished work is a quiet grouped list. Rows swipe: right for the row's quick action
- * (read, done or pin), left to archive or, while the agent works, to stop it.
+ * The Inbox as a dense chat list in the core's sections: what needs the user, running work, idle
+ * pins, then the rest. Each row is two lines; rows swipe right for their quick action (read, done
+ * or pin) and left to archive or, while the agent works, to stop it.
  */
 @Composable
 internal fun InboxScreen(store: MobileStore) {
@@ -88,12 +79,11 @@ internal fun InboxScreen(store: MobileStore) {
     val workspace by store.workspace.slice.collectAsState()
     val refreshing by store.session.refreshing.collectAsState()
     val session by store.session.slice.collectAsState()
-    val providers = rememberProviders(store)
     val selected by store.conversation.selectedCard.collectAsState()
     var query by rememberSaveable { mutableStateOf("") }
     var searching by rememberSaveable { mutableStateOf(false) }
     var project by rememberSaveable { mutableStateOf("") }
-    var filter by rememberSaveable { mutableStateOf(InboxFilter.ALL) }
+    var status by rememberSaveable { mutableStateOf(InboxStatus.ALL) }
     var timeline by rememberSaveable { mutableStateOf(false) }
     var rulesOpen by rememberSaveable { mutableStateOf(false) }
     var stopping by remember { mutableStateOf<Card?>(null) }
@@ -102,12 +92,21 @@ internal fun InboxScreen(store: MobileStore) {
     val now = rememberNow()
     val scoped =
         view.rows.filter { row ->
-            (project.isEmpty() || row.card?.project_id == project) &&
+            row.card != null &&
+                (project.isEmpty() || row.card?.project_id == project) &&
                 Activity.matches(query, row.title, row.project_name, row.board_name)
         }
-    val rows = scoped.filter { it.matches(filter) }
+    val rows = scoped.filter(status::matches)
+    val counts = InboxStatus.counts(scoped)
     val projectName = workspace.projects.firstOrNull { it.id == project }?.name
-    val quiet = workspace.loaded && scoped.none { it.needs_you || it.kind == "RUNNING" }
+    val hidden = view.summary?.hidden ?: 0
+    val machines =
+        session.machines
+            .takeIf { it.size > 1 }
+            .orEmpty()
+            .associate {
+                it.id to it.display_name
+            }
 
     fun offerUndo(message: String, undo: () -> Unit) {
         scope.launch {
@@ -145,11 +144,22 @@ internal fun InboxScreen(store: MobileStore) {
         }
     }
 
+    val filtered = status != InboxStatus.ALL || projectName != null
     val chrome =
         ScreenChrome(
             "Inbox",
             subtitle =
-                listOfNotNull(projectName, "All caught up".takeIf { quiet }).joinToString(" · "),
+                when {
+                    filtered ->
+                        listOfNotNull(
+                                projectName,
+                                status.title.takeIf { status != InboxStatus.ALL },
+                                "${rows.size}",
+                            )
+                            .joinToString(" · ")
+                    workspace.loaded -> view.summary?.headline.orEmpty()
+                    else -> ""
+                },
             // Keep the title beside the toolbar controls and the inbox content near the top.
             large = false,
             actions =
@@ -162,9 +172,22 @@ internal fun InboxScreen(store: MobileStore) {
                         "inbox-filter",
                         "Filter",
                         Glyph.FILTER,
-                        checked = project.isNotEmpty(),
+                        checked = filtered,
                         menu =
                             listOf(
+                                MenuSection(
+                                    InboxStatus.entries.map { value ->
+                                        ChromeAction(
+                                            "inbox-status-${value.name.lowercase()}",
+                                            value.title,
+                                            checked = value == status,
+                                            value = "${counts[value] ?: 0}",
+                                        ) {
+                                            status = value
+                                        }
+                                    },
+                                    title = "Show",
+                                ),
                                 MenuSection(
                                     listOf(
                                         ChromeAction(
@@ -188,7 +211,12 @@ internal fun InboxScreen(store: MobileStore) {
                                 ),
                                 MenuSection(
                                     listOf(
-                                        ChromeAction("inbox-rules", "Inbox rules…", Glyph.FILTER) {
+                                        ChromeAction(
+                                            "inbox-rules",
+                                            "Inbox rules…",
+                                            Glyph.FILTER,
+                                            value = if (hidden > 0) "$hidden hidden" else "",
+                                        ) {
                                             rulesOpen = true
                                         },
                                         ChromeAction(
@@ -231,32 +259,6 @@ internal fun InboxScreen(store: MobileStore) {
                                 testTag = "inbox-search-field",
                             )
                         }
-                    item("pulse") {
-                        InboxPulse(
-                            InboxFilter.entries.associateWith { value ->
-                                scoped.count { it.matches(value) }
-                            },
-                            filter,
-                        ) {
-                            filter = it
-                        }
-                    }
-                    if (providers.summary?.items.orEmpty().any { it.remaining >= 0 })
-                        item("usage") {
-                            UsageStrip(providers.summary?.items.orEmpty()) {
-                                store.showFrom(
-                                    MobileRoute.Root(MobileTab.INBOX),
-                                    MobileRoute.Tool(ToolPage.PROVIDERS),
-                                )
-                            }
-                        }
-                    val hidden = view.summary?.hidden ?: 0
-                    if (hidden > 0)
-                        item("hidden") {
-                            HiddenByRules(hidden, Modifier.testTag("inbox-hidden")) {
-                                rulesOpen = true
-                            }
-                        }
                     if (timeline && rows.isNotEmpty())
                         item("timeline") {
                             ActivityTimeline(rows, now) { store.openConversation(it) }
@@ -268,42 +270,41 @@ internal fun InboxScreen(store: MobileStore) {
                                 when {
                                     !workspace.loaded -> "Loading activity…"
                                     query.isNotBlank() -> "No results"
-                                    filter != InboxFilter.ALL -> "Nothing here"
+                                    filtered -> "Nothing here"
                                     else -> "All quiet"
                                 },
                                 when {
                                     query.isNotBlank() -> "No conversations match “$query”."
-                                    filter == InboxFilter.NEEDS_YOU ->
-                                        "Nothing needs your attention right now."
+                                    status == InboxStatus.NEEDS_YOU ->
+                                        "Nothing needs you right now."
                                     else -> "Running work, replies and reviews appear here."
                                 },
                                 Modifier.padding(top = 24.dp),
                             )
                         }
-                    inboxSections(rows).forEach { (section, sectionRows) ->
+                    InboxSection.group(rows).forEach { (section, sectionRows) ->
                         item("header-$section") { InboxSectionHeader(section, sectionRows.size) }
                         itemsIndexed(sectionRows, key = { _, row -> "row-" + row.card!!.id }) {
                             index,
                             row ->
-                            val machine =
-                                session.machines
-                                    .takeIf { it.size > 1 }
-                                    ?.firstOrNull { it.id == row.card?.owner_daemon_id }
-                                    ?.display_name
                             InboxRow(
                                 store,
                                 row,
                                 now,
-                                compact =
-                                    section == InboxSection.REVIEW ||
-                                        section == InboxSection.RECENT,
-                                position = Position.of(index, sectionRows.size),
+                                first = index == 0,
                                 selected = row.card!!.id == selected,
-                                machine = machine,
+                                showPin = section != InboxSection.PINNED,
+                                machine = machines[row.card?.owner_daemon_id],
                                 onSwipe = ::perform,
                             )
                         }
                     }
+                    if (hidden > 0)
+                        item("hidden") {
+                            HiddenByRules(hidden, Modifier.testTag("inbox-hidden")) {
+                                rulesOpen = true
+                            }
+                        }
                 }
             }
             SnackbarHost(
@@ -330,226 +331,55 @@ internal fun InboxScreen(store: MobileStore) {
     }
 }
 
-private fun ActivityRow.matches(filter: InboxFilter) =
-    when (filter) {
-        InboxFilter.ALL -> true
-        InboxFilter.NEEDS_YOU -> needs_you
-        InboxFilter.RUNNING -> kind == "RUNNING"
-        InboxFilter.REVIEW -> kind == "REVIEW"
-    }
-
-private val ActivityRow.tint: Color
-    @Composable
-    get() =
-        when {
-            kind == "FAILED" -> palette.destructive
-            needs_you -> palette.warning
-            kind == "RUNNING" -> palette.info
-            kind == "REVIEW" -> palette.purple
-            else -> palette.secondaryLabel
-        }
-
-private val InboxFilter.tint: Color
-    @Composable
-    get() =
-        when (this) {
-            InboxFilter.RUNNING -> palette.info
-            InboxFilter.NEEDS_YOU -> palette.warning
-            InboxFilter.REVIEW -> palette.purple
-            InboxFilter.ALL -> palette.accent
-        }
-
 /** White or black, whichever reads on [background]. */
 private fun contentOn(background: Color) =
     if (background.luminance() > .5f) Color.Black else Color.White
 
-/** A raised card's fill: lifted towards white in light mode so it stands off the background. */
-private val cardFill: Color
-    @Composable get() = if (palette.dark) palette.cell else lerp(palette.cell, Color.White, .75f)
-
 // ---------------------------------------------------------------------------------------------
-// Header
+// Sections
 // ---------------------------------------------------------------------------------------------
 
-/** Running, needs-you and review counts as tiles; tapping one filters the Inbox to it. */
+/** A section's title and count in its colour, then a hairline to the edge. */
 @Composable
-private fun InboxPulse(
-    counts: Map<InboxFilter, Int>,
-    filter: InboxFilter,
-    onFilter: (InboxFilter) -> Unit,
-) {
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = ScreenMargin, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        listOf(InboxFilter.RUNNING, InboxFilter.NEEDS_YOU, InboxFilter.REVIEW).forEach { value ->
-            PulseTile(value, counts[value] ?: 0, filter == value, Modifier.weight(1f)) {
-                onFilter(if (filter == value) InboxFilter.ALL else value)
-            }
+private fun InboxSectionHeader(section: InboxSection, count: Int) {
+    val color =
+        when (section) {
+            InboxSection.NEEDS_YOU -> palette.warning.readableOn(palette.background)
+            InboxSection.RUNNING -> palette.info.readableOn(palette.background)
+            InboxSection.PINNED,
+            InboxSection.RECENT -> palette.secondaryLabel
         }
-    }
-}
-
-@Composable
-private fun PulseTile(
-    value: InboxFilter,
-    count: Int,
-    selected: Boolean,
-    modifier: Modifier,
-    onClick: () -> Unit,
-) {
-    val tint = value.tint
-    val shape = RoundedCornerShape(20.dp)
-    val content = if (selected) contentOn(tint) else palette.label
-    val idle = count == 0 && !selected
-    Column(
-        modifier
-            .then(
-                if (!palette.dark && !selected)
-                    Modifier.shadow(
-                        1.dp,
-                        shape,
-                        ambientColor = Color.Black.copy(.04f),
-                        spotColor = Color.Black.copy(.08f),
-                    )
-                else Modifier
-            )
-            .clip(shape)
-            .background(if (selected) tint else cardFill)
-            .then(
-                if (!selected && !idle)
-                    Modifier.background(
-                        Brush.linearGradient(
-                            0f to tint.copy(alpha = if (palette.dark) .2f else .1f),
-                            .75f to Color.Transparent,
-                        )
-                    )
-                else Modifier
-            )
-            .then(
-                if (!selected)
-                    Modifier.border(
-                        .5.dp,
-                        palette.separator.copy(alpha = if (palette.dark) .5f else .3f),
-                        shape,
-                    )
-                else Modifier
-            )
-            .pressable(onClick = onClick, highlight = true)
-            .semantics { this.selected = selected }
-            .testTag("inbox-filter-${value.name.lowercase()}")
-            .padding(start = 14.dp, end = 12.dp, top = 12.dp, bottom = 12.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "$count",
-                Modifier.weight(1f),
-                style = type.title1.copy(fontWeight = FontWeight.Bold),
-                color = if (idle) palette.tertiaryLabel else content,
-                maxLines = 1,
-            )
-            if (value == InboxFilter.RUNNING && count > 0)
-                LiveDot(if (selected) content else tint, size = 12.dp)
-            else
-                Icon(
-                    value.glyph,
-                    null,
-                    tint =
-                        when {
-                            selected -> content
-                            idle -> palette.tertiaryLabel
-                            else -> tint
-                        },
-                    size = 17.dp,
-                    weight = GlyphWeight.SEMIBOLD,
-                )
-        }
-        Text(
-            value.title,
-            style = type.footnote.copy(fontWeight = FontWeight.Medium),
-            color = if (selected) content.copy(alpha = .86f) else palette.secondaryLabel,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-/** What is left of each provider's tightest allowance as small gauges; opens Providers. */
-@Composable
-private fun UsageStrip(summary: List<ProviderSummaryItem>, open: () -> Unit) {
-    val items = summary.filter { it.remaining >= 0 }
+    val hairline = with(LocalDensity.current) { 1f / density }.dp
     Row(
         Modifier.fillMaxWidth()
-            .padding(horizontal = ScreenMargin, vertical = 4.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(palette.cell)
-            .pressable(onClick = open, highlight = true)
-            .padding(start = 14.dp, end = 10.dp, top = 9.dp, bottom = 9.dp)
-            .testTag("inbox-usage"),
+            .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp)
+            .semantics(mergeDescendants = true) { heading() }
+            .testTag("inbox-section-${section.name.lowercase()}"),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        items.take(3).forEach { item ->
-            val tint = item.severity.tint()
-            val normal = item.severity == ProviderSeverity.PROVIDER_SEVERITY_NORMAL
-            Row(
-                Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                UsageGauge(item.remaining / 100f, tint)
-                Column {
-                    Text(
-                        item.provider_name,
-                        style = type.caption2,
-                        color = palette.secondaryLabel,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        ProviderExports.usageText(item.remaining),
-                        style = type.footnote.copy(fontWeight = FontWeight.SemiBold),
-                        color = if (normal) palette.label else tint.readableOn(palette.cell),
-                        maxLines = 1,
-                    )
-                }
-            }
-        }
-        Icon(
-            Glyph.CHEVRON_RIGHT,
-            "Providers",
-            tint = palette.tertiaryLabel,
-            size = 13.dp,
-            weight = GlyphWeight.SEMIBOLD,
+        Text(
+            section.title,
+            style = type.footnote.copy(fontWeight = FontWeight.SemiBold),
+            color = color,
+        )
+        Text(
+            "$count",
+            style = type.footnote.copy(fontWeight = FontWeight.Medium),
+            color = color.copy(alpha = .8f),
+        )
+        Box(
+            Modifier.weight(1f).padding(start = 4.dp).height(hairline).background(palette.separator)
         )
     }
 }
 
-@Composable
-private fun UsageGauge(fraction: Float, color: Color) {
-    val track = palette.fill
-    Canvas(Modifier.size(22.dp)) {
-        val stroke = Stroke(3.dp.toPx(), cap = StrokeCap.Round)
-        val inset = stroke.width / 2
-        val arc = Size(size.width - stroke.width, size.height - stroke.width)
-        drawArc(track, 0f, 360f, false, Offset(inset, inset), arc, style = stroke)
-        drawArc(
-            color,
-            -90f,
-            360f * fraction.coerceIn(0f, 1f),
-            false,
-            Offset(inset, inset),
-            arc,
-            style = stroke,
-        )
-    }
-}
-
+/** The quiet last row: how many conversations the Inbox rules hide; opens the rules. */
 @Composable
 private fun HiddenByRules(count: Int, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Row(
         modifier
-            .padding(horizontal = ScreenMargin, vertical = 4.dp)
+            .padding(start = 10.dp, top = 12.dp, bottom = 8.dp)
             .clip(CircleShape)
             .pressable(onClick = onClick, highlight = true)
             .padding(horizontal = 6.dp, vertical = 6.dp),
@@ -568,68 +398,6 @@ private fun HiddenByRules(count: Int, modifier: Modifier = Modifier, onClick: ()
             tint = palette.tertiaryLabel,
             size = 11.dp,
             weight = GlyphWeight.SEMIBOLD,
-        )
-    }
-}
-
-@Composable
-private fun InboxSectionHeader(section: InboxSection, count: Int) {
-    Row(
-        Modifier.fillMaxWidth()
-            .padding(
-                start = ScreenMargin + 4.dp,
-                end = ScreenMargin + 4.dp,
-                top = 20.dp,
-                bottom = 9.dp,
-            )
-            .semantics(mergeDescendants = true) {}
-            .testTag("inbox-section-${section.name.lowercase()}"),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        when (section) {
-            InboxSection.RUNNING -> LiveDot(palette.info, size = 10.dp)
-            InboxSection.PINNED ->
-                Icon(
-                    Glyph.PIN,
-                    null,
-                    tint = palette.accent,
-                    size = 15.dp,
-                    weight = GlyphWeight.SEMIBOLD,
-                )
-            InboxSection.ATTENTION ->
-                Box(Modifier.size(8.dp).background(palette.warning, CircleShape))
-            InboxSection.REVIEW ->
-                Icon(
-                    Glyph.EYE,
-                    null,
-                    tint = palette.purple,
-                    size = 15.dp,
-                    weight = GlyphWeight.SEMIBOLD,
-                )
-            InboxSection.RECENT ->
-                Icon(Glyph.CLOCK, null, tint = palette.secondaryLabel, size = 14.dp)
-        }
-        Text(
-            when (section) {
-                InboxSection.RUNNING -> "Running"
-                InboxSection.PINNED -> "Pinned"
-                InboxSection.ATTENTION -> "Needs you"
-                InboxSection.REVIEW -> "Review"
-                InboxSection.RECENT -> "Recent"
-            },
-            style =
-                if (apple) type.headline.copy(fontWeight = FontWeight.Bold)
-                else type.title3.copy(fontWeight = FontWeight.SemiBold),
-            color = palette.label,
-        )
-        Text(
-            "$count",
-            Modifier.clip(CircleShape)
-                .background(palette.fill)
-                .padding(horizontal = 7.dp, vertical = 1.dp),
-            style = type.caption.copy(fontWeight = FontWeight.SemiBold),
-            color = palette.secondaryLabel,
         )
     }
 }
@@ -659,7 +427,7 @@ private val SwipeAction.color: Color
             SwipeAction.STOP -> palette.destructive
         }
 
-/** Swiping right: read an unread reply, finish a review, or pin. */
+/** Swiping right: read an unread reply, finish a reviewed or failed card, or pin. */
 private val ActivityRow.leadingAction: SwipeAction
     get() =
         when {
@@ -673,77 +441,11 @@ private val ActivityRow.leadingAction: SwipeAction
 private val ActivityRow.trailingAction: SwipeAction
     get() = if (kind == "RUNNING") SwipeAction.STOP else SwipeAction.ARCHIVE
 
-@Composable
-private fun InboxRow(
-    store: MobileStore,
-    row: ActivityRow,
-    now: Instant,
-    compact: Boolean,
-    position: Position,
-    selected: Boolean,
-    machine: String?,
-    onSwipe: (SwipeAction, ActivityRow) -> Unit,
-) {
-    val card = row.card ?: return
-    val menu = rememberMenuState()
-    val onMenu = { menu.show(inboxMenu(store, row) { onSwipe(it, row) }) }
-    val shape =
-        if (compact) groupShape(position) else RoundedCornerShape(if (apple) 24.dp else 22.dp)
-    val gap =
-        when {
-            position.isFirst -> 0.dp
-            compact -> if (apple) 0.dp else 2.dp
-            else -> 10.dp
-        }
-    MenuAnchor(menu) {
-        SwipeRow(
-            row,
-            Modifier.padding(horizontal = ScreenMargin)
-                .padding(top = gap)
-                .then(
-                    if (!compact && !palette.dark && !selected)
-                        Modifier.shadow(
-                            2.dp,
-                            shape,
-                            ambientColor = Color.Black.copy(.05f),
-                            spotColor = Color.Black.copy(.12f),
-                        )
-                    else Modifier
-                )
-                .clip(shape)
-                .testTag("activity-row-${card.id}"),
-            onSwipe = { onSwipe(it, row) },
-        ) {
-            if (compact)
-                CompactRow(
-                    row,
-                    now,
-                    position,
-                    selected,
-                    machine,
-                    onOpen = { store.openConversation(card.id) },
-                    onMenu = onMenu,
-                    onFinish = { onSwipe(SwipeAction.DONE, row) },
-                )
-            else
-                InboxCard(
-                    row,
-                    now,
-                    shape,
-                    selected,
-                    machine,
-                    onOpen = { store.openConversation(card.id) },
-                    onMenu = onMenu,
-                    onFinish = { onSwipe(SwipeAction.DONE, row) },
-                )
-        }
-    }
-}
-
-/** The long-press menu: the Inbox's own actions, then the card's. */
+/** The long-press menu: the Inbox's own actions under where the row comes from, then the card's. */
 private fun inboxMenu(
     store: MobileStore,
     row: ActivityRow,
+    machine: String?,
     perform: (SwipeAction) -> Unit,
 ): List<MenuSection> {
     val card = row.card ?: return emptyList()
@@ -751,6 +453,14 @@ private fun inboxMenu(
     val inbox =
         MenuSection(
             listOfNotNull(
+                if (row.stale.isNotEmpty())
+                    ChromeAction(
+                        "inbox-stale-${card.id}",
+                        row.stale,
+                        Glyph.OFFLINE,
+                        enabled = false,
+                    )
+                else null,
                 ChromeAction(
                     "inbox-pin-${card.id}",
                     if (row.pinned) "Unpin from Inbox" else "Pin in Inbox",
@@ -773,9 +483,237 @@ private fun inboxMenu(
                         perform(SwipeAction.STOP)
                     }
                 else null,
-            )
+            ),
+            title = listOfNotNull(row.project_name.ifEmpty { null }, machine).joinToString(" · "),
         )
     return sections.take(1) + inbox + sections.drop(1)
+}
+
+@Composable
+private fun InboxRow(
+    store: MobileStore,
+    row: ActivityRow,
+    now: Instant,
+    first: Boolean,
+    selected: Boolean,
+    showPin: Boolean,
+    machine: String?,
+    onSwipe: (SwipeAction, ActivityRow) -> Unit,
+) {
+    val card = row.card ?: return
+    val menu = rememberMenuState()
+    MenuAnchor(menu) {
+        SwipeRow(row, Modifier.testTag("activity-row-${card.id}"), onSwipe = { onSwipe(it, row) }) {
+            InboxRowContent(
+                row,
+                now,
+                first,
+                selected,
+                showPin,
+                machine,
+                onOpen = { store.openConversation(card.id) },
+                onMenu = { menu.show(inboxMenu(store, row, machine) { onSwipe(it, row) }) },
+            )
+        }
+    }
+}
+
+/**
+ * Two lines beside the project avatar: the title and its time, then `project:` and what the agent
+ * does or said last, with one status badge. A working agent rings its avatar.
+ */
+@Composable
+private fun InboxRowContent(
+    row: ActivityRow,
+    now: Instant,
+    first: Boolean,
+    selected: Boolean,
+    showPin: Boolean,
+    machine: String?,
+    onOpen: () -> Unit,
+    onMenu: () -> Unit,
+) {
+    val card = row.card ?: return
+    val running = row.kind == "RUNNING"
+    val surface =
+        when {
+            selected -> palette.accentContainer
+            row.pinned -> lerp(palette.background, palette.label, if (palette.dark) .07f else .035f)
+            else -> palette.background
+        }
+    val accent = row.accent(surface)
+    val separator = palette.separator
+    val hairline = with(LocalDensity.current) { 1f / density }.dp
+    val iOS = apple
+    // An unfiled chat has no project, so its machine says where it runs.
+    val source = row.project_name.ifEmpty { machine.orEmpty() }
+    val label = palette.label
+    val secondary = palette.secondaryLabel
+    val preview = buildAnnotatedString {
+        if (source.isNotEmpty())
+            withStyle(SpanStyle(color = label, fontWeight = FontWeight.Medium)) {
+                append("$source: ")
+            }
+        append(row.preview.ifEmpty { row.detail })
+        if (running && row.agents.isNotEmpty())
+            withStyle(SpanStyle(color = secondary)) { append(" · ${row.agents}") }
+    }
+    Row(
+        Modifier.fillMaxWidth()
+            .heightIn(min = 72.dp)
+            .background(surface)
+            .pressable(onClick = onOpen, onLongClick = onMenu, highlight = true)
+            .drawBehind {
+                if (iOS && !first)
+                    drawRect(
+                        separator,
+                        topLeft = Offset(78.dp.toPx(), 0f),
+                        size = Size(size.width - 78.dp.toPx(), hairline.toPx()),
+                    )
+            }
+            .then(if (row.pinned) Modifier.testTag("inbox-pinned-${card.id}") else Modifier)
+            .padding(start = 12.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        InboxAvatar(row)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (row.chat)
+                    Icon(
+                        Glyph.CHAT,
+                        "Chat",
+                        Modifier.padding(end = 4.dp),
+                        tint = palette.secondaryLabel,
+                        size = 13.dp,
+                    )
+                Text(
+                    row.title,
+                    Modifier.weight(1f),
+                    style = type.bodyEmphasized.copy(fontWeight = FontWeight.SemiBold),
+                    color = palette.label,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (row.stale.isNotEmpty())
+                    Icon(
+                        Glyph.OFFLINE,
+                        row.stale,
+                        Modifier.padding(start = 6.dp),
+                        tint = palette.warning.readableOn(surface),
+                        size = 13.dp,
+                    )
+                Text(
+                    row.age(now),
+                    Modifier.padding(start = 6.dp),
+                    style = type.footnote,
+                    color = if (running || row.needs_you) accent else palette.secondaryLabel,
+                    maxLines = 1,
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    preview,
+                    Modifier.weight(1f),
+                    style = type.subheadline,
+                    color =
+                        when {
+                            running || row.kind == "FAILED" -> accent
+                            row.needs_you -> palette.label
+                            else -> palette.secondaryLabel
+                        },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                InboxBadge(row, showPin, surface, Modifier.padding(start = 8.dp))
+            }
+        }
+    }
+}
+
+/** The colour that says what a row waits for, readable on [surface]. */
+@Composable
+private fun ActivityRow.accent(surface: Color): Color =
+    when (kind) {
+        "FAILED" -> palette.destructive
+        "ANSWER" -> palette.warning
+        "UNREAD" -> palette.accent
+        "RUNNING" -> palette.info
+        "REVIEW" -> palette.purple
+        else -> palette.secondaryLabel
+    }.readableOn(surface)
+
+/**
+ * One status mark: a question for the user, an unread reply, a failure, a review, else a pin.
+ * Running and finished rows have none; the ring and the preview already say it.
+ */
+@Composable
+private fun InboxBadge(row: ActivityRow, showPin: Boolean, surface: Color, modifier: Modifier) {
+    val tag = Modifier.testTag("inbox-badge-${row.kind.lowercase()}")
+    when (row.kind) {
+        "ANSWER" -> FilledBadge("?", palette.warning, "Waiting for your answer", modifier.then(tag))
+        "FAILED" -> FilledBadge("!", palette.destructive, "Agent failed", modifier.then(tag))
+        "UNREAD" ->
+            Box(
+                modifier
+                    .then(tag)
+                    .padding(horizontal = 5.dp)
+                    .size(12.dp)
+                    .background(palette.accent, CircleShape)
+                    .semantics { contentDescription = "New reply" }
+            )
+        "REVIEW" ->
+            Icon(
+                Glyph.EYE,
+                "Ready for review",
+                modifier.then(tag),
+                tint = palette.purple.readableOn(surface),
+                size = 17.dp,
+                weight = GlyphWeight.SEMIBOLD,
+            )
+        else ->
+            if (row.pinned && showPin)
+                Icon(Glyph.PIN, "Pinned", modifier, tint = palette.tertiaryLabel, size = 15.dp)
+    }
+}
+
+@Composable
+private fun FilledBadge(text: String, color: Color, description: String, modifier: Modifier) {
+    Box(
+        modifier.size(22.dp).background(color, CircleShape).semantics {
+            contentDescription = description
+        },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text,
+            style = type.footnote.copy(fontWeight = FontWeight.Bold),
+            color = contentOn(color),
+            maxLines = 1,
+        )
+    }
+}
+
+/** The project's avatar, or a chat bubble for an unfiled chat; a working agent spins a ring. */
+@Composable
+private fun InboxAvatar(row: ActivityRow) {
+    val card = row.card ?: return
+    val running = row.kind == "RUNNING"
+    val size = 52.dp
+    Box(Modifier.size(size), contentAlignment = Alignment.Center) {
+        val inner: Dp = if (running) 42.dp else 46.dp
+        if (running) RunningRing(palette.info, size, inner * .28f + 4.dp)
+        if (row.project_name.isEmpty())
+            Box(
+                Modifier.size(inner)
+                    .clip(RoundedCornerShape(inner * .28f))
+                    .background(palette.fill),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Glyph.CHAT, null, tint = palette.secondaryLabel, size = inner * .48f)
+            }
+        else ProjectAvatar(card.project_id, row.project_name, inner)
+    }
 }
 
 /** Reveals the row's swipe actions; a row that leaves the Inbox goes with its swipe. */
@@ -841,367 +779,12 @@ private fun SwipeBackground(action: SwipeAction, alignment: Alignment) {
     }
 }
 
-/**
- * Live or waiting work: the project avatar ringed by its status, where it belongs, the title, and a
- * callout saying what happens now — the agent's current step or what it said last.
- */
-@Composable
-private fun InboxCard(
-    row: ActivityRow,
-    now: Instant,
-    shape: Shape,
-    selected: Boolean,
-    machine: String?,
-    onOpen: () -> Unit,
-    onMenu: () -> Unit,
-    onFinish: () -> Unit,
-) {
-    val card = row.card ?: return
-    val tint = row.tint
-    val running = row.kind == "RUNNING"
-    val surface = if (selected) palette.accentContainer else cardFill
-    Box(
-        Modifier.fillMaxWidth()
-            .background(surface)
-            .border(
-                if (selected) 1.5.dp else .5.dp,
-                if (selected) palette.accent
-                else palette.separator.copy(alpha = if (palette.dark) .55f else .3f),
-                shape,
-            )
-            .pressable(onClick = onOpen, onLongClick = onMenu, highlight = true)
-    ) {
-        Column(
-            Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 14.dp)
-        ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                InboxAvatar(row, tint, surface, 42.dp)
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RowContext(row, machine, Modifier.weight(1f))
-                        Text(
-                            row.age(now),
-                            Modifier.padding(start = 8.dp),
-                            style = type.footnote.copy(fontWeight = FontWeight.Medium),
-                            color =
-                                if (running || row.needs_you) tint.readableOn(surface)
-                                else palette.secondaryLabel,
-                        )
-                    }
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        row.title,
-                        style = type.bodyEmphasized.copy(fontWeight = FontWeight.SemiBold),
-                        color = palette.label,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            if (running) LiveCallout(row.detail, tint, surface)
-            else
-                StatusCallout(row, tint, surface) {
-                    if (row.can_finish) FinishChip(onFinish, Modifier.testTag("finish-${card.id}"))
-                }
-            if (row.stale.isNotEmpty())
-                StaleNote(row.stale, surface, Modifier.padding(top = 8.dp, start = 4.dp))
-        }
-        if (running) RunningSweep(tint)
-    }
-}
-
-/** Finished work: one quiet line for the title and one for what happened. */
-@Composable
-private fun CompactRow(
-    row: ActivityRow,
-    now: Instant,
-    position: Position,
-    selected: Boolean,
-    machine: String?,
-    onOpen: () -> Unit,
-    onMenu: () -> Unit,
-    onFinish: () -> Unit,
-) {
-    val card = row.card ?: return
-    val tint = row.tint
-    val surface = if (selected) palette.accentContainer else palette.cell
-    val separator = palette.separator
-    val hairline = with(LocalDensity.current) { 1f / density }.dp
-    val iOS = apple
-    Row(
-        Modifier.fillMaxWidth()
-            .background(surface)
-            .pressable(onClick = onOpen, onLongClick = onMenu, highlight = true)
-            .drawBehind {
-                if (iOS && !position.isFirst)
-                    drawRect(
-                        separator,
-                        topLeft = Offset(60.dp.toPx(), 0f),
-                        size = Size(size.width - 60.dp.toPx(), hairline.toPx()),
-                    )
-            }
-            .padding(start = 14.dp, end = 12.dp, top = 11.dp, bottom = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        InboxAvatar(row, tint, surface, 34.dp)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (row.pinned)
-                    Icon(
-                        Glyph.PIN,
-                        "Pinned",
-                        Modifier.padding(end = 4.dp),
-                        tint = palette.accent,
-                        size = 13.dp,
-                    )
-                Text(
-                    row.title,
-                    Modifier.weight(1f),
-                    style = type.subheadline.copy(fontWeight = FontWeight.SemiBold),
-                    color = palette.label,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    row.age(now),
-                    Modifier.padding(start = 8.dp),
-                    style = type.caption,
-                    color = palette.secondaryLabel,
-                )
-            }
-            val status = row.status
-            val summary = row.preview
-            Text(
-                listOfNotNull(
-                        status.takeIf { it.isNotEmpty() },
-                        summary.takeIf { it.isNotEmpty() && it != status }
-                            ?: listOfNotNull(row.project_name.ifEmpty { null }, machine)
-                                .joinToString(" · ")
-                                .ifEmpty { null },
-                    )
-                    .joinToString(" · "),
-                style = type.footnote,
-                color =
-                    if (row.kind == "REVIEW" || row.kind == "FAILED") tint.readableOn(surface)
-                    else palette.secondaryLabel,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        if (row.can_finish)
-            Box(
-                Modifier.size(32.dp)
-                    .clip(CircleShape)
-                    .background(palette.success.copy(alpha = if (palette.dark) .2f else .12f))
-                    .pressable(onClick = onFinish)
-                    .semantics { contentDescription = "Mark done" }
-                    .testTag("finish-${card.id}"),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Glyph.CHECK,
-                    null,
-                    tint = palette.success.readableOn(surface),
-                    size = 16.dp,
-                    weight = GlyphWeight.BOLD,
-                )
-            }
-    }
-}
-
-/** What happened in words: "New reply", "Ready for review", "Finished". */
-private val ActivityRow.status: String
-    get() = detail.ifEmpty { kind_label }
-
-/** What the agent said last, when its machine summarized it. */
-private val ActivityRow.preview: String
-    get() = card?.summary?.trim().orEmpty()
-
 private fun ActivityRow.age(now: Instant) =
     Activity.age(
         shown_at_millis.takeIf { it > 0 }?.let(Instant::fromEpochMilliseconds),
         now,
         suffix = false,
     )
-
-/** "Atlas API · Office mini", a chat bubble for chats and a pin for pinned rows. */
-@Composable
-private fun RowContext(row: ActivityRow, machine: String?, modifier: Modifier = Modifier) {
-    Row(
-        modifier,
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        if (row.pinned) Icon(Glyph.PIN, "Pinned", tint = palette.accent, size = 13.dp)
-        if (row.chat) Icon(Glyph.CHAT, "Chat", tint = palette.secondaryLabel, size = 12.dp)
-        Text(
-            listOfNotNull(row.project_name.ifEmpty { if (row.chat) "Chat" else null }, machine)
-                .joinToString(" · "),
-            style = type.footnote.copy(fontWeight = FontWeight.Medium),
-            color = palette.secondaryLabel,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-/**
- * The status in the row's color with an optional action beside it, then what the agent said last.
- */
-@Composable
-private fun StatusCallout(
-    row: ActivityRow,
-    tint: Color,
-    surface: Color,
-    action: @Composable () -> Unit = {},
-) {
-    val wash = lerp(surface, tint, if (palette.dark) .16f else .08f)
-    val status = row.status
-    val preview = row.preview.takeIf { it != status }.orEmpty()
-    Column(
-        Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(wash)
-            .padding(start = 10.dp, end = 8.dp, top = 8.dp, bottom = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(3.dp),
-    ) {
-        Row(
-            Modifier.heightIn(min = 22.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Icon(
-                row.statusGlyph,
-                null,
-                tint = tint.readableOn(wash),
-                size = 15.dp,
-                weight = GlyphWeight.SEMIBOLD,
-            )
-            Text(
-                status,
-                Modifier.weight(1f),
-                style = type.footnote.copy(fontWeight = FontWeight.SemiBold),
-                color = tint.readableOn(wash),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            action()
-        }
-        if (preview.isNotEmpty())
-            Text(
-                preview,
-                Modifier.padding(start = 2.dp, end = 4.dp),
-                style = type.subheadline,
-                color = palette.label.copy(alpha = .82f),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-    }
-}
-
-/** The agent's current step, typed out like a terminal line after a prompt. */
-@Composable
-private fun LiveCallout(step: String, tint: Color, surface: Color) {
-    val wash = lerp(surface, tint, if (palette.dark) .14f else .06f)
-    val mono = type.mono.copy(fontSize = 12.sp, lineHeight = 17.sp)
-    Row(
-        Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(wash)
-            .padding(start = 11.dp, end = 12.dp, top = 9.dp, bottom = 9.dp),
-        horizontalArrangement = Arrangement.spacedBy(7.dp),
-    ) {
-        Text("›", style = mono.copy(fontWeight = FontWeight.Bold), color = tint.readableOn(wash))
-        Text(
-            step.ifEmpty { "Working…" },
-            Modifier.weight(1f),
-            style = mono,
-            color = palette.label.copy(alpha = .86f),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-@Composable
-private fun StaleNote(text: String, surface: Color, modifier: Modifier = Modifier) {
-    Row(
-        modifier,
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
-    ) {
-        val color = palette.warning.readableOn(surface)
-        Icon(Glyph.OFFLINE, null, tint = color, size = 13.dp)
-        Text(
-            text,
-            style = type.footnote,
-            color = color,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-private val ActivityRow.statusGlyph: Glyph
-    get() =
-        when {
-            kind == "FAILED" -> Glyph.WARNING
-            kind == "ANSWER" -> Glyph.HOURGLASS
-            needs_you -> Glyph.CHAT
-            kind == "REVIEW" -> Glyph.EYE
-            else -> Glyph.CHECK
-        }
-
-/**
- * The project's avatar, or a chat bubble for an unfiled chat. A working agent spins a ring around
- * it; other live states wear a badge.
- */
-@Composable
-private fun InboxAvatar(row: ActivityRow, tint: Color, ring: Color, size: Dp) {
-    val card = row.card ?: return
-    val running = row.kind == "RUNNING"
-    val badge =
-        when {
-            running || row.kind == "RECENT" -> null
-            row.kind == "FAILED" -> Glyph.CLOSE
-            row.kind == "ANSWER" -> Glyph.HOURGLASS
-            row.needs_you -> Glyph.CHAT
-            row.kind == "REVIEW" -> Glyph.EYE
-            else -> null
-        }
-    Box(Modifier.size(size + 6.dp), contentAlignment = Alignment.Center) {
-        val inner = if (running) size - 4.dp else size
-        if (running) RunningRing(tint, size + 4.dp, inner * .28f + 4.dp)
-        if (row.project_name.isEmpty())
-            Box(
-                Modifier.size(inner).clip(RoundedCornerShape(inner * .3f)).background(palette.fill),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Glyph.CHAT, null, tint = palette.secondaryLabel, size = inner * .48f)
-            }
-        else ProjectAvatar(card.project_id, row.project_name, inner)
-        if (badge != null)
-            Box(
-                Modifier.align(Alignment.BottomEnd).size(20.dp).background(ring, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Box(
-                    Modifier.size(16.dp).background(tint, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        badge,
-                        null,
-                        tint = contentOn(tint),
-                        size = 10.dp,
-                        weight = GlyphWeight.BOLD,
-                    )
-                }
-            }
-    }
-}
 
 /** A comet running around the avatar's rounded square while the agent works. */
 @Composable
@@ -1236,51 +819,6 @@ private fun RunningRing(tint: Color, size: Dp, corner: Dp) {
             style = Stroke(width, cap = StrokeCap.Round),
         )
     }
-}
-
-@Composable
-private fun FinishChip(onFinish: () -> Unit, modifier: Modifier = Modifier) {
-    val tint = palette.success
-    Row(
-        modifier
-            .clip(CircleShape)
-            .background(cardFill)
-            .pressable(onClick = onFinish, highlight = true)
-            .semantics { contentDescription = "Mark done" }
-            .padding(start = 8.dp, end = 11.dp, top = 4.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        val color = tint.readableOn(cardFill)
-        Icon(Glyph.CHECK, null, tint = color, size = 14.dp, weight = GlyphWeight.BOLD)
-        Text(
-            "Done",
-            style = type.footnote.copy(fontWeight = FontWeight.SemiBold),
-            color = color,
-            maxLines = 1,
-        )
-    }
-}
-
-/** A light sweeping along the bottom edge while the agent works. */
-@Composable
-private fun BoxScope.RunningSweep(tint: Color) {
-    val progress =
-        rememberInfiniteTransition()
-            .animateFloat(0f, 1f, infiniteRepeatable(tween(1800, easing = LinearEasing)))
-    Box(
-        Modifier.align(Alignment.BottomStart).fillMaxWidth().height(2.dp).drawBehind {
-            val band = size.width * .45f
-            val start = -band + (size.width + band) * progress.value
-            drawRect(
-                Brush.horizontalGradient(
-                    listOf(Color.Transparent, tint, Color.Transparent),
-                    startX = start,
-                    endX = start + band,
-                )
-            )
-        }
-    )
 }
 
 @Composable

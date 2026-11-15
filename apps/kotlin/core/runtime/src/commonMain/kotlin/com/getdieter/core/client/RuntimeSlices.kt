@@ -24,9 +24,9 @@ import com.getdieter.client.v1.SessionSlice
 import com.getdieter.client.v1.WorkspaceNotice
 import com.getdieter.client.v1.WorkspaceSlice
 import com.getdieter.core.CoreRuntime
+import com.getdieter.core.activity.Activity
 import com.getdieter.core.activity.ActivityCounts
 import com.getdieter.core.activity.ActivityItem
-import com.getdieter.core.activity.ActivitySection
 import com.getdieter.core.activity.InboxRule
 import com.getdieter.core.activity.IslandModel
 import com.getdieter.core.activity.MenuBar
@@ -417,34 +417,30 @@ internal fun activitySlice(
     val island = IslandModel.build(items)
     return ActivitySlice(
         rows =
-            items
-                .sortedByDescending { it.id in pins }
-                .map { item ->
-                    ActivityRow(
-                        card = item.card,
-                        kind = item.kind.name,
-                        section =
-                            when (item.section) {
-                                ActivitySection.ATTENTION -> ActivityRow.Section.SECTION_ATTENTION
-                                ActivitySection.RUNNING -> ActivityRow.Section.SECTION_RUNNING
-                                ActivitySection.RECENT -> ActivityRow.Section.SECTION_RECENT
-                            },
-                        detail = item.detail,
-                        at_millis = item.at?.toEpochMilliseconds() ?: 0,
-                        started_at_millis = item.start?.toEpochMilliseconds() ?: 0,
-                        project_name = item.projectName.orEmpty(),
-                        board_name = item.boardName.orEmpty(),
-                        chat = item.chat,
-                        needs_you = item.needsYou,
-                        can_finish = item.canFinish,
-                        kind_label = item.kind.label,
-                        title = item.title,
-                        shown_at_millis = item.shownAt?.toEpochMilliseconds() ?: 0,
-                        menu_bar_title = MenuBar.title(item.kind),
-                        stale = item.stale.orEmpty(),
-                        pinned = item.id in pins,
-                    )
-                },
+            Activity.inboxOrder(items, pins).map { item ->
+                val pinned = item.id in pins
+                ActivityRow(
+                    card = item.card,
+                    kind = item.kind.name,
+                    section = Activity.inboxSection(item, pinned).row,
+                    detail = item.detail,
+                    at_millis = item.at?.toEpochMilliseconds() ?: 0,
+                    started_at_millis = item.start?.toEpochMilliseconds() ?: 0,
+                    project_name = item.projectName.orEmpty(),
+                    board_name = item.boardName.orEmpty(),
+                    chat = item.chat,
+                    needs_you = item.needsYou,
+                    can_finish = item.canFinish,
+                    kind_label = item.kind.label,
+                    title = item.title,
+                    shown_at_millis = item.shownAt?.toEpochMilliseconds() ?: 0,
+                    menu_bar_title = MenuBar.title(item.kind),
+                    stale = item.stale.orEmpty(),
+                    pinned = pinned,
+                    preview = item.preview,
+                    agents = item.agents,
+                )
+            },
         summary =
             ActivitySummary(
                 running = counts.running,
@@ -453,6 +449,7 @@ internal fun activitySlice(
                 review = counts.review,
                 subagents = counts.subagents,
                 hidden = hidden,
+                headline = Activity.headline(counts.attention, counts.running),
             ),
         island_ids = island.items.map { it.id },
         menu_bar_ids = MenuBar.items(items, now).map { it.id },

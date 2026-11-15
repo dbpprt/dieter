@@ -7380,14 +7380,17 @@ public nonisolated struct ClientMachineOutbox: Sendable {
   public init() {}
 }
 
-/// The account-wide activity feed: one latest activity per conversation,
-/// newest first except that running rows keep their start order. Sent again
-/// when a menu bar row leaves its six-hour window.
+/// The account-wide activity feed: one latest activity per conversation. Sent
+/// again when a menu bar row leaves its six-hour window.
 public nonisolated struct ClientActivitySlice: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
+  /// In Inbox display order: by section (needs you, running, pinned, recent),
+  /// then newest first within a section (a running row by its turn start, any
+  /// other by its latest activity). Clients filter the rows but never reorder
+  /// or regroup them.
   public var rows: [ClientActivityRow] = []
 
   /// Counts over every row.
@@ -7405,10 +7408,10 @@ public nonisolated struct ClientActivitySlice: Sendable {
   public var islandIds: [String] = []
 
   /// The macOS menu bar's rows (at most 4): what needs the user or waits in
-  /// review, then failures and results from the last six hours.
+  /// review, then results from the last six hours.
   public var menuBarIds: [String] = []
 
-  /// "Dieter Island. 2 running, 1 need attention, 3 recent."
+  /// "Dieter Island. 2 running, 1 needs you, 3 recent."
   public var islandAccessibility: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -7425,10 +7428,10 @@ public nonisolated struct ClientActivitySummary: Sendable {
 
   public var running: Int32 = 0
 
-  /// Rows waiting for the user: an answer or an unread reply.
+  /// Rows waiting for the user: an answer, an unread reply, or a failure.
   public var attention: Int32 = 0
 
-  /// Every other row: review, failed, and finished work.
+  /// Every other row: review and finished work.
   public var recent: Int32 = 0
 
   /// Board cards in a review lane, whatever their agent does.
@@ -7439,6 +7442,9 @@ public nonisolated struct ClientActivitySummary: Sendable {
 
   /// Conversations the Inbox rules hide; not in the rows or the counts above.
   public var hidden: Int32 = 0
+
+  /// The Inbox subtitle: "3 need you · 4 running", "All caught up".
+  public var headline: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -7502,13 +7508,14 @@ public nonisolated struct ClientActivityRow: @unchecked Sendable {
     set {_uniqueStorage()._chat = newValue}
   }
 
-  /// Waits for the user: an answer or an unread reply.
+  /// Waits for the user: an answer, an unread reply, or a failure.
   public var needsYou: Bool {
     get {_storage._needsYou}
     set {_uniqueStorage()._needsYou = newValue}
   }
 
-  /// Inbox "Finish": a board card waiting in a review lane.
+  /// Inbox "Finish": a board card waiting in a review lane, or a failed board
+  /// card; it moves the card to its board's done lane.
   public var canFinish: Bool {
     get {_storage._canFinish}
     set {_uniqueStorage()._canFinish = newValue}
@@ -7552,13 +7559,30 @@ public nonisolated struct ClientActivityRow: @unchecked Sendable {
     set {_uniqueStorage()._pinned = newValue}
   }
 
+  /// The row's second line: what the agent does now or said last, as plain
+  /// text on one line, e.g. "Thinking…", "Tag it stable now?".
+  public var preview: String {
+    get {_storage._preview}
+    set {_uniqueStorage()._preview = newValue}
+  }
+
+  /// Delegated agents at work: "6 agents", "1 agent"; empty with none.
+  public var agents: String {
+    get {_storage._agents}
+    set {_uniqueStorage()._agents = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
+  /// The Inbox section, in display order: attention ("Needs you"), running,
+  /// pinned, recent. A pinned row that needs the user or runs stays in that
+  /// section; pinned holds the idle pinned rows.
   public nonisolated enum Section: SwiftProtobuf.Enum, Swift.CaseIterable {
     public typealias RawValue = Int
     case attention // = 0
     case running // = 1
     case recent // = 2
+    case pinned // = 3
     case UNRECOGNIZED(Int)
 
     public init() {
@@ -7570,6 +7594,7 @@ public nonisolated struct ClientActivityRow: @unchecked Sendable {
       case 0: self = .attention
       case 1: self = .running
       case 2: self = .recent
+      case 3: self = .pinned
       default: self = .UNRECOGNIZED(rawValue)
       }
     }
@@ -7579,6 +7604,7 @@ public nonisolated struct ClientActivityRow: @unchecked Sendable {
       case .attention: return 0
       case .running: return 1
       case .recent: return 2
+      case .pinned: return 3
       case .UNRECOGNIZED(let i): return i
       }
     }
@@ -7588,6 +7614,7 @@ public nonisolated struct ClientActivityRow: @unchecked Sendable {
       .attention,
       .running,
       .recent,
+      .pinned,
     ]
 
   }
@@ -27908,7 +27935,7 @@ nonisolated extension ClientActivitySlice: SwiftProtobuf.Message, SwiftProtobuf.
 
 nonisolated extension ClientActivitySummary: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ActivitySummary"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}running\0\u{1}attention\0\u{1}recent\0\u{1}review\0\u{1}subagents\0\u{1}hidden\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}running\0\u{1}attention\0\u{1}recent\0\u{1}review\0\u{1}subagents\0\u{1}hidden\0\u{1}headline\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -27922,6 +27949,7 @@ nonisolated extension ClientActivitySummary: SwiftProtobuf.Message, SwiftProtobu
       case 4: try { try decoder.decodeSingularInt32Field(value: &self.review) }()
       case 5: try { try decoder.decodeSingularInt32Field(value: &self.subagents) }()
       case 6: try { try decoder.decodeSingularInt32Field(value: &self.hidden) }()
+      case 7: try { try decoder.decodeSingularStringField(value: &self.headline) }()
       default: break
       }
     }
@@ -27946,6 +27974,9 @@ nonisolated extension ClientActivitySummary: SwiftProtobuf.Message, SwiftProtobu
     if self.hidden != 0 {
       try visitor.visitSingularInt32Field(value: self.hidden, fieldNumber: 6)
     }
+    if !self.headline.isEmpty {
+      try visitor.visitSingularStringField(value: self.headline, fieldNumber: 7)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -27956,6 +27987,7 @@ nonisolated extension ClientActivitySummary: SwiftProtobuf.Message, SwiftProtobu
     if lhs.review != rhs.review {return false}
     if lhs.subagents != rhs.subagents {return false}
     if lhs.hidden != rhs.hidden {return false}
+    if lhs.headline != rhs.headline {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -27963,7 +27995,7 @@ nonisolated extension ClientActivitySummary: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension ClientActivityRow: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ActivityRow"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}card\0\u{1}kind\0\u{1}section\0\u{1}detail\0\u{3}at_millis\0\u{3}started_at_millis\0\u{3}project_name\0\u{3}board_name\0\u{1}chat\0\u{3}needs_you\0\u{3}can_finish\0\u{3}kind_label\0\u{1}title\0\u{3}shown_at_millis\0\u{3}menu_bar_title\0\u{1}stale\0\u{1}pinned\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}card\0\u{1}kind\0\u{1}section\0\u{1}detail\0\u{3}at_millis\0\u{3}started_at_millis\0\u{3}project_name\0\u{3}board_name\0\u{1}chat\0\u{3}needs_you\0\u{3}can_finish\0\u{3}kind_label\0\u{1}title\0\u{3}shown_at_millis\0\u{3}menu_bar_title\0\u{1}stale\0\u{1}pinned\0\u{1}preview\0\u{1}agents\0")
 
   fileprivate class _StorageClass {
     var _card: DieterAPI.Dieter_V1_Card? = nil
@@ -27983,6 +28015,8 @@ nonisolated extension ClientActivityRow: SwiftProtobuf.Message, SwiftProtobuf._M
     var _menuBarTitle: String = String()
     var _stale: String = String()
     var _pinned: Bool = false
+    var _preview: String = String()
+    var _agents: String = String()
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -28010,6 +28044,8 @@ nonisolated extension ClientActivityRow: SwiftProtobuf.Message, SwiftProtobuf._M
       _menuBarTitle = source._menuBarTitle
       _stale = source._stale
       _pinned = source._pinned
+      _preview = source._preview
+      _agents = source._agents
     }
   }
 
@@ -28045,6 +28081,8 @@ nonisolated extension ClientActivityRow: SwiftProtobuf.Message, SwiftProtobuf._M
         case 15: try { try decoder.decodeSingularStringField(value: &_storage._menuBarTitle) }()
         case 16: try { try decoder.decodeSingularStringField(value: &_storage._stale) }()
         case 17: try { try decoder.decodeSingularBoolField(value: &_storage._pinned) }()
+        case 18: try { try decoder.decodeSingularStringField(value: &_storage._preview) }()
+        case 19: try { try decoder.decodeSingularStringField(value: &_storage._agents) }()
         default: break
         }
       }
@@ -28108,6 +28146,12 @@ nonisolated extension ClientActivityRow: SwiftProtobuf.Message, SwiftProtobuf._M
       if _storage._pinned != false {
         try visitor.visitSingularBoolField(value: _storage._pinned, fieldNumber: 17)
       }
+      if !_storage._preview.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._preview, fieldNumber: 18)
+      }
+      if !_storage._agents.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._agents, fieldNumber: 19)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -28134,6 +28178,8 @@ nonisolated extension ClientActivityRow: SwiftProtobuf.Message, SwiftProtobuf._M
         if _storage._menuBarTitle != rhs_storage._menuBarTitle {return false}
         if _storage._stale != rhs_storage._stale {return false}
         if _storage._pinned != rhs_storage._pinned {return false}
+        if _storage._preview != rhs_storage._preview {return false}
+        if _storage._agents != rhs_storage._agents {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -28144,7 +28190,7 @@ nonisolated extension ClientActivityRow: SwiftProtobuf.Message, SwiftProtobuf._M
 }
 
 nonisolated extension ClientActivityRow.Section: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0SECTION_ATTENTION\0\u{1}SECTION_RUNNING\0\u{1}SECTION_RECENT\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0SECTION_ATTENTION\0\u{1}SECTION_RUNNING\0\u{1}SECTION_RECENT\0\u{1}SECTION_PINNED\0")
 }
 
 nonisolated extension ClientActivityTimelineBar: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
