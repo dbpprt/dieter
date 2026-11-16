@@ -10,6 +10,17 @@ copy the **Unreleased** notes into a section named after that exact version
 
 Nothing yet.
 
+## 0.7.452
+
+### Fixed
+
+- **Android: swiping along the navigation no longer closes the app.** The
+  selection lens grew with every move of your finger until the app crashed,
+  even on an accidental swipe. It now keeps its size and stops at the first
+  and last tab.
+- Android: wide badges such as "99+" on More are no longer cut off, and a
+  coloured row passing under the glass bar no longer tints the selected tab.
+
 ## 0.7.451
 
 ### Changed
