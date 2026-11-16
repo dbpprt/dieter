@@ -15,7 +15,12 @@ tags: [smoke]
     element:
       text: "Work"
     timeout: 20000
-- assertVisible: "Personal"
+# Rows under a floating bar (iOS, Android's glass navigation) count as visible
+# before the list has scrolled past them, so scroll to the next row as well.
+- scrollUntilVisible:
+    element:
+      text: "Personal"
+    timeout: 20000
 - scrollUntilVisible:
     element:
       id: settings-providers

@@ -16,6 +16,14 @@ tags: [smoke]
 - tapOn:
     text: "Design the mobile workspace"
     waitToSettleTimeoutMs: 500
+# The link sits above the fold on short screens, under the top bar or behind
+# the floating composer: centre it before tapping.
+- scrollUntilVisible:
+    element:
+      text: ".*Open workspace guide.*"
+    direction: UP
+    centerElement: true
+    timeout: 20000
 - tapOn:
     text: ".*Open workspace guide.*"
     waitToSettleTimeoutMs: 500

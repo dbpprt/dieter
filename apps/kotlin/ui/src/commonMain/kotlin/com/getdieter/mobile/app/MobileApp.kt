@@ -87,7 +87,8 @@ internal fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
     // once scrolling has rested for a moment, so the other tabs are never gone for long.
     var minimized by remember { mutableStateOf(false) }
     val scrolled = remember { ScrollRest() }
-    LaunchedEffect(navigation.tab, style) { minimized = false }
+    // A new page, or the way back to one, always shows every tab.
+    LaunchedEffect(navigation.tab, navigation.top, navigation.modal, style) { minimized = false }
     LaunchedEffect(minimized) {
         while (minimized) {
             delay(250)
@@ -135,14 +136,15 @@ internal fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
                 listWidth.dp
             else maxWidth) < DenseNavigation
         // A pane beneath the floating bar runs under it and keeps its last rows clear of it.
+        // With the bar at the bottom, pages end above the system navigation bar (see below), so
+        // only the floating bar's height is left to keep clear.
         fun paneInsets(beneath: Boolean): WindowInsets {
             val bottomInsets =
                 when {
                     !floating -> classicBottom
                     bottom && beneath ->
-                        navBars.add(
-                            WindowInsets(bottom = style.floatingReserve(false, compact, narrow))
-                        )
+                        WindowInsets(bottom = style.floatingReserve(false, compact, narrow))
+                    bottom -> WindowInsets(0, 0, 0, 0)
                     else -> navBars
                 }
             return base.union(bottomInsets)
@@ -160,6 +162,15 @@ internal fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
                         Modifier.weight(1f)
                             .glassSource(if (floating) backdrop else null)
                             .nestedScroll(minimizer)
+                            // Rows pass under the glass bar but never under the system's
+                            // navigation buttons, where a tap would leave the app.
+                            .then(
+                                if (bottom)
+                                    Modifier.windowInsetsPadding(
+                                        WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)
+                                    )
+                                else Modifier
+                            )
                             // The side bar keeps a gutter: rows never pass beneath it.
                             .padding(
                                 start = if (side) style.floatingReserve(true, compact) else 0.dp
