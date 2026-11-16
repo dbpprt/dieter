@@ -10,7 +10,41 @@ copy the **Unreleased** notes into a section named after that exact version
 
 Nothing yet.
 
-## 0.7.449
+## 0.7.451
+
+### Changed
+
+- **Android navigation floats as liquid glass.** The tabs float above the
+  page in a glass bar, with the page's main action (New task, New chat) as a
+  round button beside it. On an unfolded foldable the bar stays under the list,
+  so a conversation's message field reaches the bottom of its pane; in
+  landscape it stands on the left edge. Drag along the bar to slide between
+  tabs; it shrinks while you scroll down. **Settings › Appearance ›
+  Navigation** offers Lens (the default), Dock, Island and Classic.
+- **A clearer message field on Android**: it floats above the reply as a
+  raised card with the agent, the context in use and send inside it, and its
+  outline takes the accent colour while you type. **Settings › Appearance ›
+  Chat input** offers Card (the default), Glass and Classic.
+- **One list style on phones and tablets**: Inbox, Chats, Projects, Mail,
+  Channels, Terminals, Schedules, Folders, the iPhone More page and Devices
+  share the Inbox's look: small titles with a status line, a search button
+  instead of permanent search fields, slim section headers and full-width
+  two-line rows. Pausing a schedule, removing a device, restoring from a
+  folder's trash and resolving a folder conflict moved into the row's
+  long-press menu.
+- Long-press menus on Inbox rows open where you pressed instead of against the
+  screen edge.
+- Changes update live: the daemon pushes them as they happen instead of every
+  open view polling. New `dieter workspace watch-changes` streams them.
+- A worktree conversation's Changes list the commits its branch made and line
+  counts for every file, so committed work no longer looks like "no changes".
+- Review comments belong to the version of the file they were written on;
+  once the file changes they are counted as outdated.
+- `dieter workspace run` pins exactly the files it acts on (`--expect
+PATH=REVISION`, automatic by default); `workspace diff` and `workspace
+comment` no longer take a changeset revision. `--project p_…` no longer
+  looks up every project first.
+- Compatibility floors are `0.7.449`: update every daemon and app together.
 
 ### Fixed
 
@@ -28,20 +62,6 @@ Nothing yet.
   branch wait for it.
 - Worktree reviews on Android and iOS no longer show a false "conflicts with
   main" banner.
-
-### Changed
-
-- Changes update live: the daemon pushes them as they happen instead of every
-  open view polling. New `dieter workspace watch-changes` streams them.
-- A worktree conversation's Changes list the commits its branch made and line
-  counts for every file, so committed work no longer looks like "no changes".
-- Review comments belong to the version of the file they were written on;
-  once the file changes they are counted as outdated.
-- `dieter workspace run` pins exactly the files it acts on (`--expect
-PATH=REVISION`, automatic by default); `workspace diff` and `workspace
-comment` no longer take a changeset revision. `--project p_…` no longer
-  looks up every project first.
-- Compatibility floors are `0.7.449`: update every daemon and app together.
 
 ## 0.7.448
 
