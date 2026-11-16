@@ -162,11 +162,12 @@ function providerUsageFrom(part) {
   if (value?.type === "account/rateLimits/updated" && value.rateLimits) return value;
   return undefined;
 }
-function observeProviderUsage(stream) {
+function observeProviderUsage(stream, observePart) {
   if (typeof stream?.pipeThrough !== "function") return stream;
   return stream.pipeThrough(
     new TransformStream({
       transform(part, controller) {
+        observePart?.(part);
         const usage = providerUsageFrom(part);
         if (usage && Date.now() - lastProviderUsageAt >= 1000) {
           lastProviderUsageAt = Date.now();
@@ -176,6 +177,27 @@ function observeProviderUsage(stream) {
       },
     }),
   );
+}
+
+// Provider accounts moved Codex threads from the operator's CODEX_HOME into
+// Dieter's shared Codex home. A pre-move resume handle therefore has no rollout
+// in the new home. This is the one resume failure for which starting a fresh
+// thread is sound; every other app-server error must remain visible.
+function isMissingCodexRollout(error) {
+  const seen = new Set();
+  let current = error;
+  while (current != null && !seen.has(current)) {
+    if (
+      /Codex app-server thread\/resume failed: no rollout found for thread id [0-9a-f-]+/i.test(
+        String(current?.message ?? current),
+      )
+    )
+      return true;
+    if (typeof current !== "object") return false;
+    seen.add(current);
+    current = current.cause;
+  }
+  return false;
 }
 
 const heartbeatTimer = setInterval(() => send({ type: "heartbeat" }), 5_000);
@@ -588,7 +610,6 @@ try {
   const createAgent = (candidateHarness, model) =>
     new HarnessAgent({
       harness: observeHarnessCapabilities(candidateHarness, capabilityCollector),
-      sandbox,
       model,
       instructions: instructions || undefined,
       tools: {
@@ -601,7 +622,11 @@ try {
     });
   // OMP receives its model as a launch argument (ompACPArgs).
   let agent = createAgent(harness, adapter === "omp-acp" ? undefined : request.model || undefined);
-  const sessionOptions = { sessionId: request.sessionId, abortSignal: controller.signal };
+  const sessionOptions = {
+    sessionId: request.sessionId,
+    sandboxSession,
+    abortSignal: controller.signal,
+  };
   const incompleteACPSession =
     (adapter === "omp-acp" || adapter === "dsh-acp") &&
     request.session &&
@@ -649,6 +674,10 @@ try {
   let claudeDelegationSeen = false;
   let claudeFinalTextSeen = false;
   let claudeAuthRetried = false;
+  const emitChunk = (chunk) => {
+    capabilityCollector.consumeUIChunk(chunk);
+    send({ type: "chunk", chunk });
+  };
   async function streamResult(result, summary, diagnosticTurn) {
     const messageMetadata = createMessageMetadataTracker({
       createdAt,
@@ -656,7 +685,9 @@ try {
       reportModelId: adapter === "claude-code",
     });
     const stream = toUIMessageStream({
-      stream: observeProviderUsage(result.stream),
+      stream: observeProviderUsage(result.stream, (part) => {
+        if (part?.type === "error") summary.streamError = part.error;
+      }),
       onError: harnessErrorMessage,
       generateMessageId: () => request.responseMessageId,
       messageMetadata,
@@ -691,12 +722,22 @@ try {
         if (claudeDelegationSeen && chunk.type === "text-delta" && String(chunk.delta || "").trim())
           claudeFinalTextSeen = true;
       }
-      capabilityCollector.consumeUIChunk(chunk);
-      send({ type: "chunk", chunk });
+      if (summary.deferredChunks) {
+        summary.deferredChunks.push(chunk);
+        // A missing rollout fails immediately after the UI stream's synthetic
+        // start. Once real output arrives, this is a normal resumed turn and
+        // can stream without buffering the rest of it.
+        if (chunk.type === "start" || chunk.type === "error") continue;
+        for (const deferred of summary.deferredChunks) emitChunk(deferred);
+        summary.deferredChunks = undefined;
+        continue;
+      }
+      emitChunk(chunk);
     }
   }
-  async function runStream(start) {
+  async function runStream(start, { deferInitialError = false } = {}) {
     const summary = createClaudeTurnSummary();
+    if (deferInitialError) summary.deferredChunks = [];
     const diagnosticTurn = adapter === "claude-code" ? claudeDiagnostics.beginTurn() : undefined;
     let streamError;
     try {
@@ -710,8 +751,11 @@ try {
     if (streamError) throw streamError;
     return summary;
   }
-  async function streamPrompt(prompt) {
-    return runStream(() => agent.stream({ session, prompt, abortSignal: controller.signal }));
+  async function streamPrompt(prompt, options) {
+    return runStream(
+      () => agent.stream({ session, prompt, abortSignal: controller.signal }),
+      options,
+    );
   }
   let primarySummary;
   if (request.continue) {
@@ -721,7 +765,34 @@ try {
       agent.continueStream({ session, abortSignal: controller.signal }),
     );
   } else {
-    primarySummary = await streamPrompt(runtimePrompt);
+    const mayNeedFreshCodexThread = adapter === "codex" && Boolean(sessionOptions.resumeFrom);
+    primarySummary = await streamPrompt(runtimePrompt, {
+      deferInitialError: mayNeedFreshCodexThread,
+    });
+    if (
+      mayNeedFreshCodexThread &&
+      isMissingCodexRollout(primarySummary.streamError) &&
+      !controller.signal.aborted
+    ) {
+      console.error("Codex rollout is unavailable in Dieter's Codex home; starting a fresh thread");
+      primarySummary.deferredChunks = undefined;
+      steerTarget.session = undefined;
+      const staleSession = session;
+      session = undefined;
+      await staleSession.destroy();
+      const {
+        resumeFrom: _oldResume,
+        continueFrom: _oldContinuation,
+        ...freshOptions
+      } = sessionOptions;
+      session = await agent.createSession(freshOptions);
+      steerTarget.session = session;
+      flushEarlySteers();
+      primarySummary = await streamPrompt(runtimePrompt);
+    } else if (primarySummary.deferredChunks) {
+      for (const deferred of primarySummary.deferredChunks) emitChunk(deferred);
+      primarySummary.deferredChunks = undefined;
+    }
   }
   if (primarySummary.authFailure && !controller.signal.aborted) {
     claudeAuthRetried = true;

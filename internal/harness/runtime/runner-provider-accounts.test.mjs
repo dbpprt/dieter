@@ -25,12 +25,32 @@ const agentFixture = `
 export const getHarnessErrorMessage = error => error.message;
 let streams = 0;
 export class HarnessAgent {
-  async createSession() {
+  constructor(settings) {
+    if (settings.sandbox) throw new Error('runner used deprecated HarnessAgent sandbox');
+  }
+  async createSession(options) {
+    this.options = options;
+    process.stderr.write('fixture-session:' + JSON.stringify({
+      resumed: Boolean(options.resumeFrom),
+      sandboxSession: Boolean(options.sandboxSession),
+    }) + '\\n');
     const state = () => ({type: 'resume-session', data: {claudeSessionId: 'fixture'}});
-    return {detach: async () => state(), stop: async () => state()};
+    return {
+      destroy: async () => process.stderr.write('fixture-destroy\\n'),
+      detach: async () => state(),
+      stop: async () => state(),
+    };
   }
   async stream() {
     streams += 1;
+    const resumeError = process.env.FIXTURE_RESUME_ERROR;
+    if (resumeError && this.options.resumeFrom) {
+      return {stream: new ReadableStream({start: controller => {
+        controller.enqueue({type: 'start', messageId: 'response'});
+        controller.enqueue({type: 'error', error: new Error(resumeError)});
+        controller.close();
+      }})};
+    }
     const failing = streams <= Number(process.env.FIXTURE_FAILURES || 0);
     const parts = JSON.parse(process.env.FIXTURE_PARTS || '[]');
     return {stream: new ReadableStream({start: controller => {
@@ -65,7 +85,7 @@ registerHooks({resolve(specifier, context, next) {
 }});
 `);
 
-async function runWorker(t, { adapter, auth, parts = [], failures = 0 }) {
+async function runWorker(t, { adapter, auth, parts = [], failures = 0, resumeError, session }) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "dieter-provider-accounts-")));
   await mkdir(join(root, "project"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -81,6 +101,7 @@ async function runWorker(t, { adapter, auth, parts = [], failures = 0 }) {
     responseMessageId: "response",
   };
   if (auth !== undefined) request.auth = auth;
+  if (session !== undefined) request.session = session;
   const child = spawn(process.execPath, ["--import", preload, fileURLToPath(runnerURL)], {
     env: {
       PATH: process.env.PATH,
@@ -89,6 +110,7 @@ async function runWorker(t, { adapter, auth, parts = [], failures = 0 }) {
       CODEX_HOME: join(root, "codex"),
       FIXTURE_FAILURES: String(failures),
       FIXTURE_PARTS: JSON.stringify(parts),
+      ...(resumeError ? { FIXTURE_RESUME_ERROR: resumeError } : {}),
     },
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -119,7 +141,11 @@ async function runWorker(t, { adapter, auth, parts = [], failures = 0 }) {
   const factories = [...stderr.matchAll(/^fixture-factory:(.*)$/gm)].map((match) =>
     JSON.parse(match[1]),
   );
-  return { code, frames, factories, stderr };
+  const sessions = [...stderr.matchAll(/^fixture-session:(.*)$/gm)].map((match) =>
+    JSON.parse(match[1]),
+  );
+  const destroys = [...stderr.matchAll(/^fixture-destroy$/gm)].length;
+  return { code, frames, factories, sessions, destroys, stderr };
 }
 
 test(
@@ -143,6 +169,7 @@ test(
       const label = `${adapter} with auth ${JSON.stringify(auth)}`;
       assert.equal(result.code, 0, `${label}: ${result.stderr}`);
       assert.equal(result.factories.length, 1, label);
+      assert.deepEqual(result.sessions, [{ resumed: false, sandboxSession: true }], label);
       assert.equal(result.factories[0].adapter, adapter, label);
       if (want === undefined) {
         assert(
@@ -157,6 +184,48 @@ test(
         label,
       );
     }
+  },
+);
+
+test(
+  "a Codex rollout lost during the shared-home migration starts one fresh thread",
+  { timeout: 40_000 },
+  async (t) => {
+    const threadId = "01a1de54-418b-7252-b916-90cc486527ec";
+    const session = {
+      type: "resume-session",
+      harnessId: "codex",
+      specificationVersion: "harness-v1",
+      data: { threadId },
+    };
+    const missing = `Codex app-server thread/resume failed: no rollout found for thread id ${threadId}`;
+    const recovered = await runWorker(t, {
+      adapter: "codex",
+      auth: { CODEX_API_KEY: "fixture-token" },
+      resumeError: missing,
+      session,
+    });
+    assert.equal(recovered.code, 0, recovered.stderr);
+    assert.deepEqual(recovered.sessions, [
+      { resumed: true, sandboxSession: true },
+      { resumed: false, sandboxSession: true },
+    ]);
+    assert.equal(recovered.destroys, 1);
+    assert(recovered.frames.some((frame) => frame.chunk?.delta === "answered"));
+    assert(!recovered.frames.some((frame) => frame.chunk?.type === "error"));
+    assert.match(recovered.stderr, /starting a fresh thread/);
+
+    const unrelated = await runWorker(t, {
+      adapter: "codex",
+      auth: { CODEX_API_KEY: "fixture-token" },
+      resumeError: "Codex app-server thread/resume failed: temporary database failure",
+      session,
+    });
+    assert.equal(unrelated.code, 0, unrelated.stderr);
+    assert.deepEqual(unrelated.sessions, [{ resumed: true, sandboxSession: true }]);
+    assert.equal(unrelated.destroys, 0);
+    assert(!unrelated.frames.some((frame) => frame.chunk?.delta === "answered"));
+    assert(unrelated.frames.some((frame) => frame.chunk?.type === "error"));
   },
 );
 
