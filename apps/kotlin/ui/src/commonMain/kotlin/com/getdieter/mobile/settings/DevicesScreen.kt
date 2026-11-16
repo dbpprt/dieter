@@ -3,6 +3,7 @@ package com.getdieter.mobile.settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -25,12 +26,14 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.getdieter.client.v1.*
 import com.getdieter.core.client.rules.DeviceExports
 import com.getdieter.mobile.app.*
 import com.getdieter.mobile.design.*
 import com.getdieter.mobile.design.Tone
+import com.getdieter.mobile.navigation.*
 import com.getdieter.mobile.store.*
 import com.getdieter.mobile.tools.machineGlyph
 
@@ -53,6 +56,12 @@ internal fun DevicesScreen(store: MobileStore) {
     Screen(
         ScreenChrome(
             "Devices",
+            subtitle =
+                when (active.size) {
+                    0 -> ""
+                    1 -> "1 device"
+                    else -> "${active.size} devices"
+                },
             actions =
                 listOf(
                     ChromeAction(
@@ -98,7 +107,7 @@ internal fun DevicesScreen(store: MobileStore) {
                 }
             if (view.trust == DeviceTrust.DEVICE_TRUST_TRUSTED)
                 item("add") {
-                    SectionHeader("Add a device")
+                    ListSectionHeader("Add a device")
                     Column(
                         Modifier.padding(horizontal = ScreenMargin),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -146,54 +155,75 @@ internal fun DevicesScreen(store: MobileStore) {
                         )
                     }
                 }
-            if (view.requests.isNotEmpty())
-                item("waiting") {
-                    SectionHeader("Waiting devices")
-                    Group(view.requests) { request, position ->
-                        ListRow(
-                            request.name,
-                            Modifier.testTag("waiting-device"),
-                            position = position,
-                            subtitle = describe(request.kind_label, request.platform),
-                            glyph = deviceGlyph(request.platform, ""),
-                        )
-                    }
-                }
-            if (active.isNotEmpty())
-                item("devices") {
-                    SectionHeader("Devices")
-                    Group(active) { device, position ->
-                        DeviceRow(device, position) { removing = device }
-                    }
-                }
-            if (removed.isNotEmpty())
-                item("removed") {
-                    SectionHeader("Removed")
-                    Group(removed) { device, position -> DeviceRow(device, position) {} }
-                }
-            if (view.notices.isNotEmpty())
-                item("notices") {
-                    SectionHeader("Recent changes")
-                    Group(view.notices) { notice, position ->
-                        ListRow(
-                            notice.text,
-                            position = position,
-                            glyph = Glyph.HISTORY,
-                            titleMaxLines = 3,
-                        )
-                    }
-                }
-            if (view.trust.resettable)
-                item("reset") {
-                    SectionHeader("This device")
+            if (view.requests.isNotEmpty()) {
+                item("waiting") { ListSectionHeader("Waiting devices", count = view.requests.size) }
+                itemsIndexed(
+                    view.requests,
+                    key = { _, request -> "waiting-${request.request_id}" },
+                ) { index, request ->
                     ListRow(
-                        "Reset this device",
-                        Modifier.testTag("reset-device"),
-                        destructive = true,
-                        glyph = Glyph.UNDO,
-                        onClick = { resetting = true },
-                    )
+                        onClick = null,
+                        Modifier.testTag("waiting-device"),
+                        first = index == 0,
+                        leading = {
+                            ListIconTile(deviceGlyph(request.platform, ""), palette.warning)
+                        },
+                        subtitle = { ListSubtitle(describe(request.kind_label, request.platform)) },
+                    ) {
+                        ListTitle(request.name)
+                    }
                 }
+            }
+            if (active.isNotEmpty()) {
+                item("devices") { ListSectionHeader("Devices", count = active.size) }
+                itemsIndexed(active, key = { _, device -> "device-${device.device_id}" }) {
+                    index,
+                    device ->
+                    DeviceRow(device, index == 0) { removing = device }
+                }
+            }
+            if (removed.isNotEmpty()) {
+                item("removed") { ListSectionHeader("Removed", count = removed.size) }
+                itemsIndexed(removed, key = { _, device -> "removed-${device.device_id}" }) {
+                    index,
+                    device ->
+                    DeviceRow(device, index == 0) {}
+                }
+            }
+            if (view.notices.isNotEmpty()) {
+                item("notices") { ListSectionHeader("Recent changes") }
+                itemsIndexed(view.notices, key = { _, notice -> "notice-${notice.sequence}" }) {
+                    index,
+                    notice ->
+                    ListRow(
+                        onClick = null,
+                        first = index == 0,
+                        leading = { ListIconTile(Glyph.HISTORY) },
+                    ) {
+                        Text(
+                            notice.text,
+                            Modifier.weight(1f),
+                            style = type.body,
+                            color = palette.label,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            if (view.trust.resettable) {
+                item("reset-header") { ListSectionHeader("This device") }
+                item("reset") {
+                    ListRow(
+                        onClick = { resetting = true },
+                        Modifier.testTag("reset-device"),
+                        first = true,
+                        leading = { ListIconTile(Glyph.UNDO, palette.destructive) },
+                    ) {
+                        ListTitle("Reset this device", color = palette.destructive)
+                    }
+                }
+            }
         }
     }
     removing?.let { device ->
@@ -356,34 +386,58 @@ internal fun PairingCode(code: String, modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * A device: its name and whether it is this one, what it is and who added it. Tapping or pressing a
+ * removable device offers to remove it.
+ */
 @Composable
-private fun DeviceRow(device: DeviceEntry, position: Position, remove: () -> Unit) {
-    ListRow(
-        device.name,
-        Modifier.testTag(if (device.this_device) "device-this" else "device-row"),
-        position = position,
-        subtitle =
-            listOf(
-                    describe(device.kind_label, device.platform),
-                    device.added_by.takeIf { it.isNotEmpty() }?.let { "Added by $it" }.orEmpty(),
+private fun DeviceRow(device: DeviceEntry, first: Boolean, remove: () -> Unit) {
+    val menu = rememberMenuState()
+    val actions =
+        listOf(
+            MenuSection(
+                listOf(
+                    ChromeAction("device-remove", "Remove…", Glyph.TRASH, destructive = true) {
+                        remove()
+                    }
+                ),
+                title = device.name,
+            )
+        )
+    val open = { if (device.revocable) menu.show(actions) }
+    MenuAnchor(menu, atPress = true) {
+        ListRow(
+            onClick = open,
+            Modifier.testTag(if (device.this_device) "device-this" else "device-row"),
+            onLongClick = if (device.revocable) open else null,
+            first = first,
+            leading = {
+                ListIconTile(
+                    deviceGlyph(device.platform, device.daemon_id),
+                    if (device.revoked) palette.secondaryLabel else ToolPage.DEVICES.color,
                 )
-                .filter { it.isNotEmpty() }
-                .joinToString("\n"),
-        value = if (device.this_device) "This device" else null,
-        glyph = deviceGlyph(device.platform, device.daemon_id),
-        enabled = !device.revoked,
-        trailing =
-            if (device.revocable)
-                ({
-                    DButton(
-                        "Remove",
-                        remove,
-                        Modifier.testTag("device-remove"),
-                        kind = ButtonKind.PLAIN,
-                    )
-                })
-            else null,
-    )
+            },
+            meta = { if (device.this_device) ListMeta("This device", color = palette.accent) },
+            subtitle = {
+                ListSubtitle(
+                    listOf(
+                            describe(device.kind_label, device.platform),
+                            device.added_by
+                                .takeIf { it.isNotEmpty() }
+                                ?.let { "Added by $it" }
+                                .orEmpty(),
+                        )
+                        .filter { it.isNotEmpty() }
+                        .joinToString(" · ")
+                )
+            },
+        ) {
+            ListTitle(
+                device.name,
+                color = if (device.revoked) palette.tertiaryLabel else palette.label,
+            )
+        }
+    }
 }
 
 /** Holds the core's devices view (and its polling of waiting devices) while shown. */

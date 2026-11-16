@@ -2,6 +2,7 @@
 
 package com.getdieter.mobile.workspace
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toAwtImage
 import androidx.compose.ui.test.*
 import androidx.compose.ui.unit.dp
@@ -115,11 +116,15 @@ class InboxScreenUiTest {
                 ),
         )
 
-    private fun DesktopComposeUiTest.shot(name: String) {
+    /**
+     * Saves the window, or with an open menu its popup layer ([root] 1), when screenshots are on.
+     */
+    private fun DesktopComposeUiTest.shot(name: String, root: Int = 0) {
         val directory = System.getProperty("dieter.screenshots") ?: return
         waitForIdle()
         File(directory).mkdirs()
-        ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", File(directory, "$name.png"))
+        val image = onAllNodes(isRoot())[root].captureToImage().toAwtImage()
+        ImageIO.write(image, "png", File(directory, "$name.png"))
     }
 
     private fun DesktopComposeUiTest.launch(): MobileStore {
@@ -205,4 +210,37 @@ class InboxScreenUiTest {
                 store.close()
             }
         }
+
+    /**
+     * Long-presses the "done" row [press] dp from the left; returns where its menu starts, in dp.
+     */
+    private fun menuLeftAfterPress(press: Float): Float {
+        var left = 0f
+        runDesktopComposeUiTest(width = 412, height = 915) {
+            val store = launch()
+            try {
+                onNodeWithTag("activity-row-done").performTouchInput {
+                    longClick(Offset(press * density, height / 2f))
+                }
+                waitForIdle()
+                val item = onNodeWithTag("menu-inbox-pin-done", useUnmergedTree = true)
+                left = item.fetchSemanticsNode().positionInWindow.x / density.density
+                shot("inbox-row-menu-${press.toInt()}", root = 1)
+            } finally {
+                store.close()
+            }
+        }
+        return left
+    }
+
+    @Test
+    fun aLongPressOpensTheRowMenuAtThePressClearOfBothEdges() {
+        val middle = menuLeftAfterPress(100f)
+        assertTrue(middle in 95f..110f, "the menu opens at the press, not at $middle dp")
+        val left = menuLeftAfterPress(2f)
+        assertTrue(left in 16f..20f, "the menu keeps clear of the left edge, not at $left dp")
+        // 248 dp wide on a 412 dp window: it moves inward to end 16 dp from the right.
+        val right = menuLeftAfterPress(380f)
+        assertTrue(right in 144f..152f, "the menu keeps clear of the right edge, not at $right dp")
+    }
 }

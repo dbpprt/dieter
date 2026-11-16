@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.getdieter.client.v1.*
 import com.getdieter.core.presentation.Ages
+import com.getdieter.core.presentation.Counts
 import com.getdieter.mobile.app.*
 import com.getdieter.mobile.conversation.ComposerChip
 import com.getdieter.mobile.conversation.SendButton
@@ -53,7 +54,14 @@ internal fun ChannelsScreen(store: MobileStore) {
         navigation.stack
             .let { stack -> stack.getOrNull(stack.indexOf(root) + 1) }
             .takeIf { root in navigation.stack } as? MobileRoute.Channel
-    Screen(ScreenChrome("Channels", large = true)) {
+    val now = rememberNow()
+    val status =
+        when {
+            slice.unread > 0 -> "${slice.unread} unread"
+            slice.channels.isNotEmpty() -> Counts.of(slice.channels.size, "channel")
+            else -> ""
+        }
+    Screen(ScreenChrome("Channels", subtitle = status, large = false)) {
         RefreshableList(
             refreshing = slice.loading,
             onRefresh = store.channels::refresh,
@@ -94,28 +102,18 @@ internal fun ChannelsScreen(store: MobileStore) {
                             )
                     }
                 else {
-                    item("projects") { SectionHeader("Projects") }
+                    item("projects") {
+                        ListSectionHeader("Projects", count = slice.channels.size)
+                    }
                     itemsIndexed(slice.channels, key = { _, row -> row.project_id }) { index, row ->
-                        ListRow(
-                            "#${row.name}",
-                            Modifier.testTag("channel-row-${row.project_id}"),
-                            position = Position.of(index, slice.channels.size),
-                            subtitle = row.detail,
-                            leading = { ChannelMark() },
-                            trailing = {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                ) {
-                                    if (row.claims > 0)
-                                        Icon(Glyph.LOCK, null, tint = palette.warning, size = 13.dp)
-                                    CountBadge(row.unread)
-                                }
-                            },
-                            accessory = Accessory.CHEVRON,
+                        ChannelRow(
+                            row,
+                            now,
+                            first = index == 0,
                             selected = open?.projectId == row.project_id,
-                            onClick = { store.showFrom(root, MobileRoute.Channel(row.project_id)) },
-                        )
+                        ) {
+                            store.showFrom(root, MobileRoute.Channel(row.project_id))
+                        }
                     }
                     item("footer") {
                         SectionFooter(
@@ -130,21 +128,50 @@ internal fun ChannelsScreen(store: MobileStore) {
     }
 }
 
+/**
+ * A channel beside its tag tile: its name and when its newest message was written, then its agents,
+ * runs and claims, with a lock for live claims and the unread count.
+ */
 @Composable
-private fun ChannelMark() {
-    Box(
-        Modifier.size(30.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(palette.info.copy(alpha = .14f)),
-        contentAlignment = Alignment.Center,
+private fun ChannelRow(
+    row: ChannelListRow,
+    now: Instant,
+    first: Boolean,
+    selected: Boolean,
+    onOpen: () -> Unit,
+) {
+    val surface = listRowSurface(selected)
+    ListRow(
+        onClick = onOpen,
+        modifier = Modifier.testTag("channel-row-${row.project_id}"),
+        surface = surface,
+        first = first,
+        leading = { ListIconTile(Glyph.TAG, palette.info) },
+        meta = {
+            ListMeta(
+                age(row.last_message_at_millis, now),
+                color =
+                    if (row.unread > 0) palette.accent.readableOn(surface)
+                    else palette.secondaryLabel,
+            )
+        },
+        subtitle =
+            if (row.detail.isNotEmpty()) {
+                { ListSubtitle(row.detail) }
+            } else null,
+        badge = {
+            if (row.claims > 0)
+                Icon(
+                    Glyph.LOCK,
+                    "Live claims",
+                    ListBadgeGap,
+                    tint = palette.warning.readableOn(surface),
+                    size = 13.dp,
+                )
+            CountBadge(row.unread, ListBadgeGap)
+        },
     ) {
-        Icon(
-            Glyph.TAG,
-            null,
-            tint = palette.info,
-            size = 16.dp,
-            weight = GlyphWeight.SEMIBOLD,
-        )
+        ListTitle("#${row.name}")
     }
 }
 

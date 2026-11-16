@@ -577,3 +577,29 @@ Where the implementation differs from or adds to the plan above:
 - **Mac search.** ⌘F (only while the Inbox is the active pane, as in Mail) or
   **Search…** in the filter menu shows the field; Escape or its close button
   hides it again.
+
+## 14. One list style across pages (2026-11-15)
+
+After review the Inbox's style became the app's one list style on phones and
+tablets (Android and iOS). It lives in `apps/kotlin/ui/.../design/Lists.kt`:
+
+- `ListSectionHeader`: title and count in a tint, then a hairline to the edge,
+  with an optional trailing control (a collapse chevron, Hide).
+- `ListRow`: full-width rows with a leading avatar or `ListIconTile`, title and
+  meta, an optional subtitle and badge; 72 dp with a subtitle, 56 dp without
+  (the tile shrinks to 40 dp). A row without a click handler only informs.
+- `rememberListSearch`: a top bar search toggle; no page keeps a permanent
+  search field.
+- Every primary page uses small titles with a status subtitle.
+
+Inbox, Chats (still grouped by project), Projects and the project page, Mail,
+Channels, Terminals, Schedules, Folders, the iOS More page and Devices use them.
+Forms (Settings, Providers, folder settings) keep grouped cards. The Android
+More sheet keeps its tile grid. Inline controls moved into long-press menus:
+pausing a schedule, removing a device, restoring from a folder's trash, and
+resolving a folder conflict. `PageCatalogUiTest` renders every primary page in
+light and dark mode when screenshots are on.
+
+Long-press menus on full-width Inbox rows open at the press, clamped 16 dp
+inside the window (`MenuAnchor(atPress = true)`), instead of at the screen
+edge.

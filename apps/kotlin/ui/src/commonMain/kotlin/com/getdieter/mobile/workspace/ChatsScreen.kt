@@ -7,13 +7,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.getdieter.api.v1.Card
 import com.getdieter.client.v1.*
@@ -25,16 +24,35 @@ import com.getdieter.mobile.creation.*
 import com.getdieter.mobile.design.*
 import com.getdieter.mobile.store.*
 import kotlin.time.Instant
+import kotlinx.coroutines.flow.drop
 
+/**
+ * Chats grouped by project (and the user's chat folders), each group a collapsible section of dense
+ * rows: the project's avatar, the title and its age, then the last summary.
+ */
 @Composable
 internal fun ChatsScreen(store: MobileStore) {
     val workspace by store.workspace.slice.collectAsState()
     val refreshing by store.session.refreshing.collectAsState()
     val view by store.workspace.chats.collectAsState()
     val selected by store.conversation.selectedCard.collectAsState()
-    var query by rememberSaveable { mutableStateOf("") }
+    val search = rememberListSearch("chats", "Search chats")
+    val query = search.query
     var archived by rememberSaveable { mutableStateOf(false) }
     val now = rememberNow()
+    // The core filters the chats; it keeps the query, so only changes are sent.
+    LaunchedEffect(store) {
+        snapshotFlow { search.query }
+            .drop(1)
+            .collect {
+                store.command(
+                    Command(
+                        chats =
+                            ChatsCommand(scope = MobileStore.CHATS_SCOPE, query = ChatsQuery(it))
+                    )
+                )
+            }
+    }
     fun setArchived(value: Boolean) {
         archived = value
         store.command(
@@ -43,12 +61,15 @@ internal fun ChatsScreen(store: MobileStore) {
             )
         )
     }
+    val shown = if (archived) view.archived.size else view.visible_ids.size
     val chrome =
         ScreenChrome(
             if (archived) "Archived chats" else "Chats",
-            large = true,
+            subtitle = if (shown == 0) "" else "$shown chat${if (shown == 1) "" else "s"}",
+            large = false,
             actions =
                 listOf(
+                    search.action(),
                     ChromeAction(
                         "chats-menu",
                         "Chat options",
@@ -76,7 +97,7 @@ internal fun ChatsScreen(store: MobileStore) {
                                     )
                                 )
                             ),
-                    )
+                    ),
                 ),
             primary = newTaskAction(store, chat = true),
         )
@@ -96,43 +117,13 @@ internal fun ChatsScreen(store: MobileStore) {
             ) {
                 titleHeader()
                 item("notice") { ConnectionNotice(store) }
-                item("search") {
-                    SearchField(
-                        query,
-                        {
-                            query = it
-                            store.command(
-                                Command(
-                                    chats =
-                                        ChatsCommand(
-                                            scope = MobileStore.CHATS_SCOPE,
-                                            query = ChatsQuery(it),
-                                        )
-                                )
-                            )
-                        },
-                        "Search chats",
-                        Modifier.padding(horizontal = ScreenMargin, vertical = 6.dp),
-                    )
-                }
-                fun section(
-                    key: String,
-                    title: String?,
-                    ids: List<String>,
-                    header: (@Composable () -> Unit)? = null,
-                ) {
+                if (search.shown) item("search") { search.Field() }
+                fun section(key: String, title: String?, ids: List<String>) {
                     val cards = ids.mapNotNull(::cardFor)
-                    if (title != null) item("h-$key") { SectionHeader(title, prominent = true) }
-                    if (header != null) item("hh-$key") { header() }
+                    if (title != null)
+                        item("h-$key") { ListSectionHeader(title, count = cards.size) }
                     itemsIndexed(cards, key = { _, card -> "$key-${card.id}" }) { index, card ->
-                        ChatRow(
-                            store,
-                            card,
-                            Position.of(index, cards.size),
-                            now,
-                            archived,
-                            selected == card.id,
-                        )
+                        ChatRow(store, card, index == 0, now, archived, selected == card.id)
                     }
                 }
                 if (archived) section("archived", null, view.archived.map { it.id })
@@ -144,7 +135,6 @@ internal fun ChatsScreen(store: MobileStore) {
                                 folder.name,
                                 folder.chat_ids.size,
                                 folder.expanded,
-                                Glyph.FOLDER,
                             ) {
                                 store.command(
                                     Command(
@@ -169,13 +159,7 @@ internal fun ChatsScreen(store: MobileStore) {
                             workspace.projects.firstOrNull { it.id == project.project_id }?.name
                                 ?: "Project"
                         item("project-${project.project_id}") {
-                            CollapsibleHeader(
-                                name,
-                                project.total,
-                                !project.collapsed,
-                                null,
-                                project.project_id,
-                            ) {
+                            CollapsibleHeader(name, project.total, !project.collapsed) {
                                 store.command(
                                     Command(
                                         set_chat_section_collapsed =
@@ -204,10 +188,8 @@ internal fun ChatsScreen(store: MobileStore) {
                                             )
                                         )
                                     },
-                                    Modifier.padding(
-                                        horizontal = ScreenMargin + 4.dp,
-                                        vertical = 4.dp,
-                                    ),
+                                    // Under the rows' titles.
+                                    Modifier.padding(start = 12.dp + ListLeading, top = 2.dp),
                                     kind = ButtonKind.PLAIN,
                                 )
                             }
@@ -246,51 +228,26 @@ internal fun ChatsScreen(store: MobileStore) {
     }
 }
 
+/** A folder's or project's section header; tapping it collapses or expands the section. */
 @Composable
-private fun CollapsibleHeader(
-    title: String,
-    count: Int,
-    expanded: Boolean,
-    glyph: Glyph?,
-    projectId: String? = null,
-    toggle: () -> Unit,
-) {
-    Row(
-        Modifier.fillMaxWidth()
-            .padding(top = 12.dp)
-            .pressable(onClick = toggle)
-            .padding(
-                start = ScreenMargin + 4.dp,
-                end = ScreenMargin + 4.dp,
-                top = 8.dp,
-                bottom = 8.dp,
-            ),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        when {
-            projectId != null -> ProjectAvatar(projectId, title, 24.dp)
-            glyph != null -> Icon(glyph, null, tint = palette.secondaryLabel, size = 20.dp)
-        }
-        Spacer(Modifier.width(10.dp))
-        Text(
-            title,
-            Modifier.weight(1f),
-            style = type.title3,
-            color = palette.label,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text("$count", style = type.subheadline, color = palette.secondaryLabel)
-        Spacer(Modifier.width(8.dp))
-        DisclosureChevron(expanded)
-    }
+private fun CollapsibleHeader(title: String, count: Int, expanded: Boolean, toggle: () -> Unit) {
+    ListSectionHeader(
+        title,
+        Modifier.pressable(onClick = toggle),
+        count = count,
+        trailing = {
+            Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+                DisclosureChevron(expanded)
+            }
+        },
+    )
 }
 
 @Composable
 private fun ChatRow(
     store: MobileStore,
     card: Card,
-    position: Position,
+    first: Boolean,
     now: Instant,
     archived: Boolean,
     selected: Boolean,
@@ -298,12 +255,12 @@ private fun ChatRow(
     val menu = rememberMenuState()
     val project = store.workspace.slice.value.projects.firstOrNull { it.id == card.project_id }
     val running = card.lane == "running" || card.runtime == "running"
+    val surface = listRowSurface(selected)
+    val summary = card.summary.ifBlank { project?.name.orEmpty() }
     MenuAnchor(menu) {
-        GroupItem(
-            position,
-            Modifier.testTag("chat-${card.id}"),
-            separatorInset = 64.dp,
+        ListRow(
             onClick = { store.openConversation(card.id) },
+            modifier = Modifier.testTag("chat-${card.id}"),
             onLongClick = {
                 menu.show(
                     if (archived)
@@ -321,68 +278,37 @@ private fun ChatRow(
                     else cardMenuSections(store, card)
                 )
             },
-            selected = selected,
+            surface = surface,
+            first = first,
+            leading = { ChatAvatar(card.project_id, project?.name, running, surface) },
+            meta = { ListMeta(CardAges.compact(card, now)) },
+            subtitle = if (summary.isEmpty()) null else ({ ListSubtitle(summary) }),
         ) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp)) {
-                Box {
-                    Box(
-                        Modifier.size(36.dp)
-                            .background(
-                                if (apple) palette.fill else colors.secondaryContainer,
-                                CircleShape,
-                            ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Glyph.CHAT,
-                            null,
-                            tint =
-                                if (apple) palette.secondaryLabel else colors.onSecondaryContainer,
-                            size = 18.dp,
-                        )
-                    }
-                    if (running)
-                        Box(
-                            Modifier.align(Alignment.BottomEnd)
-                                .offset(3.dp, 3.dp)
-                                .size(14.dp)
-                                .background(palette.cell, CircleShape),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            LiveDot(palette.info, size = 9.dp)
-                        }
-                }
-                Spacer(Modifier.width(14.dp))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (card.pinned) {
-                            Icon(Glyph.PIN, "Pinned", tint = palette.secondaryLabel, size = 13.dp)
-                            Spacer(Modifier.width(4.dp))
-                        }
-                        Text(
-                            Activity.title(card),
-                            Modifier.weight(1f),
-                            style = type.headline,
-                            color = palette.label,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            CardAges.compact(card, now),
-                            Modifier.padding(start = 8.dp),
-                            style = type.footnote,
-                            color = palette.secondaryLabel,
-                        )
-                    }
-                    Text(
-                        card.summary.ifBlank { project?.name.orEmpty() },
-                        style = type.subheadline,
-                        color = palette.secondaryLabel,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
+            if (card.pinned)
+                Icon(
+                    Glyph.PIN,
+                    "Pinned",
+                    Modifier.padding(end = 4.dp),
+                    tint = palette.secondaryLabel,
+                    size = 13.dp,
+                )
+            ListTitle(Activity.title(card))
         }
+    }
+}
+
+/** The chat's project avatar, or a chat bubble without a project; a working agent adds a dot. */
+@Composable
+private fun ChatAvatar(projectId: String, projectName: String?, running: Boolean, surface: Color) {
+    Box(Modifier.size(ListLeading), contentAlignment = Alignment.Center) {
+        if (projectName != null) ProjectAvatar(projectId, projectName, ListTile)
+        else ListIconTile(Glyph.CHAT)
+        if (running)
+            Box(
+                Modifier.align(Alignment.BottomEnd).size(16.dp).background(surface, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                LiveDot(palette.info, size = 11.dp)
+            }
     }
 }

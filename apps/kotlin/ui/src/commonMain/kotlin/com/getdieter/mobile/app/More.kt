@@ -97,7 +97,9 @@ internal fun MoreScreen(store: MobileStore) {
     Screen(
         ScreenChrome(
             "More",
-            large = true,
+            subtitle =
+                if (session.machines.isEmpty()) ""
+                else "$online of ${session.machines.size} machines online",
             actions =
                 listOf(
                     if (session.needsSignIn)
@@ -122,95 +124,89 @@ internal fun MoreScreen(store: MobileStore) {
             state = listState,
             contentPadding = padding,
         ) {
-            titleHeader()
-            item { ConnectionNotice(store) }
-            item {
-                Spacer(Modifier.height(8.dp))
-                Group(places) { entry, position ->
-                    MoreRow(entry, position, entry.route.key == selected) {
-                        store.showFrom(root, entry.route)
-                    }
+            item("notice") { ConnectionNotice(store) }
+            itemsIndexed(places, key = { _, entry -> "place-${entry.id}" }) { index, entry ->
+                MoreRow(entry, index == 0, entry.route.key == selected) {
+                    store.showFrom(root, entry.route)
                 }
             }
-            item {
-                SectionHeader(
-                    "Machines",
-                    trailing = {
-                        if (session.machines.isNotEmpty())
-                            Text(
-                                "$online of ${session.machines.size} online",
-                                style = type.footnote,
-                                color = palette.secondaryLabel,
-                            )
-                    },
-                )
+            item("machines-header") {
+                ListSectionHeader("Machines", count = session.machines.size.takeIf { it > 0 })
             }
             if (session.machines.isEmpty())
-                item {
-                    ListRow(
-                        "No machines",
-                        position = Position.SINGLE,
-                        subtitle = "Enroll a computer with the Dieter daemon to run agents on it.",
-                        glyph = Glyph.MACHINE,
+                item("machines-empty") {
+                    Text(
+                        "No machines yet. Enroll a computer with the Dieter daemon to run agents on it.",
+                        Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        style = type.subheadline,
+                        color = palette.secondaryLabel,
                     )
                 }
             itemsIndexed(session.machines, key = { _, machine -> machine.id }) { index, machine ->
                 val route = MobileRoute.Machine(machine.id)
+                val surface = listRowSurface(selected = route.key == selected)
                 ListRow(
-                    machine.display_name,
-                    Modifier.testTag("more-machine-${machine.id}"),
-                    position = Position.of(index, session.machines.size),
-                    subtitle = machine.statusLine(),
-                    glyph = machineGlyph(machine.platform),
-                    tile = if (machine.online) Color(0xFF0A84FF) else Color(0xFF8E8E93),
-                    accessory = Accessory.CHEVRON,
-                    selected = route.key == selected,
-                    trailing = { PresenceDot(machine.online) },
                     onClick = { store.showFrom(root, route) },
-                )
+                    Modifier.testTag("more-machine-${machine.id}"),
+                    surface = surface,
+                    first = index == 0,
+                    leading = { MachineTile(machine, surface) },
+                    subtitle = { ListSubtitle(machine.statusLine()) },
+                ) {
+                    ListTitle(machine.display_name)
+                }
             }
-            item {
-                SectionHeader("Account")
-                Group(account) { entry, position ->
-                    MoreRow(entry, position, entry.route.key == selected) {
-                        store.showFrom(root, entry.route)
-                    }
+            item("account-header") { ListSectionHeader("Account") }
+            itemsIndexed(account, key = { _, entry -> "account-${entry.id}" }) { index, entry ->
+                MoreRow(entry, index == 0, entry.route.key == selected) {
+                    store.showFrom(root, entry.route)
                 }
             }
         }
     }
 }
 
+/** A place or account page: its icon tile in its colour, its title, and its value or badge. */
 @Composable
-private fun MoreRow(entry: MoreEntry, position: Position, selected: Boolean, onClick: () -> Unit) {
+private fun MoreRow(entry: MoreEntry, first: Boolean, selected: Boolean, onClick: () -> Unit) {
     ListRow(
-        entry.title,
-        Modifier.testTag("more-${entry.id}"),
-        position = position,
-        glyph = entry.glyph,
-        tile = entry.tint,
-        value = entry.value.takeIf { it.isNotEmpty() && entry.badge.isEmpty() },
-        accessory = Accessory.CHEVRON,
-        selected = selected,
-        trailing =
-            entry.badge
-                .takeIf { it.isNotEmpty() }
-                ?.let { label -> { TextBadge(label, Modifier.padding(end = 4.dp)) } },
         onClick = onClick,
-    )
+        Modifier.testTag("more-${entry.id}"),
+        surface = listRowSurface(selected = selected),
+        first = first,
+        leading = { ListIconTile(entry.glyph, entry.tint) },
+        meta = { if (entry.badge.isEmpty()) ListMeta(entry.value) },
+        badge = { if (entry.badge.isNotEmpty()) TextBadge(entry.badge) },
+    ) {
+        ListTitle(entry.title)
+    }
+}
+
+/** A machine's icon tile, blue while online, with its presence dot on the corner. */
+@Composable
+private fun MachineTile(machine: MachineEntry, surface: Color) {
+    Box(Modifier.size(ListLeading), contentAlignment = Alignment.Center) {
+        ListIconTile(
+            machineGlyph(machine.platform),
+            if (machine.online) Color(0xFF0A84FF) else palette.secondaryLabel,
+        )
+        Box(
+            Modifier.align(Alignment.BottomEnd)
+                .size(14.dp)
+                .background(surface, CircleShape)
+                .padding(2.5.dp)
+                .background(
+                    if (machine.online) palette.success else palette.tertiaryLabel,
+                    CircleShape,
+                )
+                .semantics { contentDescription = if (machine.online) "Online" else "Offline" }
+        )
+    }
 }
 
 /** "Online · Direct TLS · 12 ms", or why the machine can't take work. */
 private fun MachineEntry.statusLine() =
     listOf(presence, detail).filter { it.isNotBlank() }.distinct().joinToString(" · ")
-
-@Composable
-private fun PresenceDot(online: Boolean) {
-    Box(
-        Modifier.size(9.dp)
-            .background(if (online) palette.success else palette.tertiaryLabel, CircleShape)
-    )
-}
 
 @Composable
 private fun TextBadge(label: String, modifier: Modifier = Modifier) {

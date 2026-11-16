@@ -1,15 +1,18 @@
 package com.getdieter.mobile.folders
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -139,90 +142,103 @@ internal fun FolderScreen(store: MobileStore, folderId: String) {
                     )
                 }
             if (slice.device?.attached == true) {
-                item("files-header") { SectionHeader("Files") }
+                item("files-header") {
+                    ListSectionHeader("Files", count = slice.files.size.takeIf { it > 0 })
+                }
                 folderFiles(slice, files) { store.push(MobileRoute.FolderFiles(slice.id, it)) }
             } else
                 item("files-off") {
-                    SectionHeader("Files")
-                    SectionFooter(
+                    ListSectionHeader("Files")
+                    ListNote(
                         if (slice.device?.can_attach == true)
                             "Keep this folder on this device to see its files here."
                         else "This device keeps no folders; its machines do."
                     )
                 }
-            if (slice.conflicts.isNotEmpty())
-                item("conflicts") {
-                    SectionHeader("Conflicts")
-                    Group(slice.conflicts) { conflict, position ->
-                        ConflictRow(conflict, position) { keepCopy ->
-                            store.folders.resolveConflict(slice.id, conflict.path, keepCopy)
-                        }
+            if (slice.conflicts.isNotEmpty()) {
+                item("conflicts-header") {
+                    ListSectionHeader(
+                        "Conflicts",
+                        count = slice.conflicts.size,
+                        tint = palette.warning.readableOn(palette.background),
+                    )
+                }
+                itemsIndexed(
+                    slice.conflicts,
+                    key = { _, conflict -> "conflict-${conflict.path}" },
+                ) { index, conflict ->
+                    ConflictRow(conflict, index == 0) { keepCopy ->
+                        store.folders.resolveConflict(slice.id, conflict.path, keepCopy)
                     }
-                    SectionFooter(
+                }
+                item("conflicts-note") {
+                    ListNote(
                         "Two devices changed these files at the same time. Keep one version; " +
                             "the other goes to the trash on your machines."
                     )
                 }
-            item("members-header") { SectionHeader("Devices") }
+            }
+            item("members-header") { ListSectionHeader("Devices", count = slice.members.size) }
             itemsIndexed(slice.members, key = { _, member -> "member-${member.member_id}" }) {
                 index,
                 member ->
-                val count = slice.members.size + if (slice.addable_daemons.isEmpty()) 0 else 1
-                MemberRow(store, slice, member, Position.of(index, count)) { removing = member }
+                MemberRow(store, slice, member, index == 0) { removing = member }
             }
             if (slice.addable_daemons.isNotEmpty())
                 item("add-machine") {
                     ListRow(
-                        "Add a machine…",
-                        Modifier.testTag("folder-add-machine"),
-                        position = Position.of(slice.members.size, slice.members.size + 1),
-                        glyph = Glyph.ADD,
-                        glyphTint = palette.accent,
                         onClick = { addingMachine = true },
-                    )
+                        Modifier.testTag("folder-add-machine"),
+                        first = slice.members.isEmpty(),
+                        leading = { ListIconTile(Glyph.ADD, palette.accent) },
+                    ) {
+                        ListTitle("Add a machine…", color = palette.accent)
+                    }
                 }
             if (slice.device?.attached != true && slice.device?.can_attach == true)
                 item("keep") {
-                    Spacer(Modifier.height(12.dp))
                     ListRow(
-                        "Keep on this device…",
-                        Modifier.testTag("folder-keep-here"),
-                        position = Position.SINGLE,
-                        glyph = Glyph.PHONE,
-                        glyphTint = palette.accent,
                         onClick = { store.present(MobileRoute.AddFolder(slice.id)) },
-                    )
+                        Modifier.testTag("folder-keep-here"),
+                        leading = { ListIconTile(Glyph.PHONE, palette.accent) },
+                    ) {
+                        ListTitle("Keep on this device…", color = palette.accent)
+                    }
                 }
             problems(slice)
-            item("pages") {
-                SectionHeader("Manage")
-                val pages =
-                    listOfNotNull(
-                        FolderSection.DEVICE.takeIf { slice.device?.attached == true },
-                        FolderSection.TRASH,
-                        FolderSection.SETTINGS,
-                    )
-                Group(pages) { page, position ->
-                    ListRow(
-                        page.title,
-                        Modifier.testTag("folder-page-${page.name.lowercase()}"),
-                        position = position,
-                        glyph =
+            item("pages-header") { ListSectionHeader("Manage") }
+            val pages =
+                listOfNotNull(
+                    FolderSection.DEVICE.takeIf { slice.device?.attached == true },
+                    FolderSection.TRASH,
+                    FolderSection.SETTINGS,
+                )
+            itemsIndexed(pages, key = { _, page -> "page-${page.name}" }) { index, page ->
+                ListRow(
+                    onClick = { store.showFrom(route, MobileRoute.FolderPage(slice.id, page)) },
+                    Modifier.testTag("folder-page-${page.name.lowercase()}"),
+                    first = index == 0,
+                    leading = {
+                        ListIconTile(
                             when (page) {
                                 FolderSection.DEVICE -> Glyph.PHONE
                                 FolderSection.TRASH -> Glyph.TRASH
                                 FolderSection.SETTINGS -> Glyph.SETTINGS
-                            },
-                        value =
+                            }
+                        )
+                    },
+                    meta = {
+                        ListMeta(
                             when (page) {
-                                FolderSection.DEVICE -> slice.device?.direction_label
+                                FolderSection.DEVICE -> slice.device?.direction_label.orEmpty()
                                 FolderSection.TRASH ->
-                                    slice.trash?.rows?.size?.takeIf { it > 0 }?.toString()
-                                FolderSection.SETTINGS -> null
-                            },
-                        accessory = Accessory.CHEVRON,
-                        onClick = { store.showFrom(route, MobileRoute.FolderPage(slice.id, page)) },
-                    )
+                                    slice.trash?.rows?.size?.takeIf { it > 0 }?.toString().orEmpty()
+                                FolderSection.SETTINGS -> ""
+                            }
+                        )
+                    },
+                ) {
+                    ListTitle(page.title)
                 }
             }
         }
@@ -277,7 +293,7 @@ internal fun FolderFilesScreen(store: MobileStore, folderId: String, path: Strin
                 Row(
                     Modifier.fillMaxWidth()
                         .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = ScreenMargin + 4.dp, vertical = 8.dp),
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     slice.breadcrumbs.forEachIndexed { index, crumb ->
@@ -424,7 +440,7 @@ internal fun LazyListScope.folderFiles(
 ) {
     if (slice.files.isEmpty())
         item("files-empty") {
-            SectionFooter(
+            ListNote(
                 if (slice.directory.isEmpty())
                     "No files yet. Files added on any member appear here."
                 else "This folder is empty."
@@ -434,33 +450,39 @@ internal fun LazyListScope.folderFiles(
         val subtitle =
             listOf(row.size_label, row.badge).filter { it.isNotBlank() }.joinToString(" · ")
         ListRow(
-            row.name,
-            Modifier.testTag("folder-file-${row.path}"),
-            position = Position.of(index, slice.files.size),
-            subtitle = subtitle.ifEmpty { null },
-            glyph = fileGlyph(row.name, row.directory),
-            glyphTint = if (row.conflict) palette.warning else null,
-            accessory = if (row.directory) Accessory.CHEVRON else Accessory.NONE,
-            trailing =
-                if (!row.directory && !row.downloaded)
-                    ({
-                        if (files.requested == row.path || row.badge == "Waiting to download")
-                            Spinner(Modifier.size(16.dp))
-                        else
-                            Icon(
-                                Glyph.PULL,
-                                "Not downloaded",
-                                Modifier.testTag("folder-file-cloud-${row.path}"),
-                                tint = palette.tertiaryLabel,
-                                size = 20.dp,
-                            )
-                    })
-                else null,
             onClick = { if (row.directory) openDirectory(row.path) else files.tap(row) },
-        )
+            Modifier.testTag("folder-file-${row.path}"),
+            first = index == 0,
+            leading = {
+                ListIconTile(
+                    fileGlyph(row.name, row.directory),
+                    when {
+                        row.conflict -> palette.warning
+                        row.directory -> ToolPage.FOLDERS.color
+                        else -> palette.secondaryLabel
+                    },
+                )
+            },
+            subtitle = if (subtitle.isEmpty()) null else ({ ListSubtitle(subtitle) }),
+            badge = {
+                if (!row.directory && !row.downloaded)
+                    if (files.requested == row.path || row.badge == "Waiting to download")
+                        Spinner(ListBadgeGap.size(16.dp))
+                    else
+                        Icon(
+                            Glyph.PULL,
+                            "Not downloaded",
+                            ListBadgeGap.testTag("folder-file-cloud-${row.path}"),
+                            tint = palette.tertiaryLabel,
+                            size = 20.dp,
+                        )
+            },
+        ) {
+            ListTitle(row.name)
+        }
     }
     if (slice.files_truncated)
-        item("files-truncated") { SectionFooter("Only the first 500 entries are listed.") }
+        item("files-truncated") { ListNote("Only the first 500 entries are listed.") }
 }
 
 @Composable
@@ -593,37 +615,46 @@ internal fun DeletionGuard(deletions: FolderDeletionsRow, resolve: (apply: Boole
         )
 }
 
+/** A conflicted file; tapping it offers to keep this copy or the original. */
 @Composable
 private fun ConflictRow(
     conflict: FolderConflictRow,
-    position: Position,
+    first: Boolean,
     keep: (copy: Boolean) -> Unit,
 ) {
-    ListRow(
-        conflict.original.substringAfterLast('/').ifEmpty { conflict.path },
-        Modifier.testTag("folder-conflict-${conflict.path}"),
-        position = position,
-        subtitle = conflict.detail,
-        glyph = Glyph.WARNING,
-        glyphTint = palette.warning,
-        trailing = {
-            Row {
-                DButton(
-                    "Keep this",
-                    { keep(true) },
-                    Modifier.testTag("folder-conflict-keep-copy"),
-                    kind = ButtonKind.PLAIN,
-                    enabled = conflict.downloaded,
-                )
-                DButton(
-                    "Keep original",
-                    { keep(false) },
-                    Modifier.testTag("folder-conflict-keep-original"),
-                    kind = ButtonKind.PLAIN,
-                )
-            }
-        },
-    )
+    val menu = rememberMenuState()
+    val name = conflict.original.substringAfterLast('/').ifEmpty { conflict.path }
+    val choices =
+        listOf(
+            MenuSection(
+                listOf(
+                    ChromeAction(
+                        "folder-conflict-keep-copy",
+                        "Keep this",
+                        Glyph.CHECK,
+                        enabled = conflict.downloaded,
+                    ) {
+                        keep(true)
+                    },
+                    ChromeAction("folder-conflict-keep-original", "Keep original", Glyph.UNDO) {
+                        keep(false)
+                    },
+                ),
+                title = name,
+            )
+        )
+    MenuAnchor(menu, atPress = true) {
+        ListRow(
+            onClick = { menu.show(choices) },
+            Modifier.testTag("folder-conflict-${conflict.path}"),
+            onLongClick = { menu.show(choices) },
+            first = first,
+            leading = { ListIconTile(Glyph.WARNING, palette.warning) },
+            subtitle = { ListSubtitle(conflict.detail) },
+        ) {
+            ListTitle(name)
+        }
+    }
 }
 
 @Composable
@@ -631,7 +662,7 @@ private fun MemberRow(
     store: MobileStore,
     slice: FolderSlice,
     member: FolderMemberRow,
-    position: Position,
+    first: Boolean,
     remove: () -> Unit,
 ) {
     val subtitle =
@@ -703,26 +734,38 @@ private fun MemberRow(
                     )
                 ),
             )
-    MenuAnchor(menu) {
+    MenuAnchor(menu, atPress = true) {
         ListRow(
-            if (member.this_device) "${member.name} (this device)" else member.name,
-            Modifier.testTag("folder-member-${member.member_id}"),
-            position = position,
-            subtitle = subtitle,
-            glyph = if (member.daemon) Glyph.SERVER else Glyph.PHONE,
-            tile = if (member.online) palette.info else palette.tertiaryLabel,
-            trailing = { StatusDot(member.tone) },
-            onClick =
+            onClick = {
                 when {
-                    member.this_device -> {
-                        { store.push(MobileRoute.FolderPage(slice.id, FolderSection.DEVICE)) }
-                    }
-                    actions.isNotEmpty() -> {
-                        { menu.show(actions) }
-                    }
-                    else -> null
-                },
-        )
+                    member.this_device ->
+                        store.push(MobileRoute.FolderPage(slice.id, FolderSection.DEVICE))
+                    actions.isNotEmpty() -> menu.show(actions)
+                }
+            },
+            Modifier.testTag("folder-member-${member.member_id}"),
+            onLongClick = if (actions.isNotEmpty()) ({ menu.show(actions) }) else null,
+            first = first,
+            leading = {
+                Box(Modifier.size(ListLeading), contentAlignment = Alignment.Center) {
+                    ListIconTile(
+                        if (member.daemon) Glyph.SERVER else Glyph.PHONE,
+                        if (member.online) palette.info else palette.secondaryLabel,
+                    )
+                    StatusDot(
+                        member.tone,
+                        Modifier.align(Alignment.BottomEnd)
+                            .size(13.dp)
+                            .background(palette.background, CircleShape)
+                            .padding(2.5.dp),
+                    )
+                }
+            },
+            meta = { if (member.this_device) ListMeta("This device", color = palette.accent) },
+            subtitle = { ListSubtitle(subtitle) },
+        ) {
+            ListTitle(member.name)
+        }
     }
 }
 
@@ -743,19 +786,18 @@ private fun LazyListScope.problems(slice: FolderSlice) {
             )
             .filter { it.second.isNotEmpty() }
     for ((title, rows) in groups) {
-        item("problems-$title") {
-            SectionHeader(title)
-            Group(rows.take(20)) { row, position ->
-                ListRow(
-                    row.path.ifEmpty { slice.name },
-                    position = position,
-                    subtitle = row.message,
-                    glyph = Glyph.INFO,
-                    titleMaxLines = 1,
-                )
+        item("problems-$title") { ListSectionHeader(title, count = rows.size) }
+        itemsIndexed(rows.take(20), key = { index, _ -> "problem-$title-$index" }) { index, row ->
+            ListRow(
+                onClick = null,
+                first = index == 0,
+                leading = { ListIconTile(Glyph.INFO) },
+                subtitle = { ListSubtitle(row.message) },
+            ) {
+                ListTitle(row.path.ifEmpty { slice.name })
             }
-            if (rows.size > 20) SectionFooter("And ${rows.size - 20} more.")
         }
+        if (rows.size > 20) item("problems-$title-more") { ListNote("And ${rows.size - 20} more.") }
     }
 }
 
@@ -840,6 +882,21 @@ internal fun ValueText(text: String) {
         color = palette.secondaryLabel,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
+    )
+}
+
+/** A note below or in place of a list section's rows, aligned with its header. */
+@Composable
+internal fun ListNote(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = palette.secondaryLabel,
+) {
+    Text(
+        text,
+        modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 4.dp),
+        style = type.footnote,
+        color = color,
     )
 }
 

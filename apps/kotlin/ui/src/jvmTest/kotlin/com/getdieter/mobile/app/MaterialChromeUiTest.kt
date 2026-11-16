@@ -58,9 +58,10 @@ class MaterialChromeUiTest {
                 val add = onNodeWithTag("chrome-projects-add").getBoundsInRoot()
                 assertTrue(abs((heading.centerY - add.centerY).value) < 16f)
                 onNodeWithText("2 projects").assertIsDisplayed()
-                assertTrue(
-                    onNodeWithText("Search projects and boards").getBoundsInRoot().top < 100.dp
-                )
+                val search = onNodeWithTag("chrome-projects-search").getBoundsInRoot()
+                assertTrue(abs((heading.centerY - search.centerY).value) < 16f)
+                onNodeWithTag("chrome-projects-search").performClick()
+                assertTrue(onNodeWithTag("projects-search-field").getBoundsInRoot().top < 100.dp)
                 shot("mobile-tablet-projects")
                 onNodeWithTag("chrome-projects-add").performClick()
                 onNodeWithText("New project").assertIsDisplayed()
@@ -79,7 +80,8 @@ class MaterialChromeUiTest {
                 val heading = title(MobileTab.CHATS).getBoundsInRoot()
                 val options = onNodeWithTag("chrome-chats-menu").getBoundsInRoot()
                 assertTrue(abs((heading.centerY - options.centerY).value) < 16f)
-                assertTrue(onNodeWithText("Search chats").getBoundsInRoot().top < 100.dp)
+                onNodeWithTag("chrome-chats-search").performClick()
+                assertTrue(onNodeWithTag("chats-search-field").getBoundsInRoot().top < 100.dp)
                 shot("mobile-tablet-chats")
                 onNodeWithTag("chrome-chats-menu").performClick()
                 onNodeWithText("Archived chats").performClick()
@@ -90,14 +92,14 @@ class MaterialChromeUiTest {
         }
 
     @Test
-    fun phoneKeepsItsLargeProjectsTitle() =
+    fun phoneShowsTheSmallProjectsTitleBesideItsActions() =
         runDesktopComposeUiTest(width = 390, height = 844) {
             val store = launch(MobileTab.PROJECTS)
             try {
                 onNodeWithTag("rail-new").assertDoesNotExist()
                 val heading = title(MobileTab.PROJECTS).getBoundsInRoot()
                 val add = onNodeWithTag("chrome-projects-add").getBoundsInRoot()
-                assertTrue(heading.top > add.bottom)
+                assertTrue(abs((heading.centerY - add.centerY).value) < 16f)
                 shot("mobile-phone-projects")
             } finally {
                 store.close()

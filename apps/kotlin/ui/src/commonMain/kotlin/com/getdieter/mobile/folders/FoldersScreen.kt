@@ -1,12 +1,13 @@
 package com.getdieter.mobile.folders
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.getdieter.client.v1.FolderRow
@@ -31,6 +32,12 @@ internal fun FoldersScreen(store: MobileStore) {
     Screen(
         ScreenChrome(
             "Folders",
+            subtitle =
+                when (slice.folders.size) {
+                    0 -> ""
+                    1 -> "1 folder"
+                    else -> "${slice.folders.size} folders"
+                },
             actions =
                 listOf(
                     ChromeAction(
@@ -52,7 +59,6 @@ internal fun FoldersScreen(store: MobileStore) {
             state = listState,
             contentPadding = padding,
         ) {
-            titleHeader()
             item("connection") { ConnectionNotice(store) }
             if (slice.notice.isNotEmpty())
                 item("notice") {
@@ -65,7 +71,8 @@ internal fun FoldersScreen(store: MobileStore) {
                         onAction = { store.showFrom(root, MobileRoute.FolderSync) },
                     )
                 }
-            if (slice.action_error.isNotEmpty()) item("error") { SectionFooter(slice.action_error) }
+            if (slice.action_error.isNotEmpty())
+                item("error") { ListNote(slice.action_error, color = palette.destructive) }
             if (slice.loading)
                 item("loading") {
                     Box(Modifier.fillMaxWidth().padding(32.dp), Alignment.Center) { Spinner() }
@@ -86,20 +93,25 @@ internal fun FoldersScreen(store: MobileStore) {
                         )
                     }
                 }
-            else item("spacer") { Spacer(Modifier.height(8.dp)) }
             itemsIndexed(slice.folders, key = { _, row -> row.id }) { index, row ->
                 val route = MobileRoute.Folder(row.id)
-                FolderListRow(
-                    row,
-                    Position.of(index, slice.folders.size),
-                    route.key == selected,
-                ) {
+                FolderListRow(row, index == 0, route.key == selected) {
                     store.showFrom(root, route)
                 }
             }
-            if (slice.device_capable || settings.device_capable)
-                item("device") {
-                    SectionHeader("This device")
+            if (slice.folders.isNotEmpty())
+                item("add") {
+                    ListRow(
+                        onClick = { store.present(MobileRoute.AddFolder()) },
+                        Modifier.testTag("folders-add-row"),
+                        leading = { ListIconTile(Glyph.ADD, palette.accent) },
+                    ) {
+                        ListTitle("Add folder", color = palette.accent)
+                    }
+                }
+            if (slice.device_capable || settings.device_capable) {
+                item("device-header") { ListSectionHeader("This device") }
+                item("device-next-sync") {
                     val summary =
                         listOf(
                                 settings.next_sync,
@@ -108,83 +120,83 @@ internal fun FoldersScreen(store: MobileStore) {
                             )
                             .filter { !it.isNullOrBlank() }
                             .joinToString(" · ")
-                    Group(listOf(0, 1)) { index, position ->
-                        if (index == 0)
-                            ListRow(
-                                "Next background sync",
-                                Modifier.testTag("folders-next-sync"),
-                                position = position,
-                                subtitle =
-                                    summary.ifEmpty {
-                                        if (settings.folders_on_device == 0)
-                                            "No folder is on this device yet"
-                                        else "Not scheduled"
-                                    },
-                                glyph = Glyph.CLOCK,
+                    ListRow(
+                        onClick = null,
+                        Modifier.testTag("folders-next-sync"),
+                        first = true,
+                        leading = { ListIconTile(Glyph.CLOCK) },
+                        subtitle = {
+                            ListSubtitle(
+                                summary.ifEmpty {
+                                    if (settings.folders_on_device == 0)
+                                        "No folder is on this device yet"
+                                    else "Not scheduled"
+                                }
                             )
-                        else
-                            ListRow(
-                                "Folder sync settings",
-                                Modifier.testTag("folders-settings"),
-                                position = position,
-                                glyph = Glyph.SETTINGS,
-                                accessory = Accessory.CHEVRON,
-                                selected = MobileRoute.FolderSync.key == selected,
-                                onClick = { store.showFrom(root, MobileRoute.FolderSync) },
-                            )
+                        },
+                    ) {
+                        ListTitle("Next background sync")
                     }
                 }
-            if (slice.folders.isNotEmpty())
-                item("add") {
-                    Spacer(Modifier.height(12.dp))
+                item("device-settings") {
                     ListRow(
-                        "Add folder",
-                        Modifier.testTag("folders-add-row"),
-                        position = Position.SINGLE,
-                        glyph = Glyph.ADD,
-                        glyphTint = palette.accent,
-                        onClick = { store.present(MobileRoute.AddFolder()) },
-                    )
+                        onClick = { store.showFrom(root, MobileRoute.FolderSync) },
+                        Modifier.testTag("folders-settings"),
+                        surface = listRowSurface(selected = MobileRoute.FolderSync.key == selected),
+                        leading = { ListIconTile(Glyph.SETTINGS) },
+                    ) {
+                        ListTitle("Folder sync settings")
+                    }
                 }
+            }
         }
     }
 }
 
+/**
+ * A folder: its tile with a status dot, its name (with a spinner while it syncs), and its status
+ * and this device's direction.
+ */
 @Composable
-private fun FolderListRow(
-    row: FolderRow,
-    position: Position,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
+private fun FolderListRow(row: FolderRow, first: Boolean, selected: Boolean, onClick: () -> Unit) {
+    val surface = listRowSurface(selected = selected)
     val subtitle =
         // A folder kept elsewhere names its machines in its status.
         listOf(row.status, row.direction.takeIf { row.on_device })
             .filter { !it.isNullOrBlank() }
             .joinToString(" · ")
     ListRow(
-        row.name,
+        onClick = onClick,
         Modifier.testTag("folder-row-${row.id}"),
-        position = position,
-        subtitle = subtitle,
-        glyph =
-            if (row.attention) Glyph.WARNING
-            else if (row.on_device) Glyph.FOLDER else Glyph.FOLDER_OPEN,
-        tile =
-            when {
-                row.attention -> palette.warning
-                row.on_device -> Color(0xFF64D2FF)
-                else -> palette.tertiaryLabel
-            },
-        accessory = Accessory.CHEVRON,
-        selected = selected,
-        trailing = {
-            when {
-                row.syncing -> Spinner(Modifier.size(16.dp))
-                row.tone != SliceTone.TONE_NEUTRAL -> StatusDot(row.tone)
-                else -> Unit
+        surface = surface,
+        first = first,
+        leading = {
+            Box(Modifier.size(ListLeading), contentAlignment = Alignment.Center) {
+                ListIconTile(
+                    when {
+                        row.attention -> Glyph.WARNING
+                        row.on_device -> Glyph.FOLDER
+                        else -> Glyph.FOLDER_OPEN
+                    },
+                    when {
+                        row.attention -> palette.warning
+                        row.on_device -> ToolPage.FOLDERS.color
+                        else -> palette.secondaryLabel
+                    },
+                )
+                if (row.tone != SliceTone.TONE_NEUTRAL)
+                    StatusDot(
+                        row.tone,
+                        Modifier.align(Alignment.BottomEnd)
+                            .size(13.dp)
+                            .background(surface, CircleShape)
+                            .padding(2.5.dp),
+                    )
             }
         },
-        onClick = onClick,
-    )
+        meta = { if (row.syncing) Spinner(Modifier.padding(start = 6.dp).size(14.dp)) },
+        subtitle = { ListSubtitle(subtitle) },
+    ) {
+        ListTitle(row.name)
+    }
 }

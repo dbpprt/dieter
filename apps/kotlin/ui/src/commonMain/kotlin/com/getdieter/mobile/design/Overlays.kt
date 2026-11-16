@@ -14,12 +14,19 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.changedToDown
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.getdieter.mobile.app.*
 import com.getdieter.mobile.platform.exposingTestTags
@@ -75,6 +82,10 @@ internal enum class SheetSize {
 internal class MenuState {
     var sections by mutableStateOf<List<MenuSection>?>(null)
     internal var bounds = Rect.Zero
+    /** Where the last press went down, within the anchor, for menus that open at the press. */
+    internal var press: Offset? = null
+    /** The window's width in pixels, to keep a menu opened at a press inside it. */
+    internal var windowWidth = 0f
 
     fun show(sections: List<MenuSection>) {
         this.sections = sections
@@ -87,22 +98,71 @@ internal class MenuState {
 
 @Composable internal fun rememberMenuState() = remember { MenuState() }
 
-/** Anchors a menu to its content: a native UIMenu on iOS, a Material dropdown on Android. */
+/**
+ * Anchors a menu to its content: a native UIMenu on iOS, a Material dropdown on Android. With
+ * [atPress] the menu opens where the press went down, as a long-press menu on a full-width row
+ * should, instead of below the row's start edge.
+ */
 @Composable
 internal fun MenuAnchor(
     state: MenuState,
     modifier: Modifier = Modifier,
+    atPress: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val overlays = LocalNativeOverlays.current
     val density = LocalDensity.current.density
-    Box(modifier.onGloballyPositioned { state.bounds = it.boundsInWindow() }) {
+    Box(
+        modifier
+            .onGloballyPositioned {
+                state.bounds = it.boundsInWindow()
+                state.windowWidth = it.findRootCoordinates().size.width.toFloat()
+            }
+            .then(
+                if (atPress)
+                    Modifier.pointerInput(state) {
+                        // Observe only: the content's own gestures still get every event.
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                event.changes
+                                    .firstOrNull { it.changedToDown() }
+                                    ?.let {
+                                        state.press = it.position
+                                    }
+                            }
+                        }
+                    }
+                else Modifier
+            )
+    ) {
         content()
         val sections = state.sections
-        if (overlays == null) MaterialMenu(sections.orEmpty(), sections != null, state::dismiss)
-        else if (sections != null)
+        // A menu of known width opens at the press, moved inward so it keeps clear of both edges.
+        val press =
+            state.press
+                ?.takeIf { atPress }
+                ?.let {
+                    val margin = MENU_EDGE.value * density
+                    val right = state.windowWidth - margin - PRESS_MENU_WIDTH.value * density
+                    val x = (state.bounds.left + it.x).coerceIn(margin, right.coerceAtLeast(margin))
+                    Offset(x - state.bounds.left, it.y)
+                }
+        if (overlays == null) {
+            if (press != null)
+                Box(Modifier.offset { IntOffset(press.x.toInt(), press.y.toInt()) }.size(0.dp)) {
+                    MaterialMenu(
+                        sections.orEmpty(),
+                        sections != null,
+                        width = PRESS_MENU_WIDTH,
+                        onDismiss = state::dismiss,
+                    )
+                }
+            else MaterialMenu(sections.orEmpty(), sections != null, onDismiss = state::dismiss)
+        } else if (sections != null)
             LaunchedEffect(sections) {
-                val bounds = state.bounds
+                val bounds =
+                    press?.let { Rect(state.bounds.topLeft + it, Size(1f, 1f)) } ?: state.bounds
                 overlays.showMenu(
                     sections,
                     bounds.left / density.toDouble(),
@@ -114,6 +174,9 @@ internal fun MenuAnchor(
             }
     }
 }
+
+private val MENU_EDGE = 16.dp
+private val PRESS_MENU_WIDTH = 248.dp
 
 /** A "…" button that opens a menu. */
 @Composable

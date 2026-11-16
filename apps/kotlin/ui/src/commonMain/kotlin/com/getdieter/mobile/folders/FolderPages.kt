@@ -398,87 +398,80 @@ private fun TrashScreen(store: MobileStore, folderId: String) {
                 }
             else
                 item("header") {
-                    SectionHeader(
+                    ListSectionHeader(
                         trash?.daemon_name?.let { "On $it" } ?: "Deleted files",
-                        trailing = {
+                        count = rows.size,
+                        trailing =
                             if (trash != null && trash.total_bytes > 0)
-                                Text(
-                                    FolderSettings.size(trash.total_bytes),
-                                    style = type.footnote,
-                                    color = palette.secondaryLabel,
-                                )
-                        },
+                                ({
+                                    Text(
+                                        FolderSettings.size(trash.total_bytes),
+                                        Modifier.padding(start = 4.dp, end = 10.dp),
+                                        style = type.footnote,
+                                        color = palette.secondaryLabel,
+                                    )
+                                })
+                            else null,
                     )
                 }
             itemsIndexed(rows, key = { _, row -> "trash-${row.id}" }) { index, row ->
                 val menu = rememberMenuState()
-                MenuAnchor(menu) {
-                    ListRow(
-                        row.name,
-                        Modifier.testTag("folder-trash-${row.id}"),
-                        position =
-                            Position.of(
-                                index,
-                                rows.size + if (trash?.next.isNullOrEmpty()) 0 else 1,
-                            ),
-                        subtitle =
+                val actions =
+                    listOf(
+                        MenuSection(
                             listOf(
-                                    row.path.substringBeforeLast('/', ""),
-                                    row.detail,
-                                    row.size_label,
-                                )
-                                .filter { it.isNotBlank() }
-                                .joinToString(" · "),
-                        glyph = fileGlyph(row.name, false),
-                        onLongClick = {
-                            menu.show(
-                                listOf(
-                                    MenuSection(
-                                        listOf(
-                                            ChromeAction(
-                                                "trash-purge",
-                                                "Delete now",
-                                                Glyph.TRASH,
-                                                destructive = true,
-                                            ) {
-                                                store.folders.purge(
-                                                    folderId,
-                                                    trash?.daemon_id.orEmpty(),
-                                                    listOf(row.id),
-                                                )
-                                            }
-                                        )
-                                    )
-                                )
-                            )
-                        },
-                        trailing = {
-                            DButton(
-                                "Restore",
-                                {
+                                ChromeAction("trash-restore", "Restore", Glyph.UNDO) {
                                     store.folders.restore(
                                         folderId,
                                         trash?.daemon_id.orEmpty(),
                                         listOf(row.id),
                                     )
                                 },
-                                Modifier.testTag("folder-trash-restore-${row.id}"),
-                                kind = ButtonKind.PLAIN,
+                                ChromeAction(
+                                    "trash-purge",
+                                    "Delete now",
+                                    Glyph.TRASH,
+                                    destructive = true,
+                                ) {
+                                    store.folders.purge(
+                                        folderId,
+                                        trash?.daemon_id.orEmpty(),
+                                        listOf(row.id),
+                                    )
+                                },
+                            ),
+                            title = row.name,
+                        )
+                    )
+                MenuAnchor(menu, atPress = true) {
+                    ListRow(
+                        onClick = { menu.show(actions) },
+                        Modifier.testTag("folder-trash-${row.id}"),
+                        onLongClick = { menu.show(actions) },
+                        first = index == 0,
+                        leading = { ListIconTile(fileGlyph(row.name, false)) },
+                        meta = { ListMeta(row.size_label) },
+                        subtitle = {
+                            ListSubtitle(
+                                listOf(row.path.substringBeforeLast('/', ""), row.detail)
+                                    .filter { it.isNotBlank() }
+                                    .joinToString(" · ")
                             )
                         },
-                    )
+                    ) {
+                        ListTitle(row.name)
+                    }
                 }
             }
             if (!trash?.next.isNullOrEmpty())
                 item("more") {
-                    ListRow(
-                        "Load more",
-                        position = Position.LAST,
-                        glyph = Glyph.ARROW_DOWN,
-                        onClick = {
-                            store.folders.loadTrash(folderId, trash.daemon_id, trash.next)
-                        },
-                    )
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        DButton(
+                            "Load more",
+                            { store.folders.loadTrash(folderId, trash.daemon_id, trash.next) },
+                            kind = ButtonKind.PLAIN,
+                        )
+                    }
                 }
         }
     }
