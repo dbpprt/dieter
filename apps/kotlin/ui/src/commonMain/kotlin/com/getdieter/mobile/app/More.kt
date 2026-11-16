@@ -235,6 +235,8 @@ internal fun MoreSheet(
     store: MobileStore,
     navigation: MobileNavigation,
     showBar: Boolean,
+    /** The floating navigation, kept at the sheet's foot while it is open. */
+    floatingBar: (@Composable () -> Unit)? = null,
     onDismiss: () -> Unit,
 ) {
     val session by store.session.slice.collectAsState()
@@ -251,7 +253,7 @@ internal fun MoreSheet(
         containerColor = colors.surfaceContainerLow,
         // The docked bar reaches under the system navigation bar, as the app's own bar does.
         contentWindowInsets = {
-            if (showBar) WindowInsets.safeDrawing.only(WindowInsetsSides.Top)
+            if (showBar || floatingBar != null) WindowInsets.safeDrawing.only(WindowInsetsSides.Top)
             else BottomSheetDefaults.windowInsets
         },
         modifier = Modifier.exposingTestTags().testTag("more-sheet"),
@@ -295,7 +297,16 @@ internal fun MoreSheet(
                 }
             }
         }
-        if (showBar)
+        if (floatingBar != null)
+            Box(
+                Modifier.fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = FloatingMargin),
+                contentAlignment = Alignment.BottomCenter,
+            ) {
+                floatingBar()
+            }
+        else if (showBar)
             NavigationBar(containerColor = colors.surfaceContainer) {
                 NavigationItems(store, navigation, moreOpen = true) { tab ->
                     onDismiss()

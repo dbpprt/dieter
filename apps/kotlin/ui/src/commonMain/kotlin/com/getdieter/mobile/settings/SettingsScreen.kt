@@ -33,6 +33,8 @@ internal fun SettingsScreen(store: MobileStore) {
     val appearance by store.theme.appearance.collectAsState()
     val dynamic by store.theme.dynamicColor.collectAsState()
     val interfaceMode by store.layout.interfaceMode.collectAsState()
+    val navigationStyle by store.layout.navigationStyle.collectAsState()
+    val composerStyle by store.layout.composerStyle.collectAsState()
     val outbox by store.workspace.outbox.collectAsState()
     val providers = rememberProviders(store)
     var signOut by remember { mutableStateOf(false) }
@@ -76,6 +78,33 @@ internal fun SettingsScreen(store: MobileStore) {
                                     "and on external displays.",
                                 style = type.footnote,
                                 color = palette.secondaryLabel,
+                            )
+                        }
+                    if (!apple)
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Navigation", style = type.body, color = palette.label)
+                            Segmented(
+                                NavigationStyle.entries.map { it.title },
+                                navigationStyle.ordinal,
+                                { store.layout.setNavigationStyle(NavigationStyle.entries[it]) },
+                                testTagPrefix = "navigation-style",
+                            )
+                            Text(
+                                "Dock, Lens and Island float as glass above the page; drag along " +
+                                    "Dock or Lens to move the selection. Landscape foldables " +
+                                    "show it on the side.",
+                                style = type.footnote,
+                                color = palette.secondaryLabel,
+                            )
+                        }
+                    if (!apple)
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Chat input", style = type.body, color = palette.label)
+                            Segmented(
+                                ComposerStyle.entries.map { it.title },
+                                composerStyle.ordinal,
+                                { store.layout.setComposerStyle(ComposerStyle.entries[it]) },
+                                testTagPrefix = "composer-style",
                             )
                         }
                     if (!apple && platformSupportsDynamicColor)

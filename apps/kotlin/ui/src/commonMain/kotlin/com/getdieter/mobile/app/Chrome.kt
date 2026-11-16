@@ -289,7 +289,15 @@ private fun MaterialScreen(
         else TopAppBarDefaults.pinnedScrollBehavior()
     val back = LocalBackAction.current
     val insets = LocalScreenInsets.current
-    val fab = chrome.primary.takeUnless { LocalRailCreates.current }
+    // Under the floating navigation the creation command becomes its glass orb.
+    val slot = LocalPrimarySlot.current
+    val fab = chrome.primary.takeUnless { LocalRailCreates.current || slot != null }
+    if (slot != null) {
+        val owner = remember { Any() }
+        val primary = chrome.primary
+        SideEffect { if (primary != null) slot.publish(owner, primary) else slot.withdraw(owner) }
+        DisposableEffect(slot, owner) { onDispose { slot.withdraw(owner) } }
+    }
     val barColors =
         TopAppBarDefaults.topAppBarColors(
             containerColor = palette.background,

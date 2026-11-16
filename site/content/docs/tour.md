@@ -180,6 +180,18 @@ and the app remembers your choice.
 
 {{< screenshot src="ipad-conversation.png" kind="tablet" width="2048" height="2732" alt="iPad with the Atlas API board on the left and a running task's reply, rate-limit table, and plan on the right" caption="The board and a running task, side by side on iPad." >}}
 
+On Android the tabs float above the page in a glass bar, and the page's main
+action, such as **New task** or **New chat**, sits beside it as a round button.
+On an unfolded foldable the bar stays under the list, so a task's message
+field reaches the bottom of its own pane. In landscape the bar stands on the
+left edge. Drag along the bar to slide between tabs; while you scroll down a
+page, it shrinks to the current tab and comes back when you stop. The message
+field floats above the reply
+as a card, with the agent, the context in use and send inside it.
+**Settings → Appearance → Navigation** offers **Lens** (the default), **Dock**
+(labels on every tab), **Island** (a compact pill) and **Classic** (the docked
+bar). **Chat input** offers **Card** (the default), **Glass** and **Classic**.
+
 ### Android on a desktop
 
 In Samsung DeX, in Android's desktop windowing and on a connected display, the

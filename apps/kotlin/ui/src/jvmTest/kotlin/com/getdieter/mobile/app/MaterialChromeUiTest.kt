@@ -9,6 +9,7 @@ import androidx.compose.ui.unit.dp
 import com.getdieter.mobile.desktop.DesktopFixture
 import com.getdieter.mobile.navigation.MobileTab
 import com.getdieter.mobile.store.MobileStore
+import com.getdieter.mobile.store.NavigationStyle
 import java.io.File
 import javax.imageio.ImageIO
 import kotlin.math.abs
@@ -24,6 +25,8 @@ class MaterialChromeUiTest {
         val core = DesktopFixture.core()
         val store = MobileStore(core, Dispatchers.Unconfined)
         store.theme.setAppearance("dark")
+        // The Material rail and its toolbar belong to the Classic navigation.
+        store.layout.setNavigationStyle(NavigationStyle.CLASSIC)
         DesktopFixture.publish(core)
         store.selectTab(tab)
         setContent { MobileApp(store) }

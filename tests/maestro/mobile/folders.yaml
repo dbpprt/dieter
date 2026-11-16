@@ -57,13 +57,16 @@ tags: [smoke]
 - scrollUntilVisible:
     element:
       id: settings-folder-sync
+    centerElement: true
 - tapOn:
     id: settings-folder-sync
     waitToSettleTimeoutMs: 500
-# The network choice is below the fold on small screens.
+# The network choice is below the fold on small screens; centred, so the tap
+# never lands on the floating navigation passing over it.
 - scrollUntilVisible:
     element:
       id: folder-sync-network-1
+    centerElement: true
     timeout: 10000
 - tapOn:
     id: folder-sync-network-1

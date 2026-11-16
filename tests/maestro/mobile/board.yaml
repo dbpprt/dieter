@@ -18,7 +18,14 @@ tags: [smoke]
 - tapOn:
     text: "Design the mobile workspace"
     waitToSettleTimeoutMs: 500
-- assertVisible: ".*Your board stays within reach.*"
+# A conversation opens at its latest content; on short screens the floating
+# composer leaves the reply above the fold, so scroll up to it.
+- scrollUntilVisible:
+    element:
+      text: ".*Your board stays within reach.*"
+    direction: UP
+    centerElement: true
+    timeout: 20000
 - tapOn:
     id: chrome-conversation-menu
     waitToSettleTimeoutMs: 500
