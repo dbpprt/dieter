@@ -10,6 +10,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.offset
@@ -310,9 +311,14 @@ private fun BarItems(
 ) {
     val tabs = MobileTab.entries
     val bounds = remember { mutableStateMapOf<MobileTab, Rect>() }
+    // The drop's edges along the bar; they animate between tabs when nothing is dragged.
     val start = remember { Animatable(Float.NaN) }
     val end = remember { Animatable(Float.NaN) }
-    var dragging by remember { mutableStateOf(false) }
+    // While a finger drags the lens: its centre and its fixed span, taken from the tab it
+    // started on. The centre stays between the first and last tab, so the lens never leaves.
+    var dragCenter by remember { mutableStateOf<Float?>(null) }
+    var lensSpan by remember { mutableFloatStateOf(0f) }
+    val dragging = dragCenter != null
     var hovered by remember { mutableStateOf<MobileTab?>(null) }
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
@@ -338,21 +344,41 @@ private fun BarItems(
         launch { start.animateTo(to0, if (forward) slow else quick) }
         launch { end.animateTo(to1, if (forward) quick else slow) }
     }
+    fun axis(rect: Rect) = if (vertical) rect.center.y else rect.center.x
+    fun span(rect: Rect) = if (vertical) rect.height else rect.width
     fun nearest(position: Float): MobileTab? =
-        bounds.entries
-            .minByOrNull { (_, rect) ->
-                abs((if (vertical) rect.center.y else rect.center.x) - position)
-            }
-            ?.key
+        bounds.entries.minByOrNull { (_, rect) -> abs(axis(rect) - position) }?.key
+    /** The drop's edges now: the dragged lens, else the animated drop; null before layout. */
+    fun edges(): Pair<Float, Float>? {
+        dragCenter?.let { center ->
+            return center - lensSpan / 2 to center + lensSpan / 2
+        }
+        if (start.value.isNaN() || end.value.isNaN()) return null
+        return start.value to end.value
+    }
     fun follow(position: Float) {
-        val width = (end.value - start.value).takeIf { it > 0f } ?: return
-        val lens = width * 1.08f
-        scope.launch { start.snapTo(position - lens / 2) }
-        scope.launch { end.snapTo(position + lens / 2) }
-        val under = nearest(position)
+        val centers = bounds.values.map(::axis)
+        val center =
+            if (centers.isEmpty()) position else position.coerceIn(centers.min(), centers.max())
+        dragCenter = center
+        val under = nearest(center)
         if (under != hovered) {
             if (hovered != null) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
             hovered = under
+        }
+    }
+    /** Ends a drag: the drop takes over from the lens where it is, then springs to its tab. */
+    fun release(select: Boolean) {
+        val center = dragCenter ?: return
+        val tab = nearest(center)
+        scope.launch {
+            start.snapTo(center - lensSpan / 2)
+            end.snapTo(center + lensSpan / 2)
+            dragCenter = null
+            if (select && tab != null) {
+                haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                onSelect(tab)
+            }
         }
     }
     val draggable = style != NavigationStyle.ISLAND
@@ -361,54 +387,53 @@ private fun BarItems(
         else
             Modifier.pointerInput(vertical) {
                 val onStart = { offset: Offset ->
-                    dragging = true
-                    hovered = null
-                    follow(if (vertical) offset.y else offset.x)
-                }
-                val onEnd = {
-                    val center = (start.value + end.value) / 2
-                    dragging = false
-                    nearest(center)?.let { tab ->
-                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                        onSelect(tab)
+                    val position = if (vertical) offset.y else offset.x
+                    val under = nearest(position)
+                    val rect = under?.let { bounds[it] } ?: target
+                    if (rect != null) {
+                        lensSpan = span(rect)
+                        hovered = under
+                        follow(position)
                     }
-                    Unit
                 }
+                val onDrag = { delta: Float -> dragCenter?.let { follow(it + delta) } }
                 if (vertical)
                     detectVerticalDragGestures(
                         onDragStart = onStart,
-                        onDragEnd = onEnd,
-                        onDragCancel = { dragging = false },
+                        onDragEnd = { release(select = true) },
+                        onDragCancel = { release(select = false) },
                     ) { change, delta ->
                         change.consume()
-                        follow((start.value + end.value) / 2 + delta)
+                        onDrag(delta)
                     }
                 else
                     detectHorizontalDragGestures(
                         onDragStart = onStart,
-                        onDragEnd = onEnd,
-                        onDragCancel = { dragging = false },
+                        onDragEnd = { release(select = true) },
+                        onDragCancel = { release(select = false) },
                     ) { change, delta ->
                         change.consume()
-                        follow((start.value + end.value) / 2 + delta)
+                        onDrag(delta)
                     }
             }
     val colors = dropColors()
     val drop = Modifier.drawBehind {
-        if (start.value.isNaN() || target == null) return@drawBehind
-        val rect =
-            if (vertical) Rect(target.left, start.value, target.right, end.value)
-            else Rect(start.value, target.top, end.value, target.bottom)
-        drawDrop(style, colors, rect, 0f, this, alpha = 1f - lift)
+        val (from, to) = edges() ?: return@drawBehind
+        val rect = target ?: return@drawBehind
+        val shape =
+            if (vertical) Rect(rect.left, from, rect.right, to)
+            else Rect(from, rect.top, to, rect.bottom)
+        drawDrop(style, colors, shape, 0f, this, alpha = 1f - lift)
     }
     val item: @Composable (MobileTab, Modifier) -> Unit = { tab, itemModifier ->
         val center = bounds[tab]?.let { if (vertical) it.center.y else it.center.x } ?: Float.NaN
         val span = bounds[tab]?.let { if (vertical) it.height else it.width } ?: 1f
         // Icons swell as the lifted lens passes over them.
+        val lensEdges = edges()
         val magnify =
-            if (lift <= 0f || center.isNaN() || start.value.isNaN()) 1f
+            if (lift <= 0f || center.isNaN() || lensEdges == null) 1f
             else {
-                val lens = (start.value + end.value) / 2
+                val lens = (lensEdges.first + lensEdges.second) / 2
                 1f + .08f * lift * (1f - (abs(lens - center) / span)).coerceIn(0f, 1f)
             }
         NavItem(
@@ -468,12 +493,14 @@ private fun BarItems(
                     )
                 }
             }
-        if (draggable && lift > .01f && target != null && !start.value.isNaN()) {
+        val beadEdges = edges()
+        if (draggable && lift > .01f && target != null && beadEdges != null) {
             val density = androidx.compose.ui.platform.LocalDensity.current
             val grow = 8.dp * lift
+            val (from, to) = beadEdges
             val rect =
-                if (vertical) Rect(target.left, start.value, target.right, end.value)
-                else Rect(start.value, target.top, end.value, target.bottom)
+                if (vertical) Rect(target.left, from, target.right, to)
+                else Rect(from, target.top, to, target.bottom)
             with(density) {
                 Box(
                     Modifier.offset {
@@ -620,10 +647,17 @@ private fun NavItem(
     val island = style == NavigationStyle.ISLAND
     // A tab drawn as an icon alone is still named, for TalkBack and device flows.
     val labelled = if (island) selected && !vertical else metrics.labels
+    // Not clipped: a badge such as "99+" reaches past the tab's corner. The press ripple is a
+    // circle of its own instead.
     Box(
         modifier
-            .clip(CircleShape)
-            .selectable(selected, role = Role.Tab, onClick = onClick)
+            .selectable(
+                selected,
+                interactionSource = remember { MutableInteractionSource() },
+                indication = androidx.compose.material3.ripple(bounded = false),
+                role = Role.Tab,
+                onClick = onClick,
+            )
             .testTag("nav-${tab.name.lowercase()}")
             .semantics {
                 if (!labelled) contentDescription = tab.title
