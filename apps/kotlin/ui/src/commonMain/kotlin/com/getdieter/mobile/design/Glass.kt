@@ -103,7 +103,7 @@ internal object GlassStyles {
             sheen = Color.White.copy(alpha = if (dark) .06f else .32f),
             highlight = Color.White.copy(alpha = if (dark) .34f else .95f),
             blur = 9.dp,
-            saturation = if (dark) 1.4f else 1.55f,
+            saturation = if (dark) 1.2f else 1.3f,
             bezel = 18.dp,
             refraction = 11.dp,
             dispersion = .35f,

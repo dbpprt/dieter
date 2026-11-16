@@ -325,6 +325,7 @@ class FloatingNavigationUiTest {
         open: String? = null,
         palette: com.getdieter.mobile.settings.DieterPalette =
             com.getdieter.mobile.settings.DieterPalette.MONOCHROME,
+        seed: (FakeMobileCore) -> Unit = {},
         block: DesktopComposeUiTest.(MobileStore) -> Unit,
     ) =
         runDesktopComposeUiTest(
@@ -340,6 +341,7 @@ class FloatingNavigationUiTest {
             store.theme.setPalette(palette)
             DesktopFixture.publish(core)
             core.publish(Slice.SLICE_ACTIVITY, update = Update(activity = activity))
+            seed(core)
             setContent {
                 CompositionLocalProvider(LocalDensity provides Density(scale)) {
                     MobileApp(store, desktopHost = false)
@@ -442,6 +444,46 @@ class FloatingNavigationUiTest {
             }
             waitForIdle()
             assertEquals(MobileTab.PROJECTS, store.routes.value.tab)
+        }
+
+    @Test
+    fun aLongSwipeAlongTheBarKeepsTheLensItsSizeAndSelectsWhereItEnds() =
+        render(Window.PHONE, NavigationStyle.LENS) { store ->
+            val bar = onNodeWithTag("floating-navigation").getBoundsInRoot()
+            // A real swipe sends a hundred or more moves; the lens once grew with each one
+            // until its size could no longer be laid out and the app crashed.
+            onNodeWithTag("floating-navigation").performTouchInput {
+                val y = height / 2f
+                down(Offset(width * .1f, y))
+                repeat(160) { moveBy(Offset(width * .0045f, 0f)) }
+                repeat(160) { moveBy(Offset(-width * .002f, 0f)) }
+                repeat(120) { moveBy(Offset(width * .01f, 0f)) }
+            }
+            mainClock.advanceTimeBy(300)
+            shot(name(Window.PHONE, "lens", "long-swipe"))
+            onNodeWithTag("floating-navigation").assertWidthIsEqualTo(bar.right - bar.left)
+            onNodeWithTag("floating-navigation").performTouchInput { up() }
+            waitForIdle()
+            // Dragged past the last tab, the lens stops on More and opens its sheet.
+            onNodeWithTag("more-sheet").assertExists()
+            assertEquals(MobileTab.INBOX, store.routes.value.tab)
+        }
+
+    @Test
+    fun aWideBadgeOnMoreIsNotCutOff() =
+        render(
+            Window.PHONE,
+            NavigationStyle.LENS,
+            seed = { core ->
+                core.publish(
+                    Slice.SLICE_CHANNELS,
+                    MobileStore.CHANNELS_SCOPE,
+                    Update(channels = ChannelsSlice(unread_label = "99+")),
+                )
+            },
+        ) {
+            onNodeWithTag("nav-more").assertIsDisplayed()
+            shot(name(Window.PHONE, "lens", "badge"))
         }
 
     @Test
