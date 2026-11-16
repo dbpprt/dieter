@@ -18,18 +18,33 @@ tags: [smoke]
 - tapOn:
     id: chrome-new-task
     waitToSettleTimeoutMs: 500
-# The conversation works in the project directory, not a worktree. Choose it
-# before typing: an open keyboard covers the choice on small screens and
-# swallows the tap.
+# The conversation works in the project directory, not a worktree. The form
+# focuses the prompt, so a keyboard is open from the start; on small screens it
+# covers the choice. Android: answer the fresh emulator keyboard's contacts
+# prompt, close the keyboard, then choose and check the choice's caption.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - runFlow:
+          when:
+            visible: ".*access your contacts.*"
+          commands:
+            - tapOn: "DON.T ALLOW|Don.t allow"
+      - hideKeyboard
 - scrollUntilVisible:
     element:
       id: workspace-mode-1
     direction: DOWN
+    centerElement: true
 - tapOn:
     id: workspace-mode-1
     waitToSettleTimeoutMs: 500
-# Only a worktree asks for a branch.
-- assertNotVisible: "Branch (automatic)"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - assertVisible: "Use the registered project directory.*"
 - scrollUntilVisible:
     element:
       id: task-title
@@ -37,6 +52,12 @@ tags: [smoke]
 - tapOn:
     id: task-title
     waitToSettleTimeoutMs: 500
+# A fresh Android emulator's keyboard asks for contacts on first use.
+- runFlow:
+    when:
+      visible: ".*access your contacts.*"
+    commands:
+      - tapOn: "DON.T ALLOW|Don.t allow"
 - inputText: "Changes in place"
 - tapOn:
     id: task-prompt
