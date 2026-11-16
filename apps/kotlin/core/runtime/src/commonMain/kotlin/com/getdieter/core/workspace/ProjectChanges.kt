@@ -10,23 +10,23 @@ import com.getdieter.api.v1.Project
 import com.getdieter.api.v1.ProjectRef
 import com.getdieter.api.v1.StartGitOperationRequest
 import com.getdieter.api.v1.UpdateProjectWorkspaceSettingsRequest
+import com.getdieter.api.v1.WatchChangesetRequest
 import com.getdieter.api.v1.Workspace
 import com.getdieter.core.composition.WorkspaceMode
 import com.getdieter.core.machines.MachineChoice
 import com.getdieter.core.presentation.ByteSizes
 import com.getdieter.core.presentation.Counts
+import com.getdieter.core.runtime.Backoff
 import com.getdieter.core.runtime.CoreException
 import com.getdieter.core.runtime.Deadlines
 import com.getdieter.core.runtime.FailureKind
 import com.getdieter.core.runtime.Failures
 import com.getdieter.core.session.MachineSessions
 import com.getdieter.core.store.WorkspaceStore
-import com.squareup.wire.GrpcException
-import com.squareup.wire.GrpcStatus
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -45,6 +45,12 @@ enum class ChangeSection(val wire: String) {
 }
 
 object ProjectChangesRules {
+    /** Shown while an agent's turn runs in the checkout: a state, never an error. */
+    const val AGENT_ACTIVITY = "Agent working · changes update live"
+
+    /** Checkout operations that would destroy or move an agent's working state. */
+    val WAIT_FOR_AGENT = setOf(GitOperationKinds.DISCARD_CHANGES, GitOperationKinds.UPDATE)
+
     /**
      * Where a selection goes after a refresh: the same half if the file still has it, else the
      * file's other half (staging or unstaging moved it), else nowhere.
@@ -67,6 +73,42 @@ object ProjectChangesRules {
     fun first(changes: Changeset): Pair<String, ChangeSection>? =
         changes.files.firstOrNull { it.unstaged }?.let { it.path to ChangeSection.UNSTAGED }
             ?: changes.files.firstOrNull { it.staged }?.let { it.path to ChangeSection.STAGED }
+
+    /** [path]'s revision in [changes]; empty when it has no changes. */
+    fun revision(changes: Changeset?, path: String): String =
+        changes?.files?.firstOrNull { it.path == path }?.revision.orEmpty()
+
+    /**
+     * The files [kind] acts on, with their revisions, as its precondition: unstaged files to stage,
+     * staged ones to unstage, any to discard; within [path] (a file or folder) when given. The
+     * daemon acts on exactly these and refuses only if one of them changed since.
+     */
+    fun expectedFiles(changes: Changeset?, kind: String, path: String = ""): Map<String, String> {
+        val scope = path.trim().trim('/')
+        return changes
+            ?.files
+            .orEmpty()
+            .filter { file ->
+                (scope.isEmpty() || file.path == scope || file.path.startsWith("$scope/")) &&
+                    when (kind) {
+                        GitOperationKinds.STAGE -> file.unstaged
+                        GitOperationKinds.UNSTAGE -> file.staged
+                        GitOperationKinds.DISCARD_CHANGES -> true
+                        else -> false
+                    }
+            }
+            .associate { it.path to it.revision }
+    }
+
+    /** Why [kind] cannot run while an agent works, or null. */
+    fun agentReason(kind: String): String? =
+        when (kind) {
+            GitOperationKinds.DISCARD_CHANGES ->
+                "An agent is working in this checkout. Wait for it to finish, or stop it, before discarding changes."
+            GitOperationKinds.UPDATE ->
+                "An agent is working in this checkout. Wait for it to finish, or stop it, before updating the branch."
+            else -> null
+        }
 }
 
 data class ProjectChangesView(
@@ -92,6 +134,8 @@ data class ProjectChangesView(
     val split: Boolean = false,
     /** [diffLines] laid out for [split]; a new instance whenever the lines or the layout change. */
     val layout: DiffLayout = DiffLayout.EMPTY,
+    /** "Shared checkout · main" when shown inside a project-directory conversation. */
+    val shared: Boolean = false,
 ) {
     val busy: Boolean
         get() =
@@ -102,6 +146,20 @@ data class ProjectChangesView(
 
     val mutationsDisabled: Boolean
         get() = changes == null || busy
+
+    /** An agent's turn runs in this checkout. */
+    val agentActive: Boolean
+        get() = changes?.activity?.agent_active == true
+
+    /** [ProjectChangesRules.AGENT_ACTIVITY] while an agent works, else empty. */
+    val activity: String
+        get() = if (agentActive) ProjectChangesRules.AGENT_ACTIVITY else ""
+
+    /** "Shared checkout · main" inside a conversation, else empty. */
+    val sharedLabel: String
+        get() =
+            if (!shared) ""
+            else "Shared checkout · ${changes?.branch?.ifBlank { null } ?: "current branch"}"
 
     /** Another page of the diff can load. */
     val diffMore: Boolean
@@ -116,6 +174,16 @@ data class ProjectChangesView(
     /** The checkout operations that can run now, in [GitOperations.PROJECT_KINDS] order. */
     val allowed: List<String>
         get() = GitOperations.PROJECT_KINDS.filter { allows(it) }
+
+    /** Why operations that are not allowed cannot run now, when the reason is worth telling. */
+    val unavailableReasons: Map<String, String>
+        get() =
+            if (!agentActive) emptyMap()
+            else
+                ProjectChangesRules.WAIT_FOR_AGENT.mapNotNull { kind ->
+                        ProjectChangesRules.agentReason(kind)?.let { kind to it }
+                    }
+                    .toMap()
 
     /** Whether [kind] can run now, with the project's own remote. */
     fun allows(kind: String): Boolean = allows(kind, hasRemote)
@@ -136,9 +204,13 @@ data class ProjectChangesView(
             "${Counts.of(it.files.size, "local file")} · ${it.branch.ifBlank { "current branch" }}"
         }
 
-    /** Whether [kind] can run on this checkout now; pushing needs a configured remote. */
+    /**
+     * Whether [kind] can run on this checkout now; pushing needs a configured remote, and an
+     * agent's turn holds back what would destroy or move its working state.
+     */
     fun allows(kind: String, hasRemote: Boolean): Boolean =
         !mutationsDisabled &&
+            !(agentActive && kind in ProjectChangesRules.WAIT_FOR_AGENT) &&
             when (kind) {
                 GitOperationKinds.UPDATE -> changes?.dirty == false
                 GitOperationKinds.VALIDATE -> true
@@ -153,7 +225,7 @@ data class ProjectChangesView(
     companion object {
         /**
          * A project commit never validates on its own; an update fetches first; [path] narrows
-         * staging, unstaging, and discarding to one file.
+         * staging, unstaging, and discarding to one file or folder.
          */
         fun parameters(
             kind: String,
@@ -179,9 +251,11 @@ data class ProjectChangesView(
 }
 
 /**
- * Changes in a project checkout (outside any conversation's worktree): stage, unstage, discard,
- * commit, update, validate, and push. Polls every 2 s while visible; success is only reported after
- * an authoritative refresh. Confined to the core dispatcher.
+ * Changes in a project checkout: stage, unstage, discard, commit, update, validate, and push. The
+ * project's Changes and a project-directory conversation show it. While active it follows the
+ * daemon's changeset stream, so edits appear as agents make them; nothing polls. A selected diff
+ * reloads only when its own file changes, and reads never fail because something else changed.
+ * Success is only reported after an authoritative refresh. Confined to the core dispatcher.
  */
 class ProjectChanges(
     private val sessions: MachineSessions,
@@ -192,19 +266,22 @@ class ProjectChanges(
     val view: StateFlow<ProjectChangesView> = mutableView.asStateFlow()
     private var binding = 0L
     private var diffRequest = 0L
-    private var poller: Job? = null
+    private var watcher: Job? = null
     private val diffCache = LinkedHashMap<Pair<String, ChangeSection>, FileDiff>()
     private var selectFirst = false
+    private var inFlight: Deferred<Unit>? = null
+    private var refreshAgain = false
 
     /**
      * Shows a checkout; with [selectFirst], a refresh that leaves nothing selected opens
-     * [ProjectChangesRules.first].
+     * [ProjectChangesRules.first]. [shared] labels it as a project-directory conversation's.
      */
     fun bind(
         projectId: String?,
         checkoutId: String?,
         daemonId: String?,
         selectFirst: Boolean = false,
+        shared: Boolean = false,
     ) {
         this.selectFirst = selectFirst
         val current = view.value
@@ -212,10 +289,13 @@ class ProjectChanges(
             projectId == current.projectId &&
                 checkoutId == current.checkoutId &&
                 daemonId == current.daemonId
-        )
+        ) {
+            if (current.shared != shared) mutableView.update { it.copy(shared = shared) }
             return
+        }
+        val active = watcher?.isActive == true
         binding++
-        poller?.cancel()
+        watcher?.cancel()
         diffCache.clear()
         mutableView.value =
             ProjectChangesView(
@@ -224,7 +304,9 @@ class ProjectChanges(
                 daemonId,
                 hasRemote = hasRemote(projectId),
                 split = current.split,
+                shared = shared,
             )
+        if (active) setActive(true)
     }
 
     /**
@@ -237,21 +319,71 @@ class ProjectChanges(
     private fun hasRemote(projectId: String?): Boolean =
         projectId?.let { store.state.value.project(it) }?.base_remote?.isNotBlank() == true
 
-    /** Stops refreshing; nothing is shown. */
+    /** Stops following; nothing is shown. */
     fun stop() {
         setActive(false)
         bind(null, null, null)
     }
 
+    /** Visible and foregrounded: follow the checkout's changeset stream. */
     fun setActive(active: Boolean) {
-        poller?.cancel()
-        if (!active) return
+        watcher?.cancel()
+        watcher = null
+        if (!active || view.value.projectId == null) return
         val bound = binding
-        poller = scope.launch {
-            while (bound == binding) {
-                runCatching { refresh() }.onFailure { if (it is CancellationException) throw it }
-                delay(REFRESH)
+        watcher = scope.launch { follow(bound) }
+    }
+
+    /**
+     * Applies every changeset the daemon streams for the bound checkout. A dropped stream resumes
+     * with backoff; its first frame is a complete changeset, so nothing is missed.
+     */
+    private suspend fun follow(bound: Long) {
+        var attempt = 0
+        while (bound == binding) {
+            val (projectId, checkoutId, daemonId) =
+                try {
+                    target()
+                } catch (error: CoreException) {
+                    if (bound == binding)
+                        mutableView.update { it.copy(refreshError = Failures.message(error)) }
+                    return
+                }
+            try {
+                coroutineScope {
+                    sessions.call(daemonId) { client ->
+                        val call = client.WatchChangeset()
+                        val frames =
+                            call.executeIn(
+                                this,
+                                WatchChangesetRequest(
+                                    project_id = projectId,
+                                    checkout_id = checkoutId,
+                                    heartbeat_ms = HEARTBEAT_MS,
+                                ),
+                            )
+                        try {
+                            for (frame in frames) {
+                                val changes = frame.changeset ?: continue
+                                attempt = 0
+                                if (bound != binding) break
+                                apply(changes, bound)
+                            }
+                        } finally {
+                            call.cancel()
+                        }
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                if (bound == binding)
+                    mutableView.update {
+                        it.copy(refreshing = false, refreshError = Failures.message(error))
+                    }
+                if (!Failures.isRetryableRead(error)) return
             }
+            delay(Backoff.STREAM.delay(attempt++))
         }
     }
 
@@ -270,9 +402,31 @@ class ProjectChanges(
         )
     }
 
+    /**
+     * Reads the changeset once. A refresh requested while one runs joins it and triggers one more
+     * read, so on return the state is at least as new as the call.
+     */
     suspend fun refresh() {
-        val (projectId, checkoutId, daemonId) = target()
+        inFlight
+            ?.takeIf { it.isActive }
+            ?.let { running ->
+                refreshAgain = true
+                running.await()
+                return
+            }
         val bound = binding
+        val reading = scope.async {
+            do {
+                refreshAgain = false
+                read(bound)
+            } while (refreshAgain && bound == binding)
+        }
+        inFlight = reading
+        reading.await()
+    }
+
+    private suspend fun read(bound: Long) {
+        val (projectId, checkoutId, daemonId) = target()
         mutableView.update { it.copy(refreshing = true) }
         try {
             val changes =
@@ -282,42 +436,51 @@ class ProjectChanges(
                             GetChangesetRequest(project_id = projectId, checkout_id = checkoutId)
                         )
                 }
-            if (bound != binding) return
-            val previous = view.value.changes
-            if (previous?.revision != changes.revision) diffCache.clear()
-            mutableView.update {
-                it.copy(
-                    changes = changes,
-                    refreshing = false,
-                    refreshError = null,
-                    needsReconciliation = false,
-                    hasRemote = hasRemote(projectId),
-                )
-            }
-            val current = view.value.selection
-            val selection =
-                current?.let { (path, section) ->
-                    ProjectChangesRules.follow(changes, path, section)
-                } ?: if (selectFirst) ProjectChangesRules.first(changes) else null
-            if (selection == null) {
-                mutableView.update {
-                    it.copy(selection = null, diff = null).withDiffLines(emptyList())
-                }
-            } else if (selection != current) {
-                mutableView.update {
-                    it.copy(selection = selection, diff = null, diffError = null)
-                        .withDiffLines(emptyList())
-                }
-                loadDiff(selection, reload = true)
-            } else if (previous?.revision != changes.revision) {
-                loadDiff(selection, reload = true)
-            }
+            if (bound == binding) apply(changes, bound)
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
             if (bound == binding)
                 mutableView.update {
                     it.copy(refreshing = false, refreshError = Failures.message(error))
                 }
+        }
+    }
+
+    /**
+     * Shows [changes] and keeps the selection on its file; the selected diff reloads only when that
+     * file's revision moved.
+     */
+    private suspend fun apply(changes: Changeset, bound: Long) {
+        val (projectId, _, _) = target()
+        val previous = view.value
+        mutableView.update {
+            it.copy(
+                changes = changes,
+                refreshing = false,
+                refreshError = null,
+                needsReconciliation = false,
+                hasRemote = hasRemote(projectId),
+            )
+        }
+        val current = previous.selection
+        val selection =
+            current?.let { (path, section) -> ProjectChangesRules.follow(changes, path, section) }
+                ?: if (selectFirst) ProjectChangesRules.first(changes) else null
+        when {
+            selection == null ->
+                mutableView.update {
+                    it.copy(selection = null, diff = null).withDiffLines(emptyList())
+                }
+            selection != current -> {
+                mutableView.update {
+                    it.copy(selection = selection, diff = null, diffError = null)
+                        .withDiffLines(emptyList())
+                }
+                if (bound == binding) loadDiff(selection, reload = false)
+            }
+            previous.diff?.file_revision !=
+                ProjectChangesRules.revision(changes, selection.first) ->
+                if (bound == binding) loadDiff(selection, reload = false)
         }
     }
 
@@ -359,15 +522,15 @@ class ProjectChanges(
         append: Boolean = false,
     ) {
         val (projectId, checkoutId, daemonId) = target()
-        val changes = view.value.changes ?: return
+        val revision = ProjectChangesRules.revision(view.value.changes, selection.first)
         if (!append && !reload) {
             diffCache[selection]
-                ?.takeIf { it.revision == changes.revision }
+                ?.takeIf { revision.isNotEmpty() && it.file_revision == revision }
                 ?.let { cached ->
                     diffCache.remove(selection)
                     diffCache[selection] = cached
                     mutableView.update {
-                        it.copy(diff = cached, diffLoading = false)
+                        it.copy(diff = cached, diffLoading = false, diffError = null)
                             .withDiffLines(UnifiedDiff.parse(cached.patch))
                     }
                     return
@@ -387,7 +550,6 @@ class ProjectChanges(
                         checkout_id = checkoutId,
                         path = selection.first,
                         section = selection.second.wire,
-                        expected_revision = changes.revision,
                     ),
                     loaded,
                 )
@@ -396,21 +558,18 @@ class ProjectChanges(
                 bound != binding ||
                     request != diffRequest ||
                     current.selection != selection ||
-                    current.changes?.revision != changes.revision ||
                     (append && current.diff != loaded)
             )
                 return
             remember(selection, combined)
             mutableView.update {
-                it.copy(diff = combined, diffLoading = false)
+                it.copy(diff = combined, diffLoading = false, diffError = null)
                     .withDiffLines(UnifiedDiff.parse(combined.patch))
             }
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
             if (bound != binding || request != diffRequest) return
-            mutableView.update { it.copy(diffLoading = false) }
-            if (error is GrpcException && error.grpcStatus == GrpcStatus.ABORTED) refresh()
-            else mutableView.update { it.copy(diffError = Failures.message(error)) }
+            mutableView.update { it.copy(diffLoading = false, diffError = Failures.message(error)) }
         }
     }
 
@@ -427,7 +586,8 @@ class ProjectChanges(
 
     /**
      * Runs a checkout operation and waits for it; success is reported only after the refresh that
-     * shows its result. A commit draft survives failure.
+     * shows its result. Stage, unstage and discard act on exactly the files shown, and a commit on
+     * the index shown; each fails only if those changed since. A commit draft survives failure.
      */
     suspend fun run(kind: String, parameters: Map<String, String> = emptyMap()): Boolean {
         if (kind !in GitOperations.PROJECT_KINDS)
@@ -438,6 +598,18 @@ class ProjectChanges(
         val (projectId, checkoutId, daemonId) = target()
         val state = view.value
         if (state.mutationsDisabled) return false
+        state.unavailableReasons[kind]?.let { reason ->
+            mutableView.update { it.copy(operationError = reason) }
+            return false
+        }
+        val expectedFiles =
+            ProjectChangesRules.expectedFiles(state.changes, kind, parameters["path"].orEmpty())
+        if (kind in FILE_SCOPED && expectedFiles.isEmpty()) {
+            mutableView.update {
+                it.copy(operationError = "Nothing to ${GitOperations.title(kind).lowercase()}.")
+            }
+            return false
+        }
         val bound = binding
         mutableView.update { it.copy(pendingKind = kind, operationError = null, notice = null) }
         try {
@@ -449,8 +621,12 @@ class ProjectChanges(
                                 project_id = projectId,
                                 checkout_id = checkoutId,
                                 kind = kind,
-                                expected_revision = state.changes?.revision.orEmpty(),
                                 parameters = parameters,
+                                expected_files = expectedFiles,
+                                expected_index =
+                                    if (kind == GitOperationKinds.COMMIT)
+                                        state.changes?.index_fingerprint.orEmpty()
+                                    else "",
                             )
                         )
                 }
@@ -493,10 +669,16 @@ class ProjectChanges(
     }
 
     companion object {
-        private val REFRESH = 2.seconds
+        const val HEARTBEAT_MS = 15_000
         private val OPERATION_POLL = 250.milliseconds
         private const val CACHE_ENTRIES = 8
         private const val CACHE_BYTES = 8L * 1024 * 1024
+        private val FILE_SCOPED =
+            setOf(
+                GitOperationKinds.STAGE,
+                GitOperationKinds.UNSTAGE,
+                GitOperationKinds.DISCARD_CHANGES,
+            )
 
         fun notice(kind: String): String =
             when (kind) {

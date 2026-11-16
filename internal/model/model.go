@@ -331,6 +331,9 @@ type ChangedFile struct {
 	Submodule         bool   `json:"submodule,omitempty"`
 	Conflicted        bool   `json:"conflicted,omitempty"`
 	HunkCount         int    `json:"hunkCount,omitempty"`
+	// Revision changes whenever this file's HEAD, index or working-tree state
+	// changes; file-scoped operations use it as their precondition.
+	Revision string `json:"revision,omitempty"`
 }
 
 type WorkspaceCommit struct {
@@ -361,10 +364,28 @@ type Changeset struct {
 	Dirty              bool              `json:"dirty,omitempty"`
 	Conflicted         bool              `json:"conflicted,omitempty"`
 	CurrentOperationID string            `json:"currentOperationId,omitempty"`
-	Volatile           bool              `json:"volatile,omitempty"`
 	Files              []ChangedFile     `json:"files,omitempty"`
 	Commits            []WorkspaceCommit `json:"commits,omitempty"`
 	CreatedAt          string            `json:"createdAt"`
+	// Scope is ChangesetScopeWorktree or ChangesetScopeCheckout.
+	Scope            string            `json:"scope,omitempty"`
+	CheckoutID       string            `json:"checkoutId,omitempty"`
+	IndexFingerprint string            `json:"indexFingerprint,omitempty"`
+	Activity         ChangesetActivity `json:"activity"`
+	FilesTruncated   bool              `json:"filesTruncated,omitempty"`
+	TotalFiles       int               `json:"totalFiles,omitempty"`
+}
+
+const (
+	ChangesetScopeWorktree = "worktree"
+	ChangesetScopeCheckout = "checkout"
+)
+
+// ChangesetActivity is what works in a changeset's directory now. An active
+// agent is shown, never a reason to refuse a read.
+type ChangesetActivity struct {
+	AgentActive  bool     `json:"agentActive,omitempty"`
+	AgentCardIDs []string `json:"agentCardIds,omitempty"`
 }
 
 type FileDiff struct {
@@ -380,6 +401,8 @@ type FileDiff struct {
 	Truncated    bool   `json:"truncated,omitempty"`
 	NextOffset   int    `json:"nextOffset,omitempty"`
 	TotalBytes   int    `json:"totalBytes,omitempty"`
+	FileRevision string `json:"fileRevision,omitempty"`
+	Restarted    bool   `json:"restarted,omitempty"`
 }
 
 type ValidationResult struct {
@@ -416,6 +439,9 @@ type GitOperation struct {
 	StartedAt         string             `json:"startedAt,omitempty"`
 	FinishedAt        string             `json:"finishedAt,omitempty"`
 	UpdatedAt         string             `json:"updatedAt"`
+	ExpectedFiles     map[string]string  `json:"expectedFiles,omitempty"`
+	ExpectedIndex     string             `json:"expectedIndex,omitempty"`
+	RequestedByCardID string             `json:"requestedByCardId,omitempty"`
 }
 
 type PullRequestSummary struct {
@@ -469,17 +495,17 @@ type SCMCapabilities struct {
 }
 
 type ChangeComment struct {
-	ID                string `json:"id"`
-	CardID            string `json:"cardId"`
-	ChangesetRevision string `json:"changesetRevision"`
-	Path              string `json:"path"`
-	Side              string `json:"side,omitempty"`
-	Line              int    `json:"line,omitempty"`
-	HunkContext       string `json:"hunkContext,omitempty"`
-	Body              string `json:"body"`
-	Author            Author `json:"author"`
-	CreatedAt         string `json:"createdAt"`
-	ResolvedAt        string `json:"resolvedAt,omitempty"`
+	ID           string `json:"id"`
+	CardID       string `json:"cardId"`
+	FileRevision string `json:"fileRevision"`
+	Path         string `json:"path"`
+	Side         string `json:"side,omitempty"`
+	Line         int    `json:"line,omitempty"`
+	HunkContext  string `json:"hunkContext,omitempty"`
+	Body         string `json:"body"`
+	Author       Author `json:"author"`
+	CreatedAt    string `json:"createdAt"`
+	ResolvedAt   string `json:"resolvedAt,omitempty"`
 }
 
 // CardOrigin links cards produced by automations back to the durable

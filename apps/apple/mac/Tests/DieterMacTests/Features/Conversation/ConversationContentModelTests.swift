@@ -682,7 +682,7 @@ private actor ConversationContentTerminalFixture: TerminalsRPC {
         #expect(!firstSession.isDirty && !secondSession.isDirty)
     }
 
-    @Test func projectModeReviewShowsTheConversationsCheckoutOnItsMachine() async throws {
+    @Test func projectModeReviewShowsTheConversationsCheckoutThroughItsReview() async throws {
         let core = ScriptedCoreClient()
         let content = ConversationContentModel()
         content.core = core
@@ -698,22 +698,62 @@ private actor ConversationContentTerminalFixture: TerminalsRPC {
         }
         #expect(await content.openPanel(.review, conversationID: "card-A"))
         let tab = try #require(content.selectedTab)
-        #expect(tab.usesProjectReview)
-        await tab.projectReview.refresh()
-        let binds = core.commands.compactMap { command -> ClientProjectChangesTarget? in
-            guard case .projectChanges(let changes)? = command.command, case .bind(let target)? = changes.action
-            else { return nil }
+        // Commands are queued; a refresh runs after the bind.
+        await tab.review.loadWorkspaceSurface()
+        // The tab binds the conversation's review; it never decides where the changes live.
+        let reviewBinds = core.commands.compactMap { command -> ClientReviewTarget? in
+            guard case .review(let review)? = command.command, case .bind(let target)? = review.action else {
+                return nil
+            }
             return target
         }
+        #expect(reviewBinds.last?.cardID == "card-A")
+        #expect(reviewBinds.last?.daemonID == "remote-machine")
         #expect(
-            binds == [
-                .with {
+            !core.commands.contains { command in
+                if case .projectChanges? = command.command { return true }
+                return false
+            })
+        #expect(!tab.review.isCheckout)
+        // The core reports the shared checkout: the review shows it, agent activity included.
+        core.emit(.review, scope: tab.review.scope) { update in
+            update.review = .with {
+                $0.cardID = "card-A"
+                $0.daemonID = "remote-machine"
+                $0.scope = "checkout"
+                $0.checkout = .with {
                     $0.projectID = "project-A"
                     $0.checkoutID = "checkout-A"
                     $0.daemonID = "remote-machine"
-                    $0.selectFirst = true
+                    $0.activity = "Agent working · changes update live"
+                    $0.sharedLabel = "Shared checkout · main"
+                    $0.unavailableReasons = ["discard_changes": "Wait for the agent."]
+                    $0.changes = .with {
+                        $0.files = [
+                            .with {
+                                $0.path = "README.md"; $0.unstaged = true
+                            }
+                        ]
+                    }
                 }
-            ])
+            }
+        }
+        #expect(tab.review.isCheckout)
+        #expect(tab.review.checkout.projectID == "project-A")
+        #expect(tab.review.checkout.activity == "Agent working · changes update live")
+        #expect(tab.review.checkout.sharedLabel == "Shared checkout · main")
+        #expect(tab.review.checkout.unavailableReasons["discard_changes"] == "Wait for the agent.")
+        #expect(tab.review.checkout.unstagedFiles.map(\.path) == ["README.md"])
+        // Its commands travel through the review.
+        await tab.review.checkout.refresh()
+        let last = try #require(core.commands.last)
+        guard case .review(let review)? = last.command, case .checkout(let checkout)? = review.action,
+            case .refresh? = checkout.action
+        else {
+            Issue.record("checkout commands travel through the review: \(last)")
+            return
+        }
+        #expect(review.scope == tab.review.scope)
         #expect(content.isPresented(for: "card-A"))
         #expect(!content.addablePanelKinds.contains(.review))
         #expect(content.addablePanelKinds.contains(.terminal))

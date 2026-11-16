@@ -403,8 +403,11 @@ type ChangedFile struct {
 	StagedDeletions   int32                  `protobuf:"varint,14,opt,name=staged_deletions,json=stagedDeletions,proto3" json:"staged_deletions,omitempty"`
 	UnstagedAdditions int32                  `protobuf:"varint,15,opt,name=unstaged_additions,json=unstagedAdditions,proto3" json:"unstaged_additions,omitempty"`
 	UnstagedDeletions int32                  `protobuf:"varint,16,opt,name=unstaged_deletions,json=unstagedDeletions,proto3" json:"unstaged_deletions,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Changes whenever this file's HEAD, index or working-tree state changes,
+	// and only then. File-scoped operations use it as their precondition.
+	Revision      string `protobuf:"bytes,17,opt,name=revision,proto3" json:"revision,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ChangedFile) Reset() {
@@ -549,6 +552,13 @@ func (x *ChangedFile) GetUnstagedDeletions() int32 {
 	return 0
 }
 
+func (x *ChangedFile) GetRevision() string {
+	if x != nil {
+		return x.Revision
+	}
+	return ""
+}
+
 type WorkspaceCommit struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Sha           string                 `protobuf:"bytes,1,opt,name=sha,proto3" json:"sha,omitempty"`
@@ -657,34 +667,100 @@ func (x *WorkspaceCommit) GetChangedFiles() int32 {
 	return 0
 }
 
+// What works in a changeset's directory right now. An active agent is a
+// state to show, never a reason to refuse a read.
+type ChangesetActivity struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AgentActive   bool                   `protobuf:"varint,1,opt,name=agent_active,json=agentActive,proto3" json:"agent_active,omitempty"`
+	AgentCardIds  []string               `protobuf:"bytes,2,rep,name=agent_card_ids,json=agentCardIds,proto3" json:"agent_card_ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChangesetActivity) Reset() {
+	*x = ChangesetActivity{}
+	mi := &file_dieter_v1_git_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangesetActivity) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangesetActivity) ProtoMessage() {}
+
+func (x *ChangesetActivity) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_git_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangesetActivity.ProtoReflect.Descriptor instead.
+func (*ChangesetActivity) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_git_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ChangesetActivity) GetAgentActive() bool {
+	if x != nil {
+		return x.AgentActive
+	}
+	return false
+}
+
+func (x *ChangesetActivity) GetAgentCardIds() []string {
+	if x != nil {
+		return x.AgentCardIds
+	}
+	return nil
+}
+
 type Changeset struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	CardId             string                 `protobuf:"bytes,1,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
-	Revision           string                 `protobuf:"bytes,2,opt,name=revision,proto3" json:"revision,omitempty"`
-	ComparisonSha      string                 `protobuf:"bytes,3,opt,name=comparison_sha,json=comparisonSha,proto3" json:"comparison_sha,omitempty"`
-	HeadSha            string                 `protobuf:"bytes,4,opt,name=head_sha,json=headSha,proto3" json:"head_sha,omitempty"`
-	BaseSha            string                 `protobuf:"bytes,5,opt,name=base_sha,json=baseSha,proto3" json:"base_sha,omitempty"`
-	Files              []*ChangedFile         `protobuf:"bytes,6,rep,name=files,proto3" json:"files,omitempty"`
-	Commits            []*WorkspaceCommit     `protobuf:"bytes,7,rep,name=commits,proto3" json:"commits,omitempty"`
-	Additions          int32                  `protobuf:"varint,8,opt,name=additions,proto3" json:"additions,omitempty"`
-	Deletions          int32                  `protobuf:"varint,9,opt,name=deletions,proto3" json:"deletions,omitempty"`
-	Volatile           bool                   `protobuf:"varint,10,opt,name=volatile,proto3" json:"volatile,omitempty"`
-	GeneratedAt        string                 `protobuf:"bytes,11,opt,name=generated_at,json=generatedAt,proto3" json:"generated_at,omitempty"`
-	ProjectId          string                 `protobuf:"bytes,12,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Branch             string                 `protobuf:"bytes,13,opt,name=branch,proto3" json:"branch,omitempty"`
-	BaseBranch         string                 `protobuf:"bytes,14,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
-	Ahead              int32                  `protobuf:"varint,15,opt,name=ahead,proto3" json:"ahead,omitempty"`
-	Behind             int32                  `protobuf:"varint,16,opt,name=behind,proto3" json:"behind,omitempty"`
-	Dirty              bool                   `protobuf:"varint,17,opt,name=dirty,proto3" json:"dirty,omitempty"`
-	Conflicted         bool                   `protobuf:"varint,18,opt,name=conflicted,proto3" json:"conflicted,omitempty"`
-	CurrentOperationId string                 `protobuf:"bytes,19,opt,name=current_operation_id,json=currentOperationId,proto3" json:"current_operation_id,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	CardId string                 `protobuf:"bytes,1,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	// Detects any change in the directory. It guards only operations that act
+	// on the whole tree; reads never need it.
+	Revision           string             `protobuf:"bytes,2,opt,name=revision,proto3" json:"revision,omitempty"`
+	ComparisonSha      string             `protobuf:"bytes,3,opt,name=comparison_sha,json=comparisonSha,proto3" json:"comparison_sha,omitempty"`
+	HeadSha            string             `protobuf:"bytes,4,opt,name=head_sha,json=headSha,proto3" json:"head_sha,omitempty"`
+	BaseSha            string             `protobuf:"bytes,5,opt,name=base_sha,json=baseSha,proto3" json:"base_sha,omitempty"`
+	Files              []*ChangedFile     `protobuf:"bytes,6,rep,name=files,proto3" json:"files,omitempty"`
+	Commits            []*WorkspaceCommit `protobuf:"bytes,7,rep,name=commits,proto3" json:"commits,omitempty"`
+	Additions          int32              `protobuf:"varint,8,opt,name=additions,proto3" json:"additions,omitempty"`
+	Deletions          int32              `protobuf:"varint,9,opt,name=deletions,proto3" json:"deletions,omitempty"`
+	GeneratedAt        string             `protobuf:"bytes,11,opt,name=generated_at,json=generatedAt,proto3" json:"generated_at,omitempty"`
+	ProjectId          string             `protobuf:"bytes,12,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Branch             string             `protobuf:"bytes,13,opt,name=branch,proto3" json:"branch,omitempty"`
+	BaseBranch         string             `protobuf:"bytes,14,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
+	Ahead              int32              `protobuf:"varint,15,opt,name=ahead,proto3" json:"ahead,omitempty"`
+	Behind             int32              `protobuf:"varint,16,opt,name=behind,proto3" json:"behind,omitempty"`
+	Dirty              bool               `protobuf:"varint,17,opt,name=dirty,proto3" json:"dirty,omitempty"`
+	Conflicted         bool               `protobuf:"varint,18,opt,name=conflicted,proto3" json:"conflicted,omitempty"`
+	CurrentOperationId string             `protobuf:"bytes,19,opt,name=current_operation_id,json=currentOperationId,proto3" json:"current_operation_id,omitempty"`
+	// "worktree" for a conversation's own worktree, "checkout" for a project
+	// checkout, including one a project-directory conversation works in.
+	Scope      string `protobuf:"bytes,20,opt,name=scope,proto3" json:"scope,omitempty"`
+	CheckoutId string `protobuf:"bytes,21,opt,name=checkout_id,json=checkoutId,proto3" json:"checkout_id,omitempty"`
+	// Changes whenever the staged content changes; a commit of the index uses
+	// it as its precondition.
+	IndexFingerprint string             `protobuf:"bytes,22,opt,name=index_fingerprint,json=indexFingerprint,proto3" json:"index_fingerprint,omitempty"`
+	Activity         *ChangesetActivity `protobuf:"bytes,23,opt,name=activity,proto3" json:"activity,omitempty"`
+	// The file list stops at a bound; total_files counts every changed file.
+	FilesTruncated bool  `protobuf:"varint,24,opt,name=files_truncated,json=filesTruncated,proto3" json:"files_truncated,omitempty"`
+	TotalFiles     int32 `protobuf:"varint,25,opt,name=total_files,json=totalFiles,proto3" json:"total_files,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Changeset) Reset() {
 	*x = Changeset{}
-	mi := &file_dieter_v1_git_proto_msgTypes[5]
+	mi := &file_dieter_v1_git_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -696,7 +772,7 @@ func (x *Changeset) String() string {
 func (*Changeset) ProtoMessage() {}
 
 func (x *Changeset) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_git_proto_msgTypes[5]
+	mi := &file_dieter_v1_git_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -709,7 +785,7 @@ func (x *Changeset) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Changeset.ProtoReflect.Descriptor instead.
 func (*Changeset) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_git_proto_rawDescGZIP(), []int{5}
+	return file_dieter_v1_git_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Changeset) GetCardId() string {
@@ -775,13 +851,6 @@ func (x *Changeset) GetDeletions() int32 {
 	return 0
 }
 
-func (x *Changeset) GetVolatile() bool {
-	if x != nil {
-		return x.Volatile
-	}
-	return false
-}
-
 func (x *Changeset) GetGeneratedAt() string {
 	if x != nil {
 		return x.GeneratedAt
@@ -845,6 +914,48 @@ func (x *Changeset) GetCurrentOperationId() string {
 	return ""
 }
 
+func (x *Changeset) GetScope() string {
+	if x != nil {
+		return x.Scope
+	}
+	return ""
+}
+
+func (x *Changeset) GetCheckoutId() string {
+	if x != nil {
+		return x.CheckoutId
+	}
+	return ""
+}
+
+func (x *Changeset) GetIndexFingerprint() string {
+	if x != nil {
+		return x.IndexFingerprint
+	}
+	return ""
+}
+
+func (x *Changeset) GetActivity() *ChangesetActivity {
+	if x != nil {
+		return x.Activity
+	}
+	return nil
+}
+
+func (x *Changeset) GetFilesTruncated() bool {
+	if x != nil {
+		return x.FilesTruncated
+	}
+	return false
+}
+
+func (x *Changeset) GetTotalFiles() int32 {
+	if x != nil {
+		return x.TotalFiles
+	}
+	return 0
+}
+
 type GetChangesetRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CheckoutId    string                 `protobuf:"bytes,50,opt,name=checkout_id,json=checkoutId,proto3" json:"checkout_id,omitempty"`
@@ -856,7 +967,7 @@ type GetChangesetRequest struct {
 
 func (x *GetChangesetRequest) Reset() {
 	*x = GetChangesetRequest{}
-	mi := &file_dieter_v1_git_proto_msgTypes[6]
+	mi := &file_dieter_v1_git_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -868,7 +979,7 @@ func (x *GetChangesetRequest) String() string {
 func (*GetChangesetRequest) ProtoMessage() {}
 
 func (x *GetChangesetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_git_proto_msgTypes[6]
+	mi := &file_dieter_v1_git_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -881,7 +992,7 @@ func (x *GetChangesetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetChangesetRequest.ProtoReflect.Descriptor instead.
 func (*GetChangesetRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_git_proto_rawDescGZIP(), []int{6}
+	return file_dieter_v1_git_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GetChangesetRequest) GetCheckoutId() string {
@@ -906,25 +1017,27 @@ func (x *GetChangesetRequest) GetProjectId() string {
 }
 
 type GetDiffRequest struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	CheckoutId       string                 `protobuf:"bytes,50,opt,name=checkout_id,json=checkoutId,proto3" json:"checkout_id,omitempty"`
-	CardId           string                 `protobuf:"bytes,1,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
-	Path             string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
-	CommitSha        string                 `protobuf:"bytes,3,opt,name=commit_sha,json=commitSha,proto3" json:"commit_sha,omitempty"`
-	ExpectedRevision string                 `protobuf:"bytes,4,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
-	Offset           int64                  `protobuf:"varint,5,opt,name=offset,proto3" json:"offset,omitempty"`
-	Limit            int32                  `protobuf:"varint,6,opt,name=limit,proto3" json:"limit,omitempty"`
-	ProjectId        string                 `protobuf:"bytes,7,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	CheckoutId string                 `protobuf:"bytes,50,opt,name=checkout_id,json=checkoutId,proto3" json:"checkout_id,omitempty"`
+	CardId     string                 `protobuf:"bytes,1,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	Path       string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	CommitSha  string                 `protobuf:"bytes,3,opt,name=commit_sha,json=commitSha,proto3" json:"commit_sha,omitempty"`
+	Offset     int64                  `protobuf:"varint,5,opt,name=offset,proto3" json:"offset,omitempty"`
+	Limit      int32                  `protobuf:"varint,6,opt,name=limit,proto3" json:"limit,omitempty"`
+	ProjectId  string                 `protobuf:"bytes,7,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	// combined compares HEAD to the working tree, staged compares HEAD to the
 	// index, and unstaged compares the index to the working tree.
-	Section       string `protobuf:"bytes,8,opt,name=section,proto3" json:"section,omitempty"`
+	Section string `protobuf:"bytes,8,opt,name=section,proto3" json:"section,omitempty"`
+	// The file revision of the pages already read; a later page comes from the
+	// same rendering, or the diff restarts when the file changed.
+	FileRevision  string `protobuf:"bytes,9,opt,name=file_revision,json=fileRevision,proto3" json:"file_revision,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetDiffRequest) Reset() {
 	*x = GetDiffRequest{}
-	mi := &file_dieter_v1_git_proto_msgTypes[7]
+	mi := &file_dieter_v1_git_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -936,7 +1049,7 @@ func (x *GetDiffRequest) String() string {
 func (*GetDiffRequest) ProtoMessage() {}
 
 func (x *GetDiffRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_git_proto_msgTypes[7]
+	mi := &file_dieter_v1_git_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -949,7 +1062,7 @@ func (x *GetDiffRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDiffRequest.ProtoReflect.Descriptor instead.
 func (*GetDiffRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_git_proto_rawDescGZIP(), []int{7}
+	return file_dieter_v1_git_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetDiffRequest) GetCheckoutId() string {
@@ -976,13 +1089,6 @@ func (x *GetDiffRequest) GetPath() string {
 func (x *GetDiffRequest) GetCommitSha() string {
 	if x != nil {
 		return x.CommitSha
-	}
-	return ""
-}
-
-func (x *GetDiffRequest) GetExpectedRevision() string {
-	if x != nil {
-		return x.ExpectedRevision
 	}
 	return ""
 }
@@ -1015,26 +1121,38 @@ func (x *GetDiffRequest) GetSection() string {
 	return ""
 }
 
+func (x *GetDiffRequest) GetFileRevision() string {
+	if x != nil {
+		return x.FileRevision
+	}
+	return ""
+}
+
 type FileDiff struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CardId        string                 `protobuf:"bytes,1,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
-	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
-	CommitSha     string                 `protobuf:"bytes,3,opt,name=commit_sha,json=commitSha,proto3" json:"commit_sha,omitempty"`
-	Revision      string                 `protobuf:"bytes,4,opt,name=revision,proto3" json:"revision,omitempty"`
-	Patch         string                 `protobuf:"bytes,5,opt,name=patch,proto3" json:"patch,omitempty"`
-	Binary        bool                   `protobuf:"varint,6,opt,name=binary,proto3" json:"binary,omitempty"`
-	Truncated     bool                   `protobuf:"varint,7,opt,name=truncated,proto3" json:"truncated,omitempty"`
-	NextOffset    int64                  `protobuf:"varint,8,opt,name=next_offset,json=nextOffset,proto3" json:"next_offset,omitempty"`
-	TotalBytes    int64                  `protobuf:"varint,9,opt,name=total_bytes,json=totalBytes,proto3" json:"total_bytes,omitempty"`
-	ProjectId     string                 `protobuf:"bytes,10,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Section       string                 `protobuf:"bytes,11,opt,name=section,proto3" json:"section,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	CardId     string                 `protobuf:"bytes,1,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	Path       string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	CommitSha  string                 `protobuf:"bytes,3,opt,name=commit_sha,json=commitSha,proto3" json:"commit_sha,omitempty"`
+	Revision   string                 `protobuf:"bytes,4,opt,name=revision,proto3" json:"revision,omitempty"`
+	Patch      string                 `protobuf:"bytes,5,opt,name=patch,proto3" json:"patch,omitempty"`
+	Binary     bool                   `protobuf:"varint,6,opt,name=binary,proto3" json:"binary,omitempty"`
+	Truncated  bool                   `protobuf:"varint,7,opt,name=truncated,proto3" json:"truncated,omitempty"`
+	NextOffset int64                  `protobuf:"varint,8,opt,name=next_offset,json=nextOffset,proto3" json:"next_offset,omitempty"`
+	TotalBytes int64                  `protobuf:"varint,9,opt,name=total_bytes,json=totalBytes,proto3" json:"total_bytes,omitempty"`
+	ProjectId  string                 `protobuf:"bytes,10,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Section    string                 `protobuf:"bytes,11,opt,name=section,proto3" json:"section,omitempty"`
+	// The file's revision this patch shows.
+	FileRevision string `protobuf:"bytes,12,opt,name=file_revision,json=fileRevision,proto3" json:"file_revision,omitempty"`
+	// The file changed since the earlier pages; this is the first page of its
+	// new diff.
+	Restarted     bool `protobuf:"varint,13,opt,name=restarted,proto3" json:"restarted,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *FileDiff) Reset() {
 	*x = FileDiff{}
-	mi := &file_dieter_v1_git_proto_msgTypes[8]
+	mi := &file_dieter_v1_git_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1046,7 +1164,7 @@ func (x *FileDiff) String() string {
 func (*FileDiff) ProtoMessage() {}
 
 func (x *FileDiff) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_git_proto_msgTypes[8]
+	mi := &file_dieter_v1_git_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1059,7 +1177,7 @@ func (x *FileDiff) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileDiff.ProtoReflect.Descriptor instead.
 func (*FileDiff) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_git_proto_rawDescGZIP(), []int{8}
+	return file_dieter_v1_git_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *FileDiff) GetCardId() string {
@@ -1139,26 +1257,42 @@ func (x *FileDiff) GetSection() string {
 	return ""
 }
 
+func (x *FileDiff) GetFileRevision() string {
+	if x != nil {
+		return x.FileRevision
+	}
+	return ""
+}
+
+func (x *FileDiff) GetRestarted() bool {
+	if x != nil {
+		return x.Restarted
+	}
+	return false
+}
+
 type ChangeComment struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	CardId        string                 `protobuf:"bytes,2,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
-	Path          string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
-	Side          string                 `protobuf:"bytes,4,opt,name=side,proto3" json:"side,omitempty"`
-	Line          int32                  `protobuf:"varint,5,opt,name=line,proto3" json:"line,omitempty"`
-	Body          string                 `protobuf:"bytes,6,opt,name=body,proto3" json:"body,omitempty"`
-	Author        string                 `protobuf:"bytes,7,opt,name=author,proto3" json:"author,omitempty"`
-	Revision      string                 `protobuf:"bytes,8,opt,name=revision,proto3" json:"revision,omitempty"`
-	CommitSha     string                 `protobuf:"bytes,9,opt,name=commit_sha,json=commitSha,proto3" json:"commit_sha,omitempty"`
-	CreatedAt     string                 `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     string                 `protobuf:"bytes,11,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Id     string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	CardId string                 `protobuf:"bytes,2,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	Path   string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
+	Side   string                 `protobuf:"bytes,4,opt,name=side,proto3" json:"side,omitempty"`
+	Line   int32                  `protobuf:"varint,5,opt,name=line,proto3" json:"line,omitempty"`
+	Body   string                 `protobuf:"bytes,6,opt,name=body,proto3" json:"body,omitempty"`
+	Author string                 `protobuf:"bytes,7,opt,name=author,proto3" json:"author,omitempty"`
+	// The revision of the file the comment was written against; the comment is
+	// outdated once the file changes.
+	FileRevision  string `protobuf:"bytes,8,opt,name=file_revision,json=fileRevision,proto3" json:"file_revision,omitempty"`
+	CommitSha     string `protobuf:"bytes,9,opt,name=commit_sha,json=commitSha,proto3" json:"commit_sha,omitempty"`
+	CreatedAt     string `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     string `protobuf:"bytes,11,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ChangeComment) Reset() {
 	*x = ChangeComment{}
-	mi := &file_dieter_v1_git_proto_msgTypes[9]
+	mi := &file_dieter_v1_git_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1170,7 +1304,7 @@ func (x *ChangeComment) String() string {
 func (*ChangeComment) ProtoMessage() {}
 
 func (x *ChangeComment) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_git_proto_msgTypes[9]
+	mi := &file_dieter_v1_git_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1183,7 +1317,7 @@ func (x *ChangeComment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChangeComment.ProtoReflect.Descriptor instead.
 func (*ChangeComment) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_git_proto_rawDescGZIP(), []int{9}
+	return file_dieter_v1_git_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ChangeComment) GetId() string {
@@ -1235,9 +1369,9 @@ func (x *ChangeComment) GetAuthor() string {
 	return ""
 }
 
-func (x *ChangeComment) GetRevision() string {
+func (x *ChangeComment) GetFileRevision() string {
 	if x != nil {
-		return x.Revision
+		return x.FileRevision
 	}
 	return ""
 }
@@ -1271,7 +1405,7 @@ type AddChangeCommentRequest struct {
 	Line          int32                  `protobuf:"varint,4,opt,name=line,proto3" json:"line,omitempty"`
 	Body          string                 `protobuf:"bytes,5,opt,name=body,proto3" json:"body,omitempty"`
 	Author        string                 `protobuf:"bytes,6,opt,name=author,proto3" json:"author,omitempty"`
-	Revision      string                 `protobuf:"bytes,7,opt,name=revision,proto3" json:"revision,omitempty"`
+	FileRevision  string                 `protobuf:"bytes,7,opt,name=file_revision,json=fileRevision,proto3" json:"file_revision,omitempty"`
 	CommitSha     string                 `protobuf:"bytes,8,opt,name=commit_sha,json=commitSha,proto3" json:"commit_sha,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1279,7 +1413,7 @@ type AddChangeCommentRequest struct {
 
 func (x *AddChangeCommentRequest) Reset() {
 	*x = AddChangeCommentRequest{}
-	mi := &file_dieter_v1_git_proto_msgTypes[10]
+	mi := &file_dieter_v1_git_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1291,7 +1425,7 @@ func (x *AddChangeCommentRequest) String() string {
 func (*AddChangeCommentRequest) ProtoMessage() {}
 
 func (x *AddChangeCommentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_git_proto_msgTypes[10]
+	mi := &file_dieter_v1_git_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1304,7 +1438,7 @@ func (x *AddChangeCommentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddChangeCommentRequest.ProtoReflect.Descriptor instead.
 func (*AddChangeCommentRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_git_proto_rawDescGZIP(), []int{10}
+	return file_dieter_v1_git_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *AddChangeCommentRequest) GetCardId() string {
@@ -1349,9 +1483,9 @@ func (x *AddChangeCommentRequest) GetAuthor() string {
 	return ""
 }
 
-func (x *AddChangeCommentRequest) GetRevision() string {
+func (x *AddChangeCommentRequest) GetFileRevision() string {
 	if x != nil {
-		return x.Revision
+		return x.FileRevision
 	}
 	return ""
 }
@@ -1366,14 +1500,13 @@ func (x *AddChangeCommentRequest) GetCommitSha() string {
 type ListChangeCommentsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CardId        string                 `protobuf:"bytes,1,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
-	Revision      string                 `protobuf:"bytes,2,opt,name=revision,proto3" json:"revision,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListChangeCommentsRequest) Reset() {
 	*x = ListChangeCommentsRequest{}
-	mi := &file_dieter_v1_git_proto_msgTypes[11]
+	mi := &file_dieter_v1_git_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1385,7 +1518,7 @@ func (x *ListChangeCommentsRequest) String() string {
 func (*ListChangeCommentsRequest) ProtoMessage() {}
 
 func (x *ListChangeCommentsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_git_proto_msgTypes[11]
+	mi := &file_dieter_v1_git_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1398,19 +1531,12 @@ func (x *ListChangeCommentsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListChangeCommentsRequest.ProtoReflect.Descriptor instead.
 func (*ListChangeCommentsRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_git_proto_rawDescGZIP(), []int{11}
+	return file_dieter_v1_git_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListChangeCommentsRequest) GetCardId() string {
 	if x != nil {
 		return x.CardId
-	}
-	return ""
-}
-
-func (x *ListChangeCommentsRequest) GetRevision() string {
-	if x != nil {
-		return x.Revision
 	}
 	return ""
 }
@@ -1424,7 +1550,7 @@ type ChangeCommentsResponse struct {
 
 func (x *ChangeCommentsResponse) Reset() {
 	*x = ChangeCommentsResponse{}
-	mi := &file_dieter_v1_git_proto_msgTypes[12]
+	mi := &file_dieter_v1_git_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1436,7 +1562,7 @@ func (x *ChangeCommentsResponse) String() string {
 func (*ChangeCommentsResponse) ProtoMessage() {}
 
 func (x *ChangeCommentsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_git_proto_msgTypes[12]
+	mi := &file_dieter_v1_git_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1449,7 +1575,7 @@ func (x *ChangeCommentsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChangeCommentsResponse.ProtoReflect.Descriptor instead.
 func (*ChangeCommentsResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_git_proto_rawDescGZIP(), []int{12}
+	return file_dieter_v1_git_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ChangeCommentsResponse) GetComments() []*ChangeComment {
@@ -1477,7 +1603,7 @@ type SCMCapabilities struct {
 
 func (x *SCMCapabilities) Reset() {
 	*x = SCMCapabilities{}
-	mi := &file_dieter_v1_git_proto_msgTypes[13]
+	mi := &file_dieter_v1_git_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1489,7 +1615,7 @@ func (x *SCMCapabilities) String() string {
 func (*SCMCapabilities) ProtoMessage() {}
 
 func (x *SCMCapabilities) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_git_proto_msgTypes[13]
+	mi := &file_dieter_v1_git_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1502,7 +1628,7 @@ func (x *SCMCapabilities) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SCMCapabilities.ProtoReflect.Descriptor instead.
 func (*SCMCapabilities) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_git_proto_rawDescGZIP(), []int{13}
+	return file_dieter_v1_git_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *SCMCapabilities) GetProvider() string {
@@ -1585,7 +1711,7 @@ type GitConflict struct {
 
 func (x *GitConflict) Reset() {
 	*x = GitConflict{}
-	mi := &file_dieter_v1_git_proto_msgTypes[14]
+	mi := &file_dieter_v1_git_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1597,7 +1723,7 @@ func (x *GitConflict) String() string {
 func (*GitConflict) ProtoMessage() {}
 
 func (x *GitConflict) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_git_proto_msgTypes[14]
+	mi := &file_dieter_v1_git_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1610,7 +1736,7 @@ func (x *GitConflict) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GitConflict.ProtoReflect.Descriptor instead.
 func (*GitConflict) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_git_proto_rawDescGZIP(), []int{14}
+	return file_dieter_v1_git_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *GitConflict) GetPath() string {
@@ -1640,7 +1766,7 @@ type ValidationResult struct {
 
 func (x *ValidationResult) Reset() {
 	*x = ValidationResult{}
-	mi := &file_dieter_v1_git_proto_msgTypes[15]
+	mi := &file_dieter_v1_git_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1652,7 +1778,7 @@ func (x *ValidationResult) String() string {
 func (*ValidationResult) ProtoMessage() {}
 
 func (x *ValidationResult) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_git_proto_msgTypes[15]
+	mi := &file_dieter_v1_git_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1665,7 +1791,7 @@ func (x *ValidationResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidationResult.ProtoReflect.Descriptor instead.
 func (*ValidationResult) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_git_proto_rawDescGZIP(), []int{15}
+	return file_dieter_v1_git_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ValidationResult) GetName() string {
@@ -1724,13 +1850,17 @@ type GitOperation struct {
 	StartedAt         string                 `protobuf:"bytes,17,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
 	FinishedAt        string                 `protobuf:"bytes,18,opt,name=finished_at,json=finishedAt,proto3" json:"finished_at,omitempty"`
 	UpdatedAt         string                 `protobuf:"bytes,19,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	ExpectedFiles     map[string]string      `protobuf:"bytes,20,rep,name=expected_files,json=expectedFiles,proto3" json:"expected_files,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	ExpectedIndex     string                 `protobuf:"bytes,21,opt,name=expected_index,json=expectedIndex,proto3" json:"expected_index,omitempty"`
+	// The project-directory conversation that started this checkout operation.
+	RequestedByCardId string `protobuf:"bytes,22,opt,name=requested_by_card_id,json=requestedByCardId,proto3" json:"requested_by_card_id,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
 
 func (x *GitOperation) Reset() {
 	*x = GitOperation{}
-	mi := &file_dieter_v1_git_proto_msgTypes[16]
+	mi := &file_dieter_v1_git_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1742,7 +1872,7 @@ func (x *GitOperation) String() string {
 func (*GitOperation) ProtoMessage() {}
 
 func (x *GitOperation) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_git_proto_msgTypes[16]
+	mi := &file_dieter_v1_git_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1755,7 +1885,7 @@ func (x *GitOperation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GitOperation.ProtoReflect.Descriptor instead.
 func (*GitOperation) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_git_proto_rawDescGZIP(), []int{16}
+	return file_dieter_v1_git_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *GitOperation) GetId() string {
@@ -1891,21 +2021,48 @@ func (x *GitOperation) GetUpdatedAt() string {
 	return ""
 }
 
+func (x *GitOperation) GetExpectedFiles() map[string]string {
+	if x != nil {
+		return x.ExpectedFiles
+	}
+	return nil
+}
+
+func (x *GitOperation) GetExpectedIndex() string {
+	if x != nil {
+		return x.ExpectedIndex
+	}
+	return ""
+}
+
+func (x *GitOperation) GetRequestedByCardId() string {
+	if x != nil {
+		return x.RequestedByCardId
+	}
+	return ""
+}
+
 type StartGitOperationRequest struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	CheckoutId       string                 `protobuf:"bytes,50,opt,name=checkout_id,json=checkoutId,proto3" json:"checkout_id,omitempty"`
-	CardId           string                 `protobuf:"bytes,1,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
-	Kind             string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
-	ExpectedRevision string                 `protobuf:"bytes,3,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
-	Parameters       map[string]string      `protobuf:"bytes,4,rep,name=parameters,proto3" json:"parameters,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	ProjectId        string                 `protobuf:"bytes,5,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	CheckoutId string                 `protobuf:"bytes,50,opt,name=checkout_id,json=checkoutId,proto3" json:"checkout_id,omitempty"`
+	CardId     string                 `protobuf:"bytes,1,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	Kind       string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	// Guards operations on the whole tree (stage_all commits, merges, cleanup).
+	ExpectedRevision string            `protobuf:"bytes,3,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	Parameters       map[string]string `protobuf:"bytes,4,rep,name=parameters,proto3" json:"parameters,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	ProjectId        string            `protobuf:"bytes,5,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// Path to ChangedFile.revision for exactly the files stage, unstage and
+	// discard_changes act on; they fail only when one of these files changed.
+	ExpectedFiles map[string]string `protobuf:"bytes,6,rep,name=expected_files,json=expectedFiles,proto3" json:"expected_files,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Changeset.index_fingerprint for a commit of the staged changes.
+	ExpectedIndex string `protobuf:"bytes,7,opt,name=expected_index,json=expectedIndex,proto3" json:"expected_index,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *StartGitOperationRequest) Reset() {
 	*x = StartGitOperationRequest{}
-	mi := &file_dieter_v1_git_proto_msgTypes[17]
+	mi := &file_dieter_v1_git_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1917,7 +2074,7 @@ func (x *StartGitOperationRequest) String() string {
 func (*StartGitOperationRequest) ProtoMessage() {}
 
 func (x *StartGitOperationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_git_proto_msgTypes[17]
+	mi := &file_dieter_v1_git_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1930,7 +2087,7 @@ func (x *StartGitOperationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartGitOperationRequest.ProtoReflect.Descriptor instead.
 func (*StartGitOperationRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_git_proto_rawDescGZIP(), []int{17}
+	return file_dieter_v1_git_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *StartGitOperationRequest) GetCheckoutId() string {
@@ -1975,6 +2132,20 @@ func (x *StartGitOperationRequest) GetProjectId() string {
 	return ""
 }
 
+func (x *StartGitOperationRequest) GetExpectedFiles() map[string]string {
+	if x != nil {
+		return x.ExpectedFiles
+	}
+	return nil
+}
+
+func (x *StartGitOperationRequest) GetExpectedIndex() string {
+	if x != nil {
+		return x.ExpectedIndex
+	}
+	return ""
+}
+
 type GitOperationRef struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	OperationId   string                 `protobuf:"bytes,1,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
@@ -1984,7 +2155,7 @@ type GitOperationRef struct {
 
 func (x *GitOperationRef) Reset() {
 	*x = GitOperationRef{}
-	mi := &file_dieter_v1_git_proto_msgTypes[18]
+	mi := &file_dieter_v1_git_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1996,7 +2167,7 @@ func (x *GitOperationRef) String() string {
 func (*GitOperationRef) ProtoMessage() {}
 
 func (x *GitOperationRef) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_git_proto_msgTypes[18]
+	mi := &file_dieter_v1_git_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2009,7 +2180,7 @@ func (x *GitOperationRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GitOperationRef.ProtoReflect.Descriptor instead.
 func (*GitOperationRef) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_git_proto_rawDescGZIP(), []int{18}
+	return file_dieter_v1_git_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *GitOperationRef) GetOperationId() string {
@@ -2030,7 +2201,7 @@ type WatchGitOperationRequest struct {
 
 func (x *WatchGitOperationRequest) Reset() {
 	*x = WatchGitOperationRequest{}
-	mi := &file_dieter_v1_git_proto_msgTypes[19]
+	mi := &file_dieter_v1_git_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2042,7 +2213,7 @@ func (x *WatchGitOperationRequest) String() string {
 func (*WatchGitOperationRequest) ProtoMessage() {}
 
 func (x *WatchGitOperationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_git_proto_msgTypes[19]
+	mi := &file_dieter_v1_git_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2055,7 +2226,7 @@ func (x *WatchGitOperationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchGitOperationRequest.ProtoReflect.Descriptor instead.
 func (*WatchGitOperationRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_git_proto_rawDescGZIP(), []int{19}
+	return file_dieter_v1_git_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *WatchGitOperationRequest) GetOperationId() string {
@@ -2090,7 +2261,7 @@ type GitOperationLogEntry struct {
 
 func (x *GitOperationLogEntry) Reset() {
 	*x = GitOperationLogEntry{}
-	mi := &file_dieter_v1_git_proto_msgTypes[20]
+	mi := &file_dieter_v1_git_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2102,7 +2273,7 @@ func (x *GitOperationLogEntry) String() string {
 func (*GitOperationLogEntry) ProtoMessage() {}
 
 func (x *GitOperationLogEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_git_proto_msgTypes[20]
+	mi := &file_dieter_v1_git_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2115,7 +2286,7 @@ func (x *GitOperationLogEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GitOperationLogEntry.ProtoReflect.Descriptor instead.
 func (*GitOperationLogEntry) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_git_proto_rawDescGZIP(), []int{20}
+	return file_dieter_v1_git_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *GitOperationLogEntry) GetSequence() uint64 {
@@ -2150,7 +2321,7 @@ type GitOperationFrame struct {
 
 func (x *GitOperationFrame) Reset() {
 	*x = GitOperationFrame{}
-	mi := &file_dieter_v1_git_proto_msgTypes[21]
+	mi := &file_dieter_v1_git_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2162,7 +2333,7 @@ func (x *GitOperationFrame) String() string {
 func (*GitOperationFrame) ProtoMessage() {}
 
 func (x *GitOperationFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_git_proto_msgTypes[21]
+	mi := &file_dieter_v1_git_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2175,7 +2346,7 @@ func (x *GitOperationFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GitOperationFrame.ProtoReflect.Descriptor instead.
 func (*GitOperationFrame) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_git_proto_rawDescGZIP(), []int{21}
+	return file_dieter_v1_git_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *GitOperationFrame) GetOperation() *GitOperation {
@@ -2193,6 +2364,126 @@ func (x *GitOperationFrame) GetLogs() []*GitOperationLogEntry {
 }
 
 func (x *GitOperationFrame) GetHeartbeat() bool {
+	if x != nil {
+		return x.Heartbeat
+	}
+	return false
+}
+
+type WatchChangesetRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CheckoutId    string                 `protobuf:"bytes,50,opt,name=checkout_id,json=checkoutId,proto3" json:"checkout_id,omitempty"`
+	CardId        string                 `protobuf:"bytes,1,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	ProjectId     string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	HeartbeatMs   int32                  `protobuf:"varint,3,opt,name=heartbeat_ms,json=heartbeatMs,proto3" json:"heartbeat_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WatchChangesetRequest) Reset() {
+	*x = WatchChangesetRequest{}
+	mi := &file_dieter_v1_git_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchChangesetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchChangesetRequest) ProtoMessage() {}
+
+func (x *WatchChangesetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_git_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchChangesetRequest.ProtoReflect.Descriptor instead.
+func (*WatchChangesetRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_git_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *WatchChangesetRequest) GetCheckoutId() string {
+	if x != nil {
+		return x.CheckoutId
+	}
+	return ""
+}
+
+func (x *WatchChangesetRequest) GetCardId() string {
+	if x != nil {
+		return x.CardId
+	}
+	return ""
+}
+
+func (x *WatchChangesetRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *WatchChangesetRequest) GetHeartbeatMs() int32 {
+	if x != nil {
+		return x.HeartbeatMs
+	}
+	return 0
+}
+
+type ChangesetFrame struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Changeset     *Changeset             `protobuf:"bytes,1,opt,name=changeset,proto3" json:"changeset,omitempty"`
+	Heartbeat     bool                   `protobuf:"varint,2,opt,name=heartbeat,proto3" json:"heartbeat,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChangesetFrame) Reset() {
+	*x = ChangesetFrame{}
+	mi := &file_dieter_v1_git_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangesetFrame) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangesetFrame) ProtoMessage() {}
+
+func (x *ChangesetFrame) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_git_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangesetFrame.ProtoReflect.Descriptor instead.
+func (*ChangesetFrame) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_git_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ChangesetFrame) GetChangeset() *Changeset {
+	if x != nil {
+		return x.Changeset
+	}
+	return nil
+}
+
+func (x *ChangesetFrame) GetHeartbeat() bool {
 	if x != nil {
 		return x.Heartbeat
 	}
@@ -2247,7 +2538,7 @@ const file_dieter_v1_git_proto_rawDesc = "" +
 	"\x12WorkspacesResponse\x124\n" +
 	"\n" +
 	"workspaces\x18\x01 \x03(\v2\x14.dieter.v1.WorkspaceR\n" +
-	"workspaces\"\x9a\x04\n" +
+	"workspaces\"\xb6\x04\n" +
 	"\vChangedFile\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x19\n" +
 	"\bold_path\x18\x02 \x01(\tR\aoldPath\x12\x16\n" +
@@ -2267,7 +2558,8 @@ const file_dieter_v1_git_proto_rawDesc = "" +
 	"\x10staged_additions\x18\r \x01(\x05R\x0fstagedAdditions\x12)\n" +
 	"\x10staged_deletions\x18\x0e \x01(\x05R\x0fstagedDeletions\x12-\n" +
 	"\x12unstaged_additions\x18\x0f \x01(\x05R\x11unstagedAdditions\x12-\n" +
-	"\x12unstaged_deletions\x18\x10 \x01(\x05R\x11unstagedDeletions\"\xa0\x02\n" +
+	"\x12unstaged_deletions\x18\x10 \x01(\x05R\x11unstagedDeletions\x12\x1a\n" +
+	"\brevision\x18\x11 \x01(\tR\brevision\"\xa0\x02\n" +
 	"\x0fWorkspaceCommit\x12\x10\n" +
 	"\x03sha\x18\x01 \x01(\tR\x03sha\x12\x1b\n" +
 	"\tshort_sha\x18\x02 \x01(\tR\bshortSha\x12\x18\n" +
@@ -2279,7 +2571,10 @@ const file_dieter_v1_git_proto_rawDesc = "" +
 	"authoredAt\x12\x1c\n" +
 	"\tadditions\x18\a \x01(\x05R\tadditions\x12\x1c\n" +
 	"\tdeletions\x18\b \x01(\x05R\tdeletions\x12#\n" +
-	"\rchanged_files\x18\t \x01(\x05R\fchangedFiles\"\xea\x04\n" +
+	"\rchanged_files\x18\t \x01(\x05R\fchangedFiles\"\\\n" +
+	"\x11ChangesetActivity\x12!\n" +
+	"\fagent_active\x18\x01 \x01(\bR\vagentActive\x12$\n" +
+	"\x0eagent_card_ids\x18\x02 \x03(\tR\fagentCardIds\"\xc6\x06\n" +
 	"\tChangeset\x12\x17\n" +
 	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12\x1a\n" +
 	"\brevision\x18\x02 \x01(\tR\brevision\x12%\n" +
@@ -2289,9 +2584,7 @@ const file_dieter_v1_git_proto_rawDesc = "" +
 	"\x05files\x18\x06 \x03(\v2\x16.dieter.v1.ChangedFileR\x05files\x124\n" +
 	"\acommits\x18\a \x03(\v2\x1a.dieter.v1.WorkspaceCommitR\acommits\x12\x1c\n" +
 	"\tadditions\x18\b \x01(\x05R\tadditions\x12\x1c\n" +
-	"\tdeletions\x18\t \x01(\x05R\tdeletions\x12\x1a\n" +
-	"\bvolatile\x18\n" +
-	" \x01(\bR\bvolatile\x12!\n" +
+	"\tdeletions\x18\t \x01(\x05R\tdeletions\x12!\n" +
 	"\fgenerated_at\x18\v \x01(\tR\vgeneratedAt\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\f \x01(\tR\tprojectId\x12\x16\n" +
@@ -2304,26 +2597,35 @@ const file_dieter_v1_git_proto_rawDesc = "" +
 	"\n" +
 	"conflicted\x18\x12 \x01(\bR\n" +
 	"conflicted\x120\n" +
-	"\x14current_operation_id\x18\x13 \x01(\tR\x12currentOperationId\"n\n" +
+	"\x14current_operation_id\x18\x13 \x01(\tR\x12currentOperationId\x12\x14\n" +
+	"\x05scope\x18\x14 \x01(\tR\x05scope\x12\x1f\n" +
+	"\vcheckout_id\x18\x15 \x01(\tR\n" +
+	"checkoutId\x12+\n" +
+	"\x11index_fingerprint\x18\x16 \x01(\tR\x10indexFingerprint\x128\n" +
+	"\bactivity\x18\x17 \x01(\v2\x1c.dieter.v1.ChangesetActivityR\bactivity\x12'\n" +
+	"\x0ffiles_truncated\x18\x18 \x01(\bR\x0efilesTruncated\x12\x1f\n" +
+	"\vtotal_files\x18\x19 \x01(\x05R\n" +
+	"totalFilesJ\x04\b\n" +
+	"\x10\vR\bvolatile\"n\n" +
 	"\x13GetChangesetRequest\x12\x1f\n" +
 	"\vcheckout_id\x182 \x01(\tR\n" +
 	"checkoutId\x12\x17\n" +
 	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x02 \x01(\tR\tprojectId\"\x91\x02\n" +
+	"project_id\x18\x02 \x01(\tR\tprojectId\"\xa2\x02\n" +
 	"\x0eGetDiffRequest\x12\x1f\n" +
 	"\vcheckout_id\x182 \x01(\tR\n" +
 	"checkoutId\x12\x17\n" +
 	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x1d\n" +
 	"\n" +
-	"commit_sha\x18\x03 \x01(\tR\tcommitSha\x12+\n" +
-	"\x11expected_revision\x18\x04 \x01(\tR\x10expectedRevision\x12\x16\n" +
+	"commit_sha\x18\x03 \x01(\tR\tcommitSha\x12\x16\n" +
 	"\x06offset\x18\x05 \x01(\x03R\x06offset\x12\x14\n" +
 	"\x05limit\x18\x06 \x01(\x05R\x05limit\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\a \x01(\tR\tprojectId\x12\x18\n" +
-	"\asection\x18\b \x01(\tR\asection\"\xb9\x02\n" +
+	"\asection\x18\b \x01(\tR\asection\x12#\n" +
+	"\rfile_revision\x18\t \x01(\tR\ffileRevisionJ\x04\b\x04\x10\x05R\x11expected_revision\"\xfc\x02\n" +
 	"\bFileDiff\x12\x17\n" +
 	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x1d\n" +
@@ -2340,7 +2642,9 @@ const file_dieter_v1_git_proto_rawDesc = "" +
 	"\n" +
 	"project_id\x18\n" +
 	" \x01(\tR\tprojectId\x12\x18\n" +
-	"\asection\x18\v \x01(\tR\asection\"\x99\x02\n" +
+	"\asection\x18\v \x01(\tR\asection\x12#\n" +
+	"\rfile_revision\x18\f \x01(\tR\ffileRevision\x12\x1c\n" +
+	"\trestarted\x18\r \x01(\bR\trestarted\"\xa2\x02\n" +
 	"\rChangeComment\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\acard_id\x18\x02 \x01(\tR\x06cardId\x12\x12\n" +
@@ -2348,28 +2652,27 @@ const file_dieter_v1_git_proto_rawDesc = "" +
 	"\x04side\x18\x04 \x01(\tR\x04side\x12\x12\n" +
 	"\x04line\x18\x05 \x01(\x05R\x04line\x12\x12\n" +
 	"\x04body\x18\x06 \x01(\tR\x04body\x12\x16\n" +
-	"\x06author\x18\a \x01(\tR\x06author\x12\x1a\n" +
-	"\brevision\x18\b \x01(\tR\brevision\x12\x1d\n" +
+	"\x06author\x18\a \x01(\tR\x06author\x12#\n" +
+	"\rfile_revision\x18\b \x01(\tR\ffileRevision\x12\x1d\n" +
 	"\n" +
 	"commit_sha\x18\t \x01(\tR\tcommitSha\x12\x1d\n" +
 	"\n" +
 	"created_at\x18\n" +
 	" \x01(\tR\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\v \x01(\tR\tupdatedAt\"\xd5\x01\n" +
+	"updated_at\x18\v \x01(\tR\tupdatedAt\"\xde\x01\n" +
 	"\x17AddChangeCommentRequest\x12\x17\n" +
 	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x12\n" +
 	"\x04side\x18\x03 \x01(\tR\x04side\x12\x12\n" +
 	"\x04line\x18\x04 \x01(\x05R\x04line\x12\x12\n" +
 	"\x04body\x18\x05 \x01(\tR\x04body\x12\x16\n" +
-	"\x06author\x18\x06 \x01(\tR\x06author\x12\x1a\n" +
-	"\brevision\x18\a \x01(\tR\brevision\x12\x1d\n" +
+	"\x06author\x18\x06 \x01(\tR\x06author\x12#\n" +
+	"\rfile_revision\x18\a \x01(\tR\ffileRevision\x12\x1d\n" +
 	"\n" +
-	"commit_sha\x18\b \x01(\tR\tcommitSha\"P\n" +
+	"commit_sha\x18\b \x01(\tR\tcommitSha\"D\n" +
 	"\x19ListChangeCommentsRequest\x12\x17\n" +
-	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12\x1a\n" +
-	"\brevision\x18\x02 \x01(\tR\brevision\"N\n" +
+	"\acard_id\x18\x01 \x01(\tR\x06cardIdJ\x04\b\x02\x10\x03R\brevision\"N\n" +
 	"\x16ChangeCommentsResponse\x124\n" +
 	"\bcomments\x18\x01 \x03(\v2\x18.dieter.v1.ChangeCommentR\bcomments\"\xec\x02\n" +
 	"\x0fSCMCapabilities\x12\x1a\n" +
@@ -2396,7 +2699,7 @@ const file_dieter_v1_git_proto_rawDesc = "" +
 	"\x06output\x18\x03 \x01(\tR\x06output\x12\x1c\n" +
 	"\ttruncated\x18\x04 \x01(\bR\ttruncated\x12\x1f\n" +
 	"\vduration_ms\x18\x05 \x01(\x03R\n" +
-	"durationMs\"\x82\x06\n" +
+	"durationMs\"\xef\a\n" +
 	"\fGitOperation\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\acard_id\x18\x02 \x01(\tR\x06cardId\x12\x1d\n" +
@@ -2424,10 +2727,16 @@ const file_dieter_v1_git_proto_rawDesc = "" +
 	"\vfinished_at\x18\x12 \x01(\tR\n" +
 	"finishedAt\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\x13 \x01(\tR\tupdatedAt\x1a=\n" +
+	"updated_at\x18\x13 \x01(\tR\tupdatedAt\x12Q\n" +
+	"\x0eexpected_files\x18\x14 \x03(\v2*.dieter.v1.GitOperation.ExpectedFilesEntryR\rexpectedFiles\x12%\n" +
+	"\x0eexpected_index\x18\x15 \x01(\tR\rexpectedIndex\x12/\n" +
+	"\x14requested_by_card_id\x18\x16 \x01(\tR\x11requestedByCardId\x1a=\n" +
 	"\x0fParametersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc8\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a@\n" +
+	"\x12ExpectedFilesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x90\x04\n" +
 	"\x18StartGitOperationRequest\x12\x1f\n" +
 	"\vcheckout_id\x182 \x01(\tR\n" +
 	"checkoutId\x12\x17\n" +
@@ -2438,8 +2747,13 @@ const file_dieter_v1_git_proto_rawDesc = "" +
 	"parameters\x18\x04 \x03(\v23.dieter.v1.StartGitOperationRequest.ParametersEntryR\n" +
 	"parameters\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x05 \x01(\tR\tprojectId\x1a=\n" +
+	"project_id\x18\x05 \x01(\tR\tprojectId\x12]\n" +
+	"\x0eexpected_files\x18\x06 \x03(\v26.dieter.v1.StartGitOperationRequest.ExpectedFilesEntryR\rexpectedFiles\x12%\n" +
+	"\x0eexpected_index\x18\a \x01(\tR\rexpectedIndex\x1a=\n" +
 	"\x0fParametersEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a@\n" +
+	"\x12ExpectedFilesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"4\n" +
 	"\x0fGitOperationRef\x12!\n" +
@@ -2456,7 +2770,17 @@ const file_dieter_v1_git_proto_rawDesc = "" +
 	"\x11GitOperationFrame\x125\n" +
 	"\toperation\x18\x01 \x01(\v2\x17.dieter.v1.GitOperationR\toperation\x123\n" +
 	"\x04logs\x18\x02 \x03(\v2\x1f.dieter.v1.GitOperationLogEntryR\x04logs\x12\x1c\n" +
-	"\theartbeat\x18\x03 \x01(\bR\theartbeat2\xa2\a\n" +
+	"\theartbeat\x18\x03 \x01(\bR\theartbeat\"\x93\x01\n" +
+	"\x15WatchChangesetRequest\x12\x1f\n" +
+	"\vcheckout_id\x182 \x01(\tR\n" +
+	"checkoutId\x12\x17\n" +
+	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x02 \x01(\tR\tprojectId\x12!\n" +
+	"\fheartbeat_ms\x18\x03 \x01(\x05R\vheartbeatMs\"b\n" +
+	"\x0eChangesetFrame\x122\n" +
+	"\tchangeset\x18\x01 \x01(\v2\x14.dieter.v1.ChangesetR\tchangeset\x12\x1c\n" +
+	"\theartbeat\x18\x02 \x01(\bR\theartbeat2\xf3\a\n" +
 	"\n" +
 	"GitService\x12@\n" +
 	"\fGetWorkspace\x12\x1a.dieter.v1.ConversationRef\x1a\x14.dieter.v1.Workspace\x12M\n" +
@@ -2470,7 +2794,8 @@ const file_dieter_v1_git_proto_rawDesc = "" +
 	"\x11StartGitOperation\x12#.dieter.v1.StartGitOperationRequest\x1a\x17.dieter.v1.GitOperation\x12F\n" +
 	"\x0fGetGitOperation\x12\x1a.dieter.v1.GitOperationRef\x1a\x17.dieter.v1.GitOperation\x12X\n" +
 	"\x11WatchGitOperation\x12#.dieter.v1.WatchGitOperationRequest\x1a\x1c.dieter.v1.GitOperationFrame0\x01\x12I\n" +
-	"\x12CancelGitOperation\x12\x1a.dieter.v1.GitOperationRef\x1a\x17.dieter.v1.GitOperationBR\n" +
+	"\x12CancelGitOperation\x12\x1a.dieter.v1.GitOperationRef\x1a\x17.dieter.v1.GitOperation\x12O\n" +
+	"\x0eWatchChangeset\x12 .dieter.v1.WatchChangesetRequest\x1a\x19.dieter.v1.ChangesetFrame0\x01BR\n" +
 	"\x14com.getdieter.api.v1P\x01Z8github.com/dbpprt/dieter/internal/gen/dieter/v1;dieterv1b\x06proto3"
 
 var (
@@ -2485,74 +2810,85 @@ func file_dieter_v1_git_proto_rawDescGZIP() []byte {
 	return file_dieter_v1_git_proto_rawDescData
 }
 
-var file_dieter_v1_git_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_dieter_v1_git_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
 var file_dieter_v1_git_proto_goTypes = []any{
 	(*ConversationRef)(nil),           // 0: dieter.v1.ConversationRef
 	(*Workspace)(nil),                 // 1: dieter.v1.Workspace
 	(*WorkspacesResponse)(nil),        // 2: dieter.v1.WorkspacesResponse
 	(*ChangedFile)(nil),               // 3: dieter.v1.ChangedFile
 	(*WorkspaceCommit)(nil),           // 4: dieter.v1.WorkspaceCommit
-	(*Changeset)(nil),                 // 5: dieter.v1.Changeset
-	(*GetChangesetRequest)(nil),       // 6: dieter.v1.GetChangesetRequest
-	(*GetDiffRequest)(nil),            // 7: dieter.v1.GetDiffRequest
-	(*FileDiff)(nil),                  // 8: dieter.v1.FileDiff
-	(*ChangeComment)(nil),             // 9: dieter.v1.ChangeComment
-	(*AddChangeCommentRequest)(nil),   // 10: dieter.v1.AddChangeCommentRequest
-	(*ListChangeCommentsRequest)(nil), // 11: dieter.v1.ListChangeCommentsRequest
-	(*ChangeCommentsResponse)(nil),    // 12: dieter.v1.ChangeCommentsResponse
-	(*SCMCapabilities)(nil),           // 13: dieter.v1.SCMCapabilities
-	(*GitConflict)(nil),               // 14: dieter.v1.GitConflict
-	(*ValidationResult)(nil),          // 15: dieter.v1.ValidationResult
-	(*GitOperation)(nil),              // 16: dieter.v1.GitOperation
-	(*StartGitOperationRequest)(nil),  // 17: dieter.v1.StartGitOperationRequest
-	(*GitOperationRef)(nil),           // 18: dieter.v1.GitOperationRef
-	(*WatchGitOperationRequest)(nil),  // 19: dieter.v1.WatchGitOperationRequest
-	(*GitOperationLogEntry)(nil),      // 20: dieter.v1.GitOperationLogEntry
-	(*GitOperationFrame)(nil),         // 21: dieter.v1.GitOperationFrame
-	nil,                               // 22: dieter.v1.GitOperation.ParametersEntry
-	nil,                               // 23: dieter.v1.StartGitOperationRequest.ParametersEntry
-	(*ProjectRef)(nil),                // 24: dieter.v1.ProjectRef
+	(*ChangesetActivity)(nil),         // 5: dieter.v1.ChangesetActivity
+	(*Changeset)(nil),                 // 6: dieter.v1.Changeset
+	(*GetChangesetRequest)(nil),       // 7: dieter.v1.GetChangesetRequest
+	(*GetDiffRequest)(nil),            // 8: dieter.v1.GetDiffRequest
+	(*FileDiff)(nil),                  // 9: dieter.v1.FileDiff
+	(*ChangeComment)(nil),             // 10: dieter.v1.ChangeComment
+	(*AddChangeCommentRequest)(nil),   // 11: dieter.v1.AddChangeCommentRequest
+	(*ListChangeCommentsRequest)(nil), // 12: dieter.v1.ListChangeCommentsRequest
+	(*ChangeCommentsResponse)(nil),    // 13: dieter.v1.ChangeCommentsResponse
+	(*SCMCapabilities)(nil),           // 14: dieter.v1.SCMCapabilities
+	(*GitConflict)(nil),               // 15: dieter.v1.GitConflict
+	(*ValidationResult)(nil),          // 16: dieter.v1.ValidationResult
+	(*GitOperation)(nil),              // 17: dieter.v1.GitOperation
+	(*StartGitOperationRequest)(nil),  // 18: dieter.v1.StartGitOperationRequest
+	(*GitOperationRef)(nil),           // 19: dieter.v1.GitOperationRef
+	(*WatchGitOperationRequest)(nil),  // 20: dieter.v1.WatchGitOperationRequest
+	(*GitOperationLogEntry)(nil),      // 21: dieter.v1.GitOperationLogEntry
+	(*GitOperationFrame)(nil),         // 22: dieter.v1.GitOperationFrame
+	(*WatchChangesetRequest)(nil),     // 23: dieter.v1.WatchChangesetRequest
+	(*ChangesetFrame)(nil),            // 24: dieter.v1.ChangesetFrame
+	nil,                               // 25: dieter.v1.GitOperation.ParametersEntry
+	nil,                               // 26: dieter.v1.GitOperation.ExpectedFilesEntry
+	nil,                               // 27: dieter.v1.StartGitOperationRequest.ParametersEntry
+	nil,                               // 28: dieter.v1.StartGitOperationRequest.ExpectedFilesEntry
+	(*ProjectRef)(nil),                // 29: dieter.v1.ProjectRef
 }
 var file_dieter_v1_git_proto_depIdxs = []int32{
 	1,  // 0: dieter.v1.WorkspacesResponse.workspaces:type_name -> dieter.v1.Workspace
 	3,  // 1: dieter.v1.Changeset.files:type_name -> dieter.v1.ChangedFile
 	4,  // 2: dieter.v1.Changeset.commits:type_name -> dieter.v1.WorkspaceCommit
-	9,  // 3: dieter.v1.ChangeCommentsResponse.comments:type_name -> dieter.v1.ChangeComment
-	22, // 4: dieter.v1.GitOperation.parameters:type_name -> dieter.v1.GitOperation.ParametersEntry
-	15, // 5: dieter.v1.GitOperation.validation_results:type_name -> dieter.v1.ValidationResult
-	14, // 6: dieter.v1.GitOperation.conflicts:type_name -> dieter.v1.GitConflict
-	23, // 7: dieter.v1.StartGitOperationRequest.parameters:type_name -> dieter.v1.StartGitOperationRequest.ParametersEntry
-	16, // 8: dieter.v1.GitOperationFrame.operation:type_name -> dieter.v1.GitOperation
-	20, // 9: dieter.v1.GitOperationFrame.logs:type_name -> dieter.v1.GitOperationLogEntry
-	0,  // 10: dieter.v1.GitService.GetWorkspace:input_type -> dieter.v1.ConversationRef
-	24, // 11: dieter.v1.GitService.ListProjectWorkspaces:input_type -> dieter.v1.ProjectRef
-	6,  // 12: dieter.v1.GitService.GetChangeset:input_type -> dieter.v1.GetChangesetRequest
-	7,  // 13: dieter.v1.GitService.GetFileDiff:input_type -> dieter.v1.GetDiffRequest
-	7,  // 14: dieter.v1.GitService.GetCommitDiff:input_type -> dieter.v1.GetDiffRequest
-	10, // 15: dieter.v1.GitService.AddChangeComment:input_type -> dieter.v1.AddChangeCommentRequest
-	11, // 16: dieter.v1.GitService.ListChangeComments:input_type -> dieter.v1.ListChangeCommentsRequest
-	0,  // 17: dieter.v1.GitService.GetSCMCapabilities:input_type -> dieter.v1.ConversationRef
-	17, // 18: dieter.v1.GitService.StartGitOperation:input_type -> dieter.v1.StartGitOperationRequest
-	18, // 19: dieter.v1.GitService.GetGitOperation:input_type -> dieter.v1.GitOperationRef
-	19, // 20: dieter.v1.GitService.WatchGitOperation:input_type -> dieter.v1.WatchGitOperationRequest
-	18, // 21: dieter.v1.GitService.CancelGitOperation:input_type -> dieter.v1.GitOperationRef
-	1,  // 22: dieter.v1.GitService.GetWorkspace:output_type -> dieter.v1.Workspace
-	2,  // 23: dieter.v1.GitService.ListProjectWorkspaces:output_type -> dieter.v1.WorkspacesResponse
-	5,  // 24: dieter.v1.GitService.GetChangeset:output_type -> dieter.v1.Changeset
-	8,  // 25: dieter.v1.GitService.GetFileDiff:output_type -> dieter.v1.FileDiff
-	8,  // 26: dieter.v1.GitService.GetCommitDiff:output_type -> dieter.v1.FileDiff
-	9,  // 27: dieter.v1.GitService.AddChangeComment:output_type -> dieter.v1.ChangeComment
-	12, // 28: dieter.v1.GitService.ListChangeComments:output_type -> dieter.v1.ChangeCommentsResponse
-	13, // 29: dieter.v1.GitService.GetSCMCapabilities:output_type -> dieter.v1.SCMCapabilities
-	16, // 30: dieter.v1.GitService.StartGitOperation:output_type -> dieter.v1.GitOperation
-	16, // 31: dieter.v1.GitService.GetGitOperation:output_type -> dieter.v1.GitOperation
-	21, // 32: dieter.v1.GitService.WatchGitOperation:output_type -> dieter.v1.GitOperationFrame
-	16, // 33: dieter.v1.GitService.CancelGitOperation:output_type -> dieter.v1.GitOperation
-	22, // [22:34] is the sub-list for method output_type
-	10, // [10:22] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	5,  // 3: dieter.v1.Changeset.activity:type_name -> dieter.v1.ChangesetActivity
+	10, // 4: dieter.v1.ChangeCommentsResponse.comments:type_name -> dieter.v1.ChangeComment
+	25, // 5: dieter.v1.GitOperation.parameters:type_name -> dieter.v1.GitOperation.ParametersEntry
+	16, // 6: dieter.v1.GitOperation.validation_results:type_name -> dieter.v1.ValidationResult
+	15, // 7: dieter.v1.GitOperation.conflicts:type_name -> dieter.v1.GitConflict
+	26, // 8: dieter.v1.GitOperation.expected_files:type_name -> dieter.v1.GitOperation.ExpectedFilesEntry
+	27, // 9: dieter.v1.StartGitOperationRequest.parameters:type_name -> dieter.v1.StartGitOperationRequest.ParametersEntry
+	28, // 10: dieter.v1.StartGitOperationRequest.expected_files:type_name -> dieter.v1.StartGitOperationRequest.ExpectedFilesEntry
+	17, // 11: dieter.v1.GitOperationFrame.operation:type_name -> dieter.v1.GitOperation
+	21, // 12: dieter.v1.GitOperationFrame.logs:type_name -> dieter.v1.GitOperationLogEntry
+	6,  // 13: dieter.v1.ChangesetFrame.changeset:type_name -> dieter.v1.Changeset
+	0,  // 14: dieter.v1.GitService.GetWorkspace:input_type -> dieter.v1.ConversationRef
+	29, // 15: dieter.v1.GitService.ListProjectWorkspaces:input_type -> dieter.v1.ProjectRef
+	7,  // 16: dieter.v1.GitService.GetChangeset:input_type -> dieter.v1.GetChangesetRequest
+	8,  // 17: dieter.v1.GitService.GetFileDiff:input_type -> dieter.v1.GetDiffRequest
+	8,  // 18: dieter.v1.GitService.GetCommitDiff:input_type -> dieter.v1.GetDiffRequest
+	11, // 19: dieter.v1.GitService.AddChangeComment:input_type -> dieter.v1.AddChangeCommentRequest
+	12, // 20: dieter.v1.GitService.ListChangeComments:input_type -> dieter.v1.ListChangeCommentsRequest
+	0,  // 21: dieter.v1.GitService.GetSCMCapabilities:input_type -> dieter.v1.ConversationRef
+	18, // 22: dieter.v1.GitService.StartGitOperation:input_type -> dieter.v1.StartGitOperationRequest
+	19, // 23: dieter.v1.GitService.GetGitOperation:input_type -> dieter.v1.GitOperationRef
+	20, // 24: dieter.v1.GitService.WatchGitOperation:input_type -> dieter.v1.WatchGitOperationRequest
+	19, // 25: dieter.v1.GitService.CancelGitOperation:input_type -> dieter.v1.GitOperationRef
+	23, // 26: dieter.v1.GitService.WatchChangeset:input_type -> dieter.v1.WatchChangesetRequest
+	1,  // 27: dieter.v1.GitService.GetWorkspace:output_type -> dieter.v1.Workspace
+	2,  // 28: dieter.v1.GitService.ListProjectWorkspaces:output_type -> dieter.v1.WorkspacesResponse
+	6,  // 29: dieter.v1.GitService.GetChangeset:output_type -> dieter.v1.Changeset
+	9,  // 30: dieter.v1.GitService.GetFileDiff:output_type -> dieter.v1.FileDiff
+	9,  // 31: dieter.v1.GitService.GetCommitDiff:output_type -> dieter.v1.FileDiff
+	10, // 32: dieter.v1.GitService.AddChangeComment:output_type -> dieter.v1.ChangeComment
+	13, // 33: dieter.v1.GitService.ListChangeComments:output_type -> dieter.v1.ChangeCommentsResponse
+	14, // 34: dieter.v1.GitService.GetSCMCapabilities:output_type -> dieter.v1.SCMCapabilities
+	17, // 35: dieter.v1.GitService.StartGitOperation:output_type -> dieter.v1.GitOperation
+	17, // 36: dieter.v1.GitService.GetGitOperation:output_type -> dieter.v1.GitOperation
+	22, // 37: dieter.v1.GitService.WatchGitOperation:output_type -> dieter.v1.GitOperationFrame
+	17, // 38: dieter.v1.GitService.CancelGitOperation:output_type -> dieter.v1.GitOperation
+	24, // 39: dieter.v1.GitService.WatchChangeset:output_type -> dieter.v1.ChangesetFrame
+	27, // [27:40] is the sub-list for method output_type
+	14, // [14:27] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_dieter_v1_git_proto_init() }
@@ -2567,7 +2903,7 @@ func file_dieter_v1_git_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dieter_v1_git_proto_rawDesc), len(file_dieter_v1_git_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   24,
+			NumMessages:   29,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

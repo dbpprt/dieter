@@ -1,10 +1,12 @@
 package git
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -31,6 +33,9 @@ type StatusReader struct {
 	inflight   map[string]*snapshotCall
 	generation map[string]uint64
 	epoch      uint64
+	// invalidated holds, per watched directory, a channel closed by its next
+	// Invalidate.
+	invalidated map[string]chan struct{}
 }
 
 type cachedSnapshot struct {
@@ -50,7 +55,7 @@ type snapshotCall struct {
 func NewStatusReader(runner Runner) *StatusReader {
 	return &StatusReader{
 		runner: runner, cache: map[string]cachedSnapshot{}, inflight: map[string]*snapshotCall{},
-		generation: map[string]uint64{},
+		generation: map[string]uint64{}, invalidated: map[string]chan struct{}{},
 	}
 }
 
@@ -119,7 +124,24 @@ func (r *StatusReader) Invalidate(directory string) {
 	r.mu.Lock()
 	delete(r.cache, directory)
 	r.generation[directory]++
+	if changed := r.invalidated[directory]; changed != nil {
+		close(changed)
+		delete(r.invalidated, directory)
+	}
 	r.mu.Unlock()
+}
+
+// Invalidated is closed by the next Invalidate of directory: a Git
+// operation, a file save or a transfer changed it.
+func (r *StatusReader) Invalidated(directory string) <-chan struct{} {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	changed := r.invalidated[directory]
+	if changed == nil {
+		changed = make(chan struct{})
+		r.invalidated[directory] = changed
+	}
+	return changed
 }
 
 func cloneSnapshot(value StatusSnapshot) StatusSnapshot {
@@ -139,7 +161,21 @@ type StatusSnapshot struct {
 	Files      []model.ChangedFile
 	Dirty      bool
 	Conflicted bool
-	Revision   string
+	// Revision changes with anything in the tree; each file's Revision changes
+	// only with that file, and IndexFingerprint only with the staged content.
+	Revision         string
+	IndexFingerprint string
+	// Truncated means the status output hit its bound: Files holds the
+	// records read before it. Displays show them; mutations refuse.
+	Truncated bool
+}
+
+// Complete returns ErrTooManyChanges for a truncated snapshot.
+func (s StatusSnapshot) Complete() error {
+	if s.Truncated {
+		return ErrTooManyChanges
+	}
+	return nil
 }
 
 func ReadStatus(ctx context.Context, runner Runner, directory string) (StatusSnapshot, error) {
@@ -147,22 +183,37 @@ func ReadStatus(ctx context.Context, runner Runner, directory string) (StatusSna
 	if err != nil {
 		return StatusSnapshot{}, err
 	}
+	output := result.Output
 	if result.Truncated {
-		return StatusSnapshot{}, ErrTooManyChanges
+		// Keep every complete record; the last one may be cut off.
+		if end := bytes.LastIndexByte(output, 0); end >= 0 {
+			output = output[:end+1]
+		} else {
+			output = nil
+		}
 	}
-	value, err := ParseStatus(result.Output)
-	if err != nil {
+	value, err := ParseStatus(output)
+	if err != nil && !result.Truncated {
 		return StatusSnapshot{}, err
 	}
-	value.Revision = revision(directory, result.Output, value.Files)
+	value.Truncated = result.Truncated
+	if value.Truncated {
+		value.Dirty = true
+	}
+	value.Revision = revision(directory, output, value.Files)
 	return value, nil
 }
 
+// ParseStatus reads porcelain-v2 output. Each file's Revision starts as the
+// digest of its records (HEAD and index object names and modes, XY state);
+// ReadStatus folds in the working-tree file's metadata, which Git does not
+// hash.
 func ParseStatus(raw []byte) (StatusSnapshot, error) {
 	var value StatusSnapshot
+	index := sha256.New()
 	records := zeroFields(raw)
-	for index := 0; index < len(records); index++ {
-		record := records[index]
+	for position := 0; position < len(records); position++ {
+		record := records[position]
 		switch {
 		case strings.HasPrefix(record, "# branch.oid "):
 			value.HeadSHA = strings.TrimPrefix(record, "# branch.oid ")
@@ -184,17 +235,22 @@ func ParseStatus(raw []byte) (StatusSnapshot, error) {
 			}
 		case strings.HasPrefix(record, "1 "):
 			fields := strings.SplitN(record, " ", 9)
-			if len(fields) != 9 {
-				return StatusSnapshot{}, fault.Invalidf("invalid ordinary porcelain-v2 record")
+			if len(fields) != 9 || len(fields[1]) != 2 {
+				return value, fault.Invalidf("invalid ordinary porcelain-v2 record")
 			}
-			value.Files = append(value.Files, changedFile(fields[1], fields[2], fields[8], ""))
+			file := changedFile(fields[1], fields[2], fields[8], "")
+			file.Revision = recordDigest(record)
+			indexEntry(index, fields[1][:1], fields[4], fields[7], fields[8], "")
+			value.Files = append(value.Files, file)
 		case strings.HasPrefix(record, "2 "):
 			fields := strings.SplitN(record, " ", 10)
-			if len(fields) != 10 || index+1 >= len(records) {
-				return StatusSnapshot{}, fault.Invalidf("invalid renamed porcelain-v2 record")
+			if len(fields) != 10 || position+1 >= len(records) {
+				return value, fault.Invalidf("invalid renamed porcelain-v2 record")
 			}
-			index++
-			file := changedFile(fields[1], fields[2], fields[9], records[index])
+			position++
+			file := changedFile(fields[1], fields[2], fields[9], records[position])
+			file.Revision = recordDigest(record, records[position])
+			indexEntry(index, fields[1][:1], fields[4], fields[7], fields[9], records[position])
 			if strings.HasPrefix(fields[8], "R") {
 				if file.Staged {
 					file.IndexStatus = "renamed"
@@ -214,22 +270,27 @@ func ParseStatus(raw []byte) (StatusSnapshot, error) {
 		case strings.HasPrefix(record, "u "):
 			fields := strings.SplitN(record, " ", 11)
 			if len(fields) != 11 {
-				return StatusSnapshot{}, fault.Invalidf("invalid unmerged porcelain-v2 record")
+				return value, fault.Invalidf("invalid unmerged porcelain-v2 record")
 			}
 			file := changedFile(fields[1], fields[2], fields[10], "")
 			file.Conflicted, file.Status = true, "conflicted"
+			file.Revision = recordDigest(record)
+			_, _ = index.Write([]byte(record))
+			_, _ = index.Write([]byte{0})
 			value.Files = append(value.Files, file)
 		case strings.HasPrefix(record, "? "):
 			filePath := strings.TrimPrefix(record, "? ")
 			value.Files = append(value.Files, model.ChangedFile{
-				Path: filePath, Status: "untracked", WorktreeStatus: "untracked", Unstaged: true,
+				Path: filePath, Status: "untracked", WorktreeStatus: "untracked", Unstaged: true, Revision: recordDigest(record),
 			})
 		case strings.HasPrefix(record, "! "):
 			// Ignored files are not requested, but tolerate them if Git emits one.
 		default:
-			return StatusSnapshot{}, fault.Invalidf("unknown porcelain-v2 record %q", record)
+			return value, fault.Invalidf("unknown porcelain-v2 record %q", record)
 		}
 	}
+	_, _ = index.Write([]byte(value.HeadSHA))
+	value.IndexFingerprint = hex.EncodeToString(index.Sum(nil)[:16])
 	sort.SliceStable(value.Files, func(i, j int) bool { return value.Files[i].Path < value.Files[j].Path })
 	value.Dirty = len(value.Files) > 0
 	for _, file := range value.Files {
@@ -283,28 +344,56 @@ func statusName(value byte) string {
 	}
 }
 
+// revision finishes each file's revision with the working-tree metadata Git
+// does not hash (an unstaged edit keeps its status line until the content is
+// staged) and returns the whole tree's revision.
 func revision(root string, raw []byte, files []model.ChangedFile) string {
 	hash := sha256.New()
 	_, _ = hash.Write(raw)
-	for _, file := range files {
-		if !file.Unstaged {
-			continue
+	for index := range files {
+		file := &files[index]
+		if file.Unstaged {
+			file.Revision = worktreeRevision(root, *file)
 		}
 		_, _ = hash.Write([]byte{0})
-		_, _ = hash.Write([]byte(file.Path))
-		info, err := os.Lstat(filepath.Join(root, filepath.FromSlash(file.Path)))
-		if err != nil {
-			_, _ = hash.Write([]byte("missing"))
-			continue
-		}
+		_, _ = hash.Write([]byte(file.Revision))
+	}
+	return hex.EncodeToString(hash.Sum(nil)[:16])
+}
+
+func worktreeRevision(root string, file model.ChangedFile) string {
+	hash := sha256.New()
+	_, _ = hash.Write([]byte(file.Revision))
+	_, _ = hash.Write([]byte{0})
+	full := filepath.Join(root, filepath.FromSlash(file.Path))
+	info, err := os.Lstat(full)
+	if err != nil {
+		_, _ = hash.Write([]byte("missing"))
+	} else {
 		_, _ = fmt.Fprintf(hash, "%d:%d:%d", info.Mode(), info.Size(), info.ModTime().UnixNano())
 		if info.Mode()&os.ModeSymlink != 0 {
-			if target, readErr := os.Readlink(filepath.Join(root, filepath.FromSlash(file.Path))); readErr == nil {
+			if target, readErr := os.Readlink(full); readErr == nil {
 				_, _ = hash.Write([]byte(target))
 			}
 		}
 	}
 	return hex.EncodeToString(hash.Sum(nil)[:16])
+}
+
+func recordDigest(records ...string) string {
+	hash := sha256.New()
+	for _, record := range records {
+		_, _ = hash.Write([]byte(record))
+		_, _ = hash.Write([]byte{0})
+	}
+	return hex.EncodeToString(hash.Sum(nil)[:16])
+}
+
+// indexEntry adds one path's index side (X state, mode and object name) to
+// the index fingerprint. Unchanged paths match HEAD, which the fingerprint
+// also covers.
+func indexEntry(hash io.Writer, state, mode, object, filePath, previousPath string) {
+	_, _ = fmt.Fprintf(hash, "%s %s %s %s\x00%s\x00", state, mode, object, filePath, previousPath)
 }
 
 func zeroFields(raw []byte) []string {

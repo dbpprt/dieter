@@ -71,11 +71,10 @@ internal fun ConversationScreen(store: MobileStore, cardId: String, openUrl: (St
                     .joinToString(" · "),
             actions =
                 listOfNotNull(
-                    if (!chat)
-                        ChromeAction("pane-changes", "Changes", Glyph.CHANGES) {
-                            store.push(MobileRoute.Pane(cardId, CardPane.CHANGES))
-                        }
-                    else null,
+                    // Chats and cards alike work in a worktree or the project directory.
+                    ChromeAction("pane-changes", "Changes", Glyph.CHANGES) {
+                        store.push(MobileRoute.Pane(cardId, CardPane.CHANGES))
+                    },
                     ChromeAction(
                         "conversation-menu",
                         "Conversation actions",
@@ -114,20 +113,17 @@ private fun conversationMenu(
     edit: () -> Unit,
 ): List<MenuSection> {
     val card = view.card
-    val chat = card?.scope == "chat"
     val panes =
-        CardPane.entries
-            .filter { !(chat && it == CardPane.CHANGES) }
-            .map { pane ->
-                ChromeAction(
-                    "pane-${pane.name.lowercase()}",
-                    if (pane == CardPane.SUBAGENTS && subagents > 0) "${pane.title} ($subagents)"
-                    else pane.title,
-                    pane.glyph,
-                ) {
-                    store.push(MobileRoute.Pane(cardId, pane))
-                }
+        CardPane.entries.map { pane ->
+            ChromeAction(
+                "pane-${pane.name.lowercase()}",
+                if (pane == CardPane.SUBAGENTS && subagents > 0) "${pane.title} ($subagents)"
+                else pane.title,
+                pane.glyph,
+            ) {
+                store.push(MobileRoute.Pane(cardId, pane))
             }
+        }
     val agent = buildList {
         if (view.state?.can_start == true)
             add(ChromeAction("start", "Start agent", Glyph.PLAY) { store.conversation.start() })

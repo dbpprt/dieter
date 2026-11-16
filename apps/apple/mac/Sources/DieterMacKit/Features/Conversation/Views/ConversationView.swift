@@ -131,15 +131,8 @@ private struct ConversationChatColumn: View {
                 } else if !workspacePresented, tab == "Subagents" {
                     SubagentsView(background: .clear)
                 } else if !workspacePresented, tab == "Changes" {
-                    let card = context.shownCard
-                    if ConversationWorkspaceMode.projectMode(
-                        card?.workspaceMode.isEmpty == false
-                            ? card?.workspaceMode ?? "" : card?.workspace.mode ?? "project") == .project
-                    {
-                        ProjectDirectoryChangesRedirect()
-                    } else {
-                        WorkspaceChangesView(model: context.worktreeChanges, background: .clear)
-                    }
+                    ConversationChangesView(
+                        model: context.worktreeChanges, projectName: context.shownProjectName, background: .clear)
                 } else {
                     ConversationTimeline(background: .clear)
                         .id(context.selectedCardID ?? context.selectedChatID ?? "")

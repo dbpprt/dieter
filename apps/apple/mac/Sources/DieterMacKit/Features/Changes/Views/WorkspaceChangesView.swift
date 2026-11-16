@@ -817,6 +817,19 @@ private struct WorkspaceReviewFooter: View {
                 Text(
                     "· \(SharedRules.shared.bytes(count: workspace.sizeBytes))")
             }
+            if !model.activity.isEmpty {
+                // A state, not an error: the list keeps updating while the agent works.
+                Label(model.activity, systemImage: "person.crop.circle.badge.clock")
+                    .foregroundStyle(DieterTheme.amber).lineLimit(1)
+                    .help(model.blockedReason)
+                    .accessibilityIdentifier("review.activity").e2eTarget("review.activity")
+            }
+            if model.outdatedComments > 0 {
+                Text(
+                    "· \(SharedRules.shared.count(count: Int32(clamping: model.outdatedComments), noun: "outdated comment", plural: ""))"
+                )
+                .help("Comments written on an earlier version of this file")
+            }
             Spacer()
             Button {
                 NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: workspace.path)

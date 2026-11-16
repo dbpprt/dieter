@@ -22,6 +22,9 @@ service GitService {
   rpc GetGitOperation(GitOperationRef) returns (GitOperation);
   rpc WatchGitOperation(WatchGitOperationRequest) returns (stream GitOperationFrame);
   rpc CancelGitOperation(GitOperationRef) returns (GitOperation);
+  // Streams a conversation's or checkout's changes: the full changeset first,
+  // then a frame whenever its revision or activity changes, plus heartbeats.
+  rpc WatchChangeset(WatchChangesetRequest) returns (stream ChangesetFrame);
 }
 
 message ConversationRef {
@@ -82,6 +85,9 @@ message ChangedFile {
   int32 staged_deletions = 14;
   int32 unstaged_additions = 15;
   int32 unstaged_deletions = 16;
+  // Changes whenever this file's HEAD, index or working-tree state changes,
+  // and only then. File-scoped operations use it as their precondition.
+  string revision = 17;
 }
 
 message WorkspaceCommit {
@@ -96,8 +102,19 @@ message WorkspaceCommit {
   int32 changed_files = 9;
 }
 
+// What works in a changeset's directory right now. An active agent is a
+// state to show, never a reason to refuse a read.
+message ChangesetActivity {
+  bool agent_active = 1;
+  repeated string agent_card_ids = 2;
+}
+
 message Changeset {
+  reserved 10;
+  reserved "volatile";
   string card_id = 1;
+  // Detects any change in the directory. It guards only operations that act
+  // on the whole tree; reads never need it.
   string revision = 2;
   string comparison_sha = 3;
   string head_sha = 4;
@@ -106,7 +123,6 @@ message Changeset {
   repeated WorkspaceCommit commits = 7;
   int32 additions = 8;
   int32 deletions = 9;
-  bool volatile = 10;
   string generated_at = 11;
   string project_id = 12;
   string branch = 13;
@@ -116,6 +132,17 @@ message Changeset {
   bool dirty = 17;
   bool conflicted = 18;
   string current_operation_id = 19;
+  // "worktree" for a conversation's own worktree, "checkout" for a project
+  // checkout, including one a project-directory conversation works in.
+  string scope = 20;
+  string checkout_id = 21;
+  // Changes whenever the staged content changes; a commit of the index uses
+  // it as its precondition.
+  string index_fingerprint = 22;
+  ChangesetActivity activity = 23;
+  // The file list stops at a bound; total_files counts every changed file.
+  bool files_truncated = 24;
+  int32 total_files = 25;
 }
 
 message GetChangesetRequest {
@@ -125,17 +152,21 @@ message GetChangesetRequest {
 }
 
 message GetDiffRequest {
+  reserved 4;
+  reserved "expected_revision";
   string checkout_id = 50;
   string card_id = 1;
   string path = 2;
   string commit_sha = 3;
-  string expected_revision = 4;
   int64 offset = 5;
   int32 limit = 6;
   string project_id = 7;
   // combined compares HEAD to the working tree, staged compares HEAD to the
   // index, and unstaged compares the index to the working tree.
   string section = 8;
+  // The file revision of the pages already read; a later page comes from the
+  // same rendering, or the diff restarts when the file changed.
+  string file_revision = 9;
 }
 
 message FileDiff {
@@ -150,6 +181,11 @@ message FileDiff {
   int64 total_bytes = 9;
   string project_id = 10;
   string section = 11;
+  // The file's revision this patch shows.
+  string file_revision = 12;
+  // The file changed since the earlier pages; this is the first page of its
+  // new diff.
+  bool restarted = 13;
 }
 
 message ChangeComment {
@@ -160,7 +196,9 @@ message ChangeComment {
   int32 line = 5;
   string body = 6;
   string author = 7;
-  string revision = 8;
+  // The revision of the file the comment was written against; the comment is
+  // outdated once the file changes.
+  string file_revision = 8;
   string commit_sha = 9;
   string created_at = 10;
   string updated_at = 11;
@@ -173,13 +211,14 @@ message AddChangeCommentRequest {
   int32 line = 4;
   string body = 5;
   string author = 6;
-  string revision = 7;
+  string file_revision = 7;
   string commit_sha = 8;
 }
 
 message ListChangeCommentsRequest {
+  reserved 2;
+  reserved "revision";
   string card_id = 1;
-  string revision = 2;
 }
 
 message ChangeCommentsResponse {
@@ -232,15 +271,25 @@ message GitOperation {
   string started_at = 17;
   string finished_at = 18;
   string updated_at = 19;
+  map<string, string> expected_files = 20;
+  string expected_index = 21;
+  // The project-directory conversation that started this checkout operation.
+  string requested_by_card_id = 22;
 }
 
 message StartGitOperationRequest {
   string checkout_id = 50;
   string card_id = 1;
   string kind = 2;
+  // Guards operations on the whole tree (stage_all commits, merges, cleanup).
   string expected_revision = 3;
   map<string, string> parameters = 4;
   string project_id = 5;
+  // Path to ChangedFile.revision for exactly the files stage, unstage and
+  // discard_changes act on; they fail only when one of these files changed.
+  map<string, string> expected_files = 6;
+  // Changeset.index_fingerprint for a commit of the staged changes.
+  string expected_index = 7;
 }
 
 message GitOperationRef {
@@ -263,4 +312,16 @@ message GitOperationFrame {
   GitOperation operation = 1;
   repeated GitOperationLogEntry logs = 2;
   bool heartbeat = 3;
+}
+
+message WatchChangesetRequest {
+  string checkout_id = 50;
+  string card_id = 1;
+  string project_id = 2;
+  int32 heartbeat_ms = 3;
+}
+
+message ChangesetFrame {
+  Changeset changeset = 1;
+  bool heartbeat = 2;
 }

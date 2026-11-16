@@ -35,6 +35,11 @@ final class ConversationContext {
     var selectedCard: Dieter_V1_Card? { card() }
     /// The card the conversation shows: the selected one, else the loaded detail's.
     var shownCard: Dieter_V1_Card? { selectedCard ?? selectedDetail?.card }
+    /// The shown conversation's project name, for its Changes; "Project" until known.
+    var shownProjectName: String {
+        let name = selectedDetail?.project.name ?? ""
+        return name.isEmpty ? "Project" : name
+    }
     var selectedProjectID: String { projectID() }
     var harnessCatalog: Dieter_V1_HarnessCatalog { catalog() }
     var workspaceToast: WorkspaceToast? { worktreeChanges.workspaceToast }
@@ -107,8 +112,6 @@ final class ConversationContext {
     func loadEarlierMessages() async -> Bool { await onLoadEarlierMessages() }
     @ObservationIgnored var onOpenConversation: (String, Bool) async -> Void = { _, _ in }
     func openConversation(cardID: String, chat: Bool) async { await onOpenConversation(cardID, chat) }
-    @ObservationIgnored var onOpenProjectChanges: (String) async -> Void = { _ in }
-    func openProjectChanges(_ id: String) async { await onOpenProjectChanges(id) }
     @ObservationIgnored var onOpenWorkspaceFiles: (Dieter_V1_Card) async -> Void = { _ in }
     func openWorkspaceFiles(card: Dieter_V1_Card) async { await onOpenWorkspaceFiles(card) }
     @ObservationIgnored var onOpenWorkspaceTerminal: (Dieter_V1_Card) async -> Void = { _ in }

@@ -30,9 +30,16 @@ internal constructor(
         }
         context.observeAlways(Slice.SLICE_REVIEW, MobileStore.REVIEW_SCOPE) {
             it.review?.let { value ->
-                slice.value =
-                    if (value.diff_unchanged) value.copy(display_rows = slice.value.display_rows)
-                    else value
+                val previous = slice.value
+                val rows = if (value.diff_unchanged) previous.display_rows else value.display_rows
+                // A project-directory conversation's checkout leaves out unchanged rows too.
+                val checkout =
+                    value.checkout?.let { next ->
+                        if (next.diff_unchanged)
+                            next.copy(display_rows = previous.checkout?.display_rows.orEmpty())
+                        else next
+                    }
+                slice.value = value.copy(display_rows = rows, checkout = checkout)
             }
         }
     }

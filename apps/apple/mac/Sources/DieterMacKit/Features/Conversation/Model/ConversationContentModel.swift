@@ -39,10 +39,10 @@ final class ConversationContentTab: Identifiable {
     let tree = ConversationFileTreeModel()
     let browser = ConversationBrowserModel()
     let terminals = TerminalsModel()
+    /// The conversation's Changes; the core says whether they live in a worktree
+    /// or in the project checkout it shares (`review.checkout`).
     let review = WorktreeChangesModel()
-    let projectReview = ProjectChangesModel()
     let processes = ConversationProcessesModel()
-    var usesProjectReview = false
     var transportRevision = 0
     var transportsLive = false
     var selection: ConversationContentLink?
@@ -437,7 +437,7 @@ final class ConversationContentModel {
         tab.processes.active = false
         tab.files.cancelContentRead()
         tab.review.resetWorkspaceSurface()
-        tab.projectReview.suspend()
+        tab.review.checkout.suspend()
         let index = tabs.firstIndex { $0.id == id } ?? 0
         tabs.removeAll { $0.id == id }
         if selectedTabID == id { selectedTabID = tabs.isEmpty ? nil : tabs[min(index, tabs.count - 1)].id }
@@ -482,7 +482,7 @@ final class ConversationContentModel {
             tab.terminals.isLive = false
             tab.processes.active = false
             tab.review.active = false
-            tab.projectReview.disconnect()
+            tab.review.checkout.disconnect()
             tab.transportsLive = false
             tab.transportRevision += 1
         }
@@ -523,7 +523,7 @@ final class ConversationContentModel {
                 tab.files.isLive = false; tab.terminals.active = false; tab.transportsLive = false
                 tab.terminals.isLive = false
                 tab.processes.active = false
-                tab.projectReview.disconnect()
+                tab.review.checkout.disconnect()
                 tab.review.active = false
                 tab.error =
                     "The conversation workspace moved. Close this tab and reopen the file to use its new location."
@@ -561,12 +561,6 @@ final class ConversationContentModel {
         tab.error = nil
         tab.transportsLive = true
         tab.transportRevision += 1
-        tab.usesProjectReview = ConversationWorkspaceMode.projectMode(scope.workspaceMode) == .project
-        if let core {
-            tab.projectReview.bind(
-                projectID: scope.target.projectID, checkoutID: scope.card?.checkoutID ?? "",
-                daemonID: scope.target.daemonID, core: core)
-        }
         tab.terminals.active = false
         tab.files.bind(target: scope.target, core: core)
         tab.files.isLive = true; tab.files.fileScopeCardID = scope.target.conversationID
@@ -637,7 +631,7 @@ final class ConversationContentModel {
             tab.processes.active = false
             tab.files.cancelContentRead()
             tab.review.resetWorkspaceSurface()
-            tab.projectReview.suspend()
+            tab.review.checkout.suspend()
         }
         tabs = []; selectedTabID = nil
     }

@@ -176,6 +176,19 @@ public enum Dieter_V1_GitService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "WatchChangeset" metadata.
+        public enum WatchChangeset: Sendable {
+            /// Request type for "WatchChangeset".
+            public typealias Input = Dieter_V1_WatchChangesetRequest
+            /// Response type for "WatchChangeset".
+            public typealias Output = Dieter_V1_ChangesetFrame
+            /// Descriptor for "WatchChangeset".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.GitService"),
+                method: "WatchChangeset",
+                type: .serverStreaming
+            )
+        }
         /// Descriptors for all methods in the "dieter.v1.GitService" service.
         public static let descriptors: [GRPCCore.MethodDescriptor] = [
             GetWorkspace.descriptor,
@@ -189,7 +202,8 @@ public enum Dieter_V1_GitService: Sendable {
             StartGitOperation.descriptor,
             GetGitOperation.descriptor,
             WatchGitOperation.descriptor,
-            CancelGitOperation.descriptor
+            CancelGitOperation.descriptor,
+            WatchChangeset.descriptor
         ]
     }
 }
@@ -439,6 +453,30 @@ extension Dieter_V1_GitService {
             deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_GitOperation>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_GitOperation>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "WatchChangeset" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Streams a conversation's or checkout's changes: the full changeset first,
+        /// > then a frame whenever its revision or activity changes, plus heartbeats.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_WatchChangesetRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_WatchChangesetRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ChangesetFrame` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func watchChangeset<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_WatchChangesetRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_WatchChangesetRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ChangesetFrame>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_ChangesetFrame>) async throws -> Result
         ) async throws -> Result where Result: Sendable
     }
 
@@ -819,6 +857,39 @@ extension Dieter_V1_GitService {
                 onResponse: handleResponse
             )
         }
+
+        /// Call the "WatchChangeset" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Streams a conversation's or checkout's changes: the full changeset first,
+        /// > then a frame whenever its revision or activity changes, plus heartbeats.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_WatchChangesetRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_WatchChangesetRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ChangesetFrame` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func watchChangeset<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_WatchChangesetRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_WatchChangesetRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ChangesetFrame>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_ChangesetFrame>) async throws -> Result
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.serverStreaming(
+                request: request,
+                descriptor: Dieter_V1_GitService.Method.WatchChangeset.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
     }
 }
 
@@ -1118,6 +1189,34 @@ extension Dieter_V1_GitService.ClientProtocol {
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_GitOperationRef>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_GitOperation>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "WatchChangeset" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Streams a conversation's or checkout's changes: the full changeset first,
+    /// > then a frame whenever its revision or activity changes, plus heartbeats.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_WatchChangesetRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func watchChangeset<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_WatchChangesetRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_ChangesetFrame>) async throws -> Result
+    ) async throws -> Result where Result: Sendable {
+        try await self.watchChangeset(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_WatchChangesetRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_ChangesetFrame>(),
             options: options,
             onResponse: handleResponse
         )
@@ -1467,6 +1566,38 @@ extension Dieter_V1_GitService.ClientProtocol {
             metadata: metadata
         )
         return try await self.cancelGitOperation(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "WatchChangeset" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Streams a conversation's or checkout's changes: the full changeset first,
+    /// > then a frame whenever its revision or activity changes, plus heartbeats.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func watchChangeset<Result>(
+        _ message: Dieter_V1_WatchChangesetRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_ChangesetFrame>) async throws -> Result
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_WatchChangesetRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.watchChangeset(
             request: request,
             options: options,
             onResponse: handleResponse

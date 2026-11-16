@@ -543,8 +543,8 @@ func (s *Store) AddChangeComment(value model.ChangeComment) (model.ChangeComment
 	}
 	value.CardID = card.ID
 	value.Body, value.Path = strings.TrimSpace(value.Body), strings.TrimSpace(value.Path)
-	if value.Body == "" || value.Path == "" || strings.TrimSpace(value.ChangesetRevision) == "" {
-		return model.ChangeComment{}, fault.New(fault.Invalid, "changeset revision, path, and body are required")
+	if value.Body == "" || value.Path == "" || strings.TrimSpace(value.FileRevision) == "" {
+		return model.ChangeComment{}, fault.New(fault.Invalid, "file revision, path, and body are required")
 	}
 	if value.ID == "" {
 		value.ID = home.NewID("change_comment_")

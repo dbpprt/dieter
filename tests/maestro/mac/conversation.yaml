@@ -89,6 +89,20 @@ tags: [smoke]
       id: conversation.refreshing
     timeout: 30000
 - takeScreenshot: mac-conversation-returned
+# The seeded card works in the project directory: its Changes show the shared
+# checkout in place, not a redirect to the project.
+- tapOn:
+    id: conversation.content.fixed.changes
+- extendedWaitUntil:
+    visible:
+      id: project-changes.status
+    timeout: 30000
+- assertVisible:
+    id: project-changes.shared
+- assertNotVisible: "Changes belong to the project"
+- takeScreenshot: mac-conversation-changes
+- tapOn:
+    id: conversation-tab-conversation
 - tapOn:
     id: sidebar.inbox
 - extendedWaitUntil:

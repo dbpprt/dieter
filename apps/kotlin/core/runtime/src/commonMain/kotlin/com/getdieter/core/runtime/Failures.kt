@@ -97,11 +97,20 @@ object Failures {
             is CoreException -> error.message.orEmpty()
             is GrpcException -> {
                 val detail = scrub(error.grpcMessage.orEmpty())
-                if (detail.isEmpty()) "gRPC ${error.grpcStatus.name}"
-                else "gRPC ${error.grpcStatus.name}: $detail"
+                when {
+                    detail.isEmpty() -> "gRPC ${error.grpcStatus.name}"
+                    // The daemon words these refusals for people ("an agent is working in this
+                    // checkout…"); the status code adds nothing they can act on.
+                    error.grpcStatus in humanStatuses ->
+                        detail.replaceFirstChar { it.uppercaseChar() }
+                    else -> "gRPC ${error.grpcStatus.name}: $detail"
+                }
             }
             else -> scrub(error.message ?: error.toString())
         }
+
+    private val humanStatuses =
+        setOf(GrpcStatus.FAILED_PRECONDITION, GrpcStatus.ABORTED, GrpcStatus.INVALID_ARGUMENT)
 
     fun scrub(value: String): String {
         var result =

@@ -15,6 +15,7 @@ import com.getdieter.api.v1.ListChangeCommentsRequest
 import com.getdieter.api.v1.SCMCapabilities
 import com.getdieter.api.v1.StartGitOperationRequest
 import com.getdieter.api.v1.UpdateConversationWorkspaceRequest
+import com.getdieter.api.v1.WatchChangesetRequest
 import com.getdieter.api.v1.WatchGitOperationRequest
 import com.getdieter.api.v1.Workspace
 import com.getdieter.core.board.BoardOperations
@@ -31,7 +32,6 @@ import com.squareup.wire.GrpcException
 import com.squareup.wire.GrpcStatus
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
@@ -48,6 +48,12 @@ enum class MergeStep {
     COMMIT,
     MERGE,
     CLEANUP,
+}
+
+/** Where a conversation's changes live: its own worktree, or a project checkout it shares. */
+enum class ReviewScope(val wire: String) {
+    WORKTREE("worktree"),
+    CHECKOUT("checkout"),
 }
 
 enum class MergeStrategy(val wire: String, val title: String) {
@@ -83,7 +89,35 @@ data class WorkspaceReviewView(
     val split: Boolean = false,
     /** [diffLines] laid out for [split]; a new instance whenever the lines or the layout change. */
     val layout: DiffLayout = DiffLayout.EMPTY,
+    /**
+     * Null until the daemon says; with [ReviewScope.CHECKOUT] the review's checkout surface shows
+     * the changes and [changeset] stays empty.
+     */
+    val scope: ReviewScope? = null,
 ) {
+    /** Comments written against the current version of their file; the others are outdated. */
+    val currentComments: List<ChangeComment>
+        get() = comments.filter {
+            it.file_revision.isNotEmpty() &&
+                it.file_revision == ProjectChangesRules.revision(changeset, it.path)
+        }
+
+    /** Comments on the selected file written against an earlier version of it. */
+    val outdatedComments: Int
+        get() =
+            selectedPath
+                ?.takeIf { selectedCommit == null }
+                ?.let { path ->
+                    val revision = ProjectChangesRules.revision(changeset, path)
+                    comments.count { it.path == path && it.file_revision != revision }
+                } ?: 0
+
+    /** "Agent working · changes update live" while the conversation's agent works. */
+    val activity: String
+        get() =
+            if (changeset?.activity?.agent_active == true) ProjectChangesRules.AGENT_ACTIVITY
+            else ""
+
     /**
      * An operation runs or a start is unsettled; one stopped on a conflict counts as [conflicted]
      * instead.
@@ -138,9 +172,11 @@ data class WorkspaceReviewView(
 
 /**
  * The review surface of one conversation's workspace: changes, diffs, comments, Git operations, and
- * the merge flow. Runs on the machine that owns the conversation. Start is never retried
- * automatically: it has no idempotency key, so an ambiguous failure is reconciled by refreshing.
- * Confined to the core dispatcher.
+ * the merge flow. Runs on the machine that owns the conversation. A project-directory conversation
+ * works in a shared checkout: the daemon says so ([ReviewScope.CHECKOUT]) and [checkout] shows its
+ * changes, so no client decides by mode. While active it follows the daemon's changeset stream;
+ * nothing polls. Start is never retried automatically: it has no idempotency key, so an ambiguous
+ * failure is reconciled by refreshing. Confined to the core dispatcher.
  */
 class WorkspaceReview(
     private val sessions: MachineSessions,
@@ -150,6 +186,10 @@ class WorkspaceReview(
 ) {
     private val mutableView = MutableStateFlow(WorkspaceReviewView())
     val view: StateFlow<WorkspaceReviewView> = mutableView.asStateFlow()
+
+    /** The checkout of a project-directory conversation, bound once the daemon reports it. */
+    val checkout = ProjectChanges(sessions, store, scope)
+    private var active = false
     private var binding = 0L
     private var diffRequest = 0L
     private var selectionCleared = false
@@ -169,6 +209,7 @@ class WorkspaceReview(
         watcher?.cancel()
         watchedId = null
         cursor = 0
+        checkout.stop()
         mutableView.value =
             WorkspaceReviewView(
                 cardId = cardId,
@@ -189,23 +230,134 @@ class WorkspaceReview(
     /** The reviewed card as the workspace shows it, when known. */
     fun card(): Card? = view.value.cardId?.let { store.state.value.card(it) }
 
-    /** Stops refreshing and following operations; nothing is shown. */
+    /** Stops following changes and operations; nothing is shown. */
     fun stop() {
         setActive(false)
         bind(null, null)
+        checkout.stop()
     }
 
-    /** Visible and foregrounded: refresh every 5 s, including while idle. */
+    /**
+     * Visible and foregrounded: read the workspace once, then follow its changeset stream (a
+     * worktree), or start the checkout's ([checkout], a project-directory conversation). The view
+     * that shows the checkout stops it ([ReviewCommand.checkout]'s `active`), so switching between
+     * the two never races one view's stop against the other's start.
+     */
     fun setActive(active: Boolean) {
+        this.active = active
         poller?.cancel()
-        if (!active) return
-        val bound = binding
-        poller = scope.launch {
-            while (bound == binding) {
-                runCatching { refresh() }.onFailure { if (it is CancellationException) throw it }
-                delay(REFRESH)
-            }
+        poller = null
+        if (!active || view.value.cardId == null) return
+        if (view.value.scope == ReviewScope.CHECKOUT) {
+            checkout.setActive(true)
+            return
         }
+        val bound = binding
+        poller = scope.launch { follow(bound) }
+    }
+
+    private suspend fun follow(bound: Long) {
+        var attempt = 0
+        while (owns(bound)) {
+            try {
+                if (view.value.workspace == null || view.value.scope == null) refresh()
+                if (view.value.scope == ReviewScope.CHECKOUT) return
+                if (view.value.scope != ReviewScope.WORKTREE) {
+                    delay(Backoff.STREAM.delay(attempt++))
+                    continue
+                }
+                val (cardId, daemonId) = target()
+                coroutineScope {
+                    sessions.call(daemonId) { client ->
+                        val call = client.WatchChangeset()
+                        val frames =
+                            call.executeIn(
+                                this,
+                                WatchChangesetRequest(
+                                    card_id = cardId,
+                                    heartbeat_ms = HEARTBEAT_MS,
+                                ),
+                            )
+                        try {
+                            for (frame in frames) {
+                                val changes = frame.changeset ?: continue
+                                attempt = 0
+                                if (!owns(bound)) break
+                                applyFrame(changes, bound)
+                                if (view.value.scope == ReviewScope.CHECKOUT) break
+                            }
+                        } finally {
+                            call.cancel()
+                        }
+                    }
+                }
+                if (view.value.scope == ReviewScope.CHECKOUT) return
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                if (owns(bound)) mutableView.update { it.copy(error = Failures.message(error)) }
+                if (!Failures.isRetryableRead(error)) return
+            }
+            delay(Backoff.STREAM.delay(attempt++))
+        }
+    }
+
+    /**
+     * Applies one streamed changeset; the workspace is reread only when what it reports (branch,
+     * HEAD, operation, conflicts, drift) could have changed.
+     */
+    private suspend fun applyFrame(changeset: Changeset, bound: Long) {
+        if (changeset.scope == ReviewScope.CHECKOUT.wire) {
+            enterCheckout(changeset)
+            return
+        }
+        val previous = view.value
+        val last = previous.changeset
+        val stale =
+            previous.workspace == null ||
+                last == null ||
+                last.head_sha != changeset.head_sha ||
+                last.branch != changeset.branch ||
+                last.current_operation_id != changeset.current_operation_id ||
+                last.conflicted != changeset.conflicted ||
+                last.dirty != changeset.dirty ||
+                last.ahead != changeset.ahead ||
+                last.behind != changeset.behind
+        val (cardId, daemonId) = target()
+        val workspace =
+            if (stale)
+                sessions.call(daemonId, Deadlines.READ) {
+                    it.GetWorkspace().execute(ConversationRef(card_id = cardId))
+                }
+            else previous.workspace
+        if (!owns(bound)) return
+        show(workspace, changeset, previous.comments, previous.scm)
+    }
+
+    /** The daemon reports a shared checkout: [checkout] shows it from now on. */
+    private fun enterCheckout(changeset: Changeset) {
+        val daemonId = view.value.daemonId ?: return
+        checkout.bind(
+            changeset.project_id.ifEmpty { null },
+            changeset.checkout_id.ifEmpty { null },
+            daemonId,
+            selectFirst = true,
+            shared = true,
+        )
+        mutableView.update {
+            it.copy(
+                    scope = ReviewScope.CHECKOUT,
+                    changeset = null,
+                    diff = null,
+                    selectedPath = null,
+                    selectedCommit = null,
+                    loading = false,
+                    error = null,
+                    needsReconciliation = false,
+                )
+                .withDiffLines(emptyList())
+        }
+        if (active) checkout.setActive(true)
     }
 
     private fun owns(bound: Long) = bound == binding
@@ -267,28 +419,21 @@ class WorkspaceReview(
                     workspace.await() to changeset.await()
                 }
             if (!owns(bound)) return
+            if (changeset.scope == ReviewScope.CHECKOUT.wire) {
+                mutableView.update { it.copy(workspace = workspace) }
+                enterCheckout(changeset)
+                return
+            }
             val previous = view.value
-            val revisionChanged = previous.changeset?.revision != changeset.revision
-            val comments =
-                if (revisionChanged) {
-                    runCatching {
-                            sessions
-                                .call(daemonId, Deadlines.READ) {
-                                    it.ListChangeComments()
-                                        .execute(
-                                            ListChangeCommentsRequest(
-                                                card_id = cardId,
-                                                revision = changeset.revision,
-                                            )
-                                        )
-                                }
-                                .comments
-                        }
-                        .onFailure { if (it is CancellationException) throw it }
-                        .getOrDefault(emptyList())
-                } else {
-                    previous.comments
-                }
+            val comments = runCatching {
+                sessions
+                    .call(daemonId, Deadlines.READ) {
+                        it.ListChangeComments().execute(ListChangeCommentsRequest(card_id = cardId))
+                    }
+                    .comments
+            }
+                .onFailure { if (it is CancellationException) throw it }
+                .getOrDefault(previous.comments)
             val scm =
                 previous.scm
                     ?: runCatching {
@@ -299,25 +444,7 @@ class WorkspaceReview(
                         .onFailure { if (it is CancellationException) throw it }
                         .getOrNull()
             if (!owns(bound)) return
-            mutableView.update {
-                it.copy(
-                    workspace = workspace,
-                    changeset = changeset,
-                    comments = comments,
-                    scm = scm,
-                    loading = false,
-                    error = null,
-                    needsReconciliation = false,
-                    surfaceRemoved = false,
-                )
-            }
-            resolveSelection(revisionChanged)
-            GitOperations.reconciliationId(
-                    workspace.current_operation_id,
-                    view.value.operation,
-                    cardId,
-                )
-                ?.let { resume(it) }
+            show(workspace, changeset, comments, scm)
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
             if (owns(bound))
@@ -325,7 +452,40 @@ class WorkspaceReview(
         }
     }
 
-    private suspend fun resolveSelection(revisionChanged: Boolean) {
+    /** Shows a worktree's workspace and changeset and follows the selection and operation. */
+    private suspend fun show(
+        workspace: Workspace,
+        changeset: Changeset,
+        comments: List<ChangeComment>,
+        scm: SCMCapabilities?,
+    ) {
+        val (cardId, _) = target()
+        // The conversation left the shared checkout (its mode changed before the first turn).
+        val leftCheckout = view.value.scope == ReviewScope.CHECKOUT
+        if (leftCheckout) checkout.stop()
+        mutableView.update {
+            it.copy(
+                workspace = workspace,
+                changeset = changeset,
+                comments = comments,
+                scm = scm,
+                loading = false,
+                error = null,
+                needsReconciliation = false,
+                surfaceRemoved = false,
+                scope = ReviewScope.WORKTREE,
+            )
+        }
+        resolveSelection()
+        GitOperations.reconciliationId(workspace.current_operation_id, view.value.operation, cardId)
+            ?.let { resume(it) }
+        if (leftCheckout && active && poller?.isActive != true) {
+            val bound = binding
+            poller = scope.launch { follow(bound) }
+        }
+    }
+
+    private suspend fun resolveSelection() {
         // Back keeps the file list open across periodic refreshes. A new
         // binding still opens the first file until the user clears it.
         if (selectionCleared) return
@@ -353,8 +513,12 @@ class WorkspaceReview(
         }
         val moved = nextPath != state.selectedPath || commit != state.selectedCommit
         mutableView.update { it.copy(selectedPath = nextPath, selectedCommit = commit) }
-        if (revisionChanged || moved || state.diff == null)
-            loadDiff(append = false, retryStale = false)
+        // A diff reloads only when its own file changed; commits never change.
+        val fileChanged =
+            commit == null &&
+                state.diff?.file_revision !=
+                    ProjectChangesRules.revision(state.changeset, nextPath.orEmpty())
+        if (moved || state.diff == null || fileChanged) loadDiff(append = false)
     }
 
     /** Shows [path] or a whole [commit]; clearing both returns to the file list. */
@@ -367,7 +531,7 @@ class WorkspaceReview(
                 .withDiffLines(emptyList())
         }
         if (selectionCleared) return
-        loadDiff(append = false, retryStale = true)
+        loadDiff(append = false)
     }
 
     /**
@@ -377,10 +541,10 @@ class WorkspaceReview(
     suspend fun loadMoreDiff() {
         val state = view.value
         if (state.diffLoading || !state.diffMore) return
-        loadDiff(append = true, retryStale = true)
+        loadDiff(append = true)
     }
 
-    private suspend fun loadDiff(append: Boolean, retryStale: Boolean) {
+    private suspend fun loadDiff(append: Boolean) {
         if (selectionCleared) return
         val (cardId, daemonId) = target()
         val state = view.value
@@ -396,19 +560,13 @@ class WorkspaceReview(
                 DiffPages.read(
                     sessions,
                     daemonId,
-                    GetDiffRequest(
-                        card_id = cardId,
-                        path = path,
-                        commit_sha = commit,
-                        expected_revision = changeset.revision,
-                    ),
+                    GetDiffRequest(card_id = cardId, path = path, commit_sha = commit),
                     loaded,
                 )
             val current = view.value
             if (
                 !owns(bound) ||
                     request != diffRequest ||
-                    current.changeset?.revision != changeset.revision ||
                     current.selectedPath.orEmpty() != path ||
                     current.selectedCommit.orEmpty() != commit ||
                     (append && current.diff != loaded)
@@ -421,21 +579,7 @@ class WorkspaceReview(
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
             if (!owns(bound) || request != diffRequest) return
-            mutableView.update { it.copy(diffLoading = false) }
-            if (error is GrpcException && error.grpcStatus == GrpcStatus.ABORTED) {
-                // The workspace changed under the diff; one user-initiated refresh brings the new
-                // revision.
-                if (retryStale && owns(bound)) {
-                    mutableView.update {
-                        it.copy(
-                            error = "The workspace changed while this diff was open. Refreshing…"
-                        )
-                    }
-                    refresh()
-                }
-                return
-            }
-            if (owns(bound)) mutableView.update { it.copy(error = Failures.message(error)) }
+            mutableView.update { it.copy(diffLoading = false, error = Failures.message(error)) }
         }
     }
 
@@ -459,12 +603,11 @@ class WorkspaceReview(
                             line = lineNumber,
                             body = body.trim(),
                             author = author,
-                            revision = changeset.revision,
+                            file_revision = ProjectChangesRules.revision(changeset, path),
                         )
                     )
             }
-        if (owns(bound) && view.value.changeset?.revision == changeset.revision)
-            mutableView.update { it.copy(comments = it.comments + comment) }
+        if (owns(bound)) mutableView.update { it.copy(comments = it.comments + comment) }
         return comment
     }
 
@@ -480,6 +623,7 @@ class WorkspaceReview(
         val (cardId, daemonId) = target()
         if (view.value.submitting) return null
         val bound = binding
+        val changeset = view.value.changeset
         mutableView.update { it.copy(submitting = true, error = null) }
         try {
             val operation =
@@ -489,8 +633,18 @@ class WorkspaceReview(
                             StartGitOperationRequest(
                                 card_id = cardId,
                                 kind = kind,
-                                expected_revision = view.value.changeset?.revision.orEmpty(),
+                                expected_revision = changeset?.revision.orEmpty(),
                                 parameters = parameters,
+                                expected_files =
+                                    ProjectChangesRules.expectedFiles(
+                                        changeset,
+                                        kind,
+                                        parameters["path"].orEmpty(),
+                                    ),
+                                expected_index =
+                                    if (kind == GitOperationKinds.COMMIT)
+                                        changeset?.index_fingerprint.orEmpty()
+                                    else "",
                             )
                         )
                 }
@@ -795,7 +949,6 @@ class WorkspaceReview(
 
     companion object {
         const val HEARTBEAT_MS = 15_000
-        private val REFRESH = 5.seconds
         private val MERGE_POLL = 400.milliseconds
     }
 }

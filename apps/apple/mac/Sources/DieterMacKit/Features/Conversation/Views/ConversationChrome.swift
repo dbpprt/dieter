@@ -2,29 +2,6 @@ import DieterCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct ProjectDirectoryChangesRedirect: View {
-    @Environment(ConversationContext.self) private var context
-
-    var body: some View {
-        ContentUnavailableView {
-            Label("Changes belong to the project", systemImage: "folder.badge.gearshape")
-        } description: {
-            Text(
-                "This conversation uses the shared project directory. Its local changes are shown once for the checkout, independent of any card."
-            )
-        } actions: {
-            Button("Open Project Changes") {
-                let projectID =
-                    context.shownCard?.projectID ?? context.selectedProjectID
-                Task { await context.openProjectChanges(projectID) }
-            }
-            .buttonStyle(DieterBarButtonStyle(prominent: true))
-            .accessibilityIdentifier("changes.open-project").e2eTarget("changes.open-project")
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
 struct ConversationCloseButton: View {
     @Environment(ConversationContext.self) private var context
 

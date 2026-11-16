@@ -70,14 +70,26 @@ and Copy as Markdown work for a selection or the whole document.
 
 ## Inspect Git changes
 
-Changes behaves like a source-control panel, not a per-agent report.
-New-worktree conversations own their Changes view. For project-directory work,
-open the project's **Changes** (on Android and iOS, the project's page → **Changes**), which
-shows the shared checkout. The
-daemon reads one lightweight status snapshot, loads diffs on selection, and owns
-staging, commits, updates, validation, integration and explicit publishing, so
-Mac, Android, iOS and CLI clients converge on the same Git state. The same file can appear in both Staged
-and Changes when only part of its edits is staged.
+Changes behaves like a source-control panel, not a per-agent report. Every
+conversation has it, on the Mac (the conversation's **Changes** tab and the
+workspace pane), Android and iOS (the conversation → **Changes**):
+
+- A **new-worktree** conversation shows its own branch: uncommitted files and
+  the commits it made since it left its base.
+- A **project-directory** conversation shows the project checkout it works
+  in, labelled **Shared checkout**. Every conversation in that directory, and
+  the project's own **Changes** page (on Android and iOS, the project's page →
+  **Changes**), show the same checkout.
+
+The list follows the checkout live: the daemon watches it while it is shown,
+so an agent's edits appear within about a second without refreshing. While an
+agent works there, Changes says **Agent working · changes update live**; it
+keeps showing files and diffs, and an open diff reloads only when its own file
+changes. The daemon reads one lightweight status snapshot, loads diffs on
+selection, and owns staging, commits, updates, validation, integration and
+explicit publishing, so Mac, Android, iOS and CLI clients converge on the same
+Git state. The same file can appear in both Staged and Changes when only part
+of its edits is staged.
 
 The list shows changes as a folder tree by default, or as a flat list. Hover a
 file or folder to stage (+), unstage (−), discard, or open it in Files; right-click
@@ -87,13 +99,20 @@ recovery copy. Use ↑/↓ to step through files, Space to stage or unstage the
 selected file, and ⌘↩ to commit.
 
 ```sh
-dieter workspace changes WORKTREE_CARD_ID
+dieter workspace changes CARD_ID
+dieter workspace watch-changes CARD_ID
 dieter workspace changes --project PROJECT_ID
 dieter workspace diff --project PROJECT_ID --section unstaged --path src/main.go
 ```
 
-Mutations use the current changeset revision to reject stale edits. Review staged
-content before committing; committing everything is a separate, explicit choice.
+Each action checks only what it acts on. Staging, unstaging or discarding a
+file fails only if that file changed since you saw it, so an agent writing
+other files never gets in the way; a commit takes exactly the staged changes
+you reviewed. While an agent works in a shared checkout, discarding and
+updating the branch wait until it finishes (Changes says why); staging,
+committing, validating and pushing stay available. Review comments belong to
+the version of the file they were written on; once the file changes they are
+counted as outdated.
 
 ## Follow processes
 

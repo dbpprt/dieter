@@ -32,6 +32,12 @@ private fun ready(form: ClientGitOperationForm) =
  * The result is a started operation, a comment, the merge outcome, or the review after [command].
  */
 internal suspend fun WorkspaceReview.execute(command: ReviewCommand): Result {
+    // A project-directory conversation's checkout; an operation's outcome passes through.
+    command.checkout?.let { action ->
+        val result = checkout.execute(action)
+        return if (result.outcome != null) result
+        else Result(review = reviewSlice(view.value, card(), checkout = checkout.view.value))
+    }
     command.start?.let { form ->
         return start(ready(form))?.let { Result(git_operation = it) }
             ?: Result(review = reviewSlice(view.value, card()))
@@ -70,7 +76,7 @@ internal suspend fun WorkspaceReview.execute(command: ReviewCommand): Result {
     command.cancel_operation?.let { cancelOperation() }
     command.clear_toast?.let { clearToast() }
     command.layout?.let { setLayout(it.split) }
-    return Result(review = reviewSlice(view.value, card()))
+    return Result(review = reviewSlice(view.value, card(), checkout = checkout.view.value))
 }
 
 internal suspend fun ProjectChanges.execute(command: ProjectChangesCommand): Result {
@@ -98,6 +104,7 @@ internal suspend fun ProjectChanges.execute(command: ProjectChangesCommand): Res
             it.checkout_id.ifEmpty { null },
             it.daemon_id.ifEmpty { null },
             it.select_first,
+            shared = view.value.shared,
         )
     }
     command.active?.let { setActive(it.on) }
