@@ -142,6 +142,13 @@ message. The next turn runs on it and continues the same conversation, with
 its history. A running turn keeps its account. The provider itself stays fixed
 after the first message.
 
+**When an older Codex thread is unavailable.** Dieter retries a missing-thread
+resume once on a new Codex thread and adds a notice to the conversation. Your
+history remains visible in Dieter, but Codex does not receive that earlier
+context. If your latest message depends on it, the agent asks for the missing
+details. Later messages resume the new thread. Other provider errors are
+reported without this retry.
+
 **When the account can't run.** The chat shows a notice such as **Work isn't
 signed in on box**, with **Sign in** (the sheet for that machine) and **Choose
 account**. If a provider rejects a login during work and it cannot be renewed,

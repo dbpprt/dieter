@@ -286,6 +286,12 @@ dieter card send --message "Inspect these inputs." \
   --attach screenshot.png --attach notes.pdf <card-id>
 ```
 
+If Codex reports that the saved thread has no rollout, Dieter retries once on
+a fresh Codex thread and adds a notice to the reply. The transcript remains
+readable in Dieter, but earlier provider context is unavailable; ask for any
+missing details instead of guessing. Later messages resume the replacement
+thread. Other provider failures do not trigger this recovery.
+
 When `--effort` is omitted for a new card or chat, Dieter uses that model's
 `defaultEffort` from the harness registry. Pass `--effort default` to defer to
 the provider's native default instead.
