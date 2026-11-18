@@ -306,7 +306,7 @@ func (s *Service) FileDiffTarget(ctx context.Context, cardID, projectID, filePat
 	if commitSHA != "" {
 		key := patchKey{directory: directory, path: filePath, section: section, commit: commitSHA, revision: commitSHA}
 		patch, err := s.patch(key, func() ([]byte, error) {
-			args := []string{"diff", "--no-ext-diff", "--no-color", "--find-renames", commitSHA + "^!"}
+			args := []string{"show", "--format=", "--root", "--no-ext-diff", "--no-color", "--find-renames", "--end-of-options", commitSHA + "^0"}
 			if filePath != "" {
 				args = append(args, "--", filePath)
 			}
@@ -598,7 +598,7 @@ func (s *Service) branchCommits(ctx context.Context, value model.Workspace, head
 	if base == "" {
 		base = value.BaseSHA
 	}
-	if base == "" || head == "" {
+	if head == "" {
 		return nil
 	}
 	key := value.Path + "\x00" + base + "\x00" + head
@@ -610,7 +610,7 @@ func (s *Service) branchCommits(ctx context.Context, value model.Workspace, head
 	}
 	ctx, cancel := context.WithTimeout(ctx, statsTimeout)
 	defer cancel()
-	commits, err := s.readCommits(ctx, value.Path, base, head)
+	commits, err := s.readCommits(ctx, value.Path, base, head, value.BaseSHA == "")
 	if err != nil {
 		return nil
 	}
@@ -623,17 +623,25 @@ func (s *Service) branchCommits(ctx context.Context, value model.Workspace, head
 	return commits
 }
 
-func (s *Service) readCommits(ctx context.Context, directory, base, head string) ([]model.WorkspaceCommit, error) {
-	mergeBase, err := s.Git.Run(ctx, directory, "merge-base", base, head)
-	if err != nil {
-		return nil, err
-	}
-	from := strings.TrimSpace(string(mergeBase.Output))
-	if from == "" || from == head {
-		return []model.WorkspaceCommit{}, nil
+func (s *Service) readCommits(ctx context.Context, directory, base, head string, unbornOrigin bool) ([]model.WorkspaceCommit, error) {
+	rangeRef := head
+	if base != "" {
+		mergeBase, err := s.Git.Run(ctx, directory, "merge-base", base, head)
+		if err != nil {
+			var command *git.CommandError
+			if !unbornOrigin || !errors.As(err, &command) || command.ExitCode != 1 {
+				return nil, err
+			}
+		} else {
+			from := strings.TrimSpace(string(mergeBase.Output))
+			if from == "" || from == head {
+				return []model.WorkspaceCommit{}, nil
+			}
+			rangeRef = from + ".." + head
+		}
 	}
 	output, err := s.Git.Run(ctx, directory, "log", "--no-color", "--numstat", "--max-count="+strconv.Itoa(maxBranchCommits),
-		"--format=%x1e%H%x1f%P%x1f%an%x1f%aI%x1f%s", from+".."+head)
+		"--format=%x1e%H%x1f%P%x1f%an%x1f%aI%x1f%s", rangeRef)
 	if err != nil {
 		return nil, err
 	}

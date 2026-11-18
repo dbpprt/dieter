@@ -36,6 +36,12 @@ that same checkout concurrently, so use separate worktrees when their edits need
 isolation. There is at most one active turn per conversation; there are no
 global, provider, or board conversation caps. Machine resource limits still apply.
 
+An empty Git repository also supports new worktrees. Each starts on an unborn
+branch; Dieter does not create an initial commit or copy files from the project
+checkout. After committing your first work, local merge initializes the base
+branch. Squash creates one root commit; fast-forward and merge-commit preserve
+the workspace history. Validation and checkout safety checks still apply.
+
 Changes reads one lightweight Git status snapshot and loads a patch only after
 you select a file. In project-directory mode the list is intentionally shared:
 it shows all edits in that checkout, including edits from other active agents.
