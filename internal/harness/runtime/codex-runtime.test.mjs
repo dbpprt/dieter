@@ -95,142 +95,179 @@ test("Codex bootstrap replaces links into a removed runtime before it is marked"
   );
 });
 
-test(
-  "bundled Codex streams GPT-6.1 Sol Ultra and resumes the same session with the next selection",
-  { timeout: 90000 },
-  async (t) => {
-    const root = await realpath(await mkdtemp(join(tmpdir(), "dieter-codex-runtime-")));
-    const projectPath = join(root, "project");
-    const codexHome = join(root, "codex");
-    await Promise.all([mkdir(projectPath), mkdir(codexHome)]);
-    t.after(() => rm(root, { recursive: true, force: true }));
-    const requests = [];
-    const server = createServer(async (request, response) => {
-      let body = "";
-      for await (const chunk of request) body += chunk;
-      if (request.url !== "/v1/responses") {
-        response.writeHead(404).end("{}");
-        return;
-      }
-      requests.push(JSON.parse(body));
-      response.writeHead(200, { "content-type": "text/event-stream" });
-      for (const event of responseEvents(requests.length)) {
-        response.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
-      }
-      response.end();
-    });
-    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-    t.after(() => {
-      server.closeAllConnections();
-      server.close();
-    });
-    // Only disposable credentials and temporary provider state reach this child.
-    // Bootstrap links the runtime's packages; inference reaches only the fixture.
-    const environment = {
-      PATH: process.env.PATH,
-      HOME: root,
-      TMPDIR: root,
-      CODEX_HOME: codexHome,
-      OPENAI_BASE_URL: `http://127.0.0.1:${server.address().port}/v1`,
-      CODEX_API_KEY: "dieter-loopback-fixture",
-    };
-    const base = {
-      harness: "codex",
-      adapter: "codex",
-      sessionId: "sol-session",
-      projectPath,
-      runtimeRoot: join(root, "runtime"),
-      model: "gpt-6.1-sol",
-      effort: "ultra",
-      options: { fast_mode: "true" },
-      prompt: "First isolated fixture turn.",
-      responseMessageId: "first",
-    };
-    const first = await runWorker(base, environment);
-    assert.equal(first.code, 0, first.stderr);
-    assert(
-      !first.frames.some(
-        (frame) =>
-          frame.type === "error" || (frame.type === "chunk" && frame.chunk.type === "error"),
-      ),
-      first.stderr,
-    );
-    assert(
-      first.frames.some(
-        (frame) =>
-          frame.type === "chunk" &&
-          frame.chunk.type === "text-delta" &&
-          frame.chunk.delta === "Fixture response 1.",
-      ),
-    );
-    assert(!first.frames.some((frame) => frame.type === "error"), JSON.stringify(first.frames));
-    const state = first.frames.find((frame) => frame.type === "session").state;
-    assert.equal(typeof state.data.threadId, "string");
-    const second = await runWorker(
-      {
-        ...base,
-        session: state,
-        model: "gpt-6-astra",
-        effort: "medium",
-        options: { fast_mode: "false" },
-        prompt: "Second isolated fixture turn.",
-        responseMessageId: "second",
-      },
-      environment,
-    );
-    assert.equal(second.code, 0, second.stderr);
-    assert.equal(
-      second.frames.find((frame) => frame.type === "session").state.data.threadId,
-      state.data.threadId,
-    );
-    assert(
-      second.frames.some(
-        (frame) =>
-          frame.type === "chunk" &&
-          frame.chunk.type === "text-delta" &&
-          frame.chunk.delta === "Fixture response 2.",
-      ),
-    );
-    assert.equal(requests.length, 2);
-    assert.equal(requests[0].model, "gpt-6.1-sol");
-    assert.equal(requests[0].service_tier, "priority");
-    assert.equal(requests[1].model, "gpt-6-astra");
-    assert.equal(requests[1].reasoning.effort, "medium");
-    assert.notEqual(requests[1].service_tier, "priority");
-    assert.match(JSON.stringify(requests[1].input), /First isolated fixture turn/);
-    assert.match(JSON.stringify(requests[1].input), /Fixture response 1/);
-    assert.doesNotMatch(
-      first.stderr + second.stderr,
-      /model metadata.*not found|requires a newer version/i,
-    );
-
-    const records = [];
-    for (const file of await readdir(join(codexHome, "sessions"), { recursive: true })) {
-      if (!file.endsWith(".jsonl")) continue;
-      const text = await readFile(join(codexHome, "sessions", file), "utf8");
-      records.push(
-        ...text
-          .trim()
-          .split("\n")
-          .map((line) => JSON.parse(line)),
+for (const recoverMissingRollout of [false, true]) {
+  test(
+    recoverMissingRollout
+      ? "bundled Codex replaces a missing rollout, persists the new thread, and resumes its history"
+      : "bundled Codex streams GPT-6.1 Sol Ultra and resumes the same session with the next selection",
+    { timeout: 90000 },
+    async (t) => {
+      const root = await realpath(await mkdtemp(join(tmpdir(), "dieter-codex-runtime-")));
+      const projectPath = join(root, "project");
+      const codexHome = join(root, "codex");
+      await Promise.all([mkdir(projectPath), mkdir(codexHome)]);
+      t.after(() => rm(root, { recursive: true, force: true }));
+      const requests = [];
+      const server = createServer(async (request, response) => {
+        let body = "";
+        for await (const chunk of request) body += chunk;
+        if (request.url !== "/v1/responses") {
+          response.writeHead(404).end("{}");
+          return;
+        }
+        requests.push(JSON.parse(body));
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        for (const event of responseEvents(requests.length)) {
+          response.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+        }
+        response.end();
+      });
+      await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+      t.after(() => {
+        server.closeAllConnections();
+        server.close();
+      });
+      // Only disposable credentials and temporary provider state reach this child.
+      // Bootstrap links the runtime's packages; inference reaches only the fixture.
+      const environment = {
+        PATH: process.env.PATH,
+        HOME: root,
+        TMPDIR: root,
+        CODEX_HOME: codexHome,
+        OPENAI_BASE_URL: `http://127.0.0.1:${server.address().port}/v1`,
+        CODEX_API_KEY: "dieter-loopback-fixture",
+      };
+      const base = {
+        harness: "codex",
+        adapter: "codex",
+        sessionId: "sol-session",
+        projectPath,
+        runtimeRoot: join(root, "runtime"),
+        model: "gpt-6.1-sol",
+        effort: "ultra",
+        options: { fast_mode: "true" },
+        prompt: "First isolated fixture turn.",
+        responseMessageId: "first",
+      };
+      const missingThreadId = "01a1de54-418b-7252-b916-90cc486527ec";
+      const first = await runWorker(
+        {
+          ...base,
+          ...(recoverMissingRollout
+            ? {
+                session: {
+                  type: "resume-session",
+                  harnessId: "codex",
+                  specificationVersion: "harness-v1",
+                  data: { threadId: missingThreadId },
+                },
+              }
+            : {}),
+        },
+        environment,
       );
-    }
-    assert(
-      records.some(
-        (record) =>
-          record.type === "session_meta" &&
-          record.payload.cli_version === runtimePackageVersion("@openai/codex"),
-      ),
-    );
-    const turns = records
-      .filter((record) => record.type === "turn_context")
-      .map((record) => record.payload);
-    // Ultra is recorded by Codex itself. Its wire effort is an implementation
-    // detail of that orchestration mode, not an API enum Dieter should translate.
-    assert(turns.some((turn) => turn.model === "gpt-6.1-sol" && turn.effort === "ultra"));
-    assert(turns.some((turn) => turn.model === "gpt-6-astra" && turn.effort === "medium"));
-  },
-);
+      assert.equal(first.code, 0, first.stderr);
+      assert(
+        !first.frames.some(
+          (frame) =>
+            frame.type === "error" || (frame.type === "chunk" && frame.chunk.type === "error"),
+        ),
+        first.stderr,
+      );
+      assert(
+        first.frames.some(
+          (frame) =>
+            frame.type === "chunk" &&
+            frame.chunk.type === "text-delta" &&
+            frame.chunk.delta === "Fixture response 1.",
+        ),
+      );
+      assert(!first.frames.some((frame) => frame.type === "error"), JSON.stringify(first.frames));
+      const state = first.frames.find((frame) => frame.type === "session").state;
+      assert.equal(typeof state.data.threadId, "string");
+      assert.notEqual(state.data.threadId, missingThreadId);
+      assert.equal(first.frames.filter((frame) => frame.chunk?.type === "start").length, 1);
+      const notices = first.frames.filter(
+        (frame) =>
+          frame.chunk?.type === "text-delta" &&
+          frame.chunk.delta.includes("without the earlier conversation context"),
+      );
+      assert.equal(notices.length, recoverMissingRollout ? 1 : 0);
+      assert.doesNotMatch(first.stderr, /sandbox.*deprecated/);
+      const second = await runWorker(
+        {
+          ...base,
+          session: state,
+          model: "gpt-6-astra",
+          effort: "medium",
+          options: { fast_mode: "false" },
+          prompt: "Second isolated fixture turn.",
+          responseMessageId: "second",
+        },
+        environment,
+      );
+      assert.equal(second.code, 0, second.stderr);
+      assert.equal(
+        second.frames.find((frame) => frame.type === "session").state.data.threadId,
+        state.data.threadId,
+      );
+      assert(
+        second.frames.some(
+          (frame) =>
+            frame.type === "chunk" &&
+            frame.chunk.type === "text-delta" &&
+            frame.chunk.delta === "Fixture response 2.",
+        ),
+      );
+      assert.equal(requests.length, 2);
+      if (recoverMissingRollout) {
+        assert.match(JSON.stringify(requests[0].input), /ask the user.*instead of guessing/);
+        assert(
+          !second.frames.some((frame) =>
+            frame.chunk?.delta?.includes("without the earlier conversation context"),
+          ),
+        );
+      }
+      assert.equal(requests[0].model, "gpt-6.1-sol");
+      assert.equal(requests[0].service_tier, "priority");
+      assert.equal(requests[1].model, "gpt-6-astra");
+      assert.equal(requests[1].reasoning.effort, "medium");
+      assert.notEqual(requests[1].service_tier, "priority");
+      assert.match(JSON.stringify(requests[1].input), /First isolated fixture turn/);
+      assert.match(JSON.stringify(requests[1].input), /Fixture response 1/);
+      assert.doesNotMatch(
+        first.stderr + second.stderr,
+        /model metadata.*not found|requires a newer version/i,
+      );
+
+      const records = [];
+      for (const file of await readdir(join(codexHome, "sessions"), { recursive: true })) {
+        if (!file.endsWith(".jsonl")) continue;
+        const text = await readFile(join(codexHome, "sessions", file), "utf8");
+        records.push(
+          ...text
+            .trim()
+            .split("\n")
+            .map((line) => JSON.parse(line)),
+        );
+      }
+      assert(
+        records.some(
+          (record) =>
+            record.type === "session_meta" &&
+            record.payload.cli_version === runtimePackageVersion("@openai/codex"),
+        ),
+      );
+      const turns = records
+        .filter((record) => record.type === "turn_context")
+        .map((record) => record.payload);
+      // Ultra is recorded by Codex itself. Its wire effort is an implementation
+      // detail of that orchestration mode, not an API enum Dieter should translate.
+      assert(turns.some((turn) => turn.model === "gpt-6.1-sol" && turn.effort === "ultra"));
+      assert(turns.some((turn) => turn.model === "gpt-6-astra" && turn.effort === "medium"));
+    },
+  );
+}
 
 // Codex reports provider stream retries as top-level `error` events and keeps
 // running. These turns must not fail on the notice itself.

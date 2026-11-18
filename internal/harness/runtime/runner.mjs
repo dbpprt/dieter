@@ -517,6 +517,9 @@ switch (adapter) {
 
 const controller = new AbortController();
 let session;
+// A suspension must not checkpoint the gap between destroying a stale session
+// and starting the replacement turn. Resolve only once that turn is ready.
+let sessionReplacement;
 let suspending = false;
 let suspendPromise;
 let interruptExitCode;
@@ -551,6 +554,7 @@ const interrupt = (exitCode) => {
 const suspend = async () => {
   steerTarget.closed = true;
   flushEarlySteers();
+  await sessionReplacement;
   if (session) {
     try {
       const state = await session.detach();
@@ -559,6 +563,9 @@ const suspend = async () => {
       console.error(`failed to suspend harness session: ${harnessErrorMessage(error)}`);
       process.exitCode = 1;
     }
+  } else {
+    console.error("failed to suspend harness session: no active session to checkpoint");
+    process.exitCode = 1;
   }
   await capabilityTailer?.drain();
 };
@@ -693,6 +700,7 @@ try {
       messageMetadata,
     });
     for await (let chunk of stream) {
+      if (summary.skipStart && chunk.type === "start") continue;
       // The Go host owns the semantic distinction between a user interrupt
       // and a process-restart suspension. Suppress the SDK's local abort frame
       // here; Dieter appends one for a real cancel, while a restart preserves
@@ -735,13 +743,19 @@ try {
       emitChunk(chunk);
     }
   }
-  async function runStream(start, { deferInitialError = false } = {}) {
+  async function runStream(
+    start,
+    { deferInitialError = false, skipStart = false, onStarted } = {},
+  ) {
     const summary = createClaudeTurnSummary();
+    summary.skipStart = skipStart;
     if (deferInitialError) summary.deferredChunks = [];
     const diagnosticTurn = adapter === "claude-code" ? claudeDiagnostics.beginTurn() : undefined;
     let streamError;
     try {
-      await streamResult(await start(), summary, diagnosticTurn);
+      const result = await start();
+      onStarted?.();
+      await streamResult(result, summary, diagnosticTurn);
     } catch (error) {
       streamError = error;
     }
@@ -771,24 +785,55 @@ try {
     });
     if (
       mayNeedFreshCodexThread &&
+      primarySummary.deferredChunks &&
       isMissingCodexRollout(primarySummary.streamError) &&
-      !controller.signal.aborted
+      !controller.signal.aborted &&
+      !suspending
     ) {
       console.error("Codex rollout is unavailable in Dieter's Codex home; starting a fresh thread");
       primarySummary.deferredChunks = undefined;
+      emitChunk({
+        type: "start",
+        messageId: request.responseMessageId,
+        messageMetadata: { createdAt },
+      });
+      const noticeId = `${request.responseMessageId}-codex-thread-reset`;
+      emitChunk({ type: "text-start", id: noticeId });
+      emitChunk({
+        type: "text-delta",
+        id: noticeId,
+        delta:
+          "Codex could not restore its previous thread. Starting a new thread without the earlier conversation context; your history remains visible in Dieter.\n\n",
+      });
+      emitChunk({ type: "text-end", id: noticeId });
+      let replacementReady;
+      sessionReplacement = new Promise((resolve) => {
+        replacementReady = resolve;
+      });
       steerTarget.session = undefined;
       const staleSession = session;
       session = undefined;
-      await staleSession.destroy();
-      const {
-        resumeFrom: _oldResume,
-        continueFrom: _oldContinuation,
-        ...freshOptions
-      } = sessionOptions;
-      session = await agent.createSession(freshOptions);
-      steerTarget.session = session;
-      flushEarlySteers();
-      primarySummary = await streamPrompt(runtimePrompt);
+      try {
+        await staleSession.destroy();
+        const {
+          resumeFrom: _oldResume,
+          continueFrom: _oldContinuation,
+          ...freshOptions
+        } = sessionOptions;
+        session = await agent.createSession(freshOptions);
+        steerTarget.session = session;
+        flushEarlySteers();
+        const recoveryPrompt =
+          "Dieter could not restore the previous Codex thread. This is a fresh thread and you do not have the earlier conversation context. If the latest request depends on missing context, ask the user for the specific information needed instead of guessing.\n\nLatest user message:\n" +
+          runtimePrompt;
+        primarySummary = await streamPrompt(recoveryPrompt, {
+          skipStart: true,
+          onStarted: replacementReady,
+        });
+      } finally {
+        replacementReady();
+        sessionReplacement = undefined;
+      }
     } else if (primarySummary.deferredChunks) {
       for (const deferred of primarySummary.deferredChunks) emitChunk(deferred);
       primarySummary.deferredChunks = undefined;

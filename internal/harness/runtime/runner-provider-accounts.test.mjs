@@ -24,37 +24,61 @@ export function ${name}(options) {
 const agentFixture = `
 export const getHarnessErrorMessage = error => error.message;
 let streams = 0;
+async function suspendAt(phase) {
+  if (process.env.FIXTURE_SUSPEND_PHASE !== phase) return;
+  // A real adapter has a live bridge socket. Keep the fixture alive while the
+  // OS delivers the signal; a signal listener alone does not reference Node.
+  const keepAlive = setInterval(() => {}, 1000);
+  try {
+    await new Promise(resolve => {
+      process.once('SIGUSR1', resolve);
+      process.kill(process.pid, 'SIGUSR1');
+    });
+  } finally { clearInterval(keepAlive); }
+}
 export class HarnessAgent {
   constructor(settings) {
     if (settings.sandbox) throw new Error('runner used deprecated HarnessAgent sandbox');
+    this.adapter = settings.harness.fixture;
+    this.sessions = 0;
   }
   async createSession(options) {
+    this.sessions += 1;
+    if (this.sessions === 2) await suspendAt('create');
     this.options = options;
     process.stderr.write('fixture-session:' + JSON.stringify({
       resumed: Boolean(options.resumeFrom),
       sandboxSession: Boolean(options.sandboxSession),
     }) + '\\n');
-    const state = () => ({type: 'resume-session', data: {claudeSessionId: 'fixture'}});
+    const state = () => ({type: 'resume-session', harnessId: this.adapter, data:
+      this.adapter === 'codex' ? {threadId: options.resumeFrom?.data?.threadId ?? 'fresh-fixture-thread'} : {claudeSessionId: 'fixture'}});
     return {
-      destroy: async () => process.stderr.write('fixture-destroy\\n'),
-      detach: async () => state(),
+      destroy: async () => { process.stderr.write('fixture-destroy\\n'); await suspendAt('destroy'); },
+      detach: async () => {
+        this.activeController?.close();
+        return {...state(), continueFrom: {type: 'continue-turn', harnessId: this.adapter, data: {cursor: 42}}};
+      },
       stop: async () => state(),
     };
   }
-  async stream() {
+  async stream({prompt}) {
     streams += 1;
-    const resumeError = process.env.FIXTURE_RESUME_ERROR;
-    if (resumeError && this.options.resumeFrom) {
+    process.stderr.write('fixture-prompt:' + JSON.stringify(prompt) + '\\n');
+    const resumeError = this.options.resumeFrom ? process.env.FIXTURE_RESUME_ERROR : process.env.FIXTURE_FRESH_ERROR;
+    if (resumeError) {
       return {stream: new ReadableStream({start: controller => {
         controller.enqueue({type: 'start', messageId: 'response'});
+        if (process.env.FIXTURE_BEFORE_ERROR) controller.enqueue({type: 'text-delta', id: 'text', delta: 'already started'});
         controller.enqueue({type: 'error', error: new Error(resumeError)});
         controller.close();
       }})};
     }
+    await suspendAt('start');
     const failing = streams <= Number(process.env.FIXTURE_FAILURES || 0);
     const parts = JSON.parse(process.env.FIXTURE_PARTS || '[]');
     return {stream: new ReadableStream({start: controller => {
       controller.enqueue({type: 'start', messageId: 'response'});
+      if (process.env.FIXTURE_SUSPEND_PHASE) { this.activeController = controller; return; }
       if (failing) {
         controller.enqueue({type: 'error', errorText: 'HTTP 401: authentication_failed'});
       } else {
@@ -62,6 +86,14 @@ export class HarnessAgent {
         controller.enqueue({type: 'text-delta', id: 'text', delta: 'answered'});
         controller.enqueue({type: 'finish', finishReason: 'stop'});
       }
+      controller.close();
+    }})};
+  }
+  async continueStream() {
+    if (this.options.continueFrom?.data?.cursor !== 42) throw new Error('lost replacement continuation');
+    return {stream: new ReadableStream({start: controller => {
+      controller.enqueue({type: 'text-delta', id: 'text', delta: 'continued replacement'});
+      controller.enqueue({type: 'finish', finishReason: 'stop'});
       controller.close();
     }})};
   }
@@ -85,7 +117,21 @@ registerHooks({resolve(specifier, context, next) {
 }});
 `);
 
-async function runWorker(t, { adapter, auth, parts = [], failures = 0, resumeError, session }) {
+async function runWorker(
+  t,
+  {
+    adapter,
+    auth,
+    parts = [],
+    failures = 0,
+    resumeError,
+    freshError,
+    beforeError,
+    suspendPhase,
+    continuing,
+    session,
+  },
+) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "dieter-provider-accounts-")));
   await mkdir(join(root, "project"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -102,6 +148,7 @@ async function runWorker(t, { adapter, auth, parts = [], failures = 0, resumeErr
   };
   if (auth !== undefined) request.auth = auth;
   if (session !== undefined) request.session = session;
+  if (continuing) request.continue = true;
   const child = spawn(process.execPath, ["--import", preload, fileURLToPath(runnerURL)], {
     env: {
       PATH: process.env.PATH,
@@ -111,6 +158,9 @@ async function runWorker(t, { adapter, auth, parts = [], failures = 0, resumeErr
       FIXTURE_FAILURES: String(failures),
       FIXTURE_PARTS: JSON.stringify(parts),
       ...(resumeError ? { FIXTURE_RESUME_ERROR: resumeError } : {}),
+      ...(freshError ? { FIXTURE_FRESH_ERROR: freshError } : {}),
+      ...(beforeError ? { FIXTURE_BEFORE_ERROR: "1" } : {}),
+      ...(suspendPhase ? { FIXTURE_SUSPEND_PHASE: suspendPhase } : {}),
     },
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -145,7 +195,10 @@ async function runWorker(t, { adapter, auth, parts = [], failures = 0, resumeErr
     JSON.parse(match[1]),
   );
   const destroys = [...stderr.matchAll(/^fixture-destroy$/gm)].length;
-  return { code, frames, factories, sessions, destroys, stderr };
+  const prompts = [...stderr.matchAll(/^fixture-prompt:(.*)$/gm)].map((match) =>
+    JSON.parse(match[1]),
+  );
+  return { code, frames, factories, sessions, destroys, prompts, stderr };
 }
 
 test(
@@ -214,6 +267,17 @@ test(
     assert(recovered.frames.some((frame) => frame.chunk?.delta === "answered"));
     assert(!recovered.frames.some((frame) => frame.chunk?.type === "error"));
     assert.match(recovered.stderr, /starting a fresh thread/);
+    assert.equal(recovered.frames.filter((frame) => frame.chunk?.type === "start").length, 1);
+    assert(
+      recovered.frames.some((frame) =>
+        frame.chunk?.delta?.includes("without the earlier conversation context"),
+      ),
+    );
+    assert.match(recovered.prompts[1], /ask the user.*instead of guessing/);
+    assert.equal(
+      recovered.frames.find((frame) => frame.type === "session").state.data.threadId,
+      "fresh-fixture-thread",
+    );
 
     const unrelated = await runWorker(t, {
       adapter: "codex",
@@ -226,8 +290,61 @@ test(
     assert.equal(unrelated.destroys, 0);
     assert(!unrelated.frames.some((frame) => frame.chunk?.delta === "answered"));
     assert(unrelated.frames.some((frame) => frame.chunk?.type === "error"));
+
+    const freshFailed = await runWorker(t, {
+      adapter: "codex",
+      resumeError: missing,
+      freshError: missing,
+      session,
+    });
+    assert.equal(freshFailed.sessions.length, 2);
+    assert(freshFailed.frames.some((frame) => frame.chunk?.type === "error"));
+    const alreadyStarted = await runWorker(t, {
+      adapter: "codex",
+      resumeError: missing,
+      beforeError: true,
+      session,
+    });
+    assert.equal(alreadyStarted.sessions.length, 1);
+    assert(alreadyStarted.frames.some((frame) => frame.chunk?.type === "error"));
   },
 );
+
+for (const suspendPhase of ["destroy", "create", "start"]) {
+  test(
+    `Codex recovery checkpoints a suspension during ${suspendPhase} and continues the replacement`,
+    { timeout: 40_000 },
+    async (t) => {
+      const parked = await runWorker(t, {
+        adapter: "codex",
+        suspendPhase,
+        resumeError:
+          "Codex app-server thread/resume failed: no rollout found for thread id 01a1de54-418b-7252-b916-90cc486527ec",
+        session: {
+          type: "resume-session",
+          harnessId: "codex",
+          specificationVersion: "harness-v1",
+          data: { threadId: "01a1de54-418b-7252-b916-90cc486527ec" },
+        },
+      });
+      assert.equal(parked.code, 0, parked.stderr);
+      const checkpoints = parked.frames.filter((frame) => frame.type === "session");
+      assert.equal(checkpoints.length, 1, JSON.stringify(parked));
+      assert.equal(checkpoints[0].state.data.threadId, "fresh-fixture-thread");
+      assert.equal(checkpoints[0].state.continueFrom.data.cursor, 42);
+      assert(
+        !parked.frames.some((frame) => frame.type === "error" || frame.chunk?.type === "error"),
+      );
+      const continued = await runWorker(t, {
+        adapter: "codex",
+        continuing: true,
+        session: checkpoints[0].state,
+      });
+      assert.equal(continued.code, 0, continued.stderr);
+      assert(continued.frames.some((frame) => frame.chunk?.delta === "continued replacement"));
+    },
+  );
+}
 
 test(
   "a raw Claude rate_limit_event becomes one provider-usage frame and the stream flows on",
