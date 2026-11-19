@@ -633,3 +633,60 @@ func TestHubReadsOnceForEveryWatcherAndWakesOnInvalidate(t *testing.T) {
 		t.Fatal("the last release must stop the reader")
 	}
 }
+
+func TestUnbornWorktreeCommitsAndRootDiffRemainReviewable(t *testing.T) {
+	t.Parallel()
+	repository := filepath.Join(t.TempDir(), "repository")
+	testkit.InitGitRepo(t, repository)
+	data := testkit.Store(t)
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Empty", Path: repository, BaseBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "First", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := workspace.New(data, nil)
+	value, err := manager.Ensure(context.Background(), chat.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(value.Path, "first.txt")
+	if err := os.WriteFile(file, []byte("root line\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	testkit.RunGit(t, value.Path, "add", "first.txt")
+	testkit.RunGit(t, value.Path, "commit", "-m", "First commit")
+	root := testkit.RunGit(t, value.Path, "rev-parse", "HEAD")
+	if err := os.WriteFile(file, []byte("root line\nsecond line\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	testkit.RunGit(t, value.Path, "commit", "-am", "Second commit")
+	if _, err := manager.Refresh(context.Background(), chat.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	service := changeset.New(manager)
+	for _, otherBase := range []bool{false, true} {
+		// Another orphan worktree may initialize main with unrelated history.
+		if otherBase {
+			testkit.RunGit(t, repository, "commit", "--allow-empty", "-m", "Other root")
+			if _, err := manager.Refresh(context.Background(), chat.ID, false); err != nil {
+				t.Fatal(err)
+			}
+		}
+		set, err := service.GetTargetFresh(context.Background(), chat.ID, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(set.Commits) != 2 || set.Commits[1].SHA != root || set.Commits[1].ParentSHA != "" || set.Commits[1].Additions != 1 {
+			t.Fatalf("missing root history: %#v", set.Commits)
+		}
+		for _, path := range []string{"", "first.txt"} {
+			diff, err := service.FileDiffTarget(context.Background(), chat.ID, "", path, root, "", "", 0, 0)
+			if err != nil || !strings.Contains(diff.Patch, "+root line") || strings.Contains(diff.Patch, "+second line") {
+				t.Fatalf("incorrect root patch: %#v %v", diff, err)
+			}
+		}
+	}
+}

@@ -175,6 +175,13 @@ func (m *Manager) Ensure(ctx context.Context, cardRef string) (model.Workspace, 
 
 func (m *Manager) provision(ctx context.Context, detail model.CardDetail, value model.Workspace) (model.Workspace, error) {
 	projectPath := detail.Project.Path
+	if value.Mode == model.WorkspaceModeWorktree {
+		release, err := m.LockRepository(kanban.WithCheckout(ctx, detail.Card.CheckoutID), detail.Project.ID)
+		if err != nil {
+			return value, err
+		}
+		defer release()
+	}
 	currentBranch, _ := m.output(ctx, projectPath, "symbolic-ref", "--quiet", "--short", "HEAD")
 	if value.BaseBranch == "" {
 		value.BaseBranch = currentBranch
@@ -184,10 +191,19 @@ func (m *Manager) provision(ctx context.Context, detail model.CardDetail, value 
 		baseRef = "HEAD"
 	}
 	baseSHA, baseErr := m.output(ctx, projectPath, "rev-parse", "--verify", baseRef+"^{commit}")
+	// A current unborn base remains valid even after another worktree commits.
+	unborn := false
 	if baseErr != nil && value.Mode == model.WorkspaceModeWorktree {
+		var err error
+		unborn, err = git.UnbornHead(ctx, m.Git, projectPath, baseRef)
+		if err != nil {
+			return value, err
+		}
+	}
+	if baseErr != nil && value.Mode == model.WorkspaceModeWorktree && !unborn {
 		return value, fmt.Errorf("resolve base branch %q: %w", baseRef, baseErr)
 	}
-	if value.BaseSHA == "" {
+	if value.BaseSHA == "" && value.HeadSHA == "" {
 		value.BaseSHA = baseSHA
 	}
 	value.CurrentBaseSHA = baseSHA
@@ -205,11 +221,6 @@ func (m *Manager) provision(ctx context.Context, detail model.CardDetail, value 
 		if value.Path == "" {
 			value.Path = filepath.Join(m.Store.WorktreeRoot(), detail.Project.ID, detail.Card.ID)
 		}
-		release, err := m.LockRepository(kanban.WithCheckout(ctx, detail.Card.CheckoutID), detail.Project.ID)
-		if err != nil {
-			return value, err
-		}
-		defer release()
 		if info, statErr := os.Stat(value.Path); statErr == nil && info.IsDir() {
 			if _, verifyErr := m.Git.Run(ctx, value.Path, "rev-parse", "--is-inside-work-tree"); verifyErr == nil {
 				return value, nil
@@ -228,7 +239,11 @@ func (m *Manager) provision(ctx context.Context, detail model.CardDetail, value 
 			if value.HeadSHA != "" {
 				return value, fault.New(fault.FailedPrecondition, "retained workspace branch is missing; restore it before resuming")
 			}
-			args = append(args, "-b", value.Branch, value.Path, baseRef)
+			if unborn {
+				args = append(args, "--orphan", "-b", value.Branch, value.Path)
+			} else {
+				args = append(args, "-b", value.Branch, value.Path, baseRef)
+			}
 		}
 		if _, err := m.Git.Run(ctx, projectPath, args...); err != nil {
 			return value, fmt.Errorf("create Git worktree: %w", err)
@@ -330,7 +345,9 @@ func (m *Manager) refreshGitState(ctx context.Context, value model.Workspace, in
 			base, _ = m.output(ctx, value.Path, "rev-parse", "--verify", baseRef+"^{commit}")
 		}
 		if base != "" {
-			if value.BaseSHA == "" {
+			// A worktree's empty initial base records its unborn origin, even
+			// after another conversation bootstraps the shared base branch.
+			if value.BaseSHA == "" && value.Mode != model.WorkspaceModeWorktree {
 				value.BaseSHA = base
 			}
 			value.CurrentBaseSHA = base
@@ -405,7 +422,10 @@ func (m *Manager) List(ctx context.Context, projectRef string, refresh, includeS
 
 func (m *Manager) output(ctx context.Context, directory string, args ...string) (string, error) {
 	result, err := m.Git.Run(ctx, directory, args...)
-	return git.Output(result), err
+	if err != nil {
+		return "", err
+	}
+	return git.Output(result), nil
 }
 
 func directorySize(root string) int64 {

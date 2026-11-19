@@ -844,9 +844,28 @@ func (m *Manager) mergeLocal(ctx context.Context, operation *model.GitOperation,
 	if err != nil {
 		return err
 	}
-	baseSHA, err := m.gitOutput(ctx, project.Path, "rev-parse", "--verify", value.BaseBranch+"^{commit}")
+	releaseRepo, err := m.Workspaces.LockRepository(kanban.WithCheckout(ctx, value.CheckoutID), value.ProjectID)
 	if err != nil {
 		return err
+	}
+	defer releaseRepo()
+	baseSHA, err := m.gitOutput(ctx, project.Path, "rev-parse", "--verify", value.BaseBranch+"^{commit}")
+	unborn := false
+	if err != nil && operation.ExpectedBaseSHA == "" && value.BaseSHA == "" {
+		baseErr := err
+		unborn, err = git.UnbornHead(ctx, m.Git, project.Path, value.BaseBranch)
+		if err == nil && !unborn {
+			return baseErr
+		}
+	}
+	if err != nil {
+		return err
+	}
+	if unborn {
+		baseSHA = ""
+	}
+	if baseSHA == "" && !unborn {
+		return fault.New(fault.Invalid, "base branch is missing")
 	}
 	if operation.ExpectedBaseSHA != "" && baseSHA != operation.ExpectedBaseSHA {
 		return fault.New(fault.Invalid, "base branch moved after the merge was requested")
@@ -858,11 +877,6 @@ func (m *Manager) mergeLocal(ctx context.Context, operation *model.GitOperation,
 	if operation.ExpectedHeadSHA != "" && headSHA != operation.ExpectedHeadSHA {
 		return fault.New(fault.Invalid, "workspace head moved after the merge was requested")
 	}
-	releaseRepo, err := m.Workspaces.LockRepository(kanban.WithCheckout(ctx, value.CheckoutID), value.ProjectID)
-	if err != nil {
-		return err
-	}
-	defer releaseRepo()
 	integrationRoot := filepath.Join(m.Store.RuntimeDir(), "integration")
 	if err := os.MkdirAll(integrationRoot, 0o700); err != nil {
 		return err
@@ -872,7 +886,11 @@ func (m *Manager) mergeLocal(ctx context.Context, operation *model.GitOperation,
 		return err
 	}
 	_ = os.Remove(integrationPath)
-	if _, err := m.Git.Run(ctx, project.Path, "worktree", "add", "--detach", integrationPath, baseSHA); err != nil {
+	integrationBase := baseSHA
+	if unborn {
+		integrationBase = headSHA
+	}
+	if _, err := m.Git.Run(ctx, project.Path, "worktree", "add", "--detach", integrationPath, integrationBase); err != nil {
 		return err
 	}
 	defer func() {
@@ -888,29 +906,56 @@ func (m *Manager) mergeLocal(ctx context.Context, operation *model.GitOperation,
 	resultSHA := headSHA
 	switch strategy {
 	case "fast_forward":
-		if _, err := m.Git.Run(ctx, integrationPath, "merge-base", "--is-ancestor", baseSHA, headSHA); err != nil {
-			return fault.New(fault.Invalid, "workspace cannot be fast-forwarded into the base branch")
+		if !unborn {
+			if _, err := m.Git.Run(ctx, integrationPath, "merge-base", "--is-ancestor", baseSHA, headSHA); err != nil {
+				return fault.New(fault.Invalid, "workspace cannot be fast-forwarded into the base branch")
+			}
 		}
 		if _, err := m.Git.Run(ctx, integrationPath, "reset", "--hard", headSHA); err != nil {
 			return err
 		}
 	case "merge_commit":
-		if _, err := m.Git.Run(ctx, integrationPath, "-c", "commit.gpgSign=false", "merge", "--no-gpg-sign", "--no-ff", "--no-edit", headSHA); err != nil {
+		if unborn {
+			break
+		}
+		args := []string{"-c", "commit.gpgSign=false", "merge", "--no-gpg-sign", "--no-ff", "--no-edit"}
+		if value.BaseSHA == "" {
+			args = append(args, "--allow-unrelated-histories")
+		}
+		args = append(args, headSHA)
+		if _, err := m.Git.Run(ctx, integrationPath, args...); err != nil {
 			return fmt.Errorf("prepare merge commit: %w", err)
 		}
 		resultSHA, err = m.gitOutput(ctx, integrationPath, "rev-parse", "HEAD")
 	case "squash":
-		if _, err := m.Git.Run(ctx, integrationPath, "merge", "--squash", headSHA); err != nil {
-			return fmt.Errorf("prepare squash merge: %w", err)
-		}
 		message := strings.TrimSpace(operation.Parameters["subject"])
 		if message == "" {
 			message = "Merge " + value.Branch
 		}
-		if _, err := m.Git.Run(ctx, integrationPath, "-c", "commit.gpgSign=false", "commit", "--no-gpg-sign", "-m", message); err != nil {
-			return err
+		if unborn {
+			// There is no parent yet. Squash the workspace tree into one root
+			// commit, then validate the exact result in the isolated checkout.
+			resultSHA, err = m.gitOutput(ctx, integrationPath, "-c", "commit.gpgSign=false", "commit-tree", headSHA+"^{tree}", "-m", message)
+			if err != nil {
+				return err
+			}
+			if _, err := m.Git.Run(ctx, integrationPath, "reset", "--hard", resultSHA); err != nil {
+				return err
+			}
+		} else {
+			args := []string{"merge", "--squash"}
+			if value.BaseSHA == "" {
+				args = append(args, "--allow-unrelated-histories")
+			}
+			args = append(args, headSHA)
+			if _, err := m.Git.Run(ctx, integrationPath, args...); err != nil {
+				return fmt.Errorf("prepare squash merge: %w", err)
+			}
+			if _, err := m.Git.Run(ctx, integrationPath, "-c", "commit.gpgSign=false", "commit", "--no-gpg-sign", "-m", message); err != nil {
+				return err
+			}
+			resultSHA, err = m.gitOutput(ctx, integrationPath, "rev-parse", "HEAD")
 		}
-		resultSHA, err = m.gitOutput(ctx, integrationPath, "rev-parse", "HEAD")
 	default:
 		return fault.New(fault.Invalid, "merge strategy must be squash, merge_commit, or fast_forward")
 	}
@@ -934,9 +979,24 @@ func (m *Manager) mergeLocal(ctx context.Context, operation *model.GitOperation,
 	if err != nil || !clean {
 		return fault.New(fault.Invalid, "registered base checkout must be clean before local merge")
 	}
-	current, err := m.gitOutput(ctx, project.Path, "rev-parse", "HEAD")
-	if err != nil || current != baseSHA {
-		return fault.New(fault.Invalid, "registered base checkout moved during merge preparation")
+	if unborn {
+		stillUnborn, err := git.UnbornHead(ctx, m.Git, project.Path, value.BaseBranch)
+		if err != nil {
+			return err
+		}
+		if !stillUnborn {
+			return fault.New(fault.Invalid, "registered base checkout moved during merge preparation")
+		}
+	} else {
+		current, err := m.gitOutput(ctx, project.Path, "rev-parse", "HEAD")
+		if err != nil || current != baseSHA {
+			return fault.New(fault.Invalid, "registered base checkout moved during merge preparation")
+		}
+	}
+	if unborn {
+		if err := m.checkInitialCheckout(ctx, project.Path, resultSHA); err != nil {
+			return err
+		}
 	}
 	if value.RemotePublishMode == model.RemotePublishPushBase {
 		if value.BaseRemote == "" {
@@ -947,7 +1007,7 @@ func (m *Manager) mergeLocal(ctx context.Context, operation *model.GitOperation,
 		}
 		m.step(operation, "pushed "+value.BaseBranch+" to "+value.BaseRemote)
 	}
-	if _, err := m.Git.Run(ctx, project.Path, "merge", "--ff-only", resultSHA); err != nil {
+	if _, err := m.Git.Run(ctx, project.Path, "merge", "--no-overwrite-ignore", "--ff-only", resultSHA); err != nil {
 		return err
 	}
 	value.State = model.WorkspaceStateCleanupPending
@@ -958,6 +1018,40 @@ func (m *Manager) mergeLocal(ctx context.Context, operation *model.GitOperation,
 	}
 	operation.Result = resultSHA
 	m.step(operation, "fast-forwarded "+value.BaseBranch+" to "+shortSHA(resultSHA))
+	return nil
+}
+
+// Git's unborn-branch merge can overwrite ignored files even when given
+// --no-overwrite-ignore. Refuse collisions, including symlink/file ancestors,
+// before populating the first tree in the operator's checkout.
+func (m *Manager) checkInitialCheckout(ctx context.Context, directory, commit string) error {
+	files, err := m.Git.Run(ctx, directory, "ls-tree", "-r", "--name-only", "-z", commit)
+	if err != nil {
+		return err
+	}
+	if files.Truncated {
+		return fault.New(fault.Invalid, "initial checkout is too large to check safely")
+	}
+	for _, name := range zeroFields(files.Output) {
+		if _, err := relativePath(name); err != nil {
+			return err
+		}
+		parts := strings.Split(name, "/")
+		target := directory
+		for i, part := range parts {
+			target = filepath.Join(target, part)
+			info, err := os.Lstat(target)
+			if errors.Is(err, os.ErrNotExist) {
+				break
+			}
+			if err != nil {
+				return err
+			}
+			if i == len(parts)-1 || !info.IsDir() {
+				return fault.Invalidf("initial merge would overwrite existing checkout path %s", name)
+			}
+		}
+	}
 	return nil
 }
 
@@ -1030,7 +1124,7 @@ func (m *Manager) cleanup(ctx context.Context, operation *model.GitOperation, va
 	if _, err := m.Git.Run(ctx, project.Path, args...); err != nil {
 		return err
 	}
-	if value.ManagedBranch && value.Branch != "" {
+	if value.ManagedBranch && value.Branch != "" && value.HeadSHA != "" {
 		deleteFlag := "-d"
 		if discard || integrated {
 			deleteFlag = "-D"

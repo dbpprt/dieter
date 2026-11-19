@@ -446,6 +446,15 @@ dieter card labels --set <label-id>,<label-id> <card-id>
 dieter card list --board <board-id> --label <label-id> --format jsonl
 ```
 
+Empty repositories support `--workspace worktree` when the configured base is
+its checkout's current unborn branch. No initial commit is manufactured. Commit
+work before `merge_local`; the first local integration initializes the base
+(squash creates one root commit, other strategies retain workspace history).
+Other unborn worktrees can still be created after the first workspace commits.
+Validation and clean-checkout checks apply, and the initial integration refuses
+to overwrite existing files, including ignored files. Cleanup before a first
+commit succeeds; discard still retains recovery artifacts.
+
 Archiving retains worktrees by default. Project settings expose an opt-in toggle
 with an impact notice; use `project update --delete-worktrees-on-archive=true|false
 PROJECT` in automation. Enabling also covers existing archives and automatic

@@ -109,3 +109,73 @@ func TestProjectDirectoryWorkspaceUsesCurrentBranchWithoutSwitching(t *testing.T
 		t.Fatalf("detached project directory reported stale branch %q", value.Branch)
 	}
 }
+
+func TestEmptyRepositoryWorkspaces(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{model.WorkspaceModeWorktree, model.WorkspaceModeProject} {
+		t.Run(mode, func(t *testing.T) {
+			repository := filepath.Join(t.TempDir(), "repository")
+			testkit.RunGit(t, "", "init", "-b", "main", repository)
+			data := testkit.Store(t)
+			project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Empty", Path: repository, BaseBranch: "main"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			manager := workspace.New(data, nil)
+			for i := 0; i < 2; i++ {
+				chat, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Start", Prompt: "work", WorkspaceMode: mode})
+				if err != nil {
+					t.Fatal(err)
+				}
+				value, err := manager.Ensure(context.Background(), chat.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if value.State != model.WorkspaceStateReady || value.Mode != mode || value.HeadSHA != "" || value.BaseSHA != "" || value.CurrentBaseSHA != "" {
+					t.Fatalf("unexpected unborn workspace: %#v", value)
+				}
+				if mode == model.WorkspaceModeWorktree && value.Path == repository {
+					t.Fatal("worktree lost isolation")
+				}
+				value, err = manager.Ensure(context.Background(), chat.ID)
+				if err != nil || value.BaseSHA != "" {
+					t.Fatalf("retry: %#v, %v", value, err)
+				}
+			}
+			if got := testkit.RunGit(t, repository, "branch", "--show-current"); got != "main" {
+				t.Fatalf("changed checkout branch: %s", got)
+			}
+			if got := testkit.RunGit(t, repository, "for-each-ref"); got != "" {
+				t.Fatalf("created refs or commits: %s", got)
+			}
+		})
+	}
+}
+
+func TestWorktreeRejectsMissingBaseBranch(t *testing.T) {
+	t.Parallel()
+	for _, empty := range []bool{true, false} {
+		t.Run(map[bool]string{true: "empty", false: "committed"}[empty], func(t *testing.T) {
+			repository := ""
+			if empty {
+				repository = filepath.Join(t.TempDir(), "repository")
+				testkit.RunGit(t, "", "init", "-b", "main", repository)
+			} else {
+				repository = testkit.GitRepo(t)
+			}
+			data := testkit.Store(t)
+			project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Missing", Path: repository, BaseBranch: "typo"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			chat, err := data.Kanban.CreateChat(kanban.CreateCardInput{Project: project.ID, Title: "Start", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = workspace.New(data, nil).Ensure(context.Background(), chat.ID)
+			if err == nil || !strings.Contains(err.Error(), `resolve base branch "typo"`) {
+				t.Fatalf("expected missing base error, got %v", err)
+			}
+		})
+	}
+}
