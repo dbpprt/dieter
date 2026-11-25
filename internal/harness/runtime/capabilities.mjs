@@ -2,6 +2,20 @@ import { open } from "node:fs/promises";
 import { createTerminalStepReconciler } from "./stream-reconciliation.mjs";
 
 const terminalStatuses = new Set(["completed", "failed", "aborted"]);
+const codexAgentStatuses = new Map([
+  ["pendingInit", "pending"],
+  ["running", "running"],
+  ["completed", "completed"],
+  ["errored", "failed"],
+  ["interrupted", "aborted"],
+  ["shutdown", "aborted"],
+]);
+const codexActivityStatuses = new Map([
+  ["started", "running"],
+  ["completed", "completed"],
+  ["interrupted", "aborted"],
+]);
+const maxCodexAgentTextLength = 8_192;
 const terminalPlanStates = new Set(["completed", "stopped", "failed", "aborted"]);
 const progressHeartbeatMs = 60_000;
 const tailerReadChunkBytes = 256 * 1024;
@@ -449,6 +463,58 @@ export function createSubagentCapabilityCollector({
     emit({ id: "provider-status", operation: "replace", status: { ...status, updatedAt: now() } });
   }
 
+  function updateCodexAgent(id, status, patch) {
+    if (typeof id !== "string" || !id || !status) return;
+    if (status !== subagents.get(id)?.status) {
+      patch.status = status;
+      if (!terminalStatuses.has(status)) {
+        patch.endedAt = undefined;
+        patch.recentOutput = undefined;
+        patch.error = undefined;
+      }
+    }
+    upsert(id, patch);
+  }
+
+  function consumeCodexAgentItem(item) {
+    if (item.type === "subAgentActivity") {
+      const status = codexActivityStatuses.get(item.kind);
+      const previous = subagents.get(item.agentThreadId);
+      updateCodexAgent(
+        item.agentThreadId,
+        item.kind === "started" && previous ? previous.status : status,
+        {
+          ...(typeof item.agentPath === "string" && item.agentPath ? { name: item.agentPath } : {}),
+          ...(typeof item.model === "string" && item.model ? { model: item.model } : {}),
+        },
+      );
+      return;
+    }
+    if (item.type !== "collabAgentToolCall" || !Array.isArray(item.receiverThreadIds)) return;
+    const spawned = item.tool === "spawnAgent" && item.status === "completed";
+    for (const id of item.receiverThreadIds) {
+      if (typeof id !== "string" || !id) continue;
+      const state = item.agentsStates?.[id];
+      const previous = subagents.get(id);
+      const status =
+        state?.status === "shutdown" && terminalStatuses.has(previous?.status)
+          ? previous.status
+          : (codexAgentStatuses.get(state?.status) ?? (spawned && !state ? "running" : undefined));
+      const message =
+        typeof state?.message === "string" ? state.message.slice(0, maxCodexAgentTextLength) : "";
+      updateCodexAgent(id, status, {
+        ...(spawned && typeof item.prompt === "string"
+          ? { task: item.prompt.slice(0, maxCodexAgentTextLength) }
+          : {}),
+        ...(spawned && typeof item.model === "string" && item.model ? { model: item.model } : {}),
+        ...(state?.status === "completed" && message
+          ? { recentOutput: compactLines(message) }
+          : {}),
+        ...(state?.status === "errored" && message ? { error: message } : {}),
+      });
+    }
+  }
+
   function consumeHarnessEvent(event) {
     if (adapter === "codex" && event?.type === "raw" && event.rawValue?.type === "error") {
       const notice = parseProviderRetryNotice(event.rawValue.message);
@@ -469,6 +535,9 @@ export function createSubagentCapabilityCollector({
       return;
     }
     const item = raw.item && typeof raw.item === "object" ? raw.item : undefined;
+    if (adapter === "codex" && raw.type === "item.completed" && item) {
+      consumeCodexAgentItem(item);
+    }
     if (adapter === "codex" && item?.type === "todo_list") {
       const items = Array.isArray(item.items) ? item.items : [];
       const firstIncomplete = items.findIndex((task) => !task?.completed);
@@ -536,6 +605,9 @@ const codexAppServerTodoNeedle =
   '\t\tif (item.type === "agent_message" && typeof item.text === "string") {';
 const codexAppServerPlanNeedle =
   '\t\t\tif (notification.method === "item/started" && params != null) {';
+const codexAppServerNormalizeNeedle = "\t\tconst normalized = normalizeItem({";
+const codexAppServerSubagentItem =
+  'item.type === "collabAgentToolCall" || item.type === "subAgentActivity"';
 const codexAppServerErrorNeedle =
   "\t\t\t\tif (params.willRetry === true) emitWarning({ message });";
 const codexAppServerStreamNeedle = '\t\tif (event.type === "error") {\n\t\t\temitError({';
@@ -613,11 +685,22 @@ function dieterCodexProviderOverrides(config) {
 
   if (!content.includes('send({ type: "raw", rawValue: event });')) {
     if (content.includes(codexAppServerTodoNeedle) && content.includes(codexAppServerPlanNeedle)) {
+      if (!content.includes(codexAppServerNormalizeNeedle)) {
+        throw new Error("Dieter could not find the Codex subagent bridge insertion point");
+      }
+      content = content.replace(
+        codexAppServerNormalizeNeedle,
+        `\t\tif (${codexAppServerSubagentItem}) {
+\t\t\tif (eventType === "item.completed") emitStreamEvent({ type: eventType, item });
+\t\t\treturn;
+\t\t}
+${codexAppServerNormalizeNeedle}`,
+      );
       content = content.replace(
         codexAppServerTodoNeedle,
-        `\t\tif (item.type === "todo_list") {
+        `\t\tif (item.type === "todo_list" || ${codexAppServerSubagentItem}) {
 \t\t\tsend({ type: "raw", rawValue: event });
-\t\t\tobserveStep();
+\t\t\tif (item.type === "todo_list") observeStep();
 \t\t\treturn;
 \t\t}
 ${codexAppServerTodoNeedle}`,

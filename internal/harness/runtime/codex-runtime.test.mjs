@@ -269,23 +269,29 @@ for (const recoverMissingRollout of [false, true]) {
   );
 }
 
-// Codex reports provider stream retries as top-level `error` events and keeps
-// running. These turns must not fail on the notice itself.
-async function runFlakyProviderTurn(t, respond) {
-  const root = await realpath(await mkdtemp(join(tmpdir(), "dieter-codex-retry-")));
+async function runProviderTurn(t, respond, { id, prompt, config, model = "gpt-6-astra" }) {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "dieter-codex-provider-")));
   const projectPath = join(root, "project");
   const codexHome = join(root, "codex");
   await Promise.all([mkdir(projectPath), mkdir(codexHome)]);
   t.after(() => rm(root, { recursive: true, force: true }));
+  if (config) await writeFile(join(codexHome, "config.toml"), config);
   let requests = 0;
+  let fixtureError;
   const server = createServer(async (request, response) => {
-    for await (const _ of request);
+    let body = "";
+    for await (const chunk of request) body += chunk;
     if (request.url !== "/v1/responses") {
       response.writeHead(404).end("{}");
       return;
     }
     requests += 1;
-    respond(requests, response);
+    try {
+      respond(requests, response, JSON.parse(body));
+    } catch (error) {
+      fixtureError ??= error;
+      response.writeHead(500).end();
+    }
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => {
@@ -296,12 +302,12 @@ async function runFlakyProviderTurn(t, respond) {
     {
       harness: "codex",
       adapter: "codex",
-      sessionId: "retry-session",
+      sessionId: `${id}-session`,
       projectPath,
       runtimeRoot: join(root, "runtime"),
-      model: "gpt-6-astra",
-      prompt: "Retry fixture turn.",
-      responseMessageId: "retry",
+      model,
+      prompt,
+      responseMessageId: id,
     },
     {
       PATH: process.env.PATH,
@@ -312,13 +318,21 @@ async function runFlakyProviderTurn(t, respond) {
       CODEX_API_KEY: "dieter-loopback-fixture",
     },
   );
+  if (fixtureError) throw fixtureError;
+  return { ...result, requests };
+}
+
+// Codex reports provider stream retries as top-level `error` events and keeps
+// running. These turns must not fail on the notice itself.
+async function runFlakyProviderTurn(t, respond) {
+  const result = await runProviderTurn(t, respond, { id: "retry", prompt: "Retry fixture turn." });
   const chunks = result.frames
     .filter((frame) => frame.type === "chunk")
     .map((frame) => frame.chunk);
   const statuses = result.frames
     .filter((frame) => frame.type === "capability" && frame.capability.id === "provider-status")
     .map((frame) => frame.capability);
-  return { ...result, chunks, statuses, requests };
+  return { ...result, chunks, statuses };
 }
 
 function dropStreamAfterStart(response, index) {
@@ -328,11 +342,102 @@ function dropStreamAfterStart(response, index) {
   setTimeout(() => response.socket.destroy(), 20);
 }
 
-function completeStream(response, index) {
+function completeStream(response, index, item) {
   response.writeHead(200, { "content-type": "text/event-stream" });
-  for (const event of responseEvents(index))
+  for (const event of responseEvents(index, item))
     response.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
   response.end();
+}
+
+test(
+  "bundled Codex streams subagent lifecycle from the app server",
+  { timeout: 90000 },
+  async (t) => {
+    const parentPrompt = "Delegate the fixture task, then wait for the result.";
+    const childPrompt = "Report the isolated fixture finding.";
+    let childResponse;
+    let waiting = false;
+    function releaseChild() {
+      if (waiting && childResponse) completeStream(...childResponse);
+    }
+    const result = await runProviderTurn(
+      t,
+      (index, response, body) => {
+        const spawnCall = "spawn-fixture";
+        const waitCall = "wait-fixture";
+        const spawned = body.input.find(
+          (item) => item.type === "function_call_output" && item.call_id === spawnCall,
+        );
+        const waited = body.input.some(
+          (item) => item.type === "function_call_output" && item.call_id === waitCall,
+        );
+        if (waited) {
+          completeStream(response, index);
+        } else if (spawned) {
+          assert.match(spawned.output, /"agent_id"/);
+          const { agent_id: agentId } = JSON.parse(spawned.output);
+          completeStream(
+            response,
+            index,
+            agentToolCall(waitCall, "wait_agent", { targets: [agentId] }),
+          );
+          waiting = true;
+          releaseChild();
+        } else if (JSON.stringify(body.input).includes(parentPrompt)) {
+          const tools = (body.tools ?? []).map(({ name, tools }) => [
+            name,
+            tools?.map((tool) => tool.name),
+          ]);
+          assert(
+            tools.some(
+              ([name, members]) => name === "multi_agent_v1" && members?.includes("spawn_agent"),
+            ),
+            JSON.stringify(tools),
+          );
+          completeStream(
+            response,
+            index,
+            agentToolCall(spawnCall, "spawn_agent", { message: childPrompt }),
+          );
+        } else {
+          childResponse = [response, index];
+          releaseChild();
+        }
+      },
+      {
+        id: "delegation",
+        prompt: parentPrompt,
+        model: "gpt-5.4",
+        config: "[features]\nmulti_agent = true\nmulti_agent_v2 = false\n",
+      },
+    );
+    assert.equal(result.code, 0, result.stderr);
+    assert(!result.frames.some((frame) => frame.type === "error"), JSON.stringify(result.frames));
+    const agents = result.frames
+      .filter((frame) => frame.type === "capability" && frame.capability.id === "subagents")
+      .map((frame) => frame.capability.subagent);
+    assert.equal(agents.length, 2, JSON.stringify(result.frames));
+    const [started, completed] = agents;
+    assert(["pending", "running"].includes(started.status), JSON.stringify(started));
+    assert.equal(started.task, childPrompt);
+    assert.equal(started.messageId, "delegation");
+    assert.equal(started.provider, "codex");
+    assert.equal(completed.id, started.id);
+    assert.equal(completed.status, "completed");
+    assert.match(completed.recentOutput.join("\n"), /Fixture response/);
+  },
+);
+
+function agentToolCall(callId, name, args) {
+  return {
+    id: `item_${callId}`,
+    type: "function_call",
+    call_id: callId,
+    name,
+    namespace: "multi_agent_v1",
+    arguments: JSON.stringify(args),
+    status: "completed",
+  };
 }
 
 test(
@@ -441,15 +546,17 @@ async function runWorker(request, env) {
   return { code, stderr, frames };
 }
 
-function responseEvents(index) {
-  const item = {
+function responseEvents(
+  index,
+  item = {
     id: `message_${index}`,
     type: "message",
     role: "assistant",
     phase: "final_answer",
     status: "completed",
     content: [{ type: "output_text", text: `Fixture response ${index}.`, annotations: [] }],
-  };
+  },
+) {
   return [
     {
       type: "response.created",
@@ -458,15 +565,19 @@ function responseEvents(index) {
     {
       type: "response.output_item.added",
       output_index: 0,
-      item: { ...item, status: "in_progress", content: [] },
+      item: item.type === "message" ? { ...item, status: "in_progress", content: [] } : item,
     },
-    {
-      type: "response.output_text.delta",
-      item_id: item.id,
-      output_index: 0,
-      content_index: 0,
-      delta: item.content[0].text,
-    },
+    ...(item.type === "message"
+      ? [
+          {
+            type: "response.output_text.delta",
+            item_id: item.id,
+            output_index: 0,
+            content_index: 0,
+            delta: item.content[0].text,
+          },
+        ]
+      : []),
     { type: "response.output_item.done", output_index: 0, item },
     {
       type: "response.completed",
