@@ -2,7 +2,7 @@
 # `mise install --locked` installs exactly the versions recorded in mise.lock;
 # update with `mise lock` after editing a pin. Xcode, Android SDKs, simulator
 # runtimes, emulators and Docker are installed separately (fastlane/README.md).
-min_version = "2026.10.2"
+min_version = "2026.10.13"
 
 [settings]
 lockfile = true

@@ -24,7 +24,7 @@ runs:
   steps:
     - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
       with:
-        version: 2026.10.2
+        version: 2026.10.13
         install_args: ${{ inputs.tools }}
         cache_key_prefix: mise-${{ inputs.cache-scope }}-${{ github.job }}
     - name: Keep gems outside the checkout
