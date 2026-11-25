@@ -67,6 +67,13 @@ at a higher usage rate.
 A queued follow-up retains its own model, effort, attachments, and options.
 Changing that selection does not reconfigure the already-running turn.
 
+## Delegated work
+
+The **Subagents** tab shows agents that a harness delegates to during a
+conversation. Codex reports their lifecycle automatically when it delegates;
+there is no Dieter setting to enable. To try it, explicitly ask Codex to
+delegate two independent pieces of work to subagents.
+
 ## Runtime lifecycle
 
 The first catalog refresh or turn installs Dieter's harness runtime under

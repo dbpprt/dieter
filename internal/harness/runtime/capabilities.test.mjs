@@ -388,6 +388,117 @@ test("observes Codex todo_list before UI conversion and patches its bootstrap br
   assert.equal(capabilities[0].plan.phases[0].tasks[1].status, "pending");
 });
 
+test("Codex tool snapshots update each agent by thread ID, not by tool call", () => {
+  const agents = [];
+  let timestamp = "2026-08-15T10:00:00Z";
+  const collector = createSubagentCapabilityCollector({
+    provider: "custom-codex",
+    adapter: "codex",
+    messageId: "response",
+    emit: (event) => agents.push(event.subagent),
+    now: () => timestamp,
+  });
+  const observe = (fields, type = "item.completed") =>
+    collector.consumeHarnessEvent({
+      type: "raw",
+      rawValue: { type, item: { type: "collabAgentToolCall", ...fields } },
+    });
+  const spawn = { tool: "spawnAgent", prompt: "Review the README", model: "gpt-6.1-sol" };
+  observe({ ...spawn, status: "inProgress", receiverThreadIds: [] }, "item.started");
+  observe({ ...spawn, status: "failed", receiverThreadIds: [] });
+  assert.equal(agents.length, 0);
+
+  observe({
+    ...spawn,
+    id: "spawn-call",
+    status: "completed",
+    receiverThreadIds: ["scout"],
+    agentsStates: { scout: { status: "pendingInit" } },
+  });
+  assert.deepEqual(agents[0], {
+    id: "scout",
+    provider: "custom-codex",
+    messageId: "response",
+    status: "pending",
+    startedAt: timestamp,
+    updatedAt: timestamp,
+    task: spawn.prompt,
+    model: spawn.model,
+  });
+  observe({
+    tool: "wait",
+    id: "wait-call",
+    status: "completed",
+    receiverThreadIds: ["scout", "tester", "missing"],
+    agentsStates: {
+      scout: { status: "completed", message: "Found the setup instructions\nNo gaps" },
+      tester: { status: "errored", message: "Provider unavailable" },
+      missing: { status: "notFound" },
+    },
+  });
+  assert.deepEqual(
+    agents.map(({ id, status }) => [id, status]),
+    [
+      ["scout", "pending"],
+      ["scout", "completed"],
+      ["tester", "failed"],
+    ],
+  );
+  assert.equal(agents[1].task, spawn.prompt);
+  assert.deepEqual(agents[1].recentOutput, ["Found the setup instructions", "No gaps"]);
+  assert.equal(agents[2].error, "Provider unavailable");
+
+  timestamp = "2026-08-15T10:01:00Z";
+  observe({
+    tool: "closeAgent",
+    receiverThreadIds: ["scout"],
+    agentsStates: { scout: { status: "shutdown" } },
+  });
+  assert.equal(agents.length, 3);
+  observe({
+    tool: "sendInput",
+    receiverThreadIds: ["scout"],
+    agentsStates: { scout: { status: "running" } },
+  });
+  assert.equal(agents[3].status, "running");
+  assert.equal(agents[3].endedAt, undefined);
+  assert.equal(agents[3].recentOutput, undefined);
+});
+
+test("Codex sub-agent activity reports named agents without duplicating notification pairs", () => {
+  const agents = [];
+  const collector = createSubagentCapabilityCollector({
+    provider: "codex",
+    messageId: "response",
+    emit: (event) => agents.push(event.subagent),
+  });
+  const observe = (kind, agentThreadId, fields = {}) => {
+    for (const type of ["item.started", "item.completed"]) {
+      collector.consumeHarnessEvent({
+        type: "raw",
+        rawValue: { type, item: { type: "subAgentActivity", kind, agentThreadId, ...fields } },
+      });
+    }
+  };
+  observe("started", "scout", { agentPath: "/root/scout", model: "gpt-6.1-sol" });
+  observe("started", "tester", { agentPath: "/root/tester" });
+  observe("interacted", "scout");
+  observe("completed", "scout", { model: null });
+  observe("completed", "scout");
+  observe("interrupted", "tester");
+  assert.deepEqual(
+    agents.map(({ id, status }) => [id, status]),
+    [
+      ["scout", "running"],
+      ["tester", "running"],
+      ["scout", "completed"],
+      ["tester", "aborted"],
+    ],
+  );
+  assert.equal(agents[2].name, "/root/scout");
+  assert.equal(agents[2].model, "gpt-6.1-sol");
+});
+
 test("patches Codex stream errors into non-terminal notices with a terminal guard", async () => {
   const original = (await createCodex().getBootstrap()).files.find((file) =>
     file.path.endsWith("/bridge.mjs"),
