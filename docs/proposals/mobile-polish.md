@@ -1,7 +1,7 @@
 # Mobile polish spike: motion, the chat window, foldables and the desktop shell
 
-Status: spike on branch `spike/mobile-ui-polish` (worktree `tmp/mobile-polish/src`), waiting
-for the owner's approval of the captures below. Every change is presentation in `apps/kotlin/ui`:
+Status: approved by the owner on 2026-11-26 from the captures below and shipped as is through
+pull request #234 (branch `spike/mobile-ui-polish`). Every change is presentation in `apps/kotlin/ui`:
 nothing touches the core, the wire contract or iOS behaviour (iOS keeps its even bubble and its
 spinner; the shared structure, such as grouped tool steps, applies there too).
 
