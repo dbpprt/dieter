@@ -10,10 +10,27 @@ copy the **Unreleased** notes into a section named after that exact version
 
 Nothing yet.
 
-## 0.7.453
+## 0.7.454
 
 ### Changed
 
+- **A more alive Android app.** Pages slide and settle into place, tabs pass
+  each other in order, cards and buttons give under your finger, the chosen
+  tab pops, and list rows and board cards move into place instead of
+  jumping. The creation sheet rises in, and empty pages settle their tile in.
+- **A clearer chat window on Android.** A run of tool calls is one card with a
+  rail: each call shows what it does (read, search, edit, shell, web, agent,
+  git) and whether it is running, done or failed. The agent's reasoning sits
+  behind **Thinking**. Your messages are bubbles with a tail and a soft
+  gradient. While the agent works, typing dots and a shimmering activity line
+  replace the spinner, the message field glows, and a **New output** pill
+  brings you back when you scrolled away.
+- **Foldables and tablets** show a list and what you open from it as rounded
+  panels on a darker canvas, in light and dark, portrait and landscape. The
+  glass navigation floats under the list panel.
+- **Android desktop layout**: the conversation panel uses the floating message
+  card, and panes and sheets ease in. Project avatars carry a light, and board
+  cards show a coloured rail while they run, wait or fail.
 - **The Inbox refreshes as soon as you open the app.** Coming back from the
   background, Android and iPhone could reuse a network connection that had
   died while the app was away, so the Inbox kept showing what it knew when you
