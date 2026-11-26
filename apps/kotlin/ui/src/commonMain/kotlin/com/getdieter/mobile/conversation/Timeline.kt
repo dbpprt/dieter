@@ -5,6 +5,11 @@
 
 package com.getdieter.mobile.conversation
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -19,12 +24,21 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.dropShadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import com.getdieter.api.v1.MessagePart
 import com.getdieter.api.v1.ToolOutput
@@ -33,6 +47,10 @@ import com.getdieter.mobile.app.*
 import com.getdieter.mobile.channels.PeerNoticeCard
 import com.getdieter.mobile.design.*
 
+/**
+ * One row of the transcript. [live] marks the agent row the running turn is still writing: its
+ * activity disclosure pulses and its thinking label shimmers.
+ */
 @Composable
 internal fun TimelineRow(
     row: TimelineItem,
@@ -41,10 +59,11 @@ internal fun TimelineRow(
     onAttachment: (MessagePart) -> Unit,
     onTool: (TimelineStep) -> Unit,
     onCopy: () -> Unit,
+    live: Boolean = false,
 ) {
     var expanded by rememberSaveable(row.id) { mutableStateOf(false) }
     if (row.activity && !expanded) {
-        ActivitySummaryRow(row.summary, false) { expanded = true }
+        ActivitySummaryRow(row.summary, false, live) { expanded = true }
         return
     }
     if (row.user) {
@@ -83,15 +102,13 @@ internal fun TimelineRow(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             if (row.activity)
-                ActivitySummaryRow(row.summary, true, padded = false) { expanded = false }
+                ActivitySummaryRow(row.summary, true, live, padded = false) { expanded = false }
             row.groups.forEach { group ->
                 var open by rememberSaveable(group.id) { mutableStateOf(false) }
                 if (group.activity && !row.activity)
-                    ActivitySummaryRow(group.summary, open, padded = false) { open = !open }
+                    ActivitySummaryRow(group.summary, open, live, padded = false) { open = !open }
                 if (!group.activity || open || row.activity)
-                    group.steps.forEach { step ->
-                        TimelineStepView(step, row, view, openUrl, onAttachment, onTool)
-                    }
+                    StepList(group.steps, row, view, live, openUrl, onAttachment, onTool)
             }
             view.conversation
                 ?.task_plans
@@ -102,37 +119,53 @@ internal fun TimelineRow(
     }
 }
 
+/**
+ * A group's steps in order. Consecutive tool calls share one card with a rail between them, so a
+ * burst of reads and edits reads as one piece of work rather than a stack of pills.
+ */
+@Composable
+private fun StepList(
+    steps: List<TimelineStep>,
+    row: TimelineItem,
+    view: ConversationSlice,
+    live: Boolean,
+    openUrl: (String) -> Unit,
+    onAttachment: (MessagePart) -> Unit,
+    onTool: (TimelineStep) -> Unit,
+) {
+    var index = 0
+    while (index < steps.size) {
+        val step = steps[index]
+        if (step.kind == TimelineStepKind.TIMELINE_STEP_KIND_TOOL) {
+            var end = index
+            while (
+                end + 1 < steps.size &&
+                    steps[end + 1].kind == TimelineStepKind.TIMELINE_STEP_KIND_TOOL
+            ) end++
+            ToolSteps(steps.subList(index, end + 1), onTool)
+            index = end + 1
+            continue
+        }
+        TimelineStepView(step, row, view, live && index == steps.lastIndex, openUrl, onAttachment)
+        index++
+    }
+}
+
 @Composable
 private fun TimelineStepView(
     step: TimelineStep,
     row: TimelineItem,
     view: ConversationSlice,
+    live: Boolean,
     openUrl: (String) -> Unit,
     onAttachment: (MessagePart) -> Unit,
-    onTool: (TimelineStep) -> Unit,
 ) {
     val part =
         view.messages.firstOrNull { it.id == step.message_id }?.parts?.getOrNull(step.part_index)
     val text = step.text.ifEmpty { part?.text.orEmpty() }
     when (step.kind) {
-        TimelineStepKind.TIMELINE_STEP_KIND_TOOL -> ToolRow(step) { onTool(step) }
         TimelineStepKind.TIMELINE_STEP_KIND_REASONING ->
-            if (text.isNotBlank())
-                Row {
-                    Box(
-                        Modifier.width(2.dp)
-                            .heightIn(min = 18.dp)
-                            .background(palette.separator, CircleShape)
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        text,
-                        style = type.subheadline.copy(fontStyle = FontStyle.Italic),
-                        color = palette.secondaryLabel,
-                        maxLines = 12,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+            if (text.isNotBlank()) ReasoningRow(step.id, text, live)
         TimelineStepKind.TIMELINE_STEP_KIND_SUBAGENTS ->
             view.conversation
                 ?.subagents
@@ -148,6 +181,49 @@ private fun TimelineStepView(
             else if (text.isNotEmpty()) RichText(text, openUrl)
         }
         else -> if (text.isNotEmpty()) RichText(text, openUrl)
+    }
+}
+
+/** The agent's reasoning behind a "Thinking" disclosure; open by default, so nothing is lost. */
+@Composable
+private fun ReasoningRow(id: String, text: String, live: Boolean) {
+    var open by rememberSaveable(id) { mutableStateOf(true) }
+    val secondary = palette.secondaryLabel
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.clip(CircleShape)
+                .pressable(onClick = { open = !open })
+                .padding(vertical = 4.dp, horizontal = 4.dp)
+                .semantics { contentDescription = (if (open) "Hide " else "Show ") + "thinking" },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(Glyph.BRAIN, null, tint = secondary, size = 14.dp, weight = GlyphWeight.MEDIUM)
+            val label = type.footnote.copy(fontWeight = FontWeight.SemiBold)
+            Text(
+                "Thinking",
+                style = if (live) label.shimmer(secondary, palette.label) else label,
+                color = if (live) Color.Unspecified else secondary,
+            )
+            DisclosureChevron(open)
+        }
+        AnimatedVisibility(
+            open,
+            enter = expandVertically(Motion.settle()) + fadeIn(),
+            exit = shrinkVertically(Motion.settle()) + fadeOut(),
+        ) {
+            Row(Modifier.padding(start = 6.dp, top = 2.dp).height(IntrinsicSize.Min)) {
+                Box(Modifier.width(2.dp).fillMaxHeight().background(palette.separator, CircleShape))
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text,
+                    style = type.subheadline.copy(fontStyle = FontStyle.Italic),
+                    color = secondary,
+                    maxLines = 40,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
     }
 }
 
@@ -206,12 +282,26 @@ private fun UserMessage(
                 .trim()
         if (text.isNotEmpty())
             MenuAnchor(menu) {
+                val shape = userBubbleShape()
                 Box(
                     Modifier.widthIn(max = 560.dp)
                         .fillMaxWidth(.86f)
                         .wrapContentWidth(Alignment.End)
-                        .clip(RoundedCornerShape(if (apple) 20.dp else 22.dp))
-                        .background(if (apple) userBubbleApple() else colors.primaryContainer)
+                        .then(
+                            if (!apple && !palette.dark)
+                                Modifier.dropShadow(
+                                    shape,
+                                    Shadow(
+                                        radius = 10.dp,
+                                        color = Color.Black.copy(alpha = .08f),
+                                        offset = DpOffset(0.dp, 3.dp),
+                                    ),
+                                )
+                            else Modifier
+                        )
+                        .clip(shape)
+                        .background(userBubbleBrush())
+                        .then(if (row.unconfirmed) Modifier.graphicsAlpha(.6f) else Modifier)
                         .pressable(
                             onClick = {},
                             onLongClick = {
@@ -232,7 +322,7 @@ private fun UserMessage(
                             },
                             role = null,
                         )
-                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                        .padding(horizontal = 15.dp, vertical = 11.dp)
                 ) {
                     CompositionLocalProvider(
                         androidx.compose.material3.LocalContentColor provides
@@ -259,54 +349,149 @@ private fun UserMessage(
     }
 }
 
+/** iOS keeps its even bubble; Android's grows a tail toward the sender's edge. */
 @Composable
-private fun userBubbleApple() =
-    if (palette.dark) androidx.compose.ui.graphics.Color(0xFF2C2C2E)
-    else androidx.compose.ui.graphics.Color(0xFFE9E9EB)
+@ReadOnlyComposable
+private fun userBubbleShape(): Shape =
+    if (apple) RoundedCornerShape(20.dp)
+    else RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp, bottomEnd = 8.dp, bottomStart = 22.dp)
 
+/** The bubble's fill: iOS's grey, or a tinted gradient that is a little deeper at the top. */
+@Composable
+@ReadOnlyComposable
+private fun userBubbleBrush(): Brush {
+    if (apple) {
+        val grey = if (palette.dark) Color(0xFF2C2C2E) else Color(0xFFE9E9EB)
+        return Brush.linearGradient(listOf(grey, grey))
+    }
+    val base = colors.primaryContainer
+    val deep = lerp(base, colors.primary, if (palette.dark) .16f else .1f)
+    return Brush.linearGradient(
+        0f to deep,
+        1f to base,
+        start = Offset.Zero,
+        end = Offset(600f, 400f),
+    )
+}
+
+/** "Reasoning · 1 edit · 1 command": the disclosure over a run of routine work. */
 @Composable
 private fun ActivitySummaryRow(
     summary: String,
     open: Boolean,
+    live: Boolean,
     padded: Boolean = true,
     toggle: () -> Unit,
 ) {
+    val tint = if (open) palette.label else palette.secondaryLabel
     Row(
         Modifier.then(if (padded) Modifier.padding(horizontal = ScreenMargin) else Modifier)
             .clip(CircleShape)
+            .background(
+                if (open) Color.Transparent
+                else palette.fill.copy(alpha = palette.fill.alpha * .55f)
+            )
             .pressable(onClick = toggle)
-            .padding(vertical = 4.dp, horizontal = 2.dp)
+            .padding(vertical = 5.dp, horizontal = if (open) 4.dp else 10.dp)
             .semantics { contentDescription = (if (open) "Hide " else "Show ") + summary },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Glyph.SPARKLES, null, tint = palette.secondaryLabel, size = 15.dp)
-        Spacer(Modifier.width(6.dp))
+        if (live)
+            Pulse(palette.accent, 18.dp) {
+                Icon(Glyph.SPARKLES, null, tint = palette.accent, size = 14.dp)
+            }
+        else Icon(Glyph.SPARKLES, null, tint = tint, size = 14.dp)
+        Spacer(Modifier.width(7.dp))
         Text(
             summary.ifEmpty { "Agent activity" },
-            style = type.subheadline,
-            color = palette.secondaryLabel,
+            style = type.footnote.copy(fontWeight = FontWeight.Medium),
+            color = tint,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        Spacer(Modifier.width(4.dp))
-        DisclosureChevron(open)
+        Spacer(Modifier.width(5.dp))
+        DisclosureChevron(open, tint)
+    }
+}
+
+/** A run of tool calls as one card: each a row with the tool's glyph, its title and its state. */
+@Composable
+private fun ToolSteps(steps: List<TimelineStep>, onTool: (TimelineStep) -> Unit) {
+    val shape = RoundedCornerShape(16.dp)
+    val rail = palette.separator
+    Column(
+        Modifier.fillMaxWidth()
+            .clip(shape)
+            .background(palette.fill.copy(alpha = palette.fill.alpha * .55f))
+            .then(
+                if (apple) Modifier.border(.5.dp, palette.separator.copy(alpha = .5f), shape)
+                else Modifier
+            )
+            .testTag("tool-steps")
+    ) {
+        steps.forEachIndexed { index, step ->
+            ToolStepRow(
+                step,
+                first = index == 0,
+                last = index == steps.lastIndex,
+                rail = rail,
+                onClick = { onTool(step) },
+            )
+        }
     }
 }
 
 @Composable
-private fun ToolRow(step: TimelineStep, onClick: () -> Unit) {
+private fun ToolStepRow(
+    step: TimelineStep,
+    first: Boolean,
+    last: Boolean,
+    rail: Color,
+    onClick: () -> Unit,
+) {
+    val running = step.tool_status == ToolCallStatus.TOOL_CALL_STATUS_RUNNING
+    val done = step.tool_status == ToolCallStatus.TOOL_CALL_STATUS_COMPLETED
+    val statusTint =
+        when {
+            step.tool_attention -> palette.destructive
+            running -> palette.accent
+            else -> palette.secondaryLabel
+        }
+    val glyphTint = if (step.tool_attention) palette.destructive else palette.secondaryLabel
     Row(
         Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(palette.fill.copy(alpha = palette.fill.alpha * .7f))
             .pressable(onClick = onClick, highlight = true)
-            .padding(horizontal = 12.dp, vertical = 9.dp),
+            .drawBehind {
+                // The rail joins the glyph circles of consecutive steps.
+                val x = (12 + 12).dp.toPx()
+                val radius = 12.dp.toPx()
+                if (!first)
+                    drawLine(rail, Offset(x, 0f), Offset(x, center.y - radius), 1.5.dp.toPx())
+                if (!last)
+                    drawLine(
+                        rail,
+                        Offset(x, center.y + radius),
+                        Offset(x, size.height),
+                        1.5.dp.toPx(),
+                    )
+            }
+            .padding(start = 12.dp, end = 10.dp, top = 7.dp, bottom = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Glyph.TERMINAL, null, tint = palette.secondaryLabel, size = 15.dp)
-        Spacer(Modifier.width(9.dp))
+        Box(
+            Modifier.size(24.dp)
+                .background(
+                    if (step.tool_attention) palette.destructive.copy(alpha = .14f)
+                    else palette.cell,
+                    CircleShape,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(toolGlyph(step.tool_title), null, tint = glyphTint, size = 13.dp)
+        }
+        Spacer(Modifier.width(10.dp))
         Text(
-            step.tool_title,
+            step.tool_title.ifEmpty { "Tool" },
             Modifier.weight(1f),
             style = type.footnote.copy(fontWeight = FontWeight.Medium),
             color = palette.label,
@@ -314,12 +499,47 @@ private fun ToolRow(step: TimelineStep, onClick: () -> Unit) {
             overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.width(8.dp))
-        Text(
-            step.tool_status_label,
-            style = type.caption,
-            color = if (step.tool_attention) palette.destructive else palette.secondaryLabel,
-            maxLines = 1,
+        when {
+            running -> Spinner(Modifier.size(13.dp), color = palette.accent)
+            done ->
+                Icon(
+                    Glyph.CHECK,
+                    step.tool_status_label.ifEmpty { "Completed" },
+                    tint = palette.success,
+                    size = 13.dp,
+                    weight = GlyphWeight.BOLD,
+                )
+            else ->
+                Text(
+                    step.tool_status_label,
+                    style = type.caption.copy(fontWeight = FontWeight.Medium),
+                    color = statusTint,
+                    maxLines = 1,
+                )
+        }
+        Spacer(Modifier.width(6.dp))
+        Icon(
+            Glyph.CHEVRON_RIGHT,
+            null,
+            tint = palette.tertiaryLabel,
+            size = 11.dp,
+            weight = GlyphWeight.SEMIBOLD,
         )
+    }
+}
+
+/** A glyph for what the tool does, read from its title ("read file", "bash", "edit", …). */
+private fun toolGlyph(title: String): Glyph {
+    val t = title.lowercase()
+    return when {
+        "search" in t || "grep" in t || "glob" in t || "find" in t -> Glyph.SEARCH
+        "edit" in t || "write" in t || "patch" in t || "apply" in t -> Glyph.EDIT
+        "read" in t || "file" in t || "open" in t -> Glyph.DOC_TEXT
+        "web" in t || "fetch" in t || "http" in t || "browse" in t -> Glyph.GLOBE
+        "agent" in t || "task" in t || "delegate" in t -> Glyph.SUBAGENTS
+        "list" in t || "ls" == t || "dir" in t -> Glyph.FOLDER
+        "git" in t || "commit" in t || "branch" in t -> Glyph.BRANCH
+        else -> Glyph.TERMINAL
     }
 }
 

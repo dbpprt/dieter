@@ -276,20 +276,28 @@ internal fun SendButton(
     loading: Boolean = false,
     tag: String = if (glyph == Glyph.STOP) "stop-agent" else "send-message",
 ) {
-    val container =
-        when {
-            !enabled -> palette.fill
-            destructive && !apple -> colors.errorContainer
-            apple -> palette.accent.let { if (it == palette.label) palette.label else it }
-            else -> colors.primary
-        }
-    val content =
-        when {
-            !enabled -> palette.tertiaryLabel
-            destructive && !apple -> colors.onErrorContainer
-            apple -> palette.onAccent
-            else -> colors.onPrimary
-        }
+    val container by
+        androidx.compose.animation.animateColorAsState(
+            when {
+                !enabled -> palette.fill
+                destructive && !apple -> colors.errorContainer
+                apple -> palette.accent.let { if (it == palette.label) palette.label else it }
+                else -> colors.primary
+            },
+            androidx.compose.animation.core.tween(220),
+            label = "send-container",
+        )
+    val content by
+        androidx.compose.animation.animateColorAsState(
+            when {
+                !enabled -> palette.tertiaryLabel
+                destructive && !apple -> colors.onErrorContainer
+                apple -> palette.onAccent
+                else -> colors.onPrimary
+            },
+            androidx.compose.animation.core.tween(220),
+            label = "send-content",
+        )
     Box(
         Modifier.size(size.coerceAtLeast(44.dp))
             .clip(CircleShape)
@@ -299,7 +307,9 @@ internal fun SendButton(
         contentAlignment = Alignment.Center,
     ) {
         Box(
-            Modifier.size(size).background(container, CircleShape),
+            Modifier.size(size)
+                .popOnChange(enabled && !apple, from = .78f)
+                .background(container, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             if (loading) Spinner(Modifier.size(size * .55f), color = content)
@@ -446,6 +456,8 @@ private fun FloatingComposer(
                 focused -> colors.primary.copy(alpha = if (dark) .8f else .55f)
                 glass -> Color.Transparent
                 dark -> Color.White.copy(alpha = .1f)
+                // The desktop's rim is already a translucent hairline; keep it as it is.
+                colors.outlineVariant.alpha < .99f -> colors.outlineVariant
                 else -> colors.outlineVariant.copy(alpha = .85f)
             },
             label = "composer-outline",
@@ -499,11 +511,13 @@ private fun FloatingComposer(
                 if (model.pendingTools.isNotEmpty())
                     FloatingChip(model.pendingTools, Glyph.HOURGLASS, backdrop, glass)
             }
+        val working = state?.working == true
         Column(
             Modifier.padding(horizontal = 10.dp)
                 .fillMaxWidth()
                 .then(card)
                 .border(if (focused) 1.5.dp else 1.dp, outline, shape)
+                .workingGlow(working && !focused, shape, colors.primary)
                 .testTag("composer-card")
         ) {
             if (attachments.isNotEmpty())

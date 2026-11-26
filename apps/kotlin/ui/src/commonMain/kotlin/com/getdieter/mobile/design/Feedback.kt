@@ -29,6 +29,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -131,13 +132,39 @@ internal fun EmptyState(
                 size = 46.dp,
                 weight = GlyphWeight.REGULAR,
             )
-        else
+        else {
+            // The tile settles in from a little smaller, so an empty pane still feels alive.
+            val settle = remember { Animatable(.86f) }
+            LaunchedEffect(Unit) { settle.animateTo(1f, Motion.emphasized()) }
             Box(
-                Modifier.size(72.dp).background(colors.secondaryContainer, CircleShape),
+                Modifier.size(84.dp)
+                    .graphicsLayer {
+                        scaleX = settle.value
+                        scaleY = settle.value
+                    }
+                    .shadow(
+                        if (palette.dark) 0.dp else 10.dp,
+                        RoundedCornerShape(28.dp),
+                        ambientColor = colors.primary.copy(.18f),
+                        spotColor = colors.primary.copy(.22f),
+                    )
+                    .background(
+                        androidx.compose.ui.graphics.Brush.linearGradient(
+                            0f to colors.primaryContainer,
+                            1f to colors.secondaryContainer,
+                        ),
+                        RoundedCornerShape(28.dp),
+                    )
+                    .border(
+                        1.dp,
+                        Color.White.copy(alpha = if (palette.dark) .08f else .6f),
+                        RoundedCornerShape(28.dp),
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(glyph, null, tint = colors.onSecondaryContainer, size = 32.dp)
+                Icon(glyph, null, tint = colors.onPrimaryContainer, size = 36.dp)
             }
+        }
         Spacer(Modifier.height(if (apple) 14.dp else 20.dp))
         Text(
             title,
@@ -344,8 +371,17 @@ internal fun CountBadge(
 @Composable
 internal fun ProjectAvatar(id: String, name: String, size: Dp = 36.dp) {
     val tint = labelColor(com.getdieter.core.admin.Labels.stable(id))
+    val shape = RoundedCornerShape(size * .28f)
     Box(
-        Modifier.size(size).clip(RoundedCornerShape(size * .28f)).background(tint),
+        Modifier.size(size)
+            .clip(shape)
+            .background(
+                androidx.compose.ui.graphics.Brush.linearGradient(
+                    0f to androidx.compose.ui.graphics.lerp(tint, Color.White, .22f),
+                    1f to androidx.compose.ui.graphics.lerp(tint, Color.Black, .1f),
+                )
+            )
+            .border(1.dp, Color.White.copy(alpha = .22f), shape),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -394,7 +430,7 @@ internal fun ContentCard(
                         onClick = onClick,
                         onLongClick = onLongClick,
                         highlight = !apple,
-                        scaleOnPress = apple,
+                        scaleOnPress = true,
                     )
                 else Modifier
             )

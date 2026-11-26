@@ -152,9 +152,13 @@ the Inbox and the Inbox rules menu item say how many conversations they hide.
 {{< /shots >}}
 
 A task conversation shows the same reply, tool activity, and plan as on Mac,
-and exposes its **Changes** and **Subagents**. A standalone chat stays separate
-from the board. Messages sent during an active turn join its queue; closing the
-app leaves the host working.
+and exposes its **Changes** and **Subagents**. On Android, a run of tool calls
+is one card that names each call and shows whether it is running, done or
+failed, the agent's reasoning sits behind **Thinking**, and while the agent
+works its activity line shimmers and the message field glows; scroll away
+during a turn and a **New output** pill brings you back. A standalone chat
+stays separate from the board. Messages sent during an active turn join its
+queue; closing the app leaves the host working.
 
 {{< shots >}}
 {{< screenshot src="ios-conversation.png" kind="phone" width="1206" height="2622" alt="A running task on iPhone with its reply, rate-limit table, plan progress, and the test command in flight" caption="A running task on iPhone." >}}
@@ -176,8 +180,8 @@ mismatched release compatibility policy.
 {{< /shots >}}
 
 On iPad, and on Android tablets and unfolded foldables, a list and what you
-open from it sit side by side. On Android, drag the handle between them to
-resize the list. Drag it all the way to one side to hide that pane: with the
+open from it sit side by side; on Android the two sit as rounded panels on a
+darker canvas. On Android, drag the handle between them to resize the list. Drag it all the way to one side to hide that pane: with the
 list hidden, whatever you open fills the screen (back returns to the list);
 with the open page hidden, the list fills the screen until you open something.
 The handle stays at the edge to pull the pane back, a double-tap restores both,
@@ -191,8 +195,8 @@ On an unfolded foldable the bar stays under the list, so a task's message
 field reaches the bottom of its own pane. In landscape the bar stands on the
 left edge. Drag along the bar to slide between tabs; while you scroll down a
 page, it shrinks to the current tab and comes back when you stop. The message
-field floats above the reply
-as a card, with the agent, the context in use and send inside it.
+field floats above the reply as a card, with the agent, the context in use and
+send inside it, and in Android's desktop layout as well.
 **Settings → Appearance → Navigation** offers **Lens** (the default), **Dock**
 (labels on every tab), **Island** (a compact pill) and **Classic** (the docked
 bar). **Chat input** offers **Card** (the default), **Glass** and **Classic**.

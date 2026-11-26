@@ -6,6 +6,7 @@
 package com.getdieter.mobile.conversation
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -256,8 +257,11 @@ private fun Transcript(
                 .tool_output
     }
     // Card and Glass composers float above the transcript, which scrolls on beneath them.
-    val composerStyle by store.layout.composerStyle.collectAsState()
-    val floating = !apple && !desktop && composerStyle != ComposerStyle.CLASSIC
+    val chosenStyle by store.layout.composerStyle.collectAsState()
+    // The desktop shell always floats the card: its panes are too narrow for a docked band.
+    val composerStyle =
+        if (desktop && chosenStyle == ComposerStyle.GLASS) ComposerStyle.CARD else chosenStyle
+    val floating = !apple && (desktop || composerStyle != ComposerStyle.CLASSIC)
     val transcript = rememberGlassBackdrop()
     var dockHeight by remember { mutableStateOf(0.dp) }
     val density = androidx.compose.ui.platform.LocalDensity.current
@@ -425,17 +429,27 @@ private fun Transcript(
                             UnsentTask(store, task, state.can_start, busy, openUrl)
                         }
                     }
+                val lastId = view.timeline.lastOrNull()?.id
                 items(view.timeline, key = { it.id }) { row ->
-                    TimelineRow(
-                        row,
-                        view,
-                        openUrl,
-                        onAttachment = preview,
-                        onTool = ::loadTool,
-                        onCopy = {
-                            clipboard.setText(AnnotatedString(rowText(row, view)))
-                        },
-                    )
+                    Box(
+                        Modifier.animateItem(
+                            fadeInSpec = tween(260),
+                            placementSpec = Motion.settle(),
+                            fadeOutSpec = tween(120),
+                        )
+                    ) {
+                        TimelineRow(
+                            row,
+                            view,
+                            openUrl,
+                            onAttachment = preview,
+                            onTool = ::loadTool,
+                            onCopy = {
+                                clipboard.setText(AnnotatedString(rowText(row, view)))
+                            },
+                            live = state?.working == true && row.id == lastId && !row.user,
+                        )
+                    }
                 }
                 view.conversation
                     ?.task_plans
@@ -529,13 +543,11 @@ private fun Transcript(
                         size = 40.dp,
                     )
                 else
-                    androidx.compose.material3.SmallFloatingActionButton(
+                    JumpPill(
+                        if (state?.working == true) "New output" else "Jump to latest",
+                        if (floating && composerStyle == ComposerStyle.GLASS) transcript else null,
                         jump,
-                        Modifier.semantics { contentDescription = "Jump to latest" },
-                        containerColor = colors.surfaceContainerHighest,
-                    ) {
-                        Icon(Glyph.ARROW_DOWN, null, size = 24.dp)
-                    }
+                    )
             }
             if (floating)
                 Box(
@@ -623,17 +635,23 @@ private fun UnsentTask(
 @Composable
 private fun WorkingIndicator(state: ConversationState) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = ScreenMargin + 2.dp).semantics(
-            mergeDescendants = true
-        ) {},
+        Modifier.fillMaxWidth()
+            .padding(horizontal = ScreenMargin + 2.dp)
+            .testTag("working-indicator")
+            .semantics(mergeDescendants = true) {},
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Spinner(Modifier.size(16.dp))
+        if (apple) Spinner(Modifier.size(16.dp))
+        else TypingDots(palette.accent, Modifier.padding(end = 2.dp), size = 5.dp)
         Spacer(Modifier.width(10.dp))
+        val style =
+            type.subheadline.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
         Text(
             state.live_activity.ifEmpty { "Working…" },
-            style = type.subheadline,
-            color = palette.secondaryLabel,
+            style = if (apple) style else style.shimmer(palette.secondaryLabel, palette.label),
+            color =
+                if (apple) palette.secondaryLabel
+                else androidx.compose.ui.graphics.Color.Unspecified,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
@@ -759,12 +777,50 @@ private fun QueuedMessage(
 
 @Composable
 private fun JumpToLatest(visible: Boolean, modifier: Modifier, content: @Composable () -> Unit) {
-    AnimatedVisibility(
-        visible,
-        modifier,
-        enter = fadeIn() + scaleIn(initialScale = .8f),
-        exit = fadeOut() + scaleOut(targetScale = .8f),
+    AnimatedVisibility(visible, modifier, enter = popIn, exit = popOut) { content() }
+}
+
+/** The Android jump-to-latest control: a raised pill, glass over the transcript when it can be. */
+@Composable
+private fun JumpPill(text: String, backdrop: GlassBackdrop?, onClick: () -> Unit) {
+    val dark = palette.dark
+    Row(
+        Modifier.height(38.dp)
+            .then(
+                if (backdrop != null) Modifier.glass(backdrop, CircleShape, GlassStyles.chrome())
+                else
+                    Modifier.shadow(
+                            8.dp,
+                            CircleShape,
+                            ambientColor = androidx.compose.ui.graphics.Color.Black.copy(.18f),
+                            spotColor = androidx.compose.ui.graphics.Color.Black.copy(.18f),
+                        )
+                        .background(
+                            if (dark) colors.surfaceContainerHighest
+                            else colors.surfaceContainerLowest,
+                            CircleShape,
+                        )
+                        .border(
+                            1.dp,
+                            if (dark) androidx.compose.ui.graphics.Color.White.copy(.1f)
+                            else colors.outlineVariant.copy(.8f),
+                            CircleShape,
+                        )
+            )
+            .clip(CircleShape)
+            .pressable(onClick = onClick)
+            .semantics { contentDescription = "Jump to latest" }
+            .testTag("jump-to-latest")
+            .padding(start = 12.dp, end = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        content()
+        Icon(Glyph.ARROW_DOWN, null, tint = palette.label, size = 15.dp, weight = GlyphWeight.BOLD)
+        Text(
+            text,
+            style =
+                type.footnote.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+            color = palette.label,
+        )
     }
 }
