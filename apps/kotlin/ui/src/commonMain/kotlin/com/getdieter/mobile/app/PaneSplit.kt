@@ -6,6 +6,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.draggable
@@ -21,6 +22,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.dropShadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
@@ -30,6 +35,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.getdieter.mobile.design.*
@@ -48,13 +54,34 @@ internal fun ListDetailSplit(
     store: MobileStore,
     detailOpen: Boolean,
     onListWidth: (Float) -> Unit = {},
+    /**
+     * Draw the panes as rounded panels on a tinted canvas with a gutter between them, as a large
+     * screen deserves; the shell then hands the panes insets without the status bar, which the
+     * canvas keeps clear itself.
+     */
+    panelled: Boolean = false,
     list: @Composable () -> Unit,
     detail: @Composable () -> Unit,
 ) {
     val fraction by store.layout.paneFraction.collectAsState()
     val saved by store.layout.paneCollapse.collectAsState()
     val collapse = saved.shown(detailOpen)
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val canvas = paneCanvasColor()
+    BoxWithConstraints(
+        Modifier.fillMaxSize()
+            .then(
+                if (panelled)
+                    Modifier.background(canvas)
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                        .padding(
+                            start = PaneCanvasInset,
+                            end = PaneCanvasInset,
+                            top = PaneCanvasInset - 2.dp,
+                            bottom = PaneCanvasInset,
+                        )
+                else Modifier
+            )
+    ) {
         val total = maxWidth.value
         // The list's width while a finger moves the handle; settled once the drag ends.
         var dragged by remember { mutableStateOf<Float?>(null) }
@@ -67,21 +94,32 @@ internal fun ListDetailSplit(
         val showList = width > .5f
         val showDetail = total - width > .5f
         SideEffect { onListWidth(if (showList) width else 0f) }
+        val both = showList && showDetail
         Row(Modifier.fillMaxSize()) {
             if (showList)
                 Box(
                     Modifier.width(width.dp)
                         .fillMaxHeight()
+                        .then(
+                            if (panelled && both) Modifier.padding(end = PaneGutter / 2)
+                            else Modifier
+                        )
+                        .then(if (panelled) Modifier.panel() else Modifier)
                         .clipToBounds()
                         .atLeastWidth(PaneSplit.MIN_LIST_DP.dp, alignEnd = true)
                 ) {
                     list()
                 }
-            if (showList && showDetail) VerticalDivider(color = colors.outlineVariant)
+            if (both && !panelled) VerticalDivider(color = colors.outlineVariant)
             if (showDetail)
                 Box(
                     Modifier.weight(1f)
                         .fillMaxHeight()
+                        .then(
+                            if (panelled && both) Modifier.padding(start = PaneGutter / 2)
+                            else Modifier
+                        )
+                        .then(if (panelled) Modifier.panel() else Modifier)
                         .clipToBounds()
                         .atLeastWidth(PaneSplit.MIN_DETAIL_DP.dp, alignEnd = false)
                 ) {
@@ -101,6 +139,43 @@ internal fun ListDetailSplit(
             },
         )
     }
+}
+
+/** The space the panelled canvas keeps around and between its panels. */
+internal val PaneCanvasInset = 8.dp
+internal val PaneGutter = 10.dp
+
+/** The canvas behind the panels: a shade darker than the page in light, deeper in dark. */
+@Composable
+@ReadOnlyComposable
+internal fun paneCanvasColor(): Color =
+    if (palette.dark) lerp(palette.background, Color.Black, .45f)
+    else lerp(colors.surfaceContainer, colors.surfaceContainerHigh, .5f)
+
+/** A pane as a floating panel: the page colour, rounded, a hairline rim and a soft shadow. */
+@Composable
+private fun Modifier.panel(): Modifier {
+    val shape = RoundedCornerShape(22.dp)
+    val dark = palette.dark
+    return this.dropShadow(
+            shape,
+            Shadow(
+                radius = if (dark) 18.dp else 14.dp,
+                color = Color.Black.copy(alpha = if (dark) .45f else .07f),
+                offset = DpOffset(0.dp, 4.dp),
+            ),
+        )
+        .clip(shape)
+        .background(palette.background)
+        .then(
+            if (dark)
+                Modifier.border(
+                    1.dp,
+                    Color.White.copy(alpha = .07f),
+                    shape,
+                )
+            else Modifier
+        )
 }
 
 /** A list sent away only stays away while something is open beside it. */

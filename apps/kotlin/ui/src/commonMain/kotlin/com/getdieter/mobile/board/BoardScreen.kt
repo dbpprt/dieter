@@ -469,6 +469,7 @@ private fun LaneList(
                 machine =
                     session.machines.firstOrNull { it.id == card.owner_daemon_id }?.display_name
                         ?: "Unassigned",
+                modifier = Modifier.animateItem(placementSpec = Motion.settle()),
                 drag = drag,
                 onEdit = edit,
             )
