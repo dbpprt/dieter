@@ -10,6 +10,34 @@ copy the **Unreleased** notes into a section named after that exact version
 
 Nothing yet.
 
+## 0.7.453
+
+### Changed
+
+- **The Inbox refreshes as soon as you open the app.** Coming back from the
+  background, Android and iPhone could reuse a network connection that had
+  died while the app was away, so the Inbox kept showing what it knew when you
+  left until that connection timed out. Every reconnect now starts on fresh
+  connections and needs fewer round trips before your machines answer.
+- **Rows say when they are refreshing.** Until its machine has answered, an
+  Inbox row shows a small spinning mark next to its time and light sweeps
+  across its second line. A row whose machine is offline or not responding
+  says so instead. The Mac and the Android desktop shell show the same mark.
+- **Codex subagents appear in the Subagents tab**, with their task, model,
+  status and results.
+- **Worktree conversations work in empty repositories**: the first work
+  becomes the repository's first commit (squash, fast-forward or merge), and
+  Changes shows initial commits.
+- Codex conversations whose earlier provider history is missing after the
+  provider-account change continue on a fresh thread and say that earlier
+  context is unavailable, instead of failing.
+- OMP 19 ends processes an agent started in the background with `&` when its
+  session ends.
+- Updated dependencies: Go 1.27.4, Claude Code 2.1.332, Codex 0.172.0, OMP
+  19.2.1, Pi 1.6.1, the AI SDK harness adapters, Bun 1.4.5, Gradle 9.9.2,
+  Android Gradle Plugin 9.5.3, Compose 1.13, SwiftNIO 2.105 and SwiftProtobuf
+  1.41, Fastlane 2.242 and the build tools.
+
 ## 0.7.452
 
 ### Fixed
