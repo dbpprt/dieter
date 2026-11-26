@@ -127,6 +127,10 @@ separately. Up to eight recently opened conversations keep their transcript
 watches while you navigate elsewhere; older entries remain in a bounded cache.
 Reopening a cached conversation shows its messages immediately and marks it
 **Refreshing** until the owner confirms it has caught up with known activity.
+Inbox rows are marked the same way while their machine's change stream catches
+up, for example after the phone returns from the background. Every new gateway
+session dials fresh connections, so a connection that died silently while the
+app was away never delays the reconnect.
 A delayed watch falls back to a bounded read. Activity previews never replace
 full message content. Offline or unresponsive machines leave cached messages
 readable and show a warning in the conversation.

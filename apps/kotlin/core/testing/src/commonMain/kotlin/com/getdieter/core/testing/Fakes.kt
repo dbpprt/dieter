@@ -67,6 +67,8 @@ object OfflineTransport : RpcTransport, TunnelFactory {
 
     override suspend fun open(access: GatewayAccess, daemonId: String, lane: RelayLane): Tunnel =
         error("offline")
+
+    override fun renewConnections() {}
 }
 
 /** Machine sessions that never connect, for surfaces tested without a daemon. */

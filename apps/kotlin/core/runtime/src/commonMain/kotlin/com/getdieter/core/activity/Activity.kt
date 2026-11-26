@@ -47,6 +47,12 @@ data class ActivityItem(
     val boardName: String?,
     /** Why what its owner reports may be old, e.g. "Studio is offline"; null while current. */
     val stale: String? = null,
+    /**
+     * Its owner's view is being brought up to date right now, e.g. while the app reconnects after
+     * the background: what shows is the cached state, and it may change any moment. Never with
+     * [stale].
+     */
+    val refreshing: Boolean = false,
 ) {
     val id: String
         get() = card.id
@@ -166,7 +172,8 @@ object Activity {
     /**
      * The items of [cards], archived ones left out, newest first except that running rows keep
      * their start order. A running row says what its turn does from the owner's [activities];
-     * [staleness] says when its owner's data may be old.
+     * [staleness] says when its owner's data may be old, and [refreshing] when it is being brought
+     * up to date.
      */
     fun project(
         cards: List<Card>,
@@ -176,6 +183,7 @@ object Activity {
         hiddenMessageIds: Set<String> = emptySet(),
         excludedIds: Set<String> = emptySet(),
         staleness: (Card) -> String? = { null },
+        refreshing: (Card) -> Boolean = { false },
     ): List<ActivityItem> {
         val projectNames = projects.associate { it.id to it.name }
         val boardNames = boards.associate { it.id to it.name }
@@ -220,6 +228,7 @@ object Activity {
                     } else {
                         at
                     }
+                val stale = staleness(card)
                 ActivityItem(
                     card,
                     kind,
@@ -229,7 +238,8 @@ object Activity {
                     sortAt,
                     projectNames[card.project_id],
                     card.board_id.takeIf { it.isNotEmpty() }?.let(boardNames::get),
-                    staleness(card),
+                    stale,
+                    stale == null && refreshing(card),
                 )
             }
             .sortedWith(

@@ -439,6 +439,7 @@ internal fun activitySlice(
                     pinned = pinned,
                     preview = item.preview,
                     agents = item.agents,
+                    refreshing = item.refreshing,
                 )
             },
         summary =

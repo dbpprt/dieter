@@ -61,6 +61,15 @@ interface RpcTransport {
      * client certificate.
      */
     fun direct(target: DirectTarget, tokens: DaemonTokenSource): RpcChannel
+
+    /**
+     * Stops reusing the connections open now: channels and calls started afterwards dial afresh,
+     * while calls already running keep theirs. The core calls it before every gateway session,
+     * because a connection that outlived the background or a sleep can be dead without having
+     * failed, and every call on it would wait out its deadline. Transports whose channels never
+     * share connections need nothing.
+     */
+    fun renewConnections() {}
 }
 
 /** One logical channel. [close] releases its underlying connection. */
@@ -195,6 +204,12 @@ interface TunnelFactory {
      * returned port accepts exactly one loopback connection.
      */
     suspend fun open(access: GatewayAccess, daemonId: String, lane: RelayLane): Tunnel
+
+    /**
+     * Tunnels opened afterwards dial the gateway afresh; open tunnels keep their connection. See
+     * [RpcTransport.renewConnections].
+     */
+    fun renewConnections() {}
 }
 
 /** One open relay tunnel bridged to a loopback port. */

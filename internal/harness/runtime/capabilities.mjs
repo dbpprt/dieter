@@ -612,6 +612,8 @@ const codexAppServerErrorNeedle =
   "\t\t\t\tif (params.willRetry === true) emitWarning({ message });";
 const codexAppServerStreamNeedle = '\t\tif (event.type === "error") {\n\t\t\temitError({';
 const codexAppServerRetryMarker = 'emitStreamEvent({ type: "error", message, willRetry: true })';
+const codexProviderOverridesNeedle =
+  /const cliOverrides = \[\.\.\.providerCliOverrides,[^\n]*\n[\s\S]*?args: createCodexAppServerArgs\(\{ cliOverrides \}\)/;
 
 // codex exec emits a top-level `error` for provider retry notices
 // ("Reconnecting... 2/5 (...)", "Reconnecting... waiting for network (...)")
@@ -655,31 +657,11 @@ const codexTurnEndGuard = `      emitStreamEvent(event);
   } catch (err) {`;
 
 function patchCodexBridge(content) {
-  // Codex 0.166 validates the active process provider when turn/start supplies
-  // a model. Thread-only configuration leaves that provider at its default,
-  // so pass the same provider and registry to the app-server process too.
-  const providerArgs =
-    "args: createCodexAppServerArgs({ cliOverrides: trustedHook?.cliOverrides }),";
-  if (content.includes(providerArgs)) {
-    content = content.replace(
-      providerArgs,
-      "args: createCodexAppServerArgs({ cliOverrides: [...(trustedHook?.cliOverrides ?? []), ...dieterCodexProviderOverrides(codexConfig)] }),",
-    );
-    content += `
-function dieterCodexProviderOverrides(config) {
-  if (!config.model_provider) return [];
-  const flatten = (value, path) => Object.entries(value).flatMap(([key, item]) => {
-    if (!/^[A-Za-z0-9_-]+$/.test(key)) throw new Error("Invalid Codex provider configuration key");
-    const next = [...path, key];
-    return item != null && typeof item === "object" && !Array.isArray(item)
-      ? flatten(item, next)
-      : [next.join(".") + "=" + JSON.stringify(item)];
-  });
-  return ["model_provider=" + JSON.stringify(config.model_provider),
-    ...flatten(config.model_providers ?? {}, ["model_providers"])];
-}
-`;
-  } else if (!content.includes("function dieterCodexProviderOverrides(")) {
+  // Codex validates the active process provider when turn/start supplies a
+  // model, so thread-only configuration leaves it at its default. The bridge
+  // passes model_provider and model_providers to the app-server process
+  // itself (splitModelProviderConfig); fail closed if that ever goes away.
+  if (!codexProviderOverridesNeedle.test(content)) {
     throw new Error("Codex bridge provider configuration changed; review the runtime integration");
   }
 

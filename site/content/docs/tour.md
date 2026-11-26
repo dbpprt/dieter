@@ -117,6 +117,11 @@ pinned. A running agent's avatar has a spinning ring. The filter menu shows
 **All**, **Needs you**, **Running**, **Pinned** or **Review**, each with its
 count. It also filters by project and opens Inbox rules.
 
+When you open the app, the Inbox shows what it knew when you last left it, and
+refreshes each row as its machine answers. Until then a small mark spins next
+to the row's time and light sweeps across its second line. A row whose machine
+is offline or not responding says so instead.
+
 Swipe a row right to mark a reply read, finish a reviewed or failed card, or pin
 it. Swipe it left to archive it or stop a running agent; an archive can be
 undone. Touch and hold a row for all its actions.

@@ -554,6 +554,27 @@ test("patches Codex stream errors into non-terminal notices with a terminal guar
     undefined,
   );
   await assert.rejects(moved.getBootstrap(), /Codex stream error handler/);
+  // The app-server process must keep receiving the model provider overrides.
+  const providerless = observeHarnessCapabilities(
+    {
+      harnessId: "codex",
+      async getBootstrap() {
+        return {
+          files: [
+            {
+              path: ".x/bridge.mjs",
+              content: original.replace(
+                "const cliOverrides = [...providerCliOverrides, ",
+                "const cliOverrides = [",
+              ),
+            },
+          ],
+        };
+      },
+    },
+    undefined,
+  );
+  await assert.rejects(providerless.getBootstrap(), /Codex bridge provider configuration changed/);
 });
 
 test("parses Codex provider retry notices", () => {
@@ -641,7 +662,8 @@ test("reports Codex provider reconnects until the stream recovers", () => {
 
 test("makes bridge replay persistence fail closed and rejects sequence gaps", async () => {
   const source = `
-  const spawnOptions = { args: createCodexAppServerArgs({ cliOverrides: trustedHook?.cliOverrides }), };
+  const cliOverrides = [...providerCliOverrides, ...trustedHook?.cliOverrides ?? []];
+  const spawnOptions = { args: createCodexAppServerArgs({ cliOverrides }), };
   let eventLog = [];
   let seqCounter = 0;
   const flushEventsToDisk = async () => {

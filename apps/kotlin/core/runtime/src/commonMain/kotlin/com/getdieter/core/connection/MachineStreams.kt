@@ -9,6 +9,7 @@ import com.getdieter.core.runtime.FailureKind
 import com.getdieter.core.runtime.Failures
 import com.getdieter.core.session.MachineSessions
 import com.getdieter.core.sync.AccountSync
+import com.getdieter.core.trust.TrustState
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Duration
@@ -97,6 +98,44 @@ object MachineSyncs {
         }
 
     /**
+     * Whose cached views are being brought up to date now. While the session connects, everyone's:
+     * the views on screen are the ones cached when the app last left. Once connected, each online,
+     * compatible machine's until its stream is caught up and open; a machine that is offline, not
+     * responding or needs an update says so instead ([staleness]). Nobody's while the app is
+     * disconnected, waits to retry, or waits for the person (sign-in, update, pairing).
+     */
+    fun refreshing(
+        connection: ConnectionState,
+        trust: TrustState,
+        directory: MachineDirectory,
+        syncs: Map<String, MachineSync>,
+    ): Refreshing {
+        if (trust != TrustState.UNKNOWN && trust != TrustState.TRUSTED) return Refreshing.NONE
+        return when (connection.phase) {
+            ConnectionPhase.CONNECTING -> Refreshing.ALL
+            // An attempt in flight; one waiting out its backoff shows the connection notice.
+            ConnectionPhase.RECONNECTING ->
+                if (connection.retryAt == null) Refreshing.ALL else Refreshing.NONE
+            ConnectionPhase.CONNECTED ->
+                if (trust == TrustState.UNKNOWN) Refreshing.ALL
+                else
+                    Refreshing(
+                        machines =
+                            directory.all
+                                .filter { it.online(directory.evaluatedAt) && it.compatible }
+                                .filter { machine ->
+                                    val sync = syncs[machine.id]
+                                    sync == null || (!sync.current && !sync.stale)
+                                }
+                                .mapTo(HashSet()) { it.id }
+                    )
+            ConnectionPhase.DISCONNECTED,
+            ConnectionPhase.AUTH_REQUIRED,
+            ConnectionPhase.UPDATE_REQUIRED -> Refreshing.NONE
+        }
+    }
+
+    /**
      * Every online, compatible machine in [directory] is caught up over an open stream; true when
      * there is none.
      */
@@ -104,6 +143,20 @@ object MachineSyncs {
         directory.all
             .filter { it.online(directory.evaluatedAt) && it.compatible }
             .all { syncs[it.id]?.current == true }
+}
+
+/**
+ * Whose cached views are being brought up to date now ([MachineSyncs.refreshing]): every machine's
+ * while the session connects ([all]), else those in [machines].
+ */
+data class Refreshing(val all: Boolean = false, val machines: Set<String> = emptySet()) {
+    /** [machineId]'s view is being refreshed; a card without a known owner follows [all]. */
+    fun includes(machineId: String?): Boolean = all || (machineId != null && machineId in machines)
+
+    companion object {
+        val NONE = Refreshing()
+        val ALL = Refreshing(all = true)
+    }
 }
 
 data class StreamConfig(

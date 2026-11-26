@@ -197,6 +197,27 @@ class ActivityTest {
     }
 
     @Test
+    fun rowsSayWhenTheirCachedStateIsBeingRefreshed() {
+        val card = started("c", "running")
+        fun project(stale: String?, refreshing: Boolean) =
+            Activity.project(
+                    listOf(card),
+                    emptyMap(),
+                    emptyList(),
+                    emptyList(),
+                    staleness = { stale },
+                    refreshing = { refreshing },
+                )
+                .single()
+        assertTrue(project(null, refreshing = true).refreshing)
+        assertFalse(project(null, refreshing = false).refreshing)
+        // A machine that says why its data is old is not also refreshing.
+        val stale = project("Studio is not responding", refreshing = true)
+        assertEquals("Studio is not responding", stale.stale)
+        assertFalse(stale.refreshing)
+    }
+
+    @Test
     fun ageAndTimeline() {
         assertEquals("Just now", Activity.age(now, now, suffix = true))
         assertEquals("5m ago", Activity.age(now - 5.minutes, now, suffix = true))

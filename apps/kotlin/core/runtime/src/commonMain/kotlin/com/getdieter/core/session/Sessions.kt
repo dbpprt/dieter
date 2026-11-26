@@ -55,8 +55,22 @@ class GatewaySession(
     private val channel = transport.gateway(access)
     val client: GatewayServiceClient = GrpcGatewayServiceClient(channel.client)
 
-    /** Rejects an outdated client or a revoked session before any other work. */
-    suspend fun verify() {
+    /**
+     * Rejects an outdated client or a revoked session before any other work, and reads the account
+     * and the directory in the same round trip: they are read while the gateway checks
+     * compatibility, and an outdated client still fails as one.
+     */
+    suspend fun connect(): List<Machine> = coroutineScope {
+        val account = async { runCatching { readAccount() } }
+        val machines = async { runCatching { machines() } }
+        checkCompatibility()
+        this@GatewaySession.account = account.await().getOrThrow()
+        machines.await().getOrThrow()
+    }
+
+    private suspend fun readAccount(): Account = classified { client.GetAccount().execute(Unit) }
+
+    private suspend fun checkCompatibility() {
         val compatibility = classified {
             client
                 .GetCompatibility()
@@ -73,10 +87,9 @@ class GatewaySession(
                 "Dieter update required: installed $clientVersion, minimum ${compatibility.minimum_release_version}",
             )
         }
-        account = classified { client.GetAccount().execute(Unit) }
     }
 
-    /** The signed-in account, once [verify] read it. */
+    /** The signed-in account, once [connect] read it. */
     var account: Account? = null
         private set
 

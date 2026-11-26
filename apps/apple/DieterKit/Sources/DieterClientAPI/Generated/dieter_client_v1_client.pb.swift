@@ -7585,6 +7585,14 @@ public nonisolated struct ClientActivityRow: @unchecked Sendable {
     set {_uniqueStorage()._agents = newValue}
   }
 
+  /// Its machine's view is being brought up to date right now, e.g. while the
+  /// app reconnects after the background: the row shows the cached state, which
+  /// may change any moment. Never with stale.
+  public var refreshing: Bool {
+    get {_storage._refreshing}
+    set {_uniqueStorage()._refreshing = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   /// The Inbox section, in display order: attention ("Needs you"), running,
@@ -28083,7 +28091,7 @@ nonisolated extension ClientActivitySummary: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension ClientActivityRow: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ActivityRow"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}card\0\u{1}kind\0\u{1}section\0\u{1}detail\0\u{3}at_millis\0\u{3}started_at_millis\0\u{3}project_name\0\u{3}board_name\0\u{1}chat\0\u{3}needs_you\0\u{3}can_finish\0\u{3}kind_label\0\u{1}title\0\u{3}shown_at_millis\0\u{3}menu_bar_title\0\u{1}stale\0\u{1}pinned\0\u{1}preview\0\u{1}agents\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}card\0\u{1}kind\0\u{1}section\0\u{1}detail\0\u{3}at_millis\0\u{3}started_at_millis\0\u{3}project_name\0\u{3}board_name\0\u{1}chat\0\u{3}needs_you\0\u{3}can_finish\0\u{3}kind_label\0\u{1}title\0\u{3}shown_at_millis\0\u{3}menu_bar_title\0\u{1}stale\0\u{1}pinned\0\u{1}preview\0\u{1}agents\0\u{1}refreshing\0")
 
   fileprivate class _StorageClass {
     var _card: DieterAPI.Dieter_V1_Card? = nil
@@ -28105,6 +28113,7 @@ nonisolated extension ClientActivityRow: SwiftProtobuf.Message, SwiftProtobuf._M
     var _pinned: Bool = false
     var _preview: String = String()
     var _agents: String = String()
+    var _refreshing: Bool = false
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -28134,6 +28143,7 @@ nonisolated extension ClientActivityRow: SwiftProtobuf.Message, SwiftProtobuf._M
       _pinned = source._pinned
       _preview = source._preview
       _agents = source._agents
+      _refreshing = source._refreshing
     }
   }
 
@@ -28171,6 +28181,7 @@ nonisolated extension ClientActivityRow: SwiftProtobuf.Message, SwiftProtobuf._M
         case 17: try { try decoder.decodeSingularBoolField(value: &_storage._pinned) }()
         case 18: try { try decoder.decodeSingularStringField(value: &_storage._preview) }()
         case 19: try { try decoder.decodeSingularStringField(value: &_storage._agents) }()
+        case 20: try { try decoder.decodeSingularBoolField(value: &_storage._refreshing) }()
         default: break
         }
       }
@@ -28240,6 +28251,9 @@ nonisolated extension ClientActivityRow: SwiftProtobuf.Message, SwiftProtobuf._M
       if !_storage._agents.isEmpty {
         try visitor.visitSingularStringField(value: _storage._agents, fieldNumber: 19)
       }
+      if _storage._refreshing != false {
+        try visitor.visitSingularBoolField(value: _storage._refreshing, fieldNumber: 20)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -28268,6 +28282,7 @@ nonisolated extension ClientActivityRow: SwiftProtobuf.Message, SwiftProtobuf._M
         if _storage._pinned != rhs_storage._pinned {return false}
         if _storage._preview != rhs_storage._preview {return false}
         if _storage._agents != rhs_storage._agents {return false}
+        if _storage._refreshing != rhs_storage._refreshing {return false}
         return true
       }
       if !storagesAreEqual {return false}

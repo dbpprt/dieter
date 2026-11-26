@@ -76,11 +76,6 @@ class RouteSelector(
         daemonId: String,
     ): DataPlane {
         val pin = trust.pin(daemonId)
-        // A connection that outlived sleep can remain silent without failing.
-        val route =
-            withDeadline(Deadlines.CALL, GATEWAY_SILENT) {
-                gateway.ResolveDaemonRoute().execute(DaemonRef(daemon_id = daemonId))
-            }
         val exchange = DaemonTokenExchange {
             withDeadline(Deadlines.CALL, GATEWAY_SILENT) {
                 gateway
@@ -93,7 +88,18 @@ class RouteSelector(
                     )
             }
         }
-        val tokens = RenewingDaemonToken(exchange.exchange(), exchange, clock)
+        // The route and the first token in one round trip. A connection that outlived sleep can
+        // remain silent without failing.
+        val (route, token) =
+            coroutineScope {
+                val token = async { exchange.exchange() }
+                val route =
+                    withDeadline(Deadlines.CALL, GATEWAY_SILENT) {
+                        gateway.ResolveDaemonRoute().execute(DaemonRef(daemon_id = daemonId))
+                    }
+                route to token.await()
+            }
+        val tokens = RenewingDaemonToken(token, exchange, clock)
         val dial = Dial(access, daemonId, pin, tokens)
         for (candidate in candidates(route.direct_candidates)) {
             direct(dial, candidate)?.let {

@@ -150,6 +150,76 @@ class ConnectionRecoveryEndToEndTest : EndToEnd() {
     }
 
     /**
+     * A phone keeps its pooled connection to the gateway while it is in the background, and on a
+     * phone network that connection can die without failing. Coming back, the inbox says its cached
+     * rows are refreshing, and the app reconnects on new connections at once instead of waiting out
+     * a call on the dead one (each would take the full call deadline). This runs the production
+     * transport, whose channels share one pool, and reaches the machine through the relay like a
+     * phone.
+     */
+    @Test
+    fun aPhoneComingBackNeverWaitsOnAConnectionThatDiedWhileAway() = e2e {
+        val fixture = shared.acquire()
+        StallingProxy(fixture.address).use { proxy ->
+            val runtime =
+                runtime(
+                    fixture,
+                    gatewayUrl = proxy.url,
+                    configure = { it.copy(includeLoopbackRoutes = false) },
+                )
+            runtime.awaitConnected()
+            runtime.awaitSync(fixture.daemonId, SyncState.LIVE)
+            val actor = runtime(fixture)
+            actor.awaitLoaded(fixture)
+            val card =
+                actor.onMachine(fixture.daemonId) {
+                    it.CreateCard()
+                        .execute(
+                            CreateConversationRequest(
+                                project_id = fixture.projectId,
+                                board_id = fixture.boardId,
+                                lane = "todo",
+                                title = "Changed while the phone was away",
+                                workspace_mode = "project",
+                            )
+                        )
+                }
+            actor.awaitSynced(card.id)
+            runtime.awaitSynced(card.id)
+            runtime.connection.refreshing.await(5.seconds) { !it.includes(fixture.daemonId) }
+            val refreshed = mutableListOf<Boolean>()
+            val watcher =
+                runtime.scope.launch {
+                    runtime.connection.refreshing.collect {
+                        refreshed += it.includes(fixture.daemonId)
+                    }
+                }
+            try {
+                runtime.setActive(false)
+                runtime.connection.state.await { it.phase == ConnectionPhase.DISCONNECTED }
+                proxy.stall()
+                actor.onBoard { archive(card.id) }
+                runtime.setActive(true)
+                // Well within one call deadline (15 s) on the dead connection.
+                runtime.connection.syncs.await(
+                    8.seconds,
+                    describe = {
+                        "current: ${runtime.connection.state.value} ${runtime.connection.syncs.value[fixture.daemonId]}"
+                    },
+                ) {
+                    it[fixture.daemonId]?.current == true
+                }
+                assertEquals(null, runtime.workspace.state.value.card(card.id))
+                // Current again: the rows stop saying they refresh.
+                runtime.connection.refreshing.await(5.seconds) { !it.includes(fixture.daemonId) }
+            } finally {
+                watcher.cancel()
+            }
+            assertTrue(true in refreshed, "the cached view said it was refreshing: $refreshed")
+        }
+    }
+
+    /**
      * A phone disconnects while it is in the background. Its machines did nothing wrong: coming
      * back, the inbox never says they are offline or not responding while the app reconnects.
      */

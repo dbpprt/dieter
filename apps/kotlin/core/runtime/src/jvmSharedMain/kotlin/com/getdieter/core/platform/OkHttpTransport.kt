@@ -21,6 +21,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.ConnectionPool
 import okhttp3.Dispatcher
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -45,7 +46,10 @@ fun interface DeviceTlsIdentity {
     fun privateKey(): PrivateKey
 }
 
-/** OkHttp-backed transport for Android and host JVMs. Every channel shares one connection pool. */
+/**
+ * OkHttp-backed transport for Android and host JVMs. Channels share one connection pool until
+ * [renewConnections] starts the next.
+ */
 class OkHttpRpcTransport(
     private val identity: DeviceTlsIdentity,
     base: OkHttpClient = OkHttpClient(),
@@ -56,7 +60,8 @@ class OkHttpRpcTransport(
     // behind every machine's change stream and the presence and
     // feature streams that all share the gateway host. HTTP/2 multiplexes
     // them on one connection.
-    private val base =
+    @Volatile
+    private var base =
         base
             .newBuilder()
             .dispatcher(
@@ -66,6 +71,18 @@ class OkHttpRpcTransport(
                 }
             )
             .build()
+
+    /**
+     * OkHttp reuses a pooled HTTP/2 connection for as long as it has not failed, and one that died
+     * while the app was in the background or asleep fails only when the network says so, often
+     * minutes later. New channels get a new pool; the old pool's idle connections close, and its
+     * busy ones serve their calls until they end.
+     */
+    override fun renewConnections() {
+        val previous = base
+        base = previous.newBuilder().connectionPool(ConnectionPool()).build()
+        previous.connectionPool.evictAll()
+    }
 
     override fun gateway(access: GatewayAccess): RpcChannel =
         channel(access.url) {

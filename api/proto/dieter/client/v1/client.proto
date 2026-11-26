@@ -1752,6 +1752,10 @@ message ActivityRow {
   string preview = 18;
   // Delegated agents at work: "6 agents", "1 agent"; empty with none.
   string agents = 19;
+  // Its machine's view is being brought up to date right now, e.g. while the
+  // app reconnects after the background: the row shows the cached state, which
+  // may change any moment. Never with stale.
+  bool refreshing = 20;
 }
 
 // Where an activity row sits on the Inbox timeline, as fractions of the

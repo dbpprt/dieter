@@ -104,6 +104,8 @@ class DieterSharedTest {
             lane: Int,
             completion: NativeTunnelCompletion,
         ) = completion.completed(null, 14, "offline")
+
+        override fun renewConnections() {}
     }
 
     /** A P-256 public key that never signs: nothing in these tests connects. */

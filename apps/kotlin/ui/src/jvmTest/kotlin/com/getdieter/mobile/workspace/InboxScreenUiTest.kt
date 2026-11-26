@@ -176,6 +176,54 @@ class InboxScreenUiTest {
             }
         }
 
+    /**
+     * Coming back to the app, rows show what was cached until their machine answers: a mark spins
+     * by the time of each refreshing row, and goes once the core says the row is current.
+     */
+    @Test
+    fun refreshingRowsSayTheyAreBeingBroughtUpToDate() =
+        runDesktopComposeUiTest(width = 412, height = 915) {
+            val store = launch()
+            try {
+                fun publish(refreshing: Set<String>) {
+                    (store.core as FakeMobileCore).publish(
+                        Slice.SLICE_ACTIVITY,
+                        update =
+                            Update(
+                                activity =
+                                    activity.copy(
+                                        rows =
+                                            activity.rows.map {
+                                                it.copy(refreshing = it.card!!.id in refreshing)
+                                            }
+                                    )
+                            ),
+                    )
+                    waitForIdle()
+                }
+                publish(setOf("ask", "run", "done"))
+                for (id in listOf("ask", "run", "done")) onNodeWithTag(
+                        "inbox-refreshing-$id",
+                        useUnmergedTree = true,
+                    )
+                    .assertExists()
+                for (id in listOf("fail", "pin")) onAllNodesWithTag(
+                        "inbox-refreshing-$id",
+                        useUnmergedTree = true,
+                    )
+                    .assertCountEquals(0)
+                onAllNodesWithContentDescription("Refreshing", useUnmergedTree = true)
+                    .assertCountEquals(3)
+                // Mid-sweep: the light has crossed about half of the first row's second line.
+                shot("inbox-phone-refreshing")
+                publish(emptySet())
+                onAllNodesWithContentDescription("Refreshing", useUnmergedTree = true)
+                    .assertCountEquals(0)
+            } finally {
+                store.close()
+            }
+        }
+
     @Test
     fun theFilterMenuNarrowsRowsAndKeepsTheirSections() =
         runDesktopComposeUiTest(width = 412, height = 915) {

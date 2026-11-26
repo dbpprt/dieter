@@ -7,7 +7,8 @@ import Synchronization
 
 /// The core's relay tunnels: `RelayService.OpenTunnel` streams to the gateway,
 /// each bridged to a loopback port that the daemon TLS client then dials.
-/// Tunnels to one gateway share one HTTP/2 connection.
+/// Tunnels to one gateway share one HTTP/2 connection until the core renews
+/// connections.
 public final class CoreRelayTunnels: NSObject, NativeTunnels, Sendable {
     private typealias Client = GRPCClient<HTTP2ClientTransport.Posix>
     private let clients = Mutex<[String: Client]>([:])
@@ -34,6 +35,17 @@ public final class CoreRelayTunnels: NSObject, NativeTunnels, Sendable {
                 completion.value.completed(tunnel: nil, status: status, error: message)
             }
         }
+    }
+
+    /// A connection that outlived the background or a sleep can be dead without
+    /// having failed, so the next session's tunnels dial afresh. Open tunnels keep
+    /// their connection until they end: a graceful shutdown refuses only new calls.
+    public func renewConnections() {
+        let retired = clients.withLock { clients -> [Client] in
+            defer { clients.removeAll() }
+            return Array(clients.values)
+        }
+        retired.forEach { $0.beginGracefulShutdown() }
     }
 
     private func client(for url: String) throws -> Client {
