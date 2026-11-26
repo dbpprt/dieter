@@ -305,6 +305,7 @@ private fun InboxTile(
                 if (row.detail.isNotEmpty())
                     Text(
                         row.detail,
+                        Modifier.refreshShimmer(row.refreshing, accent),
                         color = tokens.subtle,
                         fontSize = 11.5.sp,
                         lineHeight = 15.sp,
@@ -336,6 +337,12 @@ private fun InboxTile(
                         style = MonoSmall,
                         color = tokens.tertiary,
                     )
+                    if (row.refreshing)
+                        RefreshingMark(
+                            tokens.tertiary,
+                            Modifier.padding(start = 6.dp).testTag("inbox-refreshing-${card.id}"),
+                            size = 10.dp,
+                        )
                     Spacer(Modifier.weight(1f))
                     if (row.can_finish)
                         DesktopCapsule(

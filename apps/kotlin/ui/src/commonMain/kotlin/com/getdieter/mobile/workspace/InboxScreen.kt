@@ -291,6 +291,7 @@ internal fun InboxScreen(store: MobileStore) {
                                 row,
                                 now,
                                 first = index == 0,
+                                wave = index,
                                 selected = row.card!!.id == selected,
                                 showPin = section != InboxSection.PINNED,
                                 machine = machines[row.card?.owner_daemon_id],
@@ -459,6 +460,7 @@ private fun InboxRow(
     row: ActivityRow,
     now: Instant,
     first: Boolean,
+    wave: Int,
     selected: Boolean,
     showPin: Boolean,
     machine: String?,
@@ -472,6 +474,7 @@ private fun InboxRow(
                 row,
                 now,
                 first,
+                wave,
                 selected,
                 showPin,
                 machine,
@@ -484,13 +487,16 @@ private fun InboxRow(
 
 /**
  * Two lines beside the project avatar: the title and its time, then `project:` and what the agent
- * does or said last, with one status badge. A working agent rings its avatar.
+ * does or said last, with one status badge. A working agent rings its avatar. While its machine is
+ * being asked for its current state ([ActivityRow.refreshing]) a mark spins by the time and light
+ * sweeps over the second line, travelling down the list from row [wave].
  */
 @Composable
 private fun InboxRowContent(
     row: ActivityRow,
     now: Instant,
     first: Boolean,
+    wave: Int,
     selected: Boolean,
     showPin: Boolean,
     machine: String?,
@@ -530,17 +536,33 @@ private fun InboxRowContent(
                     tint = palette.warning.readableOn(surface),
                     size = 13.dp,
                 )
+            if (row.refreshing)
+                RefreshingMark(
+                    palette.info.readableOn(surface),
+                    Modifier.padding(start = 6.dp).testTag("inbox-refreshing-${card.id}"),
+                )
             ListMeta(
                 row.age(now),
-                color = if (running || row.needs_you) accent else palette.secondaryLabel,
+                color =
+                    when {
+                        row.refreshing -> palette.tertiaryLabel
+                        running || row.needs_you -> accent
+                        else -> palette.secondaryLabel
+                    },
             )
         },
         subtitle = {
+            val emphasized = running || row.kind == "FAILED"
             ListSubtitle(
                 preview,
+                Modifier.refreshShimmer(
+                    row.refreshing,
+                    if (emphasized) palette.label else palette.info.readableOn(surface),
+                    wave,
+                ),
                 color =
                     when {
-                        running || row.kind == "FAILED" -> accent
+                        emphasized -> accent
                         row.needs_you -> palette.label
                         else -> palette.secondaryLabel
                     },

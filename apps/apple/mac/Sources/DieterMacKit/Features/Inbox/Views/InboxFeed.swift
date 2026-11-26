@@ -468,6 +468,14 @@ private struct InboxActivityRow: View, Equatable {
                     Image(systemName: "icloud.slash").font(.system(size: 9.5)).foregroundStyle(DieterTheme.amber)
                         .accessibilityLabel(entry.row.stale)
                 }
+                // Its machine is being asked for its current state, e.g. after a wake.
+                if entry.row.refreshing {
+                    Image(systemName: "arrow.trianglehead.2.clockwise").font(.system(size: 9))
+                        .foregroundStyle(DieterTheme.primary)
+                        .symbolEffect(.rotate, options: .repeating)
+                        .accessibilityLabel("Refreshing")
+                        .e2eTarget("inbox.refreshing.\(entry.id)")
+                }
                 InboxActivityAge(atMillis: entry.row.shownAtMillis)
                     .font(DieterFont.monoSmall).foregroundStyle(DieterTheme.tertiary)
                     .lineLimit(1).fixedSize()

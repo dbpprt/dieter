@@ -1,72 +1,72 @@
 {
   "cosign": {
     "linux/amd64": {
-      "url": "https://github.com/sigstore/cosign/releases/download/v3.1.3/cosign-linux-amd64",
-      "sha256": "4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71",
+      "url": "https://github.com/sigstore/cosign/releases/download/v3.1.5/cosign-linux-amd64",
+      "sha256": "912502def4baf810eaf36b210a4f51e1da214f9f6d664e2a9a2154cfc67ee0d6",
       "archiveMember": null
     },
     "linux/arm64": {
-      "url": "https://github.com/sigstore/cosign/releases/download/v3.1.3/cosign-linux-arm64",
-      "sha256": "c5d324e091826b0d7a78eb16fef316450b4eb9aaec045611c08ba06f5e73220a",
+      "url": "https://github.com/sigstore/cosign/releases/download/v3.1.5/cosign-linux-arm64",
+      "sha256": "516893301e9ec0f2594edfcf8f943ec3b3ba96f3aad2b507eff2b71e644e5fca",
       "archiveMember": null
     },
     "darwin/arm64": {
-      "url": "https://github.com/sigstore/cosign/releases/download/v3.1.3/cosign-darwin-arm64",
-      "sha256": "5cf948c2f4dfe59687bdd0b8523709067383e03982cc543475c8a7dc70e92a76",
+      "url": "https://github.com/sigstore/cosign/releases/download/v3.1.5/cosign-darwin-arm64",
+      "sha256": "35cfceffe68448019f75bcbb2c470045ee2f4264cf5ad6d564f08f327f97d13f",
       "archiveMember": null
     }
   },
   "oras": {
     "linux/amd64": {
-      "url": "https://github.com/oras-project/oras/releases/download/v1.3.4/oras_1.3.4_linux_amd64.tar.gz",
-      "sha256": "f27adb935022d94df8dc77719c322dda592c78a0d57a6f7dcdd8d900b248c454",
+      "url": "https://github.com/oras-project/oras/releases/download/v1.4.0/oras_1.4.0_linux_amd64.tar.gz",
+      "sha256": "d8e1dce2fd8ce996f1d901845b688eb0cf505a6082897606f053825bb47935d1",
       "archiveMember": "oras"
     },
     "linux/arm64": {
-      "url": "https://github.com/oras-project/oras/releases/download/v1.3.4/oras_1.3.4_linux_arm64.tar.gz",
-      "sha256": "15702c6e3a4a56a8bd8ac5c17efdbcab56d9bada661ccbcf017f5b10c1d89399",
+      "url": "https://github.com/oras-project/oras/releases/download/v1.4.0/oras_1.4.0_linux_arm64.tar.gz",
+      "sha256": "0791fc200831563e498638d30e8ee8aac20ad1da2610760120fe3f770e12a8a4",
       "archiveMember": "oras"
     },
     "darwin/arm64": {
-      "url": "https://github.com/oras-project/oras/releases/download/v1.3.4/oras_1.3.4_darwin_arm64.tar.gz",
-      "sha256": "217761a9500242ff473de8656b5aca21136ff39e17e9e61fd8936bbfd902704c",
+      "url": "https://github.com/oras-project/oras/releases/download/v1.4.0/oras_1.4.0_darwin_arm64.tar.gz",
+      "sha256": "0a7f499bb28793a97bd0939de8654607e753ff6082fd72697a700868b9cdab53",
       "archiveMember": "oras"
     }
   },
   "compose": {
     "linux/amd64": {
-      "url": "https://github.com/docker/compose/releases/download/v5.4.0/docker-compose-linux-x86_64",
-      "sha256": "837fd1d35bf6a494f41b5b5988269a7be79de337cf1a1a6ff0e45ab51bb4e9be",
+      "url": "https://github.com/docker/compose/releases/download/v5.8.0/docker-compose-linux-x86_64",
+      "sha256": "b8840f5008c447f41fce0a57ae3adeab42c89b1eb6e6012524bcabbfb4ffbaf6",
       "archiveMember": null
     },
     "linux/arm64": {
-      "url": "https://github.com/docker/compose/releases/download/v5.4.0/docker-compose-linux-aarch64",
-      "sha256": "fc5d1371f1ec7987e703da94ede49af3fbfb240b83f22991a98511de7bc4b93b",
+      "url": "https://github.com/docker/compose/releases/download/v5.8.0/docker-compose-linux-aarch64",
+      "sha256": "1a9c918b2fb49b9c87f0018c64b5abd0d30715155e98dc939779fbaee6c414d3",
       "archiveMember": null
     }
   },
   "restic": {
     "darwin/arm64": {
-      "url": "https://github.com/restic/restic/releases/download/v0.18.0/restic_0.18.0_darwin_arm64.bz2",
-      "sha256": "dd7d64a9bc0c1f8342e8f9693d5b198e9f04022f78b07f15d17ef9b801d4489d",
+      "url": "https://github.com/restic/restic/releases/download/v0.20.0/restic_0.20.0_darwin_arm64.bz2",
+      "sha256": "0962c515acd9fb6937a658e9d8505200f72a6a0c6a2d334c0290b8002377dfb7",
       "archiveMember": null
     },
     "linux/amd64": {
-      "url": "https://github.com/restic/restic/releases/download/v0.18.0/restic_0.18.0_linux_amd64.bz2",
-      "sha256": "98f6dd8bf5b59058d04bfd8dab58e196cc2a680666ccee90275a3b722374438e",
+      "url": "https://github.com/restic/restic/releases/download/v0.20.0/restic_0.20.0_linux_amd64.bz2",
+      "sha256": "0ccd9fa7885074a24603b051e01bf9bd8b5e45d6a1791e9d9887e9e9372107f7",
       "archiveMember": null
     }
   },
   "rest-server": {
     "darwin/arm64": {
-      "url": "https://github.com/restic/rest-server/releases/download/v0.14.0/rest-server_0.14.0_darwin_arm64.tar.gz",
-      "sha256": "057004ce24ca9edfbe0e391eae87981ab03f2abb6b65cf8fdfcddf847ded8656",
-      "archiveMember": "rest-server_0.14.0_darwin_arm64/rest-server"
+      "url": "https://github.com/restic/rest-server/releases/download/v0.15.0/rest-server_0.15.0_darwin_arm64.tar.gz",
+      "sha256": "044d862050281581b4fa73c2c5386cfaa084345e644d7091d7528653ce447152",
+      "archiveMember": "rest-server_0.15.0_darwin_arm64/rest-server"
     },
     "linux/amd64": {
-      "url": "https://github.com/restic/rest-server/releases/download/v0.14.0/rest-server_0.14.0_linux_amd64.tar.gz",
-      "sha256": "4c9c95bc079a0334e81fad379b19dc5c3353c71c2c88d652cafce2081c2b1c66",
-      "archiveMember": "rest-server_0.14.0_linux_amd64/rest-server"
+      "url": "https://github.com/restic/rest-server/releases/download/v0.15.0/rest-server_0.15.0_linux_amd64.tar.gz",
+      "sha256": "822e3d7211077305ec358a8c6548ef46307ae53f71bc6a4a6da72ac53e35e007",
+      "archiveMember": "rest-server_0.15.0_linux_amd64/rest-server"
     }
   }
 }

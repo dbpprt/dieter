@@ -71,8 +71,8 @@ jobs:
 
   ios:
     runs-on: macos-26
-    # The Kotlin/Native release link alone has taken 40 to 70+ minutes on hosted runners.
-    timeout-minutes: 120
+    # The Kotlin/Native release link alone has taken 40 to 113 minutes on hosted runners.
+    timeout-minutes: 150
     environment: apple-signing
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -31,6 +31,7 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -38,6 +39,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -95,6 +97,11 @@ class ConnectionSupervisor(
     private val config: SupervisorConfig,
     private val clock: Clock,
     private val logger: CoreLogger,
+    /**
+     * Stops reusing open connections ([RpcTransport.renewConnections] and the relay tunnels'); runs
+     * before every session, so none starts on a connection that died while the app was away.
+     */
+    private val renewConnections: () -> Unit = transport::renewConnections,
     /** Called once a gateway's cached state is restored, before any network access. */
     private val onGatewayPrepared: (Gateway, CoreStorage) -> Unit = { _, _ -> },
 ) {
@@ -118,6 +125,18 @@ class ConnectionSupervisor(
     /** Machine ID → how current its part of the account view is. */
     val syncs: StateFlow<Map<String, MachineSync>>
         get() = streams.syncs
+
+    /** Whose cached views are being brought up to date now ([MachineSyncs.refreshing]). */
+    val refreshing: StateFlow<Refreshing> =
+        combine(state, machines, streams.syncs, trust.view.map { it.state }) {
+                connection,
+                directory,
+                syncs,
+                trust ->
+                MachineSyncs.refreshing(connection, trust, directory, syncs)
+            }
+            .distinctUntilChanged()
+            .stateIn(scope, SharingStarted.Eagerly, Refreshing.NONE)
 
     private val running = MutableStateFlow(false)
     private val leases = MutableStateFlow(0)
@@ -238,9 +257,9 @@ class ConnectionSupervisor(
         mutableMachines.value = MachineDirectory(machines, clock.now())
     }
 
-    /** Reads the directory from [session], with the gateway's build. */
-    private suspend fun refreshMachines(session: GatewaySession) {
-        setMachines(session.machines())
+    /** Verifies [session] and reads its directory, with the gateway's build. */
+    private suspend fun connect(session: GatewaySession) {
+        setMachines(session.connect())
         session.information?.let { mutableGatewayInformation.value = it }
     }
 
@@ -265,6 +284,7 @@ class ConnectionSupervisor(
                 publish(ConnectionState(ConnectionPhase.AUTH_REQUIRED, gateway))
                 awaitCancellation()
             }
+            renewConnections()
             val session = GatewaySession(gateway, token, transport, config.clientVersion, clock)
             sessions.attach(session)
             try {
@@ -275,8 +295,7 @@ class ConnectionSupervisor(
                         gateway,
                     )
                 )
-                session.verify()
-                refreshMachines(session)
+                connect(session)
                 attempt = 0
                 mutableSession.value = session
                 publish(ConnectionState(ConnectionPhase.CONNECTED, gateway))
@@ -370,8 +389,7 @@ class ConnectionSupervisor(
                 logger.debug(TAG, "presence stream ended: ${Failures.message(error)}")
             }
             delay(Backoff.CONNECTION.delay(attempt++))
-            session.verify()
-            refreshMachines(session)
+            connect(session)
         }
     }
 

@@ -128,7 +128,8 @@ test("full SVG bounds down-fit without clipping or accumulating scale, and never
   const [x, y, width, height] = svg.getAttribute("viewBox").split(" ").map(Number);
   assert.ok(x <= -35 && y <= -15 && x + width >= 775 && y + height >= 355);
   assert.equal(parseFloat(svg.style.width), 300);
-  assert.equal(parseFloat(svg.style.height), (height * 300) / width);
+  // CSSOM serializes lengths to three decimals (jsdom 31 does as browsers do).
+  assert.ok(Math.abs(parseFloat(svg.style.height) - (height * 300) / width) < 0.001);
   available = 1000;
   fitChartSVG(element, view);
   assert.equal(parseFloat(svg.style.width), width);

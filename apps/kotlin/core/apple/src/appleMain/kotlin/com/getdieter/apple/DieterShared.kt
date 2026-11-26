@@ -158,6 +158,13 @@ interface NativeTunnels {
         lane: Int,
         completion: NativeTunnelCompletion,
     )
+
+    /**
+     * Tunnels opened afterwards dial the gateway on a new connection; open tunnels keep theirs. The
+     * core calls it before every gateway session, so no tunnel starts on a connection that died
+     * while the app was away or asleep.
+     */
+    fun renewConnections()
 }
 
 interface NativeTunnelCompletion {
@@ -669,6 +676,8 @@ private class NativeDeviceKeysAdapter(private val native: NativeDeviceKeys) : De
 }
 
 private class NativeTunnelFactory(private val native: NativeTunnels) : TunnelFactory {
+    override fun renewConnections() = native.renewConnections()
+
     override suspend fun open(access: GatewayAccess, daemonId: String, lane: RelayLane): Tunnel =
         suspendCancellableCoroutine { continuation ->
             native.open(

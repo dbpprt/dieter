@@ -29,6 +29,7 @@ import com.getdieter.core.connection.ConnectionSupervisor
 import com.getdieter.core.connection.MachineDirectory
 import com.getdieter.core.connection.MachineSync
 import com.getdieter.core.connection.MachineSyncs
+import com.getdieter.core.connection.Refreshing
 import com.getdieter.core.connection.SupervisorConfig
 import com.getdieter.core.conversation.ConversationConfig
 import com.getdieter.core.conversation.ConversationSession
@@ -211,6 +212,10 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
             SupervisorConfig(config.clientVersion),
             platform.clock,
             platform.logger,
+            renewConnections = {
+                platform.transport.renewConnections()
+                platform.tunnels.renewConnections()
+            },
             onGatewayPrepared = { _, prepared ->
                 // Overlays and pending results belong to the previous account; everything below
                 // rebinds.
@@ -937,6 +942,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
                         outbox.view,
                         connection.syncs,
                         connection.machines,
+                        connection.refreshing,
                         ::activity,
                     )
                     .distinctUntilChanged(),
@@ -954,6 +960,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
                     outbox.view.value,
                     connection.syncs.value,
                     connection.machines.value,
+                    connection.refreshing.value,
                 ),
                 navigationKv.values.value,
             )
@@ -967,6 +974,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
         pending: OutboxView,
         syncs: Map<String, MachineSync>,
         machines: MachineDirectory,
+        refreshing: Refreshing,
     ): List<ActivityItem> =
         Activity.project(
             cards = view.allItems,
@@ -976,6 +984,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
             hiddenMessageIds = pending.pendingMessageIds + pending.failedIds,
             excludedIds = pending.pendingCardIds,
             staleness = { card -> staleness(card, syncs, machines) },
+            refreshing = { card -> refreshing.includes(workspace.directoryProjection.owner(card)) },
         )
 
     /** [machineId]'s name, else its ID. */
