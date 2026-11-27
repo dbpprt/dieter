@@ -77,12 +77,13 @@ tags: [smoke]
       text: "Signed in"
     timeout: 30000
 - takeScreenshot: providers-scratch-signed-in
-# Centered: on iOS the row can sit under the floating tab bar while counting
-# as visible, and a tap there opens Projects instead.
+# The row is the screen's last one, so it cannot be centred. Scroll to the end
+# instead: there the list's bottom inset keeps it above the floating tab bar,
+# where a tap would open Projects.
 - scrollUntilVisible:
     element:
       id: provider-remove
-    centerElement: true
+- scroll
 - tapOn:
     id: provider-remove
     waitToSettleTimeoutMs: 500
