@@ -87,6 +87,8 @@ tags: [smoke]
     element:
       id: mail-access
     direction: DOWN
+    # Hosted simulators take seconds per swipe and hierarchy read; the form is long.
+    timeout: 60000
 - takeScreenshot: mail-access
 - tapOn:
     id: chrome-cancel-creation

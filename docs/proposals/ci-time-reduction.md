@@ -154,6 +154,15 @@ on reruns: a failed flow reruns one 15-minute shard instead of a 130-minute job.
 | Conversation links and images            | iOS      | 3              | Quick Look loads out of process; instant `assertVisible`                                                                                                                                                                                    | waits up to 60 s                                                               |
 | Terminals                                | iOS      | 1              | Relay-backed terminal connection > 20 s                                                                                                                                                                                                     | 60 s                                                                           |
 
+The first PR run (with R1) then failed two more flows the same way, and this change
+fixes both:
+
+- **Mail offline graphics:** the app itself gave up ("The diagram renderer timed out.").
+  Every diagram had 15 s from composition, and several web views start at once. The
+  budget is now 30 s, counted from when the renderer's assets are loaded.
+- **Mail:** `mail-access` on the long new-task form gets the same 60 s scroll timeout as
+  Code review.
+
 Still open: Go `TempDir RemoveAll cleanup: … dieter-home/sync: directory not empty`
 (gateway e2e and some `internal/api` tests). `api.Server` has no close or drain, and
 `topology.Daemon.Close` stops the listeners without waiting for the server's background
